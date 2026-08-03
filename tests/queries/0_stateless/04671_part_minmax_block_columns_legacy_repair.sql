@@ -11,7 +11,8 @@ DROP TABLE IF EXISTS t_minmax_repair;
 
 CREATE TABLE t_minmax_repair (date1 Date, value1 String, value2 UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
-         part_minmax_index_columns = 'partition_key_only', min_bytes_for_wide_part = 0;
+         part_minmax_index_columns = 'partition_key_only', min_bytes_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_minmax_repair SELECT toDate('2018-10-01') + number % 3, toString(number), number FROM numbers(9);
 
@@ -29,6 +30,14 @@ SELECT DISTINCT part_name, minmax__block_number, minmax__block_offset
 FROM mergeTreeIndex(currentDatabase(), 't_minmax_repair', with_minmax = 1) ORDER BY part_name;
 
 ALTER TABLE t_minmax_repair UPDATE value2 = value2 + 1 WHERE 1 SETTINGS mutations_sync = 2;
+
+-- The repair must be visible to queries immediately, not only after the index is read back from disk.
+SELECT '-- after the next mutation, before a reload --';
+SELECT DISTINCT part_name, minmax__block_number, minmax__block_offset
+FROM mergeTreeIndex(currentDatabase(), 't_minmax_repair', with_minmax = 1) ORDER BY part_name;
+
+SELECT '-- pruning works without a reload --';
+SELECT count() FROM t_minmax_repair WHERE _block_number = 100 SETTINGS max_rows_to_read = 1;
 
 DETACH TABLE t_minmax_repair SYNC;
 ATTACH TABLE t_minmax_repair;
