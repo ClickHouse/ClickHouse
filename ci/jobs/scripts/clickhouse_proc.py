@@ -373,8 +373,8 @@ class ClickHouseProc:
 
     def get_log_export_senders(self):
         """Return the concrete `system.<table>_sender` `Distributed` tables
-        that log export created for this run, as a `{name: uuid}` mapping
-        (e.g. `{"query_log_sender": "8f...-..."}`).
+        that log export created for this run, as a `{name: fingerprint}`
+        mapping.
 
         Called right after `start_log_exports` succeeds, before any test
         runs, so the mapping reflects only the CI-owned sender tables
@@ -383,12 +383,21 @@ class ClickHouseProc:
         these exact tables, so a test that later forges a `system.*_sender`
         name cannot be mistaken for a log-export shipping error.
 
-        The `uuid` is captured, not just the name: `system` is an `Atomic`
-        database in the server, so a table dropped and recreated under a
-        captured name gets a fresh `uuid`. `verify_log_export_senders` uses
-        that to detect rebinding - a test CAN create and drop tables in
-        `system` (e.g. `02494_query_cache_system_tables.sql`), so the name
-        alone is not an identity a test cannot forge.
+        The fingerprint - not just the name - is what
+        `verify_log_export_senders` re-checks after the suite, because a
+        test CAN create and drop tables in the `system` database (e.g.
+        `02494_query_cache_system_tables.sql`) and so could rebind a
+        captured name to a `Distributed` table of its own. It combines:
+
+        * `uuid` - `system` is an `Atomic` database in the server, so a
+          recreated table normally gets a fresh one;
+        * `metadata_modification_time` - the mtime of the table's metadata
+          file. This is the part a test cannot choose: `CREATE TABLE ...
+          UUID '<captured uuid>'` IS accepted in an `Atomic` database, so
+          `uuid` alone is forgeable, but a table recreated during the suite
+          is necessarily stamped later than the pre-suite snapshot;
+        * a hash of `engine_full` - so a rebind that somehow preserved both
+          of the above still has to reproduce the exact engine definition.
 
         Returns an empty mapping on any error - the heuristic then abstains
         and the run stays on the `Server died` path.
@@ -399,35 +408,43 @@ class ClickHouseProc:
     def _query_log_export_senders():
         out = Shell.get_output(
             "clickhouse-client --query \""
-            "SELECT name, toString(uuid) FROM system.tables "
+            "SELECT name, toString(uuid), toString(metadata_modification_time), "
+            "hex(sipHash64(engine_full)) FROM system.tables "
             "WHERE database = 'system' AND name LIKE '%\\_sender' "
             'FORMAT TSV"'
         )
         senders = {}
         for line in out.splitlines():
             parts = line.rstrip("\n").split("\t")
-            if len(parts) != 2:
+            if len(parts) != 4:
                 continue
-            name, uuid = parts[0].strip(), parts[1].strip()
+            name, uuid, mtime, engine_hash = (p.strip() for p in parts)
             # A zero `uuid` carries no identity (a non-`Atomic` `system`
             # database, e.g. `clickhouse-local`), so it cannot be verified
             # later. Drop such entries rather than trust a bare name.
             if not name or not uuid or uuid == "00000000-0000-0000-0000-000000000000":
                 continue
-            senders[name] = uuid
+            # An unset `metadata_modification_time` would let a recreated
+            # table match the snapshot, so it is required too.
+            if not mtime or mtime.endswith("1970-01-01 00:00:00"):
+                continue
+            senders[name] = f"{uuid}|{mtime}|{engine_hash}"
         return senders
 
     def verify_log_export_senders(self, snapshot):
-        """Return the subset of the pre-suite `{name: uuid}` ``snapshot``
-        whose tables still exist with the SAME `uuid`, as a set of names.
+        """Return the subset of the pre-suite `{name: fingerprint}`
+        ``snapshot`` whose tables still exist with the SAME fingerprint, as a
+        set of names.
 
         This is what the CIDB-staging-overload heuristic is allowed to trust
         after the suite has run. A test can drop a CI-created sender and
-        recreate a `Distributed` table under the same name (tables in
-        `system` are creatable by tests), which would otherwise let it emit
-        `system.query_log_sender.DistributedInsertQueue.*` errors that read
-        as CI log-export noise. In an `Atomic` database the recreated table
-        has a different `uuid`, so it drops out here and the heuristic stops
+        recreate a `Distributed` table under the same name - and, since
+        explicit `CREATE TABLE ... UUID '...'` is accepted in an `Atomic`
+        database, even under the same `uuid` - which would otherwise let it
+        emit `system.query_log_sender.DistributedInsertQueue.*` errors that
+        read as CI log-export noise. A recreated table is stamped with a new
+        `metadata_modification_time`, which no SQL can backdate to the
+        pre-suite value, so it drops out here and the heuristic stops
         counting that name.
 
         Fails closed: a table that disappeared, was rebound, or a failed
@@ -438,7 +455,9 @@ class ClickHouseProc:
             return set()
         current = self._query_log_export_senders()
         return {
-            name for name, uuid in snapshot.items() if current.get(name) == uuid
+            name
+            for name, fingerprint in snapshot.items()
+            if current.get(name) == fingerprint
         }
 
     @staticmethod
