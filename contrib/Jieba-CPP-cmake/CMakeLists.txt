@@ -18,6 +18,9 @@ add_library(_jieba
 # sources reference the data with quoted includes, so make data/ an include dir
 # and tell the compiler where `#embed` should resolve its operands.
 target_include_directories(_jieba SYSTEM PUBLIC "${JIEBA_DIR}/include")
+# darts-clone's include dir must appear before MeCab's (which also ships a darts.h
+# inside its source tree). Add it explicitly as BEFORE to win the include search race.
+target_include_directories(_jieba SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/darts-clone/include")
 target_include_directories(_jieba PRIVATE "${JIEBA_DIR}/data")
 target_compile_options(_jieba PRIVATE "--embed-dir=${JIEBA_DIR}/data")
 

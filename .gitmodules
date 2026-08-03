@@ -423,3 +423,6 @@
 [submodule "contrib/Jieba-CPP"]
 	path = contrib/Jieba-CPP
 	url = https://github.com/amosbird/Jieba-CPP
+[submodule "contrib/MeCab"]
+	path = contrib/MeCab
+	url = https://github.com/taku910/mecab
