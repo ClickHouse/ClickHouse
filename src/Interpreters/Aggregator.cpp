@@ -1124,11 +1124,14 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(
         {
             if (!mapped)
                 return;
+            /// Both bookkeeping vectors are filled before the destroy loop, which is `noexcept`:
+            /// until the caller erases the key, the hash table still points at `mapped`, so an
+            /// allocation failure here must leave the state alive for `destroyImpl` to reclaim
+            /// exactly once. Arena allocations are not reclaimable; reuse the slot instead.
             destroyed_states->push_back({.slot = mapped, .row = current_row});
+            method.top_k_heap.free_states.push_back(mapped);
             for (size_t j = 0; j < aggregate_functions.size(); ++j)
                 aggregate_functions[j]->destroy(mapped + offsets_of_aggregate_states[j]);
-            /// Arena allocations are not reclaimable; reuse the slot instead.
-            method.top_k_heap.free_states.push_back(mapped);
         };
 
         ColumnRawPtrs heap_columns;
