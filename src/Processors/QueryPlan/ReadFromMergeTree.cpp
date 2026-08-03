@@ -1353,6 +1353,15 @@ static std::optional<size_t> estimateReadBytes(
                 available_columns = data_part.getColumns();
 
             const auto physical_name = data_part.getColumnNameWithMinimumCompressedSize(available_columns);
+
+            /// The injected column is charged like a requested one, so it has to pass the same
+            /// scaling check. The smallest column of a part can well be a `String` or a
+            /// `LowCardinality`, whose whole-part size is not proportional to the selected rows.
+            const auto injected_col = data_part.tryGetColumn(physical_name);
+            if (selected_rows < data_part.rows_count
+                && (!injected_col || !canScaleSizeBySelectedRows(*injected_col->type)))
+                return std::nullopt;
+
             requested_names_by_column[physical_name].emplace(physical_name);
         }
 
