@@ -150,5 +150,19 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 echo "--- implicit_select is honoured by the client-side classifier (expect: 2) ---"
 $CLICKHOUSE_CLIENT $POLY --implicit_select 1 -q "1 + 1"
 
+# `INSERT ... SELECT * FROM input(...)` does not carry its data inline: the server asks for it
+# explicitly, exactly as for a native INSERT. Sending the query verbatim must not take that away —
+# the client still has to stream stdin for it. Only the `clickhouse` source dialect is used here,
+# because the bundled foreign dialects do not parse the `FORMAT` clause.
+POLY_CH="--allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect clickhouse"
+printf '5\n' | $CLICKHOUSE_CLIENT $POLY_CH -q "INSERT INTO t SELECT * FROM input('x Int32') FORMAT TSV"
+echo "--- polyglot INSERT SELECT FROM input() streams stdin (expect: 112 7) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
+# Without any external data the same query must fail loudly rather than hang waiting for it.
+$CLICKHOUSE_CLIENT $POLY_CH -q "INSERT INTO t SELECT * FROM input('x Int32') FORMAT TSV" < /dev/null 2>&1 | grep -om1 "NO_DATA_TO_INSERT"
+echo "--- no insert from an input() query without data (expect: 112 7) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

@@ -2852,9 +2852,11 @@ void ClientBase::processParsedSingleQuery(
                     "Processing inline insert data with both inlined and external data (from stdin or infile) is not supported");
         }
 
-        /// With a non-ClickHouse dialect the query is sent to the server verbatim and the server
-        /// reads the inline INSERT data from the transpiled query text; the client never forwards
-        /// external data. Reject external data (stdin or INFILE) instead of silently dropping it.
+        /// With a non-ClickHouse dialect a plain INSERT is sent to the server verbatim and the server
+        /// reads the inline INSERT data from the transpiled query text; there is no slot left for the
+        /// client to forward external data. Reject it (stdin or INFILE) instead of silently dropping it.
+        /// `INSERT ... SELECT * FROM input(...)` is different: the server requests the data explicitly,
+        /// so it keeps streaming external data below and is not rejected here.
         if (send_query_verbatim && insert && !insert->select)
         {
             bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
@@ -2876,7 +2878,11 @@ void ClientBase::processParsedSingleQuery(
             query = query_;
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data && !send_query_verbatim)
+        /// A verbatim (foreign dialect) query still takes this path when it uses `input`: the whole query text is
+        /// sent as is, and the server — after transpiling it — asks for the external data exactly as it does for a
+        /// native `input` query, so the client streams stdin or INFILE as usual.
+        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data
+            && (!send_query_verbatim || input_function))
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");

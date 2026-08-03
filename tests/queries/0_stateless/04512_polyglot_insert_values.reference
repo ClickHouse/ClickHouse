@@ -34,3 +34,8 @@ NOT_IMPLEMENTED
 107	6
 --- implicit_select is honoured by the client-side classifier (expect: 2) ---
 2
+--- polyglot INSERT SELECT FROM input() streams stdin (expect: 112 7) ---
+112	7
+NO_DATA_TO_INSERT
+--- no insert from an input() query without data (expect: 112 7) ---
+112	7
