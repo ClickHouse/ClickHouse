@@ -33,7 +33,8 @@ static DB::StoragePtr createStorage(DB::DiskPtr & disk)
 
     StoragePtr table = std::make_shared<StorageLog>(
         "Log", disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types},
-        ConstraintsDescription{}, String{}, LoadingStrictnessLevel::CREATE, getContext().context);
+        ConstraintsDescription{}, String{}, LoadingStrictnessLevel::CREATE, /*is_fresh_definition_=*/true,
+        getContext().context);
 
     table->startup();
 

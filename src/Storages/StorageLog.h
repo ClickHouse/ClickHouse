@@ -43,6 +43,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         LoadingStrictnessLevel mode,
+        bool is_fresh_definition_,
         ContextMutablePtr context_);
 
     ~StorageLog() override;
@@ -143,6 +144,10 @@ private:
     const String engine_name;
     const DiskPtr disk;
     String table_path;
+
+    /// Whether the definition is user input rather than stored metadata, so its column names are
+    /// still refusable. An existing table must keep loading whatever names it was created with.
+    const bool is_fresh_definition;
 
     std::vector<DataFile> data_files;
     size_t num_data_files = 0;
