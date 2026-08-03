@@ -466,7 +466,9 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column name
             quoteStringPostgreSQL(postgres_table),
-            (postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema))
+            /// The same schema the columns above were taken from - see the comment on `where`. Resolving the
+            /// replica identity in a different schema than the physical columns would describe two relations.
+            (postgres_schema.empty() ? String("current_schema()") : quoteStringPostgreSQL(postgres_schema))
         );
 
         table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
