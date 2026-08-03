@@ -2565,22 +2565,14 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
 static thread_local bool url_named_collection_resolution_in_progress = false;
 
 /// Lazy proxy for a `URL(named_collection)` table attached while its named collection is missing.
-/// It re-runs the full `URL` creator on first access (rebuilding the real storage class, hive
-/// partitioning, virtuals and format), but while the collection is still missing it must keep the
-/// plain `URL` engine's DDL semantics instead of forwarding to `getNested()` (which would retry the
-/// creator and throw `NAMED_COLLECTION_DOESNT_EXIST`). `rename` is metadata-only, `TRUNCATE` is
-/// unsupported — matching `StorageURLSchemeDispatch` and the plain `URL` engine.
+/// It re-runs the full `URL` creator on first access. Until then, DDL must follow the plain `URL`
+/// engine rather than forward to `getNested()`, which would retry the creator and throw.
 class StorageDeferredURL final : public StorageTableProxy
 {
 public:
-    /// Seed the proxy's cached metadata with the `URL` engine's file-like virtual columns
-    /// (`_path`, `_file`, `_size`, `_time`, `_headers`, ...) up front. The analyzer resolves available
-    /// columns from `getInMemoryMetadataPtr()` before `StorageProxy::getStorageSnapshot()` gets a
-    /// chance to materialize the proxy, so without this a `SELECT _path FROM t` (or `DESCRIBE` /
-    /// `system.columns`) on an attached-but-unresolved table would fail with `UNKNOWN_IDENTIFIER`
-    /// until some other query materialized the storage first. Only the path-independent virtuals are
-    /// seeded here; hive-partition virtuals depend on a sample path and are rebuilt correctly once the
-    /// collection returns and the nested storage materializes (`getInMemoryMetadataPtr` then forwards).
+    /// The analyzer resolves columns from `getInMemoryMetadataPtr()` before anything materializes the
+    /// proxy, so the file-like virtuals must be seeded here. Only path-independent ones: hive-partition
+    /// virtuals need a sample path and are rebuilt when the nested storage materializes.
     StorageDeferredURL(
         const StorageID & table_id_,
         std::function<StoragePtr(const StorageID &)> get_nested_,
@@ -2592,11 +2584,8 @@ public:
     {
         StorageInMemoryMetadata metadata;
         metadata.setColumns(columns_);
-        /// Seed the table-level constraints and comment too. The eager `IStorageURLBase` /
-        /// `StorageURLSchemeDispatch` constructors copy both into `StorageInMemoryMetadata`; seeding
-        /// only columns here would let the first `INSERT` (which snapshots `getInMemoryMetadataPtr()`
-        /// before `write()` materializes the proxy) skip every `CHECK` constraint, and would make
-        /// `system.tables.comment` / `system.constraints` wrong until some query materializes the storage.
+        /// Constraints and comment too: the first `INSERT` snapshots `getInMemoryMetadataPtr()` before
+        /// `write()` materializes the proxy, so seeding only columns would skip every `CHECK`.
         metadata.setConstraints(constraints_);
         if (!comment_.empty())
             metadata.setComment(comment_);
@@ -2661,15 +2650,9 @@ public:
         return {};
     }
 
-    /// While the collection is missing, use the plain `URL` engine's drop semantics (the `IStorage`
-    /// defaults: no drop-size guard, `TRUNCATE` unsupported) instead of forwarding to `getNested()`
-    /// (which would retry the creator and throw `NAMED_COLLECTION_DOESNT_EXIST`). This lets an
-    /// explicit `TRUNCATE TABLE` reach `truncate()` above and surface `NOT_IMPLEMENTED`, and lets a
-    /// `URL(nc)` table be dropped while its collection is gone. Dropping a `URL` table removes only
-    /// the table metadata: the plain `URL`/`File` backends have a no-op `drop()`, and a `URL(nc)`
-    /// only ever dispatches to plain object storage (S3/Azure/HDFS) whose `drop()` is also a no-op
-    /// (external objects are never deleted), so nothing is leaked. Once materialized, forward to the
-    /// real storage so the resolved backend's own checks apply.
+    /// No drop-size guard while unmaterialized, matching the plain `URL` engine's `IStorage` defaults.
+    /// Safe to skip: every backend a `URL(nc)` can dispatch to has a no-op `drop()` (external objects
+    /// are never deleted), so a drop is metadata-only and leaks nothing.
     void checkTableCanBeDropped(ContextPtr query_context) const override
     {
         if (auto materialized = tryGetNestedIfMaterialized())
@@ -2682,28 +2665,18 @@ public:
             materialized->checkTableSizeBelowDropLimit(query_context);
     }
 
-    /// `DROP TABLE` scrubs the named-collection dependency before it calls `dropTable()` ->
-    /// `StorageTableProxy::drop()`. The base `drop()` would materialize the nested storage here (it
-    /// re-runs the creator, which calls `getConfiguration(..., &current_id)` and *re-registers* the
-    /// named-collection dependency for a table already being dropped); in an `Ordinary` database that
-    /// resurrected name-based entry survives the drop and later makes an unrelated `DROP NAMED
-    /// COLLECTION` wrongly fail with `NAMED_COLLECTION_IS_USED`. Dropping a `URL` table is metadata-only
-    /// (plain `URL`/`File`/object-storage backends have a no-op `drop()`, external objects are never
-    /// deleted), so while unmaterialized there is nothing to clean up: do not materialize. Once
-    /// materialized, forward to the resolved storage's own `drop()`.
+    /// Must NOT materialize: `DROP TABLE` scrubs the named-collection dependency *before* calling this,
+    /// and the creator would re-register it for a table already being dropped. In an `Ordinary` database
+    /// that resurrected entry outlives the drop and fails later `DROP NAMED COLLECTION`.
     void drop() override
     {
         if (auto materialized = tryGetNestedIfMaterialized())
             materialized->drop();
     }
 
-    /// Metadata-only alters (e.g. `ALTER TABLE ... MODIFY COMMENT`) must not materialize the nested
-    /// storage while the collection is missing. The plain `URL` engine has no `checkAlterIsPossible`
-    /// override, so it uses `IStorage::checkAlterIsPossible` (comment-only alters allowed, everything
-    /// else `NOT_IMPLEMENTED`). `StorageProxy::checkAlterIsPossible` instead forwards to `getNested()`,
-    /// which would retry the creator and throw `NAMED_COLLECTION_DOESNT_EXIST`. While unmaterialized,
-    /// use the `URL` contract directly; once materialized, forward to the resolved storage so the
-    /// eager `URL`-dispatch path's behavior (also `IStorage`-default for `URL`/`File`) applies.
+    /// `IStorage`, not `StorageProxy`: the plain `URL` engine inherits the `IStorage` alter contract
+    /// (comment-only), while `StorageProxy` would forward to `getNested()` and materialize, so a
+    /// metadata-only `MODIFY COMMENT` would throw while the collection is missing.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override
     {
         if (auto materialized = tryGetNestedIfMaterialized())
@@ -2720,22 +2693,14 @@ public:
             IStorage::alter(params, context, alter_lock_holder); // NOLINT(bugprone-parent-virtual-call)
     }
 
-    /// Planner-facing PREWHERE contract. `StorageProxy` forwards `supportsPrewhere` (which already
-    /// materializes on first access), but not `supportedPrewhereColumns` / `canMoveConditionsToPrewhere`,
-    /// so without these overrides the wrapper would fall back to the `IStorage` defaults
-    /// (`std::nullopt` = unrestricted, and `canMove == supportsPrewhere`), broader than the real `URL`
-    /// engine (`IStorageURLBase` restricts `PREWHERE` away from columns with default expressions and
-    /// hive-partition columns, matching `StorageURLSchemeDispatch`). These are only consulted during
-    /// query planning, at which point a still-missing collection materializes and surfaces its real
-    /// `NAMED_COLLECTION_DOESNT_EXIST` (the query cannot run anyway); a recovered table gets the
-    /// resolved storage's narrow contract.
+    /// `StorageProxy` forwards `supportsPrewhere` but not these two, so without the overrides the
+    /// wrapper would report the unrestricted `IStorage` defaults instead of `IStorageURLBase`'s
+    /// narrower contract. Materializing is fine here: these are only read during query planning.
     std::optional<NameSet> supportedPrewhereColumns() const override { return getNested()->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return getNested()->canMoveConditionsToPrewhere(); }
 
-    /// Trivial-count contract, for parity with `StorageURLSchemeDispatch`. `StorageProxy` does not
-    /// forward `supportsTrivialCountOptimization`, so the wrapper would otherwise report the `IStorage`
-    /// default (`false`) while `StorageFile`/`StorageObjectStorage`/plain `URL` all return `true`,
-    /// disabling the backend's optimized `SELECT count()` path on a recovered `URL` table.
+    /// Also not forwarded by `StorageProxy`: the `IStorage` default (`false`) would disable the
+    /// backend's optimized `SELECT count()` path, which every `URL` backend supports.
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
     {
         return getNested()->supportsTrivialCountOptimization(storage_snapshot, query_context);
@@ -2844,15 +2809,9 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
-            /// On ATTACH/startup a `URL(named_collection)` table whose named collection was dropped
-            /// (allowed via `check_named_collection_dependencies=false`) must not abort synchronous
-            /// server startup with `NAMED_COLLECTION_DOESNT_EXIST`. When the collection resolution
-            /// fails in that mode, attach a lazy proxy that re-runs the full creator on first
-            /// access. Deferring the whole construction (rather than just the `uri`) means the
-            /// storage class (`file://`/`s3://`/`az://`/`hdfs://` dispatch), hive partitioning,
-            /// virtual columns and format inference are all rebuilt through the normal eager path
-            /// once the collection is recreated. If it is still missing at query time, the retry
-            /// (guarded so it does not defer again) surfaces the real error.
+            /// Outside `CREATE`, a missing named collection defers to a lazy proxy instead of aborting
+            /// synchronous server startup. The WHOLE construction is deferred, not just the `uri`, so the
+            /// retry rebuilds through the eager path; `in_progress` stops it from deferring again.
             const bool can_defer_missing_named_collection
                 = args.mode != LoadingStrictnessLevel::CREATE
                 && !args.columns.empty()
@@ -2870,16 +2829,9 @@ void registerStorageURL(StorageFactory & factory)
                 if (e.code() != ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST)
                     throw;
 
-                /// Register the named-collection dependency at attach time, even though the collection
-                /// is currently missing. On a real restart `NamedCollectionFactory` starts with an
-                /// empty dependency graph and otherwise rebuilds it only when
-                /// `getConfiguration(..., &table_id)` succeeds -- which this deferred path skips. Without
-                /// an attach-time registration, `check_named_collection_dependencies` would not see this
-                /// table as a dependent until its first read, so if the collection is recreated and then
-                /// dropped again before that first read, `DROP NAMED COLLECTION` would wrongly succeed.
-                /// The name is the first engine argument (an identifier), available even while the
-                /// collection does not exist. A metadata-only `RENAME` while missing moves this entry via
-                /// `NamedCollectionFactory::renameDependencies`, so it tracks the current table name.
+                /// Register the dependency even though the collection is missing: the graph is otherwise
+                /// only populated by a successful `getConfiguration(..., &table_id)`, which this path
+                /// skips, so until the first read a `DROP NAMED COLLECTION` would wrongly succeed.
                 std::optional<String> deferred_collection_name;
                 if (!args.engine_args.empty())
                     if (const auto * identifier = args.engine_args[0]->as<ASTIdentifier>())
@@ -2887,17 +2839,9 @@ void registerStorageURL(StorageFactory & factory)
                 if (deferred_collection_name)
                     NamedCollectionFactory::instance().addDependency(*deferred_collection_name, args.table_id);
 
-                /// Capture what is needed to rebuild the storage on first access. The factory runs
-                /// later, so `args` (which holds references) cannot be captured; copy the path/mode
-                /// and clone the attach-time CREATE query as a fallback. `get_nested` receives the
-                /// proxy's *current* `StorageID`, so we resolve from the table's current identity:
-                ///   - metadata-only DDL applied while the collection was missing (RENAME, ALTER
-                ///     MODIFY COMMENT) is persisted to the catalog, so fetching the current CREATE
-                ///     query via `getCreateTableQuery` reflects it (comments survive materialization,
-                ///     and `getConfiguration(..., &current_id)` re-registers the named-collection
-                ///     dependency under the *current* table name, not the stale attach-time one).
-                /// Re-run through `createTableFromAST` (the same entry point database loading uses) so
-                /// the retry goes through the identical construction path as an eager ATTACH.
+                /// `args` holds references and the factory runs later, so copy what the rebuild needs.
+                /// `createTableFromAST` is the same entry point database loading uses, so the retry
+                /// takes the identical construction path as an eager ATTACH.
                 auto attach_create_query = args.query.clone();
                 auto get_nested
                     = [attach_create_query,
@@ -2916,13 +2860,9 @@ void registerStorageURL(StorageFactory & factory)
                     if (!create_query)
                         create_query = attach_create_query;
 
-                    /// Keep the attach-time placeholder dependency in place across the whole handoff.
-                    /// The eager creator (`getConfiguration(..., &current_id)`) re-registers the
-                    /// dependency under the current identity, and `addDependency` is idempotent, so the
-                    /// table stays visible to `check_named_collection_dependencies` throughout: a
-                    /// concurrent `DROP NAMED COLLECTION` never observes a zero-dependent gap. If the
-                    /// collection is still missing the creator throws with the placeholder untouched, so
-                    /// the table remains tracked.
+                    /// The attach-time placeholder dependency is deliberately NOT removed first: the
+                    /// creator re-registers it idempotently, so a concurrent `DROP NAMED COLLECTION`
+                    /// never observes a zero-dependent gap, and a throw leaves the table tracked.
                     url_named_collection_resolution_in_progress = true;
                     SCOPE_EXIT({ url_named_collection_resolution_in_progress = false; });
                     return createTableFromAST(

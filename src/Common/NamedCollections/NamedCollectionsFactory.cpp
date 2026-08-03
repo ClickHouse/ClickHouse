@@ -428,12 +428,9 @@ void NamedCollectionFactory::addDependency(const String & collection_name, const
 {
     std::lock_guard lock(mutex);
 
-    /// A (collection, table) dependency is set-membership: `removeDependencies` erases *all* entries
-    /// for a table and there is no "remove one" operation, so no caller relies on duplicate entries.
-    /// Keep this idempotent so the same dependency can be registered more than once (e.g. the deferred
-    /// `URL(named_collection)` path registers it at attach time and again when the nested storage
-    /// materializes) without the entry surviving a single `removeDependencies` or being double-counted
-    /// by `getDependents`.
+    /// Idempotent: the dependency is set-membership. `removeDependencies` erases *all* entries for a
+    /// table and there is no "remove one", so a duplicate would survive a single `removeDependencies`
+    /// and be double-counted by `getDependents`.
     const auto & idx = dependencies.get<Collection>();
     auto range = idx.equal_range(collection_name);
     for (auto it = range.first; it != range.second; ++it)

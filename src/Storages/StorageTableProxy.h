@@ -13,18 +13,14 @@ namespace DB
 
 /// Lazily creates underlying storage for tables in databases with `lazy_load_tables` setting.
 /// Similar to `StorageTableFunctionProxy`, but for real on-disk tables.
-///
 /// Not `final`: the deferred `URL(named_collection)` path (see `registerStorageURL`) subclasses this
-/// to preserve the `URL` engine's metadata-only rename / unsupported-truncate DDL semantics while the
-/// collection is still missing, without materializing the nested storage.
+/// to keep the `URL` engine's DDL semantics without materializing the nested storage.
 class StorageTableProxy : public StorageProxy
 {
 public:
-    /// `get_nested_` receives the proxy's current `StorageID` so the factory can rebuild the nested
-    /// storage from the table's current identity/metadata rather than a value frozen at attach time.
-    /// This matters for the deferred `URL(named_collection)` path: metadata-only DDL (RENAME, ALTER
-    /// MODIFY COMMENT) applied while the collection is missing must be reflected once the table
-    /// materializes, including re-registering the named-collection dependency under the current name.
+    /// `get_nested_` receives the proxy's *current* `StorageID`, not one frozen at construction, so
+    /// the factory rebuilds from the table's present identity (metadata-only DDL applied meanwhile
+    /// must be reflected once the table materializes).
     StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr(const StorageID &)> get_nested_, ColumnsDescription cached_columns)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
@@ -209,10 +205,8 @@ public:
     }
 
 protected:
-    /// Returns the nested storage only if it has already been materialized, without triggering
-    /// materialization. Subclasses use this to answer queries with the nested storage when present
-    /// and fall back to engine-specific defaults while it is not (e.g. the deferred `URL(nc)` path
-    /// must not materialize on metadata-only DDL while the collection is missing).
+    /// Unlike `getNested`, does NOT materialize: returns null while the nested storage is absent, so
+    /// subclasses can fall back to engine-specific defaults instead.
     StoragePtr tryGetNestedIfMaterialized() const
     {
         std::lock_guard lock{nested_mutex};
