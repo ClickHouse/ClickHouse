@@ -36,7 +36,6 @@ void TSKVRowOutputFormat::writeRowEndDelimiter()
 }
 
 
-void registerOutputFormatTSKV(FormatFactory & factory);
 void registerOutputFormatTSKV(FormatFactory & factory)
 {
     factory.registerOutputFormat("TSKV", [](
