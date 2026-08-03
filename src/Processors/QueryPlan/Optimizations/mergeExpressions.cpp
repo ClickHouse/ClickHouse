@@ -59,8 +59,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         if (prevent_input_removal)
             expr->setPreventInputRemoval();
 
-        /// The merged step takes the place of the child in the plan.
-        if (child_expr->isSingleStreamParallelized())
+        if (child_expr->isSingleStreamParallelized() || parent_expr->isSingleStreamParallelized())
             expr->setParallelizeSingleStream();
 
         parent_node->step = std::move(expr);
@@ -69,6 +68,11 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
     }
     if (parent_filter && child_expr)
     {
+        /// `FilterStep` cannot inherit the flag: `FilterTransform` drops a chunk that becomes empty, so
+        /// the ordered scatter/gather pair would no longer see one chunk per input chunk.
+        if (child_expr->isSingleStreamParallelized())
+            return 0;
+
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_filter->getExpression();
 
