@@ -274,6 +274,27 @@ TEST(ParserCreateQuery, MaskNATSTableEngineNonLiteralArguments)
     EXPECT_NE(masked.find("nats1"), String::npos);
 }
 
+TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
+{
+    /// The engine accepts no positional arguments except the collection name in the first position,
+    /// but it rejects them only after the query has been formatted for logging. A malformed
+    /// positional argument can carry a secret, so it is hidden whole (fail closed).
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, '/plain/credential/file', "
+        "'nats://plain_user:plain_password@example.com:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    /// The collection name is the one legitimate positional argument and stays visible.
+    EXPECT_NE(masked.find("nats1"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
 TEST_P(ParserTest, parseQuery)
 {
     const auto & parser = std::get<0>(GetParam());

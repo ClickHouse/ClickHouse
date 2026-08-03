@@ -850,7 +850,15 @@ void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
         const auto equals_func = function->arguments->at(i)->getFunction();
         if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
             || equals_func->arguments->size() != 2)
+        {
+            /// The engine accepts no positional arguments except the collection name in the first
+            /// position, but it rejects them only after the query has been formatted for logging.
+            /// A malformed positional argument can carry a secret (a credential file path, a url
+            /// with a password), so hide it whole rather than leak it (fail closed).
+            if (i > 0 || !function->arguments->at(i)->isIdentifier())
+                markSecretArgument(i, /* argument_is_named= */ false);
             continue;
+        }
 
         String key;
         if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
