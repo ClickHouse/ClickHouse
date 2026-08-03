@@ -82,8 +82,12 @@ def read_list_header(buf, pos):
         n, pos = read_varint(buf, pos)
     return hdr, pos, n, etype
 
-def walk_struct(buf, pos, want=None):
-    """Walk one struct; return the list header of field `want`, else the struct's end."""
+def walk_struct(buf, pos, want=None, want_ctype=0x09):
+    """Walk one struct; return the size header of field `want`, else the struct's end.
+
+    For a list the header is the compact list header; for a binary field it is just the
+    length varint. Both are `[start, end)` spans that can be rewritten in place.
+    """
     last = 0
     while True:
         h = buf[pos]
@@ -99,7 +103,10 @@ def walk_struct(buf, pos, want=None):
             fid = last + delta
         last = fid
         if fid == want:
-            assert ctype == 0x09, "field %d is not a list" % fid
+            assert ctype == want_ctype, "field %d has ctype %d" % (fid, ctype)
+            if ctype == 0x08:  # binary
+                true_len, end = read_varint(buf, pos)
+                return pos, end, true_len
             hdr, end, _, etype = read_list_header(buf, pos)
             return hdr, end, etype
         pos = skip_value(buf, pos, ctype)
@@ -107,23 +114,39 @@ def walk_struct(buf, pos, want=None):
 def skip_struct(buf, pos):
     return walk_struct(buf, pos)
 
-def forge(name, count):
-    """Rewrite `schema`'s element count to `count`, keeping the file otherwise intact."""
-    buf = bytearray(open(f"{work}/norm.parquet", "rb").read())
-    hdr, end, etype = walk_struct(buf, footer_offset(buf), want=2)
-    new = bytes([0xF0 | etype]) + varint(count)
+def patch_size(name, hdr, end, new, buf):
+    """Replace the size header at [hdr, end) and keep the footer length consistent."""
     buf[hdr:end] = new
     grew = len(new) - (end - hdr)
     buf[-8:-4] = struct.pack("<I", struct.unpack("<I", bytes(buf[-8:-4]))[0] + grew)
     open(f"{work}/{name}.parquet", "wb").write(buf)
 
+def forge(name, count):
+    """Rewrite `schema`'s element count to `count`, keeping the file otherwise intact."""
+    buf = bytearray(open(f"{work}/norm.parquet", "rb").read())
+    hdr, end, etype = walk_struct(buf, footer_offset(buf), want=2)
+    patch_size(name, hdr, end, bytes([0xF0 | etype]) + varint(count), buf)
+
+def forge_string(name, declared_len):
+    """Rewrite `created_by`'s declared length, leaving its payload bytes untouched."""
+    buf = bytearray(open(f"{work}/norm.parquet", "rb").read())
+    hdr, end, _ = walk_struct(buf, footer_offset(buf), want=6, want_ctype=0x08)
+    patch_size(name, hdr, end, varint(declared_len), buf)
+
 # 5000 is small enough that the pre-fix allocation finishes in seconds instead of
 # exhausting the runner, yet the error still differs with and without the fix.
 forge("forged", 5000)
+# 500 MB is declared but not present, so pre-fix this is one bounded realloc that then
+# fails the short read; post-fix the limit rejects it before allocating.
+forge_string("forged_str", 500000000)
 PYEOF
 
 echo "-- forged container length is rejected --"
 ${CLICKHOUSE_LOCAL} --query "DESCRIBE TABLE file('${WORK_DIR}/forged.parquet', Parquet)" 2>&1 \
+    | grep -oF 'Exceeded size limit' | head -n 1
+
+echo "-- forged string length is rejected --"
+${CLICKHOUSE_LOCAL} --query "DESCRIBE TABLE file('${WORK_DIR}/forged_str.parquet', Parquet)" 2>&1 \
     | grep -oF 'Exceeded size limit' | head -n 1
 
 echo "-- a valid file is still read --"
