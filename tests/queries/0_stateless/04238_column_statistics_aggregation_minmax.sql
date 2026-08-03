@@ -150,4 +150,19 @@ SELECT min(a) AS x, max(value) AS y, min(b) AS z FROM test_col_stats_agg;
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT p, min(a) AS x, min(b) AS y FROM test_col_stats_agg GROUP BY p ORDER BY p) WHERE explain LIKE '%ReadFromPreparedSource%';
 SELECT p, min(a) AS x, min(b) AS y FROM test_col_stats_agg GROUP BY p ORDER BY p;
 
+-- ==================================================
+-- GROUP BY key / aggregate tricky output names
+-- ==================================================
+
+-- A GROUP BY key alias that textually equals an aggregate output name
+-- (GROUP BY p AS "min(a)" together with min(a)): the alias is applied by a
+-- projection above the AggregatingStep and never reaches the aggregation keys,
+-- so the query can still use column statistics and must stay correct.
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT "min(a)", min(a) FROM test_col_stats_agg GROUP BY p AS "min(a)" ORDER BY 1) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT "min(a)", min(a) FROM test_col_stats_agg GROUP BY p AS "min(a)" ORDER BY 1;
+
+-- Same with several aggregates
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT "min(a)", min(a), max(a) FROM test_col_stats_agg GROUP BY p AS "min(a)" ORDER BY 1) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT "min(a)", min(a), max(a) FROM test_col_stats_agg GROUP BY p AS "min(a)" ORDER BY 1;
+
 DROP TABLE test_col_stats_agg;

@@ -10335,76 +10335,29 @@ struct AggResultColumnInfo
     bool is_min = false;
 };
 
-/// Build the result Block in the order of required_columns, consuming aggregate and key columns.
-/// When the same aggregate column name appears multiple times in required_columns
-/// (e.g. SELECT min(v), min(v)), each occurrence consumes a distinct AggResultColumnInfo
-/// entry.  A simple name→pointer map would lose the duplicate entries because
-/// aggregate_descriptions and required_columns are built in lockstep from the same
-/// AggregateDescriptions list, so entries with the same column_name are consecutive.
+/// Build the result Block in the exact keys-then-aggregates order that the
+/// only_merge aggregation path expects (keys at positions 0..keys_size-1).
+/// Columns are consumed positionally rather than by name because output names
+/// are not unique (e.g. SELECT min(v), min(v) produces two aggregates named
+/// `min(v)`), so name-based lookup would mix up same-named columns.
 static Block buildAggResultBlock(
-    const Names & required_columns,
     const MergeTreeData::GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
-    std::unordered_map<String, MutableColumnPtr> & key_columns,
+    std::vector<MutableColumnPtr> & key_columns,
     std::vector<AggResultColumnInfo> & agg_columns,
-    const KeyDescription & partition_key,
-    const PartsPruningResult & pruning_result)
+    const KeyDescription & partition_key)
 {
-    const bool has_group_by = !group_by_key_to_partition_idx.empty();
-
-    /// Track the next unconsumed agg_columns index per column name.
-    /// When an aggregate name appears multiple times, each lookup advances
-    /// to the next entry so duplicate outputs consume distinct columns.
-    std::unordered_map<String, size_t> agg_next_idx;
-    for (size_t i = 0; i < agg_columns.size(); ++i)
-        agg_next_idx.emplace(agg_columns[i].col_name, i);
-
-    std::unordered_map<String, size_t> key_to_partition_idx;
-    for (const auto & [key_name, partition_idx] : group_by_key_to_partition_idx)
-        key_to_partition_idx[key_name] = partition_idx;
-
     Block result;
-    for (const auto & col_name : required_columns)
+
+    for (size_t i = 0; i < group_by_key_to_partition_idx.size(); ++i)
     {
-        /// Try aggregate columns first
-        auto agg_it = agg_next_idx.find(col_name);
-        if (agg_it != agg_next_idx.end())
-        {
-            size_t idx = agg_it->second;
-            auto & agg_col = agg_columns[idx];
-            auto agg_type = std::make_shared<DataTypeAggregateFunction>(agg_col.func, DataTypes{agg_col.data_type}, agg_col.func->getParameters());
-            result.insert({std::move(agg_col.column), agg_type, col_name});
+        const auto & [key_name, partition_idx] = group_by_key_to_partition_idx[i];
+        result.insert({std::move(key_columns[i]), partition_key.data_types[partition_idx], key_name});
+    }
 
-            /// Advance to next unconsumed entry with the same name.
-            /// Entries with the same name are consecutive because they are
-            /// built in the same order as required_columns.
-            ++idx;
-            while (idx < agg_columns.size() && agg_columns[idx].col_name != col_name)
-                ++idx;
-            if (idx < agg_columns.size())
-                agg_it->second = idx;
-            else
-                agg_next_idx.erase(agg_it);
-
-            continue;
-        }
-
-        /// Try GROUP BY key columns
-        auto key_it = key_columns.find(col_name);
-        if (key_it != key_columns.end())
-        {
-            size_t partition_idx = key_to_partition_idx.at(col_name);
-            result.insert({std::move(key_it->second), partition_key.data_types[partition_idx], col_name});
-            continue;
-        }
-
-        /// Try virtual columns (only when there is no GROUP BY)
-        if (!has_group_by && pruning_result.virtual_columns_block.has(col_name))
-        {
-            result.insert(pruning_result.virtual_columns_block.getByName(col_name));
-            continue;
-        }
-
-        return {};
+    for (auto & agg_col : agg_columns)
+    {
+        auto agg_type = std::make_shared<DataTypeAggregateFunction>(agg_col.func, DataTypes{agg_col.data_type}, agg_col.func->getParameters());
+        result.insert({std::move(agg_col.column), agg_type, agg_col.col_name});
     }
 
     return result;
@@ -10605,21 +10558,20 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
     if (partition_minmax.empty())
         return {};
 
-    /// Build aggregate columns from collected min/max values
-    std::unordered_map<String, MutableColumnPtr> key_columns;
+    /// Build aggregate columns from collected min/max values.
+    /// Key columns are positional, aligned with group_by_key_to_partition_idx.
+    std::vector<MutableColumnPtr> key_columns(group_by_key_to_partition_idx.size());
     for (const auto & [agg_key, partition_data] : partition_minmax)
     {
         const auto & [partition_values, col_minmax] = partition_data;
 
-        if (has_group_by)
+        for (size_t key_idx = 0; key_idx < group_by_key_to_partition_idx.size(); ++key_idx)
         {
-            for (const auto & [query_key_name, partition_idx] : group_by_key_to_partition_idx)
-            {
-                auto & col = key_columns[query_key_name];
-                if (!col)
-                    col = partition_key.data_types[partition_idx]->createColumn();
-                col->insert(partition_values[partition_idx]);
-            }
+            size_t partition_idx = group_by_key_to_partition_idx[key_idx].second;
+            auto & col = key_columns[key_idx];
+            if (!col)
+                col = partition_key.data_types[partition_idx]->createColumn();
+            col->insert(partition_values[partition_idx]);
         }
 
         for (size_t agg_idx = 0; agg_idx < agg_columns.size(); ++agg_idx)
@@ -10640,9 +10592,7 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
         }
     }
 
-    Block result = buildAggResultBlock(required_columns, group_by_key_to_partition_idx, key_columns, agg_columns, partition_key, pruning_result);
-    if (!result.columns())
-        return {};
+    Block result = buildAggResultBlock(group_by_key_to_partition_idx, key_columns, agg_columns, partition_key);
 
     LOG_DEBUG(log, "Column statistics aggregation optimization applied: {} partitions, {} aggregates",
         partition_minmax.size(), agg_columns.size());
