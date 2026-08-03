@@ -108,7 +108,6 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
     return write_settings;
 }
 
-<<<<<<< HEAD
 void IObjectStorage::prepareRead(
     ObjectStoragePtr storage,
     const StoredObjects & objects,
@@ -117,7 +116,8 @@ void IObjectStorage::prepareRead(
     ReadPipeline & pipeline) const
 {
     pipeline.setSource(std::move(storage), objects, read_settings, read_hint);
-=======
+}
+
 RelativePathWithMetadata::RelativePathWithMetadata(const DataFileInfo & info, std::optional<ObjectMetadata> metadata_)
     : metadata(std::move(metadata_))
 {
@@ -167,7 +167,6 @@ std::string RelativePathWithMetadata::CommandInTaskResponse::toString() const
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();
->>>>>>> 8c8b170f4cc (Merge pull request #1687 from Altinity/feature/antalya-26.3/pr-1414-1)
 }
 
 }

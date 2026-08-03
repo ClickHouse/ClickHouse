@@ -289,6 +289,11 @@ public:
 
     ClusterFunctionReadTaskResponsePtr operator()(size_t number_of_current_replica) const override
     {
+        fiu_do_on(FailPoints::storage_cluster_read_sleep,
+        {
+            sleepForSeconds(10);
+        });
+
         auto task = task_distributor.getNextTask(number_of_current_replica);
         if (task)
             return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), context);
@@ -348,21 +353,6 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 
     uint64_t lock_object_storage_task_distribution_ms = local_context->getSettingsRef()[Setting::lock_object_storage_task_distribution_ms];
 
-<<<<<<< HEAD
-    auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
-        {
-            fiu_do_on(FailPoints::storage_cluster_read_sleep,
-            {
-                sleepForSeconds(10);
-            });
-
-            auto task = task_distributor->getNextTask(number_of_current_replica);
-            if (task)
-                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
-        });
-=======
     /// Check value to avoid negative result after conversion in microseconds.
     /// Poco::Timestamp::TimeDiff is signed int 64.
     static const uint64_t lock_object_storage_task_distribution_ms_max = 0x0020000000000000ULL;
@@ -379,7 +369,6 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         lock_object_storage_task_distribution_ms,
         local_context,
         /* iceberg_read_optimization_enabled */local_context->getSettingsRef()[Setting::allow_experimental_iceberg_read_optimization]);
->>>>>>> 8c8b170f4cc (Merge pull request #1687 from Altinity/feature/antalya-26.3/pr-1414-1)
 
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }

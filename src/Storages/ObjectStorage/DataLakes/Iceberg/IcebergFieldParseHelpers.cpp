@@ -163,6 +163,9 @@ std::optional<Field> deserializeFieldFromBinaryRepr(const std::string & str, Dat
         return std::nullopt;
     }
 
+    if (non_nullable_type->getTypeId() == TypeIndex::Variant)
+        return std::nullopt;
+
     /// For all other types except decimal binary representation
     /// matches our internal representation
     column->insertData(str.data(), str.length());

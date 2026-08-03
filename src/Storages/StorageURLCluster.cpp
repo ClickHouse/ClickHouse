@@ -138,13 +138,6 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     }
 }
 
-<<<<<<< HEAD
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
-{
-    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
-=======
 class UrlTaskIterator : public TaskIterator
 {
 public:
@@ -155,7 +148,6 @@ public:
         const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
         const ContextPtr & context)
         : iterator(uri, max_addresses, predicate, virtual_columns, hive_partition_columns_to_read_from_file_path, context) {}
->>>>>>> 8c8b170f4cc (Merge pull request #1687 from Altinity/feature/antalya-26.3/pr-1414-1)
 
     ~UrlTaskIterator() override = default;
 
@@ -172,13 +164,13 @@ private:
 };
 
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr) const
+    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
     auto callback = std::make_shared<UrlTaskIterator>(
         uri,
         context->getSettingsRef()[Setting::glob_expansion_max_elements],
         predicate,
-        getVirtualsList(),
+        metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         hive_partition_columns_to_read_from_file_path,
         context
     );

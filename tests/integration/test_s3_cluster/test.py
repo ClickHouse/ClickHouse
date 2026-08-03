@@ -2,13 +2,9 @@ import csv
 import logging
 import os
 import shutil
-<<<<<<< HEAD
-import uuid
-=======
 import threading
 import time
-from email.errors import HeaderParseError
->>>>>>> 8c8b170f4cc (Merge pull request #1687 from Altinity/feature/antalya-26.3/pr-1414-1)
+import uuid
 
 import pytest
 
@@ -577,7 +573,6 @@ def test_cluster_default_expression(started_cluster):
     assert result == expected_result
 
 
-<<<<<<< HEAD
 @pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
 @pytest.mark.parametrize("use_partition_strategy", [False, True])
 def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_partition_strategy):
@@ -791,7 +786,8 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
             )
         node.query(f"DROP TABLE IF EXISTS {dst_table}")
         node.query(f"DROP TABLE IF EXISTS {iceberg_table}")
-=======
+
+
 def test_graceful_shutdown(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     node_to_shutdown = started_cluster.instances["s0_1_0"]
@@ -850,4 +846,3 @@ def test_graceful_shutdown(started_cluster):
     node_to_shutdown.start_clickhouse()
 
     assert errors == 0
->>>>>>> 8c8b170f4cc (Merge pull request #1687 from Altinity/feature/antalya-26.3/pr-1414-1)
