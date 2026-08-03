@@ -5917,7 +5917,7 @@ Maximum time in seconds for a `SELECT` to wait when another concurrent identical
 
 Possible values:
 
-- `0` — Disable thundering herd coalescing. Each concurrent identical query executes independently, as before this feature was introduced. This is the compatibility value for versions before 26.7.
+- `0` — Disable thundering herd coalescing. Each concurrent identical query executes independently, as before this feature was introduced. This is the compatibility value for versions before 26.8.
 - Positive integer — Maximum wait time in seconds.
 )", 0) \
     DECLARE(Bool, query_cache_compress_entries, true, R"(
