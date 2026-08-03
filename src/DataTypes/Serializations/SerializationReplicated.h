@@ -11,8 +11,14 @@ namespace DB
 /// implementation of serializeBinaryBulkWithMultipleStreams/deserializeBinaryBulkWithMultipleStreams).
 class SerializationReplicated final : public ISerialization
 {
-public:
+private:
     explicit SerializationReplicated(const SerializationPtr & nested_);
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_);
+    static SerializationPtr create(const SerializationPtr & nested_);
+
+    bool supportsPooling() const override { return nested->supportsPooling(); }
 
     KindStack getKindStack() const override;
 
@@ -72,6 +78,9 @@ public:
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
+    void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     const SerializationPtr & getNested() const { return nested; }
 private:

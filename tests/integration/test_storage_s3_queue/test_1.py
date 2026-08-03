@@ -1,24 +1,16 @@
-import io
 import json
 import logging
-import random
-import string
 import time
 import uuid
-from multiprocessing.dummy import Pool
 
 import pytest
-from kazoo.exceptions import NoNodeError
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.s3_queue_common import (
     run_query,
-    random_str,
     generate_random_files,
     put_s3_file_content,
-    put_azure_file_content,
     create_table,
     create_mv,
     generate_random_string,
@@ -346,7 +338,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 def test_max_set_age(started_cluster, mode):
     # We use an instance without keeper fault injection,
-    # because otherwise we fail to update keeper state in 1.5 * max_age,
+    # because otherwise we fail to update keeper state within the wait window,
     # so we cannot check max_set_age correctness properly.
     node = started_cluster.instances["instance_without_keeper_fault_injection"]
     table_name = f"max_set_age_{mode}_{generate_random_string()}"
@@ -386,7 +378,14 @@ def test_max_set_age(started_cluster, mode):
     def get_count():
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    def wait_for_condition(check_function, max_wait_time=1.5 * max_age):
+    # Slow instrumented builds (sanitizers, coverage) ingest far slower, so give
+    # them a larger ceiling; fast release/debug builds keep the tighter
+    # 1.5 * max_age so a genuine regression is not masked. Either way the ceiling
+    # stays above max_age so the tracked_file_ttl expiry the test relies on fires.
+    slow_build = node.is_built_with_sanitizer() or node.is_built_with_llvm_coverage()
+    condition_wait_time = (3 if slow_build else 1.5) * max_age
+
+    def wait_for_condition(check_function, max_wait_time=condition_wait_time):
         before = time.time()
         while time.time() - before < max_wait_time:
             if check_function():
@@ -535,7 +534,7 @@ def test_max_set_size(started_cluster):
 
 def test_drop_table(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"test_drop"
+    table_name = "test_drop"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
@@ -553,11 +552,11 @@ def test_drop_table(started_cluster):
             "s3queue_processing_threads_num": 5,
         },
     )
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
     )
     create_mv(node, table_name, dst_table_name)
-    node.wait_for_log_line(f"rows from file test_drop_data")
+    node.wait_for_log_line("rows from file test_drop_data")
     node.query(f"DROP TABLE {table_name} SYNC")
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Table is being dropped"
@@ -568,7 +567,7 @@ def test_drop_table(started_cluster):
 
 def test_s3_client_reused(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"test_s3_client_reused"
+    table_name = "test_s3_client_reused"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     # A unique path is necessary for repeatable tests
@@ -577,7 +576,7 @@ def test_s3_client_reused(started_cluster):
 
     def get_created_s3_clients_count():
         value = node.query(
-            f"SELECT value FROM system.events WHERE event='S3Clients'"
+            "SELECT value FROM system.events WHERE event='S3Clients'"
         ).strip()
         return int(value) if value != "" else 0
 

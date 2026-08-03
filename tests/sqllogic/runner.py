@@ -15,6 +15,8 @@ from deepdiff import DeepDiff  # pylint:disable=import-error; for style check
 from connection import Engines, default_clickhouse_native_conn_args, setup_connection
 from test_runner import RequestType, Status, TestRunner
 
+logger = logging.getLogger("runner")
+
 LEVEL_NAMES = [  # pylint:disable-next=protected-access
     l.lower() for l, n in logging._nameToLevel.items() if n != logging.NOTSET
 ]
@@ -141,6 +143,7 @@ def _child_process(setup_kwargs, runner_kwargs, input_dir, output_dir, test):
 
 def run_all_tests_in_parallel(setup_kwargs, runner_kwargs, input_dir, output_dir):
     process_count = max(1, os.cpu_count() - 2)
+    tests = list(TestRunner.list_tests(input_dir))
     with multiprocessing.Pool(process_count) as pool:
         async_results = [
             pool.apply_async(
@@ -153,9 +156,27 @@ def run_all_tests_in_parallel(setup_kwargs, runner_kwargs, input_dir, output_dir
                     test,
                 ),
             )
-            for test in TestRunner.list_tests(input_dir)
+            for test in tests
         ]
-        reports = [ar.get() for ar in async_results]
+        failed_tests = []
+        reports = []
+        for test, ar in zip(tests, async_results):
+            try:
+                reports.append(ar.get())
+            except Exception as e:
+                logger.error("Child process failed for %s: %s", test, e)
+                failed_tests.append((test, e))
+
+    if failed_tests:
+        names = ", ".join(t for t, _ in failed_tests)
+        logger.error(
+            "%d test file(s) failed to run: %s", len(failed_tests), names
+        )
+
+    if not reports:
+        raise RuntimeError(
+            f"All {len(tests)} test file(s) failed, cannot produce a report"
+        )
 
     report = reduce(lambda x, y: x.combine_with(y), reports)
     report.write_report(output_dir)

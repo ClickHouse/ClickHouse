@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -m -q "
+$CLICKHOUSE_CLIENT --optimize_skip_unused_shards 0 -m -q "
     drop table if exists test_distributed;
     drop table if exists test_source;
     drop table if exists test_shard;

@@ -8,10 +8,21 @@
 namespace DB
 {
 
+class QueryPipelineProcessorsCollector;
+
 /// Sort data stream
 class SortingStep : public ITransformingStep
 {
 public:
+
+    enum class SortingStage : uint8_t
+    {
+        Scatter = 0,
+        Sort = 1,
+        MergeStreams = 2,
+        FinishSort = 3,
+    };
+
     enum class Type : uint8_t
     {
         /// Performs a complete sorting operation and returns a single fully ordered data stream
@@ -42,6 +53,7 @@ public:
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
+        bool read_in_order_use_virtual_row_per_block = false;
         size_t temporary_files_buffer_size = 0;
         String temporary_files_codec = {};
 
@@ -82,10 +94,9 @@ public:
     SortingStep(
         const SharedHeader & input_header,
         SortDescription sort_description_,
-        size_t max_block_size_,
+        const Settings & settings_,
         UInt64 limit_ = 0,
-        bool always_read_till_end_ = false
-    );
+        bool always_read_till_end_ = false);
 
     String getName() const override { return "Sorting"; }
 
@@ -106,10 +117,26 @@ public:
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
+    void enableBuffering() { use_buffering = true; }
+    bool getUseBuffering() const { return use_buffering; }
+
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
 
     void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
+
+    /// Switch to a full sort that scatters the input by the hash of the sort key into exactly
+    /// `partitions` independent partitions and sorts each partition separately, producing one sorted
+    /// stream per partition (no final merge). Unlike the partition-by-window-frame scatter, the partition
+    /// count is fixed (not the pipeline's thread count), so both sides of a join scatter into the same
+    /// number of shards regardless of how many streams each side reads. Used by
+    /// `parallel_full_sorting_merge` to feed a hash-sharded merge join.
+    void convertToScatteredFullSort(size_t partitions)
+    {
+        partition_by_description = result_description;
+        type = Type::Full;
+        scatter_partitions = partitions;
+    }
 
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
@@ -125,12 +152,26 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
+
+    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
+
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
+
+    void describePipeline(FormatSettings & settings) const override;
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputHeader() override;
+
+    /// Adds a per-stream `LimitByTransform` before sorted streams are merged into one.
+    /// This reduces rows processed by the final merge and later pipeline steps.
+    /// It is applied only when `LIMIT BY` keys are a prefix of `stream_sort_desc`.
+    void addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc);
 
     static void mergeSorting(
         QueryPipelineBuilder & pipeline,
@@ -151,6 +192,7 @@ private:
         QueryPipelineBuilder & pipeline,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
+        QueryPipelineProcessorsCollector & collector,
         bool skip_partial_sort = false);
 
     Type type;
@@ -159,6 +201,9 @@ private:
     const SortDescription result_description;
 
     SortDescription partition_by_description;
+    /// When > 0, `scatterByPartitionIfNeeded` scatters into exactly this many partitions (instead of the
+    /// pipeline's thread count), so both sides of a hash-sharded merge join get the same shard count.
+    size_t scatter_partitions = 0;
 
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
@@ -171,6 +216,16 @@ private:
     TopKThresholdTrackerPtr threshold_tracker;
 
     Settings sort_settings;
+
+    /// See `pushLimitByIntoSort`. Empty means no hint.
+    Names limit_by_columns;
+    UInt64 limit_by_group_length = 0;
+
+    Processors scatter_stage;
+    Processors sorting_stage;
+    Processors merge_streams;
+    Processors finalizing;
+
 };
 
 }

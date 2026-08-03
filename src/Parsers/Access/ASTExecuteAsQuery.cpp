@@ -16,12 +16,12 @@ String ASTExecuteAsQuery::getID(char) const
 ASTPtr ASTExecuteAsQuery::clone() const
 {
     auto res = make_intrusive<ASTExecuteAsQuery>(*this);
-
+    res->children.clear();
     if (target_user)
         res->set(res->target_user, target_user->clone());
     if (subquery)
         res->set(res->subquery, subquery->clone());
-
+    cloneOutputOptions(*res);
     return res;
 }
 

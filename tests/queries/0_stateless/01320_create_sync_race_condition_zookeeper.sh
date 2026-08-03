@@ -11,14 +11,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS test_01320"
-$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query "CREATE DATABASE test_01320 ENGINE=Ordinary"   # Different bahaviour of DROP with Atomic
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_1}"
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query "CREATE DATABASE ${CLICKHOUSE_DATABASE_1} ENGINE=Ordinary"   # Different bahaviour of DROP with Atomic
 
 function thread1()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        $CLICKHOUSE_CLIENT --query "CREATE TABLE test_01320.r (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r') ORDER BY x; DROP TABLE test_01320.r;"
+        $CLICKHOUSE_CLIENT --query "CREATE TABLE ${CLICKHOUSE_DATABASE_1}.r (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r') ORDER BY x; DROP TABLE ${CLICKHOUSE_DATABASE_1}.r;"
     done
 }
 
@@ -26,7 +26,7 @@ function thread2()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_01320.r" 2>/dev/null;
+        $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA ${CLICKHOUSE_DATABASE_1}.r" 2>/dev/null;
     done
 }
 
@@ -40,4 +40,4 @@ thread2 $TIMEOUT &
 
 wait
 
-$CLICKHOUSE_CLIENT --query "DROP DATABASE test_01320" 2>&1 | grep -F "Code:" | grep -v "New table appeared in database being dropped or detached" || exit 0
+$CLICKHOUSE_CLIENT --query "DROP DATABASE ${CLICKHOUSE_DATABASE_1}" 2>&1 | grep -F "Code:" | grep -v "New table appeared in database being dropped or detached" || exit 0

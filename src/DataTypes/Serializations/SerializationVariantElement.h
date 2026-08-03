@@ -2,7 +2,6 @@
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 
 namespace DB
@@ -19,14 +18,30 @@ private:
     /// we need its type name and global discriminator.
     String variant_element_name;
     ColumnVariant::Discriminator variant_discriminator;
+    /// Total number of variants in the Variant type; used for bounds-checking
+    /// compact discriminators read from the wire.
+    size_t num_variants;
 
-public:
-    SerializationVariantElement(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+    SerializationVariantElement(
+        const SerializationPtr & nested_,
+        const String & variant_element_name_,
+        ColumnVariant::Discriminator variant_discriminator_,
+        size_t num_variants_)
         : SerializationWrapper(nested_)
         , variant_element_name(variant_element_name_)
         , variant_discriminator(variant_discriminator_)
+        , num_variants(num_variants_)
     {
     }
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_);
+    static SerializationPtr create(
+        const SerializationPtr & nested_,
+        const String & variant_element_name_,
+        ColumnVariant::Discriminator variant_discriminator_,
+        size_t num_variants_ = 0);
+    size_t allocatedBytes() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -71,6 +86,7 @@ public:
         const ColumnVariant::Discriminator global_variant_discriminator;
         const ColumnVariant::Discriminator local_variant_discriminator;
         bool make_nullable;
+        size_t num_variants;
 
     public:
         VariantSubcolumnCreator(
@@ -79,7 +95,8 @@ public:
             ColumnVariant::Discriminator global_variant_discriminator_,
             ColumnVariant::Discriminator local_variant_discriminator_,
             bool make_nullable_,
-            const ColumnPtr & null_map_ = nullptr);
+            const ColumnPtr & null_map_ = nullptr,
+            size_t num_variants_ = 0);
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
@@ -99,6 +116,8 @@ private:
         ReadBuffer * stream,
         bool continuous_reading,
         DeserializeBinaryBulkStatePtr & discriminators_state_,
+        const DeserializeBinaryBulkSettings & settings,
+        size_t num_variants,
         const ISerialization * serialization);
 
     void addVariantToPath(SubstreamPath & path) const;

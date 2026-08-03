@@ -4,6 +4,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -43,6 +44,8 @@ void PartMovesBetweenShardsOrchestrator::run()
 
     if (need_stop)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("PartMovesBetweenShardsOrchestrator");
 
     /// Don't poll ZooKeeper too often.
     auto sleep_ms = 3 * 1000;
@@ -658,6 +661,8 @@ void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil:
 
 CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const UUID & task_uuid)
 {
+    auto component_guard = Coordination::setCurrentComponent("PartMovesBetweenShardsOrchestrator");
+
     while (true)
     {
         auto entry = getEntryByUUID(task_uuid);
@@ -700,6 +705,8 @@ CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const U
 
 std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries()
 {
+    auto component_guard = Coordination::setCurrentComponent("PartMovesBetweenShardsOrchestrator");
+
     // Force sync. Also catches parsing errors.
     syncStateFromZK();
 

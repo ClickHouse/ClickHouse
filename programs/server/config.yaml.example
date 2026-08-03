@@ -141,7 +141,7 @@ interserver_http_port: 9009
 # max_connections: 4096
 
 # For 'Connection: keep-alive' in HTTP 1.1
-keep_alive_timeout: 10
+keep_alive_timeout: 30
 
 # gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API)
 # grpc_port: 9100
@@ -904,28 +904,23 @@ query_masking_rules:
 # status - use with static type, response status code
 # content_type - use with static type, response content-type
 # response_content - use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client.
+# defaults - include an empty string value at the bottom to preserve default handlers (e.g. /ping, /health)
 
 # http_handlers:
-#     - rule:
-#         url: /
+#     rule:
+#       - url: /
 #         methods: POST,GET
 #         headers:
 #           pragma: no-cache
 #         handler:
 #           type: dynamic_query_handler
 #           query_param_name: query
-#     - rule:
-#         url: /predefined_query
+#       - url: /predefined_query
 #         methods: POST,GET
 #         handler:
 #           type: predefined_query_handler
 #           query: 'SELECT * FROM system.settings'
-#     - rule:
-#         handler:
-#           type: static
-#           status: 200
-#           content_type: 'text/plain; charset=UTF-8'
-#           response_content: config://http_server_default_response
+#     defaults: ""
 
 send_crash_reports:
     enabled: true

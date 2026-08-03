@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/ClientApplicationBase.h>
+#include <Common/QueryScope.h>
 
 
 namespace BuzzHouse
@@ -62,11 +63,16 @@ protected:
         std::vector<Arguments> & hosts_and_ports_arguments) override;
 
 private:
+    String getHelpHeader() const;
+    String getHelpFooter() const;
     void printChangedSettings() const;
     void showWarnings();
 #if USE_BUZZHOUSE
     std::unique_ptr<BuzzHouse::FuzzConfig> fuzz_config;
     std::unique_ptr<BuzzHouse::ExternalIntegrations> external_integrations;
+    /// Invoked whenever `tryToReconnect` establishes a new session, so the fuzzer can drop
+    /// bookkeeping of session-scoped server state (e.g. hypothetical indexes).
+    std::function<void()> after_fuzz_reconnect;
 
     bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
     bool processBuzzHouseQuery(const String & full_query);
@@ -74,7 +80,7 @@ private:
 #endif
     std::vector<String> loadWarningMessages();
 
-    CurrentThread::QueryScope query_scope;
+    QueryScope query_scope;
 
 #if USE_JWT_CPP && USE_SSL
     std::shared_ptr<JWTProvider> jwt_provider;

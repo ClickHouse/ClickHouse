@@ -60,7 +60,11 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
+    /// `previous_step_columns` names columns produced by earlier reader-chain steps; a subcolumn
+    /// whose parent is among them is deferred to evaluateMissingDefaults instead of default-filled.
+    void fillMissingColumns(
+        Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+        const NameSet & previous_step_columns = {}) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
@@ -86,9 +90,26 @@ public:
 
     virtual bool canSkipMark(size_t, size_t) { return false; }
 
+    /// Returns true if this reader can skip whole marks via `canSkipMark` for at least some inputs.
+    /// Independent of any particular mark index. Used by callers that need to know upfront whether
+    /// the reader chain may filter marks before the PREWHERE step runs — for example, to decide
+    /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
+    virtual bool canSkipAnyMark() const { return false; }
+
     virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
+    StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
+
 protected:
+    /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
+    /// propagated. Used when compiling default or virtual-column expressions at read time.
+    ContextPtr createContextForDefaultExpressions() const;
+
+    /// Builds a ColumnsDescription that includes both the storage metadata columns and any virtual
+    /// columns that carry a default expression. Required by evaluateMissingDefaults so that it can
+    /// resolve default expressions for virtual columns.
+    ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
+
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
@@ -145,6 +166,9 @@ protected:
     /// Such columns should not be read from the part; defaults should be used instead.
     bool isColumnDroppedByPendingMutation(size_t pos) const;
 
+    /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
+    bool isSystemColumnInvalidated(size_t pos) const;
+
 private:
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;
@@ -189,5 +213,5 @@ MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
+    const IndexGranulesMap & index_granules);
 }

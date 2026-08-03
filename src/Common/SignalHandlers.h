@@ -72,6 +72,10 @@ bool isCrashed();
 
 void blockSignals(const std::vector<int> & signals);
 
+/// Reset the deadly signal handlers to SIG_DFL (like HandledSignals::reset(false)), idempotently.
+/// Safe to call from the sanitizer death callback: it does not construct HandledSignals.
+void resetHandledSignals();
+
 
 /** The thread that read info about signal or std::terminate from pipe.
   * On HUP, close log files (for new files to be opened later).
@@ -84,13 +88,26 @@ public:
     static constexpr int StdTerminate = -1;
     static constexpr int StopThread = -2;
 
-    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_);
+    /// Called on signals like SIGTERM, if setupCommonTerminateRequestSignalHandlers() was called.
+    /// The first time such signal is received, the callback is called with `crashing = false`,
+    /// then waitForTerminationRequest is unblocked.
+    /// The second time, the callback is called with `crashing = true`, then we crash.
+    using TerminateRequestCallback = std::function<void(int signal_id, bool crashing)>;
+
+    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_ = nullptr);
     void run() override;
+
+    bool waitForTerminationRequest(std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
 
 private:
     BaseDaemon * daemon;
     LoggerPtr log;
     std::function<String()> build_id;
+    TerminateRequestCallback terminate_request_callback;
+
+    std::mutex terminate_request_mutex;
+    std::condition_variable terminate_request_cv;
+    size_t terminate_requested = 0;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const;
 
@@ -119,7 +136,13 @@ struct HandledSignals
     void setupCommonDeadlySignalHandlers();
     void setupCommonTerminateRequestSignalHandlers();
 
-    void addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal);
+    /// `additional_masked_signals` are blocked while `handler` runs (added to `sa_mask`) but the
+    /// handler is not registered for them.
+    void addSignalHandler(
+        const std::vector<int> & signals,
+        signal_function handler,
+        bool register_signal,
+        const std::vector<int> & additional_masked_signals = {});
 
     void reset(bool close_pipe = true);
 

@@ -5,7 +5,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 
-#include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/sortBlock.h>
 
@@ -71,8 +70,16 @@ public:
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
+      * When out_selector is set, it receives the row -> partition-index mapping (empty when the block
+      * is not split, i.e. a single resulting partition). Deduplication needs it to attribute each
+      * source row to the partition it landed in.
       */
-    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    static BlocksWithPartition splitBlockIntoParts(
+        Block && block,
+        size_t max_parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        IColumn::Selector * out_selector = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -81,14 +88,19 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
+    MergeTreeTemporaryPartPtr writeTempPart(
+        BlockWithPartition & block,
+        StorageMetadataPtr metadata_snapshot,
+        ContextPtr context,
+        bool may_exist = true);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
-        ContextPtr context);
+        ContextPtr context,
+        bool may_exist = true);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
@@ -102,7 +114,8 @@ public:
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        bool merge_is_needed);
+        bool merge_is_needed,
+        ContextPtr context);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
@@ -111,7 +124,8 @@ public:
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        size_t block_num);
+        size_t block_num,
+        ContextPtr context);
 
     static Block mergeBlock(
         Block && block,
@@ -127,7 +141,8 @@ private:
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
-        UInt64 block_number);
+        UInt64 block_number,
+        bool may_exist = true);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
@@ -137,7 +152,9 @@ private:
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
-        bool merge_is_needed);
+        MergeTreeIndices indices,
+        bool merge_is_needed,
+        bool try_adaptive_codec);
 
     MergeTreeData & data;
     LoggerPtr log;

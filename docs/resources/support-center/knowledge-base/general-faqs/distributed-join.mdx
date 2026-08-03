@@ -1,0 +1,21 @@
+---
+title: 'Does ClickHouse support distributed JOIN?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/distributed-join
+description: 'ClickHouse supports distributed JOIN'
+doc_type: 'reference'
+keywords: ['distributed', 'join']
+---
+
+Yes, ClickHouse supports distributed joins on a cluster.
+
+When the data is co-located on the cluster (e.g., the join is performed by the user identifier, which is also a sharding key), ClickHouse provides a way to perform the join without data movement on the network.
+
+When the data isn't co-located, ClickHouse allows a broadcast join, when parts of the joined data are distributed across the nodes of the cluster.
+
+As of 2025, ClickHouse does not perform shuffle joins, meaning neither side of the join is redistributed across the cluster network according to the join keys.
+
+<Tip>
+For information on joins in ClickHouse more generally, see the ["JOIN clause"](/reference/statements/select/join#supported-types-of-join) page.
+</Tip>

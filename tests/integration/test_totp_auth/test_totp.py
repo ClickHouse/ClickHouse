@@ -6,7 +6,6 @@ import random
 import re
 import struct
 import time
-from fnmatch import fnmatch
 
 import pytest
 
@@ -77,6 +76,13 @@ def create_config(totp_secret):
                 <secret>GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</secret>
             </time_based_one_time_password>
         </totuser_no_password>
+
+        <totuser_empty_password>
+            <password></password>
+            <time_based_one_time_password>
+                <secret>GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</secret>
+            </time_based_one_time_password>
+        </totuser_empty_password>
     </users>
 </clickhouse>
 """.lstrip()
@@ -112,7 +118,7 @@ def test_one_time_password(started_cluster):
     )
 
     assert "REQUIRED_SECOND_FACTOR" in node.query_and_get_error(
-        query_text, user="totuser", password=f"aa+bb"
+        query_text, user="totuser", password="aa+bb"
     )
 
     assert "totuser42\n" == node.query(
@@ -170,7 +176,7 @@ def test_interactive_totp_authentication(started_cluster):
     with client(command=f"{client_command}") as c:
         # Enter password when prompted first
         c.expect("Password.*:")
-        c.send(f"aa+bb", eol="\r")
+        c.send("aa+bb", eol="\r")
 
         # Then enter TOTP when prompted
         c.expect("TOTP.*:")
@@ -194,7 +200,7 @@ def test_interactive_totp_authentication(started_cluster):
     ) as c:
         # Enter only password, TOTP is provided in command line arguments
         c.expect("Password.*:")
-        c.send(f"aa+bb", eol="\r")
+        c.send("aa+bb", eol="\r")
         c.expect(prompt)
         c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
         c.expect("totuser42")
@@ -205,11 +211,11 @@ def test_interactive_totp_authentication(started_cluster):
 
     with client(command=f"{client_command}") as c:
         c.expect("Password.*:")
-        c.send(f"aa+bb", eol="\r")
+        c.send("aa+bb", eol="\r")
 
         # Then enter wrong TOTP when prompted
         c.expect("TOTP.*:")
-        c.send(f"000000", eol="\r")
+        c.send("000000", eol="\r")
         c.expect(expected_error)
 
     with client(command=f"{client_command} --password aa+bb+000000") as c:
@@ -255,4 +261,30 @@ def test_one_time_only_no_password(started_cluster):
     with client(command=f"{client_command} --one-time-password {get_otp()}") as c:
         c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
         c.expect("totuser_no_password42")
+        c.expect(prompt)
+
+
+def test_empty_password_with_otp_cli_option(started_cluster):
+    """Test that --one-time-password works for a user with empty plaintext password and TOTP."""
+    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    get_otp = lambda: get_one_time_password(secret=secret)
+
+    query_text = "SELECT currentUser() || toString(42)"
+
+    assert "totuser_empty_password42\n" == node.query(
+        query_text, user="totuser_empty_password", password=f"+{get_otp()}"
+    )
+
+    client_command = f"{started_cluster.get_client_cmd()} --highlight=0 --host {node.ip_address} -u totuser_empty_password"
+
+    with client(command=f"{client_command} --one-time-password {get_otp()}") as c:
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser_empty_password42")
+        c.expect(prompt)
+
+    with client(
+        command=f'{client_command} --password "" --one-time-password {get_otp()}'
+    ) as c:
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser_empty_password42")
         c.expect(prompt)

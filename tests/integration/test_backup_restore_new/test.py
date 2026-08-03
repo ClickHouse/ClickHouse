@@ -5,13 +5,11 @@ import random
 import re
 import sys
 import uuid
-from collections import namedtuple
 from typing import Dict
 from datetime import datetime
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry, wait_condition
 
@@ -22,6 +20,12 @@ instance = cluster.add_instance(
     "instance",
     main_configs=["configs/backups_disk.xml"],
     user_configs=["configs/zookeeper_retries.xml"],
+    external_dirs=["/backups/"],
+)
+instance_with_short_timeout = cluster.add_instance(
+    "instance_with_short_timeout",
+    main_configs=["configs/backups_disk.xml"],
+    user_configs=["configs/max_execution_time.xml"],
     external_dirs=["/backups/"],
 )
 
@@ -83,6 +87,11 @@ def new_backup_name():
 def get_path_to_backup(backup_name):
     name = backup_name.split(",")[1].strip("')/ ")
     return os.path.join(instance.cluster.instances_dir, "backups", name)
+
+
+def read_backup_metadata(backup_name):
+    with open(os.path.join(get_path_to_backup(backup_name), ".backup")) as f:
+        return f.read()
 
 
 def find_files_in_backup_folder(backup_name):
@@ -540,6 +549,25 @@ def test_incremental_backup_overflow():
     assert os.listdir(os.path.join(get_path_to_backup(incremental_backup_name))) == [
         ".backup"
     ]
+
+
+def test_backup_id_in_manifest():
+    create_and_fill_table(n=10)
+
+    # A custom `id` is recorded verbatim as <backup_id> in the manifest.
+    backup_name = new_backup_name()
+    known_id = "my_custom_backup_id"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{known_id}'")
+    assert f"<backup_id>{known_id}</backup_id>" in read_backup_metadata(backup_name)
+
+    # With no `id`, the recorded backup_id defaults to the backup UUID.
+    backup_name2 = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name2}")
+    manifest = read_backup_metadata(backup_name2)
+    assert (
+        re.search("<backup_id>(.*?)</backup_id>", manifest).group(1)
+        == re.search("<uuid>(.*?)</uuid>", manifest).group(1)
+    )
 
 
 def test_incremental_backup_after_renaming_table():
@@ -1145,7 +1173,7 @@ def test_skip_rmv_backup():
     assert not os.path.exists(
         os.path.join(
             get_path_to_backup(backup_name),
-            f"data/test/target/",
+            "data/test/target/",
         )
     )
 
@@ -1153,7 +1181,7 @@ def test_skip_rmv_backup():
     instance.query("SYSTEM REFRESH VIEW restored.view")
     instance.query("SYSTEM WAIT VIEW restored.view")
 
-    assert int(instance.query(f"SELECT count(*) FROM restored.target")) == size
+    assert int(instance.query("SELECT count(*) FROM restored.target")) == size
 
 
 def test_rmv_append_backup():
@@ -1177,12 +1205,12 @@ def test_rmv_append_backup():
     assert os.path.exists(
         os.path.join(
             get_path_to_backup(backup_name),
-            f"data/test/target/",
+            "data/test/target/",
         )
     )
     instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
 
-    assert int(instance.query(f"SELECT count(*) FROM restored.target")) >= size
+    assert int(instance.query("SELECT count(*) FROM restored.target")) >= size
 
 
 def test_temporary_table():
@@ -1504,7 +1532,7 @@ def test_projection():
     create_and_fill_table(n=3)
 
     instance.query("ALTER TABLE test.table ADD PROJECTION prjmax (SELECT MAX(x))")
-    instance.query(f"INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
+    instance.query("INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
 
     assert (
         instance.query(
@@ -2232,3 +2260,76 @@ def test_incremental_backup_with_checksum_data_file_name():
         f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
+
+
+def test_async_backup_restore_with_max_execution_time_zero():
+    """
+    Regression test: async BACKUP/RESTORE with max_execution_time = 0 in query SETTINGS
+    was incorrectly cancelled by the max_execution_time from the user's profile, even when
+    the query explicitly set max_execution_time = 0 to disable the timeout.
+
+    Root cause: QueryStatus cached limits.max_execution_time at construction time from the
+    original query settings (profile value). BackupsWorker called applySettingsChanges()
+    to apply BACKUP/RESTORE SETTINGS, updating the context — but not the cached
+    ProcessListElement, so the old profile-level timeout still fired via checkTimeLimit().
+    CancellationChecker was also registered with the old timeout at insert time.
+
+    The test uses a PAUSEABLE_ONCE failpoint to stall the background task long enough
+    for the profile-level timeout (500ms) to fire, which reliably triggers the bug.
+    The instance_with_short_timeout node has max_execution_time = 0.5 in its default profile.
+    """
+    import time
+
+    inst = instance_with_short_timeout
+    backup_name = new_backup_name()
+    inst.query("CREATE DATABASE IF NOT EXISTS test")
+    inst.query("CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10")
+    # The node's 0.5s profile timeout (used below to trigger the bug) also caps this
+    # foreground setup query; disable it so a slow CI lane can't time out the INSERT.
+    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100) SETTINGS max_execution_time = 0")
+
+    try:
+        # Pause backup before it starts so the 500ms profile-level timeout fires.
+        inst.query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
+        [backup_id, _] = inst.query(
+            f"BACKUP TABLE test.table TO {backup_name}"
+            " SETTINGS async = 1, max_execution_time = 0",
+        ).split("\t")
+
+        inst.query("SYSTEM WAIT FAILPOINT backup_pause_on_start PAUSE")
+        time.sleep(0.7)  # exceed the 500ms profile-level timeout
+        inst.query("SYSTEM NOTIFY FAILPOINT backup_pause_on_start")
+
+        assert_eq_with_retry(
+            inst,
+            f"SELECT status, error FROM system.backups WHERE id='{backup_id}'",
+            TSV([["BACKUP_CREATED", ""]]),
+        )
+
+        # Same for RESTORE.
+        inst.query("DROP TABLE test.table")
+        inst.query("SYSTEM ENABLE FAILPOINT restore_pause_on_start")
+        [restore_id, _] = inst.query(
+            f"RESTORE TABLE test.table FROM {backup_name}"
+            " SETTINGS async = 1, max_execution_time = 0",
+        ).split("\t")
+
+        inst.query("SYSTEM WAIT FAILPOINT restore_pause_on_start PAUSE")
+        time.sleep(0.7)
+        inst.query("SYSTEM NOTIFY FAILPOINT restore_pause_on_start")
+
+        assert_eq_with_retry(
+            inst,
+            f"SELECT status, error FROM system.backups WHERE id='{restore_id}'",
+            TSV([["RESTORED", ""]]),
+        )
+
+        # Same: don't let the 0.5s profile timeout cap this foreground verification query.
+        assert (
+            inst.query("SELECT count(), sum(x) FROM test.table SETTINGS max_execution_time = 0")
+            == "100\t4950\n"
+        )
+    finally:
+        inst.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
+        inst.query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")
+        inst.query("DROP DATABASE IF EXISTS test")

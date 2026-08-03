@@ -57,10 +57,10 @@ q2_01297	local_directory	[]	[5259492]	0	['r1_01297','u1_01297']	[]
 q3_01297	local_directory	['client_key','user_name']	[5259492,15778476]	0	[]	[]
 q4_01297	local_directory	[]	[604800]	1	[]	['u1_01297']
 -- system.quota_limits
-q2_01297	5259492	0	100	\N	\N	11	1000	10000	1001	10001	2.5	\N	\N
-q3_01297	5259492	0	\N	\N	\N	\N	1002	\N	\N	\N	\N	\N	\N
-q3_01297	15778476	0	100	\N	\N	11	\N	\N	\N	\N	\N	\N	\N
-q4_01297	604800	0	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+q2_01297	5259492	0	100	\N	\N	11	1000	10000	1001	10001	2.5	\N	\N	\N
+q3_01297	5259492	0	\N	\N	\N	\N	1002	\N	\N	\N	\N	\N	\N	\N
+q3_01297	15778476	0	100	\N	\N	11	\N	\N	\N	\N	\N	\N	\N	\N
+q4_01297	604800	0	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 -- query_selects query_inserts
 CREATE QUOTA q1_01297 KEYED BY user_name FOR INTERVAL 1 minute MAX query_selects = 1 TO r1_01297
 CREATE QUOTA q2_01297 KEYED BY user_name FOR INTERVAL 1 minute MAX query_inserts = 1 TO r1_01297
@@ -101,3 +101,35 @@ CREATE QUOTA q8_01297 FOR INTERVAL 1 minute MAX execution_time = 0
 CREATE QUOTA q9_01297 FOR INTERVAL 1 minute MAX execution_time = 123000
 CREATE QUOTA q10_01297 FOR INTERVAL 1 minute MAX execution_time = 123000
 -- bad syntax test
+-- ip prefix bits
+CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 24
+CREATE QUOTA q2_01297 KEYED BY ip_address IPV6_PREFIX_BITS 64
+CREATE QUOTA q3_01297 KEYED BY ip_address IPV4_PREFIX_BITS 16 IPV6_PREFIX_BITS 48
+CREATE QUOTA q4_01297 KEYED BY ip_address IPV4_PREFIX_BITS 0
+CREATE QUOTA q5_01297 KEYED BY ip_address IPV4_PREFIX_BITS 32 IPV6_PREFIX_BITS 128
+CREATE QUOTA q6_01297 KEYED BY ip_address IPV4_PREFIX_BITS 24 IPV6_PREFIX_BITS 64
+CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 8 IPV6_PREFIX_BITS 32
+CREATE QUOTA q6_01297 KEYED BY ip_address IPV4_PREFIX_BITS 16 IPV6_PREFIX_BITS 96
+-- alter prefix bits independently
+CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 16 IPV6_PREFIX_BITS 32
+CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 16 IPV6_PREFIX_BITS 96
+CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 20 IPV6_PREFIX_BITS 80
+-- alter prefix bits ON CLUSTER without KEYED BY (round-trips through formatImpl)
+CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 16 IPV6_PREFIX_BITS 80
+-- system.quotas prefix bits
+q1_01297	16	80
+q2_01297	\N	64
+q3_01297	16	48
+q4_01297	0	\N
+q5_01297	32	128
+q6_01297	16	96
+-- ip prefix bits with intervals
+CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 24 IPV6_PREFIX_BITS 64 FOR INTERVAL 1 hour MAX queries = 100
+-- ip prefix bits invalid
+-- alter prefix bits on non-ip-keyed quota is rejected
+-- prefix bits cleared when key type changes away from ip
+CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 24 IPV6_PREFIX_BITS 64
+CREATE QUOTA q1_01297 KEYED BY client_key
+q1_01297	\N	\N
+CREATE QUOTA q1_01297 KEYED BY ip_address
+q1_01297	\N	\N

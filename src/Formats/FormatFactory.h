@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <base/types.h>
-#include <Common/Allocator.h>
+#include <Common/Allocator_fwd.h>
+#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 
 #include <boost/noncopyable.hpp>
@@ -85,7 +85,7 @@ public:
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
 
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.
@@ -126,7 +126,8 @@ private:
         bool is_remote_fs,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        const std::optional<RelativePathWithMetadata> & object_with_metadata)>;
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
+        const ContextPtr & context)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
         WriteBuffer & buf,
@@ -186,6 +187,7 @@ private:
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
         SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
         PrewhereSupportChecker prewhere_support_checker;
+        Documentation documentation;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -317,6 +319,9 @@ public:
     void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator);
     void registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator_with_metadata);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
+
+    /// Attach embedded documentation to a format by its name.
+    void setDocumentation(const String & name, Documentation documentation);
 
     /// Register file extension for format
     void registerFileExtension(const String & extension, const String & format_name);

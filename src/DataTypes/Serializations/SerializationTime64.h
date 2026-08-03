@@ -1,6 +1,9 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
+#include <Common/DateLUT.h>
+
+class DateLUTImpl;
 
 namespace DB
 {
@@ -9,9 +12,14 @@ class DataTypeTime64;
 
 class SerializationTime64 final : public SerializationDecimalBase<Time64>
 {
-public:
+private:
     explicit SerializationTime64(UInt32 scale_);
     explicit SerializationTime64(UInt32 scale_, const DataTypeTime64 & /*time_type*/);
+
+public:
+    static UInt128 getHash(UInt32 scale_);
+    static SerializationPtr create(UInt32 scale_);
+    static SerializationPtr create(UInt32 scale_, const DataTypeTime64 & time_type);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;

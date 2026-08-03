@@ -30,22 +30,26 @@ add_compile_definitions(
     HAVE_CHECK_SHA256
     HAVE_DECODERS
     HAVE_DECODER_ARM
+    HAVE_DECODER_ARM64
     HAVE_DECODER_ARMTHUMB
     HAVE_DECODER_DELTA
     HAVE_DECODER_IA64
     HAVE_DECODER_LZMA1
     HAVE_DECODER_LZMA2
     HAVE_DECODER_POWERPC
+    HAVE_DECODER_RISCV
     HAVE_DECODER_SPARC
     HAVE_DECODER_X86
     HAVE_ENCODERS
     HAVE_ENCODER_ARM
+    HAVE_ENCODER_ARM64
     HAVE_ENCODER_ARMTHUMB
     HAVE_ENCODER_DELTA
     HAVE_ENCODER_IA64
     HAVE_ENCODER_LZMA1
     HAVE_ENCODER_LZMA2
     HAVE_ENCODER_POWERPC
+    HAVE_ENCODER_RISCV
     HAVE_ENCODER_SPARC
     HAVE_ENCODER_X86
     HAVE_MF_BT2
@@ -126,15 +130,16 @@ add_library(_liblzma
     ${SRC_DIR}/src/liblzma/api/lzma/vli.h
     ${SRC_DIR}/src/liblzma/check/check.c
     ${SRC_DIR}/src/liblzma/check/check.h
+    ${SRC_DIR}/src/liblzma/check/crc32_arm64.h
     ${SRC_DIR}/src/liblzma/check/crc32_fast.c
-    ${SRC_DIR}/src/liblzma/check/crc32_table.c
+    ${SRC_DIR}/src/liblzma/check/crc32_loongarch.h
     ${SRC_DIR}/src/liblzma/check/crc32_table_be.h
     ${SRC_DIR}/src/liblzma/check/crc32_table_le.h
     ${SRC_DIR}/src/liblzma/check/crc64_fast.c
-    ${SRC_DIR}/src/liblzma/check/crc64_table.c
     ${SRC_DIR}/src/liblzma/check/crc64_table_be.h
     ${SRC_DIR}/src/liblzma/check/crc64_table_le.h
-    ${SRC_DIR}/src/liblzma/check/crc_macros.h
+    ${SRC_DIR}/src/liblzma/check/crc_common.h
+    ${SRC_DIR}/src/liblzma/check/crc_x86_clmul.h
     ${SRC_DIR}/src/liblzma/check/sha256.c
     ${SRC_DIR}/src/liblzma/common/alone_decoder.c
     ${SRC_DIR}/src/liblzma/common/alone_decoder.h
@@ -178,19 +183,25 @@ add_library(_liblzma
     ${SRC_DIR}/src/liblzma/common/index_encoder.c
     ${SRC_DIR}/src/liblzma/common/index_encoder.h
     ${SRC_DIR}/src/liblzma/common/index_hash.c
+    ${SRC_DIR}/src/liblzma/common/lzip_decoder.c
+    ${SRC_DIR}/src/liblzma/common/lzip_decoder.h
     ${SRC_DIR}/src/liblzma/common/memcmplen.h
+    ${SRC_DIR}/src/liblzma/common/microlzma_decoder.c
+    ${SRC_DIR}/src/liblzma/common/microlzma_encoder.c
     ${SRC_DIR}/src/liblzma/common/outqueue.c
     ${SRC_DIR}/src/liblzma/common/outqueue.h
     ${SRC_DIR}/src/liblzma/common/stream_buffer_decoder.c
     ${SRC_DIR}/src/liblzma/common/stream_buffer_encoder.c
     ${SRC_DIR}/src/liblzma/common/stream_decoder.c
     ${SRC_DIR}/src/liblzma/common/stream_decoder.h
+    ${SRC_DIR}/src/liblzma/common/stream_decoder_mt.c
     ${SRC_DIR}/src/liblzma/common/stream_encoder.c
     ${SRC_DIR}/src/liblzma/common/stream_encoder_mt.c
     ${SRC_DIR}/src/liblzma/common/stream_flags_common.c
     ${SRC_DIR}/src/liblzma/common/stream_flags_common.h
     ${SRC_DIR}/src/liblzma/common/stream_flags_decoder.c
     ${SRC_DIR}/src/liblzma/common/stream_flags_encoder.c
+    ${SRC_DIR}/src/liblzma/common/string_conversion.c
     ${SRC_DIR}/src/liblzma/common/vli_decoder.c
     ${SRC_DIR}/src/liblzma/common/vli_encoder.c
     ${SRC_DIR}/src/liblzma/common/vli_size.c
@@ -229,9 +240,11 @@ add_library(_liblzma
     ${SRC_DIR}/src/liblzma/rangecoder/range_decoder.h
     ${SRC_DIR}/src/liblzma/rangecoder/range_encoder.h
     ${SRC_DIR}/src/liblzma/simple/arm.c
+    ${SRC_DIR}/src/liblzma/simple/arm64.c
     ${SRC_DIR}/src/liblzma/simple/armthumb.c
     ${SRC_DIR}/src/liblzma/simple/ia64.c
     ${SRC_DIR}/src/liblzma/simple/powerpc.c
+    ${SRC_DIR}/src/liblzma/simple/riscv.c
     ${SRC_DIR}/src/liblzma/simple/simple_coder.c
     ${SRC_DIR}/src/liblzma/simple/simple_coder.h
     ${SRC_DIR}/src/liblzma/simple/simple_decoder.c

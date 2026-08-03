@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Common/threadPoolCallbackRunner.h>
+#include <exception>
+#include <mutex>
+#include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
 
@@ -28,12 +30,39 @@ public:
     const std::unordered_map<String, Int64> & getStorageColumnEncoding() const { return storage_encoding; }
     const std::unordered_map<Int64, String> & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
 
+    /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString,
+    /// so a writer preserving that distinction (ORC/Avro string vs binary) consults this.
+    /// hasIcebergStringInfo() lets a field-id-only mapper fall back to the default, not force binary.
+    void setIcebergStringPaths(std::unordered_set<String> && iceberg_string_paths_)
+    {
+        iceberg_string_paths = std::move(iceberg_string_paths_);
+        has_iceberg_string_info = true;
+    }
+    bool hasIcebergStringInfo() const { return has_iceberg_string_info; }
+    bool isIcebergStringPath(const String & path) const { return iceberg_string_paths.contains(path); }
+
+    /// Paths whose Iceberg field is `optional` (required=false). A complex container
+    /// (list/map/struct) is never wrapped in Nullable in the ClickHouse type, so its optionality
+    /// is not recoverable from the type; a writer emitting Iceberg `required` (ORC iceberg.required)
+    /// consults this. hasIcebergRequiredInfo() lets a field-id-only mapper fall back to the default.
+    void setIcebergOptionalPaths(std::unordered_set<String> && iceberg_optional_paths_)
+    {
+        iceberg_optional_paths = std::move(iceberg_optional_paths_);
+        has_iceberg_required_info = true;
+    }
+    bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
+    bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding);
 
 private:
     std::unordered_map<String, Int64> storage_encoding;
     std::unordered_map<Int64, String> field_id_to_clickhouse_name;
+    std::unordered_set<String> iceberg_string_paths;
+    bool has_iceberg_string_info = false;
+    std::unordered_set<String> iceberg_optional_paths;
+    bool has_iceberg_required_info = false;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
@@ -69,11 +98,9 @@ struct FormatFilterInfo
     /// all columns of the sample block.
     Block additional_columns;
 
-    /// IInputFormat implementation may put arbitrary state here.
-    std::shared_ptr<void> opaque;
-
     ColumnMapperPtr column_mapper;
 
+    std::optional<size_t> condition_hash;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
@@ -82,13 +109,16 @@ private:
 public:
     bool hasFilter() const;
 
-    /// Creates `key_condition` and `additional_columns`.
-    /// Call inside initOnce.
-    void initKeyCondition(const Block & keys);
+    /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
+    /// If a previous init attempt threw an exception, rethrows it instead of retrying.
+    void initKeyConditionOnce(const Block & keys);
 
-    /// Does std::call_once(init_flag, ...).
-    /// If a previous init attempt threw exception, rethrows it instead retrying.
-    void initOnce(std::function<void()> f);
+    /// Returns `base` extended with columns required by PREWHERE / row-level filter.
+    /// Hint: pass `base` with `std::move` to avoid copying
+    static Block buildKeyConditionInputs(
+        Block base,
+        const PrewhereInfoPtr & prewhere_info,
+        const FilterDAGInfoPtr & row_level_filter);
 };
 
 }

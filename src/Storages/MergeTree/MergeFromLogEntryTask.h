@@ -22,6 +22,8 @@ public:
         StorageReplicatedMergeTree & storage_,
         IExecutableTask::TaskResultCallback & task_result_callback_);
 
+    ~MergeFromLogEntryTask() override;
+
     Priority getPriority() const override { return priority; }
 
     void cancel() noexcept override
@@ -57,6 +59,8 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
+
+    std::map<String, UInt64> projections_merge_time;
 };
 
 

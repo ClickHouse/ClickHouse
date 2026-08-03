@@ -1,9 +1,9 @@
 #include <Backups/BackupIO_Default.h>
 
 #include <Disks/IDisk.h>
-#include <IO/copyData.h>
-#include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/copyData.h>
 #include <Common/logger_useful.h>
 
 
@@ -33,6 +33,26 @@ void BackupReaderDefault::copyFileToDisk(const String & path_in_backup, size_t f
         write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, write_settings);
 
     copyData(*read_buffer, *write_buffer, file_size);
+    write_buffer->finalize();
+}
+
+void BackupReaderDefault::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t /* file_size */,
+                                              bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                              WriteMode write_mode)
+{
+    LOG_TRACE(log, "Copying a range of file {} to disk {} through buffers", path_in_backup, destination_disk->getName());
+
+    auto read_buffer = readFile(path_in_backup);
+    read_buffer->seek(offset, SEEK_SET);
+
+    std::unique_ptr<WriteBuffer> write_buffer;
+    auto buf_size = std::min(size, write_buffer_size);
+    if (encrypted_in_backup)
+        write_buffer = destination_disk->writeEncryptedFile(destination_path, buf_size, write_mode, write_settings);
+    else
+        write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, write_settings);
+
+    copyData(*read_buffer, *write_buffer, size);
     write_buffer->finalize();
 }
 
@@ -76,9 +96,10 @@ void BackupWriterDefault::copyDataToFile(const String & path_in_backup, const Cr
     write_buffer->finalize();
 }
 
-void BackupWriterDefault::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                           bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterDefault::copyFileFromDisk(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
+    /// Copy through buffers (derived classes may override with optimized implementations)
     LOG_TRACE(log, "Copying file {} from disk {} through buffers", src_path, src_disk->getName());
 
     auto create_read_buffer = [src_disk, src_path, copy_encrypted, settings = read_settings.adjustBufferSize(start_pos + length)]

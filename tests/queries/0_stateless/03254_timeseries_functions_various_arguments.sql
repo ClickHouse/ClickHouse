@@ -65,6 +65,10 @@ SELECT timeSeriesResampleToGridWithStaleness(15, 125, 10, 10)([10, NULL, 30]::Ar
 -- End timestamp not aligned by step
 SELECT timeSeriesResampleToGridWithStaleness(100, 110, 15, 10)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 SELECT timeSeriesResampleToGridWithStaleness(100, 120, 15, 10)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
+SELECT timeSeriesResampleToGridWithStaleness(100, 100, 1, 11)([89]::Array(UInt32), [89]::Array(Float32));
+SELECT timeSeriesResampleToGridWithStaleness(100, 100, 1, 12)([89]::Array(UInt32), [89]::Array(Float32));
+SELECT timeSeriesResampleToGridWithStaleness(100, 120, 10, 10)([95, 110]::Array(UInt32), [95, 110]::Array(Float32));
+SELECT timeSeriesResampleToGridWithStaleness(100, 120, 15, 10)([101]::Array(UInt32), [101]::Array(Float32));
 SELECT timeSeriesRateToGrid(100, 140, 15, 40)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 SELECT timeSeriesInstantRateToGrid(100, 140, 15, 40)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 SELECT timeSeriesInstantDeltaToGrid(100, 150, 15, 20)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));

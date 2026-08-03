@@ -34,18 +34,6 @@ In the `TO` section you can provide a list of users and roles this policy should
 
 Keyword `ALL` means all the ClickHouse users, including current user. Keyword `ALL EXCEPT` allows excluding some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-:::note
-If there are no row policies defined for a table, then any user can `SELECT` all the rows from the table. Defining one or more row policies for the table makes access to the table dependent on the row policies, no matter if those row policies are defined for the current user or not. For example, the following policy:
-
-`CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
-
-forbids the users `mira` and `peter` from seeing the rows with `b != 1`, and any non-mentioned user (e.g., the user `paul`) will see no rows from `mydb.table1` at all.
-
-If that's not desirable, it can be fixed by adding one more row policy, like the following:
-
-`CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
-:::
-
 ## AS Clause {#as-clause}
 
 It's allowed to have more than one policy enabled on the same table for the same user at one time. So we need a way to combine the conditions from multiple policies.
@@ -91,9 +79,28 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
 
+## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
+
+A row policy filters rows where the table data is actually read. A table that delegates reading to remote servers, such as a [Distributed](../../../engines/table-engines/special/distributed.md) table or a wrapper over one (for example, a materialized view with a `Distributed` target), only ships the query text to the remote servers and cannot apply the policy filter to the remote read. To keep the filter from being silently dropped, queries to such a table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error.
+
+Instead, define the policy on the underlying local tables on each remote server; it is applied there when the shipped query reads them:
+
+```sql
+-- Filters reads of local_table on this server, including reads shipped by a Distributed table over it.
+CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
+```
+
+:::warning
+This works while the query is shipped as text, which is the default. With `serialize_query_plan = 1` the initiator
+ships an already-built read plan instead, and a remote server executing such a plan does not apply its own row
+policies, so a read of a `Distributed` table over `local_table` returns unfiltered rows. Keep
+`serialize_query_plan = 0` for users whose row policies must be enforced.
+See [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
+:::
+
 ## ON CLUSTER Clause {#on-cluster-clause}
 
-Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
+Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md). This is also the convenient way to create the policy on the local tables of every server of the cluster.
 
 ## Examples {#examples}
 

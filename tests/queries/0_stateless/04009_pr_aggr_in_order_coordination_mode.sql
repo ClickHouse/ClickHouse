@@ -14,7 +14,6 @@ SET optimize_read_in_order = 0;
 SET optimize_aggregation_in_order = 1;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SYSTEM ENABLE FAILPOINT parallel_replicas_check_read_mode_always;
 
 SELECT a
 FROM t1

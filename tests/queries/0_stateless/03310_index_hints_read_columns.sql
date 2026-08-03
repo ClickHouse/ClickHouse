@@ -2,7 +2,7 @@
 -- add_minmax_index_for_numeric_columns=0: More opened files
 
 -- Does additional index analysis round that the test doesn't expect
-set automatic_parallel_replicas_mode=0;
+set automatic_parallel_replicas_mode=0, enable_parallel_replicas=0;
 
 SET enable_analyzer = 1;
 DROP TABLE IF EXISTS t_index_hint;

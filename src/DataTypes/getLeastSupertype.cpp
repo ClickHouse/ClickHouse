@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -281,6 +282,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
     Strings element_names;
     size_t element_size = 0;
     std::vector<DataTypes> element_types;
+    bool initialized = false;
 
     bool have_nullable = false;
 
@@ -298,7 +300,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
         if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(unwrapped_type))
         {
             const auto & current_elements = type_tuple->getElements();
-            if (element_types.empty())
+            if (!initialized)
             {
                 element_size = current_elements.size();
                 element_types.resize(element_size);
@@ -306,6 +308,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
                     element_types[i].reserve(types.size());
                 if (type_tuple->hasExplicitNames())
                     element_names = type_tuple->getElementNames();
+                initialized = true;
             }
 
             if (element_size != type_tuple->getElements().size())
@@ -362,6 +365,8 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
 template <LeastSupertypeOnError on_error>
 DataTypePtr getLeastSupertype(const DataTypes & types)
 {
+    checkStackSize();
+
     /// Trivial cases
 
     if (types.empty())
@@ -706,108 +711,124 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         size_t have_date32 = type_ids.count(TypeIndex::Date32);
         size_t have_datetime = type_ids.count(TypeIndex::DateTime);
         size_t have_datetime64 = type_ids.count(TypeIndex::DateTime64);
+        size_t have_time = type_ids.count(TypeIndex::Time);
+        size_t have_time64 = type_ids.count(TypeIndex::Time64);
 
-        if (have_date || have_date32 || have_datetime || have_datetime64)
+        if (have_date || have_date32 || have_datetime || have_datetime64 || have_time || have_time64)
         {
-            bool all_date_or_datetime = type_ids.size() == (have_date + have_date32 + have_datetime + have_datetime64);
-            if (!all_date_or_datetime)
+            bool all_date_time_family = type_ids.size()
+                == (have_date + have_date32 + have_datetime + have_datetime64 + have_time + have_time64);
+            if (!all_date_time_family)
                 return throwOrReturn<on_error>(types,
-                    "because some of them are Date/Date32/DateTime/DateTime64 and some of them are not",
+                    "because some of them are Date/Date32/DateTime/DateTime64/Time/Time64 and some of them are not",
                     ErrorCodes::NO_COMMON_TYPE);
 
-            if (have_datetime64 == 0 && have_date32 == 0)
+            if ((have_date || have_date32) && (have_time || have_time64))
+                return throwOrReturn<on_error>(types,
+                    "because Date/Date32 and Time/Time64 are incompatible",
+                    ErrorCodes::NO_COMMON_TYPE);
+
+            /// only Time/Time64 types
+            if (!have_date && !have_date32 && !have_datetime && !have_datetime64)
             {
-                for (const auto & type : types)
+                if (!have_time64)
+                    return std::make_shared<DataTypeTime>();
+
+                UInt8 max_scale = 0;
+                size_t max_scale_time64_index = 0;
+                for (size_t i = 0; i < types.size(); ++i)
                 {
-                    if (isDateTime(type))
-                        return type;
+                    if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(types[i].get()))
+                    {
+                        const auto scale = time64_type->getScale();
+                        if (scale >= max_scale)
+                        {
+                            max_scale_time64_index = i;
+                            max_scale = static_cast<UInt8>(scale);
+                        }
+                    }
                 }
 
-                return std::make_shared<DataTypeDateTime>();
+                if (have_time && have_time64)
+                    return std::make_shared<DataTypeTime64>(max_scale);
+                return types[max_scale_time64_index];
             }
 
-            /// For Date and Date32, the common type is Date32
-            if (have_datetime == 0 && have_datetime64 == 0)
+            /// Only Date/Date32 types (no DateTime, no Time)
+            if (!have_datetime && !have_datetime64 && !have_time && !have_time64)
             {
                 for (const auto & type : types)
                 {
                     if (isDate32(type))
                         return type;
                 }
+                return std::make_shared<DataTypeDate>();
+            }
+
+            /// Time/Time64 mixed with DateTime/DateTime64: promote to DateTime/DateTime64
+            /// (Time gets epoch date 1970-01-01 prepended, analogous to Date getting midnight appended).
+            /// Time/Time64 mixed with only Date/Date32 (no DateTime): also promote to DateTime/DateTime64.
+            /// From here on, the result is always DateTime or DateTime64.
+
+            if (!have_datetime64 && !have_date32 && !have_time64 && !have_time)
+            {
+                for (const auto & type : types)
+                {
+                    if (isDateTime(type))
+                        return type;
+                }
+                return std::make_shared<DataTypeDateTime>();
             }
 
             /// For Datetime and Date32, the common type is Datetime64
-            if (have_datetime == 1 && have_date32 == 1 && have_datetime64 == 0)
+            if (have_datetime == 1 && have_date32 == 1 && have_datetime64 == 0
+                && !have_time && !have_time64)
             {
                 return std::make_shared<DataTypeDateTime64>(0);
             }
 
+            /// Find max scale across DateTime64 and Time64 types
             UInt8 max_scale = 0;
             size_t max_scale_date_time_index = 0;
 
             for (size_t i = 0; i < types.size(); ++i)
             {
                 const auto & type = types[i];
+                UInt8 scale = 0;
+                bool is_scaled = false;
 
                 if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(type.get()))
                 {
-                    const auto scale = date_time64_type->getScale();
-                    if (scale >= max_scale)
-                    {
-                        max_scale_date_time_index = i;
-                        max_scale = static_cast<UInt8>(scale);
-                    }
+                    scale = static_cast<UInt8>(date_time64_type->getScale());
+                    is_scaled = true;
                 }
-            }
-
-            return types[max_scale_date_time_index];
-        }
-    }
-
-    {
-        size_t have_time = type_ids.count(TypeIndex::Time);
-        size_t have_time64 = type_ids.count(TypeIndex::Time64);
-
-        if (have_time || have_time64)
-        {
-            bool all_time_or_time64 = type_ids.size() == (have_time + have_time64);
-
-            if (!all_time_or_time64)
-                return throwOrReturn<on_error>(types,
-                    "because some of them are Time/Time64 and some of them are not",
-                    ErrorCodes::NO_COMMON_TYPE);
-
-            if (have_time && !have_time64)
-            {
-                return std::make_shared<DataTypeTime>();
-            }
-
-            /// find the maximum scale
-            UInt8 max_scale = 0;
-            size_t max_scale_time64_index = 0;
-
-            for (size_t i = 0; i < types.size(); ++i)
-            {
-                const auto & type = types[i];
-
-                if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(type.get()))
+                else if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(type.get()))
                 {
-                    const auto scale = time64_type->getScale();
+                    scale = static_cast<UInt8>(time64_type->getScale());
+                    is_scaled = true;
+                }
 
-                    if (scale >= max_scale)
-                    {
-                        max_scale_time64_index = i;
-                        max_scale = static_cast<UInt8>(scale);
-                    }
+                if (is_scaled && scale >= max_scale)
+                {
+                    max_scale = scale;
+                    max_scale_date_time_index = i;
                 }
             }
 
-            if (have_time && have_time64)
+            /// If the max-scale type is already DateTime64, return it (preserves timezone)
+            if (typeid_cast<const DataTypeDateTime64 *>(types[max_scale_date_time_index].get()))
+                return types[max_scale_date_time_index];
+
+            /// max scale came from Time64, find a DateTime[64] to preserve its timezone
+            for (const auto & type : types)
             {
-                return std::make_shared<DataTypeTime64>(max_scale);
+                if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+                    return std::make_shared<DataTypeDateTime64>(max_scale, *dt64);
+                if (const auto * dt = typeid_cast<const DataTypeDateTime *>(type.get()))
+                    return std::make_shared<DataTypeDateTime64>(max_scale, *dt);
             }
 
-            return types[max_scale_time64_index];
+            return std::make_shared<DataTypeDateTime64>(max_scale);
         }
     }
 
@@ -933,6 +954,96 @@ DataTypePtr getLeastSupertype<LeastSupertypeOnError::Variant>(const DataTypes & 
 DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
 {
     return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
+}
+
+namespace
+{
+/// Opt-in lossy fallback used when there is no lossless common type for a set of
+/// numeric branches (e.g. Decimal + Float64, or Int64 + Float64). It promotes to
+/// Float64, matching binary arithmetic promotion, so the result can be aggregated
+/// instead of becoming a Variant. Returns nullptr when the promotion does not apply
+/// (some branch is not numeric, or none of them is floating point - in the latter
+/// case there is no obvious lossy numeric supertype).
+DataTypePtr tryGetLossyNumericSupertype(const DataTypes & types)
+{
+    bool has_float = false;
+    bool has_nullable = false;
+    /// Mirror the regular resolver's LowCardinality rule: all non-NULL branches
+    /// LowCardinality -> LowCardinality result; a mix drops it. Otherwise the wrapper
+    /// is silently lost, which corrupts array/map metadata (see 02354_array_lowcardinality).
+    bool all_low_cardinality = true;
+    for (const auto & type : types)
+    {
+        if (canContainNull(*type))
+            has_nullable = true;
+        /// Must run before the onlyNull() skip: the regular resolver's LowCardinality phase
+        /// precedes its Nullable phase, so a bare NULL counts as a non-LowCardinality branch
+        /// and drops the wrapper.
+        if (!typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            all_low_cardinality = false;
+        /// Skip NULL-only branches (a bare NULL literal is Nullable(Nothing)), mirroring the
+        /// lossless resolver: multiIf(c1, NULL, c2, toDecimal64(1, 2), 0.) then reaches the
+        /// fallback as [Decimal, Float64] and promotes to Nullable(Float64) rather than a Variant.
+        if (type->onlyNull())
+            continue;
+        const auto bare_type = removeLowCardinalityAndNullable(type);
+        if (!isNumber(bare_type))
+            return nullptr;
+        if (isFloat(bare_type))
+            has_float = true;
+    }
+
+    if (!has_float)
+        return nullptr;
+
+    DataTypePtr result = std::make_shared<DataTypeFloat64>();
+    if (has_nullable)
+        result = makeNullable(result);
+    /// LowCardinality wraps Nullable (never the reverse), matching the regular resolver.
+    if (all_low_cardinality)
+        result = std::make_shared<DataTypeLowCardinality>(result);
+    return result;
+}
+}
+
+DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_lossy_numeric)
+{
+    /// A lossless common type always wins over the lossy fallback.
+    if (auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types))
+        return common_type;
+    if (allow_lossy_numeric)
+        if (auto lossy_type = tryGetLossyNumericSupertype(types))
+            return lossy_type;
+    return getLeastSupertype<LeastSupertypeOnError::Throw>(types);
+}
+
+DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types, bool allow_lossy_numeric)
+{
+    if (auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types))
+        return common_type;
+    if (allow_lossy_numeric)
+        if (auto lossy_type = tryGetLossyNumericSupertype(types))
+            return lossy_type;
+    return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
+}
+
+String getNumericVariantSupertypeHint(const DataTypePtr & type)
+{
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(removeLowCardinalityAndNullable(type).get());
+    if (!variant_type)
+        return {};
+
+    /// Only suggest the setting when enabling it would actually replace the Variant with a
+    /// numeric supertype. Mirror the fallback eligibility (all numeric, at least one float):
+    /// integer-only sets such as Variant(Int64, UInt64) stay a Variant even with the setting on,
+    /// so pointing users at it there would be misleading.
+    if (!tryGetLossyNumericSupertype(variant_type->getVariants()))
+        return {};
+
+    /// Only the result type is visible here, not whether it was inferred (setting applies) or
+    /// stored/cast (it does not), so the wording stays conditional.
+    return ". If it is the inferred common type of if/multiIf/coalesce/ifNull/array/map over numeric "
+           "arguments, enable setting 'allow_lossy_numeric_supertype' to use a numeric supertype instead";
 }
 
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)

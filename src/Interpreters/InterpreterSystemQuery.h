@@ -68,6 +68,12 @@ private:
     void syncReplica(ASTSystemQuery & query);
     void setReplicaReadiness(bool ready);
     void waitLoadingParts();
+    void waitQueryRunner();
+
+    void restartDisk(const String & disk_name);
+
+    void scheduleMerge(ASTSystemQuery & query);
+    void syncMerges();
 
     void loadPrimaryKeys();
     void unloadPrimaryKeys();
@@ -88,12 +94,15 @@ private:
     void dropStorageReplicasFromDatabase(const String & query_replica, DatabasePtr database);
     void dropDatabaseReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
+    void flushObjectStorageQueue(ASTSystemQuery & query);
     DatabasePtr
     restoreDatabaseFromKeeperPath(const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name);
     std::optional<String> getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_);
-    [[noreturn]] void restartDisk(String & name);
 
     RefreshTaskList getRefreshTasks();
+    RefreshTaskList getAccessibleRefreshTasks();
+    std::vector<StoragePtr> getAccessibleStreamingStorages();
+    void controlBackgroundActivity(const ASTSystemQuery & query);
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
