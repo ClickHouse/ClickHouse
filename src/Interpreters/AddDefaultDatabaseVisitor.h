@@ -171,6 +171,27 @@ private:
     {
         if (table_expression.database_and_table_name)
             tryVisit<ASTTableIdentifier>(table_expression.database_and_table_name);
+        else if (table_expression.table_function)
+            visitTableFunction(*table_expression.table_function);
+    }
+
+    /// Some table functions use the current database when it is not specified explicitly, e.g. `merge('regexp')`.
+    /// The query can be interpreted later in a context where the current database is not set
+    /// (for example, a mutation is interpreted in a background thread), so the database has to be
+    /// substituted here, in the same way as it is done for table names.
+    void visitTableFunction(IAST & table_function) const
+    {
+        if (database_name.empty())
+            return;
+
+        auto * function = table_function.as<ASTFunction>();
+        if (!function || function->name != "merge" || !function->arguments)
+            return;
+
+        /// merge('tables_regexp') -> merge('database_name', 'tables_regexp')
+        auto & arguments = function->arguments->children;
+        if (arguments.size() == 1)
+            arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(database_name));
     }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
