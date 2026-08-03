@@ -261,6 +261,13 @@ const AccessControl & Context::getAccessControl() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no access control in WebAssembly");
 }
 
+/// `Interpreters/Context.cpp` is not built either, and these two are defined there. There is no
+/// server context in a browser, so they stay null and every `Context::getGlobalContextInstance`
+/// in the parser - the `storage_shared_set_join_use_inner_uuid` lookup in `CreateQueryUUIDs`, the
+/// access-control lookups in `AccessRightsElement` - takes its contextless branch.
+ContextPtr ContextData::global_context_instance;
+ContextPtr ContextData::background_context_instance;
+
 /// No timezone database is linked in (see `getTimeZone` above), so nothing validates.
 void SettingFieldTimezone::validateTimezone(const std::string &) {}
 
