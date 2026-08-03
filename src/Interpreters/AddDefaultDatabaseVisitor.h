@@ -250,6 +250,13 @@ private:
                             if (identifier->compound())
                                 continue;
 
+                            /// A parameterized name is only known when the view is called, and it has no
+                            /// resolvable name to qualify here: its name is empty and the actual value lives
+                            /// in the `ASTQueryParameter` child, which rebuilding the identifier would drop
+                            /// (same exemption as `visit(ASTTableIdentifier)` and `dictGet` above).
+                            if (identifier->isParam())
+                                continue;
+
                             /// There is a temporary/external table with such name, should not be rewritten:
                             /// `Context::resolveStorageID` looks up temporary/external tables before the
                             /// current database, so qualifying would shadow the session-local `Join` table

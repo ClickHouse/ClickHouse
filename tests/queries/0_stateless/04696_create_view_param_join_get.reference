@@ -1,0 +1,4 @@
+param	one	two
+body keeps placeholder	1
+parameterized body records no dependency
+qualified at create time	one
