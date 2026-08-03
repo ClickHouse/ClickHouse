@@ -166,9 +166,13 @@ void SerializationDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
-    else /// Just 1504193808 or 01504193808
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        readIntText(x, istr);
+        readDateTime64AsRawValue(x, istr);
+    }
+    else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
+    {
+        readDateTime64AsNumber(x, scale, istr);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
@@ -181,9 +185,14 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
-    else /// Just 1504193808 or 01504193808
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadDateTime64AsRawValue(x, istr))
+            return false;
+    }
+    else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
+    {
+        if (!tryReadDateTime64AsNumber(x, scale, istr))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
@@ -259,9 +268,9 @@ static ReturnType deserializeISODateJSON(
     return ReturnType(true);
 }
 
-/// Handles the non-quoted JSON cases: a bare integer timestamp, or the mongodb shell syntax
+/// Handles the non-quoted JSON cases: a bare numeric timestamp, or the mongodb shell syntax
 /// ISODate("...") / new ISODate("..."). Uses PeekableReadBuffer so a malformed near-miss like
-/// "ISODate123" rolls back instead of falling through to integer parsing on "123".
+/// "ISODate123" rolls back instead of falling through to numeric parsing on "123".
 template <typename ReturnType>
 static ReturnType deserializeNonQuotedJSON(
     DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings,
@@ -269,16 +278,16 @@ static ReturnType deserializeNonQuotedJSON(
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    /// Bare integer timestamp is by far the common case; avoid PeekableReadBuffer's allocation for it.
+    /// Bare numeric timestamp is by far the common case; avoid PeekableReadBuffer's allocation for it.
     if (istr.eof() || (*istr.position() != 'n' && *istr.position() != 'I'))
     {
         if constexpr (throw_exception)
         {
-            readIntText(x, istr);
+            readDateTime64AsNumber(x, scale, istr);
             return;
         }
         else
-            return ReturnType(tryReadIntText(x, istr));
+            return ReturnType(tryReadDateTime64AsNumber(x, scale, istr));
     }
 
     PeekableReadBuffer peekable_buf(istr, true);
@@ -296,8 +305,8 @@ static ReturnType deserializeNonQuotedJSON(
 
     peekable_buf.rollbackToCheckpoint();
     if constexpr (throw_exception)
-        readIntText(x, peekable_buf);
-    else if (!tryReadIntText(x, peekable_buf))
+        readDateTime64AsNumber(x, scale, peekable_buf);
+    else if (!tryReadDateTime64AsNumber(x, scale, peekable_buf))
         return ReturnType(false);
     return ReturnType(true);
 }
@@ -309,6 +318,10 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     {
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
+    }
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
+    {
+        readDateTime64AsRawValue(x, istr);
     }
     else
     {
@@ -323,6 +336,11 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     if (checkChar('"', istr))
     {
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
+            return false;
+    }
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
+    {
+        if (!tryReadDateTime64AsRawValue(x, istr))
             return false;
     }
     else if (!deserializeNonQuotedJSON<bool>(x, scale, istr, settings, time_zone, utc_time_zone))
