@@ -61,7 +61,12 @@ cat "$TMP_DIR"/*.dict "$CURATED_DICT" | LC_ALL=C sort | uniq > "$OUTPUT_DIR/all.
 # surface, so extractor gaps cannot regress silently.
 echo "Checking that the source-derived dictionary covers the binary-derived one"
 "$SCRIPT_DIR/generate_source_dict.sh" "$SOURCE_ROOT" "$TMP_DIR/source.dict"
-MISSING_TOKENS=$(comm -23 <(LC_ALL=C sort -u "$OUTPUT_DIR/all.dict") <(LC_ALL=C sort -u "$TMP_DIR/source.dict"))
+# comm compares by collation, so it must use the locale its inputs were sorted
+# with. It exits non-zero only when the comparison itself fails, never on a diff.
+if ! MISSING_TOKENS=$(LC_ALL=C comm -23 <(LC_ALL=C sort -u "$OUTPUT_DIR/all.dict") <(LC_ALL=C sort -u "$TMP_DIR/source.dict")); then
+    echo "error: failed to compare the binary-derived and source-derived dictionaries."
+    exit 1
+fi
 if [ -n "$MISSING_TOKENS" ]; then
     echo "error: tokens present in the binary-derived all.dict are missing from the source-derived dictionary:"
     echo "$MISSING_TOKENS"
