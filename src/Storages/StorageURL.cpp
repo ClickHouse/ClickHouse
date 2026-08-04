@@ -637,8 +637,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         }
         catch (...)
         {
-            /// A cancelled query is not an unreachable endpoint: report the cancellation itself
-            /// instead of remapping it below, and do not try the remaining options.
+            /// A cancelled query is not an unreachable endpoint.
             CurrentThread::checkIfNotCancelled();
 
             if (options == 1)

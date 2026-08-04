@@ -118,18 +118,33 @@ wait_for_port "$DEAD_PORT"
 wait_for_port "$LIVE_PORT"
 wait_for_port "$EMPTY_PORT"
 
+# Both poll helpers read the awaited value and the row's existence in ONE query, so the two cannot be
+# sampled at different instants: a query observed and then gone can never reach the value, so it is
+# reported at once rather than polled for. Poll 300 ends the registration window, 600 the overall cap.
+# A non-numeric reply only means "not observed yet" and must not reach the arithmetic tests.
+
 # Counts the HTTP requests the still-running query itself has sent. The counter belongs to the
 # query's own thread group, so readiness probes, earlier groups and parallel copies cannot contribute.
-# A non-numeric reply only means "not observed yet", so it must not reach the arithmetic test below.
 wait_for_requests()
 {
-    for _ in $(seq 1 600); do
-        SENT=$(${CLICKHOUSE_CLIENT} --query "
-            SELECT sum(ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'])
-            FROM system.processes WHERE query_id = '$1'" 2>/dev/null)
-        case "$SENT" in
+    local seen=0 i ALIVE SENT
+    for i in $(seq 1 600); do
+        # ifNull because sum() over no rows is NULL, which must not be mistaken for "not observed yet".
+        read -r ALIVE SENT <<< "$(${CLICKHOUSE_CLIENT} --query "
+            SELECT count(), ifNull(sum(ProfileEvents['ReadWriteBufferFromHTTPRequestsSent']), 0)
+            FROM system.processes WHERE query_id = '$1'" 2>/dev/null)"
+        case "$ALIVE$SENT" in
             '' | *[!0-9]* ) ;;
-            * ) [ "$SENT" -ge "$2" ] && return 0 ;;
+            * ) if [ "$ALIVE" -gt 0 ]; then
+                    seen=1
+                    [ "$SENT" -ge "$2" ] && return 0
+                elif [ "$seen" -eq 1 ]; then
+                    echo "wait_for_requests: query $1 left system.processes before sending $2 requests"
+                    exit 1
+                elif [ "$i" -ge 300 ]; then
+                    echo "wait_for_requests: query $1 never appeared in system.processes"
+                    exit 1
+                fi ;;
         esac
         sleep 0.1
     done
@@ -137,13 +152,27 @@ wait_for_requests()
     exit 1
 }
 
-# Waits until the server has recorded the cancellation. system.processes exposes is_killed, so the
+# Waits until the server has recorded the cancellation. system.processes exposes is_cancelled, so the
 # empty option's response can be released once the kill has landed rather than after a fixed delay.
 wait_for_cancelled()
 {
-    for _ in $(seq 1 600); do
-        [ "$(${CLICKHOUSE_CLIENT} --query "
-            SELECT count() FROM system.processes WHERE query_id = '$1' AND is_cancelled")" = "1" ] && return 0
+    local seen=0 i ALIVE CANCELLED
+    for i in $(seq 1 600); do
+        read -r ALIVE CANCELLED <<< "$(${CLICKHOUSE_CLIENT} --query "
+            SELECT count(), countIf(is_cancelled) FROM system.processes WHERE query_id = '$1'" 2>/dev/null)"
+        case "$ALIVE$CANCELLED" in
+            '' | *[!0-9]* ) ;;
+            * ) if [ "$ALIVE" -gt 0 ]; then
+                    seen=1
+                    [ "$CANCELLED" -ge 1 ] && return 0
+                elif [ "$seen" -eq 1 ]; then
+                    echo "wait_for_cancelled: query $1 left system.processes before being marked cancelled"
+                    exit 1
+                elif [ "$i" -ge 300 ]; then
+                    echo "wait_for_cancelled: query $1 never appeared in system.processes"
+                    exit 1
+                fi ;;
+        esac
         sleep 0.1
     done
     echo "Timeout waiting for query $1 to be marked cancelled"
@@ -222,13 +251,16 @@ grep -c -m1 'All uri' "$STDERR" | sed 's/^0$/reported as a cancellation/;s/^1$/r
 outcome "$QUERY_ID_LAST"
 
 # An option skipped for being empty also advances to the next one, so that exit needs the same check.
-# The empty option answers only after the kill has been observed, so the skip happens on a cancelled
-# query. Without the check on that path the dead second option is requested anyway.
+# The empty option answers only once the kill has been observed, so the skip happens on a cancelled
+# query; without the check the second option is requested anyway and the request count records it.
+# http_receive_timeout is above the harness window so the held read cannot complete on its own and
+# strand the release it waits for, and the second option is the responsive listener so an unwanted
+# attempt on it is counted at once instead of blocking for that same timeout.
 echo "--- KILL QUERY while an empty option is skipped ---"
 QUERY_ID_EMPTY="04674_empty_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_EMPTY" --query "
-    SELECT * FROM url('http://127.0.0.1:$EMPTY_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
-    SETTINGS engine_url_skip_empty_files = 1, max_execution_time = 0, http_receive_timeout = 10,
+    SELECT * FROM url('http://127.0.0.1:$EMPTY_PORT/a|http://127.0.0.1:$LIVE_PORT/b', 'TSV', 's String')
+    SETTINGS engine_url_skip_empty_files = 1, max_execution_time = 0, http_receive_timeout = 900,
              http_max_tries = 1, http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'
 " > "$STDERR" 2>&1 &
