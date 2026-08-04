@@ -374,6 +374,12 @@ void DiskLocal::renameExchange(const std::string & old_path, const std::string &
     /// `CREATE`/`RENAME`/`ALTER` on the same filesystems; `DiskObjectStorage::renameExchange`
     /// does the same. The shared `DB::renameExchange` helper stays fail-closed for other
     /// callers.
+    LOG_WARNING(
+        logger,
+        "Filesystem of disk {} does not support an atomic file exchange (renameat2 with "
+        "RENAME_EXCHANGE); exchanging {} and {} with a non-atomic fallback, which is not "
+        "crash-safe.",
+        name, old_file.string(), new_file.string());
     DB::renameExchangeNonAtomic(old_file, new_file);
 }
 
