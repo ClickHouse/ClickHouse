@@ -317,11 +317,21 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
     }
 }
 
+/// `last-column-id` is the table's high-water mark of assigned field ids. The reader needs it to
+/// tell a column dropped from the current schema (id within the bound) from a metadata mismatch.
+/// It is optional in the metadata; when absent the reader keeps rejecting every unmapped id.
+static void observeLastColumnId(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor)
+{
+    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
+        schema_processor.observeLastColumnId(metadata_object->getValue<Int64>(f_last_column_id));
+}
+
 Int32 IcebergMetadata::parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object,
     IcebergSchemaProcessor & schema_processor,
     LoggerPtr metadata_logger)
 {
+    observeLastColumnId(metadata_object, schema_processor);
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
 
     if (format_version == 2)
@@ -373,6 +383,7 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
+    observeLastColumnId(metadata_object, *schema_processor);
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {

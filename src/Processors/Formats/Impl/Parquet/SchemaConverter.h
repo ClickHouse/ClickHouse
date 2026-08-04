@@ -148,7 +148,8 @@ private:
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.
     /// For top-level columns (when current_path is empty), returns the full mapped name to support
     /// column names with dots (e.g. `integer.col` in Iceberg).
-    std::string_view useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const;
+    /// nullopt means the element is not part of the datalake projection and must be skipped.
+    std::optional<std::string_view> useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const;
 };
 
 }

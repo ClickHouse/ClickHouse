@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <mutex>
+#include <optional>
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
@@ -53,6 +54,11 @@ public:
     bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
+    /// Iceberg `last-column-id`: the highest field id the table has ever assigned.
+    /// nullopt when the metadata did not report it.
+    void setLastColumnId(Int64 last_column_id_) { last_column_id = last_column_id_; }
+    std::optional<Int64> getLastColumnId() const { return last_column_id; }
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding);
 
@@ -63,6 +69,7 @@ private:
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
+    std::optional<Int64> last_column_id;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;

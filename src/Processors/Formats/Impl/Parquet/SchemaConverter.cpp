@@ -138,7 +138,7 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
+std::optional<std::string_view> SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
 {
     if (!column_mapper)
         return element.name;
@@ -158,12 +158,17 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
         /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
         /// write these into data files, but they are not part of the table schema. Per the Iceberg
         /// spec (https://iceberg.apache.org/spec/#reserved-field-ids), readers must ignore
-        /// reserved-range field ids they don't recognize rather than failing. Such a column is
-        /// never requested, so returning its physical name lets the existing "unrequested column"
-        /// path skip it.
+        /// reserved-range field ids they don't recognize rather than failing.
         static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200; ids above this are reserved
         if (element.field_id > iceberg_max_user_field_id)
-            return element.name;
+            return std::nullopt;
+
+        /// An id within `last-column-id` was assigned by this table at some point, so a read schema
+        /// that lacks it simply does not project it (https://iceberg.apache.org/spec/#column-projection).
+        /// An id above the bound was never assigned, so it stays a mismatch.
+        auto last_column_id = column_mapper->getLastColumnId();
+        if (last_column_id.has_value() && element.field_id <= *last_column_id)
+            return std::nullopt;
 
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
     }
@@ -212,9 +217,13 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
+        auto mapped_name = useColumnMapperIfNeeded(*node.element, node.name);
+        node.appendNameComponent(node.element->name, mapped_name.value_or(node.element->name));
 
-        if (sample_block)
+        /// nullopt = not projected. Recurse anyway to keep the schema element and primitive column
+        /// counters in step, but skip the lookup: the physical name may belong to another column of
+        /// the current schema, and matching it would serve this column's values in its place.
+        if (sample_block && mapped_name.has_value())
         {
             /// Doing this lookup on each schema element to support reading individual tuple elements.
             /// E.g.:
@@ -755,9 +764,15 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::vector<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
+        auto mapped_element_name = useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name);
+        const String & element_name = element_names_in_file.emplace_back(
+            mapped_element_name.value_or(file_metadata.schema.at(schema_idx).name));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
-        if (lookup_by_name)
+        /// Not projected by the datalake schema (see useColumnMapperIfNeeded): request nothing from
+        /// this element, and in particular do not look its physical name up in the type hint.
+        if (!mapped_element_name.has_value())
+            idx_in_output_tuple = std::nullopt;
+        else if (lookup_by_name)
         {
             idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
 

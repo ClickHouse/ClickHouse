@@ -368,3 +368,34 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
 }
+
+/// One processor is shared by concurrent queries and the background metadata prefetcher, which can
+/// observe metadata versions in any order, so the bound must only ever rise: lowering it would make
+/// the reader reject field ids the table has already assigned.
+TEST(IcebergSchemaProcessor, LastColumnIdOnlyRises)
+{
+    IcebergSchemaProcessor processor;
+    EXPECT_FALSE(processor.tryGetLastColumnId().has_value());
+
+    processor.observeLastColumnId(4);
+    EXPECT_EQ(processor.tryGetLastColumnId(), 4);
+
+    processor.observeLastColumnId(3);
+    EXPECT_EQ(processor.tryGetLastColumnId(), 4);
+
+    processor.observeLastColumnId(7);
+    EXPECT_EQ(processor.tryGetLastColumnId(), 7);
+}
+
+/// The bound has to reach the reader, which only ever sees a ColumnMapper.
+TEST(IcebergSchemaProcessor, ColumnMapperCarriesLastColumnId)
+{
+    auto schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(schema);
+
+    EXPECT_FALSE(processor.getColumnMapperById(0)->getLastColumnId().has_value());
+
+    processor.observeLastColumnId(5);
+    EXPECT_EQ(processor.getColumnMapperById(0)->getLastColumnId(), 5);
+}

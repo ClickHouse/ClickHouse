@@ -817,6 +817,23 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
 }
 
 
+void IcebergSchemaProcessor::observeLastColumnId(Int64 last_column_id_)
+{
+    std::lock_guard lock(mutex);
+    /// Only ever raise the bound: an older metadata version reaching this processor later must not
+    /// lower it, or field ids assigned since would start being rejected again.
+    if (!last_column_id.has_value() || *last_column_id < last_column_id_)
+        last_column_id = last_column_id_;
+}
+
+
+std::optional<Int64> IcebergSchemaProcessor::tryGetLastColumnId() const
+{
+    SharedLockGuard lock(mutex);
+    return last_column_id;
+}
+
+
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
     SharedLockGuard lock(mutex);
@@ -879,7 +896,10 @@ ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
     auto schema = getIcebergTableSchemaById(id);
     if (!schema)
         return nullptr;
-    return createColumnMapper(schema);
+    auto column_mapper = createColumnMapper(schema);
+    if (auto bound = tryGetLastColumnId())
+        column_mapper->setLastColumnId(*bound);
+    return column_mapper;
 }
 
 ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)
