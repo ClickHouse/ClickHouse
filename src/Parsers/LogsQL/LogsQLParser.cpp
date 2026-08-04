@@ -298,9 +298,9 @@ ASTPtr LogsQLParser::parseFilterGeneric(const String & field_name)
 
     /// Filters must be separated from the previous token with whitespace or one of the explicit separators.
     if (lex.isKeyword("("))
-        lex.checkPrevAdjacentToken({"|", ":", "(", "!", "-", "not", "and", "or"});
+        lex.checkPrevAdjacentToken({"|", ":", "(", "-", "not", "and", "or", "!"});
     else
-        lex.checkPrevAdjacentToken({"|", ":", "(", "!", "-"});
+        lex.checkPrevAdjacentToken({"|", ":", "(", "-", "!"});
 
     if (lex.isKeyword("{"))
     {
