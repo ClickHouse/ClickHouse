@@ -98,24 +98,25 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
     const auto lineage = traceActionsDAGLineage(actions);
     const auto & inputs = actions.getInputs();
     const auto & outputs = actions.getOutputs();
-    for (const auto & output_lineage : lineage)
+    for (size_t output_position = 0; output_position < lineage.size(); ++output_position)
     {
-        if (!output_lineage.input)
+        const auto & output_lineage = lineage[output_position];
+        if (!output_lineage)
             continue;
 
-        const auto stats_it = original.find(inputs[output_lineage.input->input_position]->result_name);
+        const auto stats_it = original.find(inputs[output_lineage->input_position]->result_name);
         if (stats_it == original.end())
             continue;
 
         ColumnStats stats = stats_it->second;
         /// Add the offset, guarding against overflow when the source NDV is near the maximum.
-        if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
-            stats.num_distinct_values += output_lineage.input->ndv_delta;
+        if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage->ndv_delta)
+            stats.num_distinct_values += output_lineage->ndv_delta;
         /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
         /// width to unknown.
-        if (!output_lineage.input->preserves_width)
+        if (!output_lineage->preserves_width)
             stats.avg_bytes = 0;
-        mapped[outputs[output_lineage.output_position]->result_name] = stats;
+        mapped[outputs[output_position]->result_name] = stats;
     }
 }
 

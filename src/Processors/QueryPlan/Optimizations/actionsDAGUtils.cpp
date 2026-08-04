@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
+#include <Core/Block.h>
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
@@ -497,7 +498,7 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
 {
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const ActionsDAG::Node * node = nullptr;
         size_t next_child_to_visit = 0;
     };
 
@@ -571,8 +572,9 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     else
         return {};
 
-    /// NDV counts only non-null values. A hop turning a Nullable first argument into a
-    /// non-Nullable result can map NULL to one additional counted value.
+    /// NDV counts only non-null values. A Nullable result is assumed to map NULL to NULL;
+    /// a non-Nullable result can map NULL to one additional counted value. Functions with
+    /// custom NULL handling that violate this convention must be handled explicitly above.
     const bool collapses_null
         = isNullableOrLowCardinalityNullable(node.children[0]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
@@ -583,71 +585,85 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
 std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
 {
     using TraceState = std::optional<ActionsDAGInputLineage>;
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        std::optional<ActionsDAGLineageHop> hop;
+        TraceState * result = nullptr;
+    };
 
     std::unordered_map<const ActionsDAG::Node *, size_t> input_positions;
     const auto & inputs = actions.getInputs();
+    input_positions.reserve(inputs.size());
     for (size_t input_position = 0; input_position < inputs.size(); ++input_position)
-        input_positions[inputs[input_position]] = input_position;
+        input_positions.emplace(inputs[input_position], input_position);
 
     std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
+    traced.reserve(actions.getNodes().size());
+
+    std::vector<Frame> nodes_to_process;
     const auto & outputs = actions.getOutputs();
     for (const auto * output : outputs)
     {
-        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
-        nodes_to_process.push({output, false});
+        nodes_to_process.clear();
+        nodes_to_process.push_back({.node = output, .hop = {}, .result = nullptr});
         while (!nodes_to_process.empty())
         {
-            auto [node, child_pushed] = nodes_to_process.top();
-            if (traced.contains(node))
+            auto & frame = nodes_to_process.back();
+            const auto * node = frame.node;
+            if (!frame.result)
             {
-                nodes_to_process.pop();
-                continue;
-            }
-
-            if (auto input = input_positions.find(node); input != input_positions.end())
-            {
-                traced[node] = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0, true};
-                nodes_to_process.pop();
-                continue;
-            }
-
-            const auto hop = describeActionsDAGLineageHop(*node);
-            if (hop && !child_pushed)
-            {
-                nodes_to_process.top().second = true;
-                nodes_to_process.push({node->children[0], false});
-                continue;
-            }
-
-            TraceState result;
-            if (hop)
-            {
-                const auto & child = traced.at(node->children[0]);
-                if (child)
+                auto [traced_it, inserted] = traced.try_emplace(node);
+                if (!inserted)
                 {
-                    ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
-                    if (hop->kind == ActionsDAGLineageKind::DistinctValuesBound
-                        || child->kind == ActionsDAGLineageKind::DistinctValuesBound)
-                        kind = ActionsDAGLineageKind::DistinctValuesBound;
-                    else if (hop->kind == ActionsDAGLineageKind::ValuePreserving
-                        || child->kind == ActionsDAGLineageKind::ValuePreserving)
-                        kind = ActionsDAGLineageKind::ValuePreserving;
-                    result = ActionsDAGInputLineage{
-                        child->input_position,
-                        kind,
-                        child->ndv_delta + hop->ndv_delta,
-                        child->preserves_width && hop->preserves_width};
+                    nodes_to_process.pop_back();
+                    continue;
                 }
+                frame.result = &traced_it->second;
+
+                if (auto input = input_positions.find(node); input != input_positions.end())
+                {
+                    *frame.result = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0, true};
+                    nodes_to_process.pop_back();
+                    continue;
+                }
+
+                frame.hop = describeActionsDAGLineageHop(*node);
+                if (!frame.hop)
+                {
+                    nodes_to_process.pop_back();
+                    continue;
+                }
+
+                const auto * child = node->children[0];
+                nodes_to_process.push_back({.node = child, .hop = {}, .result = nullptr});
+                continue;
             }
-            traced[node] = result;
-            nodes_to_process.pop();
+
+            chassert(frame.hop);
+            const auto & child = traced.at(node->children[0]);
+            if (child)
+            {
+                ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
+                if (frame.hop->kind == ActionsDAGLineageKind::DistinctValuesBound
+                    || child->kind == ActionsDAGLineageKind::DistinctValuesBound)
+                    kind = ActionsDAGLineageKind::DistinctValuesBound;
+                else if (frame.hop->kind == ActionsDAGLineageKind::ValuePreserving || child->kind == ActionsDAGLineageKind::ValuePreserving)
+                    kind = ActionsDAGLineageKind::ValuePreserving;
+                *frame.result = ActionsDAGInputLineage{
+                    child->input_position,
+                    kind,
+                    child->ndv_delta + frame.hop->ndv_delta,
+                    child->preserves_width && frame.hop->preserves_width};
+            }
+            nodes_to_process.pop_back();
         }
     }
 
     std::vector<ActionsDAGOutputLineage> result;
     result.reserve(outputs.size());
-    for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
-        result.push_back({output_position, traced.at(outputs[output_position])});
+    for (const auto * output : outputs)
+        result.push_back(traced.at(output));
     return result;
 }
 
@@ -770,4 +786,36 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     return res;
 }
 
+UniqueColumnPositionIndex::UniqueColumnPositionIndex(const Block & header)
+{
+    for (size_t position = 0; position < header.columns(); ++position)
+    {
+        const auto & column = header.getByPosition(position);
+        positions_by_name[column.name].emplace_back(column.type.get(), position);
+    }
+}
+
+UniqueColumnPositionIndex::UniqueColumnPositionIndex(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    for (size_t position = 0; position < nodes.size(); ++position)
+        positions_by_name[nodes[position]->result_name].emplace_back(nodes[position]->result_type.get(), position);
+}
+
+std::optional<size_t> UniqueColumnPositionIndex::find(const String & name, const IDataType & type) const
+{
+    const auto it = positions_by_name.find(name);
+    if (it == positions_by_name.end())
+        return std::nullopt;
+
+    std::optional<size_t> found;
+    for (const auto & [candidate_type, position] : it->second)
+    {
+        if (!candidate_type->equals(type))
+            continue;
+        if (found)
+            return std::nullopt;
+        found = position;
+    }
+    return found;
+}
 }
