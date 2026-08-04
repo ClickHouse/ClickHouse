@@ -3,3 +3,4 @@
 2
 -- loading does not depend on the mismatch settings --
 attached
+-- the escape hatch keeps the session strictness --

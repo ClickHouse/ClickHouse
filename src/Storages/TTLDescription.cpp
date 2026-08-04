@@ -46,6 +46,7 @@
 #include <Parsers/parseQuery.h>
 #include <Common/SipHash.h>
 
+#include <optional>
 #include <unordered_set>
 
 
@@ -55,7 +56,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
-    extern const SettingsBool allow_suspicious_ttl_expressions;
 }
 
 namespace ErrorCodes
@@ -1010,7 +1010,7 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     /// (Conversion functions such as `toDateTime` handle `Variant`/`Dynamic` natively, ignore both settings
     /// and always throw on a stored type they cannot convert, so for them the probe's verdict is the same
     /// under any settings.)
-    TypeMismatchStrictnessOverride probe_strictness(/*throw_on_type_mismatch=*/ true);
+    TypeMismatchStrictnessOverride probe_strictness(/*variant_throw_on_type_mismatch=*/ true, /*dynamic_throw_on_type_mismatch=*/ true);
 
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
@@ -1207,7 +1207,7 @@ TTLDescription TTLDescription::getTTLFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    bool is_attach)
+    TTLValidationMode validation_mode)
 {
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
@@ -1220,23 +1220,18 @@ TTLDescription TTLDescription::getTTLFromAST(
 
     checkExpressionDoesntContainSubqueries(*result.expression_ast);
 
-    const bool skip_validation = is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions];
+    const bool skip_validation = validation_mode != TTLValidationMode::Validate;
 
-    /// Building a TTL expression can itself consult `variant_throw_on_type_mismatch`: the `Variant`
-    /// function adaptor throws in its constructor when none of the alternatives is compatible with the
-    /// consumer, and under a lenient setting resolves the result to constant NULL instead. The stored
-    /// metadata must not depend on which of the two a particular caller happens to see, so the strictness
-    /// is pinned here rather than taken from the ambient context.
-    ///
-    /// A validated build runs strict: a lenient build produces a TTL whose result is a constant NULL and
-    /// which therefore does nothing useful, and letting it through would only postpone the failure to the
-    /// first strict rebuild (a default-settings INSERT, or a TTL merge under the background profile).
-    ///
-    /// A build that skips validation runs lenient, which is the superset: whatever a session managed to
-    /// create must load again. Loading is exactly the caller that has no query context at all, so it would
-    /// otherwise see the strict default and refuse to attach a table that was created leniently - i.e. the
-    /// server would not start.
-    TypeMismatchStrictnessOverride build_strictness(/*throw_on_type_mismatch=*/ !skip_validation);
+    /// Pin the `Variant`/`Dynamic` build strictness per the validation mode (see `TTLValidationMode` for
+    /// the reasoning): strict for a validated user DDL, lenient when loading existing metadata. With
+    /// `allow_suspicious_ttl_expressions` nothing is pinned - the escape hatch skips the TTL validator but
+    /// does not override the session's mismatch policy, so the build reads the ambient settings exactly as
+    /// any other expression build does.
+    std::optional<TypeMismatchStrictnessOverride> build_strictness;
+    if (validation_mode == TTLValidationMode::Validate)
+        build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ true, /*dynamic_throw_on_type_mismatch=*/ true);
+    else if (validation_mode == TTLValidationMode::Attach)
+        build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ false, /*dynamic_throw_on_type_mismatch=*/ false);
 
     auto ttl_ast = result.expression_ast->clone();
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_columns).expression;
@@ -1337,13 +1332,13 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             /// On `ATTACH` (loading stored metadata) the codec checks are relaxed the same way column codecs are:
             /// a table created on an earlier version must still load even if its recompression codec would now be
-            /// rejected at `CREATE`, otherwise the server could fail to start after an upgrade. `is_attach` here is
-            /// also set for a create with `allow_suspicious_ttl_expressions`, matching `checkTTLExpression` below.
+            /// rejected at `CREATE`, otherwise the server could fail to start after an upgrade. A create with
+            /// `allow_suspicious_ttl_expressions` also skips them, matching `checkTTLExpression` below.
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     ttl_element->recompression_codec, {},
-                    !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    is_attach || context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    !skip_validation && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
+                    skip_validation || context->getSettingsRef()[Setting::allow_experimental_codecs]);
         }
     }
 
@@ -1390,7 +1385,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    bool is_attach)
+    TTLValidationMode validation_mode)
 {
     TTLTableDescription result;
     if (!definition_ast)
@@ -1401,7 +1396,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
-        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, is_attach);
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, validation_mode);
         if (ttl.mode == TTLMode::DELETE)
         {
             if (!ttl.where_expression_ast)
@@ -1434,7 +1429,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
 }
 
 TTLTableDescription TTLTableDescription::parse(
-    const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach)
+    const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, TTLValidationMode validation_mode)
 {
     TTLTableDescription result;
     if (str.empty())
@@ -1444,7 +1439,7 @@ TTLTableDescription TTLTableDescription::parse(
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key, is_attach);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, validation_mode);
 }
 
 }

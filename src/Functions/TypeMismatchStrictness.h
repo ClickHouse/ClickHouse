@@ -23,11 +23,12 @@ bool shouldThrowOnDynamicTypeMismatch();
 class TypeMismatchStrictnessOverride : private boost::noncopyable
 {
 public:
-    explicit TypeMismatchStrictnessOverride(bool throw_on_type_mismatch);
+    TypeMismatchStrictnessOverride(bool variant_throw_on_type_mismatch, bool dynamic_throw_on_type_mismatch);
     ~TypeMismatchStrictnessOverride();
 
 private:
-    std::optional<bool> previous;
+    std::optional<bool> previous_variant;
+    std::optional<bool> previous_dynamic;
 };
 
 }

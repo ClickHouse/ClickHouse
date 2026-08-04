@@ -63,3 +63,22 @@ ATTACH TABLE test_ttl_variant_attach;
 SELECT 'attached';
 
 DROP TABLE test_ttl_variant_attach;
+
+SELECT '-- the escape hatch keeps the session strictness --';
+
+-- `allow_suspicious_ttl_expressions` only skips the TTL validator; the build itself still follows the
+-- session's mismatch policy. A strict session is rejected right at CREATE time instead of getting a table
+-- whose TTL would throw on the first rebuild (a default-settings INSERT, or a TTL merge under the
+-- background profile).
+SET variant_throw_on_type_mismatch = 1;
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_variant_strict_suspicious
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, UInt64)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNull(length(v)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

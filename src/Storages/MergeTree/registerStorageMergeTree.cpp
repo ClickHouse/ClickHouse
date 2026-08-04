@@ -847,13 +847,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
-        bool allow_suspicious_ttl
-            = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings[Setting::allow_suspicious_ttl_expressions];
+        TTLValidationMode ttl_validation_mode = TTLValidationMode::Validate;
+        if (LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode)
+            ttl_validation_mode = TTLValidationMode::Attach;
+        else if (local_settings[Setting::allow_suspicious_ttl_expressions])
+            ttl_validation_mode = TTLValidationMode::SkipValidation;
 
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -1022,7 +1025,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, ttl_validation_mode);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
