@@ -2,6 +2,7 @@
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
@@ -105,14 +106,20 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             /// The `*WithNames*` variants write the column names (and data type names) into the header
             /// through `writeEscapedString`, which escapes control characters but does not validate
             /// UTF-8, so a name that is not valid UTF-8 (a quoted identifier or an `Enum` element with
-            /// arbitrary bytes) makes the output non-textual. It is knowable from the header, so the
-            /// text framings reject or base64-encode the output accordingly. The `*Raw` variants are
-            /// already covered by the unconditional mark above.
-            else if (with_names || with_types)
+            /// arbitrary bytes) makes the output non-textual. The row values are written through the
+            /// `Escaped` serializations, which write the `TSV` `NULL` representation and the `Bool`
+            /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`). All of this is
+            /// knowable from the header and the settings, so the text framings reject or base64-encode
+            /// the output accordingly. The `*Raw` variants are already covered by the unconditional
+            /// mark above.
+            else
                 factory.registerOutputFormatMayProduceRawBytesChecker(
                     format_name,
-                    [with_names, with_types](const FormatSettings &, const Block & header)
-                    { return headerNamesMayProduceRawBytes(header, with_names, with_types); });
+                    [with_names, with_types](const FormatSettings & settings, const Block & header)
+                    {
+                        return ((with_names || with_types) && headerNamesMayProduceRawBytes(header, with_names, with_types))
+                            || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::Escaped);
+                    });
         };
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);

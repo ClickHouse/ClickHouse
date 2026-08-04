@@ -155,6 +155,9 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
                 || is_not_valid_utf8(custom.row_between_delimiter)
                 || is_not_valid_utf8(custom.field_delimiter)
                 || csvHeaderNamesMayProduceRawBytes(header, flatten, with_names, with_types)
+                /// The `Escaped` and `CSV` escaping rules write the settings-driven `NULL` and `Bool`
+                /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`).
+                || settingsLiteralsMayProduceRawBytes(settings, custom.escaping_rule)
                 /// The `JSON` escaping rule serializes the field values via `serializeTextJSON`, which
                 /// can synthesize JSON object keys from named `Tuple` element names (see
                 /// `tupleElementNamesMayProduceRawBytesInJSON`). The format installs no UTF-8

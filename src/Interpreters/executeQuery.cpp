@@ -2549,8 +2549,11 @@ namespace
 /// advertise a textual content type but write the column bytes verbatim, which are not guaranteed to be
 /// valid UTF-8. They are marked with `markOutputFormatMayProduceRawBytes` and rejected explicitly.
 /// Some formats produce raw bytes only under certain settings or headers (for example `CustomSeparated`
-/// with a `Raw` escaping rule, or `SQLInsert` with a non-UTF-8 table or column name written verbatim),
-/// which is detected with the settings-and-header-aware `checkIfOutputFormatMayProduceRawBytes`.
+/// with a `Raw` escaping rule, `SQLInsert` with a non-UTF-8 table or column name written verbatim, or
+/// settings-driven literals that the serializations write verbatim - the `CSV` field delimiter, the
+/// `TSV` / `CSV` `NULL` representations, and the `Bool` representations - see
+/// `settingsLiteralsMayProduceRawBytes`), which is detected with the settings-and-header-aware
+/// `checkIfOutputFormatMayProduceRawBytes`.
 bool outputFormatProducesText(
     const String & format_name,
     const std::optional<FormatSettings> & output_format_settings,

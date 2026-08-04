@@ -5,6 +5,7 @@
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -215,13 +216,18 @@ void registerOutputFormatVertical(FormatFactory & factory)
     factory.markOutputFormatSupportsParallelFormatting("Vertical");
 
     /// Each field is labelled with its column name, written verbatim, so a name that is not valid UTF-8
-    /// makes the output not valid UTF-8 either. The text framings reject or base64-encode the output in
-    /// that case (see `checkIfOutputFormatMayProduceRawBytes`). `Vertical` does not write the data type
-    /// names.
+    /// makes the output not valid UTF-8 either. The values are written through the plain
+    /// `serializeText` kind, which writes the `Bool` representations verbatim (see
+    /// `settingsLiteralsMayProduceRawBytes`). The text framings reject or base64-encode the output in
+    /// these cases (see `checkIfOutputFormatMayProduceRawBytes`). `Vertical` does not write the data
+    /// type names.
     factory.registerOutputFormatMayProduceRawBytesChecker(
         "Vertical",
-        [](const FormatSettings &, const Block & header)
-        { return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false); });
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
+                || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None);
+        });
 
     factory.setDocumentation("Vertical", Documentation{
         .description = R"DOCS_MD(

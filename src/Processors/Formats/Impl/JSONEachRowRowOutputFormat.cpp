@@ -124,15 +124,19 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         /// The row values can synthesize further object keys from named `Tuple` element names (see
         /// `tupleElementNamesMayProduceRawBytesInJSON`) - except when the values are serialized as
         /// strings (`JSONStringsEachRow`), where a `Tuple` value is written in its plain text form,
-        /// which carries no element names. All of this is knowable from the header, so the text
-        /// framings reject or base64-encode accordingly.
+        /// which carries no element names - but that plain text form writes the `Bool`
+        /// representations verbatim (see `boolRepresentationsMayProduceRawBytesInJSONStrings`).
+        /// All of this is knowable from the header and the settings, so the text framings reject or
+        /// base64-encode accordingly.
         factory.registerOutputFormatMayProduceRawBytesChecker(
             format,
             [serialize_as_strings](const FormatSettings & settings, const Block & header)
             {
                 return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8)
                     || (!serialize_as_strings
-                        && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8));
+                        && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8))
+                    || (serialize_as_strings
+                        && JSONUtils::boolRepresentationsMayProduceRawBytesInJSONStrings(header, settings, settings.json.validate_utf8));
             });
     };
 

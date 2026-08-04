@@ -102,11 +102,16 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     factory.markOutputFormatSupportsParallelFormatting("JSONCompactStrings");
     factory.setContentType("JSONCompactStrings", "application/json; charset=UTF-8");
 
+    /// Additionally to the `meta.type` strings, `JSONCompactStrings` serializes the values through
+    /// the plain `serializeText` kind, which writes the `Bool` representations verbatim (see
+    /// `boolRepresentationsMayProduceRawBytesInJSONStrings`). The format always requests UTF-8
+    /// validation, so pass `validate_utf8 = true`.
     factory.registerOutputFormatMayProduceRawBytesChecker(
         "JSONCompactStrings",
         [](const FormatSettings & settings, const Block & header)
         {
-            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings);
+            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings)
+                || JSONUtils::boolRepresentationsMayProduceRawBytesInJSONStrings(header, settings, /*validate_utf8=*/true);
         });
 
     factory.setDocumentation("JSONCompactStrings", Documentation{
