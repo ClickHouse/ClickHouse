@@ -31,6 +31,19 @@ ALTER TABLE t_merge_mutation DELETE WHERE id IN (SELECT id FROM merge(currentDat
 SELECT id FROM t_merge_mutation ORDER BY id;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_merge_mutation' AND command LIKE '%currentDatabase%';
 
+-- The database argument of the `merge` table function can be an arbitrary constant expression,
+-- e.g. `concat(currentDatabase(), '')`, so `currentDatabase()` is substituted everywhere in it.
+INSERT INTO t_merge_mutation VALUES (7), (8);
+INSERT INTO t_merge_mutation_src VALUES (7);
+ALTER TABLE t_merge_mutation DELETE WHERE id IN (SELECT id FROM merge(concat(currentDatabase(), ''), '^t_merge_mutation_src$')) SETTINGS mutations_sync = 2;
+SELECT id FROM t_merge_mutation ORDER BY id;
+
+-- The aliases of `currentDatabase` are substituted as well.
+INSERT INTO t_merge_mutation_src VALUES (8);
+ALTER TABLE t_merge_mutation DELETE WHERE id IN (SELECT id FROM merge(database(), '^t_merge_mutation_src$')) SETTINGS mutations_sync = 2;
+SELECT id FROM t_merge_mutation ORDER BY id;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_merge_mutation' AND (command ILIKE '%currentDatabase%' OR command ILIKE '%database()%');
+
 -- The database is substituted even when the `merge` table function is an argument of another table function.
 -- A view canonicalizes its query with the same visitor, so it can be used to check the rewrite without a connection.
 CREATE VIEW v_merge_mutation AS SELECT id FROM remote('127.0.0.1', merge('^t_merge_mutation_src$'));
