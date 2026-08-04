@@ -32,7 +32,8 @@ run_and_report() {
 
     ${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query "
         SELECT count() FROM ${source} WHERE ${predicate}
-        SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1${extra:+, ${extra}}"
+        SETTINGS max_threads = 1, enable_analyzer = 1, optimize_functions_to_subcolumns = 1,
+                 input_format_orc_filter_push_down = 1${extra:+, ${extra}}"
 
     ${CLICKHOUSE_CLIENT} --query "
         SYSTEM FLUSH LOGS query_log;

@@ -22,7 +22,8 @@ run() {
 
     ${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query "
         SELECT count() FROM file('${DATA_FILE}', Parquet) WHERE ${predicate}
-        SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 1, input_format_parquet_filter_push_down = 1 FORMAT Null"
+        SETTINGS max_threads = 1, enable_analyzer = 1, optimize_functions_to_subcolumns = 1,
+                 input_format_parquet_filter_push_down = 1, input_format_parquet_dictionary_filter_push_down = 0 FORMAT Null"
 
     ${CLICKHOUSE_CLIENT} --query "
         SYSTEM FLUSH LOGS query_log;

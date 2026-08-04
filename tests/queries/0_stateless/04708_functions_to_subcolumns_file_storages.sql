@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_file;
