@@ -343,11 +343,17 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
         }
         catch (Exception & e)
         {
-            /// covering.bbox columns exist only for this optimization (they're never part of the
-            /// query's own output or WHERE columns) - malformed helper stats must fail closed
-            /// (skip pruning for this row group) rather than aborting the whole read, and
-            /// "input_format_parquet_filter_push_down=0" would not even disable this path.
-            if (column_info.is_spatial_bbox_column)
+            /// A `covering.bbox` column whose stats are read for spatial pruning only was marked
+            /// by the spatial machinery, not by the query's own filter - malformed helper stats
+            /// must fail closed (skip pruning for this row group) rather than aborting the whole
+            /// read, and "input_format_parquet_filter_push_down=0" would not even disable this
+            /// path. But a bbox column the query's own `KeyCondition` references keeps the
+            /// generic contract (mirroring the page-level `only_spatial_conditions` check):
+            /// throw, so corrupted stats surface, and the escape hatch below applies - when
+            /// `input_format_parquet_filter_push_down=0`, `only_spatial_bbox` is true and the
+            /// generic min/max path would not have decoded these stats in the first place.
+            if (column_info.is_spatial_bbox_column
+                && (only_spatial_bbox || !column_info.used_by_user_key_condition))
                 continue;
             e.addMessage("in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore", column_info.name);
             throw;
@@ -614,7 +620,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
             if (output_info.is_primitive)
+            {
                 primitive_columns[output_info.primitive_start].used_by_key_condition = true;
+                primitive_columns[output_info.primitive_start].used_by_user_key_condition = true;
+            }
         }
     }
 

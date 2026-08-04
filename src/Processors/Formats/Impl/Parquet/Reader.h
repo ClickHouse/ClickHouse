@@ -203,6 +203,12 @@ struct Reader
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
+        /// Set only when the query's own `KeyCondition` references the column, not when it is
+        /// merely marked by the spatial `covering.bbox` machinery. Distinguishes, on the
+        /// row-group stats error path, a bbox column the query itself filters on (malformed
+        /// stats keep throwing, with `input_format_parquet_filter_push_down=0` as the escape
+        /// hatch) from one whose stats are read for spatial pruning only (fails closed).
+        bool used_by_user_key_condition = false;
         bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
 
         /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this

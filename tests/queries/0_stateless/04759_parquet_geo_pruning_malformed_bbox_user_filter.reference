@@ -1,0 +1,5 @@
+=== direct bbox predicate + spatial predicate: malformed stats throw ===
+use input_format_parquet_filter_push_down=0 to ignore
+=== escape hatch: filter_push_down=0 reads through ===
+1
+2
