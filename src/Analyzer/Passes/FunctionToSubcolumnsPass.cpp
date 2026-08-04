@@ -712,7 +712,21 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
     return column_node;
 }
 
-std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
+/// Wrapper storages answer supportsOptimizationToSubcolumns by traversing what they wrap
+/// (StorageMerge walks every child table). The helpers below run once per query-tree node,
+/// so the answer is memoized for the lifetime of one pass run.
+using SubcolumnSupportCache = std::unordered_map<const IStorage *, bool>;
+
+bool supportsOptimizationToSubcolumnsCached(const IStorage & storage, SubcolumnSupportCache & cache)
+{
+    auto it = cache.find(&storage);
+    if (it == cache.end())
+        it = cache.emplace(&storage, storage.supportsOptimizationToSubcolumns()).first;
+    return it->second;
+}
+
+std::tuple<FunctionNode *, ColumnNode *, TableNode *>
+getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context, SubcolumnSupportCache & subcolumn_support_cache)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -750,7 +764,8 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storage->supportsOptimizationToSubcolumns() || storage_snapshot->metadata->isVirtualColumn(column.name))
+    if (!supportsOptimizationToSubcolumnsCached(*storage, subcolumn_support_cache)
+        || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
     auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
@@ -765,7 +780,8 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
 /// Returns the outermost function, the underlying column, the table,
 /// and the chain of intermediate function nodes.
 std::tuple<FunctionNode *, ColumnNode *, TableNode *, std::vector<FunctionNode *>>
-getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
+getTypedNodesForChainedOptimization(
+    const QueryTreeNodePtr & node, const ContextPtr & context, SubcolumnSupportCache & subcolumn_support_cache)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -812,7 +828,8 @@ getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const Context
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storage->supportsOptimizationToSubcolumns() || storage_snapshot->metadata->isVirtualColumn(column.name))
+    if (!supportsOptimizationToSubcolumnsCached(*storage, subcolumn_support_cache)
+        || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
     auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
@@ -846,7 +863,8 @@ public:
             return;
         }
 
-        auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node, getContext());
+        auto [function_node, first_argument_node, table_node]
+            = getTypedNodesForOptimization(node, getContext(), subcolumn_support_cache);
         if (function_node && first_argument_node && table_node)
         {
             enterImpl(*function_node, *first_argument_node, *table_node);
@@ -862,7 +880,8 @@ public:
             return;
 
         /// Chained match (e.g. tupleElement over Dynamic through arrayElement).
-        auto [chain_func, chain_col, chain_table, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        auto [chain_func, chain_col, chain_table, intermediates]
+            = getTypedNodesForChainedOptimization(node, getContext(), subcolumn_support_cache);
         if (chain_func && chain_col && chain_table)
         {
             enterImpl(*chain_func, *chain_col, *chain_table, intermediates);
@@ -993,6 +1012,8 @@ private:
     std::vector<bool> in_where_prewhere_stack;
 
     NameSet processed_tables;
+    /// Memoizes supportsOptimizationToSubcolumns for the lifetime of this visitor.
+    SubcolumnSupportCache subcolumn_support_cache;
     bool can_wrap_result_columns_with_nullable = false;
     bool has_where_prewhere_or_group_by = false;
 
@@ -1114,6 +1135,9 @@ private:
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
 
+    /// Memoizes supportsOptimizationToSubcolumns for the lifetime of this visitor.
+    SubcolumnSupportCache subcolumn_support_cache;
+
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
     using Base::Base;
@@ -1155,7 +1179,8 @@ public:
         /// Direct match: first argument is a ColumnNode.
         /// Restructured from "if (!match) return" to "if (match) { ... } return"
         /// so that failed direct matches fall through to the chained match below.
-        auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node, getContext());
+        auto [function_node, first_argument_column_node, table_node]
+            = getTypedNodesForOptimization(node, getContext(), subcolumn_support_cache);
         if (function_node && first_argument_column_node && table_node)
         {
             auto column = first_argument_column_node->getColumn();
@@ -1189,7 +1214,8 @@ public:
         }
 
         /// Chained match: first argument is a chain of functions with a ColumnNode at the bottom.
-        auto [chain_func, chain_col, chain_table, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        auto [chain_func, chain_col, chain_table, intermediates]
+            = getTypedNodesForChainedOptimization(node, getContext(), subcolumn_support_cache);
         if (chain_func && chain_col && chain_table)
         {
             auto column = chain_col->getColumn();
