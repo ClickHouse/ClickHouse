@@ -49,6 +49,17 @@ Additional join types available in ClickHouse are:
 | `PASTE JOIN`                                | Performs a horizontal concatenation of two tables.                                                                                          |
 
 <Note>
+When using the analyzer, enabling [`semi_join_compatibility`](../../../operations/settings/settings.md#semi_join_compatibility) or [`anti_join_compatibility`](../../../operations/settings/settings.md#anti_join_compatibility) makes the corresponding join expose only its preserved side to expressions resolved after the join result is formed.
+
+- `LEFT SEMI JOIN` and `LEFT ANTI JOIN` expose only left-side columns.
+- `RIGHT SEMI JOIN` and `RIGHT ANTI JOIN` expose only right-side columns.
+- This affects clauses such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY`, including qualified wildcards like `t1.*`.
+- The `ON` expression of the same `JOIN` can still reference both sides.
+
+When these settings are disabled, ClickHouse keeps the legacy behavior, where both sides remain accessible and `SELECT *` expands columns from both tables.
+:::
+
+:::note
 When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 </Note>
 
@@ -221,7 +232,7 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-## NULL values in JOIN keys {#null-values-in-join-keys}
+## NULL and NaN values in JOIN keys {#null-values-in-join-keys}
 
 `NULL` is not equal to any value, including itself. This means that if a `JOIN` key has a `NULL` value in one table, it won't match a `NULL` value in the other table.
 
@@ -274,6 +285,13 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 │ Charlie │    88 │
 └─────────┴───────┘
 ```
+
+`NaN` values in float `JOIN` keys do not follow the `NULL` rule above.
+A scalar comparison of two `NaN` values (`NaN = NaN`) is `0`, however, `JOIN` keys are not compared using scalar semantics - `NaN` keys may match.
+Whether they actually do is an implementation detail and depends on the join algorithm, the key type, and the session settings.
+Do not rely on a specific behavior.
+If you require that `NaN` rows do not match, map them to `NULL` values: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
+In an `ASOF JOIN`, the closest-match column is compared by ordering, which `NaN` does not support — filter such rows out on both sides.
 
 ## ASOF JOIN usage {#asof-join-usage}
 

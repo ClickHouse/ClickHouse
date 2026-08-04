@@ -65,6 +65,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
@@ -119,6 +120,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils.h>
@@ -736,7 +738,7 @@ MergeTreeData::MergeTreeData(
     , format_version(date_column_name.empty() ? MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING : MERGE_TREE_DATA_OLD_FORMAT_VERSION)
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)
-    , columns_descriptions_metric_handle(CurrentMetrics::ColumnsDescriptionsCacheSize)
+    , shared_part_columns_metric_handle(CurrentMetrics::ColumnsDescriptionsCacheSize)
     , broken_part_callback(broken_part_callback_)
     , log(table_id_.getNameForLogs())
     , storage_settings(std::move(storage_settings_))
@@ -917,18 +919,11 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
-        try
-        {
-            auto parts_lock = readLockParts();
-            auto stats = part.data_part->loadStatistics(required_columns);
-            estimator_builder.markDataPart(part.data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
-        }
+        auto parts_lock = readLockParts();
+        auto stats = part.data_part->loadStatistics(required_columns);
+        estimator_builder.markDataPart(part.data_part);
+        for (const auto & [column_name, stat] : stats)
+            estimator_builder.addStatistics(column_name, stat);
     }
 
     return estimator_builder.getEstimator();
@@ -3312,18 +3307,11 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
-        try
-        {
-            auto parts_lock = readLockParts();
-            auto stats = data_part->loadStatistics();
-            estimator_builder.markDataPart(data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", data_part->info.getPartNameV1()));
-        }
+        auto parts_lock = readLockParts();
+        auto stats = data_part->loadStatistics();
+        estimator_builder.markDataPart(data_part);
+        for (const auto & [column_name, stat] : stats)
+            estimator_builder.addStatistics(column_name, stat);
     }
     std::lock_guard<std::mutex> lock(stats_mutex);
     cached_estimator = estimator_builder.getEstimator();
@@ -12454,58 +12442,105 @@ bool MergeTreeData::sortingKeyChanged(const KeyDescription & old_sorting_key, co
     return false;
 }
 
-size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList & list) const noexcept
+size_t MergeTreeData::SharedPartColumnsCacheKeyHash::operator()(const SharedPartColumnsCacheKey & key) const noexcept
 {
-    size_t hash = 0;
-    for (const auto & name_type : list)
-        boost::hash_combine(hash, StringViewHash{}(name_type.name));
+    size_t hash = std::hash<std::string_view>{}(key.interning_key.get());
+    boost::hash_combine(hash, key.collect_nested);
     return hash;
 }
 
-MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const
+SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const
 {
-    std::lock_guard lock(columns_descriptions_cache_mutex);
-    if (auto it = columns_descriptions_cache.find(columns); it != columns_descriptions_cache.end())
-        return it->second;
+    /// The value of `share_nested_offsets` is part of the key defensively: the setting is
+    /// read-only (see `isReadonlySetting` and `isSMTReadonlySetting`) because the read path
+    /// resolves the stream file names from its live value, so it never changes on a live table;
+    /// the key just guarantees that a bundle can never be shared across different values of it.
+    String interning_key = SharedPartColumns::describeColumns(columns);
+    const SharedPartColumnsCacheKey key{std::cref(interning_key), (*getSettings())[MergeTreeSetting::share_nested_offsets]};
 
-    ColumnsDescriptionCache cache
+    /// After the first part of each schema every lookup is a hit that does not modify the map,
+    /// so a shared lock keeps concurrent part loads parallel (copying the shared_ptr only
+    /// increments the refcount, which never races with the eviction check in
+    /// `releaseSharedPartColumns`: that check runs under the exclusive lock).
     {
-        .original = std::make_shared<ColumnsDescription>(columns),
-        .with_collected_nested = (*getSettings())[MergeTreeSetting::share_nested_offsets]
-            ? std::make_shared<ColumnsDescription>(Nested::collect(columns))
-            : nullptr,
-    };
-    /// Keep `with_collected_nested` only when `Nested::collect` produced a distinct list.
-    /// The caller falls back to `original` when this is null, so the cache always holds
-    /// exactly one ref to `original` regardless of the schema shape.
-    if (cache.with_collected_nested && *cache.with_collected_nested == *cache.original)
-        cache.with_collected_nested.reset();
-    auto [_, inserted] = columns_descriptions_cache.emplace(columns, cache);
-    columns_descriptions_metric_handle.add(inserted);
-    return cache;
+        SharedLockGuard lock(shared_part_columns_cache_mutex);
+        if (auto it = shared_part_columns_cache.find(key); it != shared_part_columns_cache.end())
+            return SharedPartColumnsHolder(*this, it->second);
+    }
+
+    std::lock_guard lock(shared_part_columns_cache_mutex);
+
+    /// Another load may have interned the same columns while the lock was upgraded.
+    if (auto it = shared_part_columns_cache.find(key); it != shared_part_columns_cache.end())
+        return SharedPartColumnsHolder(*this, it->second);
+
+    /// The bundle lives as long as some part of the table stores these columns: route it to the
+    /// dedicated parts arena (no-op when the caller already did).
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    /// Building under the lock makes concurrent loads of parts with the same columns wait and then
+    /// reuse the finished bundle (build-exactly-once). The build is pure CPU on already-loaded
+    /// inputs and the cache is per-table, so only same-table loads can wait here.
+    auto original = std::make_shared<const ColumnsDescription>(columns);
+    std::shared_ptr<const ColumnsDescription> with_collected_nested;
+    if (key.collect_nested)
+    {
+        auto collected = std::make_shared<const ColumnsDescription>(Nested::collect(columns));
+        /// Keep a distinct object only when `Nested::collect` produced a distinct list.
+        if (!(*collected == *original))
+            with_collected_nested = std::move(collected);
+    }
+
+    auto shared_part_columns = std::make_shared<const SharedPartColumns>(
+        columns,
+        original,
+        with_collected_nested ? std::move(with_collected_nested) : original,
+        key.collect_nested,
+        std::move(interning_key));
+
+    shared_part_columns_cache.emplace(
+        SharedPartColumnsCacheKey{std::cref(shared_part_columns->interning_key), key.collect_nested}, shared_part_columns);
+    shared_part_columns_metric_handle.add(1);
+    return SharedPartColumnsHolder(*this, shared_part_columns);
 }
 
-void MergeTreeData::decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const
+void MergeTreeData::releaseSharedPartColumns(SharedPartColumnsPtr shared_part_columns) const
 {
-    std::lock_guard lock(columns_descriptions_cache_mutex);
-    auto it = columns_descriptions_cache.find(columns);
-    if (it == columns_descriptions_cache.end())
-        return;
+    /// The releasing part's interned pieces may have just died: give the bundle's nested caches
+    /// a chance to reclaim expired entries (amortized, see `onPartRelease`). Before the cache
+    /// lock: the sweep takes the bundle's own locks.
+    shared_part_columns->onPartRelease();
 
-    /// The cache entry holds exactly one ref to `original` (via `cache.original`).
-    /// `with_collected_nested` is either null or a distinct shared_ptr, so it does
-    /// not contribute additional refs to `original`. Evict once no part holds a ref.
-    if (it->second.original.use_count() == 1)
+    /// Destroy the bundle outside the lock if this release ends up evicting the entry.
+    SharedPartColumnsPtr victim;
+
     {
-        columns_descriptions_cache.erase(it);
-        columns_descriptions_metric_handle.sub(1);
+        std::lock_guard lock(shared_part_columns_cache_mutex);
+        auto it = shared_part_columns_cache.find(
+            SharedPartColumnsCacheKey{std::cref(shared_part_columns->interning_key), shared_part_columns->collect_nested});
+        chassert(it != shared_part_columns_cache.end() && it->second == shared_part_columns);
+
+        /// Drop the caller's reference under the exclusive lock: every reference drop happens here,
+        /// and lookups (which only add references) hold the lock at least shared, so the
+        /// `use_count` check below is exact and an entry whose last user is gone is always evicted
+        /// by whichever release observes it last.
+        shared_part_columns.reset();
+
+        if (it != shared_part_columns_cache.end() && it->second.use_count() == 1)
+        {
+            /// Move the bundle out before erasing: the key references `it->second->columns`, so the
+            /// bundle must stay alive while the entry is unlinked.
+            victim = std::move(it->second);
+            shared_part_columns_cache.erase(it);
+            shared_part_columns_metric_handle.sub(1);
+        }
     }
 }
 
 size_t MergeTreeData::getColumnsDescriptionsCacheSize() const
 {
-    std::lock_guard lock(columns_descriptions_cache_mutex);
-    return columns_descriptions_cache.size();
+    SharedLockGuard lock(shared_part_columns_cache_mutex);
+    return shared_part_columns_cache.size();
 }
 
 
