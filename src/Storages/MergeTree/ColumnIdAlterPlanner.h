@@ -18,8 +18,8 @@ struct MergeTreeSettings;
 ///   phase 1 (before the durable metadata commit): publish `new_mapping`, a SUPERSET
 ///           that still carries every renamed column's old name and every dropped
 ///           column, so a part surviving a crash mid-ALTER can still resolve its files;
-///   phase 2 (after the commit succeeds): prune that superset using `rename_old_names`
-///           and `drop_names`.
+///   phase 2 (`ColumnIdMappingUpdate::persistAfterSchemaCommit`, after the commit succeeds):
+///           prune that superset using `rename_old_names` and `drop_names`.
 /// The add-before-commit / remove-after-commit asymmetry keeps the persisted mapping a
 /// superset of what any surviving part needs at every crash point -- never missing an
 /// entry. That is why the plan carries two prune lists instead of just a final mapping.
@@ -32,12 +32,12 @@ struct ColumnIdAlterPlan
     std::optional<ColumnIdMapping> new_mapping;
 
     /// Old logical names of renamed columns, kept alive in `new_mapping` across the commit;
-    /// finalizeColumnIdRenames prunes each (finishRename) afterwards. Retained through the
-    /// commit so a crash before it leaves the old name -- which metadata still uses -- resolvable.
+    /// phase 2 prunes each (finishRename) afterwards. Retained through the commit so a crash
+    /// before it leaves the old name -- which metadata still uses -- resolvable.
     std::vector<String> rename_old_names;
 
     /// Dropped columns' logical names, likewise kept in `new_mapping` until after the commit;
-    /// finalizeColumnIdDrops removes them (two-phase drop for crash safety).
+    /// phase 2 removes them (two-phase drop for crash safety).
     std::vector<String> drop_names;
 
     /// Whether this ALTER runs in column-ID mode: true if the table already has a mapping or

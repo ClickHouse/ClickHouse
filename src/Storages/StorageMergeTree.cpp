@@ -43,6 +43,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
+#include <Storages/MergeTree/ColumnIdMappingUpdate.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
@@ -97,8 +98,6 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_alter_throw_in_durable_rollback[];
     extern const char column_ids_pause_after_metadata_alter[];
-    extern const char column_ids_throw_before_mapping_persist[];
-    extern const char column_ids_throw_after_mapping_persist[];
 }
 
 namespace Setting
@@ -460,50 +459,6 @@ void StorageMergeTree::drop()
     dropAllData();
 }
 
-void StorageMergeTree::finalizeColumnIdRenames(const std::vector<String> & old_names)
-{
-    if (old_names.empty())
-        return;
-
-    auto current = getColumnIdMapping();
-    if (!current)
-        return;
-
-    ColumnIdMapping finalized = *current;
-    for (const auto & old_name : old_names)
-    {
-        auto column_id = finalized.tryGetColumnId(old_name);
-        finalized.finishRename(old_name);
-
-        /// The rename is committed; move the old name's table-level size
-        /// aggregate to the new name so the optimizer sees the full totals.
-        if (column_id)
-        {
-            if (auto new_name = finalized.tryGetLogicalName(*column_id); new_name && *new_name != old_name)
-                renameColumnSizesEntry(old_name, *new_name);
-        }
-    }
-    persistMapping(std::move(finalized));
-}
-
-void StorageMergeTree::finalizeColumnIdDrops(const std::vector<String> & drop_names)
-{
-    if (drop_names.empty())
-        return;
-
-    auto current = getColumnIdMapping();
-    if (!current)
-        return;
-
-    ColumnIdMapping finalized = *current;
-    for (const auto & name : drop_names)
-    {
-        if (finalized.hasLogicalName(name))
-            finalized.removeColumn(name);
-    }
-    persistMapping(std::move(finalized));
-}
-
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
@@ -539,12 +494,9 @@ void StorageMergeTree::alter(
     auto pn_plan = prepareColumnIdMappingForAlter(
         commands, old_metadata, new_metadata, *getSettings(), getColumnIdMapping(), getContext());
 
-    /// Gate on the experimental flag in two cases:
-    ///   (a) this ALTER activates the mapping (has add/drop/rename commands),
-    ///   (b) the ALTER leaves `serialization_info_version = 'with_column_ids'`
-    ///       persisted while the table has no mapping -- the same condition
-    ///       CREATE gates on; `changeSettings` then creates the mapping (or
-    ///       rejects the flip) at commit time.
+    /// Gated in two cases: the ALTER activates the mapping through add/drop/rename commands, or it
+    /// leaves `with_column_ids` persisted on a table that has no mapping -- the condition CREATE
+    /// gates on, and the one that has `ColumnIdMappingUpdate` create the mapping at commit time.
     if (!hasColumnIdMapping()
         && !local_context->getSettingsRef()[Setting::allow_experimental_column_ids])
     {
@@ -562,7 +514,7 @@ void StorageMergeTree::alter(
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
-    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
+    auto auto_statistics_types = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings).first;
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
@@ -571,21 +523,34 @@ void StorageMergeTree::alter(
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
-        changeSettings(new_metadata.settings_changes, table_lock_holder);
+        /// Same sequence as the full ALTER below: durable mapping, durable schema, one publish
+        /// last. Publishing an activation before the schema commit would leave the table
+        /// activating on restart while its parts still use logical filenames.
+        ColumnIdMappingUpdate mapping_update(*this, log.load());
+        SettingsChangeResult settings_result;
 
-        if (statistics_changed)
+        try
         {
-            /// `changeSettings` may have activated column IDs and published the identity
-            /// mapping; carry the live mapping into this republish so it is not clobbered
-            /// (the mapping is folded into the versioned metadata).
-            new_metadata.column_id_mapping = getColumnIdMapping();
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(new_metadata);
+            settings_result = changeSettingsWithoutPublish(new_metadata.settings_changes, table_lock_holder, new_metadata);
+
+            mapping_update.persistBeforeSchemaCommit(pn_plan, new_metadata, settings_result.column_id_mapping_policy);
+
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+
+            /// The durable schema now requires the mapping, so the file stays whatever the
+            /// publish below does. This branch has no durable rollback to undo it for.
+            mapping_update.commit();
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Failed to commit settings changes, reverting settings");
+            tryRevertSettings(old_metadata.settings_changes, table_lock_holder);
+            /// `~ColumnIdMappingUpdate` removes a mapping file this ALTER wrote.
+            throw;
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        publishChangeSettings(new_metadata, settings_result);
     }
     else if (commands.isCommentAlter())
     {
@@ -594,6 +559,7 @@ void StorageMergeTree::alter(
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);
         }
+
         /// Safe because the early max_query_size check already passed.
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
@@ -643,26 +609,12 @@ void StorageMergeTree::alter(
             /// durable commit keeps durable metadata and the mutation file in lockstep. See #80648.
             std::optional<PreparedMutationEntry> prepared;
 
-            /// Invariant: persist the mapping to disk BEFORE publishing it in-memory and
-            /// BEFORE the metadata commit, so a crash can only leave the on-disk mapping
-            /// "ahead" of metadata. `reconcileColumnIdMappingWithMetadata` cleans stale
-            /// entries on load.
-            bool mapping_update_started = false;
-            bool mapping_was_changed = false;
-            std::shared_ptr<const ColumnIdMapping> old_published_mapping;
+            ColumnIdMappingUpdate mapping_update(*this, log.load());
+            SettingsChangeResult settings_result;
 
             try
             {
-                /// `changeSettings` creates and publishes the identity mapping itself
-                /// when this ALTER's settings turn column IDs on; capture the pre-ALTER
-                /// mapping first so the revert paths cover that publish too.
-                old_published_mapping = getColumnIdMapping();
-                changeSettings(new_metadata.settings_changes, table_lock_holder);
-                if (getColumnIdMapping().get() != old_published_mapping.get())
-                {
-                    mapping_update_started = true;
-                    mapping_was_changed = true;
-                }
+                settings_result = changeSettingsWithoutPublish(new_metadata.settings_changes, table_lock_holder, new_metadata);
 
                 checkTTLExpressions(new_metadata, old_metadata);
 
@@ -675,66 +627,22 @@ void StorageMergeTree::alter(
                 if (!maybe_mutation_commands.empty())
                     prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
 
-                if (pn_plan.new_mapping)
-                {
-                    mapping_update_started = true;
-
-                    fiu_do_on(FailPoints::column_ids_throw_before_mapping_persist,
-                    {
-                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before column ID mapping persist");
-                    });
-
-                    writeColumnIdMappingToDisk(*pn_plan.new_mapping);
-
-                    fiu_do_on(FailPoints::column_ids_throw_after_mapping_persist,
-                    {
-                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after column ID mapping persist");
-                    });
-
-                    setColumnIdMapping(std::move(*pn_plan.new_mapping));
-                    mapping_was_changed = true;
-                }
+                mapping_update.persistBeforeSchemaCommit(pn_plan, new_metadata, settings_result.column_id_mapping_policy);
 
                 /// Not under `currently_processing_in_background_mutex`: `alterTable` takes
                 /// `DatabaseAtomic::mutex`, which would invert lock order with the
                 /// scheduler/`RENAME`/`DROP` paths. Validation already ran above. See #80648.
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
+
+                mapping_update.persistAfterSchemaCommit(pn_plan, new_metadata);
             }
             catch (...)
             {
                 LOG_ERROR(log, "Failed to commit metadata changes, reverting settings");
-                changeSettings(old_metadata.settings_changes, table_lock_holder);
-                if (mapping_update_started)
-                {
-                    if (mapping_was_changed)
-                    {
-                        try
-                        {
-                            if (old_published_mapping)
-                                setColumnIdMapping(*old_published_mapping);
-                            else
-                                setColumnIdMapping(ColumnIdMapping{});
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(log,
-                                "Failed to revert column ID mapping in-memory");
-                        }
-                    }
-                    try
-                    {
-                        if (old_published_mapping)
-                            writeColumnIdMappingToDisk(*old_published_mapping);
-                        else
-                            removeColumnIdMappingFromDisk();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log,
-                            "Failed to revert column ID mapping to disk; "
-                            "reconciliation at next startup will fix it");
-                    }
-                }
+                tryRevertSettings(old_metadata.settings_changes, table_lock_holder);
+
+                /// Nothing to undo in memory: the mapping is published with the schema, and that
+                /// publish never happened. `~ColumnIdMappingUpdate` restores the file, and the
                 /// `prepared` destructor removes the orphan `mutation_*.txt` (is_registered == false).
                 throw;
             }
@@ -772,10 +680,6 @@ void StorageMergeTree::alter(
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation registered");
                 });
 
-                /// `new_metadata` was built before the pre-commit mapping publish, so stamp
-                /// the current (superset) mapping in or `setProperties` clobbers it back to
-                /// pre-ALTER; `finalizeColumnId*` prunes it after commit.
-                new_metadata.column_id_mapping = getColumnIdMapping();
                 setProperties(new_metadata, old_metadata, false, local_context);
 
                 {
@@ -811,7 +715,11 @@ void StorageMergeTree::alter(
                         tryLogCurrentException(log, "Failed to bring in-memory metadata in sync with durable metadata; server may be inconsistent until restart");
                     }
                     background_lock.unlock();
-                    /// Settings stay at `new_metadata` to match the durable commit; do not revert.
+
+                    /// The durable commit stands, so the mapping file stays with it -- and so do the
+                    /// settings side effects this ALTER deferred, even though it throws.
+                    mapping_update.commit();
+                    tryApplySettingsSideEffects(settings_result);
                 }
                 else
                 {
@@ -883,23 +791,7 @@ void StorageMergeTree::alter(
                                 tryLogCurrentException(log, "Failed to remove rolled-back rename mutation file");
                             }
                         }
-                        changeSettings(old_metadata.settings_changes, table_lock_holder);
-
-                        /// Durable metadata is `old_metadata` again; revert the column ID
-                        /// mapping published before the durable commit to match it.
-                        if (mapping_was_changed)
-                        {
-                            try
-                            {
-                                persistMapping(old_published_mapping ? *old_published_mapping : ColumnIdMapping{});
-                            }
-                            catch (...)
-                            {
-                                tryLogCurrentException(log,
-                                    "Failed to revert column ID mapping after durable metadata rollback; "
-                                    "reconciliation at next startup will fix it");
-                            }
-                        }
+                        tryRevertSettings(old_metadata.settings_changes, table_lock_holder);
                     }
                     else
                     {
@@ -927,24 +819,25 @@ void StorageMergeTree::alter(
                         {
                             tryLogCurrentException(log, "Failed to bring in-memory metadata in sync with durable metadata; server may be inconsistent until restart");
                         }
+
+                        mapping_update.commit();
+                        tryApplySettingsSideEffects(settings_result);
                     }
                 }
                 throw;
             }
 
+            /// The publish landed: the mapping is visible with the schema and its file matches.
+            mapping_update.commit();
+
             background_lock.unlock();
 
-            try
-            {
-                finalizeColumnIdRenames(pn_plan.rename_old_names);
-                finalizeColumnIdDrops(pn_plan.drop_names);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log,
-                    "Failed to finalize column ID mapping after metadata commit; "
-                    "reconciliation at next startup will fix it");
-            }
+            tryApplySettingsSideEffects(settings_result);
+
+            /// Live-state accounting, not part of the published metadata: safe only now that the
+            /// publish landed and the background lock is released.
+            for (const auto & [old_name, new_name] : mapping_update.columnSizeRenames())
+                renameColumnSizesEntry(old_name, new_name);
 
             FailPointInjection::pauseFailPoint(FailPoints::column_ids_pause_after_metadata_alter);
         }
@@ -3128,8 +3021,8 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 /// Pointer-identity guard for a pinned column-ID mapping. The partition-transfer and
 /// BACKUP paths hold only `lockForShare`, but column-ID ALTERs use `lockForAlter` and
 /// republish the mapping -- a field of `StorageInMemoryMetadata`, installed as a fresh
-/// `make_shared` per publish via `setColumnIdMapping` -- so one can land between pinning a
-/// mapping and committing. A different pointer therefore means a concurrent column-ID ALTER
+/// `make_shared` per publish -- so one can land between pinning a mapping and committing.
+/// A different pointer therefore means a concurrent column-ID ALTER
 /// republished the mapping, which would leave the transferred or backed-up parts resolving
 /// through stale physical IDs; the caller must reject and retry.
 ///

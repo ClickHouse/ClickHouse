@@ -230,10 +230,6 @@ public:
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         auto new_metadata = std::make_unique<StorageInMemoryMetadata>(metadata_);
-        /// In-memory-C single re-sync chokepoint: every metadata publish (load, ALTER, settings
-        /// change) passes through here, so stamping the columns off the active column-ID mapping
-        /// here guarantees the schema always carries per-column IDs. No-op for tables without an
-        /// active mapping (i.e. everything except column-ID MergeTree tables).
         new_metadata->syncColumnIdsFromMapping();
         metadata.set(std::move(new_metadata));
     }

@@ -194,11 +194,6 @@ private:
     /// equals zero creates object with deduplication window equals zero.
     void loadDeduplicationLog();
 
-    /// Finalize two-phase renames and deferred drops after metadata commit:
-    /// remove old logical names from the mapping and persist.
-    void finalizeColumnIdRenames(const std::vector<String> & old_names);
-    void finalizeColumnIdDrops(const std::vector<String> & drop_names);
-
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.

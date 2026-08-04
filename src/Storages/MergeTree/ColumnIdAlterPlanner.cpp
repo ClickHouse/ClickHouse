@@ -212,10 +212,9 @@ void rejectDropOrRenameThenReAdd(const AlterCommands & commands, const std::set<
 
     /// The RENAME side: `AlterCommands::validate` accepts
     /// `RENAME COLUMN b TO old_b, ADD COLUMN b ...` because validation is
-    /// order-aware (after the rename, `b` is free), but once
-    /// `finalizeColumnIdRenames` removes the old `b -> b` entry, the mapping
-    /// has no entry for the new `b` and reads fall back to physical name `b`,
-    /// which is the renamed column's bytes.
+    /// order-aware (after the rename, `b` is free), but once phase 2 removes
+    /// the old `b -> b` entry, the mapping has no entry for the new `b` and
+    /// reads fall back to physical name `b`, which is the renamed column's bytes.
     std::set<String> rename_freed_sources;
     for (const auto & command : commands)
     {
@@ -416,9 +415,9 @@ ColumnIdAlterPlan prepareColumnIdMappingForAlter(
 
     allocateNewColumnIds(new_metadata, old_col_names, local_mapping);
 
-    /// Two-phase drop for crash safety: keep dropped columns in the mapping until
-    /// after the metadata commit; `finalizeColumnIdDrops` removes them post-commit
-    /// (see the two-phase / reconcile contract in ColumnIdMapping.h).
+    /// Two-phase drop for crash safety: keep dropped columns in the mapping until after the
+    /// metadata commit, where phase 2 removes them (see the two-phase / reconcile contract
+    /// in ColumnIdMapping.h).
     std::set<String> rename_old_set(plan.rename_old_names.begin(), plan.rename_old_names.end());
     for (const auto & col : old_metadata.getColumns().getAllPhysical())
     {

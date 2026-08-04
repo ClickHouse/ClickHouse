@@ -211,3 +211,36 @@ wait $INS_PID
 $CLICKHOUSE_CLIENT --query "SELECT a, c FROM t_ins_rename ORDER BY a"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_ins_rename SYNC"
+
+# Section 8: a settings-only ALTER that turns column IDs on must leave nothing behind when it
+# fails. The mapping file is written before the schema commit, so a throw after that write has to
+# take the file with it -- otherwise the table activates on the next restart while its parts still
+# use logical filenames, and every column reads as a default.
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE IF EXISTS t_activate_fail SYNC;
+
+    CREATE TABLE t_activate_fail (a UInt64, b String)
+    ENGINE = MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part = 0;
+
+    INSERT INTO t_activate_fail VALUES (1, 'keep_me');
+"
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT column_ids_throw_after_mapping_persist"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_activate_fail MODIFY SETTING serialization_info_version = 'with_column_ids'" 2>&1 \
+    | grep -o "FAULT_INJECTED" | head -1
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT column_ids_throw_after_mapping_persist"
+
+# The setting must not have landed, and the rows must still read.
+$CLICKHOUSE_CLIENT --query "
+    SELECT engine_full NOT LIKE '%with_column_ids%' AS setting_reverted
+    FROM system.tables WHERE database = currentDatabase() AND name = 't_activate_fail';
+"
+$CLICKHOUSE_CLIENT --query "SELECT a, b FROM t_activate_fail ORDER BY a"
+
+# The discriminator: a leftover `column_ids.json` makes this ATTACH fail (the load path refuses a
+# mapping the settings do not ask for), so a clean reattach proves the file went away.
+$CLICKHOUSE_CLIENT --query "DETACH TABLE t_activate_fail SYNC"
+$CLICKHOUSE_CLIENT --query "ATTACH TABLE t_activate_fail"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM t_activate_fail"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_activate_fail SYNC"

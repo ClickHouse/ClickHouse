@@ -749,10 +749,9 @@ public:
     void loadColumnIdMappingFromDisk(bool attach);
     void writeColumnIdMappingToDisk() const;
     void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const;
-    /// Variant that targets an explicit storage policy.  Used by `changeSettings`
-    /// to push the mapping onto the NEW policy's authoritative disk BEFORE
-    /// publishing the new `storage_settings`, so the disk-write throw path leaves
-    /// `storage_settings`/metadata unchanged.
+    /// Variant that targets an explicit storage policy: the authoritative disk the table will use
+    /// after a policy change.  `ColumnIdMappingUpdate` writes there BEFORE the new
+    /// `storage_settings` are published, so a disk-write throw leaves the table unchanged.
     void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) const;
 
     /// The single disk that holds the authoritative `column_ids.json`.  Unlike
@@ -1140,12 +1139,39 @@ public:
         const Settings & settings,
         ContextPtr local_context) const override;
 
-    /// Change MergeTreeSettings
-    void changeSettings(
+    struct SettingsChangeResult
+    {
+        /// Side effects that must follow the caller's publish; see `tryApplySettingsSideEffects`.
+        bool start_background_moves = false;
+        bool restart_statistics_cache = false;
+
+        /// Set only when this change switches storage policy: the policy whose authoritative disk
+        /// the column-ID mapping must be on before the switch. Null means "wherever it is".
+        StoragePolicyPtr column_id_mapping_policy;
+    };
+
+    void changeSettings(const ASTPtr & new_settings, AlterLockHolder & table_lock_holder, bool run_sanity_checks = true);
+
+    SettingsChangeResult changeSettingsWithoutPublish(
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder,
+        StorageInMemoryMetadata & metadata_to_collect_into,
         bool run_sanity_checks = true);
 
+    void publishChangeSettings(const StorageInMemoryMetadata & metadata_to_publish, const SettingsChangeResult & result);
+    void tryRevertSettings(const ASTPtr & old_settings, AlterLockHolder & table_lock_holder) noexcept;
+    void tryApplySettingsSideEffects(const SettingsChangeResult & result) noexcept;
+
+    bool columnIdActivationPending() const;
+
+private:
+    SettingsChangeResult changeSettingsImpl(
+        const ASTPtr & new_settings,
+        AlterLockHolder & table_lock_holder,
+        StorageInMemoryMetadata * metadata_to_collect_into,
+        bool run_sanity_checks);
+
+public:
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 

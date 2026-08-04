@@ -6094,9 +6094,84 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, part_may_exist_on_disk);
 }
 
+void MergeTreeData::tryApplySettingsSideEffects(const SettingsChangeResult & result) noexcept
+{
+    try
+    {
+        if (result.start_background_moves)
+            startBackgroundMovesIfNeeded();
+
+        if (result.restart_statistics_cache)
+            startStatisticsCache();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to apply the settings side effects; background moves or the "
+                                    "statistics cache may lag the committed settings until restart");
+    }
+}
+
+MergeTreeData::SettingsChangeResult MergeTreeData::changeSettingsWithoutPublish(
+    const ASTPtr & new_settings,
+    AlterLockHolder & table_lock_holder,
+    StorageInMemoryMetadata & metadata_to_collect_into,
+    bool run_sanity_checks)
+{
+    return changeSettingsImpl(new_settings, table_lock_holder, &metadata_to_collect_into, run_sanity_checks);
+}
+
+void MergeTreeData::publishChangeSettings(
+    const StorageInMemoryMetadata & metadata_to_publish, const SettingsChangeResult & result)
+{
+    {
+        /// Route the metadata clone this publish produces into the dedicated MergeTree arena.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        setInMemoryMetadata(metadata_to_publish);
+    }
+
+    tryApplySettingsSideEffects(result);
+}
+
 void MergeTreeData::changeSettings(
+    const ASTPtr & new_settings, AlterLockHolder & table_lock_holder, bool run_sanity_checks)
+{
+    if (!new_settings)
+        return;
+
+    auto metadata_handle = getInMemoryMetadataPtr(getContext(), false);
+    StorageInMemoryMetadata metadata_to_publish = *metadata_handle;
+    auto result = changeSettingsWithoutPublish(new_settings, table_lock_holder, metadata_to_publish, run_sanity_checks);
+    publishChangeSettings(metadata_to_publish, result);
+}
+
+void MergeTreeData::tryRevertSettings(const ASTPtr & old_settings, AlterLockHolder & table_lock_holder) noexcept
+{
+    try
+    {
+        /// A table created without a SETTINGS clause has no old AST to re-apply, but its settings
+        /// still have to come back: an empty change set resets them to the defaults.
+        ASTPtr settings_to_restore = old_settings;
+        if (!settings_to_restore)
+            settings_to_restore = ASTPtr(new ASTSetQuery());
+
+        changeSettingsImpl(settings_to_restore, table_lock_holder, nullptr, /*run_sanity_checks=*/true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to revert settings; they stay ahead of the metadata until restart");
+    }
+}
+
+bool MergeTreeData::columnIdActivationPending() const
+{
+    return (*getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+        && !hasColumnIdMapping();
+}
+
+MergeTreeData::SettingsChangeResult MergeTreeData::changeSettingsImpl(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
+    StorageInMemoryMetadata * metadata_to_collect_into,
     bool run_sanity_checks)
 {
     if (new_settings)
@@ -6107,11 +6182,8 @@ void MergeTreeData::changeSettings(
         MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
 
         StoragePolicyPtr new_storage_policy = nullptr;
-        /// Capture the new policy out of the per-change loop so the mapping block
-        /// below can push `column_ids.json` onto its disks before publishing the
-        /// new `storage_settings` (the throw-on-disk-write path must leave
-        /// `storage_settings`/metadata unchanged for settings-only ALTERs,
-        /// which lack a rollback wrapper).
+        /// Captured out of the per-change loop and reported to the caller, which must place
+        /// `column_ids.json` on the new policy's authoritative disk before the switch.
         StoragePolicyPtr pending_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
@@ -6180,89 +6252,40 @@ void MergeTreeData::changeSettings(
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 
-        /// All `column_ids.json` disk writes stay BEFORE `storage_settings.set` /
-        /// `setInMemoryMetadata` below, so a disk-full / read-only / I/O exception
-        /// leaves the table's state unchanged (settings-only ALTERs have no
-        /// rollback wrapper around `changeSettings`).
-        std::optional<ColumnIdMapping> mapping_to_publish;
-        if ((*copy)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
-            && !hasColumnIdMapping())
-        {
-            /// The settings commit that turns column IDs ON must create the identity
-            /// mapping in the same commit: the load path fails closed when the setting
-            /// says `with_column_ids` but `column_ids.json` is absent.
-            auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
-            mapping_to_publish = ColumnIdMapping::createIdentity(current_metadata->getColumns().getAllPhysical());
-            try
-            {
-                /// Write to the disk this table will use after the commit: the
-                /// pending policy's authoritative disk when the same ALTER also
-                /// switches policy, otherwise the current one.
-                writeColumnIdMappingToDisk(
-                    *mapping_to_publish, pending_storage_policy ? pending_storage_policy : getStoragePolicy());
-            }
-            catch (...)
-            {
-                /// Delete any partially written copy so a failed activation
-                /// leaves NO `column_ids.json` behind -- an inactive mapping
-                /// persisting would activate the table on restart while parts
-                /// still use logical filenames.
-                removeColumnIdMappingFromDisk();
-                throw;
-            }
-        }
-        else if (pending_storage_policy)
-        {
-            /// Policy change on a table that already has an active mapping: put
-            /// the authoritative copy on the new policy's disk before the switch.
-            if (auto current_mapping = getActiveColumnIdMapping())
-                writeColumnIdMappingToDisk(*current_mapping, pending_storage_policy);
-        }
-
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
 
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
-        /// Publish the mapping before the settings so no reader can observe
-        /// `with_column_ids` without a mapping.
-        if (mapping_to_publish)
-            setColumnIdMapping(std::move(*mapping_to_publish));
-
         storage_settings.set(std::move(copy));
 
-        /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
-        /// `setInMemoryMetadata`) into the dedicated MergeTree arena.
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-        auto storage_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-        StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
-        new_metadata.setSettingsChanges(new_settings);
-
-        if (has_escape_index_filenames_changed)
+        if (metadata_to_collect_into)
         {
-            /// We need to update the metadata fields and indices so we use the new setting when reading indices
-            bool new_value = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames];
-            new_metadata.escape_index_filenames = new_value;
-            for (auto & idx : new_metadata.secondary_indices)
-                idx.escape_filenames = new_value;
+            metadata_to_collect_into->setSettingsChanges(new_settings);
+
+            if (has_escape_index_filenames_changed)
+            {
+                /// We need to update the metadata fields and indices so we use the new setting when reading indices
+                bool new_value = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames];
+                metadata_to_collect_into->escape_index_filenames = new_value;
+                for (auto & idx : metadata_to_collect_into->secondary_indices)
+                    idx.escape_filenames = new_value;
+            }
+
+            /// Carry the live mapping through: the caller's metadata may be a copy of a cached
+            /// snapshot that predates it. A mapping this ALTER *changes* is stamped by
+            /// `ColumnIdMappingUpdate` instead, after this returns.
+            metadata_to_collect_into->column_id_mapping = getColumnIdMapping();
         }
 
-        /// The mapping is folded into the metadata: carry the live mapping (possibly the
-        /// identity just published above) into this republish so it is not clobbered.
-        /// `storage_metadata_snapshot` may be a cached copy that predates that publish.
-        new_metadata.column_id_mapping = getColumnIdMapping();
-        setInMemoryMetadata(new_metadata);
-
-        if (has_storage_policy_changed)
-            startBackgroundMovesIfNeeded();
-
-        if (has_refresh_statistics_interval_changed)
-        {
-            startStatisticsCache();
-        }
+        return {
+            .start_background_moves = has_storage_policy_changed,
+            .restart_statistics_cache = has_refresh_statistics_interval_changed != 0,
+            .column_id_mapping_policy = pending_storage_policy};
     }
+
+    return {};
 }
 
 std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
