@@ -22,6 +22,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
 #include <Common/checkStackSize.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -186,6 +187,14 @@ RestCatalog::RestCatalog(
     else if (!auth_header_.empty())
     {
         auth_header = parseAuthHeader(auth_header_);
+        /// `registerDatabaseDataLake` validates `auth_header` on CREATE only, so that a database
+        /// persisted with a forbidden or malformed header does not block server startup on ATTACH.
+        /// The catalog is built lazily on first use instead; this is where the user-provided
+        /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
+        /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
+        /// validated and the original parsed header is kept.
+        DB::HTTPHeaderEntries header_to_check{auth_header.value()};
+        getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
     }
     config = loadConfig();
 }
@@ -696,6 +705,13 @@ void RestCatalog::getNamespacesRecursive(
     for (const auto & current_namespace : namespaces)
     {
         chassert(current_namespace.starts_with(base_namespace));
+
+        /// Protection from subnamepsaces with empty names
+        if (current_namespace == base_namespace)
+        {
+            LOG_WARNING(log, "Namespace {} has a subnamespace with empty name. This is an error in catalog implementation.", base_namespace);
+            continue;
+        }
 
         if (stop_condition && stop_condition(current_namespace))
             break;
