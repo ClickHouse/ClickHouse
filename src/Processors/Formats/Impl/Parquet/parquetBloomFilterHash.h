@@ -2,13 +2,9 @@
 
 #include <config.h>
 
-#include <Core/Field.h>
-#include <Columns/ColumnString.h>
-
 #if USE_PARQUET
 
-#include <parquet/encoding.h>
-#include <parquet/schema.h>
+#include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
 
 namespace DB
 {

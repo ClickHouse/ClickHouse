@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
@@ -583,18 +582,6 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
              node.element->num_children == 1); // caller checked this
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
     TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
-
-    if (column_mapper && schema_idx < file_metadata.schema.size())
-    {
-        const auto & elem_schema = file_metadata.schema.at(schema_idx);
-        if (elem_schema.__isset.field_id)
-        {
-            const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
-            if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
-                subnode.name = std::string(it->second);
-        }
-    }
-
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
@@ -612,26 +599,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     <recurse> `name1`
     ///     <recurse> `name2`
     ///     ...
-
-    /// The requested type may wrap the tuple in Nullable (e.g. `Nullable(Tuple(...))` is a legal
-    /// type). Unwrap it, match elements against the inner Tuple, and let the outer wrapper be
-    /// restored via outer_type_hint (needs_cast) in processSubtree.
-    /// Only unwrap when the tuple is always defined (REQUIRED group, no optional struct-group
-    /// ancestor), so the restored outer Nullable is always-non-null and lossless. Only Nullable
-    /// levels nested below the innermost array count: a Nullable level at or before it is the
-    /// optional wrapper of a LIST/MAP, whose nulls are normalized to empty collections by
-    /// processRepDefLevelsForArray and never reach the inner tuple null-map.
-    size_t innermost_array_idx = 0;
-    for (size_t i = 0; i < levels.size(); ++i)
-        if (levels[i].is_array)
-            innermost_array_idx = i;
-    bool has_optional_ancestor = false;
-    for (size_t i = innermost_array_idx + 1; i < levels.size(); ++i)
-        has_optional_ancestor |= !levels[i].is_array;
-    if (node.type_hint && node.type_hint->isNullable()
-        && node.element->repetition_type == parq::FieldRepetitionType::REQUIRED
-        && !has_optional_ancestor)
-        node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
 
     const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
     if (node.type_hint && !tuple_type_hint && !typeid_cast<const DataTypeObject *>(node.type_hint.get()))
@@ -930,15 +897,7 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
 
         out_inferred_type = getGeoDataType(geo_metadata->type);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata, options.format.precise_float_parsing);
-        return;
-    }
-
-    if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
-    {
-        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
-        out_inferred_type = getGeoDataType(GeoType::Mixed);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata);
         return;
     }
 
@@ -971,7 +930,7 @@ void SchemaConverter::processPrimitiveColumn(
             }
         }
 
-        size_t physical_bits = 0;
+        size_t physical_bits;
         if (type == parq::Type::INT32)
             physical_bits = 32;
         else if (type == parq::Type::INT64)
@@ -1028,7 +987,7 @@ void SchemaConverter::processPrimitiveColumn(
         /// types as timestamps, since clickhouse doesn't have time-of-day type.
         /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
 
-        UInt32 scale = 0;
+        UInt32 scale;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
             scale = 3;
         else if (logical.TIMESTAMP.unit.__isset.MICROS || logical.TIME.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MICROS)
@@ -1211,10 +1170,8 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
-        out_inferred_type = std::make_shared<DataTypeUUID>();
-        out_decoder.allow_stats = true; // UUIDs support min/max stats
-        out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-        return;
+        /// TODO [parquet]: Support UUIDs. Make sure to get the byte order right, it seems tricky.
+        /// For now, fall through to reading as FixedString(16).
     }
     else if (logical.__isset.FLOAT16)
     {
@@ -1311,19 +1268,12 @@ void SchemaConverter::processPrimitiveColumn(
         {
             if (type_hint)
             {
+                /// If parquet type is FIXED_LEN_BYTE_ARRAY(16), and type hint is [U]Int128, assume
+                /// it's binary little-endian [U]Int128. That's how clickhouse parquet writer writes
+                /// [U]Int128 (btw, we should probably change that to Decimal).
+                /// Same for FIXED_LEN_BYTE_ARRAY(32) and [U]Int256.
+                /// We can't leave this conversion to castColumn because it would parse as text.
                 WhichDataType which(type_hint->getTypeId());
-
-                /// Handle explicit UUID type hint (e.g. SELECT x::UUID)
-                if (which.isUUID() && element.type_length == 16)
-                {
-                    out_inferred_type = type_hint;
-                    out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                    out_decoder.allow_stats = true;
-                    return;
-                }
-
-                /// Legacy ClickHouse binary formats for [U]Int128 and [U]Int256.
-                /// These are written as FIXED_LEN_BYTE_ARRAY(16/32) but without logical types.
                 if (which.isInteger() && !which.isNativeInteger() &&
                     type_hint->getSizeOfValueInMemory() == size_t(element.type_length))
                 {
@@ -1331,26 +1281,14 @@ void SchemaConverter::processPrimitiveColumn(
                 }
             }
 
-            /// Automatic Inference: If no hint is provided, but the Parquet
-            /// file metadata explicitly flags this column as a UUID.
-            if (logical.__isset.UUID && element.type_length == 16)
-            {
-                out_inferred_type = std::make_shared<DataTypeUUID>();
-                out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                out_decoder.allow_stats = true;
-                return;
-            }
-
-            /// Default Fallback: If it's not a UUID or a BigInt hint, treat it as FixedString.
             if (!out_inferred_type)
                 out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
-
             auto converter = std::make_shared<FixedStringConverter>();
             converter->input_size = size_t(element.type_length);
             out_decoder.fixed_size_converter = std::move(converter);
 
-            /// Stats are only allowed for FixedString if the output is actually a string.
-            out_decoder.allow_stats = WhichDataType(get_output_type_index()).isString();
+            /// (The case where type_hint is FixedString is handled above, no need to check for it here.)
+            out_decoder.allow_stats = !logical.__isset.UUID && WhichDataType(get_output_type_index()).isString();
             return;
         }
     }
