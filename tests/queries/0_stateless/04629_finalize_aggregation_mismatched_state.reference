@@ -1,0 +1,11 @@
+-- single homogeneous state
+5
+-- UNION of the same function finalizes fine
+2
+3
+-- arrayReduce of a single function
+2
+-- a non-quantile state (sum) still finalizes
+6
+-- runningAccumulate over a homogeneous state column still works
+5
