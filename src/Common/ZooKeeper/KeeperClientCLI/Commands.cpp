@@ -647,7 +647,9 @@ void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClien
             for (const auto & child : backups)
             {
                 auto backup_path = zkutil::joinZooKeeperPath(backup_root, child);
-                client->cout << "Found backup " << backup_path << ", checking if it's active\n";
+                /// The quotes match what streaming an `fs::path` printed before the Windows port
+                /// turned these paths into plain strings; the tests pin this output.
+                client->cout << "Found backup \"" << backup_path << "\", checking if it's active\n";
 
                 String stage_path = zkutil::joinZooKeeperPath(backup_path, "stage");
                 auto stages = client->zookeeper->getChildren(stage_path);
@@ -664,11 +666,11 @@ void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClien
 
                 if (is_active)
                 {
-                    client->cout << "Backup " << backup_path << " is active, not going to delete\n";
+                    client->cout << "Backup \"" << backup_path << "\" is active, not going to delete\n";
                     continue;
                 }
 
-                client->cout << "Backup " << backup_path << " is not active, deleting it\n";
+                client->cout << "Backup \"" << backup_path << "\" is not active, deleting it\n";
                 client->zookeeper->removeRecursive(backup_path);
             }
         });
