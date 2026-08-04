@@ -101,7 +101,8 @@ print geo_point_to_geohash(-80.195829, 25.802215, 8);      // dhwfz15h
 
 print '-- more mathematics --';
 print gamma(5);          // 24
-print cot(1);
+// The last digit of the raw quotient differs across libm implementations.
+print round(cot(1), 10);
 print pi();
 print isascii('abc');
 print isutf8('abc');

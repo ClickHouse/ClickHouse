@@ -498,12 +498,14 @@ const std::map<String, Entry> & scalarFunctions()
                 [name = String(target)](const ASTs & a) -> ASTPtr
                 {
                     /// Kusto shifts by `n % 64` and answers null for a negative n, where
-                    /// ClickHouse would raise.
+                    /// ClickHouse would raise. The shift amount uses `positiveModulo`: the
+                    /// negative branch answers NULL anyway, but constant folding evaluates
+                    /// both branches, and `bitShiftLeft` raises on a negative amount.
                     return makeASTFunction(
                         "if",
                         makeASTFunction("less", a[1], litI(0)),
                         makeASTFunction("CAST", lit(Field()), litS("Nullable(Int64)")),
-                        makeASTFunction(name, a[0], makeASTFunction("modulo", a[1], litI(64))));
+                        makeASTFunction(name, a[0], makeASTFunction("positiveModulo", a[1], litI(64))));
                 }};
         };
         result.emplace("binary_shift_left", shift("bitShiftLeft"));
