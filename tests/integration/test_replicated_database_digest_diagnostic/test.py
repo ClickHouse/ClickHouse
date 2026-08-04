@@ -372,3 +372,30 @@ def test_dump_reports_local_metadata_without_a_coordinator_snapshot(started_clus
 
     node.start_clickhouse()
     node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
+def test_dump_survives_a_std_logic_error(started_cluster):
+    """The abort must still name the digest, even when the dump itself fails the worst way.
+
+    Formatting a caught std::logic_error aborts in these builds, so reporting an escaped one with
+    a formatting helper would replace `Digest does not match` with the dump's own signature -
+    losing exactly the attribution this dump exists to provide.
+    """
+    db = "digest_diagnostic_logic_error"
+    metadata_path = prepare_database(db)
+    diverge_metadata_bytes_only(f"{metadata_path}diverging.sql")
+
+    before = force_digest_check(
+        db, extra_failpoints=["database_replicated_dump_throw_std_logic_error"]
+    )
+
+    # The injected failure is reported by error code, and the digest abort is still what aborts.
+    handler_line = node.grep_in_log(
+        "Failed to dump the local and coordinator metadata diff"
+    )
+    assert "STD_EXCEPTION" in handler_line, handler_line
+    assert_log_delta(before, DIGEST_ABORT, expected_more=True)
+    assert DIGEST_ABORT in node.grep_in_log("Logical error:")
+
+    node.start_clickhouse()
+    node.query(f"DROP DATABASE IF EXISTS {db} SYNC")

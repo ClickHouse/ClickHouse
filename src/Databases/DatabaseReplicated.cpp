@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <stdexcept>
 #include <tuple>
 #include <utility>
 
@@ -134,6 +135,7 @@ namespace FailPoints
     extern const char database_replicated_drop_after_removing_keeper_failed[];
     extern const char database_replicated_force_metadata_digest_check[];
     extern const char database_replicated_dump_fail_to_get_metadata_snapshot[];
+    extern const char database_replicated_dump_throw_std_logic_error[];
     extern const char database_replicated_pause_after_reading_log_pointer[];
     extern const char database_replicated_pause_after_snapshot_identity_check[];
     extern const char database_replicated_throw_on_stop_replication[];
@@ -1294,6 +1296,11 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
     /// catchable failure is contained. A LOGICAL_ERROR still aborts in these builds by design.
     try
     {
+        /// A std::logic_error is the one shape whose mere formatting aborts, so it is what the
+        /// outer handler has to be pinned against.
+        fiu_do_on(FailPoints::database_replicated_dump_throw_std_logic_error,
+            { throw std::logic_error("Injecting a std::logic_error while dumping the metadata diff"); });
+
         auto table_names_local = getAllTableNames(local_context);
 
         /// The digest sums over the in-memory `tables` map, while `getAllTableNames` also lists
@@ -1382,7 +1389,9 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Failed to dump the local and coordinator metadata diff");
+        /// Not tryLogCurrentException: it formats the message, which aborts on a caught
+        /// std::logic_error in these builds and would replace the mismatch being reported.
+        LOG_ERROR(log, "Failed to dump the local and coordinator metadata diff: {}", describeCurrentExceptionForDumpOnly());
     }
 }
 
