@@ -29,9 +29,11 @@ settings min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 insert into t_quantized_reference select number, arrayMap(x -> toFloat32(x + number), range(64)) from numbers(100, 100);
 
--- The same rows must quantize to the same codes in both tables.
-select countIf(hex(a.vec.quantized) != hex(b.vec.quantized))
-from t_quantized_shared_meta a inner join t_quantized_reference b on a.id = b.id;
+-- The same rows must quantize to the same codes in both tables. The subcolumn is read inside the
+-- subqueries because the old analyzer cannot resolve one through a table alias (`a.vec.quantized`).
+select countIf(hex(codes) != hex(reference_codes))
+from (select id, vec.quantized as codes from t_quantized_shared_meta) as a
+inner join (select id, vec.quantized as reference_codes from t_quantized_reference) as b on a.id = b.id;
 
 select count() from t_quantized_shared_meta;
 
