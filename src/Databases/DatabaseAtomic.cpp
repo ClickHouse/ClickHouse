@@ -14,7 +14,6 @@
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CurrentThread.h>
@@ -256,10 +255,10 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
-    std::string message;
-    if (exchange && !supportsAtomicRename(&message))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported because exchanging files is not supported by the OS ({})", message);
-
+    /// Whether the metadata files can be exchanged is a per-disk property, not an OS one, so
+    /// the decision is delegated to `IDisk::renameExchange`: `DiskLocal` and
+    /// `DiskObjectStorage` fall back to a non-atomic swap when the filesystem cannot do an
+    /// atomic exchange, other disks throw a clear per-disk `NOT_IMPLEMENTED`.
     createDirectories();
     waitDatabaseStarted();
 
