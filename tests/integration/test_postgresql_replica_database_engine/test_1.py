@@ -767,6 +767,25 @@ def test_merge_keeps_child_table_capabilities(started_cluster):
         instance.query("SELECT key FROM merge_over_matpg PREWHERE value = 5") == "5\n"
     )
 
+    # A subcolumn is admitted into PREWHERE through its origin column only when every child
+    # reports `supportedPrewhereColumnsIncludeSubcolumns` - `Merge` ANDs that bit across its
+    # children, and it is rejected with ILLEGAL_PREWHERE otherwise. The pg `value` column is
+    # `Nullable(Int32)`, so `value.null` is its subcolumn.
+    assert (
+        instance.query(
+            "SELECT count() FROM merge_over_matpg PREWHERE value.null = 0"
+        ).strip()
+        == "10"
+    )
+
+    # Subcolumns are readable through the wrapper directly as well.
+    assert (
+        instance.query(
+            f"SELECT count() FROM test_database.{table_name} WHERE value.null = 0"
+        ).strip()
+        == "10"
+    )
+
     # `totalRows` and `totalBytes` of the nested table are what fills these in.
     total_rows, total_bytes = (
         instance.query(

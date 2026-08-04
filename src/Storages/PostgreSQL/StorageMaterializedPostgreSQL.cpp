@@ -320,6 +320,24 @@ bool StorageMaterializedPostgreSQL::canMoveConditionsToPrewhere() const
 }
 
 
+bool StorageMaterializedPostgreSQL::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    /// `StorageMerge` ANDs this bit across its children, so leaving it at the `IStorage` default would
+    /// silently drop a subcolumn condition from `PREWHERE` for the whole `Merge` table.
+    if (auto nested = tryGetNested())
+        return nested->supportedPrewhereColumnsIncludeSubcolumns();
+    return false;
+}
+
+
+bool StorageMaterializedPostgreSQL::supportsSubcolumns() const
+{
+    if (auto nested = tryGetNested())
+        return nested->supportsSubcolumns();
+    return false;
+}
+
+
 bool StorageMaterializedPostgreSQL::supportsOptimizationToSubcolumns() const
 {
     if (auto nested = tryGetNested())

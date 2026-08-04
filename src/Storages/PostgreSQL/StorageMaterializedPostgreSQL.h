@@ -102,6 +102,8 @@ public:
     /// `Merge` - silently loses `PREWHERE`, the optimization to subcolumns and the size estimates.
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
+    bool supportsSubcolumns() const override;
     bool supportsOptimizationToSubcolumns() const override;
 
     ColumnSizeByName getColumnSizes() const override;
