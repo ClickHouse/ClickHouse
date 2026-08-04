@@ -220,15 +220,25 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     return true;
 }
 
-/** The last value that filling can generate under the given TO bound, or nullopt when even the value right before
-  * TO is not known to be usable.
+/** A value that filling generates under the given TO bound and that therefore must be representable in the column
+  * type, or nullopt when no such value can be derived up front and the bound has to be accepted.
   *
   * Filling starts at FROM and advances by STEP while it stays strictly before TO, so with a FROM and a plain
   * numeric step the last generated value is known up front and can be far below TO: `WITH FILL FROM 0 TO 257 STEP 3`
-  * stops at 255. Without FROM the sequence is anchored at a data value, and an INTERVAL step is not a constant
-  * number of the column type units, so in those cases nothing better than the value right before TO can be assumed.
+  * stops at 255.
+  *
+  * Without FROM the sequence is anchored at a data value, so which values are generated is known only at execution
+  * time: `WITH FILL TO 257 STEP 3` over a UInt8 column stops at 254 when the data ends at 11 but reaches 256 when
+  * it ends at 13. Still, whenever filling generates anything at all, its last value lands within one step before
+  * TO, so when even the value one whole step away from TO does not fit the column type, every anchor wraps and the
+  * bound can be rejected up front. That value is clamped towards zero - a value all the checked types can represent -
+  * so that anchors close enough to TO to generate nothing (`WITH FILL TO 1000 STEP 5000` over a UInt8 column) keep
+  * being accepted.
+  *
+  * An INTERVAL step is not a constant number of the column type units, so with FROM only the value right before TO
+  * can be assumed, and without FROM nothing can be proven at all.
   */
-static std::optional<Int64> lastValueAdmittedByFillTo(const FillColumnDescription & descr, int direction)
+static std::optional<Int64> fillValueRequiredToFitColumnType(const FillColumnDescription & descr, int direction)
 {
     /// Every column type reaching this point is filled through Int64: the wider Int128/Int256 columns are filled
     /// through their own type, so their bounds have already been accepted by the representability check.
@@ -237,27 +247,38 @@ static std::optional<Int64> lastValueAdmittedByFillTo(const FillColumnDescriptio
 
     const Int64 to = descr.fill_to.safeGet<Int64>();
 
-    if (!descr.step_kind
-        && descr.fill_from.getType() == Field::Types::Int64
-        && descr.fill_step.getType() == Field::Types::Int64)
+    if (!descr.step_kind && descr.fill_step.getType() == Field::Types::Int64)
     {
-        const Int64 from = descr.fill_from.safeGet<Int64>();
         const Int64 step = descr.fill_step.safeGet<Int64>();
 
-        /// The step is non-zero and directed towards TO, and TO is not on the wrong side of FROM: all of this is
-        /// already checked when the fill description is built.
-        const Int128 span = direction > 0 ? static_cast<Int128>(to) - from : static_cast<Int128>(from) - to;
-        if (span <= 0)
-            return from; /// TO admits no filled value at all
+        if (descr.fill_from.getType() == Field::Types::Int64)
+        {
+            const Int64 from = descr.fill_from.safeGet<Int64>();
 
-        const Int128 jumps = (span - 1) / (step > 0 ? static_cast<Int128>(step) : -static_cast<Int128>(step));
-        /// The result lies between FROM and TO, so it fits into Int64.
-        return static_cast<Int64>(from + jumps * step);
+            /// The step is non-zero and directed towards TO, and TO is not on the wrong side of FROM: all of this is
+            /// already checked when the fill description is built.
+            const Int128 span = direction > 0 ? static_cast<Int128>(to) - from : static_cast<Int128>(from) - to;
+            if (span <= 0)
+                return from; /// TO admits no filled value at all
+
+            const Int128 jumps = (span - 1) / (step > 0 ? static_cast<Int128>(step) : -static_cast<Int128>(step));
+            /// The result lies between FROM and TO, so it fits into Int64.
+            return static_cast<Int64>(from + jumps * step);
+        }
+
+        /// No FROM: the possible last generated values over all anchors span one step before TO.
+        Int128 best_case = static_cast<Int128>(to) - step;
+        best_case = direction > 0 ? std::max<Int128>(best_case, 0) : std::min<Int128>(best_case, 0);
+        /// The clamp towards zero also brought the value into the Int64 range.
+        return static_cast<Int64>(best_case);
     }
+
+    if (descr.fill_from.isNull())
+        return {};
 
     Int64 last_admitted_value = 0;
     if (common::subOverflow(to, static_cast<Int64>(direction), last_admitted_value))
-        return {};
+        return {}; /// TO is at the very edge of Int64, on the side where filling stops immediately
 
     return last_admitted_value;
 }
@@ -291,12 +312,13 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
 
     /// TO is an exclusive bound, so it is enough that the last value filling can generate under it is
     /// representable: `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, and so does
-    /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit.
+    /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit. When the generated values depend
+    /// on the data (no FROM), the bound is rejected only if filling provably wraps for every possible anchor.
     if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
     {
-        const auto last_admitted_value = lastValueAdmittedByFillTo(descr, direction);
+        const auto required_value = fillValueRequiredToFitColumnType(descr, direction);
 
-        if (!last_admitted_value || !is_representable(Field(*last_admitted_value)))
+        if (required_value && !is_representable(Field(*required_value)))
             throw Exception(
                 ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL TO value {} is out of range of the ORDER BY column type {}",
