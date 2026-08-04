@@ -1310,11 +1310,17 @@ Possible values:
 - true, false
 )", 0) \
     DECLARE(Bool, always_fetch_mutated_part, false, R"(
-If true, this replica never mutates parts and always downloads mutated parts
-from other replicas.
+If true, this replica never executes `MUTATE_PART` replication log entries
+(regular mutations such as `ALTER TABLE ... UPDATE/DELETE`) and always
+downloads the resulting mutated parts from other replicas.
 
 At least one replica must have this setting disabled; otherwise mutations
 cannot finish.
+
+This setting does not affect patch parts created by lightweight updates:
+they are still applied locally when parts are merged. Enable
+`always_fetch_merged_part` as well to also offload merges (including the
+application of patch parts) to other replicas.
 
 Possible values:
 - true, false
