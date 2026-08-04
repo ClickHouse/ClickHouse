@@ -1,12 +1,11 @@
 SET allow_suspicious_low_cardinality_types = 1;
 
--- A single LowCardinality key wider than 8 bytes selects a packed keys128/keys256 map, which
--- reads key_sizes to copy the key bytes. Keys must match by value, not degenerate to one bucket.
+-- A single `LowCardinality` key wider than 8 bytes must match by value, not collapse to one bucket.
 
 DROP TABLE IF EXISTS t_l;
 DROP TABLE IF EXISTS t_r;
 
--- LowCardinality(UInt128): 1 must match only 1, not 5 or 7.
+-- `LowCardinality(UInt128)`: 1 must match only 1, not 5 or 7.
 CREATE TABLE t_l (id LowCardinality(UInt128)) ENGINE = Memory;
 CREATE TABLE t_r (id LowCardinality(UInt128)) ENGINE = Memory;
 INSERT INTO t_l VALUES (5), (1);
@@ -90,13 +89,13 @@ CREATE TABLE t_l (id LowCardinality(Nullable(UInt128))) ENGINE = Memory;
 CREATE TABLE t_r (id LowCardinality(Nullable(UInt128))) ENGINE = Memory;
 INSERT INTO t_l VALUES (5), (1), (NULL);
 INSERT INTO t_r VALUES (7), (0), (1), (NULL);
--- A NULL key matches nothing, so the count stays 1.
+-- A `NULL` key matches nothing, so the count stays 1.
 SELECT 'lc_nullable_uint128', count() FROM t_l JOIN t_r USING (id);
 SELECT 'lc_nullable_uint128 rows', a.id, b.id FROM t_l a JOIN t_r b ON a.id = b.id ORDER BY a.id;
 DROP TABLE t_l;
 DROP TABLE t_r;
 
--- Multi-column key containing a wide LowCardinality column.
+-- Multi-column key containing a wide `LowCardinality` column.
 CREATE TABLE t_l (a LowCardinality(UInt128), b UInt8) ENGINE = Memory;
 CREATE TABLE t_r (a LowCardinality(UInt128), b UInt8) ENGINE = Memory;
 INSERT INTO t_l VALUES (5, 1), (1, 2);
@@ -105,7 +104,7 @@ SELECT 'lc_uint128_multikey', count() FROM t_l JOIN t_r USING (a, b);
 DROP TABLE t_l;
 DROP TABLE t_r;
 
--- ASOF join over a wide LowCardinality equality key.
+-- `ASOF` join over a wide `LowCardinality` equality key.
 CREATE TABLE t_l (k LowCardinality(UInt128), t UInt64) ENGINE = Memory;
 CREATE TABLE t_r (k LowCardinality(UInt128), t UInt64) ENGINE = Memory;
 INSERT INTO t_l VALUES (1, 10), (5, 10);
@@ -114,9 +113,8 @@ SELECT 'lc_uint128_asof', a.k, b.k FROM t_l a ASOF JOIN t_r b ON a.k = b.k AND a
 DROP TABLE t_l;
 DROP TABLE t_r;
 
--- The key must be compared over its whole width. In each pair below the two left values share
--- their low 8 (Int128/UInt128) or 16 (Int256/UInt256) bytes and differ only above, so a copy that
--- reads fewer bytes than the key type makes them collide and the right value matches both.
+-- Below, the two left values share their low half and differ only above, so a comparison narrower
+-- than the key type makes them collide and the single right value matches both.
 
 CREATE TABLE t_l (id LowCardinality(UInt128)) ENGINE = Memory;
 CREATE TABLE t_r (id LowCardinality(UInt128)) ENGINE = Memory;

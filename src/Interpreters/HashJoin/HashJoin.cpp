@@ -339,8 +339,7 @@ static HashJoin::Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & ke
     if (keys_size == 1 && key_columns[0]->isNumeric())
     {
         size_t size_of_field = key_columns[0]->sizeOfValueIfFixed();
-        /// The loop above bails out before assigning for a LowCardinality column, and the packed
-        /// keys128/keys256 getters read key_sizes to copy the key bytes.
+        /// The loop above bails out before assigning `key_sizes` for a `LowCardinality` column.
         key_sizes[0] = size_of_field;
         if (size_of_field == 1)
             return Type::key8;
