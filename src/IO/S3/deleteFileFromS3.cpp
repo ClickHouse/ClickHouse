@@ -186,10 +186,13 @@ void deleteFilesFromS3(
                     LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", comma_separated_keys);
 
                     if (successful_keys)
+                    {
+                        successful_keys.reserve(current_chunk.size());
                         for (const auto & chunk : current_chunk)
                         {
                             successful_keys->emplace_back(chunk.GetKey());
                         }
+                    }
                 }
                 else
                 {
