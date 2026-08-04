@@ -106,6 +106,17 @@ struct Plan
     std::vector<PartitionPlan> partitions;
     IcebergHistory history;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_to_first_snapshot;
+    /// Original manifest-list entry lineage per manifest path: `added_snapshot_id` of the
+    /// snapshot that actually added the manifest. This is taken from the source manifest-list
+    /// entries rather than derived from retained history order, because the adding snapshot
+    /// may already be expired from table metadata while later snapshots still carry the
+    /// manifest forward. Sequence numbers are not preserved here: the rewrite renumbers the
+    /// history, so they are remapped onto the new numbering when the manifests are rewritten.
+    struct ManifestFileLineage
+    {
+        Int64 added_snapshot_id = 0;
+    };
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestFileLineage> manifest_file_lineage;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
@@ -146,13 +157,8 @@ struct Plan
 };
 
 /// Record `id`'s type signature into `out`, recursing into struct/list/map children.
-///
-/// The signature is deliberately name- and order-agnostic: a primitive maps to its type
-/// string ("int", "string", ...) and a complex node maps to its kind ("struct"/"list"/"map"),
-/// while every nested field/element/key/value gets its own entry keyed by its own field id.
-/// So a nested rename, reorder, or added field changes nobody's signature — only a genuine
-/// field-id removal or a leaf-type change is observable. `container[type_key]` is either a
-/// primitive type string or a nested type object (Iceberg JSON layout).
+/// The signature is name- and order-agnostic: a primitive maps to its type string, a complex node
+/// to its kind, and every nested field/element/key/value is keyed by its own field id.
 static void walkTypeNode(
     Int64 id, const Poco::JSON::Object::Ptr & container, const char * type_key, std::unordered_map<Int64, String> & out)
 {
@@ -201,26 +207,9 @@ static std::unordered_map<Int64, String> schemaFieldTypes(const Poco::JSON::Arra
     return id_to_type;
 }
 
-/// Compaction physically rewrites every historical data file into the CURRENT schema.
-/// `writeMetadataFiles` keeps the original snapshot ids and their committed schema-ids, so
-/// older snapshots stay reachable for time travel — but their backing files no longer contain
-/// fields that were dropped from the current schema, or that changed to a type the current
-/// schema can't losslessly represent in reverse. Reading such a pre-evolution snapshot after
-/// OPTIMIZE would then return NULL/defaults (or fail).
-///
-/// Renames are safe (the field id and type are preserved, only the name changes) and additive
-/// evolution is safe (old files simply lack the new field, exactly as before compaction). This
-/// holds recursively for complex types too: a nested rename, reorder, or added struct field is
-/// remappable by getSchemaTransformationDagByIds. So the comparison is SEMANTIC, keyed by field
-/// id and walking into struct/list/map children (see schemaFieldTypes/walkTypeNode) — not a
-/// textual compare of the enclosing type JSON, which would embed child names/ordering and wrongly
-/// reject safe nested evolution.
-///
-/// Reject only LOSSY evolution: a field id present in a still-reachable snapshot's schema that is
-/// missing from the current schema (DROP COLUMN), or whose leaf/kind signature differs from the
-/// current schema's field of the same id (any type change — treated as non-reversible for safety,
-/// since even a widening like int->long is not reversible when reading an old snapshot back).
-/// Fail-closed is appropriate for an experimental feature (allow_experimental_iceberg_compaction).
+/// Reject compaction when a schema still reachable from a snapshot has a field id that is absent
+/// from the current schema (DROP COLUMN) or whose signature differs from it (any type change,
+/// treated as non-reversible). Renames, reorders and additions are remappable and stay allowed.
 static void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr & initial_metadata_object)
 {
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -349,7 +338,12 @@ static Plan getPlan(
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
-    if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) < 2)
+    /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
+    /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
+    /// from createEmptyMetadataFile, which produces format_version 2, so a v3 table would be
+    /// silently downgraded and lose v3-only state such as row lineage (first_row_id /
+    /// next_row_id).
+    if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
 
     /// The compacted metadata is the next version of this table, so the generated
@@ -379,6 +373,8 @@ static Plan getPlan(
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
             if (!plan.manifest_file_to_first_snapshot.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
+            if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
+                plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
             auto files_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
@@ -940,7 +936,7 @@ static bool writeConsolidatedManifestFile(
     std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
     std::vector<Int64> manifest_entry_sizes;
     /// Parallel to consolidated_manifest_paths: existing (not added) file/row counts, since the referenced data files already exist.
-    std::vector<ManifestListEntryExistingCounts> existing_entry_counts;
+    std::vector<ManifestListEntryCounts> existing_entry_counts;
     /// Parallel to consolidated_manifest_paths: each manifest's partition spec-id.
     std::vector<Int64> entry_partition_spec_ids;
     /// Parallel to consolidated_manifest_paths: each manifest's partition fields (value + type), used to recompute the manifest-list `partitions` summary.
@@ -1006,8 +1002,11 @@ static bool writeConsolidatedManifestFile(
             for (const auto & lineage : pd.file_entry_lineage)
                 manifest_min_sequence_number = std::min(manifest_min_sequence_number, lineage.sequence_number.value_or(0));
 
-            existing_entry_counts.push_back(
-                {static_cast<Int64>(pd.file_paths.size()), manifest_existing_rows, manifest_min_sequence_number});
+            ManifestListEntryCounts consolidated_counts;
+            consolidated_counts.files_count = static_cast<Int64>(pd.file_paths.size());
+            consolidated_counts.rows_count = manifest_existing_rows;
+            consolidated_counts.min_sequence_number = manifest_min_sequence_number;
+            existing_entry_counts.push_back(consolidated_counts);
 
             /// Rewrite this manifest under the partition spec its source files used, not the default.
             const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
@@ -1047,6 +1046,7 @@ static bool writeConsolidatedManifestFile(
                 *buffer_manifest,
                 Iceberg::FileContentType::DATA,
                 /* user_defined_sequence_number */ std::nullopt,
+                /* user_defined_snapshot_id */ std::nullopt,
                 /* data_file_formats */ pd.file_formats,
                 /* per_file_statistics */ pd.file_statistics,
                 /* data_file_sort_order_ids */ pd.file_sort_order_ids,
@@ -1232,11 +1232,8 @@ static bool writeMetadataFiles(
     metadata_object->set(Iceberg::f_last_sequence_number, 0);
     if (metadata_object->has(Iceberg::f_refs) && metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
         metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, -1);
-    /// Format-version 3 row lineage: `generateNextMetadata` uses the table-level `next-row-id` as
-    /// the starting `first-row-id` for each replayed snapshot and increments it by that snapshot's
-    /// added row count. Since the loop below rebuilds the whole snapshot history from row 0, the
-    /// preserved (inflated) `next-row-id` must be reset too — otherwise the first regenerated
-    /// snapshot starts at the old table tail and the final `next-row-id` becomes old value + replay.
+    /// The history below is replayed from row 0, so any preserved `next-row-id` must restart there
+    /// too. Inert while compaction is restricted to format-version 2, which has no row lineage.
     if (metadata_object->has(Iceberg::f_next_row_id))
         metadata_object->set(Iceberg::f_next_row_id, static_cast<Int64>(0));
 
@@ -1347,6 +1344,9 @@ static bool writeMetadataFiles(
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_sizes;
+    /// Per rewritten manifest: actual file/row counts of its content, written into the
+    /// manifest-list entries so that metadata row counts stay exact after compaction.
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestListEntryCounts> manifest_file_counts;
 
     {
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::unordered_set<Iceberg::IcebergPathFromMetadata>> grouped_by_manifest_files_result;
@@ -1393,8 +1393,22 @@ static bool writeMetadataFiles(
 
             auto snapshot_id = plan.manifest_file_to_first_snapshot[manifest_entry->path];
             auto snapshot = snapshot_id_to_snapshot[snapshot_id];
+            /// Fail closed rather than skip: a live manifest can have no rewritten snapshot for
+            /// its first retained reference when that reference is a delete-only snapshot
+            /// (tryGetAppendUpdate skips those when generating new snapshots), e.g. after the
+            /// appending snapshot was expired and the manifest survives only through a later
+            /// delete-only overwrite. Skipping would silently drop the manifest from the
+            /// rewritten table -- and clearOldFiles would then delete its original files after
+            /// commit. Throwing here aborts OPTIMIZE before any metadata is committed and
+            /// before any original file is removed, leaving the table intact.
             if (!snapshot)
-                continue;
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg compaction does not support this table history: live manifest {} is first referenced "
+                    "by snapshot {} which produced no rewritten snapshot (e.g. a delete-only snapshot). "
+                    "The table is left unchanged.",
+                    manifest_entry->path.serialize(),
+                    snapshot_id);
 
             std::vector<Iceberg::IcebergPathFromMetadata> data_files_vec(data_filenames.begin(), data_filenames.end());
             std::vector<UInt64> file_row_counts;
@@ -1422,6 +1436,49 @@ static bool writeMetadataFiles(
                     per_file_fresh_statistics.push_back(nullptr);
                 }
             }
+
+            /// The manifest's original lineage, taken from the source manifest-list entry: the
+            /// snapshot that actually added the manifest may already be expired from table
+            /// metadata, in which case `plan.manifest_file_to_first_snapshot` (first *retained*
+            /// snapshot referencing the manifest) would wrongly re-attribute it.
+            const auto manifest_lineage = plan.manifest_file_lineage[manifest_entry->path];
+
+            /// The rewritten history is renumbered by generateNextMetadata (sequence numbers
+            /// restart from 1), so the source sequence number must be remapped onto the new
+            /// numbering rather than copied verbatim: a stale higher value would make the
+            /// compacted files sort as *newer* than deletes committed after OPTIMIZE, and
+            /// those deletes would silently stop applying. Snapshot ids are preserved by the
+            /// rewrite, so the adding snapshot's new sequence number is used when that
+            /// snapshot is retained; when it has been expired, fall back to the first
+            /// retained snapshot referencing the manifest -- the earliest point in the
+            /// rewritten history where the manifest exists.
+            Int64 remapped_sequence_number = 0;
+            {
+                Poco::JSON::Object::Ptr sequence_source = snapshot;
+                if (auto it = snapshot_id_to_snapshot.find(manifest_lineage.added_snapshot_id);
+                    it != snapshot_id_to_snapshot.end() && it->second)
+                    sequence_source = it->second;
+                if (sequence_source->has(Iceberg::f_metadata_sequence_number))
+                    remapped_sequence_number = sequence_source->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+            }
+
+            /// Record the manifest's actual content counts and lineage for its manifest-list
+            /// entries. added_snapshot_id preserves which snapshot added the manifest, so
+            /// manifest lists of later snapshots that carry it forward do not claim they added
+            /// it; the sequence numbers use the remapped value, consistent with the entries
+            /// written into the regenerated manifest below.
+            {
+                Int64 manifest_rows = 0;
+                for (const auto rows : file_row_counts)
+                    manifest_rows += static_cast<Int64>(rows);
+                ManifestListEntryCounts counts;
+                counts.files_count = static_cast<Int64>(data_files_vec.size());
+                counts.rows_count = manifest_rows;
+                counts.min_sequence_number = remapped_sequence_number;
+                counts.added_snapshot_id = manifest_lineage.added_snapshot_id;
+                counts.added_sequence_number = remapped_sequence_number;
+                manifest_file_counts[manifest_entry->patched_path] = counts;
+            }
             generateManifestFile(
                 metadata_object,
                 partition_columns,
@@ -1438,7 +1495,11 @@ static bool writeMetadataFiles(
                 partition_spec_id,
                 *buffer_manifest_entry,
                 Iceberg::FileContentType::DATA,
-                /*user_defined_sequence_number=*/std::nullopt,
+                /// Stamp the rewritten entries with the manifest's original adding snapshot and
+                /// the remapped sequence number, keeping the manifest file consistent with the
+                /// manifest-list entries written above and with the renumbered history.
+                /* user_defined_sequence_number */ remapped_sequence_number,
+                /* user_defined_snapshot_id */ manifest_lineage.added_snapshot_id,
                 /*data_file_formats=*/{},
                 /*per_file_statistics=*/{},
                 /*data_file_sort_order_ids=*/{},
@@ -1490,6 +1551,25 @@ static bool writeMetadataFiles(
         {
             per_manifest_sizes.push_back(manifest_file_sizes[entry]);
         }
+        /// Pass the actual per-manifest counts: without them generateManifestList stamps the
+        /// snapshot summary's `added-records` into EVERY entry, so any consumer summing the
+        /// manifest-list row counts (including our own trivial count) would multiply the
+        /// table's row count by the number of manifests. Each manifest's entries are emitted
+        /// as ADDED in the snapshot that first added it, so its counts are reported as
+        /// added_* only in that snapshot's manifest list; manifest lists of later snapshots
+        /// carry the manifest forward and report the counts as existing_*, preserving the
+        /// original added_snapshot_id / sequence_number.
+        const Int64 list_snapshot_id = new_snapshots[i].snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        std::vector<ManifestListEntryCounts> entry_counts;
+        entry_counts.reserve(renamed_manifest_entries.size());
+        for (const auto & entry : renamed_manifest_entries)
+        {
+            ManifestListEntryCounts counts;
+            if (auto it = manifest_file_counts.find(entry); it != manifest_file_counts.end())
+                counts = it->second;
+            counts.counts_are_added = counts.added_snapshot_id.has_value() && *counts.added_snapshot_id == list_snapshot_id;
+            entry_counts.push_back(counts);
+        }
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(path_resolver.resolve(renamed_manifest_list)),
             WriteMode::Rewrite,
@@ -1506,7 +1586,9 @@ static bool writeMetadataFiles(
             per_manifest_sizes,
             *buffer_manifest_list,
             Iceberg::FileContentType::DATA,
-            false);
+            false,
+            /* per_entry_content_types */ {},
+            entry_counts);
         buffer_manifest_list->finalize();
     }
 

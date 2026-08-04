@@ -398,16 +398,12 @@ def test_optimize_prunes_refs_to_delete_only_snapshot(
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_optimize_resets_next_row_id_format_v3(
+def test_optimize_rejected_on_format_v3(
     started_cluster_iceberg_no_spark, storage_type
 ):
     """
-    Format-version 3 row lineage: `MetadataGenerator::generateNextMetadata` uses the table-level
-    `next-row-id` as the starting `first-row-id` for each replayed snapshot and increments it by
-    that snapshot's added rows. Compaction rebuilds the whole snapshot history from scratch, so
-    the deep-copied (already-advanced) `next-row-id` must be reset first. Otherwise the first
-    regenerated snapshot starts at the old table tail and the final `next-row-id` becomes the old
-    value plus the replayed history (inflated row lineage).
+    Compaction is fail-closed on format-version 3, matching the MANIFEST-only path: the writer
+    does not round-trip the row-lineage `first_row_id`, so a rewrite would drop row ids.
     """
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     TABLE_NAME = "test_optimize_next_row_id_" + storage_type + "_" + get_uuid_str()
@@ -434,38 +430,23 @@ def test_optimize_resets_next_row_id_format_v3(
     # 5 rows appended across two snapshots -> next-row-id advanced to 5.
     assert meta_before.get("next-row-id") == 5
 
-    # Positional delete so compaction has work to do.
+    # Positional delete so compaction would otherwise have work to do.
     instance.query(
         f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
         settings={"allow_insert_into_iceberg": 1},
     )
-    instance.query(
+    error = instance.query_and_get_error(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={
             "allow_experimental_iceberg_compaction": 1,
             "allow_insert_into_iceberg": 1,
         },
     )
+    assert "Compaction is supported only for format_version 2" in error, error
 
+    # The table is left unchanged: the rejection happens before any file is rewritten.
     meta_after, _ = _read_latest_metadata(instance, TABLE_NAME)
-    # Row lineage must be replayed from 0: the first regenerated snapshot starts at first-row-id 0,
-    # and next-row-id equals the sum of the replayed added-rows (self-consistent from 0). Before the
-    # fix, the preserved next-row-id (>= 5) was reused as the starting first-row-id, so the first
-    # snapshot started at the old table tail and next-row-id ended at old_value + replayed_history.
-    replay_snapshots = [
-        s for s in meta_after["snapshots"] if s.get("first-row-id") is not None
-    ]
-    assert replay_snapshots, "format-v3 snapshots must carry first-row-id"
-    first_row_ids = [s["first-row-id"] for s in replay_snapshots]
-    assert min(first_row_ids) == 0, f"row lineage did not restart at 0: {first_row_ids}"
-    replayed_total = sum(s.get("added-rows", 0) for s in replay_snapshots)
-    assert (
-        meta_after.get("next-row-id") == replayed_total
-    ), (
-        f"next-row-id inflated after compaction: next-row-id="
-        f"{meta_after.get('next-row-id')} vs replayed_total={replayed_total} "
-        f"(pre-fix it would be old next-row-id + replayed_total)"
-    )
+    assert meta_after.get("next-row-id") == meta_before.get("next-row-id")
     assert (
         instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id")
         == "1\ta\n3\tc\n4\td\n5\te\n"

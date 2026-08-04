@@ -217,23 +217,26 @@ void AsynchronousBoundedReadBuffer::appendToPrefetchLog(
     int64_t size,
     const std::unique_ptr<Stopwatch> & execution_watch)
 {
-    FilesystemReadPrefetchesLogElement elem
-    {
-        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-        .query_id = query_id,
-        .path = impl->getFileName(),
-        .offset = file_offset_of_buffer_end,
-        .size = size,
-        .prefetch_submit_time = last_prefetch_info.submit_time,
-        .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
-        .priority = last_prefetch_info.priority,
-        .state = state,
-        .thread_id = getThreadId(),
-        .reader_id = current_reader_id,
-    };
-
     if (prefetches_log)
-        prefetches_log->add(std::move(elem));
+    {
+        prefetches_log->add([&](FilesystemReadPrefetchesLogElement & element)
+        {
+            element = FilesystemReadPrefetchesLogElement
+            {
+                .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+                .query_id = query_id,
+                .path = impl->getFileName(),
+                .offset = file_offset_of_buffer_end,
+                .size = size,
+                .prefetch_submit_time = last_prefetch_info.submit_time,
+                .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
+                .priority = last_prefetch_info.priority,
+                .state = state,
+                .thread_id = getThreadId(),
+                .reader_id = current_reader_id,
+            };
+        });
+    }
 }
 
 
