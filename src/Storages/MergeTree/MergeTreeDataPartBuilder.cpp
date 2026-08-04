@@ -71,7 +71,7 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (!part_info)
         part_info = MergeTreePartInfo::fromPartName(name, data.format_version);
 
-    auto data_settings = data.getSettings(projection ? &projection->settings_changes : nullptr);
+    auto data_settings = data.getSettings(projection);
 
     switch (part_type->getValue())
     {
@@ -94,6 +94,11 @@ MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageByType(
 {
     if (!volume_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part storage, because volume is not specified");
+
+    /// The storage object and its `root_path` / `part_dir` strings live for the part's whole lifetime.
+    /// Create them in the dedicated arena here: on the write paths this runs while configuring the
+    /// builder, before `build()` enters its own scope, so the scope there would otherwise miss them.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     using Type = MergeTreeDataPartStorageType;
     switch (storage_type_.getValue())
@@ -179,7 +184,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromDisk()
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
 {
-    chassert(volume);
+    assert(volume);
     auto [storage, mark_type] = getPartStorageAndMarkType(volume, root_path, part_dir, read_settings);
 
     if (!storage || !mark_type)
@@ -195,7 +200,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromStorage()
 {
-    chassert(part_storage);
+    assert(part_storage);
     auto mark_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(*part_storage);
 
     if (!mark_type)

@@ -13,6 +13,7 @@
 #include <cmath>
 #include <string>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -37,7 +38,7 @@ namespace details
 template <UInt8 K>
 struct LogLUT
 {
-    LogLUT() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in the body
+    LogLUT()
     {
         log_table[0] = 0.0;
         for (size_t i = 1; i <= M; ++i)
@@ -54,7 +55,7 @@ struct LogLUT
 private:
     static constexpr size_t M = 1 << ((static_cast<unsigned int>(K) <= 12) ? K : 12);
 
-    double log_table[M + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
+    double log_table[M + 1];
 };
 
 template <UInt8 K> struct MinCounterTypeHelper;
@@ -182,7 +183,7 @@ public:
         long double val = rank_count[size - 1];
         for (int i = size - 2; i >= 0; --i)
         {
-            val /= 2.0L;
+            val /= 2.0;
             val += rank_count[i];
         }
         return static_cast<DenominatorType>(val);
@@ -396,7 +397,7 @@ public:
 
     static void skipText(DB::ReadBuffer & in)
     {
-        UInt8 dummy = 0;
+        UInt8 dummy;
         for (size_t i = 0; i < RankStore::size(); ++i)
         {
             if (i != 0)
@@ -466,7 +467,7 @@ private:
         {
             static constexpr double pow2_32 = 4294967296.0;
 
-            double fixed_estimate = 0;
+            double fixed_estimate;
 
             if (raw_estimate > (pow2_32 / 30.0))
                 fixed_estimate = raw_estimate;
@@ -480,7 +481,7 @@ private:
 
     double applyCorrection(double raw_estimate) const
     {
-        double fixed_estimate = 0;
+        double fixed_estimate;
 
         if (BiasEstimator::isTrivial())
         {
@@ -509,7 +510,7 @@ private:
     /// (S. Heule et al., Proceedings of the EDBT 2013 Conference).
     double applyBiasCorrection(double raw_estimate) const
     {
-        double fixed_estimate = 0;
+        double fixed_estimate;
 
         if (raw_estimate <= (5 * bucket_count))
             fixed_estimate = raw_estimate - BiasEstimator::getBias(raw_estimate);
@@ -524,7 +525,7 @@ private:
     /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
     double applyLinearCorrection(double raw_estimate) const
     {
-        double fixed_estimate = 0;
+        double fixed_estimate;
 
         if (zeros != 0)
             fixed_estimate = bucket_count * (log_lut.getLog(bucket_count) - log_lut.getLog(zeros));

@@ -105,7 +105,7 @@ public:
             this->data(place).value.push_back(std::make_pair(right, Int64(-1)), arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
@@ -206,7 +206,6 @@ AggregateFunctionPtr createAggregateFunctionMaxIntersections(
 
 }
 
-void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -10,7 +10,7 @@
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Interpreters/FileCache/ShardedMap.h>
 #include <Common/SharedMutex.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 
 #include <map>
 #include <memory>
@@ -130,7 +130,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     /// Will only fail if key is not in ACTIVE state, e.g. REMOVING or REMOVED.
     LockedKeyPtr tryLock();
 
-    [[nodiscard]] std::error_code createBaseDirectory();
+    bool createBaseDirectory(bool throw_if_failed = false);
 
     std::string getPath() const;
 
@@ -185,8 +185,6 @@ public:
         size_t background_download_queue_size_limit_,
         size_t background_download_threads_,
         bool write_cache_per_user_directory_);
-
-    virtual ~CacheMetadata();
 
     void startup();
 

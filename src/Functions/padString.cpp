@@ -1,7 +1,6 @@
 #include <memory>
 #include <Columns/ColumnFixedString.h>
 #include <Common/StringUtils.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
@@ -115,7 +114,7 @@ namespace
         /// utf8_offsets[1] is the offset of the second code point in `pad_string`;
         /// utf8_offsets[2] is the offset of the third code point in `pad_string`;
         /// ...
-        VectorWithMemoryTracking<size_t> utf8_offsets;
+        std::vector<size_t> utf8_offsets;
     };
 
     /// Returns the number of characters in a slice.
@@ -142,7 +141,7 @@ namespace
 
     /// If `is_right_pad` - it's the rightPad() function instead of leftPad().
     /// If `is_utf8` - lengths are measured in code points instead of bytes.
-    class FunctionPadString final : public IFunction
+    class FunctionPadString : public IFunction
     {
     public:
         FunctionPadString(const char * name_, bool is_right_pad_, bool is_utf8_)

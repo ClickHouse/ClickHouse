@@ -22,7 +22,7 @@ private:
     void readSuffix() override;
 };
 
-class JSONCompactFormatReader final : public JSONCompactEachRowFormatReader
+class JSONCompactFormatReader : public JSONCompactEachRowFormatReader
 {
 public:
     JSONCompactFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);

@@ -5,7 +5,6 @@
 #include <base/types.h>
 
 #include <ctime>
-#include <limits>
 #include <string>
 #include <type_traits>
 
@@ -206,10 +205,10 @@ private:
     /// Day nums are the same in all time zones. 1970-01-01 is 0 and so on.
     /// Table is relatively large, so better not to place the object on stack.
     /// In comparison to std::vector, plain array is cheaper by one indirection.
-    Values lut[DATE_LUT_SIZE + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
+    Values lut[DATE_LUT_SIZE + 1];
 
     /// Same as above but with dates < 1970-01-01 saturated to 1970-01-01.
-    Values lut_saturated[DATE_LUT_SIZE + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
+    Values lut_saturated[DATE_LUT_SIZE + 1];
 
     /// Year number after DATE_LUT_MIN_YEAR -> LUTIndex in lut for start of year.
     LUTIndex years_lut[DATE_LUT_YEARS];
@@ -280,42 +279,6 @@ private:
         return lut[toLUTIndex(v)];
     }
 
-    /// Round `value` down to a multiple of `divisor` (towards negative infinity).
-    /// Integer division truncates towards zero, so for negative values we shift the result one step down.
-    /// The computation goes through the remainder to avoid signed overflow when `value` is close to the
-    /// minimum of the type - the natural expression `value + 1 - divisor` overflows there. Such values are
-    /// far outside any valid date range, so on the boundary we saturate to the nearest representable multiple.
-    template <typename DateOrTime, typename Divisor>
-    static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
-    {
-        if (value >= 0) [[likely]]
-            return static_cast<DateOrTime>(value / divisor * divisor);
-
-        const Int64 v = static_cast<Int64>(value);
-        const Int64 d = static_cast<Int64>(divisor);
-        const Int64 remainder = v % d; /// In (-d, 0] for negative v.
-        if (remainder == 0)
-            return static_cast<DateOrTime>(v);
-
-        const Int64 rounded_towards_zero = v - remainder; /// A multiple of d in [v, 0], never overflows.
-        if (unlikely(rounded_towards_zero < std::numeric_limits<Int64>::min() + d))
-            return static_cast<DateOrTime>(rounded_towards_zero);
-        return static_cast<DateOrTime>(rounded_towards_zero - d);
-    }
-
-    /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
-    /// undefined behavior). Interval rounding reconstructs the result as `date + offset`; for arguments far
-    /// outside any valid date range this sum can step just past the type boundary even though both operands
-    /// are individually representable. The result for such out-of-range values is meaningless anyway, so we
-    /// saturate to the nearest boundary.
-    static Time addSaturating(Time base, Time offset)
-    {
-        Time res = 0;
-        if (unlikely(__builtin_add_overflow(base, offset, &res)))
-            return offset < 0 ? std::numeric_limits<Time>::min() : std::numeric_limits<Time>::max();
-        return res;
-    }
-
     template <typename DateOrTime, typename Divisor>
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
@@ -323,7 +286,14 @@ private:
         chassert(divisor > 0);
 
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
-            return roundDownToMultiple(x, divisor);
+        {
+            if (x >= 0) [[likely]]
+                return static_cast<DateOrTime>(x / divisor * divisor);
+
+            /// Integer division for negative numbers rounds them towards zero (up).
+            /// We will shift the number so it will be rounded towards -inf (down).
+            return static_cast<DateOrTime>((x + 1 - divisor) / divisor * divisor);
+        }
 
         Time date = find(x).date;
         Time res = date + (x - date) / divisor * divisor;
@@ -629,10 +599,6 @@ public:
     }
 
     unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
-
-    unsigned toMicrosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
-
-    unsigned toNanosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
 
     unsigned toMinute(Time t) const
     {
@@ -1003,18 +969,14 @@ public:
     }
 
     /// We count all hour-length intervals, unrelated to offset changes.
-    /// `NO_SANITIZE_UNDEFINED` because the addition can overflow `Time` for out-of-range arguments
-    /// (e.g. a `DateTime64` close to the limits of `Int64`); the wrapped-around result is meaningless
-    /// but harmless, like for the `add*` functions below.
-    NO_SANITIZE_UNDEFINED ALWAYS_INLINE Time toRelativeHourNum(Time t) const
+    ALWAYS_INLINE Time toRelativeHourNum(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return t / 3600;
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
         /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
-        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
-        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
     template <typename DateOrTime>
@@ -1025,10 +987,9 @@ public:
 
     /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
     /// It's needed for correct work of dateDiff function.
-    NO_SANITIZE_UNDEFINED Time toStableRelativeHourNum(Time t) const
+    Time toStableRelativeHourNum(Time t) const
     {
-        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
-        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
     template <typename DateOrTime>
@@ -1037,10 +998,9 @@ public:
         return toStableRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
-    NO_SANITIZE_UNDEFINED Time toRelativeMinuteNum(Time t) const /// NOLINT
+    Time toRelativeMinuteNum(Time t) const /// NOLINT
     {
-        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
-        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
+        return (t + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
     }
 
     template <typename DateOrTime>
@@ -1132,13 +1092,7 @@ public:
           * the intervals can be shortened or prolonged to the amount of transition.
           */
 
-        /// `hours` is only validated to be positive by the caller, so an extreme interval count can make
-        /// `hours * 3600` wrap. When it wraps to exactly zero (e.g. `toIntervalHour(4611686018427387904)`),
-        /// the division by `seconds` below would be undefined behaviour. Saturate the divisor instead; the
-        /// rounding result for such meaningless interval counts is discarded anyway.
-        UInt64 seconds = 0;
-        if (unlikely(__builtin_mul_overflow(hours, static_cast<UInt64>(3600), &seconds)))
-            seconds = std::numeric_limits<UInt64>::max();
+        UInt64 seconds = hours * 3600;
 
         const LUTIndex index = findIndex(t);
         const Values & values = lut[index];
@@ -1164,7 +1118,7 @@ public:
             time = time / seconds * seconds;
         }
 
-        Time res = addSaturating(values.date, time);
+        Time res = values.date + time;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
             if (unlikely(res < 0))
@@ -1178,19 +1132,13 @@ public:
     template <typename DateOrTime>
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
-        /// `minutes` is only validated to be positive by the caller, so an extreme interval count can make
-        /// `60 * minutes` wrap, exactly as in `toStartOfHourInterval`. `INTERVAL 4611686018427387904 MINUTE`
-        /// wraps the product to exactly zero, which would then divide by zero in `roundDownToMultiple` (or in
-        /// the reconstruction below) before producing a result. Saturate the divisor to the maximum instead;
-        /// the rounding result for such meaningless interval counts is discarded anyway.
-        UInt64 product = 0;
-        if (unlikely(__builtin_mul_overflow(minutes, static_cast<UInt64>(60), &product)
-                     || product > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
-            product = static_cast<UInt64>(std::numeric_limits<Int64>::max());
-        Int64 divisor = static_cast<Int64>(product);
-
+        Int64 divisor = 60 * minutes;
         if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
-            return roundDownToMultiple(t, divisor);
+        {
+            if (t >= 0) [[likely]]
+                return static_cast<DateOrTime>(t / divisor * divisor);
+            return static_cast<DateOrTime>((t + 1 - divisor) / divisor * divisor);
+        }
 
         Time date = find(t).date;
         Time res = date + (t - date) / divisor * divisor;
@@ -1344,14 +1292,14 @@ public:
     struct TimeComponents
     {
         bool is_negative = false;
-        uint64_t hour{};
-        uint8_t minute{};
-        uint8_t second{};
+        uint64_t hour;
+        uint8_t minute;
+        uint8_t second;
     };
 
     struct DateTimeComponents
     {
-        DateComponents date{};
+        DateComponents date;
         TimeComponents time;
     };
 
