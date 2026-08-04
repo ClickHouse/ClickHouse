@@ -281,20 +281,21 @@ while IFS='|' read -r id concl stat created; do
             cls="ok"; n_ok=$((n_ok+1)) ;;
         failure)
             # GUARD == the version-bump-PR guard specifically: the traceback must
-            # show the guard's frame AND a `raise RuntimeError` source line. The
-            # praktika `AutoReleases` job raises it from
-            # `_assert_no_open_version_bump_prs` (ci/jobs/auto_release_job.py);
-            # the legacy GH-Actions workflow raised it from `_prepare`. Match
-            # either frame so both new and historical failed logs classify, but
-            # NOT a line number (which drifts) and NOT bare `raise RuntimeError`
-            # — other failures (e.g. the `assert refs` candidate check) raise
-            # AssertionError and must classify as OTHER.
+            # show the guard's frame `in _assert_no_open_version_bump_prs`
+            # (ci/jobs/auto_release_job.py) AND a `raise RuntimeError` source
+            # line. Match that combination, NOT a line number (which drifts) and
+            # NOT bare `raise RuntimeError` — other failures (e.g. the
+            # `assert refs` candidate check) raise AssertionError and must
+            # classify as OTHER. Only the praktika frame is matched: the script
+            # looks back DAYS (14 by default), and the legacy GH-Actions workflow
+            # (which raised from `_prepare`) is gone after the praktika migration,
+            # so no `_prepare` logs land in the window.
             if flog="$(fetch_failed_log "$id")"; then
                 # Use here-strings, NOT `printf "$flog" | grep -q`: grep -q exits on
                 # first match and SIGPIPEs the producer (rc 141), which `set -o pipefail`
                 # propagates, short-circuiting the && to the OTHER branch — silently
                 # misclassifying a real GUARD failure on a multi-MB log.
-                if grep -qE 'in _prepare|in _assert_no_open_version_bump_prs' <<<"$flog" \
+                if grep -q 'in _assert_no_open_version_bump_prs' <<<"$flog" \
                    && grep -q 'raise RuntimeError' <<<"$flog"; then
                     cls="GUARD"; n_guard=$((n_guard+1))
                 else

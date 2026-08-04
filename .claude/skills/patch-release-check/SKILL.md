@@ -102,15 +102,12 @@ previous version bump PRs were merged": it runs
 result is non-empty. The guard runs before any per-branch dispatch, so a guard failure
 **skips every branch** — nothing releases.
 
-> The script classifies `GUARD` only when the failed-step log shows **both** a guard
-> traceback frame **and** the `raise RuntimeError` source line — not a line number
-> (which drifts) and not bare `RuntimeError`. It matches either frame the guard can
-> come from: `in _assert_no_open_version_bump_prs` (the praktika `AutoReleases`
-> workflow, `ci/jobs/auto_release_job.py`) or `in _prepare` (the legacy GH-Actions
-> workflow, kept so historical failed logs still classify). Other failures (e.g. the
-> `assert refs` release-candidate check, which raises `AssertionError`) classify as
-> `OTHER`, not `GUARD`, so the operator is not sent to hunt version-bump PRs when the
-> guard is actually clear.
+> The script classifies `GUARD` only when the failed-step log shows **both** the guard
+> traceback frame `in _assert_no_open_version_bump_prs` (`ci/jobs/auto_release_job.py`)
+> **and** the `raise RuntimeError` source line — not a line number (which drifts) and
+> not bare `RuntimeError`. Other failures (e.g. the `assert refs` release-candidate
+> check, which raises `AssertionError`) classify as `OTHER`, not `GUARD`, so the
+> operator is not sent to hunt version-bump PRs when the guard is actually clear.
 
 > The GitHub Actions log does **not** name the offending PR — the list is sent to a
 > Slack alert, not stdout. Find it two ways:
