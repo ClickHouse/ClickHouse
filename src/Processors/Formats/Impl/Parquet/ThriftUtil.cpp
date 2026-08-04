@@ -8,6 +8,14 @@
 
 #include <sstream>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+}
+
 namespace DB::Parquet
 {
 
@@ -55,6 +63,12 @@ size_t deserializeThriftStruct(T & out, const char * buf, size_t limit)
         uint32_t bytes_read = out.read(&proto);
         chassert(size_t(bytes_read + trans->available_read()) == limit);
         return size_t(bytes_read);
+    }
+    catch (const apache::thrift::TException & e)
+    {
+        /// Malformed wire data. Must precede the generic clause below, which would map it to
+        /// STD_EXCEPTION and so say nothing about the input.
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to parse Parquet metadata: {}", e.what());
     }
     catch (const std::exception & e)
     {
