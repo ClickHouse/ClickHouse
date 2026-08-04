@@ -1,0 +1,6 @@
+-- 1. a table in an Ordinary database has no UUID: the plan is never cached
+-- result: 6
+-- result: 6
+-- hits of the second run (must be 0, not cached): 0
+-- 2. the same query over an Atomic-database table is cached
+-- hits of the second run (must be 1, cached): 1

@@ -240,6 +240,22 @@ bool isStorageEligibleForPlanCache(const StoragePtr & storage, const StorageMeta
         return false;
     }
 
+    /// Every guard of the "analyzed storage == executed storage" invariant - the pre-store
+    /// cross-check against the planning-time identities, the hit-path dependency validation and
+    /// `QueryPlan::resolveStorages` - compares storage UUIDs. A table without a UUID (a table in
+    /// an `Ordinary` or `Lazy` database) makes all of them vacuous: after a `DROP`/`CREATE` both
+    /// the old and the new table carry `Nil`, so a swapped table would pass every comparison and
+    /// a stale plan could execute the new table with the old table's baked row policies or view
+    /// expansions. Such storages cannot be identity-bound, so they are not cacheable. The allowed
+    /// system tables (`system.one`) are exempt: they are constant and cannot be replaced.
+    if (storage_id.uuid == UUIDHelpers::Nil && !isAllowedSystemTable(database, table))
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: dependency {}.{} has no UUID (a database engine that does not support atomic table replacement), "
+            "so the plan cannot be bound to the analyzed table identity", database, table);
+        return false;
+    }
+
     /// A DEFINER view executes its body under the definer's rights; a NONE view executes it
     /// under the global context. Either way the cached plan resolves the expanded view leaves
     /// under the invoker context and cannot replay that overridden security context, so only
