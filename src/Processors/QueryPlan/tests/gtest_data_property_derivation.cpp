@@ -322,6 +322,79 @@ TEST(DataPropertyDerivation, ProjectingPartOfCompositeKeyDropsKey)
     EXPECT_TRUE(properties.uniqueKeys().empty());
 }
 
+TEST(DataPropertyDerivation, AggregationGroupingIsUniqueOnlyInOrdinaryFinalMode)
+{
+    Block output_header;
+    addColumn(output_header, "tenant", std::make_shared<DataTypeUInt64>());
+    addColumn(output_header, "count", std::make_shared<DataTypeUInt64>());
+
+    auto ordinary = deriveDataPropertiesForAggregation(output_header, {"tenant"}, {.final = true});
+    ASSERT_EQ(ordinary.uniqueKeys().size(), 1u);
+    EXPECT_EQ(ordinary.uniqueKeys().front().columns, (DataPropertyColumnSet{{0, "tenant"}}));
+    EXPECT_EQ(ordinary.uniqueKeys().front().provenance, DataPropertyProvenance::aggregationGrouping());
+
+    EXPECT_TRUE(deriveDataPropertiesForAggregation(output_header, {"tenant"}, {.final = false}).uniqueKeys().empty());
+    EXPECT_TRUE(
+        deriveDataPropertiesForAggregation(output_header, {"tenant"}, {.final = true, .has_grouping_sets = true}).uniqueKeys().empty());
+    EXPECT_TRUE(
+        deriveDataPropertiesForAggregation(output_header, {"tenant"}, {.final = true, .has_overflow_row = true}).uniqueKeys().empty());
+    EXPECT_TRUE(deriveDataPropertiesForAggregation(output_header, {}, {.final = true}).uniqueKeys().empty());
+}
+
+TEST(DataPropertyDerivation, JoinDropsKeysAndNullExtendedFacts)
+{
+    Block left_header;
+    addColumn(left_header, "left_id", std::make_shared<DataTypeUInt64>());
+    Block right_header;
+    addColumn(right_header, "right_id", std::make_shared<DataTypeUInt64>());
+
+    Block output_header = left_header;
+    output_header.insert(right_header.getByPosition(0));
+
+    auto left = propertiesWithUniqueKey({{0, "left_id"}}, left_header);
+    auto right = propertiesWithUniqueKey({{0, "right_id"}}, right_header);
+
+    auto inner
+        = deriveDataPropertiesForJoin(JoinKind::Inner, JoinStrictness::All, output_header, {left_header, left}, {right_header, right});
+    EXPECT_TRUE(inner.uniqueKeys().empty());
+    EXPECT_EQ(inner.nonNullColumns(), (DataPropertyColumnSet{{0, "left_id"}, {1, "right_id"}}));
+
+    auto left_outer
+        = deriveDataPropertiesForJoin(JoinKind::Left, JoinStrictness::All, output_header, {left_header, left}, {right_header, right});
+    EXPECT_EQ(left_outer.nonNullColumns(), (DataPropertyColumnSet{{0, "left_id"}}));
+
+    auto right_outer
+        = deriveDataPropertiesForJoin(JoinKind::Right, JoinStrictness::All, output_header, {left_header, left}, {right_header, right});
+    EXPECT_EQ(right_outer.nonNullColumns(), (DataPropertyColumnSet{{1, "right_id"}}));
+
+    auto full_outer
+        = deriveDataPropertiesForJoin(JoinKind::Full, JoinStrictness::All, output_header, {left_header, left}, {right_header, right});
+    EXPECT_TRUE(full_outer.nonNullColumns().empty());
+}
+
+TEST(DataPropertyDerivation, SemiAndAntiJoinsPreserveOnlySubsetSide)
+{
+    Block left_header;
+    addColumn(left_header, "left_id", std::make_shared<DataTypeUInt64>());
+    Block right_header;
+    addColumn(right_header, "right_id", std::make_shared<DataTypeUInt64>());
+
+    auto left = propertiesWithUniqueKey({{0, "left_id"}}, left_header);
+    auto right = propertiesWithUniqueKey({{0, "right_id"}}, right_header);
+
+    for (const auto strictness : {JoinStrictness::Semi, JoinStrictness::Anti})
+    {
+        auto properties = deriveDataPropertiesForJoin(JoinKind::Left, strictness, left_header, {left_header, left}, {right_header, right});
+        ASSERT_EQ(properties.uniqueKeys().size(), 1u);
+        EXPECT_EQ(properties.uniqueKeys().front().columns, (DataPropertyColumnSet{{0, "left_id"}}));
+        EXPECT_EQ(properties.uniqueKeys().front().provenance.origin, DataPropertyOrigin::StorageDeclaration);
+        EXPECT_EQ(properties.uniqueKeys().front().provenance.confidence, DataPropertyConfidence::DiagnosticOnly);
+        EXPECT_EQ(
+            properties.uniqueKeys().front().provenance,
+            DataPropertyProvenance::storageDeclaration().transformed(DataPropertyTransformationKind::JoinPreservation));
+    }
+}
+
 TEST(DataPropertyDerivation, SafeRowSubsetStepsPreserveFacts)
 {
     auto id_type = std::make_shared<DataTypeUInt64>();
@@ -384,6 +457,135 @@ TEST(DataPropertyDerivation, CompleteFactsPassThroughWithoutModifyingSafeCaller)
     SortingStep sorting(shared_header, sort_description, 0, SortingStep::Settings(65536));
     EXPECT_EQ(deriveDataProperties(sorting, children), expected);
     EXPECT_EQ(children.front(), expected);
+}
+
+TEST(DataPropertyDerivation, JoinDerivationAppendsPreservedFactsDirectly)
+{
+    Block left_header;
+    addColumn(left_header, "left_id", std::make_shared<DataTypeUInt64>());
+    addColumn(left_header, "left_value", std::make_shared<DataTypeUInt64>());
+    Block right_header;
+    addColumn(right_header, "right_id", std::make_shared<DataTypeUInt64>());
+    addColumn(right_header, "right_value", std::make_shared<DataTypeUInt64>());
+
+    Block output_header = left_header;
+    output_header.insert(right_header.getByPosition(0));
+    output_header.insert(right_header.getByPosition(1));
+
+    const auto left = completeProperties(left_header);
+    const auto right = completeProperties(right_header);
+    auto append_expected_side = [](DataPropertySet & result,
+                                   const DataPropertySet & source_properties,
+                                   const Block & source_header,
+                                   size_t output_offset,
+                                   size_t child_index,
+                                   bool preserve_keys_and_dependencies)
+    {
+        if (preserve_keys_and_dependencies)
+        {
+            result.addUniqueKey(source_properties.uniqueKeys().front().remap(
+                {{output_offset, source_header.getByPosition(0).name}}, DataPropertyPreservingTransformationKind::JoinPreservation));
+            result.addFunctionalDependency(source_properties.functionalDependencies().front().remap(
+                {{output_offset, source_header.getByPosition(0).name}},
+                {{output_offset + 1, source_header.getByPosition(1).name}},
+                DataPropertyPreservingTransformationKind::JoinPreservation));
+        }
+        for (size_t position = 0; position < source_header.columns(); ++position)
+        {
+            const auto & name = source_header.getByPosition(position).name;
+            result.addNonNullColumn({output_offset + position, name});
+            result.addLineage(
+                {{output_offset + position, name},
+                 {child_index, position, name},
+                 ColumnLineageKind::Identity,
+                 lineageProvenance(DataPropertyTransformationKind::JoinPreservation)});
+        }
+    };
+
+    DataPropertySet both_sides;
+    append_expected_side(both_sides, left, left_header, 0, 0, false);
+    append_expected_side(both_sides, right, right_header, 2, 1, false);
+    for (const auto kind : {JoinKind::Inner, JoinKind::Cross, JoinKind::Comma})
+    {
+        EXPECT_EQ(
+            deriveDataPropertiesForJoin(kind, JoinStrictness::All, output_header, {left_header, left}, {right_header, right}), both_sides);
+    }
+    EXPECT_EQ(
+        deriveDataPropertiesForJoin(JoinKind::Inner, JoinStrictness::Semi, output_header, {left_header, left}, {right_header, right}),
+        both_sides);
+
+    DataPropertySet left_only;
+    append_expected_side(left_only, left, left_header, 0, 0, false);
+    EXPECT_EQ(
+        deriveDataPropertiesForJoin(JoinKind::Left, JoinStrictness::All, output_header, {left_header, left}, {right_header, right}),
+        left_only);
+
+    DataPropertySet right_only;
+    append_expected_side(right_only, right, right_header, 2, 1, false);
+    EXPECT_EQ(
+        deriveDataPropertiesForJoin(JoinKind::Right, JoinStrictness::All, output_header, {left_header, left}, {right_header, right}),
+        right_only);
+
+    for (const auto kind : {JoinKind::Full, JoinKind::Paste})
+    {
+        EXPECT_TRUE(
+            deriveDataPropertiesForJoin(kind, JoinStrictness::All, output_header, {left_header, left}, {right_header, right}).empty());
+    }
+
+    DataPropertySet left_subset;
+    append_expected_side(left_subset, left, left_header, 0, 0, true);
+    DataPropertySet right_subset;
+    append_expected_side(right_subset, right, right_header, 0, 1, true);
+    for (const auto strictness : {JoinStrictness::Semi, JoinStrictness::Anti})
+    {
+        EXPECT_EQ(
+            deriveDataPropertiesForJoin(JoinKind::Left, strictness, left_header, {left_header, left}, {right_header, right}), left_subset);
+        EXPECT_EQ(
+            deriveDataPropertiesForJoin(JoinKind::Right, strictness, right_header, {left_header, left}, {right_header, right}),
+            right_subset);
+    }
+}
+
+TEST(DataPropertyDerivation, JoinPreservedNonNullFactsRespectNullableOutputTypes)
+{
+    Block left_header;
+    addColumn(left_header, "nullable_left", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()));
+    addColumn(
+        left_header,
+        "low_cardinality_nullable_left",
+        std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())));
+    Block right_header;
+    addColumn(right_header, "right_id", std::make_shared<DataTypeUInt64>());
+    Block output_header = left_header;
+    output_header.insert(right_header.getByPosition(0));
+
+    DataPropertySet left;
+    left.addNonNullColumn({0, "nullable_left"});
+    left.addNonNullColumn({1, "low_cardinality_nullable_left"});
+    DataPropertySet right;
+    right.addNonNullColumn({0, "right_id"});
+
+    DataPropertySet expected;
+    expected.addNonNullColumn({2, "right_id"});
+    expected.addLineage(
+        {{0, "nullable_left"},
+         {0, 0, "nullable_left"},
+         ColumnLineageKind::Identity,
+         lineageProvenance(DataPropertyTransformationKind::JoinPreservation)});
+    expected.addLineage(
+        {{1, "low_cardinality_nullable_left"},
+         {0, 1, "low_cardinality_nullable_left"},
+         ColumnLineageKind::Identity,
+         lineageProvenance(DataPropertyTransformationKind::JoinPreservation)});
+    expected.addLineage(
+        {{2, "right_id"},
+         {1, 0, "right_id"},
+         ColumnLineageKind::Identity,
+         lineageProvenance(DataPropertyTransformationKind::JoinPreservation)});
+
+    EXPECT_EQ(
+        deriveDataPropertiesForJoin(JoinKind::Inner, JoinStrictness::All, output_header, {left_header, left}, {right_header, right}),
+        expected);
 }
 
 }

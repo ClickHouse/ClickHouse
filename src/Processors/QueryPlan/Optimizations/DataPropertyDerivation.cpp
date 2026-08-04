@@ -3,10 +3,12 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -138,6 +140,70 @@ DataPropertySet mapThroughActionsDAG(
     return result;
 }
 
+std::vector<std::optional<PlanColumnRef>>
+mapPreservedColumns(const Block & source_header, const Block & other_header, const Block & output_header)
+{
+    const UniqueColumnPositionIndex output_header_index(output_header);
+    std::vector<std::optional<PlanColumnRef>> mapped(source_header.columns());
+    for (size_t source_position = 0; source_position < source_header.columns(); ++source_position)
+    {
+        const auto & source = source_header.getByPosition(source_position);
+        if (other_header.has(source.name))
+            continue;
+
+        if (const auto output_position = output_header_index.find(source.name, *source.type))
+            mapped[source_position] = PlanColumnRef{*output_position, source.name};
+    }
+    return mapped;
+}
+
+void appendPreservedSide(
+    DataPropertySet & result,
+    const DataPropertySet & source_properties,
+    const Block & source_header,
+    const Block & other_header,
+    const Block & output_header,
+    size_t child_index,
+    bool preserve_keys_and_dependencies)
+{
+    const auto mapped_columns = mapPreservedColumns(source_header, other_header, output_header);
+
+    if (preserve_keys_and_dependencies)
+    {
+        for (const auto & unique_key : source_properties.uniqueKeys())
+        {
+            if (auto mapped = mapColumnSet(unique_key.columns, source_header, mapped_columns))
+                result.addUniqueKey(unique_key.remap(std::move(*mapped), DataPropertyPreservingTransformationKind::JoinPreservation));
+        }
+        for (const auto & dependency : source_properties.functionalDependencies())
+        {
+            auto determinant = mapColumnSet(dependency.determinant, source_header, mapped_columns);
+            auto dependents = mapColumnSet(dependency.dependents, source_header, mapped_columns);
+            if (determinant && dependents)
+                result.addFunctionalDependency(dependency.remap(
+                    std::move(*determinant), std::move(*dependents), DataPropertyPreservingTransformationKind::JoinPreservation));
+        }
+    }
+
+    for (const auto & non_null : source_properties.nonNullColumns())
+    {
+        if (non_null.position >= mapped_columns.size() || !mapped_columns[non_null.position])
+            continue;
+        const auto & mapped = *mapped_columns[non_null.position];
+        if (!canContainNull(*output_header.getByPosition(mapped.position).type))
+            result.addNonNullColumn(mapped);
+    }
+
+    for (size_t source_position = 0; source_position < mapped_columns.size(); ++source_position)
+    {
+        if (!mapped_columns[source_position])
+            continue;
+        result.addLineage(
+            {*mapped_columns[source_position],
+             {child_index, source_position, source_header.getByPosition(source_position).name},
+             ColumnLineageKind::Identity,
+             DataPropertyProvenance::transformation(DataPropertyTransformationKind::JoinPreservation)});
+    }
 }
 
 DataPropertySet deriveDataPropertiesForStorageRead(const Block & output_header, const StorageInMemoryMetadata * metadata)
@@ -161,12 +227,59 @@ DataPropertySet deriveDataPropertiesForStorageRead(const Block & output_header, 
     return properties;
 }
 
-namespace
+DataPropertySet
+deriveDataPropertiesForAggregation(const Block & output_header, const Names & grouping_keys, AggregationDataPropertyOptions options)
+{
+    DataPropertySet result;
+    for (size_t position = 0; position < output_header.columns(); ++position)
+    {
+        const auto & column = output_header.getByPosition(position);
+        if (!canContainNull(*column.type))
+            result.addNonNullColumn({position, column.name});
+    }
+
+    if (!options.final || options.has_grouping_sets || options.has_overflow_row || grouping_keys.empty())
+        return result;
+
+    const auto output_names = output_header.getNames();
+    if (auto key = resolveColumnSetByName(output_names, grouping_keys))
+        result.addUniqueKey(UniqueKeyFact::fromAggregationGrouping(std::move(*key)));
+    return result;
+}
+
+DataPropertySet deriveDataPropertiesForJoin(
+    JoinKind kind, JoinStrictness strictness, const Block & output_header, DataPropertyInputView left, DataPropertyInputView right)
+{
+    DataPropertySet result;
+    const bool subset_join = strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
+    if (subset_join && kind == JoinKind::Left)
+    {
+        appendPreservedSide(result, left.properties, left.header, right.header, output_header, 0, true);
+        return result;
+    }
+    if (subset_join && kind == JoinKind::Right)
+    {
+        appendPreservedSide(result, right.properties, right.header, left.header, output_header, 1, true);
+        return result;
+    }
+
+    const bool preserve_left_non_null
+        = kind == JoinKind::Inner || kind == JoinKind::Left || kind == JoinKind::Cross || kind == JoinKind::Comma;
+    const bool preserve_right_non_null
+        = kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Cross || kind == JoinKind::Comma;
+    if (preserve_left_non_null)
+        appendPreservedSide(result, left.properties, left.header, right.header, output_header, 0, false);
+    if (preserve_right_non_null)
+        appendPreservedSide(result, right.properties, right.header, left.header, output_header, 1, false);
+    return result;
+}
+
+namespace detail
 {
 
 DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::span<DataPropertySet> child_properties)
 {
-    if (child_properties.size() > 1 || !step.hasOutputHeader())
+    if (child_properties.size() > 2 || !step.hasOutputHeader())
         return {};
 
     if (child_properties.empty())
@@ -185,6 +298,30 @@ DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::sp
     }
 
     const auto & output_header = *step.getOutputHeader();
+    if (const auto * aggregation = dynamic_cast<const AggregatingStep *>(&step))
+    {
+        if (child_properties.size() != 1 || step.getInputHeaders().size() != 1)
+            return {};
+        return deriveDataPropertiesForAggregation(
+            output_header,
+            aggregation->getParams().keys,
+            {.final = aggregation->getFinal(),
+             .has_grouping_sets = aggregation->isGroupingSets(),
+             .has_overflow_row = aggregation->getParams().overflow_row});
+    }
+    if (const auto * join = dynamic_cast<const JoinStepLogical *>(&step))
+    {
+        if (child_properties.size() != 2 || step.getInputHeaders().size() != 2)
+            return {};
+        const auto & join_operator = join->getJoinOperator();
+        return deriveDataPropertiesForJoin(
+            join_operator.kind,
+            join_operator.strictness,
+            output_header,
+            {*step.getInputHeaders()[0], child_properties[0]},
+            {*step.getInputHeaders()[1], child_properties[1]});
+    }
+
     if (child_properties.size() != 1 || step.getInputHeaders().size() != 1)
         return {};
 
@@ -228,15 +365,16 @@ DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::sp
 }
 
 }
+}
 
 DataPropertySet deriveDataProperties(const IQueryPlanStep & step, std::span<const DataPropertySet> child_properties)
 {
-    if (child_properties.size() > 1)
+    if (child_properties.size() > 2)
         return {};
 
     /// Copy so per-step derivation may move from its inputs; child counts are tiny,
     /// so a plain vector beats maintaining a small-size special case in two places.
     std::vector<DataPropertySet> owned_child_properties(child_properties.begin(), child_properties.end());
-    return deriveDataPropertiesForStep(step, owned_child_properties);
+    return detail::deriveDataPropertiesForStep(step, owned_child_properties);
 }
 }
