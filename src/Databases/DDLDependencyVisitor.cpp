@@ -151,7 +151,7 @@ namespace
                     if (create.is_materialized_view)
                     {
                         auto select_copy = create.select->clone();
-                        ApplyWithSubqueryVisitor(global_context).visit(select_copy);
+                        ApplyWithSubqueryVisitor::visit(select_copy);
 
                         auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, global_context);
                         if (!select_query.select_table_id.empty())
