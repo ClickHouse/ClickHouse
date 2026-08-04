@@ -1622,14 +1622,28 @@ static CommitResult writeMetadataFiles(
         StoredObject commit_target(path_resolver.resolve(generated_metadata_info.path));
         const bool target_existed_before = object_storage->exists(commit_target);
 
-        if (!Iceberg::writeMetadataFileAndVersionHint(
+        bool written = false;
+        try
+        {
+            written = Iceberg::writeMetadataFileAndVersionHint(
                 path_resolver,
                 generated_metadata_info,
                 json_representation,
                 version_hint_path,
                 object_storage,
                 context,
-                write_version_hint))
+                write_version_hint);
+        }
+        catch (...)
+        {
+            /// The helper publishes the metadata before it touches the hint, and those hint
+            /// operations are not themselves guarded, so a throw here can already have committed.
+            /// Keep everything rather than let the caller treat this as nothing-was-written.
+            tryLogCurrentException(log, "Iceberg compaction failed while committing metadata");
+            return CommitResult::KeepEverything;
+        }
+
+        if (!written)
         {
             /// Someone else already held the target, so nothing of ours was published.
             if (target_existed_before)
