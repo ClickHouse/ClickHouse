@@ -899,12 +899,12 @@ def test_function_timestamp():
         [["[]", "1970-01-01 00:02:15.000", 120]],
     )
 
-    # Selector with combined @ and offset modifiers: returns the @ timestamp (120).
+    # Combined modifiers evaluate at @ minus offset (90), before `test` has samples.
     do_query_test(
         "timestamp(test @ 120 offset 30s)",
         135,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "120"]}]}',
-        [["[]", "1970-01-01 00:02:15.000", 120]],
+        '{"resultType": "vector", "result": []}',
+        [],
     )
 
     # Range query regression for offset-modified selector (/api/v1/query_range):
@@ -939,20 +939,15 @@ def test_function_timestamp():
         ],
     )
 
-    # Range query regression for combined @ and offset modified selector (/api/v1/query_range):
-    # Verifies that both modifiers interact correctly on the direct-selector fast path.
+    # Range query regression for a combined @ and offset-modified selector (/api/v1/query_range):
+    # It evaluates at 90 and is empty for every output grid point.
     do_range_query_test(
         "timestamp(test @ 120 offset 30s)",
         135,
         155,
         10,
-        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[135, "120"], [145, "120"], [155, "120"]]}]}',
-        [
-            [
-                "[]",
-                "[('1970-01-01 00:02:15.000',120),('1970-01-01 00:02:25.000',120),('1970-01-01 00:02:35.000',120)]",
-            ]
-        ],
+        '{"resultType": "matrix", "result": []}',
+        [],
     )
 
     # General instant vector expressions (binary math, unary operators, comparisons, nested timestamp() calls):
