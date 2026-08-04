@@ -106,7 +106,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
         }
 
         task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
-            task.read_info->data_part, task.read_info->patch_parts, task.ranges);
+            task.read_info->data_part_info->getDataPart(), task.read_info->patch_parts, task.ranges);
 
         readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
 
@@ -307,7 +307,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
                 continue;
 
             thread_task->patches_ranges = ranges_in_patch_parts.getRanges(
-                thread_task->read_info->data_part, thread_task->read_info->patch_parts, thread_task->ranges);
+                thread_task->read_info->data_part_info->getDataPart(), thread_task->read_info->patch_parts, thread_task->ranges);
         }
 
         return createTask(*thread_task, previous_task);
@@ -428,6 +428,12 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         auto & part_stat = per_part_statistics.emplace_back();
         const auto & read_info = *per_part_infos[i];
 
+        /// The prefetched read pool is only used on the coordinator (owned parts), never the
+        /// stateless-worker read path, so the concrete part is always present. Assert it once here
+        /// so a future misuse that routes a borrowed part through this pool fails loudly instead of
+        /// dereferencing nullptr in the getDataPart() calls further down (task sizing, logging).
+        chassert(read_info.data_part_info->getDataPart());
+
         /// Sum up total size of all mark ranges in a data part.
         for (const auto & range : parts_ranges[i].ranges)
             part_stat.sum_marks += range.end - range.begin;
@@ -437,13 +443,13 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         auto update_stat_for_column = [&](const auto & column_name)
         {
             size_t column_size = 0;
-            auto column = read_info.data_part->tryGetColumn(column_name);
+            auto column = read_info.data_part_info->tryGetColumn(column_name);
             if (column)
             {
                 if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
-                    column_size = read_info.data_part->getSubcolumnSize(column_name).data_compressed;
+                    column_size = read_info.data_part_info->getSubcolumnSize(column_name).data_compressed;
                 else
-                    column_size = read_info.data_part->getColumnSize(column->getNameInStorage()).data_compressed;
+                    column_size = read_info.data_part_info->getColumnSize(column->getNameInStorage()).data_compressed;
             }
 
             part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings[Setting::prefetch_buffer_size]);
@@ -591,7 +597,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
                         ErrorCodes::LOGICAL_ERROR,
                         "Requested {} marks from part {}, but part has only {} marks",
                         marks_to_get_from_part,
-                        getPartNameForLogging(per_part_infos[part_idx]->data_part),
+                        getPartNameForLogging(per_part_infos[part_idx]->data_part_info->getDataPart()),
                         part_stat.sum_marks);
                 }
 
@@ -641,7 +647,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
             }
 
             const auto & read_info = per_part_infos[part_idx];
-            auto patch_ranges = ranges_in_patch_parts.getRanges(read_info->data_part, read_info->patch_parts, ranges_to_get_from_part);
+            auto patch_ranges = ranges_in_patch_parts.getRanges(read_info->data_part_info->getDataPart(), read_info->patch_parts, ranges_to_get_from_part);
             auto thread_task = std::make_unique<ThreadTask>(read_info, ranges_to_get_from_part, std::move(patch_ranges), priority);
 
             if (allow_prefetch)
@@ -671,7 +677,7 @@ std::string MergeTreePrefetchedReadPool::dumpTasks(const TasksPerThread & tasks)
                 result << '\t';
                 result << ++no << ": ";
                 result << "reader future: " << task->isValidReadersFuture() << ", ";
-                result << "part: " << getPartNameForLogging(task->read_info->data_part) << ", ";
+                result << "part: " << getPartNameForLogging(task->read_info->data_part_info->getDataPart()) << ", ";
                 result << "ranges: " << toString(task->ranges);
             }
         }
