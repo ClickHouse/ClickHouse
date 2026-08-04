@@ -170,14 +170,17 @@ def test_optimize_rejected_after_lossy_schema_evolution(
     instance.query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN extra;")
 
     # OPTIMIZE must be rejected: rewriting historical files into the current schema would drop
-    # `extra` and break time travel to the pre-drop snapshot.
-    assert "NOT_IMPLEMENTED" in instance.query_and_get_error(
+    # `extra` and break time travel to the pre-drop snapshot. Name the guard's own wording, since
+    # several unrelated refusals also raise NOT_IMPLEMENTED.
+    err = instance.query_and_get_error(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={
             "allow_experimental_iceberg_compaction": 1,
             "allow_insert_into_iceberg": 1,
         },
     )
+    assert "NOT_IMPLEMENTED" in err, err
+    assert "was dropped from the current schema" in err, err
 
     # The positional delete is still there (OPTIMIZE did not run).
     assert (
@@ -884,6 +887,8 @@ def test_optimize_rejected_after_requiredness_change(
         },
     )
     assert "NOT_IMPLEMENTED" in err, err
+    # The guard's own wording, so an unrelated broad refusal cannot satisfy this.
+    assert "changed type" in err, err
 
     # Rejected before anything was rewritten, so the table still reads.
     assert (
