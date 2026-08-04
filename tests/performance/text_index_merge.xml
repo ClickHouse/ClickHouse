@@ -1,0 +1,34 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>codec</name>
+           <values>
+               <value>none</value>
+               <value>bitpacking</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_text_index_merge_{codec}
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = '{codec}')
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_text_index_merge_{codec}</fill_query>
+
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(0, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(100000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(200000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(300000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(400000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(500000, 100000)</fill_query>
+
+    <query>OPTIMIZE TABLE t_text_index_merge_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_{codec}</drop_query>
+</test>
