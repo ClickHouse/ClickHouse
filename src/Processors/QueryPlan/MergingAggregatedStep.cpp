@@ -219,7 +219,16 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
     settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient] = memory_efficient_aggregation;
 
     /// Written only when the legacy method is requested and this step can actually choose the single-`String` method -
-    /// see the same condition in `AggregatingStep::serializeSettings`.
+    /// see the corresponding condition in `AggregatingStep::serializeSettings`.
+    ///
+    /// Unlike there, no two-level-threshold narrowing applies here, not even for `memory_efficient_aggregation =
+    /// false`. This step's method choice is not local to the server that merges: `Aggregator::mergeBlocks` inserts a
+    /// bucketed input chunk into `impls[bucket]` under the *producer's* bucket number, but re-buckets the single-level
+    /// (`bucket_num = -1`) chunks by the *local* method's hash. Sources sharing one plan can still legitimately mix
+    /// the two (only the sources whose state grew past the threshold converted), and then a merging peer on the other
+    /// method splits one key across two sub-tables and returns it twice. Whether the inputs can be two-level is a
+    /// property of the producing steps' thresholds, which this step's merge `params` does not carry, so there is no
+    /// sound local condition to narrow on - the gate stays keyed on the method choice alone.
     if (!params.enable_packed_string_keys
         && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;

@@ -21,9 +21,9 @@ using namespace DB;
 namespace
 {
 
-Aggregator::Params makeParams(const Names & keys, bool enable_packed_string_keys)
+Aggregator::Params makeParams(const Names & keys, bool enable_packed_string_keys, size_t group_by_two_level_threshold = 100000)
 {
-    return Aggregator::Params(
+    Aggregator::Params params(
         keys,
         AggregateDescriptions{},
         /*overflow_row=*/false,
@@ -32,6 +32,8 @@ Aggregator::Params makeParams(const Names & keys, bool enable_packed_string_keys
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         /*serialize_string_with_zero_byte=*/false,
         enable_packed_string_keys);
+    params.group_by_two_level_threshold = group_by_two_level_threshold;
+    return params;
 }
 
 /// The name as it appears in the binary settings stream written by `writeChangedBinary`.
@@ -42,11 +44,12 @@ bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
     return out.str().find("enable_packed_string_keys_in_aggregation") != std::string::npos;
 }
 
-bool aggregatingStepCarriesSetting(const Block & header, const Names & keys, bool enable_packed_string_keys)
+bool aggregatingStepCarriesSetting(
+    const Block & header, const Names & keys, bool enable_packed_string_keys, size_t group_by_two_level_threshold = 100000)
 {
     AggregatingStep step(
         std::make_shared<const Block>(header),
-        makeParams(keys, enable_packed_string_keys),
+        makeParams(keys, enable_packed_string_keys, group_by_two_level_threshold),
         GroupingSetsParamsList{},
         /*final=*/true,
         /*max_block_size=*/65536,
@@ -71,7 +74,9 @@ bool mergingAggregatedStepCarriesSetting(const Block & header, const Names & key
 {
     MergingAggregatedStep step(
         std::make_shared<const Block>(header),
-        makeParams(keys, enable_packed_string_keys),
+        /// The planner builds merge params with the short `Params` constructor, which leaves both two-level
+        /// thresholds at `0` - the bucket layout of this step's input is not knowable from them.
+        makeParams(keys, enable_packed_string_keys, /*group_by_two_level_threshold=*/0),
         GroupingSetsParamsList{},
         /*final=*/true,
         /*memory_efficient_aggregation=*/false,
@@ -105,6 +110,19 @@ TEST(PackedStringKeysPlanSetting, EmittedOnlyForSingleStringKey)
     /// The default needs nothing on the wire - the receiver's default is the packed method already.
     EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, true));
     EXPECT_FALSE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, true));
+}
+
+TEST(PackedStringKeysPlanSetting, NotEmittedWhenTwoLevelAggregationIsImpossible)
+{
+    const Block string_key = headerWithKey(std::make_shared<DataTypeString>());
+
+    /// With both serialized two-level thresholds at `0` the receiver can never produce a two-level state, so a method
+    /// mismatch is unobservable and an old peer may safely run the plan with its default method.
+    EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, false, /*group_by_two_level_threshold=*/0));
+
+    /// `MergingAggregatedStep` has no such narrowing: whether its *input* is bucketed is a property of the producing
+    /// steps' thresholds, which its own merge params do not carry (see `MergingAggregatedStep::serializeSettings`).
+    EXPECT_TRUE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, false));
 }
 
 TEST(PackedStringKeysPlanSetting, NotEmittedWhenTheMethodIsUnreachable)

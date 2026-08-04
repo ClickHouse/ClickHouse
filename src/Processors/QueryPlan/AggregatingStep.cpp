@@ -1041,7 +1041,17 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     /// peer that silently used the other method could still go two-level, and two-level bucket numbering differs
     /// between the two methods, which corrupts memory-efficient distributed merging. The exception is the only safe
     /// outcome for that combination.
+    ///
+    /// When both serialized two-level thresholds are `0`, however, the mismatch cannot be observed, so the name is
+    /// left off the wire and an old peer may run the plan with its default method. The receiver takes both thresholds
+    /// from the very settings written above, and with both at `0` every path to a two-level state is closed:
+    /// `worthConvertToTwoLevel` is false for any size (also in the size-hint path of `initDataVariantsWithSizeHint`),
+    /// the external-group-by spill in `Aggregator::executeOnBlock` additionally requires `worth_convert_to_two_level`,
+    /// and the conversion in `Aggregator::mergeVariants` fires only when some variant is two-level already. The step
+    /// then only ever produces single-level blocks (`bucket_num = -1`), whose rows and serialized aggregate states do
+    /// not depend on the hash-table method, and every consumer merges them as a plain set-union by key.
     if (!params.enable_packed_string_keys
+        && (params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
         && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 }
