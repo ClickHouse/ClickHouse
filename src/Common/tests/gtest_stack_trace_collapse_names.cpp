@@ -36,6 +36,17 @@ TEST(StackTraceCollapseNames, HidesStdFunctionPlumbing)
         StackTrace::collapseDemangledNames(
             function_h, "std::__1::function<void ()>::function<DB::AsyncLoader::AsyncLoader()::$_0, void>(DB::AsyncLoader::AsyncLoader()::$_0&&)"),
         "?");
+    /// The assignment operators do the same type-erasing work: the copy and move assignment, and the
+    /// callable-taking overload, which is a function template just like the corresponding constructor -
+    /// this is the "assign a lambda" frame of `f = [capture] { ... };`.
+    EXPECT_EQ(
+        StackTrace::collapseDemangledNames(
+            function_h, "std::__1::function<void ()>::operator=(std::__1::function<void ()>&&)"),
+        "?");
+    EXPECT_EQ(
+        StackTrace::collapseDemangledNames(
+            function_h, "std::__1::function<void ()>::operator=<DB::AsyncLoader::AsyncLoader()::$_0, void>(DB::AsyncLoader::AsyncLoader()::$_0&&)"),
+        "?");
 }
 
 /// Only the type erasure of `std::function` is noise. Its other members do work of their own, so a frame
