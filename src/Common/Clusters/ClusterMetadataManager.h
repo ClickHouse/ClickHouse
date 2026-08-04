@@ -171,7 +171,6 @@ private:
         const ClusterCatalogDefinition & record,
         const ClusterMetadataStorage::Snapshot & local_snapshot,
         ContextPtr query_context) const;
-    ClusterPtr materializeCluster(const String & cluster_name, ContextPtr context) const;
 
     ShardCatalogDefinition buildShardDefinition(
         const String & shard_name,
@@ -179,7 +178,6 @@ private:
         UInt32 weight,
         bool internal_replication) const;
     void resolveEndpointsForShard(ShardCatalogDefinition & shard, const ClusterMetadataStorage::Snapshot & source_snapshot) const;
-    void resolveEndpointsForShard(ShardCatalogDefinition & shard) const;
     static void resolveShardEndpoints(
         ShardCatalogDefinition & shard,
         const std::unordered_map<String, EndpointCatalogDefinition> & endpoints);

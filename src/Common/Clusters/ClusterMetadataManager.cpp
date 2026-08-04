@@ -1349,25 +1349,6 @@ ClusterPtr ClusterMetadataManager::materializeClusterFromSnapshot(
         settings, cluster_name, record.secret, std::move(specs), record.allow_distributed_ddl_queries);
 }
 
-ClusterPtr ClusterMetadataManager::materializeCluster(const String & cluster_name, ContextPtr query_context) const
-{
-    if (!query_context)
-        return nullptr;
-
-    ClusterCatalogDefinition record;
-    ClusterMetadataStorage::Snapshot local_snapshot;
-    {
-        std::lock_guard lock(mutex);
-        const auto it = snapshot.clusters.find(cluster_name);
-        if (it == snapshot.clusters.end())
-            return nullptr;
-        record = it->second;
-        local_snapshot = snapshot;
-    }
-
-    return materializeClusterFromSnapshot(cluster_name, record, local_snapshot, query_context);
-}
-
 String ClusterMetadataManager::getShowCreateShard(const String & shard_name) const
 {
     if (!initialized)
@@ -1494,11 +1475,6 @@ void ClusterMetadataManager::resolveEndpointsForShard(
     const ClusterMetadataStorage::Snapshot & source_snapshot) const
 {
     resolveShardEndpoints(shard, source_snapshot.endpoints);
-}
-
-void ClusterMetadataManager::resolveEndpointsForShard(ShardCatalogDefinition & shard) const
-{
-    resolveShardEndpoints(shard, snapshot.endpoints);
 }
 
 ShardCatalogDefinition ClusterMetadataManager::buildShardDefinition(
