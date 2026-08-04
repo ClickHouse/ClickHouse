@@ -2042,24 +2042,34 @@ def test_attach_partition_undoes_detached_changes_when_lease_goes_stale(started_
     The `merge_tree_leader_election_stale_lease_mid_detached_mutation` failpoint rejects the
     command right after its first permanent change to `detached/`, so the journal must restore
     everything it recorded.
+
+    A recordable change needs a detached part that is *covered* by another detached part (the
+    `inactive_` rename): `txn_version.txt` never exists on these tables (the disks accepted by
+    `leader_election` do not support transactions, so non-transactional version metadata is
+    never persisted). A covered pair is built by detaching a merged part 1_a_b_1 and restarting
+    the server: the restart resets the block-number counter to the maximum among *committed*
+    parts (detached ones do not count), so the next insert into the partition reuses block `a`
+    and produces 1_a_a_0, which 1_a_b_1 covers once both sit in `detached/`.
     """
     ensure_node_up(node1)
     failpoint = "merge_tree_leader_election_stale_lease_mid_detached_mutation"
     table = "test_detached_mutation_rollback"
     try:
+        # `old_parts_lifetime = 0`: the source parts of the merge below must be gone from the
+        # working set before the restart, or they would keep the block-number counter past the
+        # detached merged part's range.
         node1.query(
             f"""
             CREATE TABLE {table} UUID '{SHARED_UUID_DETACHED_MUTATION}' (x UInt64)
             ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
-            SETTINGS {TABLE_SETTINGS}
+            SETTINGS {TABLE_SETTINGS}, old_parts_lifetime = 0
             """
         )
         wait_for_leader([node1], table_name=table)
 
-        # Two detached parts: the transaction metadata of the first one is stripped before the
-        # fence in front of the second one is reached.
         node1.query(f"INSERT INTO {table} VALUES (11)")
         node1.query(f"INSERT INTO {table} VALUES (13)")
+        node1.query(f"OPTIMIZE TABLE {table} PARTITION 1 FINAL")
         node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
 
         def detached_names():
@@ -2072,11 +2082,63 @@ def test_attach_partition_undoes_detached_changes_when_lease_goes_stale(started_
                 .splitlines()
             )
 
+        detached_merged = detached_names()
+        assert len(detached_merged) == 1 and not detached_merged[0].endswith("_0"), (
+            f"Expected a single merged detached part, got {detached_merged}"
+        )
+
+        # Wait for the merge's source parts to be removed, then restart: the freshly started
+        # server initializes the block-number counter from the parts that are still committed.
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            inactive = int(
+                node1.query(
+                    f"SELECT count() FROM system.parts"
+                    f" WHERE database = currentDatabase() AND table = '{table}' AND NOT active"
+                ).strip()
+            )
+            if inactive == 0:
+                break
+            time.sleep(0.5)
+        assert inactive == 0, "Outdated parts were not cleaned up before the restart"
+
+        node1.stop_clickhouse()
+        node1.start_clickhouse()
+        ensure_node_up(node1)
+
+        # Retry the insert directly (instead of `wait_for_leader`, whose probe inserts would
+        # consume the block number the covered part must reuse) until leadership is re-acquired.
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                node1.query(f"INSERT INTO {table} VALUES (15)")
+                break
+            except Exception:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(1)
+
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
         detached_before = detached_names()
-        assert len(detached_before) == 2
+        assert len(detached_before) == 2, f"Expected two detached parts, got {detached_before}"
+
+        def block_range(name):
+            parts = name.split("_")
+            return int(parts[1]), int(parts[2])
+
+        covered = [n for n in detached_before if n != detached_merged[0]]
+        assert len(covered) == 1
+        merged_min, merged_max = block_range(detached_merged[0])
+        covered_min, covered_max = block_range(covered[0])
+        assert merged_min <= covered_min and covered_max <= merged_max, (
+            f"The new part {covered[0]} is not covered by {detached_merged[0]};"
+            f" the restart did not reset the block-number counter as expected"
+        )
 
         node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
         try:
+            # The covered part gets its permanent `inactive_` rename first, arming the journal;
+            # the fence in front of the next permanent change then rejects the command.
             with pytest.raises(Exception, match="middle of changing the detached namespace"):
                 node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
             # `WHERE x > 0` excludes the `x = 0` probe rows inserted by `wait_for_leader`.
@@ -2087,15 +2149,16 @@ def test_attach_partition_undoes_detached_changes_when_lease_goes_stale(started_
                 "A rejected ATTACH PARTITION consumed part of the detached namespace"
             )
             assert node1.contains_in_log(
-                "Restoring detached file .*txn_version.txt removed by a rejected command"
-            ), "The stripped transaction metadata was not restored"
+                "Renaming detached directory .* back to .* after a rejected command"
+            ), "The inactive_ rename of the covered detached part was not undone"
         finally:
             node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
-        # The restored detached parts are still attachable, contents and all.
+        # The restored detached parts are still attachable: the merged part carries the rows,
+        # the covered part is shelved as `inactive_` (this time for good).
         node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
         assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
-        assert detached_names() == []
+        assert detached_names() == ["inactive_" + covered[0]]
     finally:
         try:
             node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
