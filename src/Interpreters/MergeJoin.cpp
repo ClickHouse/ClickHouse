@@ -1283,11 +1283,8 @@ bool MergeJoin::isSupported(JoinKind kind, JoinStrictness strictness)
 
     bool all_join = is_all && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
 
-    /// INNER ANY must return one row per matching key (any_join_distinct_right_table_keys = 0;
-    /// legacy INNER ANY is rewritten to SEMI LEFT before reaching here). MergeJoin sorts the left
-    /// side only per block, so it cannot deduplicate left keys across blocks and would keep every
-    /// left row like SEMI LEFT. Do not advertise it, so the planner can pick another configured
-    /// algorithm that returns the correct result.
+    /// INNER ANY is excluded: it needs one row per left key, but this join sorts the left side
+    /// only per block and so cannot deduplicate keys across blocks.
     bool semi_or_any_left = isLeft(kind) && (is_any || is_semi);
     bool semi_inner = isInner(kind) && is_semi;
 
