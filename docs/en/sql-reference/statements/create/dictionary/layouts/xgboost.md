@@ -11,7 +11,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge />
 
-The `xgboost` (`XGBOOST`) dictionary trains an [XGBoost](https://xgboost.readthedocs.io/) gradient-boosted model once, at load time, from a source table of training rows, then predicts a numeric target for any feature vector you pass in. The feature columns are the dictionary key and the single attribute is the target the model learns.
+The `xgboost` (`XGBOOST`) dictionary trains an [XGBoost](https://xgboost.readthedocs.io/) gradient-boosted model, at load time, from a source table of training rows, then predicts a numeric target for any feature vector you pass in. The feature columns are the dictionary key and the single attribute is the target the model learns.
 
 It is suited to tabular regression and binary classification where the features are numeric — for example forecasting a value from several measurements, or scoring rows against a learned target. Multiclass objectives are not supported (see [Layout parameters](#layout-parameters)).
 
@@ -22,12 +22,10 @@ The XGBoost integration is experimental. Enable it with the `enable_xgboost` set
 SET enable_xgboost = 1;
 ```
 
-`predictXGBoost` is the only way to predict with such a dictionary, so with the setting off an already created dictionary cannot be used either.
-
 A dictionary defined in a server configuration file rather than with `CREATE DICTIONARY` belongs to no session, so it is gated by the server setting instead: set `enable_xgboost` to `1` in the `default` profile, otherwise the dictionary fails to load and reports the same error in `system.dictionaries`.
 :::
 
-[`predictXGBoost`](/sql-reference/functions/machine-learning-functions#predictxgboost) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error (see [Notes](#notes)).
+[`predictXGBoost`](/sql-reference/functions/machine-learning-functions#predictxgboost) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error.
 
 ## Quickstart {#quickstart}
 
@@ -62,7 +60,7 @@ LAYOUT(XGBOOST(
 LIFETIME(0);
 ```
 
-`PRIMARY KEY (x1, x2)` makes `x1` and `x2` the features — but for an `XGBOOST` dictionary this "key" is the feature vector you pass in to predict, not a stored value you look up (see [Dictionary structure](#dictionary-structure)). The target the model learns is `y`, inferred as the single column that is not part of the key; the parameters in `LAYOUT` are XGBoost hyperparameters (see [Layout parameters](#layout-parameters)).
+`PRIMARY KEY (x1, x2)` makes `x1` and `x2` the features. The target the model learns is `y`, inferred as the single column that is not part of the key; the parameters in `LAYOUT` are XGBoost hyperparameters (see [Layout parameters](#layout-parameters)).
 
 **4. Predict** — `predictXGBoost` takes the features positionally and returns the prediction:
 
@@ -83,14 +81,12 @@ The ground truth is `2*1 + 3*2 = 8`, so the model's prediction is close.
 **Training (at load time).** Each source row is a `(features..., target)` observation. When the dictionary loads, the source is read block by block and the model is then trained once over the whole set. Feature and target values are read as floats, so the key columns must be numeric and the target attribute floating-point (see [Dictionary structure](#dictionary-structure)).
 
 :::warning
-**Training holds the entire training set in memory.** Reading the source in blocks is not out-of-core training: each block is accumulated rather than consumed, so the whole training set is resident before the first boosting round and stays resident until the last one.
-
-Size the source table for a load that fits in memory. Training a table that does not fit fails the load with a memory-limit exception, or gets the server OOM-killed.
+**Training holds the entire training set in memory.** Reading the source in blocks is not out-of-core training: each block is accumulated rather than consumed, so the whole training set is memory resident before the first boosting round and stays memory resident until the last one.
 :::
 
 **Predicting (at query time).** To predict, the model takes the feature vector — in the same order as the key columns were declared — and runs it through the trained booster, returning a `Float64`.
 
-**The model is not persisted.** It lives only in memory, for as long as the dictionary is loaded, and is trained again from the source on every load — including after a server restart. Training cost is therefore paid on each load, which matters for a large source table.
+**The model is not persisted.** It lives only in memory, for as long as the dictionary is loaded, and is trained again from the source on every load — including after a server restart.
 
 **Retraining the model.** Because every load trains from scratch, `SYSTEM RELOAD DICTIONARY` retrains the model against the current contents of the source table:
 
@@ -101,10 +97,6 @@ SYSTEM RELOAD DICTIONARY model;
 
 A non-zero `LIFETIME` also retrains, since a lifetime-triggered reload is an ordinary load. Use it to refresh the model periodically as the training data grows.
 
-:::warning
-Every load trains on the whole source table, and nothing about a trained model survives it. A restart, a `SYSTEM RELOAD DICTIONARY`, or each expiry of a non-zero `LIFETIME` pays the full training cost again — the time *and* the memory, since every load again holds the entire training set in memory as described above. On a large source table neither is small: `LIFETIME(3600)` on a table that takes ten minutes to train means retraining for ten minutes of every hour, indefinitely, with the whole training set resident for each of those ten minutes. A `LIFETIME` that looks affordable on the clock can still exhaust memory, so choose it from how long training takes *and* how much memory the training set needs, not from how often the data changes, and prefer `LIFETIME(0)` with an explicit `SYSTEM RELOAD DICTIONARY` when you want to control when that cost is paid.
-:::
-
 ## Dictionary structure {#dictionary-structure}
 
 An `XGBOOST` dictionary has a fixed shape:
@@ -114,8 +106,6 @@ An `XGBOOST` dictionary has a fixed shape:
 
 A column that does not match these requirements is rejected when the dictionary loads, not when you create it.
 
-The target must be floating-point because a prediction is a floating-point value: `predictXGBoost` returns a `Float64`, and an integer target column would describe the model as predicting whole numbers — a probability of `0.73` declared as a `UInt8`. This does not prevent binary classification: the labels in the source table may be integers, you simply declare the target column as `Float32` or `Float64` in the dictionary and the source values are converted on load.
-
 ## Layout parameters {#layout-parameters}
 
 Only the parameters listed below are accepted; any other name fails the load, so typos are caught when the model trains rather than being silently ignored. `num_iterations` is handled by ClickHouse (see its description); every other parameter is forwarded to the XGBoost booster unchanged, as a string, and takes XGBoost's own default and value range — see the [XGBoost parameter reference](https://xgboost.readthedocs.io/en/stable/parameter.html).
@@ -124,7 +114,7 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | --- | --- |
 | `num_iterations` | Number of boosting rounds (how many trees to train). A positive integer, used as the training loop count rather than forwarded to the booster. Default `100`. |
 | `booster` | Booster type: `gbtree`, `gblinear`, or `dart`. |
-| `objective` | Learning objective, e.g. `reg:squarederror` or `binary:logistic`. Must be an objective that predicts a single value per row; multiclass objectives (`multi:softmax`, `multi:softprob`) are rejected — see the note below. |
+| `objective` | Learning objective, e.g. `reg:squarederror` or `binary:logistic`. Must be an objective that predicts a single value per row; multiclass objectives (`multi:softmax`, `multi:softprob`) are rejected. |
 | `eval_metric` | Evaluation metric(s) used during training. |
 | `seed` | Random number seed. |
 | `verbosity` | Logging verbosity: `0` (silent) to `3` (debug). |
@@ -145,10 +135,6 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | `max_leaves` | Maximum number of leaf nodes (used with `grow_policy` `lossguide`). |
 | `max_bin` | Maximum number of discrete bins used to bucket continuous features (used with `tree_method` `hist`). |
 | `num_parallel_tree` | Number of trees grown per boosting round (a value `> 1` trains a boosted random forest). |
-
-:::note
-Multiclass objectives are not supported. `multi:softmax` and `multi:softprob` require XGBoost's `num_class` parameter, which is not in the list above, and `multi:softprob` predicts one probability per class per row while a dictionary returns exactly one `Float64` per row. A dictionary whose `objective` starts with `multi:` is rejected when the model trains. Use a regression objective, or `binary:logistic` for two-class classification.
-:::
 
 You can define the dictionary with `CREATE DICTIONARY` DDL (as in the quickstart above).
 
@@ -173,14 +159,7 @@ LIFETIME(0);
 SELECT predictXGBoost('model', 1.0, 2.0, map('type', 0, 'iteration_end', 0));
 ```
 
-The parameter names map to the prediction parameters of XGBoost's `XGBoosterPredictFromDMatrix`. Only the keys below are accepted; any other key fails the query.
-
-Every parameter is an integer or a boolean, so the `Map` values must be an integer type — `Map(String, Float64)` is rejected at query analysis instead of being truncated, and `strict_shape` is given as `0` or `1`:
-
-```sql
--- Rejected: the map values are Float64
-SELECT predictXGBoost('model', 1.0, 2.0, map('iteration_end', 2.9));
-```
+The parameter names map to the prediction parameters of XGBoost's `XGBoosterPredictFromDMatrix`. Only the keys below are accepted; any other key fails the query. Every parameter is an integer or a boolean, so the `Map` values must be an integer type.
 
 | Parameter | Description | Default |
 | --- | --- | --- |
@@ -189,10 +168,6 @@ SELECT predictXGBoost('model', 1.0, 2.0, map('iteration_end', 2.9));
 | `iteration_end` | Last boosting iteration to include; `0` uses all trees. | `0` |
 | `strict_shape` | Apply stricter output-shape rules. | `false` |
 | `ntree_limit` | Deprecated; limits the number of trees used. Prefer `iteration_begin` / `iteration_end`. | — |
-
-:::note
-`predictXGBoost` returns exactly one `Float64` per input row, so only prediction types that produce a single value per row are accepted: `0` (value) and `1` (margin). Types that emit several values per row - such as SHAP contributions (`2`, `3`) or feature interactions (`4`, `5`) - are rejected with an error.
-:::
 
 ## Notes {#notes}
 
