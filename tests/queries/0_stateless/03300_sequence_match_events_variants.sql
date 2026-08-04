@@ -158,3 +158,28 @@ select 'Last is not fooled by a time constraint scanning past later anchors' as 
 select 'All is not fooled by a time constraint scanning past later anchors' as test, [[20]] = sequenceMatchEventsAll('(?1)(?t>10)(?2)')(time, event = 'A', event = 'B') from sequence_test_variants;
 
 drop table sequence_test_variants;
+
+-- Test: patterns with no numbered (?N) captures at all ('', '.', '.*') are valid, per
+-- 00222_sequence_aggregate_function_family.sql, which checks them against sequenceMatch/sequenceCount.
+-- They match (or match trivially at every position) but never capture any event, since captured
+-- events only come from (?N) actions. First/Last therefore return [] here, same as
+-- sequenceMatchEvents('') / ('.') / ('.*') already do (also []) - [] does not distinguish "matched,
+-- nothing captured" from "did not match at all". All returns one (empty) array per non-overlapping
+-- match, so its length still matches sequenceCount's count for the same pattern.
+create table sequence_test_variants (time UInt32, data UInt8) engine=MergeTree ORDER BY tuple();
+insert into sequence_test_variants values (0,0),(1,0),(2,0),(3,0),(4,1),(5,2),(6,0),(7,0),(8,0),(9,0),(10,1),(11,1);
+
+select 'Empty pattern - First' as test, [] = sequenceMatchEventsFirst('')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
+select 'Empty pattern - Last' as test, [] = sequenceMatchEventsLast('')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
+select 'Empty pattern - All count matches sequenceCount' as test, sequenceCount('')(time, data = 0, data = 1, data = 2, data = 3) = length(sequenceMatchEventsAll('')(time, data = 0, data = 1, data = 2, data = 3)) from sequence_test_variants;
+select 'Empty pattern - All entries are empty' as test, [] = sequenceMatchEventsAll('')(time, data = 0, data = 1, data = 2, data = 3)[1] from sequence_test_variants;
+
+select 'Any-event pattern (.) - First' as test, [] = sequenceMatchEventsFirst('.')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
+select 'Any-event pattern (.) - Last' as test, [] = sequenceMatchEventsLast('.')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
+select 'Any-event pattern (.) - All count matches sequenceCount' as test, sequenceCount('.')(time, data = 0, data = 1, data = 2, data = 3) = length(sequenceMatchEventsAll('.')(time, data = 0, data = 1, data = 2, data = 3)) from sequence_test_variants;
+
+select 'Kleene pattern (.*) - First' as test, [] = sequenceMatchEventsFirst('.*')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
+select 'Kleene pattern (.*) - Last' as test, [] = sequenceMatchEventsLast('.*')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
+select 'Kleene pattern (.*) - All count matches sequenceCount' as test, sequenceCount('.*')(time, data = 0, data = 1, data = 2, data = 3) = length(sequenceMatchEventsAll('.*')(time, data = 0, data = 1, data = 2, data = 3)) from sequence_test_variants;
+
+drop table sequence_test_variants;

@@ -40,3 +40,13 @@ First prefers a later complete match over an earlier partial	1
 Last prefers a later partial over an earlier, longer one	1
 Last is not fooled by a time constraint scanning past later anchors	1
 All is not fooled by a time constraint scanning past later anchors	1
+Empty pattern - First	1
+Empty pattern - Last	1
+Empty pattern - All count matches sequenceCount	1
+Empty pattern - All entries are empty	1
+Any-event pattern (.) - First	1
+Any-event pattern (.) - Last	1
+Any-event pattern (.) - All count matches sequenceCount	1
+Kleene pattern (.*) - First	1
+Kleene pattern (.*) - Last	1
+Kleene pattern (.*) - All count matches sequenceCount	1

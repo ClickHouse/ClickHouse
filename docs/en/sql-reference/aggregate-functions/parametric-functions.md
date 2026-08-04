@@ -321,7 +321,7 @@ sequenceMatchEventsFirst(pattern)(timestamp, cond1, cond2, ...)
 
 **Returned values**
 
-- Array of timestamps for the first matched chain. Returns partial match if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all.
+- Array of timestamps for the first matched chain. Returns partial match if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all. Patterns with no numbered `(?N)` captures (`''`, `.`, `.*`) can match without capturing any event, in which case this also returns an empty array (indistinguishable from no match at all) - the same behavior as `sequenceMatchEvents` for these patterns.
 
 Type: Array.
 
@@ -386,7 +386,7 @@ sequenceMatchEventsLast(pattern)(timestamp, cond1, cond2, ...)
 
 **Returned values**
 
-- Array of timestamps for the last matched chain. Returns partial match if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all.
+- Array of timestamps for the last matched chain. Returns partial match if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all. Patterns with no numbered `(?N)` captures (`''`, `.`, `.*`) can match without capturing any event, in which case this also returns an empty array (indistinguishable from no match at all) - the same behavior as `sequenceMatchEvents` for these patterns.
 
 Type: Array.
 
@@ -451,7 +451,7 @@ sequenceMatchEventsAll(pattern)(timestamp, cond1, cond2, ...)
 
 **Returned values**
 
-- Array of arrays, where each inner array contains timestamps for a matched chain. The last match may be partial if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all.
+- Array of arrays, where each inner array contains timestamps for a matched chain. The last match may be partial if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all. Patterns with no numbered `(?N)` captures (`''`, `.`, `.*`) can match without capturing any event: each such match still contributes one (empty) inner array, so the outer array's length still equals `sequenceCount` for the same pattern.
 
 Type: Array(Array).
 
