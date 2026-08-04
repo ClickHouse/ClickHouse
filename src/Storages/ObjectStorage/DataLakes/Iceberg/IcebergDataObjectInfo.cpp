@@ -201,10 +201,8 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
     }
     else if (!identity_partition_columns.empty())
     {
-        /// Fail closed: these columns are absent from the data file and must be backfilled from this
-        /// payload. An older worker that cannot carry them would read the column as NULL from the file
-        /// and silently return wrong rows for SELECT, WHERE or GROUP BY instead of failing. Mirrors the
-        /// read_source_index handling in ClusterFunctionReadTaskResponse::serialize. See issue #110216.
+        /// Fail closed: a worker that cannot carry this payload would read the column as NULL and
+        /// return wrong rows instead of failing. Same handling as read_source_index. See #110216.
         throw Exception(
             ErrorCodes::UNKNOWN_PROTOCOL,
             "Worker protocol version {} cannot carry Iceberg `identity_partition_columns`, which are "

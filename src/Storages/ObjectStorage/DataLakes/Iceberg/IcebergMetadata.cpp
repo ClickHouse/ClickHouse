@@ -672,10 +672,8 @@ void IcebergMetadata::cacheIdentityPartitionColumns(
 NamesAndTypesList IcebergMetadata::getIdentityPartitionColumns(
     ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & pinned_state) const
 {
-    /// Identity-partition columns can be absent from the data files (backfilled from the manifest at
-    /// read time) so they must be excluded from PREWHERE; the exclusion is derived from the snapshot
-    /// pinned for this query, not a fresh re-fetch, so a concurrent commit cannot reopen the pushdown
-    /// race. See issue #110216.
+    /// Excluded from PREWHERE because the value is backfilled after the read. Derived from the
+    /// snapshot pinned for this query, so a concurrent commit cannot reopen the race. See #110216.
     try
     {
         /// The resolved names depend on both fields: schema_id selects the field name for a given

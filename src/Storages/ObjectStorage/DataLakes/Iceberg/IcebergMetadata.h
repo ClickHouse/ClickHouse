@@ -229,10 +229,8 @@ private:
     const ObjectStoragePtr object_storage;
     const DB::Iceberg::PersistentTableComponents persistent_components;
 
-    /// Identity-partition source columns keyed by (metadata_file_path, schema_id): the resolved names
-    /// depend on the schema (a rename keeps source_id but changes the name) and on the exact metadata
-    /// file, since REST catalogs write several `vN-<uuid>.metadata.json` files that share the numeric
-    /// version but carry different partition specs. Collected across ALL specs. See #110216.
+    /// Identity-partition source columns across all specs, keyed by (metadata_file_path, schema_id):
+    /// a rename keeps source_id, and same-version metadata files can carry different specs. See #110216.
     mutable std::mutex identity_partition_columns_mutex;
     mutable std::map<std::pair<String, Int32>, NamesAndTypesList> identity_partition_columns_by_state;
     const DataLakeStorageSettings & data_lake_settings;

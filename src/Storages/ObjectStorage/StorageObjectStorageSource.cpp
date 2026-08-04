@@ -117,10 +117,8 @@ ColumnPtr backfillIdentityPartitionColumn(const DataTypePtr & column_type, const
             ? value.safeGet<Int64>()
             : static_cast<Int64>(value.safeGet<UInt64>());
         auto single_value = column_type->createColumn();
-        /// The DecimalField must carry the target column's own decimal width: ColumnDecimal<T>::insert
-        /// does Field::safeGet<T>(), which checks the Field type tag. Decimal64/DateTime64/Time64 all
-        /// share tag Decimal64, but Decimal32/Decimal128/Decimal256 have distinct tags, so hard-coding
-        /// DecimalField<Decimal64> throws BAD_GET for those widths.
+        /// The DecimalField must carry the target's own width: ColumnDecimal<T>::insert checks the
+        /// Field tag, so a hard-coded DecimalField<Decimal64> throws BAD_GET for the other widths.
         const WhichDataType which(inner_type);
         if (which.isDecimal32())
             single_value->insert(DecimalField<Decimal32>(static_cast<Int32>(ticks), *scale));
@@ -586,10 +584,8 @@ Chunk StorageObjectStorageSource::generate()
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
 #if USE_AVRO
-            /// Backfill Iceberg identity-partition columns whose value lives only in the manifest
-            /// partition tuple and is absent from the data file (Hive-style / Fabric-virtualized
-            /// Iceberg, issue #110216). The column is part of the schema, so the reader already emits
-            /// it (NULL-filled); here we overwrite it in place with the per-file partition value.
+            /// Backfill identity-partition columns absent from the data file. The reader already
+            /// emits the column NULL-filled, so overwrite it in place. See #110216.
             if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
                 iceberg_info && !iceberg_info->info.identity_partition_columns.empty())
             {

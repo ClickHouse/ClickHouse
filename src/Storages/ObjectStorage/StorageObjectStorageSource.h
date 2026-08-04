@@ -18,10 +18,8 @@ namespace DB
 
 class SchemaCache;
 
-/// Builds a constant column of `num_rows` holding an Iceberg identity-partition value read from the
-/// manifest partition tuple (the source column is absent from the data file). Scale-backed target
-/// types (Decimal32/64/128/256, DateTime64, Time64) receive the raw physical tick directly wrapped in
-/// a width-correct DecimalField; other types go through convertFieldToType. See issue #110216.
+/// Constant column of `num_rows` holding an identity-partition value from the manifest. Scale-backed
+/// types take the raw tick in a width-correct DecimalField; others go via convertFieldToType.
 ColumnPtr backfillIdentityPartitionColumn(const DataTypePtr & column_type, const Field & value, size_t num_rows);
 
 class StorageObjectStorageSource final : public ISource
