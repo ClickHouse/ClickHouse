@@ -183,3 +183,25 @@ SELECT ll.Date FROM (WITH ll AS (SELECT 1 AS k, 'D' AS Date UNION ALL SELECT 2 A
           SELECT * FROM ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k
                            LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k)
 ORDER BY ll.Date;
+
+-- ============================================================
+-- Two `USING` chains: the old analyzer rejected this shape
+-- (`NOT_IMPLEMENTED: Multiple USING statements are not supported`); the analyzer
+-- supports it and applies the same naming as elsewhere, except that the merged
+-- `USING` key belongs to the join rather than to a single table and therefore
+-- keeps its bare name.
+-- ============================================================
+
+SET analyzer_compatibility_multiple_joins_qualify_column_names = 1;
+
+SELECT '=== describe: two USING chains, setting ON ===';
+DESCRIBE (SELECT * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 USING (k) LEFT JOIN (SELECT 1 AS k) AS t2 USING (k));
+
+SELECT '=== two USING chains: outer ref to a qualified column, setting ON ===';
+SELECT ll.Date FROM (SELECT * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 USING (k) LEFT JOIN (SELECT 1 AS k) AS t2 USING (k));
+
+SELECT '=== two USING chains: merged key is referenced bare, setting ON ===';
+SELECT k FROM (SELECT * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 USING (k) LEFT JOIN (SELECT 1 AS k) AS t2 USING (k));
+
+SELECT '=== two USING chains: merged key is not qualified, setting ON ===';
+SELECT ll.k FROM (SELECT * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 USING (k) LEFT JOIN (SELECT 1 AS k) AS t2 USING (k)); -- { serverError UNKNOWN_IDENTIFIER }
