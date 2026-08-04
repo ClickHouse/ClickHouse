@@ -375,9 +375,12 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     };
 
     /// Non-default endpoints must be set explicitly: plain HTTP (Azurite; the builder
-    /// defaults to https_only=true) and non-default HTTPS hosts (sovereign clouds,
-    /// custom domains). For a parsed connection string, azure_endpoint is already set
-    /// above and storage_account_url holds the connection string, not a URL.
+    /// defaults to https_only=true) and non-default HTTPS hosts (sovereign clouds).
+    /// The builder still requires the storage account name, so hosts that do not encode
+    /// it in the first label (custom domains) only work when endpoint.account_name is
+    /// set, which the credential-based SQL paths cannot do yet. For a parsed connection
+    /// string, azure_endpoint is already set above and storage_account_url holds the
+    /// connection string, not a URL.
     if (endpoint.storage_account_url.starts_with("http://"))
     {
         set_option("azure_endpoint", connection_params.getConnectionURL());
