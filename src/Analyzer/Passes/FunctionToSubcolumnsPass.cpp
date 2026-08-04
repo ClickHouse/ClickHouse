@@ -88,10 +88,8 @@ bool columnSourceHasFinal(const QueryTreeNodePtr & column_source)
     return false;
 }
 
-/// Identifies a column within one query tree. Keyed on the source NODE rather than on the storage
-/// name because every `file()`/`s3()`/`url()` call resolves to the same StorageID
-/// (`_table_function.<name>`), so two such sources in one query would otherwise share a key and
-/// mix their optimizability counts.
+/// Keyed on the source NODE, not the StorageID: every `file()`/`s3()`/`url()` resolves to
+/// `_table_function.<name>`, so two such sources in one query would otherwise share a key.
 struct ColumnInSource
 {
     const IQueryTreeNode * source = nullptr;

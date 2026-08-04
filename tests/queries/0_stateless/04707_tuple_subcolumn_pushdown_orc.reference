@@ -1,0 +1,23 @@
+-- pruning: a tuple element must prune like the top-level column holding the same values
+1
+top_level	20000
+1
+tuple_element	20000
+1
+tuple_element_ci	20000
+-- refused as key names: only named tuple elements have their own statistics
+14286
+map_keys	200000
+100000
+map_values	200000
+33334
+nullable_null	200000
+25000
+array_size	200000
+1
+unnamed_tuple	200000
+1
+array_of_tuple	200000
+-- a structure hint whose element type disagrees with the file must not prune
+1
+type_mismatch	200000

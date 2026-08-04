@@ -1,0 +1,15 @@
+-- tuple element becomes a subcolumn read
+1
+1
+1
+-- other subcolumn kinds stay whole-column functions
+0
+0
+-- two distinct table function sources keep separate identities
+2
+-- results are unchanged
+1
+1
+33
+1000
+250

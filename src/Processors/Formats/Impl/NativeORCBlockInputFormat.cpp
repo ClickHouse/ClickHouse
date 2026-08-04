@@ -41,6 +41,7 @@
 #include <IO/WithFileSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -204,6 +205,79 @@ static DataTypePtr findHeaderTypeByPath(const Block & header, const String & nam
             return subcolumn_type;
     }
     return nullptr;
+}
+
+/// True when `path` is a named tuple element at every level, so it is a file leaf with its own
+/// statistics. Nullable, LowCardinality and Array are transparent; anything else is refused,
+/// which is what rejects Map/Variant/JSON/Dynamic and `.null`, `.size0`, `.keys`, `.values`.
+static bool isNamedTupleElementPath(const IDataType & type, std::string_view path, bool ignore_case)
+{
+    const IDataType * current = &type;
+    while (true)
+    {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(current))
+            current = nullable->getNestedType().get();
+        else if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(current))
+            current = low_cardinality->getDictionaryType().get();
+        else if (const auto * array = typeid_cast<const DataTypeArray *>(current))
+            current = array->getNestedType().get();
+        else
+            break;
+    }
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(current);
+    if (!tuple || !tuple->hasExplicitNames())
+        return false;
+
+    if (tuple->tryGetPositionByName(path, ignore_case))
+        return true;
+
+    /// An element name may itself contain dots, so every split has to be considered.
+    for (size_t dot = path.find('.'); dot != std::string_view::npos; dot = path.find('.', dot + 1))
+    {
+        auto head = path.substr(0, dot);
+        auto tail = path.substr(dot + 1);
+        if (head.empty() || tail.empty())
+            continue;
+        if (auto position = tuple->tryGetPositionByName(head, ignore_case))
+            if (isNamedTupleElementPath(*tuple->getElement(*position), tail, ignore_case))
+                return true;
+    }
+    return false;
+}
+
+/// Resolves `name` as a named tuple element of a header column, through the same
+/// tryGetSubcolumnType lookup the search argument builder resolves it with.
+static DataTypePtr findTupleElementKeyType(const Block & header, const String & name, bool ignore_case)
+{
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = header.findByName(String(column_name), ignore_case);
+        if (!column || !isNamedTupleElementPath(*column->type, subcolumn_name, ignore_case))
+            continue;
+        if (auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name))
+            return subcolumn_type;
+    }
+    return nullptr;
+}
+
+/// KeyCondition derives its key names from this block, and the ORC header carries only the parent
+/// column, so a tuple element predicate would degrade to `unknown`. Only the local copy grows;
+/// the reader header stays as it is, so the read path is unaffected.
+static Block buildORCKeyConditionBlock(const Block & header, const ActionsDAG * filter_dag, bool ignore_case)
+{
+    if (!filter_dag)
+        return header;
+
+    Block keys = header;
+    for (const auto & required : filter_dag->getRequiredColumns())
+    {
+        if (keys.has(required.name))
+            continue;
+        if (auto type = findTupleElementKeyType(header, required.name, ignore_case))
+            keys.insert({type->createColumn(), type, required.name});
+    }
+    return keys;
 }
 
 static bool isDictionaryEncoded(const orc::StripeInformation * stripe_info, const orc::Type * orc_type)
@@ -1152,7 +1226,10 @@ void NativeORCBlockInputFormat::prepareFileReader()
         return;
 
     if (format_filter_info)
-        format_filter_info->initKeyConditionOnce(getPort().getHeader());
+        format_filter_info->initKeyConditionOnce(buildORCKeyConditionBlock(
+            getPort().getHeader(),
+            format_filter_info->filter_actions_dag.get(),
+            format_settings.orc.case_insensitive_column_matching));
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
