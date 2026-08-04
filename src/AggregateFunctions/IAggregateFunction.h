@@ -985,7 +985,7 @@ struct AggregateFunctionProperties
       *
       * Accepting the `Variant` natively does not exempt the function from the standard NULL-skipping contract:
       * the factory wraps the natively-resolved function in `AggregateFunctionVariantNull`, which skips the rows
-      * where a `Variant` argument is NULL, exactly as the `Null` combinator does for `Nullable` arguments (see
+      * where a `Variant` argument is NULL, like the `Null` combinator does for `Nullable` arguments (see
       * `skips_variant_nulls` below for the functions that implement the contract themselves).
       */
     bool support_variant_argument = false;

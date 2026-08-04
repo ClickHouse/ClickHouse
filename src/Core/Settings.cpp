@@ -5425,7 +5425,7 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 ```
 )", 0) \
     DECLARE(Bool, aggregate_functions_skip_variant_nulls, true, R"(
-Aggregate functions skip the rows where a `Variant` argument holds a NULL value, exactly as they skip the NULL values of a `Nullable` argument.
+Aggregate functions skip the rows where a `Variant` argument holds a NULL value, like they skip the NULL values of a `Nullable` argument. Only the row skipping matches `Nullable`: the function keeps its usual result type, and a group where every `Variant` value is NULL gets the same result as an empty set.
 
 A `Variant` is not `Nullable`, so the `-Null` combinator is never applied to it, and before ClickHouse 26.8 the aggregate functions that accept a `Variant` argument natively (`count`, `any`, `groupArray`, `groupConcat`, the `uniq` family, ...) processed those rows as ordinary values: `count` counted them, `any` could return NULL from a group that has non-NULL values, `groupArray` stored the NULLs, and `uniq` counted NULL as a distinct value.
 
