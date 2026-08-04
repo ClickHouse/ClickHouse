@@ -980,8 +980,11 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
              auto projection_storage = getProjection(file);
              auto params_copy = params;
              params_copy.external_transaction = dest_storage->transaction;
-             /// The top-level fsync below covers the whole subtree; don't let each projection re-walk it.
-             params_copy.fsync_part_directory = false;
+             /// Only clear the flag when nothing else suppresses the nested directory walk: under an
+             /// external transaction that walk is already skipped, and there the flag still fsyncs a
+             /// rewritten projection archive's contents.
+             if (!params_copy.external_transaction)
+                 params_copy.fsync_part_directory = false;
              projection_storage->freeze(dest_storage->getRelativePath(), file, read_settings, write_settings, save_metadata_callback, params_copy);
          }
     }
