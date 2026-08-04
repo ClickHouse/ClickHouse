@@ -93,7 +93,11 @@ SQLQueryPiece applySortFunction(
 
     /// sort() / sort_desc() do not change the values, they only affect the output ordering.
     /// We pass the argument through unchanged and set the sort direction on the result.
+    /// sort() / sort_desc() replace the ordering mode entirely, so any `sort_by_labels` set by an
+    /// earlier sort_by_label() / sort_by_label_desc() in the argument (e.g. sort_desc(sort_by_label(...)))
+    /// must be cleared here, otherwise finalizeSQL() would still take the label-sorting path.
     argument.sort_direction = (function_name == "sort") ? 1 : -1;
+    argument.sort_by_labels.clear();
     argument.node = function_node;
     return std::move(argument);
 }

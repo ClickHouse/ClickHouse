@@ -48,6 +48,10 @@ promql_client -q "sort(sort_desc(up))"
 echo "-- sort on expression: sort(up * 2) ascending (20, 40, 60)"
 promql_client -q "sort(up * 2)"
 
+echo "-- sort_desc(sort_by_label(up, 'instance')): sort() must override the ordering mode entirely,"
+echo "-- so this is descending by value (30, 20, 10), not descending by the 'instance' label"
+promql_client -q "sort_desc(sort_by_label(up, 'instance'))"
+
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"
