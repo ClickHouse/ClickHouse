@@ -138,10 +138,51 @@ void StorageState::writeInfoFile() const
 
 void StorageState::shutdown()
 {
+    FileDeleteQueuePtr leftover_deletes;
     if (background)
     {
+        leftover_deletes = background->file_delete_queue;
         background->shutdown();
         background.reset();
+    }
+
+    /// The on-disk node storage is not persistent: it is wiped on startup, and a snapshot install
+    /// (`KeeperStateMachine::apply_snapshot`) destroys and recreates the whole storage in-process
+    /// without going through that wipe. Remove our files here - otherwise every snapshot install
+    /// would leave the previous run set behind on disk until the next full restart.
+    if (!memory_only && disk)
+    {
+        const auto remove_file = [&](const std::string & path)
+        {
+            try
+            {
+                disk->removeFileIfExists(path);
+            }
+            catch (...)
+            {
+                DB::tryLogCurrentException(log, fmt::format("Failed to delete file {} during shutdown", path));
+            }
+        };
+
+        for (const auto & run : sorted_runs)
+        {
+            for (const auto & file : run->files)
+            {
+                /// ~SortedFile would only re-enqueue the path to the no-longer-drained delete queue.
+                file->delete_when_destroyed = false;
+                remove_file(file->file_path);
+            }
+        }
+
+        /// Deletions that were enqueued but not yet performed by the background threads
+        /// (including output files of a merge interrupted by the shutdown).
+        if (leftover_deletes)
+        {
+            std::lock_guard lock(leftover_deletes->mutex);
+            for (const auto & path : leftover_deletes->paths)
+                remove_file(path);
+            leftover_deletes->paths.clear();
+        }
     }
 }
 
