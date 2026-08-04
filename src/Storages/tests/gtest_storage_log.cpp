@@ -13,7 +13,9 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <cctype>
 #include <memory>
+#include <string_view>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -179,6 +181,26 @@ static String overlongColumnName()
     return String(static_cast<size_t>(NAME_MAX), 'c');
 }
 
+/// The diagnostic has to name the offending file and the bound, not just the error class, so that
+/// a message which dropped either still fails.
+static void expectNamesFileAndLimit(const DB::Exception & e)
+{
+    using namespace DB;
+    EXPECT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    const String message = e.message();
+    const String column = overlongColumnName();
+    EXPECT_NE(message.find(column + ".bin"), String::npos) << message;
+    EXPECT_NE(message.find("current length is " + std::to_string(column.length())), String::npos) << message;
+
+    /// The bound is whatever the disk reports, so require a digit after the phrase rather than a value.
+    static constexpr std::string_view limit_phrase = "max length of a stream name is ";
+    const auto limit_pos = message.find(limit_phrase);
+    EXPECT_NE(limit_pos, String::npos) << message;
+    if (limit_pos != String::npos)
+        EXPECT_TRUE(std::isdigit(static_cast<unsigned char>(message[limit_pos + limit_phrase.size()]))) << message;
+}
+
 /// The state a table created before the DDL check existed loads in: the definition is accepted
 /// because it comes from stored metadata, so only the runtime guards can refuse it.
 static DB::StoragePtr createLegacyOverlongStorage(DB::DiskPtr & disk)
@@ -221,8 +243,7 @@ TEST(StorageLogOverlongName, writeIsRefusedWithTypedError)
     }
     catch (const Exception & e)
     {
-        EXPECT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        EXPECT_NE(e.message().find("max length of a stream name"), String::npos) << e.message();
+        expectNamesFileAndLimit(e);
     }
 
     destroyDisk(disk);
@@ -294,8 +315,7 @@ TEST(StorageLogOverlongName, restoreIsRefusedWithTypedError)
     }
     catch (const Exception & e)
     {
-        EXPECT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        EXPECT_NE(e.message().find("max length of a stream name"), String::npos) << e.message();
+        expectNamesFileAndLimit(e);
     }
 
     destroyDisk(disk);
