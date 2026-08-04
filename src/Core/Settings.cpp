@@ -1164,7 +1164,7 @@ index serialization path cannot handle heterogeneous Field values that JSON colu
 Reject TTL expressions that don't depend on any of table's columns. It indicates a user error most of the time.
 )", 0) \
     DECLARE(Bool, allow_suspicious_row_policies_with_blending_engines, false, R"(
-Allow `CREATE ROW POLICY` and `ALTER ROW POLICY` for a `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` or `GraphiteMergeTree` table.
+Allow `CREATE ROW POLICY` and `ALTER ROW POLICY` for a `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` or `GraphiteMergeTree` table, and `CREATE TABLE` with one of these engines when a row policy for it already exists.
 
 A merge on these engines produces one row out of all the rows with the same sorting key, taking column values from all of them. A row policy cannot hide a row from that merge, only from its result, which by then holds the values of the hidden rows as well - so the policy is not a security boundary. Define the policy on the table which stores the raw rows instead.
 )", 0) \

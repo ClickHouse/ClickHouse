@@ -140,8 +140,9 @@ CREATE ROW POLICY sensitive_filter ON test USING key != 'secret_key' TO accounta
 ```
 
 <Note>
-The check runs for `CREATE ROW POLICY` and `ALTER ROW POLICY` on an existing table; policies which were
-created earlier keep working. On these engines the policy is always applied before `FINAL`, regardless of
+The same check runs for a policy on the whole database (`ON db.*`) when the database holds such a table, and
+for `CREATE TABLE` with one of these engines when a policy for it already exists. Policies which were created
+before the upgrade keep working. On these engines the policy is always applied before `FINAL`, regardless of
 [`apply_row_policy_after_final`](/operations/settings/settings#apply_row_policy_after_final), so at least
 `FINAL` does not merge hidden rows into the result of a query.
 </Note>
