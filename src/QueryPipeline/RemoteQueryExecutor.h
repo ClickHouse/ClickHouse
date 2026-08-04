@@ -327,14 +327,19 @@ private:
     /** Set by the synchronous `read` path (under `was_cancelled_mutex`) while it is blocked in
       * `connections->receivePacket` with the mutex released (`async_socket_for_remote = 0`).
       * A concurrent `finish` (e.g. a `PartialResult` cancellation delivered from another thread)
-      * must not enter its own drain loop in that state — two threads would consume packets from
-      * the same connections and desynchronize the protocol. `finish` sets `drain_requested`
-      * instead, delegating the drain to the reading thread.
+      * must not touch the connections in that state: entering its own drain loop would make two
+      * threads consume packets from the same connections and desynchronize the protocol, and
+      * even `sendCancel` would block on the connections' internal cancel mutex (held by the
+      * reading thread across the blocking receive) while holding `was_cancelled_mutex`, stalling
+      * every concurrent `cancel` / `finish` / `isCancelled` caller until the next packet
+      * arrives. `finish` sets `drain_requested` instead, delegating both the `Cancel` send and
+      * the drain to the reading thread.
       */
     bool sync_read_in_progress TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
-    /** Set by `finish` when it observes `sync_read_in_progress`: the drain is delegated to the
-      * thread inside `read`, which performs it right after its pending `receivePacket` returns.
+    /** Set by `finish` when it observes `sync_read_in_progress`: the `Cancel` send and the drain
+      * are delegated to the thread inside `read`, which performs them right after its pending
+      * `receivePacket` returns.
       * Cleared by that thread (under `was_cancelled_mutex`) when it takes ownership of the drain.
       */
     bool drain_requested TSA_GUARDED_BY(was_cancelled_mutex) = false;

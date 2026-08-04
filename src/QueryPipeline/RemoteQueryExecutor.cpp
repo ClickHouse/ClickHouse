@@ -640,6 +640,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
         {
             LockAndBlocker lock(was_cancelled_mutex);
             sync_read_in_progress = false;
+            /// A drain delegated to this thread (see `finish`) can no longer happen: the
+            /// receive failed, so the connections are broken anyway. Clearing the flag lets a
+            /// later `finish` observe `was_cancelled && !drain_requested` and eagerly
+            /// disconnect them instead of waiting for the destructor.
+            drain_requested = false;
             throw;
         }
 
@@ -666,6 +671,14 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
             drain_requested = false;
             draining = true;
         }
+
+        /// `finish` could not send the `Cancel` packet itself: this thread was holding the
+        /// connections' internal cancel mutex inside `receivePacket` at the time (see `finish`).
+        /// Send it now, before draining, so the replicas wind down and the drain loop
+        /// terminates. No other thread sends a concurrent `Cancel`: `finish` set `was_cancelled`
+        /// before delegating, which makes every later `tryCancel` return early.
+        connections->sendCancel();
+        LOG_TRACE(log, "({}) Cancelling query because enough data has been read", connections->dumpAddresses());
 
         drainConnections(std::move(packet));
         return ReadResult(Block());
@@ -1019,25 +1032,36 @@ void RemoteQueryExecutor::finish()
           * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
           */
 
+        /// The synchronous read path (`async_socket_for_remote = 0`) may be blocked in
+        /// `connections->receivePacket` on another thread right now, with `was_cancelled_mutex`
+        /// released (see `read`). This check must come before `tryCancel`: the reading thread
+        /// holds the connections' internal cancel mutex for the whole blocking receive, so a
+        /// `sendCancel` from this thread would block until the next packet arrives - while we
+        /// hold `was_cancelled_mutex`, stalling every concurrent `cancel` / `finish` /
+        /// `isCancelled` caller together with us. Entering the drain loop from this thread is
+        /// not an option either: two threads would consume packets from the same connections
+        /// and desynchronize the protocol. So do not touch the connections at all - delegate
+        /// both the `Cancel` send and the drain to the reading thread: once the pending
+        /// `receivePacket` returns, `read` observes `drain_requested`, sends the `Cancel`
+        /// itself and drains the connections (see `read`).
+        if (sync_read_in_progress)
+        {
+            /// A synchronous read in progress implies the query was sent over real connections
+            /// and no `read_context` fiber exists, so setting the flag is all `tryCancel` would
+            /// have done here. It also suppresses `sendCancel` in any later `tryCancel`, keeping
+            /// the delegated `Cancel` send (see `read`) the only one.
+            chassert(!read_context);
+            was_cancelled = true;
+            drain_requested = true;
+            return;
+        }
+
         /// Send the request to abort the execution of the request, if not already sent.
         tryCancel("Cancelling query because enough data has been read");
 
         /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
         if (!connections || !sent_query || finished)
             return;
-
-        /// The synchronous read path (`async_socket_for_remote = 0`) may be blocked in
-        /// `connections->receivePacket` on another thread right now, with `was_cancelled_mutex`
-        /// released (see `read`). Entering the drain loop from this thread would make two threads
-        /// consume packets from the same connections and desynchronize the protocol. Delegate the
-        /// drain to the reading thread instead: `tryCancel` above has already asked the replicas
-        /// to wind down, and once the pending `receivePacket` returns, `read` observes
-        /// `drain_requested` and drains the connections itself.
-        if (sync_read_in_progress)
-        {
-            drain_requested = true;
-            return;
-        }
 
         /// Take ownership of the drain loop before releasing the mutex. A concurrent `finish` that
         /// observes the `was_cancelled` we just set (via `tryCancel` above) will now skip its eager
