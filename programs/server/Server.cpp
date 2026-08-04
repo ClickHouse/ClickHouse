@@ -1314,14 +1314,22 @@ try
         {
             /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
             /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
-            /// thread; the listener thread already has them blocked (it inherited the mask at creation), and no
-            /// other thread exists yet, so no handler can run while the code is unmapped. Nothing is lost: the
-            /// signal stays pending for the process and is delivered once the mask is restored below.
+            /// thread first, so that no new record can be queued into the signal pipe from here on. Nothing is
+            /// lost: the signal stays pending for the process and is delivered once the mask is restored below.
             BlockSignalsScope block_signals(asynchronousHandledSignals());
+
+            /// Blocking the signals is not enough by itself: a signal that arrived just before the mask was set
+            /// may already have written a record into the signal pipe, and the listener thread would execute the
+            /// corresponding callback at an arbitrary later moment - possibly inside the remap window. Stop and
+            /// join the listener thread: it drains every record already queued (they are ordered in the pipe
+            /// before the stop request) while the code is still mapped, and then exits. It is restarted below.
+            stopSignalListener();
 
             /// The async logging threads poll rather than block, so join them for the duration and restart afterwards.
             stopAsyncLoggingThreads();
 
+            /// At this point the process is single-threaded again and all handled signals are blocked,
+            /// so no code other than this thread can possibly run while the text segment is rewritten.
             try
             {
                 remapped_size = remapExecutable();
@@ -1336,6 +1344,11 @@ try
         /// running would keep accepting messages into queues that no consumer drains (open() tears the
         /// partially opened channel back down before rethrowing), silently losing later diagnostics.
         startAsyncLoggingThreads();
+
+        /// Restarted after the logging threads, so that if this throws, the exception is still logged normally.
+        /// A pending signal delivered when the mask was restored above only writes a record into the signal
+        /// pipe; the record waits there until the restarted listener thread picks it up, so it is not lost.
+        startSignalListener();
 
         if (remap_exception)
             std::rethrow_exception(remap_exception);

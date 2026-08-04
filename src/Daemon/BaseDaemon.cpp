@@ -138,8 +138,7 @@ BaseDaemon::~BaseDaemon()
 {
     try
     {
-        writeSignalIDtoSignalPipe(SignalListener::StopThread);
-        signal_listener_thread.join();
+        stopSignalListener();
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -485,18 +484,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
-    {
-        /// The signal listener thread only drains the signal pipe; it must never run a signal handler itself.
-        /// Poco already blocks `SIGQUIT`, `SIGTERM` and `SIGPIPE` in every thread it starts, but not the rest
-        /// of the asynchronously delivered handled signals. Block them here, so that the thread inherits the
-        /// mask at creation (doing it inside `SignalListener::run` would leave a window right after the start),
-        /// and restore the mask of this thread afterwards.
-        ///
-        /// This is what makes it possible to keep every thread out of the signal handling path for a while:
-        /// see `remapExecutable` in `Server::main`, which unmaps the code of the handlers themselves.
-        BlockSignalsScope block_signals(asynchronousHandledSignals());
-        signal_listener_thread.start(*signal_listener);
-    }
+    startSignalListener();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -504,6 +492,31 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     if (!executable_path.empty())
         stored_binary_hash = Elf(executable_path).getStoredBinaryHash();
 #endif
+}
+
+void BaseDaemon::startSignalListener()
+{
+    /// The signal listener thread only drains the signal pipe; it must never run a signal handler itself.
+    /// Poco already blocks `SIGQUIT`, `SIGTERM` and `SIGPIPE` in every thread it starts, but not the rest
+    /// of the asynchronously delivered handled signals. Block them here, so that the thread inherits the
+    /// mask at creation (doing it inside `SignalListener::run` would leave a window right after the start),
+    /// and restore the mask of this thread afterwards.
+    ///
+    /// This is what makes it possible to keep every thread out of the signal handling path for a while:
+    /// see `remapExecutable` in `Server::main`, which unmaps the code of the handlers themselves.
+    BlockSignalsScope block_signals(asynchronousHandledSignals());
+    signal_listener_thread.start(*signal_listener);
+}
+
+void BaseDaemon::stopSignalListener()
+{
+    /// The thread exits only when told to, so `isRunning` going false means it was already stopped and joined
+    /// (or never started); a second join would hang on the already-consumed completion event.
+    if (!signal_listener_thread.isRunning())
+        return;
+
+    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
 }
 
 void BaseDaemon::logRevision() const

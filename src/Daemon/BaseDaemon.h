@@ -135,6 +135,14 @@ protected:
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
 
+    /// Start the signal listener thread with the asynchronously delivered handled signals blocked in it.
+    void startSignalListener();
+
+    /// Ask the signal listener thread to stop and join it. The thread first drains every record already
+    /// queued in the signal pipe (they are ordered before the stop request), so after this returns no
+    /// queued signal work remains pending inside the thread. It can be started again with `startSignalListener`.
+    void stopSignalListener();
+
     /// fork the main process and watch if it was killed
     void setupWatchdog();
 
