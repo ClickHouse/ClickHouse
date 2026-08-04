@@ -8,6 +8,11 @@
 
 #include <sstream>
 
+namespace DB::ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace DB::Parquet
 {
 
@@ -58,6 +63,10 @@ size_t deserializeThriftStruct(T & out, const char * buf, size_t limit)
         uint32_t bytes_read = out.read(&proto);
         chassert(size_t(bytes_read + trans->available_read()) == limit);
         return size_t(bytes_read);
+    }
+    catch (const apache::thrift::TException & e)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to parse Parquet Thrift metadata from {} bytes: {}", limit, e.what());
     }
     catch (const std::exception & e)
     {
