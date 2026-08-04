@@ -8,6 +8,8 @@
 #include <Common/PODArray_fwd.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <cmath>
+#include <limits>
 
 
 namespace DB
@@ -29,24 +31,48 @@ struct RankCorrelationData : public StatisticalSample<Float64, Float64>
 {
     Float64 getResult()
     {
-        RanksArray ranks_x;
-        std::tie(ranks_x, std::ignore) = computeRanksAndTieCorrection(this->x);
-
-        RanksArray ranks_y;
-        std::tie(ranks_y, std::ignore) = computeRanksAndTieCorrection(this->y);
+        const RanksArray ranks_x = computeRanksAndTieCorrection(this->x).first;
+        const RanksArray ranks_y = computeRanksAndTieCorrection(this->y).first;
 
         /// Sizes can be non-equal due to skipped NaNs.
-        const Float64 size = static_cast<Float64>(std::min(this->size_x, this->size_y));
+        const size_t size = std::min(this->size_x, this->size_y);
 
-        /// Count d^2 sum
-        Float64 answer = 0;
-        for (size_t j = 0; j < static_cast<size_t>(size); ++j)
-            answer += (ranks_x[j] - ranks_y[j]) * (ranks_x[j] - ranks_y[j]);
+        if (size < 2)
+            return std::numeric_limits<Float64>::quiet_NaN();
 
-        answer *= 6;
-        answer /= size * (size * size - 1);
-        answer = 1 - answer;
-        return answer;
+        /// Spearman's coefficient is the Pearson correlation of the mid-ranks. The
+        /// closed-form 1 - 6 * sum(d^2) / (n^3 - n) is only valid without ties, because
+        /// ties shrink the rank variance below the value that form assumes.
+        Float64 mean_x = 0;
+        Float64 mean_y = 0;
+        for (size_t j = 0; j < size; ++j)
+        {
+            mean_x += ranks_x[j];
+            mean_y += ranks_y[j];
+        }
+        mean_x /= static_cast<Float64>(size);
+        mean_y /= static_cast<Float64>(size);
+
+        Float64 covariance = 0;
+        Float64 deviation_x = 0;
+        Float64 deviation_y = 0;
+        for (size_t j = 0; j < size; ++j)
+        {
+            const Float64 dx = ranks_x[j] - mean_x;
+            const Float64 dy = ranks_y[j] - mean_y;
+            covariance += dx * dy;
+            deviation_x += dx * dx;
+            deviation_y += dy * dy;
+        }
+
+        /// A constant column has no rank variance, so the correlation is undefined.
+        const Float64 denominator = deviation_x * deviation_y;
+        if (denominator == 0)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        /// Multiply before taking the root: sqrt(dx) * sqrt(dy) can round the perfectly
+        /// correlated case to 1.0000000000000002, outside the documented [-1, +1] range.
+        return covariance / std::sqrt(denominator);
     }
 };
 

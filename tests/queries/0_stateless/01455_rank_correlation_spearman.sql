@@ -24,6 +24,23 @@ INSERT INTO circles VALUES (1.20848,0.505643), (1.577706,1.726383), (1.945215,1.
 SELECT '0.286';
 SELECT roundBankers(rankCorr(a, b), 3) from circles;
 
+-- Tied values get mid-ranks, whose Pearson correlation is the coefficient.
+SELECT '-1';
+SELECT rankCorr(x, y) FROM values('x Float64, y Float64', (1, 2), (1, 2), (2, 1), (2, 1));
+
+SELECT '0';
+SELECT rankCorr(x, y) FROM values('x Float64, y Float64', (1, 1), (1, 2), (2, 1), (2, 2));
+
+SELECT '-0.333';
+SELECT roundBankers(rankCorr(x, y), 3) FROM values('x Float64, y Float64', (0, 1), (0, 0), (0, 0), (1, 0));
+
+SELECT '0.861';
+SELECT roundBankers(rankCorr(x, y), 3) FROM values('x Float64, y Float64', (1, 1), (1, 2), (1, 3), (2, 3), (2, 4), (3, 5));
+
+-- A constant column has no rank variance, so the correlation is undefined.
+SELECT 'nan';
+SELECT rankCorr(x, y) FROM values('x Float64, y Float64', (5, 1), (5, 2), (5, 3));
+
 DROP TABLE IF EXISTS moons;
 DROP TABLE IF EXISTS circles;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
