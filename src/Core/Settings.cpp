@@ -455,7 +455,7 @@ The wait time in milliseconds for a connection when the connection pool is full.
 Possible values:
 
 - Positive integer.
-- 0 — Infinite timeout.
+- 0 — Infinite timeout: wait until a connection is returned to the pool.
 )", 0) \
     DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
 The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
@@ -1966,10 +1966,10 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 Logs index statistics per part
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_insert, true, R"(
-If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS. Only tables whose current size, plus the size of the block being inserted, does not exceed `materialize_statistics_on_insert_max_table_size` are affected.
+If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS. Only tables whose current size, plus the size of the block being written, does not exceed `materialize_statistics_on_insert_max_table_size` are affected.
 )", 0) \
     DECLARE(UInt64, materialize_statistics_on_insert_max_table_size, 26843545600, R"(
-Only build and store column statistics on INSERT (see `materialize_statistics_on_insert`) for tables whose current total size of active parts on disk (compressed, in bytes), plus the uncompressed in-memory size of the block being inserted, does not exceed this value. Counting the inserted block bounds the very first bulk load into an otherwise empty table; using its uncompressed size (the compressed size is unknown before the part is written) makes the check deliberately conservative by at most one block. This keeps statistics fresh on small dimension tables, which is important for cost-based join reordering, while avoiding per-insert overhead on large fact tables (their statistics are built during merges instead). `0` means no size limit.
+Only build and store column statistics on INSERT (see `materialize_statistics_on_insert`) for tables whose current total size of active parts on disk (compressed, in bytes), plus the uncompressed in-memory size of the block being written, does not exceed this value. The contract is per written block, not per INSERT: a single INSERT is split into one block per partition (and, for streaming inserts, into several blocks), and each of them is checked against the size of the parts that are already active, because the parts of the ongoing INSERT are not active yet. A single bulk load into an empty table can therefore build statistics for all of its parts even if their total size exceeds the threshold; the limit takes effect for the inserts that follow. Using the uncompressed block size (the compressed size is unknown before the part is written) makes the check deliberately conservative by at most one block. This keeps statistics fresh on small dimension tables, which is important for cost-based join reordering, while avoiding per-insert overhead on large fact tables (their statistics are built during merges instead). `0` means no size limit.
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
 Ignores the skipping indexes specified if used by the query.
@@ -8122,6 +8122,9 @@ As each series represents a node in Keeper, it is recommended to have no more th
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
+    DECLARE(Bool, throw_on_hive_partitioning_resolution_failure, true, R"(
+Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
+)", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
 The former is used when we know that the right table size is below the threshold.
@@ -8435,6 +8438,10 @@ Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
+)", 0) \
+    DECLARE(Bool, use_text_index_negative_tokens_cache, true, R"(
+Whether to cache text index tokens that are absent from a data part.
+The negative tokens cache uses the text index tokens cache and avoids repeated dictionary lookups for absent tokens.
 )", 0) \
     DECLARE(Bool, use_text_index_header_cache, true, R"(
 Whether to cache deserialized text index headers in memory.

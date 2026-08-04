@@ -917,18 +917,11 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
-        try
-        {
-            auto parts_lock = readLockParts();
-            auto stats = part.data_part->loadStatistics(required_columns);
-            estimator_builder.markDataPart(part.data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
-        }
+        auto parts_lock = readLockParts();
+        auto stats = part.data_part->loadStatistics(required_columns);
+        estimator_builder.markDataPart(part.data_part);
+        for (const auto & [column_name, stat] : stats)
+            estimator_builder.addStatistics(column_name, stat);
     }
 
     return estimator_builder.getEstimator();
@@ -3334,6 +3327,9 @@ void MergeTreeData::refreshStatistics(const DataPartsVector & data_parts)
         /// the error and silently degrade the estimator to "no statistics for that part".
         /// The error propagates to the caller; the background refresh task catches it at the
         /// upper level (see startStatisticsCache) and keeps the periodic refresh alive.
+        /// Callers are responsible for the parts lock: the background refresh path acquires it
+        /// around collecting data_parts, and the commit path already holds it - re-acquiring
+        /// readLockParts here would self-deadlock.
         auto stats = data_part->loadStatistics();
         estimator_builder.markDataPart(data_part);
         for (const auto & [column_name, stat] : stats)
