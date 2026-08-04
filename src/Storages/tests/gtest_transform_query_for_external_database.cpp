@@ -336,6 +336,26 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
 }
 
+TEST(TransformQueryForExternalDatabase, ForeignColumnInWhereOr)
+{
+    const State & state = State::instance();
+
+    /// A disjunction with a branch over another table's column must stay out of the remote filter as a
+    /// whole: pushing the surviving branch alone would drop rows that match only the removed branch
+    /// before the local filtering can re-check them.
+    check(state, 2, {"column", "apply_id"},
+          "SELECT column FROM test.table "
+          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
+          "WHERE column > 2 AND (apply_id = 1 OR table2.num = 2)",
+          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "column" > 2)");
+
+    check(state, 2, {"column", "apply_id"},
+          "SELECT column FROM test.table "
+          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
+          "WHERE apply_id = 1 OR table2.num = 2",
+          R"(SELECT "column", "apply_id" FROM "test"."table")");
+}
+
 TEST(TransformQueryForExternalDatabase, LocalOnlyColumns)
 {
     const State & state = State::instance();

@@ -385,18 +385,17 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, con
         /// Removing a conjunct only widens the remote filter (the removed condition is re-checked by the
         /// local filtering over the rows the external database returns), but removing a disjunct narrows
         /// it: a row matching only the removed branch is dropped remotely and never reaches the local
-        /// re-filtering. For a genuinely unknown identifier (a column of another table of the query) the
-        /// disjunct is kept out of the remote filter anyway; but when a branch mentions a column that is
-        /// present locally and merely not pushdown-safe (`local_only_names`), the whole disjunction must
-        /// stay local so the local filter can evaluate every branch over unfiltered rows.
+        /// re-filtering. So whenever any branch of a disjunction is removed — whether it mentions a column
+        /// of another table of the query or a column that is present but not pushdown-safe
+        /// (`local_only_names`) — the whole disjunction must stay local so the local filter can evaluate
+        /// every branch over unfiltered rows.
         bool child_mentions_local_only = false;
+        const size_t children_before = func->arguments->children.size();
         removeUnknownChildren(func->arguments->children, known_names, local_only_names, child_mentions_local_only);
         if (child_mentions_local_only)
-        {
             mentions_local_only = true;
-            if (func->name == "or")
-                return false;
-        }
+        if (func->name == "or" && func->arguments->children.size() != children_before)
+            return false;
         /// all children removed, current node can be removed too
         if (func->arguments->children.size() == 1)
         {
@@ -425,9 +424,10 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, con
 //
 // `local_only_columns` are columns that do exist in the external table but whose predicates the caller
 // requires to be evaluated locally (e.g. a pushdown over them would compare differently on the remote
-// side). Their conditions are removed from the remote filter like unknown ones, except that a disjunction
-// with such a branch is removed as a whole, and `mentions_local_only` reports that some condition was kept
-// local because of them (so strict mode can reject the query).
+// side). Their conditions are removed from the remote filter like unknown ones. A disjunction with any
+// removed branch is removed as a whole (a narrower remote filter would lose rows), and
+// `mentions_local_only` reports that some condition was kept local because of a local-only column (so
+// strict mode can reject the query).
 bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns, const NameSet & local_only_columns, bool & mentions_local_only)
 {
     if (!node)
