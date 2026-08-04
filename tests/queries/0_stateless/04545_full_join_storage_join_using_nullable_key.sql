@@ -92,6 +92,44 @@ SELECT 'on regular analyzer=0 join_use_nulls=1';
 SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_mem_04545.x AS rx, str
 FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x ORDER BY str, lx;
 
+-- USING projects one merged key, ON keeps both, so the two blocks above cannot be compared row by
+-- row directly. FULL JOIN builds the merged key as firstNonDefault over the two sides
+-- (IdentifierResolver::createProjectionForUsing), so applying that to the ON output is what makes
+-- them comparable. Asserted per arm below; each must be 1.
+SET join_use_nulls = 0;
+SET enable_analyzer = 1;
+SELECT 'using == coalesced on, storage analyzer=1 join_use_nulls=0',
+    (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_full_04545 USING (x)))
+  = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_full_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_full_04545 ON t_left_04545.x = t_full_04545.x));
+SELECT 'using == coalesced on, regular analyzer=1 join_use_nulls=0',
+    (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_mem_04545 USING (x)))
+  = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_mem_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x));
+
+SET enable_analyzer = 0;
+SELECT 'using == coalesced on, storage analyzer=0 join_use_nulls=0',
+    (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_full_04545 USING (x)))
+  = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_full_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_full_04545 ON t_left_04545.x = t_full_04545.x));
+SELECT 'using == coalesced on, regular analyzer=0 join_use_nulls=0',
+    (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_mem_04545 USING (x)))
+  = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_mem_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x));
+
+SET join_use_nulls = 1;
+SET enable_analyzer = 1;
+SELECT 'using == coalesced on, storage analyzer=1 join_use_nulls=1',
+    (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_full_nulls_04545 USING (x)))
+  = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_full_nulls_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_full_nulls_04545 ON t_left_04545.x = t_full_nulls_04545.x));
+SELECT 'using == coalesced on, regular analyzer=1 join_use_nulls=1',
+    (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_mem_04545 USING (x)))
+  = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_mem_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x));
+
+SET enable_analyzer = 0;
+SELECT 'using == coalesced on, storage analyzer=0 join_use_nulls=1',
+    (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_full_nulls_04545 USING (x)))
+  = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_full_nulls_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_full_nulls_04545 ON t_left_04545.x = t_full_nulls_04545.x));
+SELECT 'using == coalesced on, regular analyzer=0 join_use_nulls=1',
+    (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_mem_04545 USING (x)))
+  = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_mem_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x));
+
 -- LEFT resolves the USING key from the left side only; the NULL key must survive.
 SET join_use_nulls = 0;
 SET enable_analyzer = 1;
