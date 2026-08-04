@@ -26,8 +26,9 @@ INSERT INTO t_stripe VALUES (1);
 SELECT count() FROM t_stripe;
 DROP TABLE t_stripe;
 
--- A full-definition ATTACH is fresh user input, unlike a short ATTACH of stored metadata.
-ATTACH TABLE t_attach_over UUID '00000000-0000-0000-0000-0000000004a2' (`cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc` UInt8) ENGINE = Log; -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- A full-definition ATTACH is fresh user input, unlike a short ATTACH of stored metadata. The
+-- `FROM` form is the one that needs no UUID clause, whose value would be server-global.
+ATTACH TABLE t_attach_over FROM 'attach_04686' (`cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc` UInt8) ENGINE = Log; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- RENAME does not touch a column name, and the limit is per path component, so the at-limit
 -- table stays writable however long the table and database names become.
