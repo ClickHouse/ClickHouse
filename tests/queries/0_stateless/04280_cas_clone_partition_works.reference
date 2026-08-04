@@ -1,0 +1,8 @@
+after_replace_dst_p1	100	4950
+after_attach_from_dst_p2	50	1225
+after_move_dst_p3	30	435
+after_move_src_p3	0
+after_detach_src	50
+after_reattach_src	100	4950
+after_drop_src_p2	0
+dropped_ok

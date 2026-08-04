@@ -1,0 +1,5 @@
+grew_above_baseline 1
+rows_after_mutations_correct	1
+fsck_unreachable 0
+fsck_dangling 0
+pool_meta_present 1

@@ -1,0 +1,14 @@
+count	2600000
+by_b_top	1299999	3899998
+by_b_top	1299998	3899996
+by_b_top	1299997	3899994
+after_merge_by_b_top	1299999	3899998
+after_merge_by_b_top	1299998	3899996
+after_merge_by_b_top	1299997	3899994
+after_materialize_count	2600000
+projection_active	1
+uses_projection	1
+after_reload_by_b_top	1299999	3899998
+after_reload_by_b_top	1299998	3899996
+after_reload_by_b_top	1299997	3899994
+dropped_ok

@@ -1,0 +1,5 @@
+rows	600000
+grew_above_baseline 1
+fsck_unreachable 0
+fsck_dangling 0
+pool_meta_present 1

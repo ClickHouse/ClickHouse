@@ -1,0 +1,7 @@
+3
+0 0 0
+disk	reachable	dangling	unreachable	pending_gc	awaiting_gc	unaccounted	stale_edge	corrupted_runs	chain_broken	unchecked	lifeless_keys	namespace_janitor_pending	namespace_janitor_pending_bytes	namespace_janitor_pending_lives	ref_records_walked	physical_bytes	referenced_logical_bytes	distinct_blobs	total_blob_refs
+<disk>	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+fsck_non_ca_disk_rejected: 1
+fsck_requires_disk: 1
+second_forget_idempotent: vanished(forgotten)

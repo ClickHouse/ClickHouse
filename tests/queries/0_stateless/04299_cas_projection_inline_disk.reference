@@ -1,0 +1,60 @@
+count	2000
+sum_b	9000
+by_b	0	200
+by_b	1	200
+by_b	2	200
+by_b	3	200
+by_b	4	200
+by_b	5	200
+by_b	6	200
+by_b	7	200
+by_b	8	200
+by_b	9	200
+after_merge_count	2000
+after_merge_by_b	0	200
+after_merge_by_b	1	200
+after_merge_by_b	2	200
+after_merge_by_b	3	200
+after_merge_by_b	4	200
+after_merge_by_b	5	200
+after_merge_by_b	6	200
+after_merge_by_b	7	200
+after_merge_by_b	8	200
+after_merge_by_b	9	200
+has_projection	1
+uses_projection	1
+after_merge_reload_projection	1
+after_merge_reload_uses_projection	1
+after_add_projection_count	2000
+projections_after_add	p_by_b	1
+projections_after_add	p_sum	1
+uses_p_sum	1
+projections_after_materialize_reload	p_by_b	1
+projections_after_materialize_reload	p_sum	1
+after_materialize_reload_uses_p_sum	1
+projections_after_update_reload	p_by_b	1
+projections_after_update_reload	p_sum	1
+after_update_reload_uses_p_sum	1
+after_drop_projection_count	2000
+projections_after_drop	p_sum	1
+after_reload_by_b	0	200
+after_reload_by_b	1	200
+after_reload_by_b	2	200
+after_reload_by_b	3	200
+after_reload_by_b	4	200
+after_reload_by_b	5	200
+after_reload_by_b	6	200
+after_reload_by_b	7	200
+after_reload_by_b	8	200
+after_reload_by_b	9	200
+after_reload_sum_b	0	199000
+after_reload_sum_b	1	199200
+after_reload_sum_b	2	199400
+after_reload_sum_b	3	199600
+after_reload_sum_b	4	199800
+after_reload_sum_b	5	200000
+after_reload_sum_b	6	200200
+after_reload_sum_b	7	200400
+after_reload_sum_b	8	200600
+after_reload_sum_b	9	200800
+dropped_ok

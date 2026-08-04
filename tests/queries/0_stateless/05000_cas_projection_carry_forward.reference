@@ -1,0 +1,10 @@
+count	100000
+no_projection	1	0	0	1249950000
+no_projection	1	0	2	1250000000
+no_projection	1	1	1	1249975000
+no_projection	1	1	3	1250025000
+with_projection	1	0	0	1249950000
+with_projection	1	0	2	1250000000
+with_projection	1	1	1	1249975000
+with_projection	1	1	3	1250025000
+projection_parts	2	4

@@ -1,0 +1,14 @@
+empty_table_state_before_drop live
+empty_table_has_format_version 1
+empty_table_has_no_ref_stream_before_drop 1
+empty_table_state_after_sync_drop removing
+empty_table_terminal_stream_record_exists 1
+one_part_table_state_before_drop live
+one_part_table_state_after_sync_drop removing
+negative_control_state_after_truncate live
+negative_control_state_after_reinsert live
+negative_control_rows 1
+cycle_leaks_after_sync_drop 0
+captured_rows_absent_after_gc_fixpoint 1
+fsck_unreachable 0
+fsck_dangling 0

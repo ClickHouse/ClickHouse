@@ -1,0 +1,9 @@
+basic	1000	499500	7	2020-01-01	2022-09-26
+oracle_full_match	1
+after_second_insert	2000
+after_merge	2000	999000
+active_parts	1
+slice	0	0	2
+slice	500	3	2
+slice	999	5	2
+dropped_ok
