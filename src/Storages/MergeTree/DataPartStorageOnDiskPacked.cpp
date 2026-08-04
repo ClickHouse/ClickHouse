@@ -753,36 +753,31 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
         writer->applyMetadataChanges(old_index);
     }
 
-    auto out_buffer_getter = [&](String serialised_data, const WriteSettings & settings, bool need_sync)
-    {
-        if (file_is_rewriten)
-        {
-            /// replace file to avoid modification of hardlinked files
-            auto buf = transaction->writeFile(
-                getRelativeDataPath() + ".tmp", DBMS_DEFAULT_BUFFER_SIZE,
-                WriteMode::Rewrite, settings);
-            buf->write(serialised_data.data(), serialised_data.size());
-            buf->finalize();
-            if (need_sync)
-                buf->sync();
+    /// If the archive already exists, write to a temporary file and replace it,
+    /// to avoid modification of hardlinked files.
+    const String archive_path = file_is_rewriten ? getRelativeDataPath() + ".tmp" : getRelativeDataPath();
 
-            transaction->replaceFile(getRelativeDataPath() + ".tmp", getRelativeDataPath());
-        }
-        else
-        {
-            auto buf = transaction->writeFile(
-                getRelativeDataPath(), DBMS_DEFAULT_BUFFER_SIZE,
-                WriteMode::Rewrite, settings);
-            buf->write(serialised_data.data(), serialised_data.size());
-            buf->finalize();
-            if (need_sync)
-                buf->sync();
-        }
+    /// Validate the metadata changes and calculate the index before the destination file is
+    /// opened: on a disk without a real transaction `writeFile` truncates the destination right
+    /// away, so a throwing preparation would leave a truncated archive behind.
+    auto plan = writer->prepareFinalize(preferred_file_order, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
 
-    };
+    /// The writer keeps the whole part in memory, so stream the archive directly into the
+    /// destination file: serializing it into a string first would hold a second copy of the part.
+    auto buf = transaction->writeFile(
+        archive_path, DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode::Rewrite, writer->getWriteSettings());
 
-    auto new_index = writer->finalize(std::move(out_buffer_getter), preferred_file_order, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
-    reader.emplace(new_index);
+    writer->finalize(*buf, plan);
+
+    buf->finalize();
+    if (plan.need_sync)
+        buf->sync();
+
+    if (file_is_rewriten)
+        transaction->replaceFile(archive_path, getRelativeDataPath());
+
+    reader.emplace(plan.index);
     writer.reset();
 }
 
@@ -966,6 +961,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             disk->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
     }
 
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
+
     std::vector<std::string> all_files;
     src_disk->listFiles(getRelativePath(), all_files);
     for (const auto & file : all_files)
@@ -975,6 +972,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
              auto projection_storage = getProjection(file);
              auto params_copy = params;
              params_copy.external_transaction = dest_storage->transaction;
+             /// The top-level fsync below covers the whole subtree; don't let each projection re-walk it.
+             params_copy.fsync_part_directory = false;
              projection_storage->freeze(dest_storage->getRelativePath(), file, read_settings, write_settings, save_metadata_callback, params_copy);
          }
     }
@@ -989,6 +988,11 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
+
+    /// Make the clone durable before the caller commits the covering part, same as the Full-storage
+    /// override (the hardlink/copy above fsyncs nothing). Runs once for the whole subtree here.
+    if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
+        fsyncFrozenCloneTree(*disk, fs::path(to) / dir_path);
 
     return dest_storage;
 }
@@ -1097,6 +1101,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
             src_disk->copyFile(getRelativeDataPath(), *dst_disk, dest_storage->getRelativeDataPath(), read_settings, write_settings);
         }
     }
+
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
 
     std::vector<std::string> all_files;
     src_disk->listFiles(getRelativePath(), all_files);
