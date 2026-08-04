@@ -29,26 +29,27 @@ trap cleanup EXIT
 QUERY_ID="${CLICKHOUSE_DATABASE}_cancel_teardown_pager"
 
 # The pager never exits on its own and never reads its input, so the client is parked in the pager
-# wait of the teardown as soon as the result has been formatted.
+# wait of the teardown as soon as the result has been formatted. The query is long enough that the
+# polling below cannot miss its running state even when every poll is slow under sanitizers.
 $CLICKHOUSE_CLIENT --pager 'sleep 1000' \
     --partial_result_on_first_cancel=1 --query_id="$QUERY_ID" \
-    --query "SELECT sleep(1) FROM numbers(3) SETTINGS max_block_size = 1, max_threads = 1" \
+    --query "SELECT sleep(1) FROM numbers(15) SETTINGS max_block_size = 1, max_threads = 1" \
     > "$CLIENT_OUT" 2> "$CLIENT_ERR" &
 CLIENT=$!
 
-query_is_running()
+# Poll over HTTP: starting a full client for every poll is too slow under sanitizers, and a poll
+# that fails must stay distinguishable from a poll that returns 0.
+running_count()
 {
-    local count
-    count=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = '$QUERY_ID'" 2>/dev/null)
-    [[ "$count" =~ ^[0-9]+$ ]] && [ "$count" -ge 1 ]
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM system.processes WHERE query_id = '$QUERY_ID'" 2>/dev/null
 }
 
 # First wait until the query is visibly running, so that the transition below really means "the
 # query is over and the client moved on to the teardown" and not "the query has not started yet".
 started=0
-for _ in {0..120}
+for _ in {0..240}
 do
-    if query_is_running
+    if [ "$(running_count)" = "1" ]
     then
         started=1
         break
@@ -66,11 +67,13 @@ then
 fi
 
 # Then wait for it to disappear: the client is now past the receive loop and inside the teardown,
-# waiting for the pager. It cannot have exited, because the pager keeps running.
+# waiting for the pager. It cannot have exited, because the pager keeps running. Only an explicit 0
+# counts: a failed poll must not be mistaken for the query being over, or the Ctrl+C below would be
+# sent while the query is still running and would only request the partial result.
 in_teardown=0
-for _ in {0..120}
+for _ in {0..240}
 do
-    if ! query_is_running
+    if [ "$(running_count)" = "0" ]
     then
         in_teardown=1
         break
