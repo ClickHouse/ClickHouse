@@ -355,9 +355,8 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
 std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source_num, size_t row)
 {
     const auto & token_info = inputs[source_num].token_infos[row];
-
-    if (token_info.embedded_postings)
-        return {token_info.embedded_postings};
+    /// Embedded postings are accumulated by appendEmbeddedPostings, without a bitmap.
+    chassert(token_info.embedded_postings.empty());
 
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     auto * data_buffer = stream->getDataBuffer();
@@ -395,14 +394,62 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
     return std::make_shared<PostingList>(offsets.size(), offsets.data());
 }
 
+void MergeTextIndexesTask::appendEmbeddedPostings(size_t source_num, std::span<const UInt32> values)
+{
+    if (!merged_part_offsets)
+    {
+        output_embedded_postings.insert(values.begin(), values.end());
+        return;
+    }
+
+    size_t part_index = segments[source_num].part_index;
+    for (UInt32 value : values)
+    {
+        UInt64 new_offset = (*merged_part_offsets)[part_index, value];
+
+        if (new_offset > std::numeric_limits<UInt32>::max())
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
+                new_offset, std::numeric_limits<UInt32>::max());
+        }
+
+        output_embedded_postings.push_back(static_cast<UInt32>(new_offset));
+    }
+}
+
 void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-    PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
+    TokenPostingsInfo token_info;
 
-    if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-        token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
+    if (output_postings.isEmpty())
+    {
+        /// All sources of the token have embedded postings: merge them in the plain
+        /// array and serialize it, without materializing a roaring bitmap.
+        std::sort(output_embedded_postings.begin(), output_embedded_postings.end());
+
+        token_info = TextIndexSerialization::serializePostings(
+            std::span<const UInt32>(output_embedded_postings.data(), output_embedded_postings.size()),
+            *postings_stream, params, postings_serialization);
+
+        if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+            token_info.embedded_postings.assign(output_embedded_postings.begin(), output_embedded_postings.end());
+    }
+    else
+    {
+        if (!output_embedded_postings.empty())
+            output_postings.addMany(output_embedded_postings.size(), output_embedded_postings.data());
+
+        PostingListBuilder builder(&output_postings);
+        token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
+
+        if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+        {
+            token_info.embedded_postings.resize(output_postings.cardinality());
+            output_postings.toUint32Array(token_info.embedded_postings.data());
+        }
+    }
 
     /// Serialize position data if positions are enabled.
     if (params.positions && !output_positions.empty())
@@ -431,6 +478,7 @@ void MergeTextIndexesTask::flushPostingList()
 
     output_infos.push_back(token_info);
     output_postings.clear();
+    output_embedded_postings.clear();
     output_positions.clear();
 }
 
@@ -467,13 +515,14 @@ void MergeTextIndexesTask::flushDictionaryBlock()
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
         {
-            const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
-            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
+            for (UInt32 value : output_infos[i].embedded_postings)
+                writeVarUInt(value, ostr);
         }
     }
 
     output_tokens = ColumnString::create();
     output_postings.clear();
+    output_embedded_postings.clear();
     output_infos.clear();
 }
 
@@ -531,7 +580,7 @@ bool MergeTextIndexesTask::executeStep()
         {
             if (i > 0 || first_row_is_new_token)
             {
-                if (!output_postings.isEmpty())
+                if (!output_postings.isEmpty() || !output_embedded_postings.empty())
                     flushPostingList();
 
                 if (output_tokens->size() >= params.dictionary_block_size)
@@ -540,18 +589,28 @@ bool MergeTextIndexesTask::executeStep()
                 output_tokens->insertFrom(*source_block.tokens, row);
             }
 
-            auto read_postings = readPostingLists(source_num, row);
+            const auto & token_info = source_block.token_infos[row];
 
-            for (auto & posting : read_postings)
+            if (!token_info.embedded_postings.empty())
             {
-                posting = adjustPartOffsets(source_num, posting);
-                output_postings |= *posting;
+                /// Embedded postings are already decoded: accumulate them in a plain
+                /// array instead of materializing them into a roaring bitmap.
+                appendEmbeddedPostings(source_num, token_info.embedded_postings);
+            }
+            else
+            {
+                auto read_postings = readPostingLists(source_num, row);
+
+                for (auto & posting : read_postings)
+                {
+                    posting = adjustPartOffsets(source_num, posting);
+                    output_postings |= *posting;
+                }
             }
 
             /// Read and merge position data if positions are enabled.
             if (params.positions)
             {
-                const auto & token_info = source_block.token_infos[row];
                 if (token_info.header & PostingsSerialization::Flags::HasPositions)
                 {
                     auto * pos_stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
@@ -597,7 +656,7 @@ bool MergeTextIndexesTask::executeStep()
 
 void MergeTextIndexesTask::finalize()
 {
-    if (!output_postings.isEmpty())
+    if (!output_postings.isEmpty() || !output_embedded_postings.empty())
         flushPostingList();
 
     if (!output_tokens->empty())

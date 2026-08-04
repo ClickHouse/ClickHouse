@@ -85,12 +85,6 @@ namespace Setting
     extern const SettingsBool use_text_index_negative_tokens_cache;
 }
 
-static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
-static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
-
-static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
-static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
-
 /// Kept as a fixed default rather than a MergeTree setting: a mutable table-level default would let
 /// an index's positions value change after parts exist, mixing positional and non-positional parts
 /// within one index.
@@ -363,7 +357,7 @@ size_t TokenPostingsInfo::bytesAllocated() const
     return sizeof(TokenPostingsInfo)
         + offsets.capacity() * sizeof(UInt64)
         + ranges.capacity() * sizeof(RowsRange)
-        + (embedded_postings ? embedded_postings->getSizeInBytes() : 0);
+        + (embedded_postings.capacity() > MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS ? embedded_postings.capacity() * sizeof(UInt32) : 0);
 }
 
 MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
@@ -818,7 +812,7 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
         if (token_info->offsets.size() == 1 && analyzer->isTokenNeeded(token) && !analyzer->hasReadPostings(token))
         {
             auto block = readPostingsBlock(stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
-            analyzer->addPostings(token, std::move(block));
+            analyzer->addPostings(token, *block);
         }
 
         if (analyzer->alwaysFalse())
@@ -1062,6 +1056,43 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     return info;
 }
 
+TokenPostingsInfo TextIndexSerialization::serializePostings(
+    std::span<const UInt32> postings,
+    MergeTreeIndexWriterStream & postings_stream,
+    const MergeTreeIndexTextParams & params,
+    PostingsSerialization & postings_serialization)
+{
+    using enum PostingsSerialization::Flags;
+
+    if (postings.size() <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    {
+        TokenPostingsInfo info;
+        info.header = RawPostings | EmbeddedPostings;
+        info.cardinality = static_cast<UInt32>(postings.size());
+        return info;
+    }
+
+    if (postings.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    {
+        TokenPostingsInfo info;
+        info.header = RawPostings | SingleBlock;
+        info.cardinality = static_cast<UInt32>(postings.size());
+        info.offsets.emplace_back(postings_stream.plain_hashing.count());
+        info.ranges.emplace_back(postings.front(), postings.back());
+
+        for (UInt32 value : postings)
+            writeVarUInt(value, postings_stream.plain_hashing);
+
+        return info;
+    }
+
+    /// Larger lists go through the roaring-based serialization to keep a single
+    /// implementation of the codec and multi-block layouts.
+    PostingList posting_list(postings.size(), postings.data());
+    PostingListBuilder builder(&posting_list);
+    return serializePostings(builder, postings_stream, params, postings_serialization);
+}
+
 void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format)
 {
     serializeTokensImpl(
@@ -1206,13 +1237,19 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         }
         else
         {
-            auto postings = postings_serialization->deserialize(istr, info.header, info.cardinality);
-            if (postings && postings->cardinality() > 0)
+            if (!(info.header & RawPostings))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Embedded postings must be serialized as raw values, got header {}", info.header);
+
+            /// Read the raw values directly into the inline array, avoiding a roaring bitmap per token.
+            info.embedded_postings.resize(info.cardinality);
+            for (auto & value : info.embedded_postings)
+                readVarUInt(value, istr);
+
+            if (!info.embedded_postings.empty())
             {
                 info.offsets.emplace_back(0);
-                info.ranges.emplace_back(postings->minimum(), postings->maximum());
+                info.ranges.emplace_back(info.embedded_postings.front(), info.embedded_postings.back());
             }
-            info.embedded_postings = std::move(postings);
             /// TextIndexUsedEmbeddedPostings is incremented by the callers, batched per dictionary block.
         }
     }
@@ -1333,7 +1370,7 @@ std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(
     }
 
     size_t num_embedded = std::count_if(result.begin(), result.end(),
-        [](const auto & info) { return info->embedded_postings != nullptr; });
+        [](const auto & info) { return !info->embedded_postings.empty(); });
     ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings, num_embedded);
 
     return result;
@@ -1353,7 +1390,7 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
         token_infos.emplace_back(deserializeTokenInfo(istr, postings_serialization));
 
     size_t num_embedded = std::count_if(token_infos.begin(), token_infos.end(),
-        [](const auto & info) { return info.embedded_postings != nullptr; });
+        [](const auto & info) { return !info.embedded_postings.empty(); });
     ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings, num_embedded);
 
     return DictionaryBlock{std::move(tokens_column), std::move(token_infos), std::move(tokens_format)};

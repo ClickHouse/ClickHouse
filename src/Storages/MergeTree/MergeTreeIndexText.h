@@ -18,6 +18,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <span>
 #include <variant>
 #include <vector>
 
@@ -160,6 +161,16 @@ struct SortedToken
 using SortedTokens = std::vector<SortedToken>;
 struct TokenPostingsInfo;
 
+/// Posting lists up to this cardinality are serialized as raw VarUInt values:
+/// the minimal size of a serialized Roaring Bitmap is 48 bytes, so tiny lists don't use it.
+static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
+/// Posting lists up to this cardinality are embedded into the dictionary block
+/// to avoid additional random reads from disk.
+static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
+
+static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+
 struct PostingsSerialization
 {
     PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeIndexVersion serialization_version_);
@@ -222,7 +233,10 @@ struct TokenPostingsInfo
     /// so use inlined vector to avoid heap allocations.
     absl::InlinedVector<UInt64, 1> offsets;
     absl::InlinedVector<RowsRange, 1> ranges;
-    PostingListPtr embedded_postings;
+    /// Postings embedded into the dictionary block, ascending row ids; empty if not embedded.
+    /// Stored inline (not as a roaring bitmap): merges and dictionary scans materialize
+    /// every token's info, and most embedded tokens are low-cardinality.
+    absl::InlinedVector<UInt32, MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS> embedded_postings;
 
     /// Position data offset in the .pos file
     UInt64 position_offset = 0;
@@ -309,6 +323,14 @@ struct TextIndexSerialization
 
     static TokenPostingsInfo serializePostings(
         PostingListBuilder & postings,
+        MergeTreeIndexWriterStream & postings_stream,
+        const MergeTreeIndexTextParams & params,
+        PostingsSerialization & postings_serialization);
+
+    /// The same, but for a posting list stored in a plain array.
+    /// The values must be sorted in ascending order and unique.
+    static TokenPostingsInfo serializePostings(
+        std::span<const UInt32> postings,
         MergeTreeIndexWriterStream & postings_stream,
         const MergeTreeIndexTextParams & params,
         PostingsSerialization & postings_serialization);

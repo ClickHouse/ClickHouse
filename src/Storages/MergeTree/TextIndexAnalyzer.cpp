@@ -227,21 +227,26 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         query_builder.addTokenInfo(token, token_info, token_rows_range);
     });
 
-    if (token_info->embedded_postings)
-        addPostings(token, token_info->embedded_postings);
+    if (!token_info->embedded_postings.empty())
+    {
+        /// Queries touch only the searched tokens, so a transient bitmap per token is cheap here.
+        PostingList embedded;
+        embedded.addMany(token_info->embedded_postings.size(), token_info->embedded_postings.data());
+        addPostings(token, embedded);
+    }
 }
 
-void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
+void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & postings)
 {
     tokens_with_postings.emplace(token);
 
     /// Clip the postings to the readable rows once.
     std::optional<PostingList> clipped_postings;
-    const auto * postings_ptr = postings.get();
+    const auto * postings_ptr = &postings;
 
     if (readable_rows)
     {
-        clipped_postings = readable_rows->clipPostings(*postings);
+        clipped_postings = readable_rows->clipPostings(postings);
 
         if (clipped_postings->cardinality() == 0)
         {

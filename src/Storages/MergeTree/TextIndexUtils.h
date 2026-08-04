@@ -11,6 +11,8 @@
 #include <Columns/ColumnString.h>
 #include <Processors/ISimpleTransform.h>
 
+#include <span>
+
 namespace DB
 {
 
@@ -113,6 +115,9 @@ private:
     std::vector<PostingListPtr> readPostingLists(size_t source_num, size_t row);
     /// Adjusts row numbers in the postings list according to merged part offsets.
     PostingListPtr adjustPartOffsets(size_t source_num, PostingListPtr posting_list);
+    /// Appends the embedded postings of one source (adjusted according to merged part offsets)
+    /// to the plain array of the current token, without materializing a roaring bitmap.
+    void appendEmbeddedPostings(size_t source_num, std::span<const UInt32> values);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -146,8 +151,11 @@ private:
     MutableColumnPtr output_tokens;
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
-    /// Postings accumulated for the current token.
+    /// Postings accumulated for the current token from sources with non-embedded postings.
     PostingList output_postings;
+    /// Postings accumulated for the current token from sources with embedded postings.
+    /// Values are adjusted to the merged part, but not sorted across sources.
+    PODArray<UInt32> output_embedded_postings;
     /// Positions accumulated for the current token (phrase query support).
     PODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
