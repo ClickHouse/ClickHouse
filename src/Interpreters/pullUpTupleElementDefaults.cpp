@@ -299,6 +299,31 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, const NameSet & outer_element_nam
         return result;
     }
 
+    /// SimpleAggregateFunction is a transparent wrapper too: the column stores plain values of its
+    /// storage type, which is the first type argument (`DataTypeCustomSimpleAggregateFunction::create`
+    /// takes `argument_types[0]` as the storage type), and a plain value casts into the
+    /// SimpleAggregateFunction type. So a DEFAULT inside `SimpleAggregateFunction(f, Tuple(...))` is
+    /// representable as the column-level default built from the storage type. Further type arguments
+    /// (if any) do not describe the stored value, so a DEFAULT inside them is not representable.
+    if (data_type->name == "SimpleAggregateFunction")
+    {
+        if (!arguments || arguments->children.size() < 2)
+            return nullptr;
+
+        /// children[0] is the aggregate function, children[1] is the storage type.
+        ASTPtr result = buildAndStripTupleDefaults(*arguments->children[1], outer_element_names, column_name);
+
+        for (size_t i = 2; i < arguments->children.size(); ++i)
+        {
+            /// As for `Nested`: an empty scope, so that an unsupported default is reported as such.
+            if (buildAndStripTupleDefaults(*arguments->children[i], {}, column_name))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "DEFAULT expressions are not supported inside an argument type of SimpleAggregateFunction other "
+                    "than the first one (the storage type)");
+        }
+        return result;
+    }
+
     /// Any other composite type (Array, Map, LowCardinality, ...): a DEFAULT inside is not
     /// representable as a static column default.
     if (arguments)

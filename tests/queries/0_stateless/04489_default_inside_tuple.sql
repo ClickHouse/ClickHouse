@@ -141,6 +141,42 @@ CREATE TABLE t_variant_two (c Variant(Tuple(a UInt32 DEFAULT 1), Tuple(b String,
 -- An unsupported wrapper inside a Variant is still rejected.
 CREATE TABLE t_variant_array (c Variant(UInt64, Array(Tuple(a UInt32 DEFAULT 1)))) ENGINE = Memory; -- { serverError NOT_IMPLEMENTED }
 
+SELECT '-- simple aggregate function';
+-- SimpleAggregateFunction stores plain values of its storage type (the first type argument), so a
+-- DEFAULT inside `SimpleAggregateFunction(f, Tuple(...))` is pulled up as the column-level default.
+CREATE TABLE t_saf
+(
+    id UInt8,
+    c SimpleAggregateFunction(any, Tuple(a UInt8 DEFAULT 1, b UInt8))
+)
+ENGINE = AggregatingMergeTree ORDER BY id;
+SELECT type, default_kind, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_saf' AND name = 'c';
+INSERT INTO t_saf (id) VALUES (1);
+INSERT INTO t_saf (id, c) VALUES (2, (3, 4));
+SELECT id, c FROM t_saf ORDER BY id;
+ALTER TABLE t_saf ADD COLUMN d SimpleAggregateFunction(max, Tuple(a UInt8, s String DEFAULT 'Hi'));
+SELECT type, default_kind, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_saf' AND name = 'd';
+SELECT id, d FROM t_saf ORDER BY id;
+ALTER TABLE t_saf MODIFY COLUMN d SimpleAggregateFunction(max, Tuple(a UInt16 DEFAULT 9, s String));
+SELECT type, default_kind, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_saf' AND name = 'd';
+-- A SimpleAggregateFunction wrapping a tuple with a default may itself be an element of a tuple.
+CREATE TABLE t_saf_nested (id UInt8, c Tuple(x SimpleAggregateFunction(any, Tuple(a UInt8 DEFAULT 7)), y String)) ENGINE = MergeTree ORDER BY id;
+SELECT type, default_kind, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_saf_nested' AND name = 'c';
+INSERT INTO t_saf_nested (id) VALUES (1);
+SELECT id, c FROM t_saf_nested;
+-- The ambiguity check applies inside the wrapper as well.
+CREATE TABLE t_saf_ambiguous (c SimpleAggregateFunction(any, Tuple(a UInt8 DEFAULT b, b UInt8))) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+-- An unsupported wrapper inside the storage type is still rejected.
+CREATE TABLE t_saf_array (c SimpleAggregateFunction(groupArrayArray, Array(Tuple(a UInt8 DEFAULT 1)))) ENGINE = Memory; -- { serverError NOT_IMPLEMENTED }
+
 SELECT '-- lambda parameter shadowing an element name';
 -- A lambda parameter is a scoped local variable, not a reference to a tuple element or a column, so
 -- a parameter named like an element does not make the default ambiguous.
@@ -187,5 +223,7 @@ DROP TABLE t_alter_add;
 DROP TABLE t_alter_modify;
 DROP TABLE t_nullable;
 DROP TABLE t_variant;
+DROP TABLE t_saf;
+DROP TABLE t_saf_nested;
 DROP TABLE t_lambda;
 DROP TABLE t_scope;
