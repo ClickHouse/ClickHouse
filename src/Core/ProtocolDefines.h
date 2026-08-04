@@ -78,11 +78,17 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///            These names are omitted when serializing for a receiver older than version 5, because
 ///            `BaseSettings::readBinary` throws on unknown setting names.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 5;
-/// The parallel-replicas remote plan is pre-serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
-/// that blob is reused for every replica that can read it, so a replica below this version must be excluded
-/// up front rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so
-/// a future bump can't silently leave this gate behind.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// The minimum query-plan serialization version a replica must advertise to participate in parallel
+/// replicas at the QueryPlan stage: version 3 introduced the parallel-replicas flag (bit 32) on a
+/// serialized `ReadFromMergeTree`, which every parallel-replicas plan carries (the flag is
+/// data-dependent, so `QueryPlan::getRequiredSerializationVersion` does not see it - this constant is
+/// its floor). Higher versions are not required up front: `Connection::sendQueryPlan` re-serializes
+/// the plan down to each receiver's advertised version via `serializeForReceiver`, so
+/// `RemoteQueryExecutor` excludes a replica only when it is below the *fragment's* required version
+/// (`max` of this constant and `QueryPlan::getRequiredSerializationVersion`), instead of below the
+/// current global maximum - otherwise a rolling upgrade would lose all not-yet-upgraded replicas even
+/// for fragments they could execute identically.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
