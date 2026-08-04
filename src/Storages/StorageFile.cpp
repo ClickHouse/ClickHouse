@@ -1805,15 +1805,38 @@ Chunk StorageFileSource::generate()
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
 
                     /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
-                    /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
+                    /// `current_file_cache_version`, so a writer - e.g. a second `File` table pointing at
                     /// the same path, which is guarded by its own independent `rwlock` and so isn't excluded
-                    /// by ours - could truncate and rewrite the file in that window. Re-stat right after
-                    /// opening: if the token no longer matches what we just opened, it cannot be trusted to
-                    /// pin this read's generation, so fail close (the gates below skip both the Query
-                    /// Condition Cache lookup and, per the bracketing check further down, its population).
-                    if (!storage->use_table_fd && current_file_version_settled
+                    /// by ours - could truncate and rewrite the file in that window, and the token would
+                    /// then describe a different generation than the bytes the buffer returns. The opened
+                    /// fd is not reachable here (the buffer may be an mmap, io_uring, or compression
+                    /// wrapper), so bracket the open with a second `stat` of the path instead: once the
+                    /// token has settled (`isFileCacheVersionSettled`), any write in the gap moves the
+                    /// mtime out of the settled tick and changes the token, so an unchanged token proves
+                    /// the opened bytes match it. For a not-yet-settled token the bracket is best-effort:
+                    /// a same-tick rewrite that keeps the inode and the byte size is indistinguishable,
+                    /// the same residual the format metadata cache accepts by design for fresh files.
+                    if (!storage->use_table_fd
                         && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                    {
+                        /// The bucket (row-group) assignment of a parallel single-file split was
+                        /// computed for `expected_file_cache_version`; applying it to a file that just
+                        /// changed under us could silently return wrong data, so fail close, mirroring
+                        /// the pre-open check above.
+                        if (file_bucket_info && expected_file_cache_version.has_value())
+                            throw Exception(
+                                ErrorCodes::FILE_CHANGED_WHILE_READING,
+                                "File {} was modified concurrently while a parallel single-file read was in progress "
+                                "(version {} did not hold after the file was opened)",
+                                current_path, *current_file_cache_version);
+
+                        /// For a plain read, fail close on the caches instead: drop the token so neither
+                        /// the format metadata cache (`object_with_metadata` below) nor the Query
+                        /// Condition Cache keys this read's data under a version it may not describe.
+                        /// The footer is then parsed directly from the opened bytes.
+                        current_file_cache_version.reset();
                         current_file_version_settled = false;
+                    }
                 }
             }
 
@@ -2470,6 +2493,17 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                 auto splitter = FormatFactory::instance().getSplitter(storage->format_name);
                 buckets = splitter->splitToBucketsByCount(max_num_streams, *buf, format_settings);
             }
+
+            /// Bracket the split decision the same way `StorageFileSource::generate` brackets its
+            /// open: the footer was read through a buffer opened by path strictly after the `stat`
+            /// above computed `decision_file_version`, so a rewrite in that gap would pair a
+            /// row-group assignment from the new footer with a token of the old file. If the token
+            /// no longer holds, do not split - fall back to a plain single-source read of the
+            /// current file (the per-bucket fail-close in `StorageFileSource::generate` would
+            /// otherwise deterministically throw `FILE_CHANGED_WHILE_READING` on a race the plain
+            /// read handles fine).
+            if (!buckets.empty() && !fileCacheVersionTokenStillHolds(single_file_path, decision_file_version))
+                buckets.clear();
 
             if (buckets.size() >= 2)
             {
