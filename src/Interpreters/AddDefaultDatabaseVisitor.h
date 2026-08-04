@@ -103,6 +103,20 @@ public:
         visit(refresh, unused);
     }
 
+    /// Substitute the database only into table functions that use the current database implicitly,
+    /// e.g. `merge('tables_regexp')`, without qualifying table identifiers.
+    /// It is used for `ALTER ... ON CLUSTER`: the identifiers are qualified when the query
+    /// is interpreted on each host, but the table functions have to be canonicalized before
+    /// `executeDDLQueryOnCluster` replaces `currentDatabase()` with the database of the session.
+    void substituteDatabaseInTableFunctions(IAST & ast) const
+    {
+        if (const auto * table_expression = ast.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+            visitTableFunction(*table_expression->table_function);
+
+        for (auto & child : ast.children)
+            substituteDatabaseInTableFunctions(*child);
+    }
+
 private:
 
     ContextPtr context;
