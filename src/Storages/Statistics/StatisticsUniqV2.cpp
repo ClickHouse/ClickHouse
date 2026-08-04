@@ -1,4 +1,5 @@
 #include <Storages/Statistics/StatisticsUniqV2.h>
+#include <base/scope_guard.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -84,6 +85,9 @@ void StatisticsUniqV2::serialize(WriteBuffer & buf)
 
 void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
+    /// A read can throw after the container switch has already mutated the state, so reset in one place.
+    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
+
     bool is_null = false;
     readBinary(is_null, buf);
 
@@ -97,13 +101,11 @@ void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*ver
             is_null, collector_is_nullable);
 
     collector->deserialize(data, buf);
-    cached_cardinality_plus_one.store(0, std::memory_order_relaxed);
 }
 
 UInt64 StatisticsUniqV2::estimateCardinality() const
 {
-    /// Finalizing the sketch is a pure function of the state, so it can be memoized. It is not
-    /// cheap: uniqCombined64 runs a 54 iteration `long double` loop, software binary128 on aarch64.
+    /// Finalizing the sketch is a pure function of the state, so it can be memoized.
     if (const UInt64 cached = cached_cardinality_plus_one.load(std::memory_order_relaxed))
         return cached - 1;
 
