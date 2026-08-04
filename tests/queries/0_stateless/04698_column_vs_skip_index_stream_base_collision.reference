@@ -11,7 +11,6 @@ empty-part-legal	5
 ttl-merge-legal	0
 ttl-merge-vertical-legal	0
 t_carry_copy	1
-t_carry_packed	1
 t_carry_full	1
 t_rename	1
 rename-legal	10	45

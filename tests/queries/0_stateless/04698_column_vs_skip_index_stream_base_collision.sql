@@ -75,16 +75,10 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_in
 INSERT INTO t_spill_hash SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_spill_hash;
 
--- A substream that stays inside `skp_idx.packed` still owns the base: reads resolve `skp_idx_*`
--- archive keys before the real disk, so the archive member shadows the column's own file.
-CREATE TABLE t_packed (k UInt64, `skp_idx_a` UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         packed_skip_index_max_bytes = 1000000;
-INSERT INTO t_packed SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
-DROP TABLE t_packed;
+-- A substream that stays inside `skp_idx.packed` claims the logical name, so it only collides while
+-- the column keeps its own logical name too. That arm lives in 04719 (unhashed names are required).
 
--- ... but a HASHED on-disk name is bare hex, which the archive lookup never matches, so nothing can
+-- A HASHED on-disk name is bare hex, which the archive lookup never matches, so nothing can
 -- be shadowed and this pair is legal. This is why the archive claim uses the logical name.
 CREATE TABLE t_packed_hash (k UInt64, `skp_idx_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` UInt64, s String,
     INDEX `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`(s) TYPE set(100) GRANULARITY 1)
@@ -132,17 +126,7 @@ INSERT INTO t_text SELECT number, number, toString(number) FROM numbers(10); -- 
 DROP TABLE t_text;
 
 -- The arm above is caught during ordinary writer init, so it never reaches MergeTextIndexesTask.
--- Building the column before the index exists leaves the merge as the only producer that can see
--- the pair, which is the claim inside that task.
-CREATE TABLE t_text_merge (k UInt64, s String) ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-INSERT INTO t_text_merge SELECT number, toString(number) FROM numbers(10);
-INSERT INTO t_text_merge SELECT number + 100, toString(number) FROM numbers(10);
-ALTER TABLE t_text_merge ADD COLUMN `skp_idx_a` String DEFAULT 'x';
-ALTER TABLE t_text_merge UPDATE `skp_idx_a` = 'y' WHERE 1;
-ALTER TABLE t_text_merge ADD INDEX a(s) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1;
-OPTIMIZE TABLE t_text_merge FINAL; -- { serverError INCORRECT_FILE_NAME }
-DROP TABLE t_text_merge;
+-- That producer claims the index's logical name, so its arm lives in 04719.
 
 -- An ordinary text index must still build and merge: the temporary per-segment streams must not
 -- claim anything in the part registry.
@@ -250,19 +234,7 @@ SELECT 't_carry_copy', countIf(latest_fail_reason LIKE '%INCORRECT_FILE_NAME%'
 FROM system.mutations WHERE database = currentDatabase() AND table = 't_carry_copy';
 DROP TABLE t_carry_copy;
 
--- A carried archive member is claimed under its logical name, which is what a read resolves.
-CREATE TABLE t_carry_packed (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         packed_skip_index_max_bytes = 1000000;
-INSERT INTO t_carry_packed SELECT number, toString(number) FROM numbers(10);
-ALTER TABLE t_carry_packed ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
-ALTER TABLE t_carry_packed UPDATE `skp_idx_a` = 5 WHERE 1; -- { serverError UNFINISHED }
-SELECT 't_carry_packed', countIf(latest_fail_reason LIKE '%INCORRECT_FILE_NAME%'
-    AND latest_fail_reason LIKE '%skip index `a`%'
-    AND latest_fail_reason LIKE '%column `skp_idx_a`%')
-FROM system.mutations WHERE database = currentDatabase() AND table = 't_carry_packed';
-DROP TABLE t_carry_packed;
+-- A carried archive member is claimed under its logical name, so its arm lives in 04719.
 
 -- A mutation that rewrites every column carries indices through its own loops, at a different site.
 CREATE TABLE t_carry_full (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
