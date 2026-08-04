@@ -1,7 +1,7 @@
 export const ExperimentalBadge = () => {
     return (
         <a
-            href="/docs/beta-and-experimental-features#experimental-features"
+            href="/ko/reference/settings/beta-and-experimental-features#experimental-features"
             className="experimentalBadge"
         >
             <div className="experimentalIcon">
