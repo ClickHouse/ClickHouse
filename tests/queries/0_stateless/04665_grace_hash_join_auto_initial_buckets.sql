@@ -1,3 +1,7 @@
+DROP TABLE IF EXISTS grace_hash_join_auto_initial_buckets_rhs;
+CREATE TABLE grace_hash_join_auto_initial_buckets_rhs (number UInt64) ENGINE = MergeTree ORDER BY number;
+INSERT INTO grace_hash_join_auto_initial_buckets_rhs SELECT number FROM numbers(4000);
+
 SELECT default, type
 FROM system.settings
 WHERE name = 'grace_hash_join_initial_buckets';
@@ -13,7 +17,7 @@ SET join_overflow_mode = 'throw';
 SELECT 'planner auto';
 SELECT count()
 FROM numbers(10) AS lhs
-INNER JOIN numbers(4000) AS rhs USING number
+INNER JOIN grace_hash_join_auto_initial_buckets_rhs AS rhs USING number
 SETTINGS
     grace_hash_join_initial_buckets = 0,
     max_rows_in_join = 1000,
@@ -55,3 +59,5 @@ WHERE
     AND type = 'QueryFinish'
 GROUP BY log_comment
 ORDER BY log_comment;
+
+DROP TABLE grace_hash_join_auto_initial_buckets_rhs;
