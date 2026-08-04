@@ -16,7 +16,12 @@ $CLICKHOUSE_CLIENT --query "
 # Warm up the in-memory mark cache, so that both queries below take marks from it and their only
 # filesystem cache accesses are for the data file. Otherwise the paused downloader would hold the
 # mark cache load token and the waiter would block on it instead of `FileSegment::wait`.
-$CLICKHOUSE_CLIENT --filesystem_cache_allow_background_download 0 \
+# Strictly synchronous, no prefetches and no background download: any cache write still in flight
+# after this query would consume the one-time failpoint instead of the downloader below.
+$CLICKHOUSE_CLIENT --max_threads 1 \
+    --remote_filesystem_read_prefetch 0 \
+    --allow_prefetched_read_pool_for_remote_filesystem 0 \
+    --filesystem_cache_allow_background_download 0 \
     --query "SELECT a FROM t_download_wait_timeout LIMIT 1 FORMAT Null"
 
 $CLICKHOUSE_CLIENT --query "
@@ -30,9 +35,14 @@ $CLICKHOUSE_CLIENT --max_threads 1 \
     --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0 \
     --remote_filesystem_read_prefetch 0 \
     --allow_prefetched_read_pool_for_remote_filesystem 0 \
+    --filesystem_cache_allow_background_download 0 \
     --query "SELECT sum(a) FROM t_download_wait_timeout" &
 
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT file_segment_pause_before_write PAUSE"
+
+# Exactly one segment must be DOWNLOADING now, held by the paused downloader. Anything else means
+# the failpoint was consumed by a stray cache write and the test below would be vacuous.
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADING'"
 
 # The waiter needs the paused segment, gives up waiting after 100 ms and bypasses the cache.
 waiter_query_id="04695_waiter_${CLICKHOUSE_DATABASE}_${RANDOM}"
@@ -41,6 +51,7 @@ $CLICKHOUSE_CLIENT --query_id "$waiter_query_id" --max_threads 1 \
     --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0 \
     --remote_filesystem_read_prefetch 0 \
     --allow_prefetched_read_pool_for_remote_filesystem 0 \
+    --filesystem_cache_allow_background_download 0 \
     --use_uncompressed_cache 0 \
     --filesystem_cache_wait_for_concurrent_download_timeout_milliseconds 100 \
     --query "SELECT sum(a) FROM t_download_wait_timeout"
