@@ -109,9 +109,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-namespace
-{
-
 /// Returns whether the analyzer should be used for mutations.
 /// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
 /// The override is parsed once per config reload in `Server.cpp` and stored on the shared context,
@@ -121,8 +118,6 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     if (auto override_value = context->getMutationsUseAnalyzerOverride())
         return *override_value;
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
-}
-
 }
 
 /// A mutation command's predicate and `UPDATE` expressions are stored as serialized SQL text and

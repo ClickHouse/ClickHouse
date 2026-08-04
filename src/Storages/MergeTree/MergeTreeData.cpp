@@ -18,7 +18,10 @@
 #endif
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
@@ -66,6 +69,11 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
@@ -79,6 +87,7 @@
 #include <Parsers/parseQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingTransform.h>
@@ -8816,23 +8825,6 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (!query_context->getSettingsRef()[Setting::use_partition_pruning])
         return std::nullopt;
 
-    /// Every column the mutation predicate may legally reference must be known here, otherwise
-    /// this analysis throws on a predicate the mutation itself accepts. `getAll` adds the
-    /// `ALIAS` and `EPHEMERAL` columns on top of the physical ones; the virtual columns
-    /// (e.g. `_part`, `_partition_id`) are available during mutation execution too.
-    /// A column that is not part of the partition key simply makes the expression opaque to
-    /// `PartitionPruner`, which then keeps the partition - it does not have to be readable here.
-    auto columns = metadata_snapshot->getColumns().getAll();
-
-    NameSet column_names;
-    for (const auto & column : columns)
-        column_names.insert(column.name);
-    for (const auto & column : metadata_snapshot->virtuals)
-    {
-        if (!column_names.contains(column.name))
-            columns.emplace_back(column.name, column.type);
-    }
-
     auto predicate_clone = predicate->clone();
 
     /// The predicate comes from a serialized mutation command that was re-parsed, so its set
@@ -8841,15 +8833,96 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// the mutation execution path does in `getPartitionAndPredicateExpressionForMutationCommand`.
     normalizeSetOperations(predicate_clone, query_context);
 
-    TreeRewriter tree_rewriter(query_context);
-    auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
-    auto actions_dag = ExpressionAnalyzer(predicate_clone, syntax_result, query_context).getActionsDAG(false);
+    /// The analysis must accept everything the mutation itself accepts, so it has to follow
+    /// the same analyzer selection as the mutation execution (`MutationsInterpreter`). Some
+    /// predicate shapes (e.g. qualified column names) resolve only under the query-tree analyzer.
+    std::optional<ActionsDAG> actions_dag;
+    const ActionsDAG::Node * predicate_node = nullptr;
 
-    /// The predicate output is the node matching the predicate expression name.
-    /// `getActionsDAG` may include input columns in the outputs list, so we need
-    /// to find the correct node by name.
-    String predicate_column_name = predicate_clone->getColumnName();
-    const auto * predicate_node = actions_dag.tryFindInOutputs(predicate_column_name);
+    if (shouldUseAnalyzerForMutations(query_context))
+    {
+        auto execution_context = Context::createCopy(query_context);
+        auto expression = buildQueryTree(predicate_clone, execution_context);
+
+        /// Resolve against the real storage, so that its columns (including `ALIAS` and
+        /// `EPHEMERAL`), subcolumns and virtual columns (e.g. `_part`, `_partition_id`)
+        /// are visible, just like during the mutation execution.
+        auto table_expression = std::make_shared<TableNode>(
+            std::const_pointer_cast<IStorage>(shared_from_this()), execution_context);
+
+        QueryAnalyzer analyzer(false);
+        analyzer.resolveConstantExpression(expression, table_expression, execution_context);
+
+        GlobalPlannerContextPtr global_planner_context
+            = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+        auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+        collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+        collectSets(expression, *planner_context);
+
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        /// Use plain column names for the DAG inputs (instead of planner column identifiers
+        /// like `__table1.x`), so that `PartitionPruner` can match them against the partition
+        /// key expression columns.
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/ {},
+            planner_context,
+            empty_correlated_columns_set,
+            /*use_column_identifier_as_action_node_name=*/ false);
+        correlated_subtrees.assertEmpty("in a mutation predicate");
+
+        /// Plan the subqueries, so that `KeyCondition` can build the sets for `IN (SELECT ...)`.
+        auto subquery_options = SelectQueryOptions{}.subquery();
+        for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+        {
+            auto query_tree = subquery->detachQueryTree();
+            createUniqueAliasesIfNecessary(query_tree, execution_context);
+            Planner subquery_planner(
+                query_tree,
+                subquery_options,
+                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+            subquery_planner.buildQueryPlanIfNeeded();
+
+            auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+            subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        }
+
+        actions_dag.emplace(std::move(actions));
+        if (actions_dag->getOutputs().size() != 1)
+            return std::nullopt;
+        predicate_node = actions_dag->getOutputs().front();
+    }
+    else
+    {
+        /// Every column the mutation predicate may legally reference must be known here, otherwise
+        /// this analysis throws on a predicate the mutation itself accepts. `getAll` adds the
+        /// `ALIAS` and `EPHEMERAL` columns on top of the physical ones; the virtual columns
+        /// (e.g. `_part`, `_partition_id`) are available during mutation execution too.
+        /// A column that is not part of the partition key simply makes the expression opaque to
+        /// `PartitionPruner`, which then keeps the partition - it does not have to be readable here.
+        auto columns = metadata_snapshot->getColumns().getAll();
+
+        NameSet column_names;
+        for (const auto & column : columns)
+            column_names.insert(column.name);
+        for (const auto & column : metadata_snapshot->virtuals)
+        {
+            if (!column_names.contains(column.name))
+                columns.emplace_back(column.name, column.type);
+        }
+
+        TreeRewriter tree_rewriter(query_context);
+        auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
+        actions_dag.emplace(ExpressionAnalyzer(predicate_clone, syntax_result, query_context).getActionsDAG(false));
+
+        /// The predicate output is the node matching the predicate expression name.
+        /// `getActionsDAG` may include input columns in the outputs list, so we need
+        /// to find the correct node by name.
+        String predicate_column_name = predicate_clone->getColumnName();
+        predicate_node = actions_dag->tryFindInOutputs(predicate_column_name);
+    }
+
     if (!predicate_node)
         return std::nullopt;
 
