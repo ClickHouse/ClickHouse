@@ -12435,7 +12435,8 @@ function onQueryInput(e)
         /// never auto-executed: the workspace store carries no `run` flag, and the editor-only
         /// history writers never stamp `run=1` for an unrun edit (`tabReflectsRun` fails once the
         /// editor diverges from the produced result). A draft that a debounced `persist` happens to
-        /// flush to IndexedDB (fired by some later structural event / Back-Forward / color toggle) is
+        /// flush to IndexedDB (fired by some later structural event / Back-Forward, or a result-only
+        /// color or column-pin toggle — `persistColorModes` / `persistPinnedColumns`) is
         /// still restored as editor text on reload via `reconcileStartup`'s stale-reload branch
         /// (`preserve_local_query`), but only shown, never re-run. Browser Back/Forward preserves a
         /// live unrun draft in `window.onpopstate` (see `preserve_draft` there), and closing the

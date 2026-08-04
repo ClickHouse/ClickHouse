@@ -49,6 +49,8 @@ stale reload: the draft is not auto-run
 stale reload: the preserved draft entry is not stamped run=1
 reload after a color toggle over a draft: the draft is restored as editor text
 reload after a color toggle over a draft: the draft is not auto-run
+reload after a pin toggle over a draft: the draft is restored as editor text
+reload after a pin toggle over a draft: the draft is not auto-run
 reload of a clean run: the run query is restored
 reload of a clean run: the run query is auto-run
 stale reload then rerun: the draft is restored unrun

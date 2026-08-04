@@ -34,8 +34,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     reordering the placeholders does not blank the finished background run, while genuinely
 #     different bindings still render the entry as plain time travel;
 #   - the reload path (`persist` -> `reconcileStartup`): a debounced save that flushes an unrun
-#     draft diverging from the URL (fired by a later structural event / Back-Forward / color
-#     toggle) makes a reload restore that draft as editor text but NEVER auto-run it (the
+#     draft diverging from the URL (fired by a later structural event / Back-Forward, or a
+#     result-only color or column-pin toggle — `persistColorModes` / `persistPinnedColumns`)
+#     makes a reload restore that draft as editor text but NEVER auto-run it (the
 #     stale-reload branch, `preserve_local_query`, refuses the URL's `run=1`); a clean run, by
 #     contrast, is both restored and re-run on reload;
 #   - the `run=1` policy (`tab.runnableUrl`) is scoped to the history ENTRY, not sticky per tab:
@@ -87,7 +88,7 @@ const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tab
     'sameServerAddress', 'effectiveConnectionUser', 'stampSelectedDatabaseConnection',
     'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory', 'resolveTabForState',
     'markBootstrapDirty', 'switchToTab', 'addTab', 'closeTab', 'closeOtherTabs', 'scheduleSave', 'loadFromDb',
-    'persist', 'persistColorModes', 'reconcileStartup'];
+    'persist', 'persistColorModes', 'persistPinnedColumns', 'reconcileStartup'];
 let code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
 
@@ -759,6 +760,19 @@ async function openRunUrl(query, tab_name)
     sandbox.column_color_modes = {};
     assert_eq('reload after a color toggle over a draft: the draft is restored as editor text', active().query, 'SELECT 2');
     assert_eq('reload after a color toggle over a draft: the draft is not auto-run', sandbox.postAllCalled, false);
+
+    /// Reload after a column-pin toggle over an unrun draft. `persistPinnedColumns` is the sibling
+    /// of `persistColorModes` — the same result-only `scheduleSave` -> `persist` ->
+    /// `captureActiveTab` chain — so it is the same intentional exception: the flushed draft is
+    /// restored on reload as editor text only, never auto-run.
+    reset();
+    await run('SELECT 1');
+    type('SELECT 2');
+    active().pinnedColumns = { c: true };
+    sandbox.persistPinnedColumns();
+    await reload();
+    assert_eq('reload after a pin toggle over a draft: the draft is restored as editor text', active().query, 'SELECT 2');
+    assert_eq('reload after a pin toggle over a draft: the draft is not auto-run', sandbox.postAllCalled, false);
 
     /// Control: reloading a clean run (no draft) restores the run's query AND re-runs it — the URL is
     /// still authoritative (run=1 preserved) — the "reload re-runs what you ran" behavior the draft
