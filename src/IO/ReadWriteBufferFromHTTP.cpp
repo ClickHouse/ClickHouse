@@ -123,18 +123,28 @@ std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
         }
         catch (const HTTPException &)
         {
+            /// A file without a size is fine, but a request interrupted by a cancellation must not
+            /// come out as such a file: the caller would go on requesting the data no one needs.
+            if (isReadCancelled())
+                throw;
             return std::nullopt;
         }
         catch (const NetException &)
         {
+            if (isReadCancelled())
+                throw;
             return std::nullopt;
         }
         catch (const Poco::Net::NetException &)
         {
+            if (isReadCancelled())
+                throw;
             return std::nullopt;
         }
         catch (const Poco::IOException &)
         {
+            if (isReadCancelled())
+                throw;
             return std::nullopt;
         }
     }
@@ -420,6 +430,12 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             }
         }
     }
+}
+
+
+bool ReadWriteBufferFromHTTP::isReadCancelled() const
+{
+    return cancellation && cancellation->isCancelled();
 }
 
 
@@ -764,18 +780,28 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
         }
         catch (const HTTPException &)
         {
+            /// A file without a modification time is fine, but a request interrupted by a cancellation
+            /// must not come out as such a file: the caller would go on requesting the data no one needs.
+            if (isReadCancelled())
+                throw;
             return std::nullopt;
         }
         catch (const NetException &)
         {
+            if (isReadCancelled())
+                throw;
             return std::nullopt;
         }
         catch (const Poco::Net::NetException &)
         {
+            if (isReadCancelled())
+                throw;
             return std::nullopt;
         }
         catch (const Poco::IOException &)
         {
+            if (isReadCancelled())
+                throw;
             return std::nullopt;
         }
     }

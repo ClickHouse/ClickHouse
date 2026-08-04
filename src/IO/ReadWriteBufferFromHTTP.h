@@ -73,6 +73,14 @@ public:
             return changed.wait_for(lock, duration, [this] { return cancelled; });
         }
 
+        /// A non-blocking check for the code in between the requests, which must not go on making
+        /// more of them after the read has been cancelled.
+        bool isCancelled()
+        {
+            std::lock_guard lock(mutex);
+            return cancelled;
+        }
+
     private:
         std::mutex mutex;
         std::condition_variable changed;
@@ -158,6 +166,11 @@ private:
 
     /// Waits before the next retry attempt. Returns true if the read has been cancelled while waiting.
     bool waitBeforeRetry(size_t milliseconds) const;
+
+    /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries. The
+    /// helpers which swallow the errors of the requests they make must not swallow the error of a
+    /// request interrupted by a cancellation - nothing may go on requesting after it.
+    bool isReadCancelled() const;
 
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,

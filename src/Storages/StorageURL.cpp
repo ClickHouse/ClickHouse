@@ -512,6 +512,16 @@ Chunk StorageURLSource::generate()
             if (!reader && !initialize())
                 return {};
 
+            /// Re-check after initialize: some of its helpers swallow the errors of the requests they
+            /// make - a failover probe, or the HEAD request for the file metadata whose absence is not
+            /// an error - so a cancellation which interrupted one of them can come out of initialize
+            /// as a normal completion. Do not pull a chunk no one needs.
+            if (isCancelled())
+            {
+                reader->cancel();
+                break;
+            }
+
             pulled = reader->pull(chunk);
         }
         catch (...)
@@ -694,6 +704,14 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         catch (...)
         {
             if (options == 1)
+                throw;
+
+            /// Probing the next failover option only makes sense while someone still wants the data.
+            /// The error of a request whose read has been cancelled - for example, the last HTTP error
+            /// rethrown when the cancellation woke up the retry backoff, see doWithRetries - must
+            /// propagate instead: the source discards it or fails with it depending on the reason of
+            /// the cancellation, see generate.
+            if (cancellation && cancellation->isCancelled())
                 throw;
 
             if (first_exception_message.empty())
