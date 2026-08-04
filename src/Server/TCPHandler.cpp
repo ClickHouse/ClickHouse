@@ -1041,6 +1041,17 @@ void TCPHandler::runImpl()
                 return;
             }
 
+            /// The input buffer is canceled only by a socket-level read failure
+            /// (timeout, connection reset, ...), i.e. the connection is broken:
+            /// graceful termination would write into it, blocking for up to
+            /// send_timeout. Close it right away, discarding the buffered output.
+            if (in->isCanceled())
+            {
+                LOG_DEBUG(log, "Going to close connection without graceful termination because the input stream is canceled, exception: {}", exception->message());
+                query_state->cancelOut(out);
+                return;
+            }
+
             /// If the exception happened during initial query parsing (before
             /// `query_context` was created at the end of `processQuery`), the
             /// input buffer is in an unknown state: the failing read may have
