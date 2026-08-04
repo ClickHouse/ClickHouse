@@ -6960,7 +6960,7 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
@@ -7050,6 +7050,10 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             /// if parts_count == parts_to_delay_insert -> we're 1 part over threshold
             active_parts_over_threshold = parts_count_in_partition - active_parts_to_delay_insert + 1;
     }
+
+    /// The caller asked only for the throw checks (it applies the backpressure elsewhere).
+    if (!allow_delay)
+        return;
 
     /// no need for delay
     if (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold)

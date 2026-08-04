@@ -281,8 +281,10 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
 void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 {
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::consume");
-    if (num_blocks_processed > 0)
-        storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, false);
+    /// Apply the `parts_to_delay_insert` backpressure before every block, including the first one of
+    /// each sink: unlike the pre-write rejection in `onStart`, the delay is not shared across the
+    /// parallel sinks of the query, otherwise all the sinks but one would skip it for their first block.
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, /*allow_throw=*/ false);
 
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
@@ -420,7 +422,6 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     if (synchronously_commit_part_for_dependent_views)
         finishDelayed(zookeeper);
 
-    ++num_blocks_processed;
 }
 
 MergeTreeTemporaryPartPtr ReplicatedMergeTreeSink::writeNewTempPart(BlockWithPartition & block)
@@ -1230,7 +1231,8 @@ void ReplicatedMergeTreeSink::onStart()
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
     /// The query may write through several sinks in parallel (`max_insert_threads`), so the check is
     /// shared by all of them: it runs once, before any of the sinks writes its first part.
-    runOnceBeforeFirstWrite([this] { storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true); });
+    /// Only the rejection is shared: the `parts_to_delay_insert` backpressure applies per block, in `consume`.
+    runOnceBeforeFirstWrite([this] { storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, /*allow_throw=*/ true, /*allow_delay=*/ false); });
 
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onStart");
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onStart");

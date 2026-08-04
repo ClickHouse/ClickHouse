@@ -87,7 +87,8 @@ void MergeTreeSink::onStart()
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
     /// The query may write through several sinks in parallel (`max_insert_threads`), so the check is
     /// shared by all of them: it runs once, before any of the sinks writes its first part.
-    runOnceBeforeFirstWrite([this] { storage.delayInsertOrThrowIfNeeded(nullptr, context, true); });
+    /// Only the rejection is shared: the `parts_to_delay_insert` backpressure applies per block, in `consume`.
+    runOnceBeforeFirstWrite([this] { storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false); });
 }
 
 void MergeTreeSink::onFinish()
@@ -100,8 +101,10 @@ void MergeTreeSink::onFinish()
 
 void MergeTreeSink::consume(Chunk & chunk)
 {
-    if (num_blocks_processed > 0)
-        storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
+    /// Apply the `parts_to_delay_insert` backpressure before every block, including the first one of
+    /// each sink: unlike the pre-write rejection in `onStart`, the delay is not shared across the
+    /// parallel sinks of the query, otherwise all the sinks but one would skip it for their first block.
+    storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ false);
 
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
@@ -252,7 +255,6 @@ void MergeTreeSink::consume(Chunk & chunk)
     if (synchronously_commit_part_for_dependent_views)
         finishDelayedChunk();
 
-    ++num_blocks_processed;
 }
 
 void MergeTreeSink::finishDelayedChunk()

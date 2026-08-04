@@ -30,9 +30,12 @@ done
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM crossing"
 
-# The check itself has to be performed exactly once per INSERT query, no matter how many streams the
-# query writes through. `parts_to_delay_insert = 1` makes every INSERT into a non-empty table delay,
-# and `DelayedInserts` counts how many times the check was performed.
+# Only the rejection is shared across the streams. The `parts_to_delay_insert` backpressure applies
+# per block, so every sink that receives data still delays before writing - the shared pre-write check
+# does not weaken the throttling of parallel inserts. `parts_to_delay_insert = 1` makes every block
+# written into a non-empty table delay, and `DelayedInserts` counts the delays. The single row of the
+# INSERT arrives as one block into one of the sinks, so the query delays exactly once, no matter how
+# many streams it writes through (before the fix every stream performed the check on start: 64).
 $CLICKHOUSE_CLIENT --async_insert 0 --query "
     CREATE TABLE delayed (x UInt64) ENGINE = MergeTree ORDER BY tuple()
         SETTINGS parts_to_delay_insert = 1, parts_to_throw_insert = 1000, min_delay_to_insert_ms = 0;
@@ -51,7 +54,9 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # The gate is shared per destination table, not per view: the branches of different materialized
-# views converging on the same target table also perform the check exactly once for the whole query.
+# views converging on the same target table also perform the rejection check exactly once for the
+# whole query. Each of the two branches delivers one block into the target table and delays on it,
+# so `DelayedInserts` is 2 (before the fix every stream of every branch performed the check: 128).
 $CLICKHOUSE_CLIENT --async_insert 0 --query "
     CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY tuple();
     CREATE TABLE converged (x UInt64) ENGINE = MergeTree ORDER BY tuple()
@@ -73,8 +78,9 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # An Alias destination forwards the write through a nested INSERT per parallel branch, and the real
-# check runs inside those nested inserts. They share the outer query's gate, so the check still runs
-# exactly once for the whole query.
+# check runs inside those nested inserts. They share the outer query's gate, so the rejection check
+# still runs exactly once for the whole query, and the single row delays once in the branch that
+# received it (before the fix every branch performed the check on start: 64).
 $CLICKHOUSE_CLIENT --async_insert 0 --allow_experimental_alias_table_engine 1 --query "
     CREATE TABLE alias_target (x UInt64) ENGINE = MergeTree ORDER BY tuple()
         SETTINGS parts_to_delay_insert = 1, parts_to_throw_insert = 1000, min_delay_to_insert_ms = 0;

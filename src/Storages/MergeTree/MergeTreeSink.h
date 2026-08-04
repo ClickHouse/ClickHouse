@@ -61,7 +61,6 @@ protected:
     size_t max_parts_per_block;
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;
-    UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
     bool synchronously_commit_part_for_dependent_views = false;
     /// We can delay processing for previous chunk and start writing a new one.
