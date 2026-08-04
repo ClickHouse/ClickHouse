@@ -17,6 +17,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -384,9 +385,9 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
 namespace
 {
 
-/// Does converting a column from `from` to `to` keep values in the same relative order?
-/// Conservative: an unrecognised pair is reported as order-breaking, because a false "safe"
-/// yields wrong results while a false "unsafe" only costs one pushdown.
+/// Does converting a column from `from` to `to` keep the order AND map distinct values to distinct
+/// ones? The `Array` branch composes this elementwise, so a collapsing pair would reorder arrays.
+/// Unrecognised pairs are refused: a false "safe" gives wrong results, a false "unsafe" a pushdown.
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
 {
     if (from.equals(to))
@@ -395,14 +396,14 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     const WhichDataType which_from(from);
     const WhichDataType which_to(to);
 
-    /// An `Enum` is stored as its underlying signed number, so widening it to an `Enum` that agrees
-    /// on the shared names, or to a signed integer at least as wide, keeps the numeric order. An
-    /// unmatched `to` falls through, so a `Nullable` one still reaches the unwrapping below.
+    /// An `Enum` is `static_cast` to the target's field type, so the order survives only when that
+    /// mapping is the identity: the target must agree on the values AND be wide enough not to
+    /// truncate, which `contains` does not check. An unmatched `to` falls through to the unwrapping.
     if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
     {
         if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
         {
-            if (to_enum->contains(*from_enum))
+            if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
                 return true;
         }
         else if (which_to.isNativeInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
@@ -435,6 +436,14 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
         const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from);
         return conversionPreservesOrder(from_nullable ? *from_nullable->getNestedType() : from, *to_nullable->getNestedType());
     }
+
+    /// `ColumnArray::compareAt` compares elementwise then by length, so a strictly monotonic element
+    /// conversion orders arrays the same way. Both sides must be `Array`: wrapping or unwrapping one
+    /// changes what is compared. `Tuple` and `Map` need their own analysis and stay refused.
+    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
+    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
+    if (from_array && to_array)
+        return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
 
     return false;
 }

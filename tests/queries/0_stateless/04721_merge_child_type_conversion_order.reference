@@ -106,6 +106,22 @@ Nullable(String)
 0
 1
 10
+-- an Enum narrowing stays refused even though the target contains the source values
+0
+d
+c
+-- element widening inside Array keeps the stage
+Array(Int64)
+1
+[-199]
+[-198]
+[-197]
+-- an order-breaking element conversion, or a one-sided Array, stays refused
+0
+0
+-- Tuple and Map need their own analysis, so they stay refused
+0
+0
 -- an equal-width signedness flip inside LowCardinality stays refused
 0
 0

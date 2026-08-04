@@ -152,6 +152,49 @@ SELECT type FROM system.columns WHERE database = currentDatabase() AND table = '
 SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_derived ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
 SELECT DISTINCT A FROM m_derived ORDER BY A ASC LIMIT 3;
 
+SELECT '-- an Enum narrowing stays refused even though the target contains the source values';
+-- `contains` accepts this pair: the name sets are disjoint, so it falls back to testing the
+-- TRUNCATED value, and 128 truncated to Int8 is -128, which the target does hold. The cast
+-- truncates the data the same way, so ascending 0, 128 arrives as 0, -128, i.e. reversed.
+CREATE TABLE t_e16_wide (A Enum16('a' = 0, 'b' = 128)) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_e16_wide SELECT if(number % 2, 'a', 'b') FROM numbers(200);
+CREATE TABLE dist_e16_wide AS t_e16_wide ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_e16_wide);
+CREATE TABLE m_e16_narrow (`A` Enum8('c' = 0, 'd' = -128)) ENGINE = Merge(currentDatabase(), '^dist_e16_wide$');
+SELECT count() FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_e16_narrow ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT DISTINCT A FROM m_e16_narrow ORDER BY A ASC LIMIT 2;
+
+SELECT '-- element widening inside Array keeps the stage';
+-- No column list, so `getLeastSupertype` recurses into `Array` and derives the target itself.
+-- The declared type is asserted, so a resolver change reddens instead of going vacuous.
+CREATE TABLE t_arr_i32 (A Array(Int32)) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_arr_i32 SELECT [toInt32(-number)] FROM numbers(200);
+CREATE TABLE dist_arr_i32 AS t_arr_i32 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_arr_i32);
+CREATE TABLE t_arr_i64 (A Array(Int64)) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_arr_i64 SELECT [toInt64(number) + 100000] FROM numbers(100);
+CREATE TABLE dist_arr_i64 AS t_arr_i64 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_arr_i64);
+CREATE TABLE m_arr_derived ENGINE = Merge(currentDatabase(), '^(dist_arr_i32|dist_arr_i64)$');
+SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'm_arr_derived' AND name = 'A';
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_arr_derived ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT DISTINCT A FROM m_arr_derived ORDER BY A ASC LIMIT 3;
+
+SELECT '-- an order-breaking element conversion, or a one-sided Array, stays refused';
+CREATE TABLE m_arr_flip   (`A` Array(UInt64)) ENGINE = Merge(currentDatabase(), '^dist_arr_i64$');
+CREATE TABLE m_arr_narrow (`A` Array(Int32))  ENGINE = Merge(currentDatabase(), '^dist_arr_i64$');
+SELECT count() FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_arr_flip   ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT count() FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_arr_narrow ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+
+SELECT '-- Tuple and Map need their own analysis, so they stay refused';
+CREATE TABLE t_tup_i32 (A Tuple(Int32)) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_tup_i32 SELECT tuple(toInt32(-number)) FROM numbers(200);
+CREATE TABLE dist_tup_i32 AS t_tup_i32 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_tup_i32);
+CREATE TABLE m_tup (`A` Tuple(Int64)) ENGINE = Merge(currentDatabase(), '^dist_tup_i32$');
+SELECT count() FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_tup ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+CREATE TABLE t_map_i32 (A Map(String, Int32)) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_map_i32 SELECT map('k', toInt32(-number)) FROM numbers(200);
+CREATE TABLE dist_map_i32 AS t_map_i32 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_map_i32);
+CREATE TABLE m_map (`A` Map(String, Int64)) ENGINE = Merge(currentDatabase(), '^dist_map_i32$');
+SELECT count() FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_map ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+
 SELECT '-- an equal-width signedness flip inside LowCardinality stays refused';
 CREATE TABLE t_lc_i64 (A LowCardinality(Int64)) ENGINE = MergeTree ORDER BY A;
 INSERT INTO t_lc_i64 SELECT -number % 50 FROM numbers(200);
