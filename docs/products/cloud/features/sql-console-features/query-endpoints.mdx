@@ -22,8 +22,7 @@ Query API endpoints respect API key-level IP whitelisting. Similar to the SQL Co
 To restrict which clients can call your Query API endpoints:
 
 <Steps>
-<Step>
-#### Open API key settings {#open-settings}
+<Step title="Open API key settings" id="open-settings">
 
 1. Go to ClickHouse Cloud Console → **Organization** → **API Keys**
 
@@ -33,8 +32,7 @@ To restrict which clients can call your Query API endpoints:
 
 <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Edit"/>
 </Step>
-<Step>
-#### Add allowed IP addresses {#add-ips}
+<Step title="Add allowed IP addresses" id="add-ips">
 
 1. In the **Allow access to this API Key** section, select **Specific locations**
 2. Enter IP addresses or CIDR ranges (e.g., `203.0.113.1` or `203.0.113.0/24`)

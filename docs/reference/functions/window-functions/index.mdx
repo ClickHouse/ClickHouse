@@ -1,6 +1,6 @@
 ---
 description: 'Overview page for window functions'
-sidebarTitle: 'Window Functions'
+sidebarTitle: 'Overview'
 slug: /sql-reference/window-functions/
 title: 'Window Functions'
 doc_type: 'reference'
@@ -78,6 +78,10 @@ The following functions can only be used as window functions. Most are standard 
 | [`nth_value(x, offset)`](/reference/functions/window-functions/nth_value)                                                              | Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.                                           |
 | [`rank()`](/reference/functions/window-functions/rank)                                                                                 | Rank the current row within its partition with gaps.                                                                                   |
 | [`dense_rank()`](/reference/functions/window-functions/dense_rank)                                                                     | Rank the current row within its partition without gaps.                                                                                |
+| [`percent_rank()`](/reference/functions/window-functions/percent_rank)                                                                 | Compute the relative rank of the current row within its partition, as a value between 0 and 1.                                         |
+| [`cume_dist()`](/reference/functions/window-functions/cume_dist)                                                                       | Compute the cumulative distribution of a value within a group of values.                                                               |
+| [`lag(x, offset)`](/reference/functions/window-functions/lag)                                                                          | Return a value evaluated at the row that is offset rows before the current row within the partition.                                   |
+| [`lead(x, offset)`](/reference/functions/window-functions/lead)                                                                        | Return a value evaluated at the row that is offset rows after the current row within the partition.                                    |
 | [`lagInFrame(x)`](/reference/functions/window-functions/lagInFrame)                                                                    | Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.        |
 | [`leadInFrame(x)`](/reference/functions/window-functions/leadInFrame)                                                                  | Return a value evaluated at the row that is offset rows after the current row within the ordered frame.                                |
 | [`ntile(buckets)`](/reference/functions/window-functions/ntile)                                                                        | Divide the ordered rows within a partition into the given number of buckets and return the bucket number of the current row.           |
@@ -735,6 +739,44 @@ ORDER BY
 │ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
 │ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
+```
+
+### SESSION frame {#session-frame}
+
+<Warning>
+The `SESSION` frame is experimental. To use it, enable the setting `allow_experimental_session_window_frame = 1`.
+</Warning>
+
+The `SESSION` frame groups consecutive rows (in `ORDER BY` order) into disjoint sessions: a new session starts whenever the gap between a row and the previous row on the single `ORDER BY` key exceeds a given threshold. Unlike `ROWS`/`RANGE`/`GROUPS`, which produce a sliding or growing frame per row, every row in the same session shares one and the same frame, so a window aggregate returns the same value for all rows of a session.
+
+Syntax:
+
+```text
+function OVER ([PARTITION BY ...] ORDER BY key [ASC|DESC] SESSION threshold)
+```
+
+- Exactly one `ORDER BY` column is required (the session key). More than one raises an error.
+- `threshold` is expressed in the natural units of the `ORDER BY` column, the same as `RANGE OFFSET`. For a numeric key it is the numeric gap; for a `DateTime` key it is a number of seconds (`INTERVAL` on the threshold is not supported, specify seconds directly). So a "60 second" session over a `DateTime` column is written `SESSION 60`.
+- `threshold` must be a positive constant. Zero, negative, non-constant, or non-numeric thresholds raise an error.
+- `DESC` ordering is supported; sessions are then formed on decreasing keys.
+
+Example: group values into sessions where consecutive values differ by no more than 2, and collect each session with `groupArray`:
+
+```sql
+SET allow_experimental_session_window_frame = 1;
+
+SELECT
+    arrayJoin([1, 20, 22, 24, 100, 101]) AS n,
+    groupArray(n) OVER (ORDER BY n SESSION 2) AS session;
+
+┌───n─┬─session────┐
+│   1 │ [1]        │
+│  20 │ [20,22,24] │
+│  22 │ [20,22,24] │
+│  24 │ [20,22,24] │
+│ 100 │ [100,101]  │
+│ 101 │ [100,101]  │
+└─────┴────────────┘
 ```
 
 ## References {#references}

@@ -272,29 +272,21 @@ FROM s3(
 以下の手順に従って、新しい Cloud サービスを作成してください。
 
 <Steps>
-  <Step>
-    #### Cloud Console を開く
-
+  <Step title="Cloud Console を開く" id="open-cloud-console">
     [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/) にアクセスします
   </Step>
 
-  <Step>
-    #### 新しいサービスを作成する
-
+  <Step title="新しいサービスを作成する" id="create-new-service">
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="新しいサービスを作成する" />
   </Step>
 
-  <Step>
-    #### サービスを設定して作成する
-
+  <Step title="サービスを設定して作成する" id="configure-and-create">
     使用するリージョンと構成を選択し、`Create service` をクリックします
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="サービスの設定を行う" />
   </Step>
 
-  <Step>
-    #### アクセスロールを作成する
-
+  <Step title="アクセスロールを作成する" id="create-an-access-role">
     SQL Console を開きます
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="サービスの設定を行う" />
@@ -303,9 +295,9 @@ FROM s3(
 
     S3 からバックアップを復元するには、ClickHouse Cloud と S3 バケットの間で安全にアクセスできるよう設定する必要があります。
 
-    1. [&quot;Accessing S3 data securely&quot;](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) の手順に従ってアクセスロールを作成し、ロール ARN を取得します。
+    1. [&quot;S3 データへ安全にアクセスする&quot;](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) の手順に従ってアクセスロールを作成し、ロール ARN を取得します。
 
-    2. [&quot;How to create an S3 bucket and IAM role&quot;](/ja/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket) で作成した S3 バケットポリシーを更新し、前の手順で取得したロール ARN を追加します。
+    2. [&quot;S3 バケットと IAM ロールを作成する方法&quot;](/ja/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket) で作成した S3 バケットポリシーを更新し、前の手順で取得したロール ARN を追加します。
 
     更新後の S3 バケットポリシーは、次のようになります。
 
@@ -335,8 +327,8 @@ FROM s3(
 
     このポリシーには、両方の ARN が含まれています。
 
-    * **IAM ユーザー** (`docs-s3-user`): セルフマネージドの ClickHouse クラスターが S3 にバックアップできるようにします
-    * **ClickHouse Cloud ロール** (`ClickHouseAccess-001`): Cloud サービスが S3 から復元できるようにします
+    * **IAM user** (`docs-s3-user`): セルフマネージドの ClickHouse クラスターが S3 にバックアップできるようにします
+    * **ClickHouse Cloud role** (`ClickHouseAccess-001`): Cloud サービスが S3 から復元できるようにします
   </Step>
 </Steps>
 
@@ -443,8 +435,8 @@ BACKUP DATABASE my_database
 TO S3('https://your-bucket.s3.amazonaws.com/backup.zip', 'key', 'secret')
 ASYNC;
        
--- バックアップIDを即座に返して処理を返す
--- 実行結果の例:
+-- Returns immediately with backup ID
+-- Example result:
 -- ┌─id──────────────────────────────────┬─status────────────┐
 -- │ abc123-def456-789                   │ CREATING_BACKUP   │
 -- └─────────────────────────────────────┴───────────────────┘
