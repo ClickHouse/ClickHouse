@@ -200,6 +200,11 @@ static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out)
 
     writeFieldBinary(frame.begin_offset, out);
     writeFieldBinary(frame.end_offset, out);
+
+    /// Only for SESSION, so the byte stream of every other frame type is unchanged and a reader
+    /// that does not know SESSION rejects the type byte before reaching this field.
+    if (frame.type == WindowFrame::FrameType::SESSION)
+        writeFieldBinary(frame.session_window_threshold, out);
 }
 
 static WindowFrame deserializeWindowFrame(ReadBuffer & in)
@@ -217,7 +222,7 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
     /// handle).
     UInt8 type = 0;
     readIntBinary(type, in);
-    if (type > static_cast<UInt8>(WindowFrame::FrameType::RANGE))
+    if (type > static_cast<UInt8>(WindowFrame::FrameType::SESSION))
         throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep: invalid window frame type {}", static_cast<UInt16>(type));
     frame.type = static_cast<WindowFrame::FrameType>(type);
 
@@ -235,6 +240,9 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
 
     frame.begin_offset = readFieldBinary(in);
     frame.end_offset = readFieldBinary(in);
+
+    if (frame.type == WindowFrame::FrameType::SESSION)
+        frame.session_window_threshold = readFieldBinary(in);
 
     return frame;
 }

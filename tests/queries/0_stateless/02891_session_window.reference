@@ -71,6 +71,35 @@ order by t;
 2020-01-01 00:00:30	['2020-01-01 00:00:00','2020-01-01 00:00:30','2020-01-01 00:01:15']
 2020-01-01 00:01:15	['2020-01-01 00:00:00','2020-01-01 00:00:30','2020-01-01 00:01:15']
 2020-01-01 00:05:00	['2020-01-01 00:05:00']
+-- The threshold survives AST JSON serialization, and it is mutually exclusive with the
+-- frame boundary fields in both directions.
+select formatQueryFromJSON(parseQueryToJSON('SELECT groupArray(n) OVER (ORDER BY n SESSION 2) FROM t'));
+SELECT groupArray(n) OVER (ORDER BY n ASC SESSION 2) FROM t
+select formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Function","name":"groupArray","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"n"}]},"window_definition":{"type":"WindowDefinition","frame_is_default":false,"frame_type":"SESSION","frame_begin_type":"Current","session_window_threshold":{"type":"Literal","value":{"field_type":"UInt64","value":2}}},"is_window_function":true,"kind":"WINDOW_FUNCTION"}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+select formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Function","name":"groupArray","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"n"}]},"window_definition":{"type":"WindowDefinition","frame_is_default":false,"frame_type":"SESSION"},"is_window_function":true,"kind":"WINDOW_FUNCTION"}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+select formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Function","name":"groupArray","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"n"}]},"window_definition":{"type":"WindowDefinition","frame_is_default":false,"frame_type":"RANGE","frame_begin_type":"Unbounded","frame_begin_preceding":true,"frame_end_type":"Current","frame_end_preceding":false,"session_window_threshold":{"type":"Literal","value":{"field_type":"UInt64","value":2}}},"is_window_function":true,"kind":"WINDOW_FUNCTION"}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+-- The threshold also survives query plan serialization, so a distributed plan forms the same
+-- sessions as local execution (without it the worker rejects the frame type outright).
+drop table if exists 02891_session_window_mt;
+create table 02891_session_window_mt (n UInt64) engine = MergeTree order by n;
+insert into 02891_session_window_mt values (1), (20), (22), (24), (100), (101);
+set make_distributed_plan = 1, serialize_query_plan = 1, distributed_plan_execute_locally = 1;
+select n, groupArray(n) over (order by n session 2) from 02891_session_window_mt order by n;
+1	[1]
+20	[20,22,24]
+22	[20,22,24]
+24	[20,22,24]
+100	[100,101]
+101	[100,101]
+select n, groupArray(n) over (order by n session 100) from 02891_session_window_mt order by n;
+1	[1,20,22,24,100,101]
+20	[1,20,22,24,100,101]
+22	[1,20,22,24,100,101]
+24	[1,20,22,24,100,101]
+100	[1,20,22,24,100,101]
+101	[1,20,22,24,100,101]
+set make_distributed_plan = 0, serialize_query_plan = 0, distributed_plan_execute_locally = 0;
+drop table 02891_session_window_mt;
 -- Test some wrong things
 select 1 n, count() over (order by n session 0.5); -- { serverError 69 }
 select 1 n, count() over (order by n session -1); -- { serverError 69 }

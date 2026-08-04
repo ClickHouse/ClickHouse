@@ -216,6 +216,16 @@ void ASTWindowDefinition::writeJSON(WriteBuffer & out) const
             case WindowFrame::FrameType::RANGE:
                 w.writeString("frame_type", "RANGE");
                 break;
+            case WindowFrame::FrameType::SESSION:
+                w.writeString("frame_type", "SESSION");
+                break;
+        }
+        /// A SESSION frame carries a threshold instead of boundaries, and `formatImpl` emits
+        /// neither boundary for it, so the boundary fields must stay absent to round-trip.
+        if (frame_type == WindowFrame::FrameType::SESSION)
+        {
+            w.writeChild("session_window_threshold", session_window_threshold);
+            return;
         }
         switch (frame_begin_type)
         {
@@ -260,6 +270,7 @@ static WindowFrame::FrameType parseFrameType(const String & s)
     if (s == "ROWS") return WindowFrame::FrameType::ROWS;
     if (s == "GROUPS") return WindowFrame::FrameType::GROUPS;
     if (s == "RANGE") return WindowFrame::FrameType::RANGE;
+    if (s == "SESSION") return WindowFrame::FrameType::SESSION;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown WindowFrame FrameType: '{}'", s);
 }
 
@@ -314,6 +325,18 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         "frame_end_type",
         "frame_end_offset",
         "frame_end_preceding",
+        "session_window_threshold",
+    };
+
+    /// A SESSION frame carries a threshold instead of boundaries; the boundary fields are
+    /// mutually exclusive with it, in both directions.
+    static constexpr std::array frame_boundary_field_keys = {
+        "frame_begin_type",
+        "frame_begin_offset",
+        "frame_begin_preceding",
+        "frame_end_type",
+        "frame_end_offset",
+        "frame_end_preceding",
     };
 
     if (frame_is_default)
@@ -325,6 +348,22 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Field '{}' is present for a default-frame window during AST JSON deserialization", key);
     }
+    else if (r.has("frame_type") && r.getString("frame_type") == "SESSION")
+    {
+        frame_type = WindowFrame::FrameType::SESSION;
+
+        for (const char * key : frame_boundary_field_keys)
+            if (r.has(key))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Field '{}' is present for a SESSION-frame window during AST JSON deserialization", key);
+
+        child = r.readChild("session_window_threshold");
+        if (!child)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Missing 'session_window_threshold' for a SESSION-frame window during AST JSON deserialization");
+        session_window_threshold = child;
+        children.push_back(session_window_threshold);
+    }
     else
     {
         if (!r.has("frame_type"))
@@ -333,6 +372,9 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_begin_type' for a non-default-frame window during AST JSON deserialization");
         if (!r.has("frame_end_type"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_end_type' for a non-default-frame window during AST JSON deserialization");
+        if (r.has("session_window_threshold"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'session_window_threshold' is only valid for a SESSION frame during AST JSON deserialization");
 
         frame_type = parseFrameType(r.getString("frame_type"));
         frame_begin_type = parseBoundaryType(r.getString("frame_begin_type"));
