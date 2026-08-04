@@ -1444,7 +1444,14 @@ static std::optional<size_t> estimateReadBytes(
         }
 
         if (!part_bytes_known)
+        {
+            /// Compact parts only expose the size of the shared data file. Scaling that size by rows
+            /// is not conservative when variable-size data is distributed unevenly between granules.
+            if (selected_rows < data_part.rows_count)
+                return std::nullopt;
+
             part_bytes = data_part.getTotalColumnsSize().data_uncompressed;
+        }
 
         const auto selected_bytes_wide
             = (static_cast<UInt128>(part_bytes) * selected_rows + data_part.rows_count - 1) / data_part.rows_count;
