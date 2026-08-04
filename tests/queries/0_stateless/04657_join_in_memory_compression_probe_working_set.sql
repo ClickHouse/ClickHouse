@@ -11,11 +11,14 @@
 -- setting is supposed to avoid. Now the decompressed working set held at once is bounded: blocks
 -- already copied into the output are released early and decompressed anew if referenced again.
 --
--- The right side is a Memory table filled with `max_block_size = 4`, so the join build receives
--- 16384 blocks of 4 rows (~1.5 KB per row, ~100 MB decompressed in total, compressing to almost
+-- The right side is a Memory table filled with `max_block_size = 32`, so the join build receives
+-- 2048 blocks of 32 rows (~1.5 KB per row, ~100 MB decompressed in total, compressing to almost
 -- nothing). The left side probes in default-sized blocks, so a single output batch references
 -- thousands of distinct stored blocks (~100 MB decompressed) - well past the 64 MiB working-set
 -- budget - and must release mid-batch, observable as `JoinInMemoryDecompressWorkingSetReleases`.
+-- (32-row blocks rather than even tinier ones: per-block costs elsewhere in the pipeline made a
+-- 16384-block variant of this test exceed the 180 s limit under sanitizer builds, without making
+-- the working-set scenario any stronger.)
 
 DROP TABLE IF EXISTS jimc_ws_left;
 DROP TABLE IF EXISTS jimc_ws_right;
@@ -24,7 +27,7 @@ CREATE TABLE jimc_ws_left (k UInt64) ENGINE = Memory;
 INSERT INTO jimc_ws_left SELECT number FROM numbers(65536);
 
 CREATE TABLE jimc_ws_right (k UInt64, pad String) ENGINE = Memory;
-INSERT INTO jimc_ws_right SELECT number, repeat('x', 1500) FROM numbers(65536) SETTINGS max_block_size = 4;
+INSERT INTO jimc_ws_right SELECT number, repeat('x', 1500) FROM numbers(65536) SETTINGS max_block_size = 32;
 
 -- The compressed run must produce the same result as the uncompressed one.
 SELECT (SELECT sum(cityHash64(l.k, r.pad))
