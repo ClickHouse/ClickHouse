@@ -19,10 +19,9 @@ drafts/
 # declared" on re-injection) and can abort injection of the real scripts.
 _site/styles/
 
-# Legacy content in the docs folder. Anchored to the top level so that
+# Internal content in the docs folder. Anchored to the top level so that
 # resources/changelogs/ (and its locale copies) stays published.
 /_templates/
 /_includes/
 /changelogs/
-/en/
 /get-started/quickstarts/_TEMPLATE.mdx
