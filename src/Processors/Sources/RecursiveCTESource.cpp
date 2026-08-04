@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
@@ -126,9 +127,10 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// `AS remote(...)` is a `StorageProxy` over `StorageDistributed`, a materialized view
 /// with a `Distributed` target reads that target directly (this is independent of
 /// `parallel_replicas_allow_materialized_views`, which gates only the planner's
-/// `MergeTree`-family rule), and an `Alias` table reads its target. `Buffer` and `Merge`
-/// tables over a remote child are not unwrapped — their targets are not reachable through
-/// a public accessor here — so they do not count as eligible: the read stays correct
+/// `MergeTree`-family rule), an `Alias` table reads its target, and a `Buffer` table
+/// forwards both `getQueryProcessingStage` and `read` to its destination. `Merge` tables
+/// over a remote child are not unwrapped — their children are not reachable through a
+/// public accessor here — so they do not count as eligible: the read stays correct
 /// (parallel replicas are still disabled below), only the forced-mode rejection does not
 /// fire for them.
 bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const ContextPtr & context)
@@ -151,6 +153,12 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
     {
         const auto target = alias->getTargetTable();
         return target && target->isRemote() && mayEngageParallelReplicasForRemoteStorage(*target, context);
+    }
+
+    if (const auto * buffer = dynamic_cast<const StorageBuffer *>(&storage))
+    {
+        const auto destination = buffer->getDestinationTable();
+        return destination && destination->isRemote() && mayEngageParallelReplicasForRemoteStorage(*destination, context);
     }
 
     const auto * distributed = dynamic_cast<const StorageDistributed *>(&storage);

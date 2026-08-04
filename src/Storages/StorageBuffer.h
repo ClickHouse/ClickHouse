@@ -89,6 +89,10 @@ public:
         size_t num_streams) override;
     bool isRemote() const override;
 
+    /// The table the buffers are flushed into and reads are forwarded to.
+    /// Empty destination (`Buffer(..., '', '')`) means the table only buffers, and nullptr is returned.
+    StoragePtr getDestinationTable() const;
+
     bool supportsParallelInsert() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -205,8 +209,6 @@ private:
 
     void backgroundFlush();
     void reschedule(size_t min_delay);
-
-    StoragePtr getDestinationTable() const;
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;

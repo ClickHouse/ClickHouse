@@ -964,6 +964,46 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP VIEW edges_dist_mv;
+
+-- A `Buffer` table forwards its read to the destination table, so a `Buffer` over a local
+-- table cannot engage parallel replicas (the planner sees the `Buffer`, which is not eligible)
+-- and must keep running under the forcing mode.
+DROP TABLE IF EXISTS edges_buffer_local;
+CREATE TABLE edges_buffer_local AS edges
+    ENGINE = Buffer(currentDatabase(), edges, 1, 10, 100, 10, 100, 10000, 100000);
+
+WITH RECURSIVE buffer_local_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM buffer_local_pr AS t INNER JOIN edges_buffer_local AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM buffer_local_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+DROP TABLE edges_buffer_local;
+
+-- A `Buffer` over a `Distributed` table forwards the read to that remote destination, which
+-- can engage parallel replicas, so the forcing mode must fail closed instead of silently
+-- downgrading to a plain read.
+DROP TABLE IF EXISTS edges_buffer_dist;
+CREATE TABLE edges_buffer_dist AS edges
+    ENGINE = Buffer(currentDatabase(), edges_dist_replicas, 1, 10, 100, 10, 100, 10000, 100000);
+
+WITH RECURSIVE buffer_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM buffer_pr_throw AS t INNER JOIN edges_buffer_dist AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM buffer_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE edges_buffer_dist;
 DROP TABLE edges_dist_replicas;
 
 DROP TABLE edges;
