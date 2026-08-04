@@ -760,10 +760,12 @@ def test_insert_datetime(started_cluster):
         ]
     )
 
+    # The `DateTime64` column comes back as a BSON date, so the round trip returns exactly
+    # the inserted values.
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
     assert found == [
-        {"id": 1, "when": "2020-05-17 10:30:00.000"},
-        {"id": 2, "when": "2021-06-18 11:45:30.123"},
+        {"id": 1, "when": datetime.datetime(2020, 5, 17, 10, 30, 0)},
+        {"id": 2, "when": datetime.datetime(2021, 6, 18, 11, 45, 30, 123000)},
     ]
 
     assert [doc["id"] for doc in collection.find({"when": {"$gt": datetime.datetime(2021, 1, 1)}})] == [2]
@@ -801,6 +803,85 @@ def test_aggregate_match_subdocument(started_cluster):
     assert [doc["id"] for doc in collection.aggregate([{"$match": {"profile": {"name": "alpha"}}}, {"$sort": {"id": 1}}, {"$project": {"id": 1}}])] == [1, 3]
 
     assert collection.distinct("id", {"profile": {"name": "alpha"}}) == [1, 3]
+
+
+def test_readback_preserves_document_shape(started_cluster):
+    """What a driver reads back must have the shape and the types of what it inserted: a nested
+    document comes back as a nested document rather than literal dotted keys, and a date as a
+    BSON date rather than a string - for a `find`, an `aggregate` and a `distinct` alike."""
+    import copy
+    import datetime
+
+    client = make_client()
+    collection = client["db"]["readback_shape"]
+
+    documents = [
+        {"id": 1, "profile": {"name": "alpha", "age": 30}, "when": datetime.datetime(2021, 6, 1, 12, 0, 0)},
+        {"id": 2, "profile": {"name": "beta", "age": 40}, "when": datetime.datetime(2022, 7, 2, 13, 30, 0)},
+    ]
+
+    collection.drop()
+    # `insert_many` adds a client-generated `_id` to the documents it is given, which the server
+    # does not store, so it must not reach the expected value.
+    collection.insert_many(copy.deepcopy(documents))
+
+    found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
+    assert found == documents
+
+    # An empty projection asks for the whole document.
+    found = sorted((doc for doc in collection.find({}, {})), key=lambda x: x["id"])
+    assert found == documents
+
+    # A projection of a nested field keeps its document shape.
+    assert [doc for doc in collection.find({"id": 1}, {"profile.name": 1})] == [{"profile": {"name": "alpha"}}]
+
+    assert [doc for doc in collection.aggregate([{"$match": {"id": 2}}, {"$project": {"when": 1}}])] == [
+        {"when": datetime.datetime(2022, 7, 2, 13, 30, 0)}
+    ]
+
+    assert collection.distinct("when") == [
+        datetime.datetime(2021, 6, 1, 12, 0, 0),
+        datetime.datetime(2022, 7, 2, 13, 30, 0),
+    ]
+
+
+def test_union_with_nested_match(started_cluster):
+    """The `$match` stages inside the pipeline of a `$unionWith` use the same query syntax as the
+    outer ones, so their subdocument filters are normalized the same way."""
+    client = make_client()
+    collection = client["db"]["union_nested_match"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "profile": {"name": "alpha"}},
+            {"id": 2, "profile": {"name": "beta"}},
+        ]
+    )
+
+    other = client["db"]["union_nested_match_other"]
+    other.drop()
+    other.insert_many(
+        [
+            {"id": 3, "profile": {"name": "alpha"}},
+            {"id": 4, "profile": {"name": "beta"}},
+        ]
+    )
+
+    result = collection.aggregate(
+        [
+            {"$match": {"profile": {"name": "alpha"}}},
+            {
+                "$unionWith": {
+                    "coll": "union_nested_match_other",
+                    "pipeline": [{"$match": {"profile": {"name": "alpha"}}}],
+                }
+            },
+            {"$sort": {"id": 1}},
+            {"$project": {"id": 1}},
+        ]
+    )
+    assert [doc["id"] for doc in result] == [1, 3]
 
 
 def test_dollar_field_path_is_an_error(started_cluster):

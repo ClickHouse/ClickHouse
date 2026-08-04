@@ -98,6 +98,10 @@ String QueryExecutor::execute(const String & query)
     query_context->setSetting("output_format_json_named_tuples_as_objects", true);
     query_context->setSetting("output_format_json_array_of_rows", false);
 
+    /// The dates of the result are parsed back into BSON dates, so they must be formatted the
+    /// way the parsing expects rather than the way the user's profile asks.
+    query_context->setSetting("date_time_output_format", String("simple"));
+
     auto query_scope = QueryScope::create(query_context);
     ReadBufferFromString read_buf(query);
 

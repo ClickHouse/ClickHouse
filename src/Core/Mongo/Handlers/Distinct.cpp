@@ -100,40 +100,35 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     if (result_json.Parse(output.data()).HasParseError())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
 
+    auto columns = extractResultColumns(result_json);
+    if (columns.size() != 1 || columns[0].first != "_id")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no '_id'");
+
     auto data_it = result_json.FindMember("data");
     if (data_it == result_json.MemberEnd() || !data_it->value.IsArray())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no rows");
 
-    /// The reply is `{"values": [...], "ok": 1}`, and the values keep the types the rows carry, so
-    /// it is built as JSON and converted to BSON once rather than value by value.
-    rapidjson::Document reply;
-    auto & reply_allocator = reply.GetAllocator();
-    reply.SetObject();
-
-    rapidjson::Value values(rapidjson::kArrayType);
-    for (auto & row : data_it->value.GetArray())
+    /// The reply is `{"values": [...], "ok": 1}`, and the values keep the types of the column
+    /// (see `appendTypedValue`).
+    bson_t * reply = bson_new();
     {
-        auto value_it = row.FindMember("_id");
-        if (value_it == row.MemberEnd())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no '_id'");
-        rapidjson::Value value;
-        value.CopyFrom(value_it->value, reply_allocator);
-        values.PushBack(value, reply_allocator);
+        static constexpr std::string_view key_identifier = "values";
+        bson_t values;
+        bson_append_array_begin(reply, key_identifier.data(), static_cast<int>(key_identifier.size()), &values);
+        size_t index = 0;
+        for (const auto & row : data_it->value.GetArray())
+        {
+            /// `meta` promises the column, so every row has it.
+            auto value_it = row.FindMember("_id");
+            if (value_it != row.MemberEnd())
+                appendTypedValue(&values, std::to_string(index++), value_it->value, columns[0].second);
+        }
+        bson_append_array_end(reply, &values);
     }
-
-    reply.AddMember("values", values, reply_allocator);
-    reply.AddMember("ok", 1.0, reply_allocator);
-
-    String serialized_reply;
-    {
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        reply.Accept(writer);
-        serialized_reply = buffer.GetString();
-    }
+    BSON_APPEND_DOUBLE(reply, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(serialized_reply);
+    result.emplace_back(reply);
     return result;
 }
 

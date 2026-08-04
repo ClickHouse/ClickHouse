@@ -5,6 +5,7 @@
 #include <Core/Mongo/MongoProtocol.h>
 #include <Core/Mongo/Wire/OpMessage.h>
 #include <Core/Mongo/Wire/OpQuery.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
@@ -40,9 +41,24 @@ struct CollectionRef
   */
 CollectionRef getCollectionRef(const Document & command, const String & command_name);
 
+/** Appends one value of a `FORMAT JSON` result to a BSON document under `key`, using the
+  * ClickHouse type of its column to restore the BSON type the JSON text does not carry:
+  * a `DateTime`/`DateTime64`/`Date` becomes a BSON date rather than a string, an integer
+  * column an `int32`/`int64` of its width, a `Bool` a boolean, and an `Array`/`Tuple`/`Map`
+  * recurses element by element. A value whose column type carries no more information than
+  * the JSON itself (`JSON`, `Dynamic`) is converted structurally.
+  */
+void appendTypedValue(bson_t * document, const String & key, const rapidjson::Value & value, const DataTypePtr & type);
+
+/// The names and types of the columns of a parsed `FORMAT JSON` result, from its `meta`.
+std::vector<std::pair<String, DataTypePtr>> extractResultColumns(const rapidjson::Document & result_json);
+
 /** Runs a `SELECT` and builds the reply a Mongo client expects from a command that returns
   * documents: `{"cursor": {"firstBatch": [...], "id": 0, "ns": "<database>.<collection>"}, "ok": 1}`.
   * The whole result is returned in the first batch, so the cursor is already exhausted.
+  * The `meta` of the result drives the conversion of each value (see `appendTypedValue`), and
+  * the dotted name of a column - the way the dialect addresses a nested field - becomes the
+  * nested document it names: the row `{"profile.name": "x"}` returns as `{"profile": {"name": "x"}}`.
   */
 std::vector<Document>
 executeSelectIntoCursor(const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor);

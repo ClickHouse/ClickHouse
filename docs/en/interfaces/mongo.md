@@ -54,6 +54,8 @@ The wire protocol port is plaintext. Do not expose it outside a trusted network.
 
 Collections with the same name in different MongoDB databases are different ClickHouse tables, and the database is created on demand by the first insert into it.
 
+What a driver reads back has the shape and the types of what it inserted: an `a.b` column returns as the nested document it names, a `DateTime`/`DateTime64`/`Date` column as a BSON date, and an integer column as a BSON `int32`/`int64` of its width.
+
 ### Supported commands {#supported-commands}
 
 `insert`, `find`, `aggregate`, `distinct`, `count`, `update`, `delete`, `create`, `drop`, `dropDatabase`, `createIndexes`, `listDatabases`, `listCollections`, `isMaster`, `buildInfo`, `ping`, `connectionStatus`, `killCursors`, `endSessions` and `saslStart`.
@@ -155,6 +157,7 @@ SET allow_experimental_mongo_dialect = 1;
 SET dialect = 'mongo';
 
 db.users.find({"age" : {"$gt" : 20}});
+db.users.find({}, {"name" : 1, "age" : 1});
 db.users.find({"$projection" : {"name" : "name", "total" : {"$add" : ["price", "tax"]}}});
 db.users.find({}).limit(10).sort({"age" : 1});
 db.users.aggregate([{"$group" : {"_id" : "$city", "c" : {"$sum" : 1}}}, {"$sort" : {"c" : -1}}]);

@@ -1,16 +1,26 @@
 #include <Core/Mongo/Handler.h>
 
 #include <memory>
+#include <Core/DecimalFunctions.h>
 #include <Core/Mongo/Document.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/IsMaster.h>
 #include <Core/Mongo/MongoProtocol.h>
 #include <Core/Mongo/Wire/OpMessage.h>
 #include <Core/Mongo/Wire/OpQuery.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <bson/bson.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
 #include <rapidjson/document.h>
@@ -150,6 +160,294 @@ static void AddPrefixToKeys(
     }
 }
 
+namespace
+{
+
+/// Appends a JSON value whose column type says no more than the JSON itself: the shape of the
+/// value is kept, and a number becomes the narrowest of `int32`/`int64`/`double` that holds it.
+void appendUntypedValue(bson_t * document, const String & key, const rapidjson::Value & value)
+{
+    const int key_length = static_cast<int>(key.size());
+
+    if (value.IsNull())
+    {
+        bson_append_null(document, key.data(), key_length);
+    }
+    else if (value.IsBool())
+    {
+        bson_append_bool(document, key.data(), key_length, value.GetBool());
+    }
+    else if (value.IsInt())
+    {
+        bson_append_int32(document, key.data(), key_length, value.GetInt());
+    }
+    else if (value.IsInt64())
+    {
+        bson_append_int64(document, key.data(), key_length, value.GetInt64());
+    }
+    else if (value.IsUint64())
+    {
+        /// BSON has no unsigned type, so what does not fit a signed 64-bit integer loses
+        /// precision rather than its magnitude.
+        UInt64 unsigned_value = value.GetUint64();
+        if (unsigned_value <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            bson_append_int64(document, key.data(), key_length, static_cast<Int64>(unsigned_value));
+        else
+            bson_append_double(document, key.data(), key_length, static_cast<Float64>(unsigned_value));
+    }
+    else if (value.IsNumber())
+    {
+        bson_append_double(document, key.data(), key_length, value.GetDouble());
+    }
+    else if (value.IsString())
+    {
+        bson_append_utf8(document, key.data(), key_length, value.GetString(), static_cast<int>(value.GetStringLength()));
+    }
+    else if (value.IsObject())
+    {
+        bson_t child;
+        bson_append_document_begin(document, key.data(), key_length, &child);
+        for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
+            appendUntypedValue(&child, it->name.GetString(), it->value);
+        bson_append_document_end(document, &child);
+    }
+    else if (value.IsArray())
+    {
+        bson_t child;
+        bson_append_array_begin(document, key.data(), key_length, &child);
+        size_t index = 0;
+        for (const auto & element : value.GetArray())
+            appendUntypedValue(&child, std::to_string(index++), element);
+        bson_append_array_end(document, &child);
+    }
+}
+
+/// The milliseconds since the Unix epoch of a `DateTime64` value, which is what a BSON date holds.
+Int64 dateTime64ToMilliseconds(DateTime64 value, UInt32 scale)
+{
+    if (scale >= 3)
+        return value.value / DecimalUtils::scaleMultiplier<Int64>(scale - 3);
+    return value.value * DecimalUtils::scaleMultiplier<Int64>(3 - scale);
+}
+
+}
+
+void appendTypedValue(bson_t * document, const String & key, const rapidjson::Value & value, const DataTypePtr & type)
+{
+    const int key_length = static_cast<int>(key.size());
+
+    /// `Nullable` of anything, and the JSON output of a denormal float.
+    if (value.IsNull())
+    {
+        bson_append_null(document, key.data(), key_length);
+        return;
+    }
+
+    /// `Bool` is a numeric type dressed up, so it is told by the value.
+    if (value.IsBool())
+    {
+        bson_append_bool(document, key.data(), key_length, value.GetBool());
+        return;
+    }
+
+    auto unwrapped = removeLowCardinalityAndNullable(type);
+    WhichDataType which(unwrapped);
+
+    if (which.isDateTime64() && value.IsString())
+    {
+        const auto & datetime_type = assert_cast<const DataTypeDateTime64 &>(*unwrapped);
+        DateTime64 datetime(0);
+        ReadBufferFromString in(std::string_view(value.GetString(), value.GetStringLength()));
+        readDateTime64Text(datetime, datetime_type.getScale(), in, datetime_type.getTimeZone());
+        bson_append_date_time(document, key.data(), key_length, dateTime64ToMilliseconds(datetime, datetime_type.getScale()));
+        return;
+    }
+    if (which.isDateTime() && value.IsString())
+    {
+        const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*unwrapped);
+        time_t datetime = 0;
+        ReadBufferFromString in(std::string_view(value.GetString(), value.GetStringLength()));
+        readDateTimeText(datetime, in, datetime_type.getTimeZone());
+        bson_append_date_time(document, key.data(), key_length, static_cast<Int64>(datetime) * 1000);
+        return;
+    }
+    if (which.isDateOrDate32() && value.IsString())
+    {
+        /// A day number does not depend on a time zone, and BSON has no date without a time,
+        /// so a `Date` is the UTC midnight of that day.
+        ExtendedDayNum day;
+        ReadBufferFromString in(std::string_view(value.GetString(), value.GetStringLength()));
+        readDateText(day, in, DateLUT::instance("UTC"));
+        bson_append_date_time(document, key.data(), key_length, static_cast<Int64>(day.toUnderType()) * 86400000);
+        return;
+    }
+    if ((which.isInt8() || which.isInt16() || which.isInt32() || which.isUInt8() || which.isUInt16()) && value.IsInt())
+    {
+        bson_append_int32(document, key.data(), key_length, value.GetInt());
+        return;
+    }
+    if ((which.isInt64() || which.isUInt32()) && value.IsInt64())
+    {
+        bson_append_int64(document, key.data(), key_length, value.GetInt64());
+        return;
+    }
+    if (which.isArray() && value.IsArray())
+    {
+        const auto & element_type = assert_cast<const DataTypeArray &>(*unwrapped).getNestedType();
+        bson_t child;
+        bson_append_array_begin(document, key.data(), key_length, &child);
+        size_t index = 0;
+        for (const auto & element : value.GetArray())
+            appendTypedValue(&child, std::to_string(index++), element, element_type);
+        bson_append_array_end(document, &child);
+        return;
+    }
+    if (which.isTuple())
+    {
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*unwrapped);
+        if (tuple_type.hasExplicitNames() && value.IsObject())
+        {
+            const auto & names = tuple_type.getElementNames();
+            const auto & types = tuple_type.getElements();
+            bson_t child;
+            bson_append_document_begin(document, key.data(), key_length, &child);
+            for (size_t i = 0; i < names.size(); ++i)
+            {
+                auto it = value.FindMember(names[i].c_str());
+                if (it != value.MemberEnd())
+                    appendTypedValue(&child, names[i], it->value, types[i]);
+            }
+            bson_append_document_end(document, &child);
+            return;
+        }
+        if (!tuple_type.hasExplicitNames() && value.IsArray() && value.Size() == tuple_type.getElements().size())
+        {
+            const auto & types = tuple_type.getElements();
+            bson_t child;
+            bson_append_array_begin(document, key.data(), key_length, &child);
+            for (size_t i = 0; i < types.size(); ++i)
+                appendTypedValue(&child, std::to_string(i), value[static_cast<rapidjson::SizeType>(i)], types[i]);
+            bson_append_array_end(document, &child);
+            return;
+        }
+    }
+    if (which.isMap() && value.IsObject())
+    {
+        const auto & value_type = assert_cast<const DataTypeMap &>(*unwrapped).getValueType();
+        bson_t child;
+        bson_append_document_begin(document, key.data(), key_length, &child);
+        for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
+            appendTypedValue(&child, it->name.GetString(), it->value, value_type);
+        bson_append_document_end(document, &child);
+        return;
+    }
+
+    /// Everything else either already is what the JSON says (`String`, `Enum`, `UUID`, a wide
+    /// integer that only fits a double), or carries no type information at all (`JSON`, `Dynamic`).
+    appendUntypedValue(document, key, value);
+}
+
+namespace
+{
+
+/** The dotted column names of a result regrouped into the tree of the documents they name:
+  * the columns `profile.name` and `profile.age` become one `profile` subtree with the leaves
+  * `name` and `age`. The insertion order - the order of the select list - is kept.
+  */
+struct FieldTree
+{
+    struct Entry
+    {
+        String name;
+        /// The index of the column when the entry is a leaf, unused otherwise.
+        size_t column = 0;
+        std::unique_ptr<FieldTree> subtree;
+    };
+    std::vector<Entry> entries;
+
+    Entry * find(std::string_view name)
+    {
+        for (auto & entry : entries)
+            if (entry.name == name)
+                return &entry;
+        return nullptr;
+    }
+};
+
+/// Returns false when the path cannot be added because it conflicts with an existing entry,
+/// e.g. the columns `a` and `a.b` in one result.
+bool insertColumnPath(FieldTree & tree, std::string_view remaining_path, size_t column)
+{
+    auto dot = remaining_path.find('.');
+    String head(remaining_path.substr(0, dot));
+
+    auto * entry = tree.find(head);
+    if (dot == std::string_view::npos)
+    {
+        if (entry)
+            return false;
+        tree.entries.push_back({.name = std::move(head), .column = column, .subtree = nullptr});
+        return true;
+    }
+
+    if (!entry)
+    {
+        tree.entries.push_back({.name = std::move(head), .column = 0, .subtree = std::make_unique<FieldTree>()});
+        entry = &tree.entries.back();
+    }
+    else if (!entry->subtree)
+        return false;
+
+    return insertColumnPath(*entry->subtree, remaining_path.substr(dot + 1), column);
+}
+
+void appendFieldTree(
+    bson_t * document,
+    const FieldTree & tree,
+    const rapidjson::Value & row,
+    const std::vector<std::pair<String, DataTypePtr>> & columns)
+{
+    for (const auto & entry : tree.entries)
+    {
+        if (!entry.subtree)
+        {
+            const auto & [column_name, column_type] = columns[entry.column];
+            auto it = row.FindMember(column_name.c_str());
+            if (it != row.MemberEnd())
+                appendTypedValue(document, entry.name, it->value, column_type);
+        }
+        else
+        {
+            bson_t child;
+            bson_append_document_begin(document, entry.name.data(), static_cast<int>(entry.name.size()), &child);
+            appendFieldTree(&child, *entry.subtree, row, columns);
+            bson_append_document_end(document, &child);
+        }
+    }
+}
+
+}
+
+std::vector<std::pair<String, DataTypePtr>> extractResultColumns(const rapidjson::Document & result_json)
+{
+    auto meta_it = result_json.FindMember("meta");
+    if (meta_it == result_json.MemberEnd() || !meta_it->value.IsArray())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no column list");
+
+    std::vector<std::pair<String, DataTypePtr>> columns;
+    for (const auto & column : meta_it->value.GetArray())
+    {
+        if (!column.IsObject())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column list of the result is malformed");
+        auto name_it = column.FindMember("name");
+        auto type_it = column.FindMember("type");
+        if (name_it == column.MemberEnd() || !name_it->value.IsString() || type_it == column.MemberEnd() || !type_it->value.IsString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column list of the result is malformed");
+        columns.emplace_back(name_it->value.GetString(), DataTypeFactory::instance().get(type_it->value.GetString()));
+    }
+    return columns;
+}
+
 std::vector<Document>
 executeSelectIntoCursor(const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
 {
@@ -161,16 +459,29 @@ executeSelectIntoCursor(const String & sql_query, const CollectionRef & collecti
         if (result_json.Parse(output.data()).HasParseError())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
 
+        auto columns = extractResultColumns(result_json);
+
+        FieldTree tree;
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted name as
+            /// the literal key it always was, rather than dropping the column.
+            if (!insertColumnPath(tree, columns[i].first, i))
+                tree.entries.push_back({.name = columns[i].first, .column = i, .subtree = nullptr});
+        }
+
         auto data_it = result_json.FindMember("data");
         if (data_it == result_json.MemberEnd() || !data_it->value.IsArray())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no rows");
 
         for (const auto & json_data : data_it->value.GetArray())
         {
-            rapidjson::StringBuffer json_buffer;
-            rapidjson::Writer<rapidjson::StringBuffer> json_writer(json_buffer);
-            json_data.Accept(json_writer);
-            selected.emplace_back(String(json_buffer.GetString()));
+            if (!json_data.IsObject())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "A row of the result is not a document");
+
+            bson_t * row_document = bson_new();
+            appendFieldTree(row_document, tree, json_data, columns);
+            selected.emplace_back(row_document);
         }
     }
 
@@ -224,6 +535,42 @@ String modifyFilter(const String & json)
     return result;
 }
 
+/// Rewrites the filter of every `$match` stage of the pipeline through the same normalization as
+/// the filter of a `find`, including the pipelines nested inside a `$unionWith`.
+static void normalizeMatchStages(rapidjson::Value & pipeline, rapidjson::Document::AllocatorType & allocator)
+{
+    if (!pipeline.IsArray())
+        return;
+
+    for (auto & stage : pipeline.GetArray())
+    {
+        if (!stage.IsObject())
+            continue;
+
+        if (auto match_it = stage.FindMember("$match"); match_it != stage.MemberEnd() && match_it->value.IsObject())
+        {
+            String serialized_match;
+            {
+                rapidjson::StringBuffer buffer;
+                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+                match_it->value.Accept(writer);
+                serialized_match = buffer.GetString();
+            }
+
+            rapidjson::Document modified;
+            if (modified.Parse(modifyFilter(serialized_match).c_str()).HasParseError())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the normalized filter of a '$match' stage");
+            match_it->value.CopyFrom(modified, allocator);
+        }
+
+        if (auto union_it = stage.FindMember("$unionWith"); union_it != stage.MemberEnd() && union_it->value.IsObject())
+        {
+            if (auto nested_it = union_it->value.FindMember("pipeline"); nested_it != union_it->value.MemberEnd())
+                normalizeMatchStages(nested_it->value, allocator);
+        }
+    }
+}
+
 String serializePipeline(const rapidjson::Value & pipeline)
 {
     /// The pipeline is copied so that only the `$match` filters are rewritten: everywhere else in
@@ -232,27 +579,7 @@ String serializePipeline(const rapidjson::Value & pipeline)
     auto & allocator = normalized.GetAllocator();
     normalized.CopyFrom(pipeline, allocator);
 
-    for (auto & stage : normalized.GetArray())
-    {
-        if (!stage.IsObject())
-            continue;
-        auto match_it = stage.FindMember("$match");
-        if (match_it == stage.MemberEnd() || !match_it->value.IsObject())
-            continue;
-
-        String serialized_match;
-        {
-            rapidjson::StringBuffer buffer;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-            match_it->value.Accept(writer);
-            serialized_match = buffer.GetString();
-        }
-
-        rapidjson::Document modified;
-        if (modified.Parse(modifyFilter(serialized_match).c_str()).HasParseError())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the normalized filter of a '$match' stage");
-        match_it->value.CopyFrom(modified, allocator);
-    }
+    normalizeMatchStages(normalized, allocator);
 
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
