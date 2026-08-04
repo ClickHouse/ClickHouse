@@ -11,6 +11,8 @@
 #include <Common/escapeForFileName.h>
 #include <Core/NamesAndTypes.h>
 
+/// White-box unit test that drives restoreDataImpl directly (befriended inside StorageLog).
+class StorageLogOverlongName_restoreIsRefusedWithTypedError_Test;
 
 namespace DB
 {
@@ -28,6 +30,8 @@ class StorageLog final : public StorageWithCommonVirtualColumns, public WithMuta
 {
     friend class LogSource;
     friend class LogSink;
+    /// White-box unit test.
+    friend class ::StorageLogOverlongName_restoreIsRefusedWithTypedError_Test;
 
 public:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),

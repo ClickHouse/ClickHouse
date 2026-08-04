@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Backups/IBackup.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
@@ -22,6 +23,11 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
 
 
 static DB::StoragePtr createStorage(DB::DiskPtr & disk)
@@ -165,4 +171,132 @@ TEST_F(StorageLogTest, testReadWrite)
     data += writeData(10, this->getTable(), context_holder.context);
 
     ASSERT_EQ(data, readData(this->getTable(), context_holder.context));
+}
+
+/// A name that overflows `<name>.bin` in one path component of any filesystem CI runs on.
+static String overlongColumnName()
+{
+    return String(static_cast<size_t>(NAME_MAX), 'c');
+}
+
+/// The state a table created before the DDL check existed loads in: the definition is accepted
+/// because it comes from stored metadata, so only the runtime guards can refuse it.
+static DB::StoragePtr createLegacyOverlongStorage(DB::DiskPtr & disk)
+{
+    using namespace DB;
+
+    NamesAndTypesList names_and_types;
+    names_and_types.emplace_back(overlongColumnName(), std::make_shared<DataTypeUInt64>());
+
+    return std::make_shared<StorageLog>(
+        "Log", disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types},
+        ConstraintsDescription{}, String{}, LoadingStrictnessLevel::ATTACH, /*is_fresh_definition=*/false,
+        getContext().context);
+}
+
+/// Pins that a legacy table still loads: the DDL guard must stay exempt for stored metadata.
+TEST(StorageLogOverlongName, legacyDefinitionStillLoads)
+{
+    DB::DiskPtr disk = createDisk("tmp_log_legacy_load/");
+    ASSERT_NO_THROW(createLegacyOverlongStorage(disk));
+    destroyDisk(disk);
+}
+
+/// The `StorageLog::write` guard. Without it the sink reaches the filesystem, which refuses the
+/// name as an untyped `STD_EXCEPTION` that loses its own message.
+TEST(StorageLogOverlongName, writeIsRefusedWithTypedError)
+{
+    using namespace DB;
+    DB::DiskPtr disk = createDisk("tmp_log_legacy_write/");
+    StoragePtr table = createLegacyOverlongStorage(disk);
+    const auto context = getContext().context;
+
+    /// The handle has to outlive the call: its rvalue conversion to StorageMetadataPtr is deleted.
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+
+    try
+    {
+        table->write({}, metadata_snapshot, context, /*async_insert=*/false);
+        FAIL() << "write() accepted a stream name that does not fit a path component";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        EXPECT_NE(e.message().find("max length of a stream name"), String::npos) << e.message();
+    }
+
+    destroyDisk(disk);
+}
+
+/// A backup that carries a stream name which does not fit the destination. Only the file name
+/// matters: the guard runs before any entry is read, so no entry has to exist.
+class BackupWithOverlongStreamName : public DB::IBackup
+{
+public:
+    bool hasFiles(const String &) const override { return true; }
+    bool fileExists(const String &) const override { return true; }
+
+    /// Reaching this means the guard did not run, which is the failure this test pins.
+    size_t copyFileToDisk(const String &, DB::DiskPtr, const String &, DB::WriteMode) const override
+    {
+        ADD_FAILURE() << "restoreDataImpl appended a file without checking the stream name length";
+        return 0;
+    }
+
+    const String & getNameForLogging() const override { return name; }
+    OpenMode getOpenMode() const override { return OpenMode::READ; }
+    std::map<String, String> getEngineSettings() const override { return {}; }
+    time_t getTimestamp() const override { return 0; }
+    DB::UUID getUUID() const override { return {}; }
+    const String & getBackupId() const override { return name; }
+    std::shared_ptr<const IBackup> getBaseBackup() const override { return nullptr; }
+    size_t getNumFiles() const override { return 1; }
+    UInt64 getTotalSize() const override { return 0; }
+    size_t getNumEntries() const override { return 1; }
+    UInt64 getSizeOfEntries() const override { return 0; }
+    UInt64 getUncompressedSize() const override { return 0; }
+    UInt64 getCompressedSize() const override { return 0; }
+    size_t getNumReadFiles() const override { return 0; }
+    UInt64 getNumReadBytes() const override { return 0; }
+    bool directoryExists(const String &) const override { return true; }
+    DB::Strings listFiles(const String &, bool) const override { return {}; }
+    bool fileExists(const SizeAndChecksum &) const override { return true; }
+    UInt64 getFileSize(const String &) const override { return 0; }
+    UInt128 getFileChecksum(const String &) const override { return {}; }
+    SizeAndChecksum getFileSizeAndChecksum(const String &) const override { return {}; }
+    std::unique_ptr<DB::ReadBufferFromFileBase> readFile(const String &) const override { return nullptr; }
+    std::unique_ptr<DB::ReadBufferFromFileBase> readFile(const String &, const SizeAndChecksum &) const override { return nullptr; }
+    size_t copyFileToDisk(const SizeAndChecksum &, DB::DiskPtr, const String &, DB::WriteMode) const override { return 0; }
+    void writeFile(const DB::BackupFileInfo &, DB::BackupEntryPtr) override { }
+    void setOriginalEndpointAndNamespaceIfEmpty(const String &, const String &) noexcept override { }
+    bool supportsWritingInMultipleThreads() const override { return true; }
+    void finalizeWriting() override { }
+    bool setIsCorrupted() noexcept override { return true; }
+    bool tryRemoveAllFiles() noexcept override { return true; }
+
+private:
+    const String name = "test_backup";
+};
+
+/// The `StorageLog::restoreDataImpl` guard. That path appends the backup's files directly, so it
+/// bypasses the `write` guard entirely.
+TEST(StorageLogOverlongName, restoreIsRefusedWithTypedError)
+{
+    using namespace DB;
+    DB::DiskPtr disk = createDisk("tmp_log_legacy_restore/");
+    StoragePtr table = createLegacyOverlongStorage(disk);
+
+    try
+    {
+        std::static_pointer_cast<StorageLog>(table)->restoreDataImpl(
+            std::make_shared<const BackupWithOverlongStreamName>(), "data", std::chrono::seconds{60});
+        FAIL() << "restoreDataImpl accepted a stream name that does not fit a path component";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        EXPECT_NE(e.message().find("max length of a stream name"), String::npos) << e.message();
+    }
+
+    destroyDisk(disk);
 }
