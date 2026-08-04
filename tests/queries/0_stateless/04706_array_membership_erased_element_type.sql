@@ -414,6 +414,32 @@ SELECT 'one block   ', id, has(v, 1::UInt8) AS got FROM t_block_one ORDER BY id;
 SELECT 'block size 1', id, has(v, 1::UInt8) AS got FROM t_block_one ORDER BY id SETTINGS max_block_size = 1;
 SELECT 'two blocks  ', id, has(v, 1::UInt8) AS got FROM t_block_two ORDER BY id;
 
+-- The needle is erased too, and its alternative varies by row: row 0 must still answer from its own
+-- pair, so the three partitions have to agree here as well.
+DROP TABLE IF EXISTS t_block_needle;
+CREATE TABLE t_block_needle (id UInt8, v Array(Dynamic), n Dynamic) ENGINE = Memory;
+INSERT INTO t_block_needle VALUES (0, [1::UInt64], 1::UInt8), (1, [2::UInt64], 'x');
+
+DROP TABLE IF EXISTS t_block_needle_two;
+CREATE TABLE t_block_needle_two (id UInt8, v Array(Dynamic), n Dynamic) ENGINE = Memory;
+INSERT INTO t_block_needle_two VALUES (0, [1::UInt64], 1::UInt8);
+INSERT INTO t_block_needle_two VALUES (1, [2::UInt64], 'x');
+
+SELECT 'needle one block   ', id, has(v, n) AS got, indexOf(v, n) AS index_of_got, countEqual(v, n) AS count_equal_got
+FROM t_block_needle ORDER BY id;
+SELECT 'needle block size 1', id, has(v, n) AS got, indexOf(v, n) AS index_of_got, countEqual(v, n) AS count_equal_got
+FROM t_block_needle ORDER BY id SETTINGS max_block_size = 1;
+SELECT 'needle two blocks  ', id, has(v, n) AS got, indexOf(v, n) AS index_of_got, countEqual(v, n) AS count_equal_got
+FROM t_block_needle_two ORDER BY id;
+
+-- Same shape with a declared Variant needle, and with the erased needle inside a Tuple element.
+DROP TABLE IF EXISTS t_block_needle_variant;
+CREATE TABLE t_block_needle_variant (id UInt8, v Array(Dynamic), n Variant(UInt64, String)) ENGINE = Memory;
+INSERT INTO t_block_needle_variant VALUES (0, [1::UInt64], 1::UInt64), (1, [2::UInt64], 'x'::String);
+
+SELECT 'variant needle', id, has(v, n) AS got FROM t_block_needle_variant ORDER BY id;
+SELECT 'variant needle size 1', id, has(v, n) AS got FROM t_block_needle_variant ORDER BY id SETTINGS max_block_size = 1;
+
 -- An admitted cell answers the same under both values of the mismatch setting: the comparison sees
 -- concrete types, so no adaptor is built and those settings do not reach it.
 DROP TABLE IF EXISTS t_setting;

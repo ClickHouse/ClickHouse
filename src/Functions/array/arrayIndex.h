@@ -890,11 +890,46 @@ private:
         return {};
     }
 
-    /// Group the rows by the one global discriminator all of that row's elements carry; NULL elements
-    /// join any group, since the peel answers those from the null maps. A row whose elements disagree
-    /// gets no group, and nothing means no group formed at all.
-    static std::optional<UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, IColumn::Filter>> groupRowsByAlternative(
-        const ColumnArray & array, const DataTypePtr & element_type)
+    /// A row's alternatives on both sides of the comparison, packed so rows agreeing on both share a
+    /// group. Both halves are ColumnVariant::Discriminator, so the pair fits a UInt16.
+    using GroupKey = UInt16;
+
+    static GroupKey makeGroupKey(ColumnVariant::Discriminator elements, ColumnVariant::Discriminator needle)
+    {
+        return static_cast<GroupKey>(static_cast<GroupKey>(elements) << 8 | needle);
+    }
+
+    /// The one global discriminator every element of `row` carries, NULL_DISCRIMINATOR when it holds
+    /// only NULLs, or nothing when its elements disagree. NULLs are skipped: the peel answers those
+    /// from the null maps.
+    static std::optional<ColumnVariant::Discriminator> rowAlternative(
+        const ColumnVariant & variant_column, size_t begin, size_t end)
+    {
+        const auto & local_discriminators = variant_column.getLocalDiscriminators();
+        std::optional<ColumnVariant::Discriminator> alternative;
+
+        for (size_t position = begin; position < end; ++position)
+        {
+            auto local = local_discriminators[position];
+            if (local == ColumnVariant::NULL_DISCRIMINATOR)
+                continue;
+
+            auto global = variant_column.globalDiscriminatorByLocal(local);
+            if (!alternative)
+                alternative = global;
+            else if (*alternative != global)
+                return {};
+        }
+
+        return alternative.value_or(ColumnVariant::NULL_DISCRIMINATOR);
+    }
+
+    /// Group the rows by the alternatives they carry, on the element side and on the needle side both:
+    /// a group is only answerable as a whole if every member peels the same way on both sides. A row
+    /// whose own elements disagree gets no group, and nothing means no group formed at all.
+    static std::optional<UnorderedMapWithMemoryTracking<GroupKey, IColumn::Filter>> groupRowsByAlternative(
+        const ColumnArray & array, const DataTypePtr & element_type,
+        const IColumn & needle, const DataTypePtr & needle_type)
     {
         auto path = findErasedPath(*element_type);
         if (!path)
@@ -906,40 +941,37 @@ private:
             return {};
 
         const auto & offsets = array.getOffsets();
-        const auto & local_discriminators = variant_column->getLocalDiscriminators();
 
-        UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, IColumn::Filter> groups;
+        /// The needle need not be erased at all, and when it is not, every row shares one key half.
+        const ColumnVariant * needle_variant = nullptr;
+        ColumnPtr needle_holder;
+        if (auto needle_path = findErasedPath(*needle_type))
+        {
+            needle_variant = findVariantAtPath(needle, *needle_path, needle_holder);
+            if (!needle_variant || needle_variant->size() != offsets.size())
+                return {};
+        }
+
+        UnorderedMapWithMemoryTracking<GroupKey, IColumn::Filter> groups;
         ColumnArray::Offset current_offset = 0;
 
         for (size_t row = 0; row < offsets.size(); ++row)
         {
-            std::optional<ColumnVariant::Discriminator> row_discriminator;
-            bool groupable = true;
-
-            for (size_t position = current_offset; position < offsets[row]; ++position)
-            {
-                auto local = local_discriminators[position];
-                if (local == ColumnVariant::NULL_DISCRIMINATOR)
-                    continue;
-
-                if (!row_discriminator)
-                    row_discriminator = variant_column->globalDiscriminatorByLocal(local);
-                else if (*row_discriminator != variant_column->globalDiscriminatorByLocal(local))
-                {
-                    groupable = false;
-                    break;
-                }
-            }
-
+            auto elements_alternative = rowAlternative(*variant_column, current_offset, offsets[row]);
             current_offset = offsets[row];
 
-            /// A row holding only NULLs needs no alternative, so it can ride with any group; giving it
-            /// its own keeps every group single-alternative without a special case.
-            if (!groupable)
+            if (!elements_alternative)
+                continue;
+
+            auto needle_alternative = needle_variant
+                ? rowAlternative(*needle_variant, row, row + 1)
+                : std::optional<ColumnVariant::Discriminator>{ColumnVariant::NULL_DISCRIMINATOR};
+
+            if (!needle_alternative)
                 continue;
 
             auto & filter = groups.try_emplace(
-                row_discriminator.value_or(ColumnVariant::NULL_DISCRIMINATOR), IColumn::Filter(offsets.size(), 0)).first->second;
+                makeGroupKey(*elements_alternative, *needle_alternative), IColumn::Filter(offsets.size(), 0)).first->second;
             filter[row] = 1;
         }
 
@@ -1264,7 +1296,7 @@ private:
         const DataTypePtr & element_type,
         const DataTypePtr & needle_type) const
     {
-        auto groups = groupRowsByAlternative(array, element_type);
+        auto groups = groupRowsByAlternative(array, element_type, *full_needle, needle_type);
         if (!groups)
             return nullptr;
 
@@ -1274,9 +1306,9 @@ private:
         IColumn::Filter undecided(rows, 1);
         bool any_group_decided = false;
 
-        /// At most one group per real alternative (ColumnVariant::MAX_NESTED_COLUMNS), and only a
-        /// heterogeneous column reaches here: a single-alternative block was answered above.
-        for (const auto & [discriminator, filter] : *groups)
+        /// At most one group per alternative pair, and only a heterogeneous column reaches here: a
+        /// block homogeneous on both sides was answered above.
+        for (const auto & [group_key, filter] : *groups)
         {
             auto group_array = array.filter(filter, -1);
             const auto & group = assert_cast<const ColumnArray &>(*group_array);
