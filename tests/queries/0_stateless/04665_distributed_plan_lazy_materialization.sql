@@ -62,29 +62,44 @@ SELECT 'WITH TIES distributed', count() FROM (SELECT a FROM t_dist_lazy ORDER BY
 
 -- `payload` must not be read for every scanned row. Read a key-only query as the baseline for what
 -- the sort itself costs, then compare the extra cost of `payload` with and without the rewrite.
+-- Top-K dynamic filtering reaches the same saving by a different route (it prunes rows during the
+-- read), which would leave the `query_plan_optimize_lazy_materialization = 0` run nothing to be a
+-- baseline for, so pin it off here - the sort key is a `String`, i.e. a variable-length type.
 SELECT a FROM t_dist_lazy ORDER BY b, a LIMIT 5 FORMAT Null
-SETTINGS make_distributed_plan = 1, log_comment = '04665_key_only';
+SETTINGS make_distributed_plan = 1, use_top_k_dynamic_filtering = 0, log_comment = '04665_key_only';
 
 SELECT a, payload FROM t_dist_lazy ORDER BY b, a LIMIT 5 FORMAT Null
-SETTINGS make_distributed_plan = 1, log_comment = '04665_lazy_on';
+SETTINGS make_distributed_plan = 1, use_top_k_dynamic_filtering = 0, log_comment = '04665_lazy_on';
 
 SELECT a, payload FROM t_dist_lazy ORDER BY b, a LIMIT 5 FORMAT Null
-SETTINGS make_distributed_plan = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '04665_lazy_off';
+SETTINGS make_distributed_plan = 1, use_top_k_dynamic_filtering = 0,
+    query_plan_optimize_lazy_materialization = 0, log_comment = '04665_lazy_off';
 
 SYSTEM FLUSH LOGS query_log;
 
--- Not filtered by `current_database`: a fragment executed on a worker logs its own `system.query_log`
--- entry, and that entry - which holds the bytes the fragment actually read - carries the default
--- database, not the one the query was issued against. The `log_comment` values are unique to this test.
+-- The bytes are read by the fragments, and each fragment logs its own `system.query_log` entry with
+-- its own `query_id` - the coordinator's entry only counts the rows it received. So resolve each
+-- query's `initial_query_id` from its coordinator entry (the one in this database), then sum over
+-- every entry of that query. `argMax` keeps a repeated run of this test from accumulating.
+WITH
+    (SELECT argMax(initial_query_id, event_time_microseconds) FROM system.query_log
+     WHERE event_date >= yesterday() AND type = 'QueryFinish'
+       AND current_database = currentDatabase() AND log_comment = '04665_key_only') AS key_only_query,
+    (SELECT argMax(initial_query_id, event_time_microseconds) FROM system.query_log
+     WHERE event_date >= yesterday() AND type = 'QueryFinish'
+       AND current_database = currentDatabase() AND log_comment = '04665_lazy_on') AS lazy_on_query,
+    (SELECT argMax(initial_query_id, event_time_microseconds) FROM system.query_log
+     WHERE event_date >= yesterday() AND type = 'QueryFinish'
+       AND current_database = currentDatabase() AND log_comment = '04665_lazy_off') AS lazy_off_query
 SELECT 'payload almost free', (payload_bytes - key_only_bytes) * 4 < (no_lazy_bytes - key_only_bytes)
 FROM
 (
     SELECT
-        sumIf(read_bytes, log_comment = '04665_key_only') AS key_only_bytes,
-        sumIf(read_bytes, log_comment = '04665_lazy_on') AS payload_bytes,
-        sumIf(read_bytes, log_comment = '04665_lazy_off') AS no_lazy_bytes
+        sumIf(read_bytes, initial_query_id = key_only_query) AS key_only_bytes,
+        sumIf(read_bytes, initial_query_id = lazy_on_query) AS payload_bytes,
+        sumIf(read_bytes, initial_query_id = lazy_off_query) AS no_lazy_bytes
     FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND type = 'QueryFinish'
 );
 
 DROP TABLE t_dist_lazy;
