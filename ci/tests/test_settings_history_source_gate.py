@@ -56,7 +56,7 @@ def test_history_only_change_is_a_correction_and_is_allowed(monkeypatch):
 
 def test_history_plus_unrelated_non_source_change_is_still_a_correction(monkeypatch):
     kv = _kv(
-        [HISTORY, "docs/en/operations/settings/settings.md", "ci/jobs/check_style.py"],
+        [HISTORY, "docs/reference/settings/session-settings/overview.mdx", "ci/jobs/check_style.py"],
         [{"namespace": "Session", "name": "no_such_setting_at_all"}],
     )
     assert _run(monkeypatch, kv) == ""
