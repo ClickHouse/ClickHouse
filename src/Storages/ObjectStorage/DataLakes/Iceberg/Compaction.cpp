@@ -175,6 +175,15 @@ struct Plan
     } partition_encoder;
 };
 
+/// Requiredness is part of the physical type: the rewrite writes each column under the current
+/// schema's optionality, and a mismatch aborts in the Parquet writer.
+static void appendRequiredness(
+    std::unordered_map<Int64, String> & out, Int64 id, const Poco::JSON::Object::Ptr & container, const char * required_key)
+{
+    if (container->has(required_key))
+        out[id] += container->getValue<bool>(required_key) ? "!" : "?";
+}
+
 /// Record `id`'s type signature into `out`, recursing into struct/list/map children.
 /// The signature is name- and order-agnostic: a primitive maps to its type string, a complex node
 /// to its kind, and every nested field/element/key/value is keyed by its own field id.
@@ -198,16 +207,21 @@ static void walkTypeNode(
             {
                 auto field = fields->getObject(static_cast<UInt32>(i));
                 walkTypeNode(field->getValue<Int64>(Iceberg::f_id), field, Iceberg::f_type, out);
+                appendRequiredness(out, field->getValue<Int64>(Iceberg::f_id), field, Iceberg::f_required);
             }
     }
     else if (kind == Iceberg::f_list)
     {
-        walkTypeNode(type_obj->getValue<Int64>(Iceberg::f_element_id), type_obj, Iceberg::f_element, out);
+        auto element_id = type_obj->getValue<Int64>(Iceberg::f_element_id);
+        walkTypeNode(element_id, type_obj, Iceberg::f_element, out);
+        appendRequiredness(out, element_id, type_obj, Iceberg::f_element_required);
     }
     else if (kind == Iceberg::f_map)
     {
+        auto value_id = type_obj->getValue<Int64>(Iceberg::f_value_id);
         walkTypeNode(type_obj->getValue<Int64>(Iceberg::f_key_id), type_obj, Iceberg::f_key, out);
-        walkTypeNode(type_obj->getValue<Int64>(Iceberg::f_value_id), type_obj, Iceberg::f_value, out);
+        walkTypeNode(value_id, type_obj, Iceberg::f_value, out);
+        appendRequiredness(out, value_id, type_obj, Iceberg::f_value_required);
     }
 }
 
@@ -223,10 +237,7 @@ static std::unordered_map<Int64, String> schemaFieldTypes(const Poco::JSON::Arra
         auto field = fields->getObject(static_cast<UInt32>(i));
         auto id = field->getValue<Int64>(Iceberg::f_id);
         walkTypeNode(id, field, Iceberg::f_type, id_to_type);
-        /// Requiredness is part of the physical type: the rewrite writes each column under the
-        /// current schema's optionality, and a mismatch aborts in the Parquet writer.
-        if (field->has(Iceberg::f_required))
-            id_to_type[id] += field->getValue<bool>(Iceberg::f_required) ? "!" : "?";
+        appendRequiredness(id_to_type, id, field, Iceberg::f_required);
     }
     return id_to_type;
 }

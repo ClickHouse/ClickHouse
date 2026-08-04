@@ -903,7 +903,16 @@ def test_compaction_never_cleans_up_the_commit_target():
     assert "generated_metadata_paths" in text, (
         f"{source} no longer tracks generated paths; this guard needs updating"
     )
-    assert "generated_metadata_paths.push_back(generated_metadata_info.path)" not in text, (
-        "the metadata commit target was added to the compaction cleanup set: on a lost commit "
-        "this deletes the concurrent winner's metadata"
+    # Match any push_back of the commit target rather than one exact spelling, so routing it
+    # through a local alias or a second call site is caught too.
+    offenders = [
+        line.strip()
+        for line in text.splitlines()
+        if "generated_metadata_paths" in line
+        and "push_back" in line
+        and "generated_metadata_info" in line
+    ]
+    assert not offenders, (
+        "the metadata commit target was added to the compaction cleanup set, which deletes the "
+        f"concurrent winner's metadata on a lost commit: {offenders}"
     )
