@@ -433,6 +433,71 @@ def test_direct_join(started_cluster):
     assert response[0] == ["1", "1"]
 
 
+def test_direct_join_nullable_left(started_cluster):
+    """DirectKeyValueJoin with a Nullable key on the left side of Redis storage."""
+    address = get_address_for_ch()
+
+    drop_table("redis_str_pk")
+    drop_table("t_null")
+    drop_table("t_str")
+
+    node.query(
+        f"""
+        CREATE TABLE redis_str_pk(key String, value String)
+        Engine=Redis('{address}', 3, 'clickhouse') PRIMARY KEY (key);
+
+        INSERT INTO redis_str_pk VALUES ('a', 'A'), ('b', 'B'), ('c', 'C');
+
+        CREATE TABLE t_str (k String) ENGINE = TinyLog;
+        INSERT INTO t_str VALUES ('a'), ('b'), ('c'), ('d');
+
+        CREATE TABLE t_null (k Nullable(String)) ENGINE = TinyLog;
+        INSERT INTO t_null VALUES ('a'), ('b'), ('c'), ('d'), (NULL);
+        """
+    )
+
+    response = TSV.toMat(node.query(
+        "SELECT key, value FROM (SELECT k AS key FROM t_str) AS t "
+        "INNER JOIN redis_str_pk USING (key) ORDER BY key FORMAT TSV"
+    ))
+    assert response == [["a", "A"], ["b", "B"], ["c", "C"]]
+
+    response = TSV.toMat(node.query(
+        "SELECT key, value FROM (SELECT k AS key FROM t_str) AS t "
+        "LEFT JOIN redis_str_pk USING (key) ORDER BY key FORMAT TSV"
+    ))
+    assert response == [["a", "A"], ["b", "B"], ["c", "C"], ["d", ""]]
+
+    response = TSV.toMat(node.query(
+        "SELECT key, value FROM (SELECT k AS key FROM t_null) AS t "
+        "INNER JOIN redis_str_pk USING (key) ORDER BY key FORMAT TSV"
+    ))
+    assert response == [["a", "A"], ["b", "B"], ["c", "C"]]
+
+    response = TSV.toMat(node.query(
+        "SELECT key, value FROM (SELECT k AS key FROM t_null) AS t "
+        "LEFT JOIN redis_str_pk USING (key) ORDER BY key NULLS LAST, value FORMAT TSV"
+    ))
+    assert response == [
+        ["a", "A"],
+        ["b", "B"],
+        ["c", "C"],
+        ["d", ""],
+        ["\\N", ""],
+    ]
+
+    plan = node.query(
+        "EXPLAIN actions = 1 "
+        "SELECT key, value FROM (SELECT k AS key FROM t_null) AS t "
+        "INNER JOIN redis_str_pk USING (key)"
+    )
+    assert "Algorithm: DirectKeyValueJoin" in plan, plan
+
+    drop_table("redis_str_pk")
+    drop_table("t_null")
+    drop_table("t_str")
+
+
 def test_get_keys(started_cluster):
     """
     Checks that ClickHouse reads by key instead of full scan if possible.
