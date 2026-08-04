@@ -116,7 +116,7 @@ no conversion	0
 0	0	0	0	1
 1	1	1
 -- a Nullable(Tuple(...)) wrapper nested inside a Tuple still reaches the erased leaf
-1	1	1	1
+1	1	2	2	2	2
 1	1
 -- Map(LowCardinality(String), String): a NULL needle, whose dictionary has no null entry
 0	0	0	0

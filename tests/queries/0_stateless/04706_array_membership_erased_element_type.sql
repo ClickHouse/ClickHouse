@@ -527,15 +527,19 @@ SELECT '-- a Nullable(Tuple(...)) wrapper nested inside a Tuple still reaches th
 -- to see through it. Materialized on purpose: the constant folder answers these without the
 -- dispatcher. Each cell pairs the answer with scalar = on the same peeled pair, the authoritative
 -- statement of intent for these shapes.
+-- A non-matching leading element and a repeated match, so the position and the count each reduce to
+-- something a constant could not stand in for.
 DROP TABLE IF EXISTS t_nested_null_tuple;
 CREATE TABLE t_nested_null_tuple (v Array(Tuple(Nullable(Tuple(Dynamic))))) ENGINE = Memory;
-INSERT INTO t_nested_null_tuple VALUES ([tuple(tuple(1::UInt64::Dynamic))]);
+INSERT INTO t_nested_null_tuple VALUES ([tuple(tuple(9::UInt64::Dynamic)), tuple(tuple(1::UInt64::Dynamic)), tuple(tuple(1::UInt64::Dynamic))]);
 
 SELECT
     has(v, tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS got,
-    toUInt8(v[1] = tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS want,
+    toUInt8(arrayExists(x -> x = tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))')), v)) AS want,
     indexOf(v, tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS index_of_got,
-    countEqual(v, tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS count_equal_got
+    indexOf(arrayMap(x -> toUInt8(x = tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))), v), 1) AS index_of_want,
+    countEqual(v, tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS count_equal_got,
+    length(arrayFilter(x -> x = tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))')), v)) AS count_equal_want
 FROM t_nested_null_tuple;
 
 -- The same wrapper past a non-erased leading element, so the decay is exercised at a Tuple position
