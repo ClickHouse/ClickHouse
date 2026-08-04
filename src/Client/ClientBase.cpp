@@ -1241,7 +1241,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
                 client_context->setSetting(setting_name, value);
         }
     };
-    mirror_format_setting("format", "format");
+    mirror_format_setting("format", mappedFormatOptionSetting());
     mirror_format_setting("output-format", "output_format");
     mirror_format_setting("input-format", "input_format");
 
@@ -4249,7 +4249,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
 
-        ("format,f", po::value<std::string>(), "Default input and output format (maps to the generic `format` setting). Use --input-format / --output-format to set only one direction.")
+        ("format,f", po::value<std::string>(), "Default input and output format (maps to the generic `format` setting). In clickhouse-client only the default output format (maps to `output_format`). Use --input-format / --output-format to set only one direction.")
         ("output-format", po::value<std::string>(), "Default output format. Takes precedence over --format.")
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
@@ -4333,8 +4333,10 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     {
         const auto & fmt = options["format"].as<std::string>();
         getClientConfiguration().setString("format", fmt);
-        /// Mirror to the `format` setting (same rationale as `--database` above).
-        cmd_settings->set("format", fmt);
+        /// Mirror to the corresponding setting (same rationale as `--database` above):
+        /// the bidirectional `format` in `clickhouse-local`, the output-only `output_format`
+        /// in `clickhouse-client` (see `mappedFormatOptionSetting`).
+        cmd_settings->set(mappedFormatOptionSetting(), fmt);
     }
     if (options.contains("output-format"))
     {

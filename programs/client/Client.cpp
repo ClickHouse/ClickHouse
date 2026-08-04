@@ -330,6 +330,13 @@ void Client::initialize(Poco::Util::Application & self)
     for (const auto & setting : client_context->getSettingsRef().getUnchangedNames())
     {
         String name{setting};
+        /// The `format` config key is owned by the client-side `--format` option, which in
+        /// `clickhouse-client` is output-only: it is mirrored into the `output_format` setting by
+        /// `setDefaultFormatsAndCompressionFromConfiguration` (see `mappedFormatOptionSetting`).
+        /// Feeding it into the bidirectional `format` setting here would make `--format` override
+        /// the `FORMAT` clause of `INSERT` queries on the input side.
+        if (name == "format")
+            continue;
         if (config().has(name))
             client_context->setSetting(name, config().getString(name));
     }

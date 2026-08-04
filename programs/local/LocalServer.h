@@ -54,6 +54,10 @@ protected:
 
     String getName() const override { return "local"; }
 
+    /// In `clickhouse-local`, `--format` keeps its historical meaning of both the default input
+    /// and the default output format, so it maps to the bidirectional `format` setting.
+    std::string_view mappedFormatOptionSetting() const override { return "format"; }
+
     void printHelpMessage(const OptionsDescription & options_description) override;
 
     void addExtraOptions(OptionsDescription & options_description) override;

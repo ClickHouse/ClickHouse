@@ -322,7 +322,7 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
 | `default_format` | Sets the output format when the query has no `FORMAT` clause, no path extension, and no other format override. |
 | `compression` | Compresses the response body, for example with `compression=gz`. This is independent of HTTP `Content-Encoding` and the ClickHouse-native `compress` parameter. |
 
-The format settings also work with other protocols, including the native client and `clickhouse-local`, where they correspond to the `--format`, `--input-format`, and `--output-format` options.
+The format settings also work with other protocols, including the native client and `clickhouse-local`. `input_format` and `output_format` correspond to the `--input-format` and `--output-format` options. The `--format` option maps to the bidirectional `format` setting in `clickhouse-local`, while in `clickhouse-client` it keeps its historical output-only meaning and maps to `output_format`.
 
 `compression` is specific to HTTP response shaping and is consumed before query execution. Supply it through an HTTP URL parameter, a path extension, or a user profile. It is rejected in an in-query `SETTINGS` clause.
 
