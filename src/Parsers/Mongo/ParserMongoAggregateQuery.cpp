@@ -303,6 +303,9 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
         std::string name(stringView(it->name));
         const auto & value = it->value;
 
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of a projection must not be empty");
+
         /// A number or a boolean says whether to keep the field; only a document or a `$` prefixed
         /// expression computes one.
         const bool is_flag = value.IsBool() || value.IsNumber();
@@ -423,6 +426,10 @@ void translateUnset(SelectChain & chain, const rapidjson::Value & stage)
 
     if (removed.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$unset' must name at least one field");
+
+    for (const auto & name : removed)
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$unset' must not name an empty field");
 
     if (!chain.onlyFiltered())
         chain.wrap();

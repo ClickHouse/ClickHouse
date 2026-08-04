@@ -623,6 +623,9 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value)
 
 void expandMongoProjectedField(const std::string & name, const rapidjson::Value & value, std::vector<MongoProjectedField> & result)
 {
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of a projection must not be empty");
+
     if (value.IsObject() && value.MemberCount() >= 1 && !tryParseMongoConstant(value))
     {
         auto first_member_name = stringView(value.MemberBegin()->name);
