@@ -69,6 +69,11 @@ struct FilterDAGInfo
 
     std::string dump() const;
 
+    FilterDAGInfo clone() const;
+    static FilterDAGInfoPtr clonePtr(const FilterDAGInfoPtr & filter_info, bool do_remove_column);
+    static FilterDAGInfoPtr combineConjunction(const FilterDAGInfoPtr & left_filter_info, const FilterDAGInfoPtr & right_filter_info);
+    void projectInputs();
+
     void serialize(IQueryPlanStep::Serialization & ctx) const;
     static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };
