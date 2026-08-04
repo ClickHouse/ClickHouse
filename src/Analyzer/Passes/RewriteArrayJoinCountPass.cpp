@@ -61,7 +61,7 @@ bool isPlainRowCount(const FunctionNode & function_node)
 
 /// These storages declare their own column list and can serve the read from a differently typed
 /// destination, target table or inner query, so the analyzed declared type is not the one the read
-/// executes against. Exact `typeid_cast` and not `isView()`, which would widen the set unpredictably.
+/// executes against.
 bool readsAgainstAnotherSchema(const IStorage * storage)
 {
     return typeid_cast<const StorageBuffer *>(storage)
@@ -143,8 +143,7 @@ public:
             return;
 
         /// The checks below establish that the analyzed declared type is the type the read will
-        /// execute against; dropping the ARRAY JOIN also drops its type check, so anything less is a
-        /// wrong result.
+        /// execute against.
 
         /// A storage that opts out of subcolumn optimization may execute the read against a different
         /// schema than the one analyzed here.
@@ -172,9 +171,8 @@ public:
         if (wrapper_hops == max_wrapper_hops)
             return;
 
-        /// These three satisfy the capability check by forwarding it to their destination/target and
-        /// are not wrappers the loop unwraps, so the read can execute against a schema never analyzed
-        /// here, and the ARRAY JOIN that would type-check it is exactly what this rewrite removes.
+        /// These three satisfy the capability check by forwarding it, and the loop above does not
+        /// unwrap them.
         if (readsAgainstAnotherSchema(resolved_storage.get()))
             return;
 
@@ -182,8 +180,8 @@ public:
         const auto & column_name = physical_column->getColumnName();
         auto context = getContext();
 
-        /// A hopped wrapper is transparent only if its declared columns are the ones the read executes
-        /// against, which the comparison below establishes without naming a wrapper type.
+        /// A hopped wrapper is transparent only if its declared columns are the ones the read
+        /// executes against, which the comparison below establishes.
         auto resolved_metadata = resolved_storage->getInMemoryMetadataPtr(context, false);
         if (!resolved_metadata)
             return;
@@ -192,25 +190,22 @@ public:
         if (!resolved_column || !resolved_column->type->equals(*analyzed_type))
             return;
 
-        /// supportsOptimizationToSubcolumns() on a Merge is the AND over its children, and a MergeTree
-        /// child satisfies it whatever its column types are, so it is blind to type heterogeneity. A
-        /// Merge declares its own column list, which need not equal any child's.
+        /// A Merge declares its own column list, which need not equal any child's, and the capability
+        /// check above is satisfied by a child of any column type, so it is blind to that mismatch.
         if (const auto * storage_merge = typeid_cast<const StorageMerge *>(resolved_storage.get()))
         {
             auto access = context->getAccess();
             if (storage_merge->hasChildTable([&](const StoragePtr & child)
                 {
-                    /// Direct children only, so a nested Merge -- or a wrapper around one -- could hide
-                    /// a mismatched grandchild. A child that can read a differently typed table is
-                    /// declined for the same reason as at the top level. Decline rather than descend.
+                    /// Direct children only, so a child that could itself hide a mismatched
+                    /// grandchild is declined rather than descended into.
                     if (typeid_cast<const StorageMerge *>(child.get())
                         || typeid_cast<const StorageAlias *>(child.get())
                         || dynamic_cast<const StorageProxy *>(child.get())
                         || readsAgainstAnotherSchema(child.get()))
                         return true;
                     /// This traversal is unfiltered while execution reads only children the user may
-                    /// SELECT, so fail closed rather than let a type the reader cannot see steer the
-                    /// plan. A column-level-only grant declines too, costing only the optimization.
+                    /// SELECT, so a child the reader cannot see must not steer the plan.
                     auto child_id = child->getStorageID();
                     if (!access->isGranted(AccessType::SELECT, child_id.database_name, child_id.table_name))
                         return true;
@@ -225,8 +220,8 @@ public:
         }
 
         /// The subsequent FunctionToSubcolumnsPass folds length(<column>) into the <column>.size0
-        /// subcolumn so only offsets are read. Where that fold is excluded (an index column, FINAL) the
-        /// ARRAY JOIN has already been removed and the whole column is read: correct, just not cheaper.
+        /// subcolumn so only offsets are read. Where that fold is excluded (an index column, FINAL)
+        /// the whole column is still read: correct, just not cheaper.
         auto length_function = std::make_shared<FunctionNode>("length");
         length_function->getArguments().getNodes().push_back(join_alias_column->getExpression());
         resolveOrdinaryFunctionNodeByName(*length_function, "length", getContext());
