@@ -3,8 +3,11 @@
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -534,39 +537,45 @@ TEST(ColumnObject, HashIsIndependentOfDynamicVsSharedLayout)
     }
 }
 
-/// A shared_data entry can legitimately be encoded as the Nothing type with no payload: when a
-/// source ColumnObject's dynamic path holding a NULL value gets demoted into the destination's
-/// shared_data (because the destination has no room to keep it as a dynamic path), it goes through
-/// ColumnObject::serializePathAndValueIntoSharedData -> SerializationDynamic::serializeBinary, which
-/// serializes NULL as the Nothing type with no value (see SerializationDynamic.cpp). Decoding such an
-/// entry must not throw (SerializationNothing::deserializeBinary always throws NOT_IMPLEMENTED) and
-/// must hash deterministically, so hash-based GROUP BY / DISTINCT / uniq* keep working on it.
+/// A shared_data entry can legitimately be encoded as the Nothing type with no payload: this is
+/// exactly how `SerializationDynamic::serializeBinary` encodes a NULL value (see
+/// SerializationDynamic.cpp: "Serialize NULL as Nothing type with no value"), and pre-existing code in
+/// ColumnObject.cpp (e.g. `getValueNameImpl`, and the shared-data duplicate-repair path) already
+/// special-cases `isNothing(...)` on a type decoded from shared_data for exactly this reason.
+///
+/// NOTE: this is NOT reachable via `insertRangeFrom` demoting a NULL dynamic-path value into
+/// shared_data: `ColumnObject::serializePathAndValueIntoSharedData` explicitly skips NULL values
+/// ("we cannot distinguish cases when path has Null value or is absent in the row and consider them
+/// equivalent"), so demotion of a NULL never writes a shared_data entry for that path/row at all. We
+/// build the entry directly instead, using the same encoding `SerializationDynamic::serializeBinary`
+/// produces for a NULL value.
+///
+/// Decoding such an entry must not throw (`SerializationNothing::deserializeBinary` always throws
+/// `NOT_IMPLEMENTED`) and must hash deterministically, so hash-based GROUP BY / DISTINCT / uniq* keep
+/// working on it.
 TEST(ColumnObject, HashSharedDataNothingEntry)
 {
-    /// Give "g" plenty of budget so it becomes a real dynamic path, then explicitly set it to NULL.
-    auto src_type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=10)");
-    auto src_col = src_type->createColumn();
-    auto & src_object = assert_cast<ColumnObject &>(*src_col);
-    src_object.insert(Object{{"g", Field(5)}});
-    src_object.insert(Object{{"g", Field(Null())}});
-    ASSERT_EQ(src_object.getDynamicPaths().size(), 1u);
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=0)");
+    auto col = type->createColumn();
+    auto & object = assert_cast<ColumnObject &>(*col);
 
-    /// max_dynamic_paths=0 leaves no room for "g" as a dynamic path, so insertRangeFrom demotes it
-    /// (including its NULL value at row 1) into shared_data as a Nothing-encoded entry.
-    auto dest_type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=0)");
-    auto dest_col = dest_type->createColumn();
-    auto & dest_object = assert_cast<ColumnObject &>(*dest_col);
-    dest_object.insertRangeFrom(src_object, 0, 2);
+    /// Manually append a shared_data entry for path "g" whose value is encoded as Nothing (a
+    /// serialized NULL with no payload).
+    auto [shared_data_paths, shared_data_values] = object.getSharedDataPathsAndValues();
+    shared_data_paths->insertData("g", 1);
+    auto & shared_data_values_chars = shared_data_values->getChars();
+    {
+        WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
+        encodeDataType(std::make_shared<DataTypeNothing>(), value_buf);
+    }
+    shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
+    object.getSharedDataOffsets().push_back(shared_data_paths->size());
 
-    ASSERT_TRUE(dest_object.getDynamicPaths().empty());
-    const auto & shared_data_offsets = dest_object.getSharedDataOffsets();
-    ASSERT_EQ(shared_data_offsets[0], 1u);
-    ASSERT_EQ(shared_data_offsets[1], 2u);
-    ASSERT_EQ(dest_object[1], (Object{{"g", Field(Null())}}));
+    ASSERT_EQ(object.size(), 1u);
 
     /// Must not throw (regression: used to throw NOT_IMPLEMENTED from SerializationNothing).
     SipHash actual;
-    ASSERT_NO_THROW(dest_object.updateHashWithValue(1, actual));
+    ASSERT_NO_THROW(object.updateHashWithValue(0, actual));
 
     /// The hash must match hashing the path together with ColumnVariant::NULL_DISCRIMINATOR directly,
     /// i.e. the same null handling ColumnDynamic::updateHashWithValue performs for a NULL value,
@@ -578,7 +587,7 @@ TEST(ColumnObject, HashSharedDataNothingEntry)
 
     /// Hashing must be deterministic across repeated calls.
     SipHash actual_again;
-    dest_object.updateHashWithValue(1, actual_again);
+    object.updateHashWithValue(0, actual_again);
     ASSERT_EQ(actual.get128(), actual_again.get128());
 }
 
