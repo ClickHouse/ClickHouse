@@ -283,12 +283,25 @@ def install_thread_pool_fault_injection() -> None:
     call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
 
     # Fail-close: `call_with_retry` is silent on persistent failure, so verify
-    # the injector probability is actually non-zero after reload.
+    # the injector probability is actually non-zero after reload. The server runs
+    # under thread-fuzzer injection and may not answer even a trivial query within
+    # the client's 15-second `receive_timeout` right after `SYSTEM RELOAD CONFIG`,
+    # so retry transient client failures instead of aborting the whole run on the
+    # first timeout.
     verify_query = make_query_command(
         "SELECT value FROM system.server_settings "
         "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
     )
-    value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    retry_count = 5
+    for i in range(retry_count):
+        try:
+            value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+            break
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            if i + 1 == retry_count:
+                raise
+            logging.info("Verification query failed (%s), retrying", e)
+            time.sleep(i)
     if not value or float(value) <= 0:
         raise RuntimeError(
             f"cannot_allocate_thread_fault_injection_probability is {value!r} after reload"
