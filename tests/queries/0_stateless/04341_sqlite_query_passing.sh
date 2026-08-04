@@ -51,6 +51,10 @@ SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) WHERE id =
 SELECT '-- external_table_strict_query: no outer filter is allowed';
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) SETTINGS external_table_strict_query = 1;
 
+-- The verdicts below hold on the analyzer path only: with enable_analyzer = 0 the guard
+-- inspects the original AST and rejects every one of them.
+SET enable_analyzer = 1;
+
 SELECT '-- external_table_strict_query: a predicate on the joined local side is not a filter on the source';
 -- The flag column is absent from the passed query, so it cannot be confused with a source column.
 CREATE TABLE local_r (id Int64, flag UInt8) ENGINE = Memory;
