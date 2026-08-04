@@ -52,7 +52,13 @@ struct SchemaConverter
     /// discriminator schema inference could only restore the historical `UUID` type.
     std::unordered_set<size_t> uuid2_leaf_columns;
 
-    SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *);
+    /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
+    /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
+    /// failed parse caught by the caller (which leaves an empty map) does not cause
+    /// SchemaConverter to re-parse and rethrow. Pass std::nullopt to let SchemaConverter
+    /// parse according to its own settings.
+    SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *,
+                    std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
 
     void prepareForReading();
     NamesAndTypesList inferSchema();
