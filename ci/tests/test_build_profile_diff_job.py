@@ -84,6 +84,31 @@ _SPEEDUP_TUS = [f"fast_tu{i}.cpp" for i in range(12)]
 _SPEEDUP_BASE_ROWS = _skew_rows(0, _BASE_SHA, "2026-06-30 00:00:00", "arm_release_pr_cache_warmup", "W0", 65000000, tus=_SPEEDUP_TUS)
 _SPEEDUP_PR_ROWS = _skew_rows(_PR, "prsha-uniform-speedup", "2026-07-02 00:00:00", "arm_release", "I14", 30000000, tus=_SPEEDUP_TUS)
 
+def _optfn_rows(pr_number, sha, check_start_time, instance_id, file, prefix, count, dur_us):
+    check_name = "arm_release"
+    return ",\n    ".join(
+        f"({pr_number}, '{sha}', '{check_start_time}', '{check_name}', '{instance_id}', '{file}', 'OptFunction', '{prefix}{i}', {dur_us})"
+        for i in range(count)
+    )
+
+
+# Per-binary ThinLTO skew. Each final binary is its own link, so the two links
+# of one build do not even run at the same time, let alone the links of the two
+# sides: their systematic ratio to the master baseline differs. Here twelve
+# functions of ``clickhouse`` are unchanged (40 s on both sides) while the whole
+# ``clickhouse-keeper`` link is three times slower (5 s -> 15 s). A single median
+# over both binaries is 2.0, which turns every unchanged ``clickhouse`` function
+# into an apparent -40 s regression (twice the significance bar) and normalizes
+# the keeper's real uniform shift away.
+_PER_BINARY_SKEW_ROWS = ",\n    ".join(
+    [
+        _optfn_rows(0, "basesha-skew", "2026-06-30 00:00:00", "IB", _MAIN, "skew_main_fn", 12, 40000000),
+        _optfn_rows(0, "basesha-skew", "2026-06-30 00:00:00", "IB", _KEEPER, "skew_keeper_fn", 12, 5000000),
+        _optfn_rows(_PR, "prsha-skew", "2026-07-02 00:00:00", "IS", _MAIN, "skew_main_fn", 12, 40000000),
+        _optfn_rows(_PR, "prsha-skew", "2026-07-02 00:00:00", "IS", _KEEPER, "skew_keeper_fn", 12, 15000000),
+    ]
+)
+
 _SCHEMA = f"""
 CREATE TABLE binary_sizes
 (
@@ -170,10 +195,10 @@ INSERT INTO build_time_trace (date, pull_request_number, commit_sha, check_start
 
 -- ThinLTO link-trace fixture: both final binaries have OptFunction rows on
 -- both sides. ``main_fn`` (clickhouse) is unchanged; ``keeper_fn``
--- (clickhouse-keeper) regresses 5 s -> 30 s, above the significance bar.
+-- (clickhouse-keeper) regresses 5 s -> 60 s, above the significance bar.
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
     ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', '{_MAIN}', 'OptFunction', 'main_fn', 10000000),
-    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', '{_KEEPER}', 'OptFunction', 'keeper_fn', 30000000),
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', '{_KEEPER}', 'OptFunction', 'keeper_fn', 60000000),
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_MAIN}', 'OptFunction', 'main_fn', 10000000),
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_KEEPER}', 'OptFunction', 'keeper_fn', 5000000);
 
@@ -190,8 +215,10 @@ INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, che
     (0, 'basesha-no-stripped', '2026-06-30 00:00:00', 'arm_release', 'I7', '{_MAIN}', 1400);
 
 -- A PR run that adds one large object file (bar.cpp.o, 512 KiB, absent from
--- the warmup baseline) and no longer builds the baseline's foo.cpp.o: both
--- one-sided rows are above OBJECT_SIG_BYTES and must drive the verdict.
+-- the warmup baseline) and does not build the baseline's foo.cpp.o. The added
+-- object is above OBJECT_SIG_BYTES and must drive the verdict; the object the
+-- run does not build is the warmup build's larger target set (it builds every
+-- object-file target, a PR build only ``clickhouse-bundle``), not a removal.
 INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, size) VALUES
     ({_PR}, 'prsha-new-object', '2026-07-02 00:00:00', 'arm_release', 'I8', '{_MAIN}', 1500),
     ({_PR}, 'prsha-new-object', '2026-07-02 00:00:00', 'arm_release', 'I8', '{_STRIPPED}', 1500),
@@ -238,6 +265,24 @@ INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time,
     {_SPEEDUP_BASE_ROWS};
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
     {_SPEEDUP_PR_ROWS};
+
+-- Per-binary ThinLTO skew (see _PER_BINARY_SKEW_ROWS).
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    {_PER_BINARY_SKEW_ROWS};
+
+-- ThinLTO clone-suffix churn. When ThinLTO imports a function it promotes the
+-- module-local symbols it needs and renames them with a `.llvm.<hash>` suffix
+-- whose hash comes from the defining module, so two builds of the very same
+-- source name the same clone differently. One unchanged function therefore
+-- appears twice - once gone, once new, at exactly the same time and size - and
+-- such phantom pairs were the largest rows of both the ThinLTO and the symbol
+-- table on every pull request, enough to declare both sections significant.
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    (0, 'basesha-clone', '2026-06-30 00:00:00', 'arm_release', 'IC0', '{_MAIN}', 'OptFunction', '_ZN2DB9settingsEv.llvm.11069338206770680048', 40000000),
+    ({_PR}, 'prsha-clone', '2026-07-02 00:00:00', 'arm_release', 'IC', '{_MAIN}', 'OptFunction', '_ZN2DB9settingsEv.llvm.12487241783113815285', 40000000);
+INSERT INTO binary_symbols (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, address, size, type, symbol) VALUES
+    (0, 'basesha-clone', '2026-06-30 00:00:00', 'arm_release', 'IC0', '{_MAIN}', 0, 450000, 't', 'DB::settings() [clone .llvm.11069338206770680048]'),
+    ({_PR}, 'prsha-clone', '2026-07-02 00:00:00', 'arm_release', 'IC', '{_MAIN}', 0, 450000, 't', 'DB::settings() [clone .llvm.12487241783113815285]');
 """
 
 
@@ -440,7 +485,7 @@ def test_opt_functions_cover_the_keeper_binary():
     pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
     base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
     section = job.compare_opt_functions(db, pr_side, base_side)
-    # keeper_fn regressed 5 s -> 30 s: reported, significant, and attributed
+    # keeper_fn regressed 5 s -> 60 s: reported, significant, and attributed
     # to clickhouse-keeper.
     assert "keeper_fn" in section.body
     assert f"`{job.strip_build_dir(_KEEPER)}`" in section.body
@@ -506,26 +551,73 @@ def test_opt_functions_missing_pr_side_binary_is_flagged():
     assert "missing PR-side link trace" in section.summary
 
 
-def test_objects_added_and_removed_are_significant():
-    """A one-sided object row above the significance bar drives the verdict.
+def test_added_object_is_significant_and_a_baseline_only_one_is_not_a_removal():
+    """A PR-only object file is an addition; a baseline-only one is not a removal.
 
-    OBJECT_FILTER keeps only compile-stage .o files and both sides compile the
-    full object set with the same flags, so an object present on one side only
-    is a real addition or removal. Gating significance on ``pr_size and
-    base_size`` let a PR add or drop a multi-MiB object while the top-level
-    comment still said "No significant changes".
+    The two builds do not have the same target set: the warmup baseline builds
+    every object-file target ninja knows about, a pull request build only
+    ``clickhouse-bundle``. Hundreds of object files - the gRPC and protobuf
+    libraries, the unit tests, the utils - therefore exist on the warmup side
+    alone, and reading them as removals produced a "685 removed, -40 MiB"
+    finding on every pull request. The other direction is real: the warmup side
+    builds a superset, so an object only the PR has is a source file it added.
     """
     db = FixtureDb()
     pr_side = job.Side(job.PR_DAYS, _PR, "prsha-new-object", "2026-07-02 00:00:00", "I8")
     warmup_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA, check_name=job.WARMUP_CHECK_NAME)
     section = job.compare_objects(db, pr_side, warmup_side)
-    # bar.cpp.o (512 KiB) is added, foo.cpp.o (256 KiB) is removed: both
-    # one-sided and both above OBJECT_SIG_BYTES.
+    # bar.cpp.o (512 KiB) is added: one-sided, above OBJECT_SIG_BYTES.
     assert "bar.cpp.o" in section.body
-    assert "new" in section.body
-    assert "foo.cpp.o" in section.body
-    assert "removed" in section.body
+    assert "1 added" in section.body
     assert section.significant
+    # foo.cpp.o is built by the warmup baseline only: counted, never a row.
+    assert "foo.cpp.o" not in section.body
+    assert "removed" not in section.body
+    assert "1 more object file is built by the master warmup baseline only" in section.body
+    assert "removed" not in section.summary
+
+
+def test_opt_function_skew_is_estimated_per_binary():
+    """Each binary's ThinLTO time is normalized by its own median ratio.
+
+    A binary is its own ThinLTO link: the two links of one build do not even run
+    at the same time, let alone the links of the two sides, so their systematic
+    ratio to the master baseline differs - by more than a factor of two in
+    practice. Here ``clickhouse`` is unchanged and the whole ``clickhouse-keeper``
+    link is three times slower; one median over both binaries is 2.0, which
+    reports every unchanged ``clickhouse`` function as a 40 s speedup (twice the
+    significance bar) while erasing the keeper's real uniform shift. Per binary
+    both medians are exact, so nothing is reported at all.
+    """
+    db = FixtureDb()
+    pr_side = job.Side(job.PR_DAYS, _PR, "prsha-skew", "2026-07-02 00:00:00", "IS")
+    base_side = job.Side(job.BASE_DAYS, 0, "basesha-skew", "2026-06-30 00:00:00", "IB")
+    section = job.compare_opt_functions(db, pr_side, base_side)
+    assert "skew_main_fn" not in section.body
+    assert "skew_keeper_fn" not in section.body
+    assert not section.significant
+
+
+def test_thinlto_clone_suffix_churn_is_not_a_change():
+    """A `.llvm.<hash>` rename of an unchanged function is not a finding.
+
+    The hash comes from the defining module, so it differs between two builds of
+    the same source: an unchanged function shows up as one gone row and one new
+    row of exactly the same time and size, in both the ThinLTO and the symbol
+    table. Those pairs were the largest rows of the report on every pull request
+    and made both sections significant on their own.
+    """
+    db = FixtureDb()
+    pr_side = job.Side(job.PR_DAYS, _PR, "prsha-clone", "2026-07-02 00:00:00", "IC")
+    base_side = job.Side(job.BASE_DAYS, 0, "basesha-clone", "2026-06-30 00:00:00", "IC0")
+    opt_functions = job.compare_opt_functions(db, pr_side, base_side)
+    assert "settings" not in opt_functions.body
+    assert "gone" not in opt_functions.body
+    assert not opt_functions.significant
+    symbols = job.compare_symbols(db, pr_side, base_side)
+    assert "settings" not in symbols.body
+    assert "removed" not in symbols.body
+    assert not symbols.significant
 
 
 def test_opt_functions_trace_below_report_cutoff_is_not_a_lost_upload():
