@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <algorithm>
 #include <array>
 #include <memory>
@@ -390,7 +392,12 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 ErrorCodes::ACCESS_DENIED,
                 "DataLakeCatalog database is inaccessible: its catalog uses server-managed credentials that are "
                 "restricted for user queries and could not be resolved when the database was loaded from metadata. "
+#if CLICKHOUSE_CLOUD
+                "Recreate the database with explicit catalog credentials (for a Glue catalog, an IAM role via "
+                "aws_role_arn = '...'; for a BigLake catalog, a Google ADC triple). Reason: {}",
+#else
                 "Provide explicit credentials, or enable `s3_allow_server_credentials_in_user_queries`. Reason: {}",
+#endif
                 catalog_unavailable_reason);
     }
     return catalog_impl;
@@ -1595,7 +1602,7 @@ The following settings are supported:
 | `vended_credentials`    | Boolean indicating whether to use vended credentials from the catalog (supports AWS S3 and Azure ADLS Gen2) |
 | `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
 | `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)              |
-| `aws_role_arn`          | ARN of the IAM role to assume for AWS/Glue access. When set, ClickHouse uses AWS STS `AssumeRole` with base credentials from `aws_access_key_id` and `aws_secret_access_key` when both are provided. If they are omitted, ClickHouse can use the default AWS credential chain only when `s3_allow_server_credentials_in_user_queries` is enabled; otherwise the request is rejected. |
+| `aws_role_arn`          | ARN of the IAM role to assume for AWS/Glue access. When set, ClickHouse uses AWS STS `AssumeRole` with base credentials from `aws_access_key_id` and `aws_secret_access_key` when both are provided, or from the default AWS credential chain otherwise (the role must trust the identity the server runs under). |
 | `aws_role_session_name` | Session name used for the AWS STS `AssumeRole` call. Optional; defaults to `ClickHouseSession`. |
 | `aws_external_id`       | External ID passed to AWS STS `AssumeRole`, matching the `sts:ExternalId` condition on the role's trust policy. Use this when the role is owned by a third party, such as ClickHouse Cloud. |
 | `region`                | AWS region for the service (e.g., `us-east-1`)                                          |
