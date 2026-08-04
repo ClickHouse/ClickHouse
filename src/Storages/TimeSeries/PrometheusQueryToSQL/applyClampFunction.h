@@ -13,6 +13,6 @@ struct ConverterContext;
 bool isClampFunction(std::string_view function_name);
 
 /// Applies one of the clamping functions: clamp(), clamp_min(), clamp_max().
-SQLQueryPiece applyClampFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyClampFunction(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

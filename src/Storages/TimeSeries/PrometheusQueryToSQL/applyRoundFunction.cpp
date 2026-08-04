@@ -18,7 +18,7 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for the round() function.
-    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
 
@@ -55,7 +55,7 @@ bool isRoundFunction(std::string_view function_name)
 
 
 SQLQueryPiece applyRoundFunction(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(function_node, arguments, context);
 

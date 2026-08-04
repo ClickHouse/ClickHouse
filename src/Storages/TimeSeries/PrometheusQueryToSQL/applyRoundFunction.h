@@ -12,6 +12,6 @@ struct ConverterContext;
 bool isRoundFunction(std::string_view function_name);
 
 /// Applies the round() function.
-SQLQueryPiece applyRoundFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyRoundFunction(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

@@ -23,7 +23,7 @@ namespace
 {
     /// Checks if the types of the specified arguments are valid for a clamping function.
     void checkArgumentTypes(
-        const PQT::Function * function_node,
+        const PrometheusQueryTree::Function * function_node,
         const std::vector<SQLQueryPiece> & arguments,
         size_t expected_num_arguments,
         const ConverterContext & context)
@@ -66,7 +66,7 @@ bool isClampFunction(std::string_view function_name)
 
 
 SQLQueryPiece applyClampFunction(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & function_name = function_node->function_name;
 
