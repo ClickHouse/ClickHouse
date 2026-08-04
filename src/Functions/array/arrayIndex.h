@@ -628,13 +628,14 @@ private:
         if (!array_type)
             return;
 
-        const auto inner_type_decayed = removeNullable(array_type->getNestedType());
-        const auto arg_decayed = removeNullable(arguments[1].type);
+        const auto inner_type_decayed = removeNullable(removeLowCardinality(array_type->getNestedType()));
+        const auto arg_decayed = removeNullable(removeLowCardinality(arguments[1].type));
 
         if ((isUUID(inner_type_decayed) && isUUID2(arg_decayed)) || (isUUID2(inner_type_decayed) && isUUID(arg_decayed)))
         {
-            DataTypePtr target_type
-                = arguments[1].type->isNullable() ? std::make_shared<DataTypeNullable>(inner_type_decayed) : inner_type_decayed;
+            DataTypePtr target_type = arguments[1].type->isNullable() || arguments[1].type->isLowCardinalityNullable()
+                ? std::make_shared<DataTypeNullable>(inner_type_decayed)
+                : inner_type_decayed;
             arguments[1].column = castColumn(arguments[1], target_type);
             arguments[1].type = std::move(target_type);
         }

@@ -2114,12 +2114,13 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
     /// halves and loses nothing), the same way `mapContains`/`has` already do for arrays.
     ColumnWithTypeAndName key_argument = arguments[1];
     {
-        const auto key_type_decayed = removeNullable(type_map.getKeyType());
-        const auto arg_type_decayed = removeNullable(key_argument.type);
+        const auto key_type_decayed = removeNullable(removeLowCardinality(type_map.getKeyType()));
+        const auto arg_type_decayed = removeNullable(removeLowCardinality(key_argument.type));
         if ((isUUID(key_type_decayed) && isUUID2(arg_type_decayed)) || (isUUID2(key_type_decayed) && isUUID(arg_type_decayed)))
         {
-            DataTypePtr target_type
-                = key_argument.type->isNullable() ? std::make_shared<DataTypeNullable>(key_type_decayed) : key_type_decayed;
+            DataTypePtr target_type = key_argument.type->isNullable() || key_argument.type->isLowCardinalityNullable()
+                ? std::make_shared<DataTypeNullable>(key_type_decayed)
+                : key_type_decayed;
             key_argument.column = castColumn(key_argument, target_type);
             key_argument.type = std::move(target_type);
         }

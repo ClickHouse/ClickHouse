@@ -24,6 +24,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/validateColumnType.h>
 
@@ -1328,6 +1329,19 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             if (nullable_column.isNullAt(row))
                 return Null();
             return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object);
+        }
+        case TypeIndex::LowCardinality:
+        {
+            /// Recurse into the dictionary so that a wrapped type which needs a non-raw literal
+            /// (such as `LowCardinality(UUID2)` or `LowCardinality(Nullable(DateTime))`) takes
+            /// the same branch as its full-column counterpart.
+            const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*data_type);
+            const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(*column);
+            return getFieldFromColumnForASTLiteralImpl(
+                low_cardinality_column.getDictionary().getNestedColumn(),
+                low_cardinality_column.getIndexAt(row),
+                low_cardinality_data_type.getDictionaryType(),
+                is_inside_object);
         }
         /// `UUID2` shares the `Field` representation with `UUID` (`Field::Types::UUID`) but keeps the two
         /// 64-bit halves in the opposite order, and a literal is always formatted with `UUID` semantics.
