@@ -1856,7 +1856,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 create.is_materialized_view ? "MATERIALIZED VIEW" : (create.is_window_view ? "WINDOW VIEW" : "VIEW"));
 
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
