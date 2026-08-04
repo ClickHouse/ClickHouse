@@ -64,6 +64,7 @@
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
+#include <Storages/System/StorageSystemEngineSettings.h>
 #include <Storages/System/StorageSystemDatabaseEngines.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
@@ -193,6 +194,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemSettingsChanges>(context, system_database, "settings_changes", "Contains the information about the settings changes through different ClickHouse versions. You may make ClickHouse behave like a particular previous version by changing the `compatibility` user-level settings.");
     attach<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings", "Contains a list of all MergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.");
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings", "Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. ");
+    attach<StorageSystemEngineSettings>(context, system_database, "engine_settings", "Contains a list of settings for all table engines that have engine-specific settings, along with their default values and descriptions.");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", "Contains a list of all build flags, compiler options and commit hash for used build.");
     attach<StorageSystemHypotheticalIndexes>(context, system_database, "hypothetical_indexes", "Shows session-scoped hypothetical indexes created with CREATE HYPOTHETICAL INDEX for use with EXPLAIN WHATIF.");
 #if USE_XRAY
