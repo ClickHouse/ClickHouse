@@ -260,7 +260,7 @@ struct JoinAlgorithmParams
     UInt64 max_bytes_before_external_join = 0;
 
     String initial_query_id;
-    std::chrono::milliseconds lock_acquire_timeout{};
+    std::chrono::milliseconds lock_acquire_timeout;
 
     std::optional<UInt64> rhs_size_estimation;
 
@@ -287,7 +287,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const JoinAlgorithmParams & params);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
-TableExpressionSet extractTableExpressionsSet(const TableExpressionNodePtr & node);
+TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);
 
 std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     const IQueryTreeNode * expression_root_node,

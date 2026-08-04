@@ -52,7 +52,7 @@ private:
     size_t new_indices_observed = 0;
 };
 
-class DistinctTransform final : public ISimpleTransform
+class DistinctTransform : public ISimpleTransform
 {
 public:
     DistinctTransform(

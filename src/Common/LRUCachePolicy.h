@@ -209,7 +209,7 @@ private:
     struct Cell
     {
         MappedPtr value;
-        size_t size{};
+        size_t size;
         LRUQueueIterator queue_iterator;
     };
 

@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -139,7 +138,7 @@ namespace
     {
         constexpr size_t complex_types_size = complex_types.size() * allow_complex_types;
         constexpr size_t result_size = simple_types.size() + complex_types_size;
-        std::array<TypeIndex, result_size> result{};
+        std::array<TypeIndex, result_size> result;
         size_t index = 0;
 
         for (size_t i = 0; i != simple_types.size(); ++i, ++index)
@@ -190,7 +189,7 @@ namespace
         /// and slowness of this function, and it can lead to `Max query size exceeded`
         /// while using this function with generateRandom.
         size_t num_values = rng() % 16 + 1;
-        VectorWithMemoryTracking<Int16> values(num_values);
+        std::vector<Int16> values(num_values);
 
         /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)
@@ -242,13 +241,10 @@ namespace
     }
 
     template <bool allow_complex_types = true>
-    void writeRandomType(const String & column_name, pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types, size_t depth = 0, size_t max_depth = MAX_DEPTH)
+    void writeRandomType(const String & column_name, pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types, size_t depth = 0)
     {
-        if (allow_complex_types && depth > max_depth)
-        {
-            writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth, max_depth);
-            return;
-        }
+        if (allow_complex_types && depth > MAX_DEPTH)
+            writeRandomType<false>(column_name, rng, buf, depth);
 
         constexpr auto all_types = getAllTypes<allow_complex_types>();
         auto type = all_types[rng() % all_types.size()];
@@ -297,14 +293,14 @@ namespace
             case TypeIndex::Nullable:
             {
                 writeCString("Nullable(", buf);
-                writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
+                writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
                 writeChar(')', buf);
                 return;
             }
             case TypeIndex::Array:
             {
                 writeCString("Array(", buf);
-                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
+                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
                 writeChar(')', buf);
                 return;
             }
@@ -313,7 +309,7 @@ namespace
                 writeCString("Map(", buf);
                 writeMapKeyType(column_name, rng, buf);
                 writeCString(", ", buf);
-                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
+                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
                 writeChar(')', buf);
                 return;
             }
@@ -338,7 +334,7 @@ namespace
                         writeString(element_name, buf);
                         writeChar(' ', buf);
                     }
-                    writeRandomType(element_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
+                    writeRandomType(element_name, rng, buf, allow_suspicious_lc_types, depth + 1);
                 }
                 writeChar(')', buf);
                 return;
@@ -445,14 +441,6 @@ String FunctionGenerateRandomStructure::generateRandomDataType(pcg64 & rng, bool
         writeRandomType<true>(column_name, rng, buf, allow_suspicious_lc_types);
     else
         writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types);
-    return buf.str();
-}
-
-String FunctionGenerateRandomStructure::generateRandomTypeForTest(size_t seed, bool allow_suspicious_lc_types, size_t max_depth)
-{
-    pcg64 rng(seed);
-    WriteBufferFromOwnString buf;
-    writeRandomType<true>("c", rng, buf, allow_suspicious_lc_types, /*depth=*/0, max_depth);
     return buf.str();
 }
 

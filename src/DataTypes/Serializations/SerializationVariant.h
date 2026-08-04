@@ -48,7 +48,7 @@ namespace ErrorCodes
 /// and use them to calculate the limit for each variant. Each variant is deserialized from
 /// corresponding stream using calculated limit. Offsets column is not deserialized and constructed
 /// according to discriminators.
-class SerializationVariant final : public ISerialization
+class SerializationVariant : public ISerialization
 {
 public:
     struct DiscriminatorsSerializationMode
@@ -70,8 +70,7 @@ public:
         Value value;
     };
 
-    using VariantSerializations = VectorWithMemoryTracking<SerializationPtr>;
-    using VariantTypes = VectorWithMemoryTracking<DataTypePtr>;
+    using VariantSerializations = std::vector<SerializationPtr>;
 
 private:
     explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
@@ -207,16 +206,9 @@ private:
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
-        DeserializeBinaryBulkStateVariantDiscriminators & state,
-        const DeserializeBinaryBulkSettings & settings) const;
+        DeserializeBinaryBulkStateVariantDiscriminators & state) const;
 
-    /// Reads the compact-discriminators granule header and validates the compact discriminator
-    /// against num_variants when num_variants > 0.
-    static void readDiscriminatorsGranuleStart(
-        DeserializeBinaryBulkStateVariantDiscriminators & state,
-        ReadBuffer * stream,
-        size_t num_variants,
-        const DeserializeBinaryBulkSettings & settings);
+    static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
 
     /// Shared implementation for Escaped and Raw text deserialization.
     /// Checks for NULL representation in the raw buffer before escape processing
@@ -249,7 +241,7 @@ private:
         std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
         const FormatSettings & settings) const;
 
-    VariantTypes variant_types;
+    DataTypes variant_types;
     VariantSerializations variant_serializations;
     std::vector<String> variant_names;
     std::vector<size_t> deserialize_text_order;

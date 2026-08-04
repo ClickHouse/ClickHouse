@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/Operators.h>
 #include <Processors/IProcessor.h>
 
@@ -19,7 +17,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     out << "  rankdir=\"LR\";\n";
     out << "  { node [shape = rect]\n";
 
-    UnorderedMapWithMemoryTracking<const void *, std::size_t> pointer_to_id;
+    std::unordered_map<const void *, std::size_t> pointer_to_id;
     auto get_proc_id = [&pointer_to_id](const IProcessor & proc) -> std::size_t
     {
         auto [it, inserted] = pointer_to_id.try_emplace(&proc, pointer_to_id.size());
@@ -56,20 +54,29 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
         out << "\"];\n";
     }
 
-    out << "  }\n";
-
-    /// Map each input port's shared connection id to the id of the processor that owns it.
-    /// Connected ports share one state, so an output port can find its peer through this map
-    /// without dereferencing the peer processor, which may already be destroyed (e.g. removed
-    /// during pipeline teardown while a survivor still references it through a port).
-    UnorderedMapWithMemoryTracking<const void *, std::size_t> input_connection_to_id;
-    for (const auto & processor : processors)
+    /// Print the outputs which are not in `processors`
+    for (const auto & proc : processors)
     {
-        auto proc_id = get_proc_id(*processor);
-        for (const auto & port : processor->getInputs())
-            if (port.isConnected())
-                input_connection_to_id.try_emplace(port.getConnectionId(), proc_id);
+        for (const auto & port : proc->getOutputs())
+        {
+            if (!port.isConnected())
+                continue;
+            const IProcessor & next = port.getInputPort().getProcessor();
+            auto [it, inserted] = pointer_to_id.try_emplace(&next, pointer_to_id.size());
+            if (!inserted)
+                continue;
+
+            auto next_proc_id = it->second;
+            const auto & description = next.getDescription();
+            out << "    n" << next_proc_id ///
+                << "[label=\"" << next.getUniqID() ///
+                << ":(output)" ///
+                << (description.empty() ? "" : ":") << description ///
+                << "\"];\n";
+        }
     }
+
+    out << "  }\n";
 
     /// Edges
     for (const auto & processor : processors)
@@ -80,12 +87,8 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
             if (!port.isConnected())
                 continue;
 
-            /// Only draw the edge if the peer input port belongs to a processor in this set.
-            auto it = input_connection_to_id.find(port.getConnectionId());
-            if (it == input_connection_to_id.end())
-                continue;
-
-            out << "  n" << current_proc_id << " -> n" << it->second << ";\n";
+            const IProcessor & next = port.getInputPort().getProcessor();
+            out << "  n" << current_proc_id << " -> n" << get_proc_id(next) << ";\n";
         }
     }
     out << "}\n";
@@ -94,7 +97,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 template <typename Processors>
 void printPipeline(const Processors & processors, WriteBuffer & out, bool with_profile = false)
 {
-    printPipeline(processors, VectorWithMemoryTracking<IProcessor::Status>(), out, with_profile);
+    printPipeline(processors, std::vector<IProcessor::Status>(), out, with_profile);
 }
 
 /// Prints pipeline in compact representation.
