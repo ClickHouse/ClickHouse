@@ -75,6 +75,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/VectorQueryParameters.h>
 #include <Interpreters/Cache/VectorQueryPlanCache.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -2615,9 +2616,6 @@ static BlockIO executeQueryImpl(
 
         /// Hold element of process list till end of query execution.
         res.process_list_entries.push_back(process_list_entry);
-
-        /// Hold query metadata cache till end of query execution.
-        res.query_metadata_cache = std::move(query_metadata_cache);
 
         if (query_plan)
         {
