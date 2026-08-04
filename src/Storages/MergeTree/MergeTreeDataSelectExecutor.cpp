@@ -842,9 +842,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     for (const auto & part : parts)
     {
+        auto estimates = part.data_part->getEstimates();
         try
         {
-            auto estimates = part.data_part->getEstimates();
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
             {
                 LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
@@ -854,7 +854,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         catch (const Exception &)
         {
             tryLogCurrentException(log, fmt::format(
-                "Failed to use statistics for part {}, skipping statistics pruning for this part",
+                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
                 part.data_part->name), LogsLevel::debug);
         }
         res_parts.push_back(part);
@@ -1841,7 +1841,6 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         if (!query_info.isStream() && merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
-    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
     else if (!parts)
     {
         if (!query_info.isStream())
