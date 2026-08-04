@@ -841,7 +841,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// the invoker would decide about rows the view does not expose — the same leak that
         /// `IQueryPlanStep::isSecurityBarrier` prevents in the plan built by the analyzer. Reading
         /// the view through `StorageView::read` instead keeps the outer predicate outside of it.
-        const bool inline_view = view && !StorageView::isSecurityBarrier(*metadata_snapshot, context);
+        ///
+        /// `only_analyze` needs no such protection and keeps inlining: the plan it builds reads
+        /// from `ReadNothingStep`, so no expression of the outer query is ever evaluated on a row.
+        /// This is what `EXPLAIN SYNTAX` is built with, and it is the form it has always printed.
+        const bool inline_view = view && (options.only_analyze || !StorageView::isSecurityBarrier(*metadata_snapshot, context));
 
         if (view)
             query_info.is_parameterized_view = view->isParameterizedView();
