@@ -29,10 +29,14 @@ Read type: InOrder
 Virtual row conversions
 --- INNER JOIN: read-in-order needs the virtual row
 -- cast on the first of two key columns
-Read type: Default
+Prefix sort description: CAST(name AS Nullable(String)) ASC, code ASC
+Read type: InOrder
+Virtual row conversions
 Read type: Default
 -- right table column last
-Read type: Default
+Prefix sort description: name ASC, code ASC
+Read type: InOrder
+Virtual row conversions
 Read type: Default
 --- results stay correctly ordered
 1

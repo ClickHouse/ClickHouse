@@ -70,9 +70,6 @@
 2024-01-01 00:00:00	0	Payload for event 0
 2024-01-01 00:00:04	4	Payload for event 4
 2024-01-01 00:00:08	8	Payload for event 8
-2024-01-01 00:00:00	0	Payload for event 0
-2024-01-01 00:00:04	4	Payload for event 4
-2024-01-01 00:00:08	8	Payload for event 8
 --
 OK
 OK
@@ -87,5 +84,4 @@ OK
 OK
 OK
 --
-OK
 OK

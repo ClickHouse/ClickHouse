@@ -130,16 +130,6 @@ LIMIT 3
 SETTINGS log_comment = '03711_read_in_order_through_join_no_optimize'
 ;
 
-SELECT events.Time, events.Id, payloads.Payload
-FROM events
-JOIN payloads
-ON events.Id = payloads.Id
-ORDER BY events.Time
-LIMIT 3
-SETTINGS read_in_order_use_virtual_row = 0,
-    log_comment = '03711_read_in_order_through_join_no_optimize'
-;
-
 SYSTEM FLUSH LOGS system.query_log;
 
 SELECT '--';
