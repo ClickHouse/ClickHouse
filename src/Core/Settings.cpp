@@ -6168,8 +6168,9 @@ unreplicated data in local storage.
 
 Tables with a replicated engine (such as `ReplicatedMergeTree`) and tables that do not write data to local
 storage (such as `Memory`, `Null`, `Merge`, and `Dictionary`) are allowed. Engines that keep unreplicated data
-in local storage, such as `MergeTree`, `Log`, `Set`, `Distributed`, `Remote`, and `RemoteSecure`, are rejected,
-because their data would exist on a single replica only, while the table metadata is replicated to all of them.
+in local storage, such as `MergeTree`, `Log`, `Set`, `Distributed`, and `Remote` or `RemoteSecure` with an
+ordinary table target, are rejected, because their data would exist on a single replica only, while the table
+metadata is replicated to all of them.
 
 Cloud default value: `1`.
 )", 0) \
