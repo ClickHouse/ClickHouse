@@ -93,6 +93,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
+    extern const CoordinationSettingsMilliseconds full_consensus_lagging_member_grace_period_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
@@ -586,6 +587,10 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.append_entries_backward_probe_throttle_threshold_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
         "nuraft_append_entries_backward_probe_throttle_threshold",
+        log);
+    params.full_consensus_lagging_member_grace_period_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::full_consensus_lagging_member_grace_period_ms].totalMilliseconds(),
+        "full_consensus_lagging_member_grace_period_ms",
         log);
 
     params.return_method_ = nuraft::raft_params::async_handler;

@@ -100,6 +100,7 @@ namespace ErrorCodes
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
+    DECLARE(Milliseconds, full_consensus_lagging_member_grace_period_ms, 0, "How long full consensus mode (see the `fcon` four letter command) keeps requiring the acknowledgement of a member that is alive but failing to sync, i.e. lagging behind the committed log or receiving a snapshot. This throttles commits down to the rate that member can sustain, giving it a chance to catch up; after the grace period it is excluded from the quorum and commits proceed with a majority. 0 excludes such a member immediately. A member that stops responding altogether is always excluded immediately. Only effective while full consensus mode is on.", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 

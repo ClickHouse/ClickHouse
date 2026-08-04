@@ -71,6 +71,50 @@ def wait_full_consensus_mode(nodes, expected, resend_node, resend_cmd):
         assert get_full_consensus_mode(node) == expected
 
 
+def test_grace_period_not_applied_to_a_down_member(started_cluster):
+    # The grace period only covers a member that is alive but failing to sync.
+    # A member that stopped responding cannot catch up while it is down, so it
+    # must be excluded after the usual exclusion window instead of holding the
+    # commit for the whole grace period.
+    zk = None
+    try:
+        wait_nodes()
+
+        grace_period_ms = 30000
+        for node in [node1, node2, node3]:
+            conf = keeper_utils.send_4lw_cmd(cluster, node, cmd="conf")
+            assert (
+                f"full_consensus_lagging_member_grace_period_ms={grace_period_ms}"
+                in conf
+            )
+
+        leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+        followers = [node for node in [node1, node2, node3] if node != leader]
+
+        keeper_utils.send_4lw_cmd(cluster, leader, cmd="fcon")
+        wait_full_consensus_mode([node1, node2, node3], 1, leader, "fcon")
+
+        zk = get_fake_zk(leader.name)
+        followers[1].stop_clickhouse()
+
+        started_at = time.monotonic()
+        zk.create("/test_grace_period_down_member", b"value")
+        elapsed_ms = (time.monotonic() - started_at) * 1000
+        assert zk.get("/test_grace_period_down_member")[0] == b"value"
+        # Generous bound: the exclusion window is a few heartbeats, and the
+        # point is only that it is not the grace period.
+        assert elapsed_ms < grace_period_ms / 2
+
+        followers[1].start_clickhouse()
+        wait_nodes()
+    finally:
+        try:
+            keeper_utils.send_4lw_cmd(cluster, node1, cmd="fcof")
+        except:
+            pass
+        destroy_zk_client(zk)
+
+
 def test_full_consensus_mode(started_cluster):
     zk = None
     try:
