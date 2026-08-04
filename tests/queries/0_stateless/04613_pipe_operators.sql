@@ -163,6 +163,22 @@ FROM orders |> WHERE customer = 'charlie' |> SELECT customer, amount,;
 FROM orders |> AGGREGATE count() AS c, GROUP BY customer; -- { clientError SYNTAX_ERROR }
 FROM orders |> SELECT customer, , amount; -- { clientError SYNTAX_ERROR }
 
+SELECT '-- A pipe operator can end with a SETTINGS clause, attached to the generated wrapper query';
+FROM orders |> WHERE amount >= 250 |> ORDER BY customer SETTINGS max_threads = 1;
+-- The settings reach execution, same as in the equivalent nested form
+FROM orders |> LIMIT 1 SETTINGS max_rows_to_read = 2; -- { serverError TOO_MANY_ROWS }
+-- A SETTINGS clause in the middle of a chain stays on its stage, which becomes a subquery
+FROM orders |> ORDER BY amount DESC |> LIMIT 2 SETTINGS max_threads = 1 |> WHERE customer = 'charlie';
+-- A trailing SETTINGS works in the contexts that have no separate pass for query settings
+SELECT count() FROM (FROM orders |> WHERE cancelled = 0 SETTINGS max_threads = 1);
+SELECT count() FROM view(FROM orders |> LIMIT 2 SETTINGS max_threads = 1);
+DROP TABLE IF EXISTS pipe_settings_view;
+CREATE VIEW pipe_settings_view AS FROM orders |> WHERE amount > 200 |> SELECT customer SETTINGS max_threads = 1;
+SELECT * FROM pipe_settings_view ORDER BY customer;
+DROP TABLE pipe_settings_view;
+-- SETTINGS goes before INTERPOLATE in the generated wrapper, as in an ordinary SELECT query
+SELECT 1 AS x, 10 AS y |> ORDER BY x WITH FILL FROM 1 TO 4 INTERPOLATE (y AS y + 1) SETTINGS max_threads = 1;
+
 -- The following sections require the analyzer: the old analyzer does not support WITH RECURSIVE
 -- and column alias lists on subqueries, and it expands asterisks in EXPLAIN SYNTAX.
 SET enable_analyzer = 1;

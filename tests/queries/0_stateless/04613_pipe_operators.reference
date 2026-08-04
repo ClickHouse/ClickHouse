@@ -149,6 +149,17 @@ alice
 bob
 charlie
 charlie	300
+-- A pipe operator can end with a SETTINGS clause, attached to the generated wrapper query
+alice	250	0
+charlie	300	0
+charlie	300	0
+4
+2
+alice
+charlie
+1	10
+2	11
+3	12
 -- The resulting AST is the same as with nested subqueries
 SELECT * FROM (SELECT * FROM (SELECT customer, sum(amount) AS total FROM (SELECT * FROM (SELECT * FROM orders) WHERE equals(cancelled, 0)) GROUP BY customer) ORDER BY total DESC) LIMIT 3
 SELECT * FROM (SELECT * EXCEPT cancelled FROM (SELECT * REPLACE (plus(amount, 1) AS amount) FROM (SELECT * FROM orders))) AS t ALL LEFT JOIN big_orders AS b USING (customer)
