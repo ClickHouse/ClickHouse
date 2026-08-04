@@ -92,10 +92,20 @@ needle block size 1	0	1	1	1
 needle block size 1	1	0	0	0
 needle two blocks  	0	1	1	1
 needle two blocks  	1	0	0	0
+needle row alone   	0	1	1	1
+needle row alone   	1	0	0	0
 variant needle	0	1
 variant needle	1	0
 variant needle size 1	0	1
 variant needle size 1	1	0
+variant needle alone	0	1
+variant needle alone	1	0
+tuple needle	0	1
+tuple needle	1	0
+tuple needle size 1	0	1
+tuple needle size 1	1	0
+tuple needle alone	0	1
+tuple needle alone	1	0
 1
 1
 -- NULL nested inside a non-null Nullable(Tuple(...)) wrapper
