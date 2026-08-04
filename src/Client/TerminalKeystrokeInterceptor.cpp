@@ -34,6 +34,13 @@ namespace DB
 /// The console input mode. Its two relevant flags are the counterparts of `ICANON` and `ECHO`:
 /// with `ENABLE_LINE_INPUT` set the console hands over input only when Enter is pressed, and
 /// `ENABLE_ECHO_INPUT` prints what is typed.
+///
+/// `ENABLE_PROCESSED_INPUT` - the counterpart of `ISIG` - is deliberately left on, exactly as the
+/// POSIX `enterRawMode` below leaves `ISIG` on: Ctrl+C keeps arriving as a console control event
+/// for the handler installed by `ClientApplicationBase::setupSignalHandler`, rather than as a key
+/// event that no registered callback would consume. The embedded client, whose `0x03` callback
+/// does expect Ctrl+C as ordinary input, gets its input over an SSH channel where the byte is
+/// part of the stream and never passes through a Windows console.
 struct TerminalState
 {
     DWORD console_mode = 0;

@@ -12,6 +12,11 @@
 #include <Common/config_version.h>
 #include "config.h"
 
+#if defined(OS_WINDOWS)
+#include <csignal>
+#include <Poco/UnWindows.h>
+#endif
+
 #include <unordered_set>
 #include <string>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -46,6 +51,33 @@ static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown query kind {}", query_kind);
 }
 
+#if defined(OS_WINDOWS)
+
+/// The console-control counterpart of `interruptSignalHandler` below: Windows reports Ctrl+C to a
+/// console program by calling this handler on a thread of its own making rather than by
+/// interrupting an existing one. Returning TRUE suppresses the default action, which is to end
+/// the process; like the POSIX handler, a repeated Ctrl+C while a stop is already requested exits.
+static BOOL WINAPI consoleControlHandler(DWORD control_type)
+{
+    /// Ctrl+Break as well: it is the other way to interrupt a console program, and unlike Ctrl+C
+    /// it can never be turned into ordinary input, so leaving it alone would end the process.
+    /// (`Poco/UnWindows.h` undefines `TRUE` and `FALSE`, hence the bare 0 and 1.)
+    if (control_type != CTRL_C_EVENT && control_type != CTRL_BREAK_EVENT)
+        return 0;
+
+    /// The handler might be called even before the setup is fully finished
+    /// and client application started to process the query.
+    /// Because of that we have to manually check it.
+    if (auto * instance = ClientApplicationBase::instanceRawPtr(); instance)
+        if (auto * base = dynamic_cast<ClientApplicationBase *>(instance); base)
+            if (base->tryStopQuery())
+                safeExit(128 + SIGINT);
+
+    return 1;
+}
+
+#else
+
 /// This signal handler is set only for SIGINT and SIGQUIT.
 void interruptSignalHandler(int signum)
 {
@@ -57,6 +89,8 @@ void interruptSignalHandler(int signum)
             if (base->tryStopQuery())
                 safeExit(128 + signum);
 }
+
+#endif
 
 ClientApplicationBase::~ClientApplicationBase()
 {
@@ -89,10 +123,12 @@ bool ClientApplicationBase::isEmbeeddedClient() const
 void ClientApplicationBase::setupSignalHandler()
 {
 #if defined(OS_WINDOWS)
-    /// This installs a `SIGINT` handler so that Ctrl+C cancels the running query instead of ending
-    /// the process. On Windows that job belongs to the console control handler in
-    /// `InterruptListener`, which the interactive loop already installs, so there is nothing to do
-    /// here.
+    /// The POSIX branch below installs a `SIGINT` handler so that Ctrl+C cancels the running query
+    /// instead of ending the process. Windows reports Ctrl+C through a console control handler,
+    /// not a signal.
+    if (!SetConsoleCtrlHandler(consoleControlHandler, 1))
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER,
+            "Cannot install the console control handler, error code: {}", GetLastError());
 #else
 
     ClientApplicationBase::getInstance().stopQuery();
