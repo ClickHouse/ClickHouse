@@ -110,6 +110,7 @@ TEST(DeltaLakeMetadata, GetSimpleTypeByNameChar)
 #if USE_DELTA_KERNEL_RS && USE_AZURE_BLOB_STORAGE
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <azure/identity/workload_identity_credential.hpp>
 
@@ -221,6 +222,8 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsEnvironment)
 
 /// Explicit client_id / tenant_id (extra_credentials, named collections) must be
 /// forwarded even when the environment variables are absent, and win over them.
+/// Built through getAzureConnectionParams so the test covers the persistence of
+/// the IDs on ConnectionParams, not just the builder plumbing.
 TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsExplicitIds)
 {
     unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
@@ -231,15 +234,14 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsExplicitIds)
         unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
     });
 
-    DB::AzureBlobStorage::ConnectionParams params;
-    params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
-    params.endpoint.container_name = "testcontainer";
-    Azure::Identity::WorkloadIdentityCredentialOptions credential_options;
-    credential_options.ClientId = "22222222-2222-2222-2222-222222222222";
-    credential_options.TenantId = "11111111-1111-1111-1111-111111111111";
-    params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>(credential_options);
-    params.workload_identity_client_id = "22222222-2222-2222-2222-222222222222";
-    params.workload_identity_tenant_id = "11111111-1111-1111-1111-111111111111";
+    const auto params = DB::getAzureConnectionParams(
+        "https://testaccount.blob.core.windows.net",
+        "testcontainer",
+        /*account_name*/ std::nullopt,
+        /*account_key*/ std::nullopt,
+        "22222222-2222-2222-2222-222222222222",
+        "11111111-1111-1111-1111-111111111111",
+        getContext().context);
     ASSERT_EQ(params.auth_method.index(), 3u);
 
     const auto options = DeltaLake::getAzureBuilderOptions(params);
