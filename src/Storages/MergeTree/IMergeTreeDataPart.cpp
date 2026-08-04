@@ -389,6 +389,9 @@ IMergeTreeDataPart::MinMaxIndexPtr IMergeTreeDataPart::getMinMaxIndex() const
 
     /// Build the lazily-materialized index in the parts arena. Reloaded parts and the zero-level path
     /// that resets a virtual minmax column to null (see MergeTreeDataWriter) first create it here.
+    /// Part-lifetime metadata, so it is not charged to whichever query happens to materialize it
+    /// either; see `setColumns` for why.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     if (is_temp || isEmpty())
@@ -406,6 +409,10 @@ IMergeTreeDataPart::MinMaxIndexPtr IMergeTreeDataPart::getMinMaxIndex() const
 
 void IMergeTreeDataPart::setMinMaxIndex(MinMaxIndexPtr minmax_index) const
 {
+    /// Part-lifetime metadata: not charged to the query that builds it, see `setColumns`. Kept outside
+    /// the `isEnabled` check below so the exclusion does not depend on the arena feature.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
+
     /// Re-home the index into the parts arena (deep copy under the scope, then adopt), same rationale as
     /// `setColumns`. The index is one of the larger part-lifetime metadata structures and is built outside
     /// the arena on the insert and mutation paths.
@@ -653,8 +660,9 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
 
     /// The primary index lives for the part's whole lifetime, so build the `Index` object in the
-    /// dedicated arena, like `setColumns` / `setMinMaxIndex`. This covers every caller (insert / merge
-    /// write finalize and the mutation path) in one place.
+    /// dedicated arena and keep it off the query's memory tracker, like `setColumns` / `setMinMaxIndex`.
+    /// This covers every caller (insert / merge write finalize and the mutation path) in one place.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
     index = std::make_shared<Index>(std::move(index_columns));
@@ -769,6 +777,22 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version)
 {
+    /// Per-part metadata lives as long as the part, and the interned bundle below lives as long as the
+    /// cache that shares it between parts — both far longer than the query that writes the part. So the
+    /// bytes must not be charged to that query: they are freed much later by a background thread (part
+    /// removal, or the cache sweep), which cannot credit them back to the per-user tracker. That tracker
+    /// is only reset once the user has no queries left (`ProcessList::remove`), so for a user who always
+    /// has one query in flight the charge drifts up forever and eventually trips
+    /// `max_memory_usage_for_user` with memory the user does not hold. Charging one unlucky query for a
+    /// bundle shared by every other part would be arbitrary on top of that.
+    ///
+    /// The read path already excludes this (`loadColumnsChecksumsIndexes`, `loadIndex`); the blocker
+    /// does the same for every path that builds a part. It stops the `User` tracker and the narrower
+    /// ones, so `total_memory_tracker` still accounts the bytes and the server limit still sees them.
+    /// Unlike the narrow arena scopes, it covers the whole function: the transient work is freed on
+    /// this same thread, so it nets out either way.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
+
     {
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
         /// The shared bundle and serializations manage their own arena scopes
@@ -2363,6 +2387,10 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
 void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
 {
+    /// The interned list is shared between parts and outlives the query, so it is not charged to it;
+    /// see `setColumns`.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
+
     columns_substreams_.validateColumns(getColumns().getNames());
     /// Drop the interned list first, as in `setColumns`. Callers always pass a list of their own.
     chassert(&columns_substreams_ != columns_substreams.get());
@@ -2378,6 +2406,8 @@ void IMergeTreeDataPart::moveMetadataToDedicatedArena()
     if (!JemallocMergeTreeArena::isEnabled())
         return;
 
+    /// Part-lifetime metadata, so the copies are not charged to the query; see `setColumns`.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     /// Re-home the members built outside the arena into it (copy under the scope, then adopt).
@@ -2892,6 +2922,12 @@ void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const
 {
+    /// The resulting size maps are cached on the part, so they are not charged to whichever query
+    /// happens to compute them; see `setColumns`. Unlike the arena scope below this covers the whole
+    /// computation, because the short-lived churn it allocates is freed on this same thread and so
+    /// nets out either way.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
+
     /// The computation must run outside the dedicated arena: `calculateEachColumnSizes` resolves a
     /// stream name and builds a sample column for every column and substream, which is heavy
     /// short-lived churn that must stay out of the shared arena. All callers (the eager load path
