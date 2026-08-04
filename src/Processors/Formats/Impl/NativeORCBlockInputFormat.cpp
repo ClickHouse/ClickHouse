@@ -712,8 +712,7 @@ static void buildORCSearchArgumentImpl(
     const orc::Type & schema,
     KeyCondition::RPN & rpn_stack,
     orc::SearchArgumentBuilder & builder,
-    const FormatSettings & format_settings,
-    std::unordered_set<UInt64> & sargs_column_ids)
+    const FormatSettings & format_settings)
 {
     if (rpn_stack.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty rpn stack in buildORCSearchArgumentImpl");
@@ -827,11 +826,6 @@ static void buildORCSearchArgumentImpl(
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
             }
-
-            /// liborc loads row indexes only for selected columns and degrades a leaf without them
-            /// to YES_NO_NULL, so a predicate column absent from the read set silently disables
-            /// pruning. Report it so the caller can add it to the selected set.
-            sargs_column_ids.insert(orc_type->getColumnId());
 
             if (need_wrap_not)
                 builder.startNot();
@@ -954,7 +948,7 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startNot();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
@@ -962,8 +956,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startAnd();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
@@ -971,8 +965,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startOr();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
@@ -992,18 +986,14 @@ static void buildORCSearchArgumentImpl(
 }
 
 std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
-    const KeyCondition & key_condition,
-    const Block & header,
-    const orc::Type & schema,
-    const FormatSettings & format_settings,
-    std::unordered_set<UInt64> & sargs_column_ids)
+    const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings)
 {
     auto rpn_stack = key_condition.getRPN();
     if (rpn_stack.empty())
         return nullptr;
 
     auto builder = orc::SearchArgumentFactory::newBuilder();
-    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings, sargs_column_ids);
+    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings);
     return builder->build();
 }
 
@@ -1255,18 +1245,10 @@ void NativeORCBlockInputFormat::prepareFileReader()
         if (orc_type)
             updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids);
     }
-    /// Build the search argument before finalizing the read set: a predicate column that is not
-    /// selected gets no row indexes from liborc, which silently turns pruning off. This happens for
-    /// a tuple element predicate, whose parent column is selected but whose own leaf is not.
-    if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs)
-    {
-        std::unordered_set<UInt64> sargs_column_ids;
-        sargs = buildORCSearchArgument(
-            *format_filter_info->key_condition, header, file_schema, format_settings, sargs_column_ids);
-        include_typeids.insert(sargs_column_ids.begin(), sargs_column_ids.end());
-    }
-
     include_indices.assign(include_typeids.begin(), include_typeids.end());
+
+    if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs)
+        sargs = buildORCSearchArgument(*format_filter_info->key_condition, header, file_schema, format_settings);
 
     selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
     read_iterator = 0;

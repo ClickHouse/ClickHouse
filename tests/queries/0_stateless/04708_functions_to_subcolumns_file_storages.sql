@@ -2,6 +2,9 @@
 
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
+-- The pass disables itself for the whole query when a join can wrap results in Nullable, so a
+-- comma-join arm below would assert 0 instead. Stress workers set join_use_nulls = 1.
+SET join_use_nulls = 0;
 
 DROP TABLE IF EXISTS t_file;
 DROP TABLE IF EXISTS t_merge;

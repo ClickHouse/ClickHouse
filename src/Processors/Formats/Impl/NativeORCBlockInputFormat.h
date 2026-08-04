@@ -58,14 +58,8 @@ asORCInputStream(ReadBuffer & in, const FormatSettings & settings, bool use_pref
 // Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
 std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled);
 
-/// Reports through sargs_column_ids the ORC column ids the search argument prunes on, so the caller
-/// can select them: liborc loads row indexes only for selected columns.
 std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
-    const KeyCondition & key_condition,
-    const Block & header,
-    const orc::Type & schema,
-    const FormatSettings & format_settings,
-    std::unordered_set<UInt64> & sargs_column_ids);
+    const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
 
 class ORCColumnToCHColumn;
 class NativeORCBlockInputFormat final : public IInputFormat
