@@ -39,6 +39,10 @@ CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = inf; -- { clientErr
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = nan; -- { clientError BAD_ARGUMENTS }
 
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -0; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -0x0; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -0.0; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = -0; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1e-400; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1.5; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1.5; -- { clientError BAD_ARGUMENTS }

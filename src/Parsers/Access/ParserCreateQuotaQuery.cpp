@@ -169,8 +169,15 @@ namespace
         if (!ParserNumber{}.parse(pos, ast, expected) && !ParserStringLiteral{}.parse(pos, ast, expected))
             return false;
 
-        /// ParserNumber consumes an optional sign token before the number token.
-        if (literal_pos->type == TokenType::Minus || literal_pos->type == TokenType::Plus)
+        /// ParserNumber consumes an optional sign token before the number token. A leading minus is
+        /// rejected by the token rather than by the parsed value, because ParserNumber normalizes the
+        /// integer spellings of a negative zero (e.g. -0, -0x0) to an unsigned zero, which the value
+        /// checks below cannot tell apart from 0 - while the users.xml path rejects the same text.
+        /// Every other negative value is rejected anyway (see the checks below), so no valid input
+        /// starts with a minus.
+        if (literal_pos->type == TokenType::Minus)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
+        if (literal_pos->type == TokenType::Plus)
             ++literal_pos;
         /// ParserNumber strips '_' digit separators from the token before conversion; do the same
         /// so that e.g. 1_5e-1 is analyzed as 15e-1 and not dismissed as an unknown literal form.
