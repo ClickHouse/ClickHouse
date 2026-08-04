@@ -36,7 +36,10 @@ claim the same port and do not interfere with each other. It also refuses to run
 is on a memory-backed filesystem (`tmpfs`/`ramfs`): there the part bytes written by the churn would be
 charged to the cgroup, so an OOM would prove the filesystem choice rather than the merge-memory
 mechanism. The scratch root defaults to the repo `tmp` directory (disk-backed) and can be overridden
-with BASE_DIR.
+with BASE_DIR. The pre-OOM churn fails closed as well: until at least one churn cycle has completed
+successfully (and no cgroup OOM has fired yet), a failed `INSERT`/`OPTIMIZE` aborts the run with the
+client's error instead of letting every worker spin uselessly and misreport the broken workload as
+"OOM did not fire".
 """
 
 import os
@@ -388,23 +391,43 @@ def main():
         # 3) sustained concurrent fat-state churn (each state is ~0.2 GiB; merging many of them, and the
         #    allocator retention they leave behind, drive resident memory past the cgroup).
         stop = threading.Event()
+        # Set once any worker has completed one full successful INSERT+OPTIMIZE cycle. Until then a
+        # failed query is a failure of the reproducer itself (connection refused, SQL error, an early
+        # tracked-memory rejection), not a symptom of the cgroup OOM, and it must abort the run: with
+        # every worker silently spinning on a broken workload the script would burn the whole churn
+        # window doing nothing and misreport "OOM did not fire". Once a cycle has succeeded - or once
+        # `oom_kill_count` has started incrementing - failures are the expected way the workload dies
+        # and the workers keep churning through them.
+        churn_ok = threading.Event()
+        # First pre-success failure, recorded for the abort message (`list.append` is atomic, and only
+        # the first element is ever read).
+        churn_failures = []
 
         def churn():
             while not stop.is_set():
-                # Queries are expected to fail once the cgroup OOM fires; keep churning regardless.
                 # `bounded_client` caps every call (see CLIENT_TIMEOUT_* above), so after `stop` is
                 # set - or once the server is OOM-killed or otherwise wedged - a call cannot block
                 # forever and the worker still observes `stop`. A `TimeoutExpired` here is expected
-                # under OOM, so swallow it and re-check `stop` on the next iteration.
+                # under OOM (the server stalls before it dies), so swallow it and re-check `stop` on
+                # the next iteration.
                 try:
-                    bounded_client(
+                    insert = bounded_client(
                         "-q",
                         "INSERT INTO m SELECT 0, arrayReduce('groupArrayState', "
                         "arrayMap(x -> repeat('x', 400000), range(500))) FROM numbers(1)",
                     )
-                    bounded_client("-q", "OPTIMIZE TABLE m FINAL")
+                    optimize = bounded_client("-q", "OPTIMIZE TABLE m FINAL")
                 except subprocess.TimeoutExpired:
-                    pass
+                    continue
+                if insert.returncode == 0 and optimize.returncode == 0:
+                    churn_ok.set()
+                elif not churn_ok.is_set() and oom_kill_count() == oom_before:
+                    # Fail closed: the workload broke before it ever worked and before any OOM - stop
+                    # the churn now and let `main` abort with the client's error instead of waiting
+                    # out the full churn window and reporting a false negative.
+                    churn_failures.append(insert if insert.returncode != 0 else optimize)
+                    stop.set()
+                    return
 
         # Daemon threads so a worker that is somehow still blocked cannot keep the interpreter alive at
         # exit (a non-daemon thread would be joined implicitly, hanging the script).
@@ -412,7 +435,10 @@ def main():
         for w in workers:
             w.start()
         print(f"churning {NUM_WORKERS} workers for ~{CHURN_SECONDS}s in the {LIMIT_GB} GiB cgroup ...")
-        time.sleep(CHURN_SECONDS)
+        # A worker that hits a pre-success failure sets `stop` itself (see `churn`), so wait on the
+        # event rather than sleeping unconditionally: a broken workload aborts the run immediately
+        # instead of idling out the whole churn window first.
+        stop.wait(CHURN_SECONDS)
         stop.set()
         # The join window comfortably exceeds the per-call client timeout above, so a worker that was
         # mid-call when `stop` was set still finishes here rather than lingering.
@@ -427,6 +453,17 @@ def main():
             )
 
         oom_after = oom_kill_count()
+        # The churn never worked and no OOM fired: the reproducer itself is broken (server refused
+        # connections, the SQL failed, ...) - report that instead of a false "OOM did not fire".
+        # `oom_after` is re-checked here because the worker's own check races with the kill: if the
+        # OOM did land in between, the failure was the expected death of the workload, not a bug.
+        if churn_failures and not churn_ok.is_set() and oom_after == oom_before:
+            failed = churn_failures[0]
+            die(
+                "churn workload failed before completing a single successful cycle "
+                f"(exit code {failed.returncode}) and no cgroup OOM fired; the reproducer is "
+                f"broken, not the workload too small:\n{failed.stdout}{failed.stderr}"
+            )
         print(f"cgroup oom_kill: {oom_before} -> {oom_after}")
         dmesg = subprocess.run(["dmesg"], capture_output=True, text=True).stdout
         for line in reversed(dmesg.splitlines()):
