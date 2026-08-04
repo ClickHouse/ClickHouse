@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <any>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -50,6 +52,7 @@ namespace ProfileEvents
 {
     extern const Event JoinInMemoryCompressedColumns;
     extern const Event JoinInMemoryDecompressWorkingSetReleases;
+    extern const Event JoinInMemoryDecompressWorkingSetPinned;
 }
 
 namespace DB
@@ -937,15 +940,37 @@ DecompressedColumnsPtr HashJoin::getDecompressedColumns(const StoredBlock * comp
     return std::make_shared<StoredBlock>(std::move(decompressed));
 }
 
-void DecompressResolver::release()
+void DecompressResolver::release(bool forced_by_budget)
 {
-    if (!active || held.empty())
+    if (!active)
+        return;
+    if (forced_by_budget)
+    {
+        /// Remember what a budget-forced release dropped: decompressing one of these again within
+        /// the same batch means the budget is thrashing (see the member comment) and must stop
+        /// being enforced.
+        for (const auto & [stored, _] : resolved)
+            released_over_budget.insert(stored);
+    }
+    else
+    {
+        /// A batch boundary: every consumer copied everything out, references in the next batch
+        /// are legitimate, so thrash tracking restarts.
+        released_over_budget.clear();
+    }
+    if (held.empty())
         return;
     if (held_bytes > held_bytes_budget)
         ProfileEvents::increment(ProfileEvents::JoinInMemoryDecompressWorkingSetReleases);
     held.clear();
     resolved.clear();
     held_bytes = 0;
+}
+
+void DecompressResolver::disableBudget()
+{
+    budget_disabled = true;
+    ProfileEvents::increment(ProfileEvents::JoinInMemoryDecompressWorkingSetPinned);
 }
 
 void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)
@@ -1385,9 +1410,13 @@ namespace
 {
 
 /// Fills the output columns of a non-joined-rows stream (RIGHT/FULL JOIN) from collected
-/// (stored block, row number) pairs. When the join compressed its stored blocks, they are resolved
-/// to decompressed views in budget-bounded chunks: each chunk is decompressed, copied into every
-/// output column and released before the next chunk starts, so the decompressed working set never
+/// (stored block, row number) pairs. When the join compressed its stored blocks, the pairs are
+/// first grouped by stored block - the callers collect them in hash-map iteration order, which
+/// carries no meaning, so reordering them is free - and then resolved to decompressed views in
+/// budget-bounded chunks: each chunk is decompressed, copied into every output column and released
+/// before the next chunk starts. Grouping ensures each distinct block is decompressed exactly once
+/// per call, whatever order the map iteration produced (ungrouped pairs alternating between blocks
+/// larger than the budget would re-decompress on every block switch), and the working set never
 /// exceeds the `DecompressResolver` budget even when the pairs reference many distinct tiny blocks.
 void fillFromStoredBlocksAndRowNumbers(
     const HashJoin & join, MutableColumns & columns_keys_and_right, const ColumnsWithRowNumbers & columns_with_row_numbers)
@@ -1402,15 +1431,21 @@ void fillFromStoredBlocksAndRowNumbers(
 
     const auto & many_columns = columns_with_row_numbers.columns;
     const auto & row_nums = columns_with_row_numbers.row_numbers;
+    const size_t num_rows = many_columns.size();
+
+    std::vector<size_t> order(num_rows);
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) { return many_columns[lhs] < many_columns[rhs]; });
+
     ColumnsWithRowNumbers chunk;
     size_t begin = 0;
-    while (begin < many_columns.size())
+    while (begin < num_rows)
     {
         size_t end = begin;
-        while (end < many_columns.size() && (end == begin || !resolve.needReleaseBefore(many_columns[end])))
+        while (end < num_rows && (end == begin || !resolve.needReleaseBefore(many_columns[order[end]])))
         {
-            chunk.columns.push_back(resolve(many_columns[end]));
-            chunk.row_numbers.push_back(row_nums[end]);
+            chunk.columns.push_back(resolve(many_columns[order[end]]));
+            chunk.row_numbers.push_back(row_nums[order[end]]);
             ++end;
         }
         for (size_t j = 0; j < columns_keys_and_right.size(); ++j)

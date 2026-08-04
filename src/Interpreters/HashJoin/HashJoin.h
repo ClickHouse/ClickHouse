@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -792,6 +793,21 @@ struct DecompressResolver
     std::unordered_map<const StoredBlock *, const StoredBlock *> resolved;
     size_t held_bytes = 0;
 
+    /// Blocks dropped by a budget-forced `release` since the last batch boundary (a batch-boundary
+    /// release clears it: everything is copied out there, so a later reference is a legitimate new
+    /// batch, not thrash). Decompressing one of these again means the consumer copies in an order
+    /// that alternates between blocks that do not fit the budget together (e.g. a build side of a
+    /// few blocks larger than the budget each, probed in row order by keys that jump between them):
+    /// enforcing the budget would then release and re-decompress tens of megabytes on every block
+    /// switch, degrading the probe to O(rows * block size) - observed as a stress-test "hung" query.
+    /// The bulk lazy output paths avoid this by grouping their copies by stored block, but the
+    /// row-at-a-time paths (`joinGet`, the non-lazy output, the byte-accounted limit/offset path)
+    /// copy in row order, so when thrash is detected the budget stops being enforced for the rest
+    /// of this batch: memory is then bounded by the distinct blocks the batch references instead of
+    /// the time being unbounded.
+    std::unordered_set<const StoredBlock *> released_over_budget;
+    bool budget_disabled = false;
+
     explicit DecompressResolver(const HashJoin & join) : active(join.haveCompressed()) { }
 
     const StoredBlock * operator()(const StoredBlock * block)
@@ -802,6 +818,8 @@ struct DecompressResolver
         auto [it, inserted] = resolved.try_emplace(block, nullptr);
         if (inserted)
         {
+            if (!budget_disabled && !released_over_budget.empty() && released_over_budget.contains(block))
+                disableBudget();
             auto decompressed = HashJoin::getDecompressedColumns(block);
             /// Not StoredBlock::allocatedBytes: it scales by the selector, which is empty on this view.
             for (const auto & column : decompressed->columns)
@@ -813,17 +831,22 @@ struct DecompressResolver
     }
 
     /// True when resolving `block` would decompress a new block while the working set is already over
-    /// budget: the caller must flush what it copied so far and `release` before resolving it. Checked
-    /// at that moment - not after every consumed row - so that a working set which is over budget but
-    /// still referenced (e.g. a single stored block larger than the whole budget) is kept rather than
-    /// re-decompressed for every row.
+    /// budget: the caller must flush what it copied so far and `release(true)` before resolving it.
+    /// Checked at that moment - not after every consumed row - so that a working set which is over
+    /// budget but still referenced (e.g. a single stored block larger than the whole budget) is kept
+    /// rather than re-decompressed for every row.
     bool needReleaseBefore(const StoredBlock * block) const
     {
-        return active && block != nullptr && held_bytes > held_bytes_budget && !resolved.contains(block);
+        return active && !budget_disabled && block != nullptr && held_bytes > held_bytes_budget && !resolved.contains(block);
     }
 
     /// Drops the decompressed working set (all resolved pointers become dangling). Counts the release
     /// in a profile event when it was forced by the budget rather than by reaching the end of a batch.
-    void release();
+    /// Callers reacting to `needReleaseBefore` pass `forced_by_budget = true` so re-decompression of a
+    /// dropped block can be told apart from the legitimate once-per-batch decompression.
+    void release(bool forced_by_budget = false);
+
+private:
+    void disableBudget();
 };
 }

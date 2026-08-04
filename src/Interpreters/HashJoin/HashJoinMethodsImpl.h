@@ -810,7 +810,7 @@ static ColumnPtr buildAdditionalFilter(
                     /// The values of the previous rows are copied out, so the working set can be
                     /// released before it has to grow past its budget.
                     if (resolve.needReleaseBefore(stored))
-                        resolve.release();
+                        resolve.release(/*forced_by_budget=*/ true);
                     const auto * block = resolve(stored);
                     const auto [src_col, row_pos] = getBlockColumnAndRow(block, refWordRowNo(selected_row), rhs_pos_it->second);
                     col->insertFrom(*src_col, row_pos);
