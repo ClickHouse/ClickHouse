@@ -1,5 +1,0 @@
-truncate reached async phase	1
-read through alias succeeded	1
-read through alias blocked	0
-rows after truncate	0
-through alias	1

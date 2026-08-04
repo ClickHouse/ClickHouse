@@ -1,0 +1,13 @@
+buffer_reader_alias_truncate scans reached target	3
+buffer_reader_alias_truncate truncate succeeded	1
+buffer_reader_alias_truncate rows after truncate	0
+direct scans reached target	3
+direct truncate succeeded	1
+direct rows after truncate	0
+reader started	1
+truncate timed out on reader	1
+rows kept after timeout	300000
+truncate after reader	1
+rows after truncate	0
+direct	1
+through alias	1
