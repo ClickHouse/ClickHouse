@@ -114,28 +114,31 @@ SELECT formatQueryOrNull('this is not a query') IS NULL SETTINGS max_execution_t
 --    TIMEOUT_EXCEEDED is the expected result. One call per polled row loop, no limit set.
 --    Each call has to actually REACH the check, and the check is throttled on accumulated input
 --    bytes, so a single short query never polls at all and would make this arm vacuous. The stride
---    is charged in raw bytes, so a padded row buys the same crossings with far fewer rows than a
---    bare 'SELECT 1' would: 20000 rows of 39 bytes cross the 64 KiB stride 12 times over.
+--    is charged in bytes while the parse costs per row, so a few long rows reach it far more cheaply
+--    than many short ones: 100 rows of 7809 bytes cross the 64 KiB stride 11 times over.
+--    The padding sits in a string literal rather than in a trailing comment because a comment is not
+--    part of the AST: `parseQueryToJSON` emits the same 339 bytes however long the comment is, so the
+--    two `formatQueryFromJSON` calls below, whose rows are that JSON, would never cross the stride.
 --    `fuzzQuery` is non-deterministic, so only the length is asserted.
-SELECT sum(length(formatQuery(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
+SELECT sum(length(formatQuery(materialize('SELECT ''' || repeat('x', 7800) || '''')))) > 0 FROM numbers(100)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-SELECT sum(length(parseQueryToJSON(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
+SELECT sum(length(parseQueryToJSON(materialize('SELECT ''' || repeat('x', 7800) || '''')))) > 0 FROM numbers(100)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-SELECT sum(length(highlightQuery(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
+SELECT sum(length(highlightQuery(materialize('SELECT ''' || repeat('x', 7800) || '''')))) > 0 FROM numbers(100)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-SELECT sum(length(tokenizeQuery(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
+SELECT sum(length(tokenizeQuery(materialize('SELECT ''' || repeat('x', 7800) || '''')))) > 0 FROM numbers(100)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-SELECT sum(length(fuzzQuery(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
+SELECT sum(length(fuzzQuery(materialize('SELECT ''' || repeat('x', 7800) || '''')))) > 0 FROM numbers(100)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-WITH parseQueryToJSON('SELECT 1 -- ' || repeat('x', 27)) AS json
-SELECT sum(length(formatQueryFromJSON(materialize(json)))) > 0 FROM numbers(20000)
+WITH parseQueryToJSON('SELECT ''' || repeat('x', 7800) || '''') AS json
+SELECT sum(length(formatQueryFromJSON(materialize(json)))) > 0 FROM numbers(100)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
 
 --    The two-argument form takes a separate branch, so without a line of its own nothing would redden
 --    if the check threw unconditionally there.
-WITH parseQueryToJSON('SELECT 1 -- ' || repeat('x', 27)) AS json
-SELECT sum(length(formatQueryFromJSON(materialize(json), materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0
-FROM numbers(20000) SETTINGS max_execution_time = 0, max_block_size = 200000;
+WITH parseQueryToJSON('SELECT ''' || repeat('x', 7800) || '''') AS json
+SELECT sum(length(formatQueryFromJSON(materialize(json), materialize('SELECT ''' || repeat('x', 7800) || '''')))) > 0
+FROM numbers(100) SETTINGS max_execution_time = 0, max_block_size = 200000;
 
 -- 10. The poll must read the EXECUTING query, not the one that built the function. `ALTER` rebuilds the
 --     partition key from its own query context and `adjustPartitionKey` hands that same object to later
