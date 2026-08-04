@@ -39,6 +39,10 @@ namespace ErrorCodes
 namespace
 {
 
+/// A range of elements smaller than this is read contiguously even when most of it is not needed
+/// by the chunk: one large read is cheaper than collecting the needed elements run by run.
+constexpr UInt64 min_sparse_read_range_bytes = 8 * 1024 * 1024;
+
 DataTypePtr getDataType(NetCDFType type)
 {
     switch (type)
@@ -419,16 +423,9 @@ void NetCDFBlockInputFormat::initialize()
     }
 }
 
-void NetCDFBlockInputFormat::loadElements(ColumnState & state, UInt64 first_element, UInt64 num_elements_to_read)
+void NetCDFBlockInputFormat::readElements(
+    const NetCDFTableLayout::Column & column, UInt64 first_element, UInt64 num_elements_to_read, char * to)
 {
-    if (num_elements_to_read == 0)
-        return;
-
-    if (state.buffer_num_elements != 0 && first_element >= state.buffer_first_element
-        && first_element + num_elements_to_read <= state.buffer_first_element + state.buffer_num_elements)
-        return;
-
-    const auto & column = *state.column;
     const auto & variable = *column.variable;
 
     if (first_element + num_elements_to_read > column.num_elements)
@@ -437,12 +434,7 @@ void NetCDFBlockInputFormat::loadElements(ColumnState & state, UInt64 first_elem
             first_element, first_element + num_elements_to_read, variable.name, column.num_elements);
 
     UInt64 remaining_bytes = num_elements_to_read * column.element_size;
-    state.buffer.resize(remaining_bytes);
-    state.buffer_first_element = first_element;
-    state.buffer_num_elements = num_elements_to_read;
-
     UInt64 offset_in_data = first_element * column.element_size;
-    char * to = state.buffer.data();
 
     if (!variable.is_record)
     {
@@ -465,6 +457,53 @@ void NetCDFBlockInputFormat::loadElements(ColumnState & state, UInt64 first_elem
         ++record;
         offset_in_record = 0;
     }
+}
+
+void NetCDFBlockInputFormat::loadElements(ColumnState & state, UInt64 first_element, UInt64 num_elements_to_read)
+{
+    if (num_elements_to_read == 0)
+        return;
+
+    if (state.buffer_num_elements != 0 && first_element >= state.buffer_first_element
+        && first_element + num_elements_to_read <= state.buffer_first_element + state.buffer_num_elements)
+        return;
+
+    state.buffer.resize(num_elements_to_read * state.column->element_size);
+    state.buffer_first_element = first_element;
+    state.buffer_num_elements = num_elements_to_read;
+    readElements(*state.column, first_element, num_elements_to_read, state.buffer.data());
+}
+
+void NetCDFBlockInputFormat::loadElementsSparse(ColumnState & state, PaddedPODArray<UInt64> & indexes)
+{
+    /// The buffer holds a set of elements that is not a contiguous range of the variable, so it
+    /// must not serve a later contiguous load.
+    state.buffer_first_element = 0;
+    state.buffer_num_elements = 0;
+
+    std::vector<UInt64> elements(indexes.begin(), indexes.end());
+    std::sort(elements.begin(), elements.end());
+    elements.erase(std::unique(elements.begin(), elements.end()), elements.end());
+
+    const auto & column = *state.column;
+    state.buffer.resize(elements.size() * column.element_size);
+    char * to = state.buffer.data();
+
+    /// Runs of consecutive elements are read together.
+    for (size_t i = 0; i < elements.size();)
+    {
+        size_t run_end = i + 1;
+        while (run_end < elements.size() && elements[run_end] == elements[run_end - 1] + 1)
+            ++run_end;
+
+        readElements(column, elements[i], run_end - i, to);
+        to += (run_end - i) * column.element_size;
+        i = run_end;
+    }
+
+    /// The values are addressed by their positions in the buffer from now on.
+    for (auto & index : indexes)
+        index = std::lower_bound(elements.begin(), elements.end(), index) - elements.begin();
 }
 
 void NetCDFBlockInputFormat::getElementIndexes(
@@ -661,7 +700,22 @@ Chunk NetCDFBlockInputFormat::read()
             /// for the variables along the outer dimensions of the row space.
             UInt64 first_element = *std::min_element(indexes.begin(), indexes.end());
             UInt64 last_element = *std::max_element(indexes.begin(), indexes.end());
-            loadElements(state, first_element, last_element - first_element + 1);
+            UInt64 range = last_element - first_element + 1;
+
+            /// When the dimension orders of two variables contradict each other, such as (x, y)
+            /// and (y, x), the order of the rows disagrees with one of the variables, and the
+            /// elements that one chunk needs from it are spread over a range that can be
+            /// arbitrarily larger than the chunk. Buffering the range would take memory
+            /// proportional to the size of the variable rather than of the chunk, so only the
+            /// needed elements are read.
+            UInt64 range_bytes = 0;
+            bool range_is_large = common::mulOverflow(range, state.column->element_size, range_bytes)
+                || range_bytes > min_sparse_read_range_bytes;
+
+            if (range > 2 * indexes.size() && range_is_large)
+                loadElementsSparse(state, indexes);
+            else
+                loadElements(state, first_element, range);
         }
 
         auto column = state.column->type->createColumn();

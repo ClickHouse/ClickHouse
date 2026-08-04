@@ -92,8 +92,15 @@ private:
     };
 
     void initialize();
+    /// Reads a range of the values of the variable of the column into `to`.
+    void readElements(const NetCDFTableLayout::Column & column, UInt64 first_element, UInt64 num_elements_to_read, char * to);
     /// Reads the data of the variable at the given range of values into the buffer of the column.
     void loadElements(ColumnState & state, UInt64 first_element, UInt64 num_elements_to_read);
+    /// Reads only the values at the given indexes into the buffer of the column and replaces the
+    /// indexes with the positions of the values in the buffer. For a variable whose order of the
+    /// dimensions disagrees with the order of the rows, where the values of one chunk are spread
+    /// over a range that is arbitrarily larger than the chunk.
+    void loadElementsSparse(ColumnState & state, PaddedPODArray<UInt64> & indexes);
     /// Reads `size` bytes at the given offset from the beginning of the file.
     void readAt(UInt64 offset, UInt64 size, char * to);
     /// The indexes of the values of the variable for a range of rows.
