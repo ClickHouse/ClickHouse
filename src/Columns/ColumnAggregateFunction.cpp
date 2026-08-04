@@ -7,6 +7,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -533,6 +534,45 @@ size_t ColumnAggregateFunction::sampledSerializedStateBytes(size_t max_states_to
         return serialized_bytes;
 
     return static_cast<size_t>(static_cast<double>(serialized_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
+}
+
+ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledStateSizes(size_t max_states_to_serialize) const
+{
+    SampledStateSizes res;
+    const size_t rows = data.size();
+    if (rows == 0)
+        return res;
+
+    /// The same periodic sample as in sampledSerializedStateBytes, serialized through a compression buffer
+    /// so that the uncompressed figure and the compression ratio are measured on the same states.
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf);
+
+    const size_t limit = std::max<size_t>(max_states_to_serialize, 1);
+    const size_t period = (rows + limit - 1) / limit;
+    size_t serialized_states = 0;
+    for (size_t i = 0; i < rows; i += period)
+    {
+        func->serialize(data[i], compressed_buf, version);
+        ++serialized_states;
+    }
+    compressed_buf.finalize();
+
+    /// `compressed_buf.count()` is the size of the sample before compression, `null_buf.count()` is the
+    /// size of the compressed data that reached the underlying buffer.
+    res.sample_bytes = compressed_buf.count();
+    /// The compressed format writes a checksum and a block header in front of every compressed block, so a
+    /// sample of a few tiny states comes out of `CompressedWriteBuffer` larger than it went in. When the
+    /// states are actually sent, that framing is amortized over `min_compress_block_size` of data, so such
+    /// a sample says nothing about how well the states compress - report it as incompressible rather than
+    /// as expanding, the same clamp `Aggregator::estimateSizeOfCompressedState` applies via
+    /// `compressedSampleSize`.
+    res.compressed_bytes = std::min(res.sample_bytes, null_buf.count());
+    res.bytes = serialized_states == rows
+        ? res.sample_bytes
+        : static_cast<size_t>(
+              static_cast<double>(res.sample_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
+    return res;
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const

@@ -154,31 +154,36 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
     const bool serialize_states = has_aggregate_states
         && (sample_block || statistics.serialized_state_rows.load(std::memory_order_relaxed) == 0);
     size_t serialized_state_bytes = 0;
+    size_t sample_bytes = 0;
+    size_t compressed_bytes = 0;
     if (serialize_states)
     {
         static constexpr size_t max_states_to_serialize = 100;
         for (const auto & col : cols)
             if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(col.column.get()))
-                serialized_state_bytes += aggregate_column->sampledSerializedStateBytes(max_states_to_serialize);
+            {
+                /// One periodic sample yields both the uncompressed figure and the compression sample, so
+                /// the `bytes / (sample_bytes / compressed_bytes)` estimate is derived from a single
+                /// population of states even when state size or compressibility changes with key order
+                /// inside the block, and the compression side stays behind the same cap instead of
+                /// serializing a prefix of up to `min(8192, rows)` states a second time. The clamp of the
+                /// compressed size to the sample size - a sample of tiny states must read as
+                /// incompressible, not as expanding - lives in `sampledStateSizes`.
+                const auto sizes = aggregate_column->sampledStateSizes(max_states_to_serialize);
+                serialized_state_bytes += sizes.bytes;
+                sample_bytes += sizes.sample_bytes;
+                compressed_bytes += sizes.compressed_bytes;
+            }
     }
 
-    size_t sample_bytes = 0;
-    size_t compressed_bytes = 0;
     if (sample_block)
     {
         for (const auto & col : cols)
         {
-            auto [sample, compressed] = estimateCompressedColumnSize(col);
-            /// The compressed format writes a checksum and a block header in front of every compressed block, so
-            /// a sample of a few states comes out of `CompressedWriteBuffer` larger than it went in. When the
-            /// states are actually sent, that framing is amortized over `min_compress_block_size` of data, so a
-            /// sample dominated by it says nothing about how well the states compress. Report such a sample as
-            /// incompressible rather than as expanding - the other producer of the `AggregationState` statistic,
-            /// `Aggregator::estimateSizeOfCompressedState`, applies the same clamp. Without it a small
-            /// `max_block_size` or `aggregation_in_order_max_block_bytes` gives a compression ratio below one,
-            /// which inflates the estimate above the uncompressed size.
+            /// Aggregate-state columns are measured above, from the same sample as their uncompressed figure.
             if (typeid_cast<const ColumnAggregateFunction *>(col.column.get()))
-                compressed = std::min(sample, compressed);
+                continue;
+            auto [sample, compressed] = estimateCompressedColumnSize(col);
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
