@@ -839,10 +839,17 @@ namespace
   * column after the column itself, so it always expects a separate column, while the
   * shard plans the inlined expression.
   *
-  * To keep such expansions distinct, every occurrence of an ALIAS column whose
-  * inlined expression coincides with the inlined expression of another ALIAS column
-  * of the same table, or with the inlined form of any other expression of the query,
-  * is wrapped into the internal function `__actionName(expression, 'name')`. It is
+  * The collapse can only drop a column of the block sent over the network when two
+  * whole expressions of the query clauses (projection entries, GROUP BY keys, ORDER BY
+  * expressions, ...) that the initiator distinguishes become identical on the shard
+  * after inlining. Identical subtrees inside one expression, or an expression shared
+  * with a filter, merge inside the DAG without dropping an output column and are
+  * harmless. So an occurrence of an ALIAS column is wrapped into the internal function
+  * `__actionName(expression, 'name')` when it belongs to a whole clause expression
+  * whose inlined form coincides with the inlined form of another whole clause
+  * expression that differs before inlining (expressions equal before inlining collapse
+  * the same way on the initiator and need no wrapper), or when another ALIAS column of
+  * the same table shares its expression. The wrapper is
   * a no-op at runtime, but its action name is taken from the second argument
   * (see PlannerActionsVisitor), so both the sample block computed on the initiator
   * and the plan built on the shard keep one column per ALIAS column. The name is
@@ -869,8 +876,19 @@ public:
 
     void visit(QueryTreeNodePtr & node)
     {
-        collectAliasColumns(node, /*inside_alias_expression=*/ false);
-        replace(node, /*is_filter_context=*/ false);
+        collectAliasColumns(node, /*is_whole_expression=*/ false);
+
+        /// A whole clause expression collides when its inlined form is also produced by
+        /// another whole expression that differs before inlining: the initiator plans two
+        /// columns where the shard would plan one. Expressions equal before inlining
+        /// collapse the same way on both sides and are consistent without a wrapper.
+        for (const auto & [_, forms] : whole_expression_forms)
+        {
+            if (forms.original_hashes.size() > 1)
+                colliding_whole_expressions.insert(forms.nodes.begin(), forms.nodes.end());
+        }
+
+        replace(node, /*is_filter_context=*/ false, /*inside_colliding_expression=*/ false);
     }
 
 private:
@@ -921,12 +939,12 @@ private:
     }
 
     /// Remember the names of all ALIAS columns sharing one expression, per column source,
-    /// and the inlined-form hashes of all other expressions of the query. The latter are
-    /// not collected inside ALIAS column expressions: those subtrees do not appear in the
-    /// rewritten query on their own, only as parts of the expansions, and shared subparts
-    /// of expansions are harmless (they merge inside the DAG without dropping a column of
-    /// the block sent over the network).
-    void collectAliasColumns(const QueryTreeNodePtr & node, bool inside_alias_expression)
+    /// and the whole expressions of the query clauses that may survive as separate columns
+    /// of the block sent over the network. Proper subtrees of those expressions are not
+    /// collision candidates: shared subparts merge inside the DAG without dropping an
+    /// output column. Neither are filters (WHERE and PREWHERE are computed entirely on the
+    /// shard), limits and offsets (not columns at all), or join conditions.
+    void collectAliasColumns(const QueryTreeNodePtr & node, bool is_whole_expression)
     {
         if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->hasExpression())
         {
@@ -935,31 +953,63 @@ private:
                 source_ordinals.emplace(column_source, source_ordinals.size());
                 alias_names_by_expression[{column_source, getExpressionHash(inlineAliasColumns(column_node->getExpression()))}].insert(column_node->getColumnName());
 
+                if (is_whole_expression)
+                    recordWholeExpression(node);
+
                 for (const auto & child : node->getChildren())
                 {
                     if (child)
-                        collectAliasColumns(child, /*inside_alias_expression=*/ true);
+                        collectAliasColumns(child, /*is_whole_expression=*/ false);
                 }
                 return;
             }
         }
-        else if (!inside_alias_expression)
+
+        if (const auto * query_node = node->as<QueryNode>())
         {
-            auto node_type = node->getNodeType();
-            if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::FUNCTION || node_type == QueryTreeNodeType::CONSTANT)
-                other_expression_hashes.insert(getExpressionHash(inlineAliasColumns(node)));
+            for (const auto & child : node->getChildren())
+            {
+                if (!child)
+                    continue;
+
+                bool is_output_clause = child != query_node->getWhere() && child != query_node->getPrewhere()
+                    && child != query_node->getJoinTreeNode() && child != query_node->getLimit() && child != query_node->getOffset()
+                    && child != query_node->getLimitByLimit() && child != query_node->getLimitByOffset();
+                collectAliasColumns(child, is_output_clause);
+            }
+            return;
         }
+
+        /// Lists, sort and window definitions and interpolations are containers: the whole
+        /// expressions are their elements (recursively, e.g. each key list of GROUPING SETS).
+        auto node_type = node->getNodeType();
+        bool is_expression_container = node_type == QueryTreeNodeType::LIST || node_type == QueryTreeNodeType::SORT
+            || node_type == QueryTreeNodeType::INTERPOLATE || node_type == QueryTreeNodeType::WINDOW;
+
+        if (is_whole_expression && !is_expression_container)
+            recordWholeExpression(node);
 
         for (const auto & child : node->getChildren())
         {
             if (child)
-                collectAliasColumns(child, inside_alias_expression);
+                collectAliasColumns(child, is_whole_expression && is_expression_container);
         }
     }
 
-    void replace(QueryTreeNodePtr & node, bool is_filter_context)
+    void recordWholeExpression(const QueryTreeNodePtr & node)
     {
-        if (auto column_expression = getColumnNodeAliasExpression(node, is_filter_context))
+        auto & forms = whole_expression_forms[getExpressionHash(inlineAliasColumns(node))];
+        forms.original_hashes.insert(getExpressionHash(node));
+        forms.nodes.push_back(node.get());
+    }
+
+    void replace(QueryTreeNodePtr & node, bool is_filter_context, bool inside_colliding_expression)
+    {
+        /// The pointer must be tested before the node is possibly replaced: an ALIAS
+        /// column occurrence may itself be a colliding whole expression.
+        inside_colliding_expression = inside_colliding_expression || colliding_whole_expressions.contains(node.get());
+
+        if (auto column_expression = getColumnNodeAliasExpression(node, is_filter_context, inside_colliding_expression))
             node = std::move(column_expression);
 
         /// The expansion is fully inlined and contains no ALIAS column references,
@@ -972,7 +1022,7 @@ private:
                 if (!child)
                     continue;
                 bool is_filter = child == query_node->getWhere() || child == query_node->getPrewhere();
-                replace(child, is_filter);
+                replace(child, is_filter, inside_colliding_expression);
             }
             return;
         }
@@ -980,11 +1030,11 @@ private:
         for (auto & child : node->getChildren())
         {
             if (child)
-                replace(child, is_filter_context);
+                replace(child, is_filter_context, inside_colliding_expression);
         }
     }
 
-    QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node, bool is_filter_context) const
+    QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node, bool is_filter_context, bool inside_colliding_expression) const
     {
         const auto * column_node = node->as<ColumnNode>();
         if (!column_node || !column_node->hasExpression())
@@ -997,9 +1047,8 @@ private:
         auto column_expression = inlineAliasColumns(column_node->getExpression());
         const String & column_name = column_node->getColumnName();
 
-        auto expression_hash = getExpressionHash(column_expression);
-        bool is_duplicate = other_expression_hashes.contains(expression_hash);
-        if (auto it = alias_names_by_expression.find({column_source, expression_hash}); !is_duplicate && it != alias_names_by_expression.end())
+        bool is_duplicate = inside_colliding_expression;
+        if (auto it = alias_names_by_expression.find({column_source, getExpressionHash(column_expression)}); !is_duplicate && it != alias_names_by_expression.end())
             is_duplicate = it->second.size() > 1;
 
         if (!is_duplicate)
@@ -1033,7 +1082,17 @@ private:
     /// tables of one query happen to have equal names.
     std::map<const IQueryTreeNode *, size_t> source_ordinals;
     std::map<std::pair<const IQueryTreeNode *, IQueryTreeNode::Hash>, std::set<String>> alias_names_by_expression;
-    std::set<IQueryTreeNode::Hash> other_expression_hashes;
+
+    /// Whole expressions of the query clauses, keyed by the hash of their fully inlined
+    /// form; the value keeps the hashes of the distinct original (not inlined) forms and
+    /// the expression nodes themselves.
+    struct WholeExpressionForms
+    {
+        std::set<IQueryTreeNode::Hash> original_hashes;
+        std::vector<const IQueryTreeNode *> nodes;
+    };
+    std::map<IQueryTreeNode::Hash, WholeExpressionForms> whole_expression_forms;
+    std::unordered_set<const IQueryTreeNode *> colliding_whole_expressions;
 };
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
