@@ -2380,20 +2380,20 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
 
-    /// Settings a query sets to a value that differs from the one already in effect. Drives the feature tier
-    /// check in `sanityCheck`, mirroring `SettingsConstraints::getNewValueToCheck`: a no-op is exempt, any other
-    /// change is checked even if the new value equals the compiled default.
+    /// Settings a query changed from the value in effect. Drives the feature tier check in `sanityCheck`,
+    /// mirroring `SettingsConstraints::getNewValueToCheck`.
     std::unordered_set<String> changed_by_query;
 
-    /// Apply changes requested by a query, so they are subject to the feature tier check.
-    void applyChangesFromQuery(const SettingsChanges & changes)
+    /// Apply changes from a query. `baseline` (default `this`) is what each entry is compared against.
+    void applyChangesFromQuery(const SettingsChanges & changes, const MergeTreeSettingsImpl * baseline = nullptr)
     {
+        const MergeTreeSettingsImpl & compare_against = baseline ? *baseline : *this;
         for (const auto & change : changes)
         {
             auto resolved_name = Traits::resolveName(change.name);
 
             Field current_value;
-            bool has_current_value = tryGet(resolved_name, current_value);
+            bool has_current_value = compare_against.tryGet(resolved_name, current_value);
             Field new_value = castValueUtil(resolved_name, change.value);
             if (has_current_value && new_value == current_value)
                 changed_by_query.erase(String(resolved_name));
@@ -2781,11 +2781,12 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
-void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
+void MergeTreeSettings::applyChanges(
+    const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, const MergeTreeSettings * baseline)
 {
     auto resolved_changes = changes;
     resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
-    impl->applyChangesFromQuery(resolved_changes);
+    impl->applyChangesFromQuery(resolved_changes, baseline ? baseline->impl.get() : nullptr);
 }
 
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)

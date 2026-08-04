@@ -86,7 +86,10 @@ struct MergeTreeSettings
     void set(std::string_view name, const Field & value);
 
     SettingsChanges changes() const;
-    void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
+    /// `baseline`: what the feature tier check compares `changes` against, instead of `this`. Pass the table's
+    /// live settings when `changes` is the full stored SETTINGS list (e.g. on `ALTER`).
+    void applyChanges(
+        const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, const MergeTreeSettings * baseline = nullptr);
     void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     std::vector<std::string_view> getAllAliasNames() const;

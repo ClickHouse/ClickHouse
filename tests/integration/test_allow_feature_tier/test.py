@@ -511,3 +511,35 @@ def test_server_level_merge_tree_settings_are_not_blocked_by_feature_tier(start_
     node.replace_in_config(feature_tier_1_path, "2", "1")
     node.query("SYSTEM RELOAD CONFIG")
     assert "1" == get_current_tier_value(node)
+
+
+def test_altering_unrelated_setting_after_tightening_tier(start_cluster):
+    # Table created at tier 0 with an EXPERIMENTAL override must stay alterable for unrelated
+    # PRODUCTION settings once the tier is tightened
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS test_unrelated_alter")
+    instance.query(
+        "CREATE TABLE test_unrelated_alter (a UInt64) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS allow_commit_order_projection = 1"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER TABLE test_unrelated_alter MODIFY SETTING max_avg_part_size_for_too_many_parts = 999999999"
+    )
+    assert output == ""
+    assert error == ""
+
+    output = instance.query(
+        "SELECT engine_full FROM system.tables WHERE name = 'test_unrelated_alter'"
+    )
+    assert "allow_commit_order_projection" in output
+    assert "max_avg_part_size_for_too_many_parts" in output
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS test_unrelated_alter")

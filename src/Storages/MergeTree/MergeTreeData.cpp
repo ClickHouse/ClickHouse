@@ -5875,8 +5875,11 @@ void MergeTreeData::changeSettings(
         }
 
         /// Reset to default settings before applying existing.
+        auto old_settings = storage_settings.get();
         auto copy = getDefaultSettings();
-        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        /// Compare against the table's live settings, not `copy`'s bare defaults, so an existing override isn't
+        /// mistaken for a change made by this ALTER.
+        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true, old_settings.get());
         if (run_sanity_checks)
         {
             const auto & ac = getContext()->getAccessControl();
