@@ -440,7 +440,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_open_files;
     extern const ServerSettingsString path;
     extern const ServerSettingsString user_files_path;
-    extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
     extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
@@ -893,7 +892,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readLine(filename).find("[always]") != std::string::npos)
+        if (readLine(filename).contains("[always]"))
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
@@ -2079,13 +2078,6 @@ try
             ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
-    }
-
-    {
-        const auto & dictionaries_lib_path_setting = server_settings[ServerSetting::dictionaries_lib_path];
-        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed
-            ? getCanonicalPath(String(dictionaries_lib_path_setting.value), path_str) : String(path / "dictionaries_lib/");
-        global_context->setDictionariesLibPath(dictionaries_lib_path);
     }
 
     {

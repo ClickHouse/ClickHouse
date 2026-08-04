@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <base/types.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 
 #include <map>
 
@@ -99,12 +98,16 @@ private: \
         String str2{str}; \
         std::vector<String> type_aliases; \
         \
-        boost::split(type_aliases, str2, [](char c) { return c == ','; }); \
-        for (auto & alias : type_aliases) \
+        for (size_t begin = 0; begin <= str2.length();) \
         { \
-            boost::trim(alias); \
-            aliases[alias] = type; \
+            size_t end = str2.find(',', begin); \
+            if (end == String::npos) \
+                end = str2.length(); \
+            type_aliases.push_back(trim(str2.substr(begin, end - begin), isWhitespaceASCII)); \
+            begin = end + 1; \
         } \
+        for (auto & alias : type_aliases) \
+            aliases[alias] = type; \
         \
         aliases[String{toString(type)}] = type; \
     } \
