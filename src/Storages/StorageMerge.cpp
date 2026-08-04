@@ -1528,6 +1528,13 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
+        /// In a query with the SECONDARY_QUERY kind (e.g. the fragment a parallel replica executes)
+        /// the planner tops the plan with a `BlocksMarshallingStep`, whose `ColumnBLOB` output only
+        /// the connection writer can consume. The plan built here is a child of `ReadFromMerge` and
+        /// its output goes through converting expressions, so the blocks must stay regular - the
+        /// whole fragment is marshalled above `ReadFromMerge` anyway.
+        modified_context->setSetting("enable_parallel_blocks_marshalling", false);
+
         if (use_analyzer)
         {
             /// Converting query to AST because types might be different in the source table.
