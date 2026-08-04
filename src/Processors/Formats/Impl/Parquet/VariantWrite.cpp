@@ -18,6 +18,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1595,6 +1596,17 @@ bool tryEncodeVariantScalarFromColumnUsingTypeHint(
     }
 }
 
+/// Writes an integer that does not fit the `INT64` primitive as a `DECIMAL16` with scale 0.
+/// `DECIMAL16` holds a 16-byte two's-complement value with up to 38 decimal digits, so it covers
+/// the whole `UInt64` range and wide integers up to 10^38 - 1 in magnitude.
+template <typename Sink>
+void writeVariantDecimal16Integer(Int128 value, Sink & sink)
+{
+    sink.writePrimitiveHeader(VariantPrimitiveType::Decimal16);
+    sink.writePOD(static_cast<UInt8>(0));
+    sink.writePOD(value);
+}
+
 template <typename T, typename Sink>
 void writeVariantDecimalFromColumn(VariantPrimitiveType type, const IColumn & column, size_t row, UInt32 scale, Sink & sink)
 {
@@ -1648,11 +1660,16 @@ void encodeVariantScalarFromColumn(
         case TypeIndex::Date:
         case TypeIndex::DateTime:
         {
-            /// All of these produce a `UInt64` `Field`; encode as `Int64` with the same overflow check.
+            /// All of these produce a `UInt64` `Field`; encode as `Int64`, falling back to a
+            /// scale-0 `DECIMAL16` for values above the signed `Int64` range so that the residual
+            /// encoding stays non-lossy for the whole `UInt64` domain.
             UInt64 source = 0;
             tryReadColumnIntegralValue(column, row, value_type, source);
             if (source > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode integer {} as `Parquet` `VARIANT` `INT64`", source);
+            {
+                writeVariantDecimal16Integer(static_cast<Int128>(source), sink);
+                return;
+            }
 
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, static_cast<Int64>(source), sink);
             return;
@@ -1663,11 +1680,27 @@ void encodeVariantScalarFromColumn(
         case TypeIndex::UInt256:
         {
             Int64 converted = 0;
-            if (!tryReadColumnIntegralValue(column, row, value_type, converted))
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode integer value as `Parquet` `VARIANT` `INT64`");
+            if (tryReadColumnIntegralValue(column, row, value_type, converted))
+            {
+                writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, converted, sink);
+                return;
+            }
 
-            writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, converted, sink);
-            return;
+            /// Values outside the `Int64` range are preserved through a scale-0 `DECIMAL16`, which
+            /// holds up to 38 decimal digits. Anything larger has no non-lossy `VARIANT` primitive.
+            static const Int128 max_decimal16_integer = DecimalUtils::scaleMultiplier<Int128>(DecimalUtils::max_precision<Decimal128>) - 1;
+            Int128 wide = 0;
+            if (tryReadColumnIntegralValue(column, row, value_type, wide) && wide >= -max_decimal16_integer && wide <= max_decimal16_integer)
+            {
+                writeVariantDecimal16Integer(wide, sink);
+                return;
+            }
+
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Cannot encode integer value of type {} as `Parquet` `VARIANT`: "
+                "the value does not fit the `DECIMAL16` primitive (38 decimal digits)",
+                value_type.getName());
         }
         case TypeIndex::Float32:
         case TypeIndex::Float64:
