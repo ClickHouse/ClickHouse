@@ -52,12 +52,19 @@ struct TextIndexReadInfo
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
 
-String getNameWithoutAliases(const ActionsDAG::Node * node)
+const ActionsDAG::Node * removeAliases(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
     {
         node = node->children[0];
     }
+
+    return node;
+}
+
+String getNameWithoutAliases(const ActionsDAG::Node * node)
+{
+    node = removeAliases(node);
 
     if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -75,6 +82,15 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     }
 
     return node->result_name;
+}
+
+bool hasNullableDataArgument(const ActionsDAG::Node & function_node)
+{
+    return std::ranges::any_of(function_node.children, [](const auto * child)
+    {
+        const auto * argument = removeAliases(child);
+        return !argument->column && isNullableOrLowCardinalityNullable(argument->result_type);
+    });
 }
 
 /// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
@@ -522,7 +538,7 @@ private:
         if (need_transform_function)
             processTextIndexFunction(replacement, selected_conditions, context);
 
-        if (direct_read_from_text_index)
+        if (direct_read_from_text_index && !hasNullableDataArgument(function_node))
             replaceFunctionsToVirtualColumns(replacement, selected_conditions, virtual_column_to_node, context);
 
         return replacement;

@@ -14,6 +14,19 @@ Basic Nullable(String) expressions.
 0
 -- hasToken on absent token returns no rows
 0
+-- NOT hasToken: only row 3; the NULL rows are NULL, i.e. not a match
+3
+-- NOT hasAnyTokens: rows 3 and 5 do not contain "world"
+3
+5
+-- isNull(hasToken): rows 2 and 4
+2
+4
+-- the predicate evaluates to NULL for the NULL rows, not to 0
+1	1
+2	\N
+4	\N
+5	1
 -- has[Any|All]Token on NULL should not match anything
 0
 0
@@ -164,6 +177,11 @@ LowCardinality(Nullable(String))
 1
 -- LowCardinality(Nullable): NULL rows must not match any token
 0
+-- LowCardinality(Nullable): NOT hasToken is only row 3, the NULL rows are NULL
+3
+-- LowCardinality(Nullable): isNull(hasToken) is rows 2 and 4
+2
+4
 -- has[Any|All]Token on NULL should not match anything
 0
 0

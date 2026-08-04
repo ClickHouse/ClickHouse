@@ -41,6 +41,20 @@ SELECT count() FROM tab WHERE hasToken(str, 'hello') AND str IS NULL;
 SELECT '-- hasToken on absent token returns no rows';
 SELECT count() FROM tab WHERE hasToken(str, 'xyz');
 
+-- On a Nullable column the predicate is NULL for the NULL rows. NULL and 0 are both falsy, so a plain
+-- filter cannot tell them apart, but a negated one can: reading the text index must not turn NULL into 0.
+SELECT '-- NOT hasToken: only row 3; the NULL rows are NULL, i.e. not a match';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+
+SELECT '-- NOT hasAnyTokens: rows 3 and 5 do not contain "world"';
+SELECT id FROM tab WHERE NOT hasAnyTokens(str, 'world') ORDER BY id;
+
+SELECT '-- isNull(hasToken): rows 2 and 4';
+SELECT id FROM tab WHERE isNull(hasToken(str, 'hello')) ORDER BY id;
+
+SELECT '-- the predicate evaluates to NULL for the NULL rows, not to 0';
+SELECT id, hasToken(str, 'hello') AS matched FROM tab WHERE matched OR isNull(matched) ORDER BY id;
+
 SELECT '-- has[Any|All]Token on NULL should not match anything';
 SELECT count() FROM tab WHERE hasToken(str, NULL);
 SELECT count() FROM tab WHERE hasAllToken(str, NULL);
@@ -433,6 +447,12 @@ SELECT id FROM tab WHERE hasAllTokens(str, 'hello world') ORDER BY id;
 
 SELECT '-- LowCardinality(Nullable): NULL rows must not match any token';
 SELECT count() FROM tab WHERE hasToken(str, 'hello') AND str IS NULL;
+
+SELECT '-- LowCardinality(Nullable): NOT hasToken is only row 3, the NULL rows are NULL';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+
+SELECT '-- LowCardinality(Nullable): isNull(hasToken) is rows 2 and 4';
+SELECT id FROM tab WHERE isNull(hasToken(str, 'hello')) ORDER BY id;
 
 SELECT '-- has[Any|All]Token on NULL should not match anything';
 SELECT count() FROM tab WHERE hasToken(str, NULL);
