@@ -261,8 +261,21 @@ void TableFunctionURL::buildDelegate(URLSchemeTarget target, const ContextPtr & 
 StoragePtr TableFunctionURL::executeImpl(
     const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
+    /// The outer `execute` has already run the `CREATE TEMPORARY TABLE` privilege check when it
+    /// applies (it does not when a database engine resolves its table through this function), so
+    /// the delegate must not repeat it. The same holds for the source access check: this function
+    /// reports the delegate's engine name and access URI, so the outer check (or the caller that
+    /// explicitly disabled it and took over) has already covered exactly the delegate's source.
     if (delegate)
-        return delegate->execute(ast_function, context, table_name, std::move(cached_columns), /*use_global_context=*/false, is_insert_query);
+        return delegate->execute(
+            ast_function,
+            context,
+            table_name,
+            std::move(cached_columns),
+            /*use_global_context=*/false,
+            is_insert_query,
+            /*check_create_temporary_table=*/false,
+            /*check_source_access=*/false);
 
     return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
 }
@@ -452,7 +465,18 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 
 std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 {
-    return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());
+    /// The URL may arrive already resolved against a base URL (e.g. from a `URL` database), and
+    /// `resolveURLBase` tolerates inputs that `Poco::URI` rejects — e.g. `file://report:2026.csv`,
+    /// whose authority parses as a host with an invalid port. Failing to detect the format from
+    /// the file name is not an error.
+    try
+    {
+        return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());
+    }
+    catch (const Poco::Exception &)
+    {
+        return std::nullopt;
+    }
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
@@ -480,7 +504,7 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified format and structure and with data from the defined `URL`.
 
@@ -585,7 +609,8 @@ The resolution rules are:
 - **Query-only** (e.g. `?x=1`): appended to the full base path, replacing any existing query or fragment.
 - **Fragment-only** (e.g. `#frag`): appended to the base URL, preserving the query, replacing any existing fragment.
 - **Empty**: returns the base URL without fragment.
-- **Absolute URL**: passed through unchanged; `url_base` is ignored.
+- **Absolute URL**: passed through unchanged; `url_base` is ignored. A URL is considered absolute only when it starts with `scheme://`: a name whose first path segment contains a colon (e.g. `report:2026.csv`), which RFC 3986 would parse as an absolute URI with the scheme `report`, is resolved as a path-relative reference instead, because such a name is not a usable URL.
+- **Scheme-only base** (e.g. `file://`): a path-relative URL is appended to the base directly: `file://` + `data.csv` = `file://data.csv`, which for the `file://` scheme means a path relative to the [user_files](/reference/settings/server-settings/settings/user#user_files_path) directory (the current directory for clickhouse-local). Dot segments are kept as-is in this case.
 
 **Example**
 
