@@ -190,6 +190,12 @@ ExchangeLookupPtr createExchangeLookup(
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context);
 
+class IProcessor;
+
+/// Transform that drops zero-row chunks emitted as scheduling ticks by in-memory exchange
+/// sources, so they do not escape the exchange path (e.g. to the client as empty `Data` packets).
+std::shared_ptr<IProcessor> makeSkipZeroRowChunksTransform(SharedHeader header);
+
 class ICustomResourceHolder;
 
 /// Helper to clean temporary files after query execution
