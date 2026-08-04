@@ -26,6 +26,14 @@ class IAST;
   * Functions listed in `unsupported_functions` are kept for local filtering even if they are otherwise
   * compatible. This lets a caller exclude operators whose semantics differ in its external database.
   *
+  * Columns listed in `local_only_columns` exist in the external table but their predicates must be
+  * evaluated locally (e.g. the external database would compare them differently, so a pushed-down
+  * predicate could drop rows the local re-filtering never sees). Their conditions are removed from the
+  * remote filter; because removing a disjunct would narrow the remote filter instead of widening it, a
+  * disjunction with a branch over such a column is kept local as a whole. Under
+  * external_table_strict_query this throws INCORRECT_QUERY, like any other condition that cannot be
+  * pushed down.
+  *
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
   *
   * Throws INCORRECT_QUERY if external_table_strict_query (from context settings)
@@ -41,7 +49,8 @@ String transformQueryForExternalDatabase(
     const String & table,
     ContextPtr context,
     std::optional<size_t> limit = {},
-    const NameSet & unsupported_functions = {});
+    const NameSet & unsupported_functions = {},
+    const NameSet & local_only_columns = {});
 
 /** When the data source of an external database integration is a user-provided query (passed to the external
   * database as is), the query is not rewritten by `transformQueryForExternalDatabase` and no outer predicate can

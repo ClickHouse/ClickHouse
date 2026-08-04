@@ -124,7 +124,8 @@ static void checkOld(
     const State & state,
     size_t table_num,
     const std::string & query,
-    const std::string & expected)
+    const std::string & expected,
+    const NameSet & local_only_columns = {})
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -137,7 +138,7 @@ static void checkOld(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        LiteralEscapingStyle::Regular, "test", "table", state.context);
+        LiteralEscapingStyle::Regular, "test", "table", state.context, {}, {}, local_only_columns);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -167,7 +168,8 @@ static void checkNewAnalyzer(
     const State & state,
     const Names & column_names,
     const std::string & query,
-    const std::string & expected)
+    const std::string & expected,
+    const NameSet & local_only_columns = {})
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -191,7 +193,7 @@ static void checkNewAnalyzer(
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        LiteralEscapingStyle::Regular, "test", "table", state.context);
+        LiteralEscapingStyle::Regular, "test", "table", state.context, {}, {}, local_only_columns);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -202,15 +204,16 @@ static void check(
     const Names & column_names,
     const std::string & query,
     const std::string & expected,
-    const std::string & expected_new = "")
+    const std::string & expected_new = "",
+    const NameSet & local_only_columns = {})
 {
     {
         SCOPED_TRACE("Old analyzer");
-        checkOld(state, table_num, query, expected);
+        checkOld(state, table_num, query, expected, local_only_columns);
     }
     {
         SCOPED_TRACE("Analyzer");
-        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new);
+        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, local_only_columns);
     }
 }
 
@@ -331,6 +334,42 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
           "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
+}
+
+TEST(TransformQueryForExternalDatabase, LocalOnlyColumns)
+{
+    const State & state = State::instance();
+
+    /// A conjunct over a local-only column is removed like one over an unknown column: the remote filter
+    /// only widens, and the removed condition is re-checked by the local filtering.
+    check(state, 1, {"column", "field"},
+          "SELECT column, field FROM table WHERE column > 2 AND field = 'test'",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "column" > 2)",
+          "", {"field"});
+
+    /// Removing a disjunct would narrow the remote filter and drop rows the local re-filtering never sees,
+    /// so a disjunction with a local-only branch is kept local as a whole.
+    check(state, 1, {"column", "field"},
+          "SELECT column, field FROM table WHERE column > 2 OR field = 'test'",
+          R"(SELECT "column", "field" FROM "test"."table")",
+          "", {"field"});
+
+    check(state, 1, {"column", "field", "a"},
+          "SELECT column, field, a FROM table WHERE (column > 2 OR field = 'test') AND a > 0",
+          R"(SELECT "column", "field", "a" FROM "test"."table" WHERE "a" > 0)",
+          "", {"field"});
+
+    /// Strict mode rejects a condition kept local because of a local-only column.
+    state.context->setSetting("external_table_strict_query", true);
+    EXPECT_THROW(
+        check(state, 1, {"column", "field"},
+              "SELECT column, field FROM table WHERE column > 2 AND field = 'test'", "", "", {"field"}),
+        Exception);
+    EXPECT_THROW(
+        check(state, 1, {"column", "field"},
+              "SELECT column, field FROM table WHERE column > 2 OR field = 'test'", "", "", {"field"}),
+        Exception);
+    state.context->setSetting("external_table_strict_query", false);
 }
 
 TEST(TransformQueryForExternalDatabase, TupleSurroundPredicates)

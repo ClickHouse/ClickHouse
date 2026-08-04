@@ -310,13 +310,21 @@ Pipe StorageSQLite::read(
         /// every cell to the declared column type - in an ordinary table any cell can carry any storage
         /// class (an INTEGER-declared column holding the TEXT cell `'abc'`), which SQLite compares by its
         /// runtime storage class while ClickHouse reads it through a coercing accessor, so the two sides
-        /// disagree. Ineligible columns are excluded from the set so ClickHouse applies their predicates
-        /// locally instead.
+        /// disagree. Ineligible columns are passed as `local_only_columns` instead of simply being dropped
+        /// from the set: `transformQueryForExternalDatabase` must distinguish them from columns of other
+        /// tables of the query, because a disjunction with a branch over such a column has to stay local as
+        /// a whole (pushing down the remaining branches would narrow the remote filter and drop rows the
+        /// local re-filtering never sees), and `external_table_strict_query = 1` has to reject the query.
         NamesAndTypesList pushdown_columns;
+        NameSet local_only_columns;
         for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+        {
             if (SQLiteFormatImpl::isPushdownSafeColumn(
                     metadata_connection.get(), remote_table_or_query.getTableName(), column.name, column.type))
                 pushdown_columns.push_back(column);
+            else
+                local_only_columns.insert(column.name);
+        }
 
         /// `LIKE` and `NOT LIKE` differ in case sensitivity and escaping between the two sides.
         ///
@@ -349,7 +357,8 @@ Pipe StorageSQLite::read(
             remote_table_or_query.getTableName(),
             context_,
             {},
-            unsupported_functions);
+            unsupported_functions,
+            local_only_columns);
     }
     LOG_TRACE(log, "Query: {}", query);
 

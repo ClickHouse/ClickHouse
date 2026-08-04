@@ -348,15 +348,15 @@ bool isCompatible(
     return node->as<ASTIdentifier>();
 }
 
-bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names);
+bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, const NameSet & local_only_names, bool & mentions_local_only);
 
-void removeUnknownChildren(ASTs & children, const NameSet & known_names)
+void removeUnknownChildren(ASTs & children, const NameSet & known_names, const NameSet & local_only_names, bool & mentions_local_only)
 {
 
     ASTs new_children;
     for (auto & child : children)
     {
-        bool leave_child = removeUnknownSubexpressions(child, known_names);
+        bool leave_child = removeUnknownSubexpressions(child, known_names, local_only_names, mentions_local_only);
         if (leave_child)
             new_children.push_back(child);
     }
@@ -364,10 +364,17 @@ void removeUnknownChildren(ASTs & children, const NameSet & known_names)
 }
 
 /// return `true` if we should leave node in tree
-bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
+bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, const NameSet & local_only_names, bool & mentions_local_only)
 {
     if (const auto * ident = node->as<ASTIdentifier>())
+    {
+        if (local_only_names.contains(ident->name()))
+        {
+            mentions_local_only = true;
+            return false;
+        }
         return known_names.contains(ident->name());
+    }
 
     if (node->as<ASTLiteral>() != nullptr)
         return true;
@@ -375,7 +382,21 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
     auto * func = node->as<ASTFunction>();
     if (func && (func->name == "and" || func->name == "or"))
     {
-        removeUnknownChildren(func->arguments->children, known_names);
+        /// Removing a conjunct only widens the remote filter (the removed condition is re-checked by the
+        /// local filtering over the rows the external database returns), but removing a disjunct narrows
+        /// it: a row matching only the removed branch is dropped remotely and never reaches the local
+        /// re-filtering. For a genuinely unknown identifier (a column of another table of the query) the
+        /// disjunct is kept out of the remote filter anyway; but when a branch mentions a column that is
+        /// present locally and merely not pushdown-safe (`local_only_names`), the whole disjunction must
+        /// stay local so the local filter can evaluate every branch over unfiltered rows.
+        bool child_mentions_local_only = false;
+        removeUnknownChildren(func->arguments->children, known_names, local_only_names, child_mentions_local_only);
+        if (child_mentions_local_only)
+        {
+            mentions_local_only = true;
+            if (func->name == "or")
+                return false;
+        }
         /// all children removed, current node can be removed too
         if (func->arguments->children.size() == 1)
         {
@@ -389,9 +410,9 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
     bool leave_child = true;
     for (auto & child : node->children)
     {
-        leave_child = leave_child && removeUnknownSubexpressions(child, known_names);
-        if (!leave_child)
-            break;
+        /// Visit every child even after the node is already known to be removed: a later child may mention
+        /// a local-only column, and an enclosing disjunction must learn about it.
+        leave_child = removeUnknownSubexpressions(child, known_names, local_only_names, mentions_local_only) && leave_child;
     }
     return leave_child;
 }
@@ -401,7 +422,13 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
 // send the query to the storage as AST. Before that, we have to remove the conditions
 // that reference other tables from `WHERE`, so that the external engine is not confused
 // by the unknown columns.
-bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
+//
+// `local_only_columns` are columns that do exist in the external table but whose predicates the caller
+// requires to be evaluated locally (e.g. a pushdown over them would compare differently on the remote
+// side). Their conditions are removed from the remote filter like unknown ones, except that a disjunction
+// with such a branch is removed as a whole, and `mentions_local_only` reports that some condition was kept
+// local because of them (so strict mode can reject the query).
+bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns, const NameSet & local_only_columns, bool & mentions_local_only)
 {
     if (!node)
         return false;
@@ -413,10 +440,10 @@ bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList
     if (auto * expr_list = node->as<ASTExpressionList>(); expr_list && !expr_list->children.empty())
     {
         /// traverse expression list on top level
-        removeUnknownChildren(expr_list->children, known_names);
+        removeUnknownChildren(expr_list->children, known_names, local_only_columns, mentions_local_only);
         return !expr_list->children.empty();
     }
-    return removeUnknownSubexpressions(node, known_names);
+    return removeUnknownSubexpressions(node, known_names, local_only_columns, mentions_local_only);
 }
 
 String transformQueryForExternalDatabaseImpl(
@@ -429,7 +456,8 @@ String transformQueryForExternalDatabaseImpl(
     const String & table,
     ContextPtr context,
     std::optional<size_t> limit,
-    const NameSet & unsupported_functions)
+    const NameSet & unsupported_functions,
+    const NameSet & local_only_columns)
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
 
@@ -450,7 +478,15 @@ String transformQueryForExternalDatabaseImpl(
       */
 
     ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
-    bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
+    bool where_mentions_local_only = false;
+    bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, available_columns, local_only_columns, where_mentions_local_only);
+
+    /// A condition kept local because it mentions a column the caller marked as not pushdown-safe is a
+    /// condition the external database cannot evaluate, which is exactly what strict mode forbids.
+    if (strict && where_mentions_local_only)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Query contains expressions over columns that cannot be evaluated by the external database "
+                        "(and external_table_strict_query=true)");
 
     if (original_where && where_has_known_columns)
     {
@@ -546,7 +582,8 @@ String transformQueryForExternalDatabase(
     const String & table,
     ContextPtr context,
     std::optional<size_t> limit,
-    const NameSet & unsupported_functions)
+    const NameSet & unsupported_functions,
+    const NameSet & local_only_columns)
 {
     if (!query_info.syntax_analyzer_result)
     {
@@ -573,7 +610,8 @@ String transformQueryForExternalDatabase(
             table,
             context,
             limit,
-            unsupported_functions);
+            unsupported_functions,
+            local_only_columns);
     }
 
     auto clone_query = query_info.query->clone();
@@ -587,7 +625,8 @@ String transformQueryForExternalDatabase(
         table,
         context,
         limit,
-        unsupported_functions);
+        unsupported_functions,
+        local_only_columns);
 }
 
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context)
