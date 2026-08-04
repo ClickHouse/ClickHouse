@@ -54,6 +54,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
@@ -416,7 +417,8 @@ public:
             /// all bytes buffered in `snappy_out`; compression happens in `snappy_out.finalize()`
             /// below, after the object tree has been released.
             ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{snappy_out};
-            read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
+            if (!read_response.SerializeToZeroCopyStream(&zero_copy_output_stream))
+                throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Failed to serialize the Prometheus ReadResponse");
         }
         snappy_out.finalize();
 
