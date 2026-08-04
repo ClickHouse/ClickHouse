@@ -106,6 +106,7 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 
 }
 
@@ -135,6 +136,7 @@ namespace FailPoints
     extern const char lightweight_show_tables[];
     extern const char datalake_try_get_table_return_nullptr[];
     extern const char datalake_try_get_table_throw[];
+    extern const char datalake_get_tables_throw[];
 }
 
 namespace
@@ -979,10 +981,17 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     /// It must not fail on case of some datalake error.
     try
     {
+        fiu_do_on(FailPoints::datalake_get_tables_throw,
+        {
+            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
+        });
+
         catalog_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
+        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -1109,7 +1118,7 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
 }
 
 std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIteratorWithHint(
-    ContextPtr /*context_*/,
+    ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
     bool /*skip_not_loaded*/,
     const TablesFilter & tables_filter) const
@@ -1121,10 +1130,17 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     /// It must not fail on case of some datalake error.
     try
     {
+        fiu_do_on(FailPoints::datalake_get_tables_throw,
+        {
+            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
+        });
+
         catalog_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
+        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
