@@ -928,11 +928,9 @@ private:
         return alternative.value_or(ColumnVariant::NULL_DISCRIMINATOR);
     }
 
-    /// Group the rows by the alternatives they carry, on the element side and on the needle side both:
-    /// a group is only answerable as a whole if every member peels the same way on both sides. A row
-    /// whose own elements disagree is labelled no_group, and nothing means no group formed at all.
-    /// One label per row rather than a filter per group: the pair key admits far more groups than a
-    /// block has distinct ones, and every filter would otherwise span the whole block.
+    /// One group label per row, keyed by the alternatives it carries on both sides: a group is only
+    /// answerable as a whole if every member peels the same way. A row whose own elements disagree is
+    /// labelled no_group, and nothing means no group formed at all.
     static std::optional<VectorWithMemoryTracking<GroupKey>> groupRowsByAlternative(
         const ColumnArray & array, const DataTypePtr & element_type,
         const IColumn & needle, const DataTypePtr & needle_type)
