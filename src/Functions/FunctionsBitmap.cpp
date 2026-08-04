@@ -162,16 +162,23 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     factory.registerFunction<FunctionBitmapSelfCardinality>(documentation_bitmapCardinality);
 
     /// Documentation for bitmapMin
-    FunctionDocumentation::Description description_bitmapMin = "Returns the position of the smallest bit set in a bitmap. If all bits are unset, or `UINT32_MAX` (`UINT64_MAX` if the bitmap contains more than `2^64` bits).";
+    FunctionDocumentation::Description description_bitmapMin = "Returns the smallest element in a bitmap, interpreted as an unsigned integer of the bitmap element type. For signed bitmaps, negative values are treated as their unsigned counterparts (for example, `Int8` value `-128` is `128`). If the bitmap is empty, returns `UINT32_MAX` (`UINT64_MAX` if the bitmap element type is wider than 32 bits).";
     FunctionDocumentation::Syntax syntax_bitmapMin = "bitmapMin(bitmap)";
     FunctionDocumentation::Arguments arguments_bitmapMin = {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapMin = {"Returns the position of the smallest bit set in the bitmap, or `UINT32_MAX`/`UINT64_MAX`", {"UInt64"}};
-    FunctionDocumentation::Examples examples_bitmapMin = {{"Usage example", "SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;",
+    FunctionDocumentation::ReturnedValue returned_value_bitmapMin = {"Returns the smallest element as an unsigned value of the bitmap element type, or `UINT32_MAX`/`UINT64_MAX` if the bitmap is empty", {"UInt64"}};
+    FunctionDocumentation::Examples examples_bitmapMin = {
+        {"Usage example", "SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;",
         R"(
 ┌─res─┐
 │   2 │
+└─────┘
+    )"},
+        {"Signed bitmap", "SELECT bitmapMin(bitmapBuild([-128, -1]::Array(Int8))) AS res;",
+        R"(
+┌─res─┐
+│ 128 │
 └─────┘
     )"}
     };
@@ -182,16 +189,23 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     factory.registerFunction<FunctionBitmapMin>(documentation_bitmapMin);
 
     /// Documentation for bitmapMax
-    FunctionDocumentation::Description description_bitmapMax = "Returns the position of the greatest bit set in a bitmap, or `0` if the bitmap is empty.";
+    FunctionDocumentation::Description description_bitmapMax = "Returns the greatest element in a bitmap, interpreted as an unsigned integer of the bitmap element type. For signed bitmaps, negative values are treated as their unsigned counterparts (for example, `Int8` value `-1` is `255`). Returns `0` if the bitmap is empty.";
     FunctionDocumentation::Syntax syntax_bitmapMax = "bitmapMax(bitmap)";
     FunctionDocumentation::Arguments arguments_bitmapMax = {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapMax = {"Returns the position of the greatest bit set in the bitmap, otherwise `0`", {"UInt64"}};
-    FunctionDocumentation::Examples examples_bitmapMax = {{"Usage example", "SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;",
+    FunctionDocumentation::ReturnedValue returned_value_bitmapMax = {"Returns the greatest element as an unsigned value of the bitmap element type, or `0` if the bitmap is empty", {"UInt64"}};
+    FunctionDocumentation::Examples examples_bitmapMax = {
+        {"Usage example", "SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;",
         R"(
 ┌─res─┐
 │   5 │
+└─────┘
+    )"},
+        {"Signed bitmap", "SELECT bitmapMax(bitmapBuild([-128, -1]::Array(Int8))) AS res;",
+        R"(
+┌─res─┐
+│ 255 │
 └─────┘
     )"}
     };
@@ -412,14 +426,21 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     factory.registerFunction<FunctionBitmapHasAny>(documentation_bitmapHasAny);
 
     /// Documentation for bitmapContains
-    FunctionDocumentation::Description description_bitmapContains = "Checks if the bitmap contains a specific element.";
+    FunctionDocumentation::Description description_bitmapContains = "Checks if the bitmap contains a specific element. The value is compared as an unsigned integer of the bitmap element type. For signed bitmaps, a negative element matches its unsigned counterpart (for example, `Int8` value `-1` matches `255`).";
     FunctionDocumentation::Syntax syntax_bitmapContains = "bitmapContains(bitmap, value)";
     FunctionDocumentation::Arguments arguments_bitmapContains = {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
-        {"value", "Element to check for. [(U)Int8/16/32/64](/sql-reference/data-types/int-uint/)"}
+        {"value", "Element to check for, interpreted as an unsigned integer of the bitmap element type. [(U)Int8/16/32/64](/sql-reference/data-types/int-uint/)"}
     };
     FunctionDocumentation::ReturnedValue returned_value_bitmapContains = {"Returns `1` if the bitmap contains the specified value, otherwise `0`", {"UInt8"}};
-    FunctionDocumentation::Examples examples_bitmapContains = {{"Usage example", "SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;",
+    FunctionDocumentation::Examples examples_bitmapContains = {
+        {"Usage example", "SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;",
+        R"(
+┌─res─┐
+│  1  │
+└─────┘
+    )"},
+        {"Signed bitmap", "SELECT bitmapContains(bitmapBuild([-1]::Array(Int8)), 255) AS res;",
         R"(
 ┌─res─┐
 │  1  │
