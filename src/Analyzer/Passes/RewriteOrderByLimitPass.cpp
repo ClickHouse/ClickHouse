@@ -10,15 +10,16 @@
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/MatcherNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageMergeTree.h>
 
 namespace DB
@@ -210,7 +211,7 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
         /// Only process single-table nodes, handle the process where the table identifier has been parsed and not parsed,
         /// and return the corresponding StoragePtr for that table, which is used for subsequent metadata validation during rewriting.
         /// Note: Statements like "select a join b order by x limit 10" are not supported for now.
-        if (auto * tb_node = query_node.getJoinTree()->as<TableNode>())
+        if (auto * tb_node = query_node.getJoinTreeNode()->as<TableNode>())
         {
             /// With `FINAL` the result row is not necessarily a single physical source row: engines such as
             /// `SummingMergeTree`, `AggregatingMergeTree`, and the collapsing/replacing variants can merge or
@@ -231,6 +232,25 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
                     && (metadata->getColumns().hasPhysical("_part_starting_offset")
                         || metadata->getColumns().hasPhysical("_part_offset")))
                     return {};
+                /// The rewrite communicates between the cloned subquery and the outer query through
+                /// physical row positions (`_part_starting_offset + _part_offset`), which only identify
+                /// base-table rows when both reads are planned on the base table. When the table defines
+                /// a normal projection, `optimizeUseNormalProjection` can plan either read on the
+                /// projection, whose parts have their own row numbering: `_part_offset` is remapped to
+                /// the parent's `_parent_part_offset` only when the projection was written with parent
+                /// part offsets, and `_part_starting_offset` is never remapped at all. The subquery could
+                /// then rank rows by projection-local offsets while the outer query fetches base-table
+                /// rows at those positions, returning different rows. Reject the rewrite whenever a
+                /// normal projection exists (aggregate projections cannot serve these non-aggregate
+                /// queries, so they are safe to ignore).
+                if (metadata)
+                {
+                    for (const auto & projection : metadata->getProjections())
+                    {
+                        if (projection.type == ProjectionDescription::Type::Normal)
+                            return {};
+                    }
+                }
                 return storage;
             }
         }
@@ -312,7 +332,7 @@ static bool rewriteOrderByLimit(QueryTreeNodePtr & original_query, const Storage
         func->resolveAsFunction(FunctionFactory::instance().get(func_name, context));
         return func;
     };
-    auto get_column_source_from_proj = [](const QueryNode & node) -> QueryTreeNodePtr
+    auto get_column_source_from_proj = [](const QueryNode & node) -> TableExpressionNodePtr
     {
         const auto & children = node.getProjection().getChildren();
         if (children.empty())
@@ -326,7 +346,7 @@ static bool rewriteOrderByLimit(QueryTreeNodePtr & original_query, const Storage
             return {};
         }
     };
-    auto collect_column_nodes = [](const NamesAndTypes & column_names_and_types, QueryTreeNodePtr source) -> QueryTreeNodes
+    auto collect_column_nodes = [](const NamesAndTypes & column_names_and_types, TableExpressionNodePtr source) -> QueryTreeNodes
     {
         /// Keep `source` for every generated column: the range has more than one entry, so moving it
         /// here would leave the second and subsequent `ColumnNode`s with an empty source.
@@ -385,6 +405,16 @@ void RewriteOrderByLimitPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr
         if (rewriteOrderByLimit(query_node.first, query_node.second, context))
         {
             has_rewrite = true;
+            /// The rewrite relies on `_part_starting_offset + _part_offset` identifying the same rows
+            /// in the cloned subquery and in the outer query, which only holds when both reads use one
+            /// storage snapshot. Each rewritten `QueryNode` is planned from its own context
+            /// (`Planner::buildPlanForUnionNode` plans every branch from `query_node->getContext()`),
+            /// so the setting must be forced on every rewritten node, not only on the root — otherwise
+            /// a rewritten `UNION ALL` arm would keep the user-disabled value and take independent
+            /// snapshots under concurrent part changes. `QueryNode::cloneImpl` shares the parent's
+            /// `ContextMutablePtr`, so this also covers the cloned inner subquery.
+            query_node.first->as<QueryNode>()->getMutableContext()->setSetting(
+                "enable_shared_storage_snapshot_in_query", true);
         }
     }
 
@@ -394,16 +424,6 @@ void RewriteOrderByLimitPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr
             &Poco::Logger::get("RewriteOrderByLimitPass"),
             "Rewrite ORDER BY LIMIT successfully, current query: {}",
             query_tree_node->dumpTree());
-
-        /// `OrderByLimitRewriteVisitor` descends into child `QueryNode`s, so a set query such as
-        /// `(SELECT ... ORDER BY k LIMIT 1) UNION ALL SELECT ...` can have a rewritten child while the
-        /// root stays a `UnionNode`. In that case `query_tree_node->as<QueryNode>()` is null, so set the
-        /// snapshot setting on whichever node actually carries the context (the planner reads it from
-        /// both `QueryNode` and `UnionNode` the same way) to avoid dereferencing a null pointer.
-        if (auto * query = query_tree_node->as<QueryNode>())
-            query->getMutableContext()->setSetting("enable_shared_storage_snapshot_in_query", true);
-        else if (auto * union_node = query_tree_node->as<UnionNode>())
-            union_node->getMutableContext()->setSetting("enable_shared_storage_snapshot_in_query", true);
     }
 }
 

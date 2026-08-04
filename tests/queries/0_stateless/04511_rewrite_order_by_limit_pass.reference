@@ -16,3 +16,7 @@
 97	970
 98	980
 99	990
+-- a table with a normal projection must NOT be rewritten (projection reads use projection-local part offsets)
+0
+-- an aggregate projection does not block the rewrite (it cannot serve a non-aggregate read)
+1

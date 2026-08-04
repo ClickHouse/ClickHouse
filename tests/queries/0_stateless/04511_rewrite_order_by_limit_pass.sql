@@ -46,4 +46,20 @@ SELECT a, b FROM (
     SELECT a, b FROM t_rewrite_order_by_limit ORDER BY a DESC LIMIT 3
 ) ORDER BY a, b;
 
+SELECT '-- a table with a normal projection must NOT be rewritten (projection reads use projection-local part offsets)';
+DROP TABLE IF EXISTS t_rewrite_order_by_limit_proj;
+CREATE TABLE t_rewrite_order_by_limit_proj (a UInt64, b UInt64, PROJECTION p_b (SELECT a, b ORDER BY b)) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_rewrite_order_by_limit_proj SELECT number, number * 10 FROM numbers(100);
+SELECT countIf(explain LIKE '%_cumulative_part_offset%')
+FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, b FROM t_rewrite_order_by_limit_proj ORDER BY b LIMIT 2);
+
+SELECT '-- an aggregate projection does not block the rewrite (it cannot serve a non-aggregate read)';
+DROP TABLE IF EXISTS t_rewrite_order_by_limit_agg_proj;
+CREATE TABLE t_rewrite_order_by_limit_agg_proj (a UInt64, b UInt64, PROJECTION p_sum (SELECT a, sum(b) GROUP BY a)) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_rewrite_order_by_limit_agg_proj SELECT number, number * 10 FROM numbers(100);
+SELECT countIf(explain LIKE '%_cumulative_part_offset%')
+FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, b FROM t_rewrite_order_by_limit_agg_proj ORDER BY b LIMIT 2);
+
+DROP TABLE t_rewrite_order_by_limit_proj;
+DROP TABLE t_rewrite_order_by_limit_agg_proj;
 DROP TABLE t_rewrite_order_by_limit;
