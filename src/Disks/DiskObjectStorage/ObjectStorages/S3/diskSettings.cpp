@@ -51,6 +51,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString access_key_id;
     extern const S3AuthSettingsUInt64 connect_timeout_ms;
     extern const S3AuthSettingsBool disable_checksum;
+    extern const S3AuthSettingsUInt64 expect_continue_min_bytes;
     extern const S3AuthSettingsUInt64 expiration_window_seconds;
     extern const S3AuthSettingsBool gcs_issue_compose_request;
     extern const S3AuthSettingsUInt64 http_keep_alive_max_requests;
@@ -178,6 +179,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
+    client_configuration.expect_continue_min_bytes = auth_settings[S3AuthSetting::expect_continue_min_bytes];
 
     if (request_settings.proxy_resolver)
     {

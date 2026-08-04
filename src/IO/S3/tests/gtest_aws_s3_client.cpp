@@ -20,13 +20,16 @@
 #include <aws/core/client/AWSError.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
+#include <aws/core/http/HttpResponse.h>
 #include <aws/core/http/URI.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromS3.h>
+#include <IO/WriteSettings.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/PocoHTTPClient.h>
@@ -40,6 +43,11 @@ namespace DB::S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 max_single_read_retries;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+}
+
+namespace ProfileEvents
+{
+    extern const Event S3SingleAttemptRetryConsultations;
 }
 
 /*
@@ -195,6 +203,135 @@ static void testServerSideEncryption(
     do_request(client, uri);
     String content = getSSEAndSignedHeaders(http.getLastRequestHeader());
     EXPECT_EQ(content, expected_headers);
+}
+
+TEST(IOTestAwsS3Client, DoesNotRetryPreconditionFailed)
+{
+    /// B166: a 412 Precondition Failed (conditional CAS/dedup writes of the content-addressed
+    /// backend) must NOT be retried, even when the SDK marks it retryable because an S3-compatible
+    /// server (e.g. RustFS) returned a body whose ExceptionName it could not parse. Retrying it is a
+    /// storm that stalls the write path.
+    DB::S3::Client::RetryStrategy strategy(DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 10});
+
+    Aws::Client::AWSError<Aws::Client::CoreErrors> precondition(Aws::Client::CoreErrors::UNKNOWN, /*isRetryable=*/true);
+    precondition.SetResponseCode(Aws::Http::HttpResponseCode::PRECONDITION_FAILED);
+    EXPECT_FALSE(strategy.ShouldRetry(precondition, /*attemptedRetries=*/0));
+    EXPECT_TRUE(DB::S3::isPreconditionFailedError(precondition));       // one policy: agrees via response code
+
+    /// A genuinely transient error is still retried (the guard is specific to 412).
+    Aws::Client::AWSError<Aws::Client::CoreErrors> unavailable(Aws::Client::CoreErrors::SLOW_DOWN, /*isRetryable=*/true);
+    unavailable.SetResponseCode(Aws::Http::HttpResponseCode::SERVICE_UNAVAILABLE);
+    EXPECT_TRUE(strategy.ShouldRetry(unavailable, /*attemptedRetries=*/0));
+    EXPECT_FALSE(DB::S3::isPreconditionFailedError(unavailable));
+
+    /// The one 412 policy also matches on the canonical <Code> name / raw body (the two CA conditional
+    /// ops see an error whose ExceptionName the SDK DID parse, or whose body carries the token).
+    Aws::Client::AWSError<Aws::S3::S3Errors> named(Aws::S3::S3Errors::UNKNOWN, "PreconditionFailed", "precondition failed", false);
+    EXPECT_TRUE(DB::S3::isPreconditionFailedError(named));
+
+    /// Typed-exception surface (the conditional copy / finalize catch an S3Exception): name and message.
+    EXPECT_TRUE(DB::S3Exception("boom", Aws::S3::S3Errors::UNKNOWN, "PreconditionFailed").isPreconditionFailed());
+    EXPECT_FALSE(DB::S3Exception("boom", Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey").isPreconditionFailed());
+}
+
+/// Every consultation is counted, not just the first: simulating two retryable 5xx decisions in a row
+/// proves the counter tracks each SDK consultation rather than being fixed/clamped at 1, which is what
+/// makes it a live tripwire ("SDK-level retries must remain zero for conditional writes") rather than a
+/// value nothing ever touches.
+TEST(IOTestAwsS3Client, SingleAttemptRetryStrategyRefusesAndCounts)
+{
+    using ProfileEvents::global_counters;
+    const auto before = global_counters[ProfileEvents::S3SingleAttemptRetryConsultations].load();
+    DB::S3::SingleAttemptRetryStrategy strategy;
+    const Aws::Client::AWSError<Aws::Client::CoreErrors> retryable_5xx(
+        Aws::Client::CoreErrors::INTERNAL_FAILURE, /*isRetryable=*/true);
+    EXPECT_FALSE(strategy.ShouldRetry(retryable_5xx, /*attempted=*/0));
+    EXPECT_FALSE(strategy.ShouldRetry(retryable_5xx, /*attempted=*/1));
+    EXPECT_EQ(strategy.GetMaxAttempts(), 1);
+    EXPECT_EQ(global_counters[ProfileEvents::S3SingleAttemptRetryConsultations].load() - before, 2u);
+}
+
+/// Drive a single-part conditional PUT (`If-None-Match: *`) with `body_size` bytes through a real
+/// S3 client whose `expect_continue_min_bytes` gate is `threshold`, against the mock HTTP server, and
+/// report whether the request that reached the wire carried an `Expect: 100-continue` header.
+static bool conditionalPutNegotiatesExpectContinue(uint64_t threshold, size_t body_size)
+{
+    TestPocoHTTPServer http;
+
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientExpectContinue/test.txt");
+
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        uri.uri.getScheme());
+
+    client_configuration.endpointOverride = uri.endpoint;
+    client_configuration.expect_continue_min_bytes = threshold;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = false,
+    };
+
+    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        /* access_key_id = */ "ACCESS_KEY_ID",
+        /* secret_access_key = */ "SECRET_ACCESS_KEY",
+        /* server_side_encryption_customer_key_base64 = */ "",
+        /* sse_kms_config = */ {},
+        /* headers = */ {},
+        DB::S3::CredentialsConfiguration{
+            .use_environment_credentials = false,
+            .use_insecure_imds_request = false,
+        });
+
+    DB::S3::S3RequestSettings request_settings;
+    request_settings[DB::S3RequestSetting::max_unexpected_write_error_retries] = 1;
+
+    DB::WriteSettings write_settings;
+    write_settings.object_storage_write_if_none_match = "*";
+
+    DB::WriteBufferFromS3 write_buffer(
+        client,
+        uri.bucket,
+        uri.key,
+        DB::DBMS_DEFAULT_BUFFER_SIZE,
+        request_settings,
+        /* blob_log = */ nullptr,
+        /* object_metadata = */ std::nullopt,
+        /* schedule = */ {},
+        write_settings);
+
+    const std::string body(body_size, 'x');
+    write_buffer.write(body.data(), body.size());
+    write_buffer.finalize();
+
+    return http.getLastRequestHeader().has("Expect");
+}
+
+TEST(IOTestAwsS3Client, ExpectContinueOnlyWhenThresholdPositive)
+{
+    /// RExpect: `Expect: 100-continue` (B118) is scoped to CAS-owned conditional writes. A non-CAS S3
+    /// client carries the default threshold 0 (disabled) and must NOT negotiate Expect on a conditional
+    /// PUT — that is the upstream wire behaviour a non-CAS disk (e.g. Iceberg's If-None-Match commits)
+    /// must keep. A CAS conditional-write client raises the threshold (see the single-attempt client in
+    /// ObjectStorageBackend) and DOES negotiate it for a body at least that large.
+    EXPECT_FALSE(conditionalPutNegotiatesExpectContinue(/*threshold=*/0, /*body_size=*/64));
+    EXPECT_TRUE(conditionalPutNegotiatesExpectContinue(/*threshold=*/8, /*body_size=*/64));
+    /// A positive threshold still excludes a body below it (only large bodies warrant the round-trip).
+    EXPECT_FALSE(conditionalPutNegotiatesExpectContinue(/*threshold=*/128, /*body_size=*/64));
 }
 
 TEST(IOTestAwsS3Client, AppendExtraSSECHeadersRead)

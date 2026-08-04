@@ -25,6 +25,7 @@ namespace DB
     DECLARE(Bool, no_sign_request, S3::DEFAULT_NO_SIGN_REQUEST, "", 0) \
     DECLARE(Bool, use_insecure_imds_request, false, "", 0) \
     DECLARE(Bool, use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
+    DECLARE(UInt64, expect_continue_min_bytes, S3::DEFAULT_EXPECT_CONTINUE_MIN_BYTES, "", 0) \
     DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
     DECLARE(Bool, disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, "", 0) \
     DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \

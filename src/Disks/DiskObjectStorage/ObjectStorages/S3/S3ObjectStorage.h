@@ -6,6 +6,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <memory>
+#include <mutex>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
 #include <Common/MultiVersion.h>
@@ -108,6 +109,9 @@ public:
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
+    /// Uses `DeleteObjectRequest` with `If-Match` (token-exact removal for content-addressed disks).
+    ConditionalRemoveResult removeObjectIfTokenMatches(const StoredObject & object, const std::string & etag) override;
+
     void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
@@ -120,6 +124,17 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
+
+    /// Write-once conditional server-side copy (`CopyObject`/`CompleteMultipartUpload` with
+    /// `If-None-Match: *`). Only performed via the native copy path (`copyS3File`'s
+    /// `allow_native_copy` path); if native copy is not available this throws rather than silently
+    /// falling back to an unconditional overwrite (see `.cpp` for details).
+    ConditionalCopyResult copyObjectConditional(
+        const StoredObject & object_from,
+        const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        std::optional<ObjectAttributes> object_to_attributes) override;
 
     void copyObjectToAnotherObjectStorage( /// NOLINT
         const StoredObject & object_from,
@@ -149,6 +164,12 @@ public:
 
     bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
 
+    bool conditionalOpsUseGenerationTokens() const override;
+
+    std::optional<bool> isBucketVersioningEnabled() const override;
+
+    bool supportsRetryProfile(ObjectStorageRetryProfile) const override { return true; }
+
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 
@@ -156,6 +177,12 @@ public:
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
+
+    /// Lazily-built clone of the current disk client with the single-attempt retry profile
+    /// (SingleAttemptRetryStrategy, max_retries=0, Expect:100-continue floor). Rebuilt whenever the
+    /// disk client rotates (applyNewSettings/credentials refresh) — the cached clone is keyed by the
+    /// base client's identity, so a stale clone can never outlive a rotation.
+    std::shared_ptr<const S3::Client> getSingleAttemptClient() const;
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
@@ -174,6 +201,17 @@ private:
 
     const bool for_disk_s3;
     S3CredentialsRefreshCallback credentials_refresh_callback;
+
+    mutable std::mutex single_attempt_client_mutex;
+    mutable std::shared_ptr<const S3::Client> single_attempt_client;
+    /// The base client the cached clone above was built from. Deliberately held as a shared_ptr (not
+    /// a raw pointer): a raw pointer would be compared for identity AFTER the object it once pointed
+    /// to could have been freed and a new client reallocated at the same address by an unrelated
+    /// rotation (ABA), which would false-match and serve a stale clone (e.g. built from retired
+    /// credentials) indefinitely. Holding the shared_ptr pins at most one retired client version —
+    /// released as soon as the next rotation is observed and the clone is rebuilt — which is what
+    /// makes the identity comparison in getSingleAttemptClient sound.
+    mutable std::shared_ptr<const S3::Client> single_attempt_client_base;
 };
 
 }

@@ -51,6 +51,10 @@ public:
     void preFinalize() override;
     std::string getFileName() const override { return key; }
     void sync() override { next(); }
+    /// The object ETag from the PutObject / CompleteMultipartUpload response, captured on a
+    /// successful upload. Lets content-addressed callers record the written incarnation's token
+    /// without a follow-up HEAD. Valid only after a successful finalize().
+    std::optional<std::string> getResultObjectETag() const override { return object_etag; }
 
 private:
     /// Receives response from the server after sending all data.
@@ -88,6 +92,10 @@ private:
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
+    /// Set from the PutObject / CompleteMultipartUpload response ETag on a successful upload; read
+    /// by getResultObjectETag() after finalize(). Written by the upload worker, read after the
+    /// finalize barrier (happens-before), so no extra synchronization is needed.
+    std::optional<String> object_etag;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 

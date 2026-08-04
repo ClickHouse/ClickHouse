@@ -30,6 +30,16 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 /// (copyDataToS3File()).
 ///
 /// read_settings - is used for throttling in case of native copy is not possible
+///
+/// If `if_none_match` is set, it is passed as the `If-None-Match` precondition on the destination
+/// write (both the single-operation `CopyObject` request and, for large objects, the multipart
+/// `CompleteMultipartUpload` request), turning the copy into a write-once conditional copy. A `412
+/// Precondition Failed` response (destination already exists) is not swallowed: it surfaces as a
+/// thrown `S3Exception`. This precondition is only honored on the native server-side copy path; it
+/// is not applied if the copy falls back to the non-native read-write copy (`copyDataToS3File`).
+///
+/// If `out_dest_etag` is non-null, it is filled in with the ETag of the destination object as
+/// reported by the copy response, on success.
 void copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
@@ -44,7 +54,9 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer& fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    std::optional<String> if_none_match = {},
+    String * out_dest_etag = nullptr);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3

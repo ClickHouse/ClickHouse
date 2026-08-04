@@ -13,6 +13,7 @@
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/GetObjectTaggingRequest.h>
+#include <aws/s3/model/GetBucketVersioningRequest.h>
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 #include <aws/s3/model/CreateMultipartUploadRequest.h>
 #include <aws/s3/model/CompleteMultipartUploadRequest.h>
@@ -158,6 +159,7 @@ using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
 using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
 using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;
 using GetObjectTaggingRequest = ExtendedRequest<Model::GetObjectTaggingRequest>;
+using GetBucketVersioningRequest = ExtendedRequest<Model::GetBucketVersioningRequest>;
 
 class UploadPartRequest : public ExtendedRequest<Model::UploadPartRequest>
 {

@@ -208,6 +208,7 @@ public:
 
     Model::HeadObjectOutcome HeadObject(HeadObjectRequest & request) const;
     Model::GetObjectTaggingOutcome GetObjectTagging(GetObjectTaggingRequest & request) const;
+    Model::GetBucketVersioningOutcome GetBucketVersioning(GetBucketVersioningRequest & request) const;
     Model::ListObjectsV2Outcome ListObjectsV2(ListObjectsV2Request & request) const;
     Model::ListObjectsOutcome ListObjects(ListObjectsRequest & request) const;
     Model::GetObjectOutcome GetObject(GetObjectRequest & request) const;
@@ -252,6 +253,10 @@ public:
 
     const PocoHTTPClientConfiguration & getClientConfiguration() const { return client_configuration; }
 
+    /// True when this client's HTTP layer runs the GCS conditional dialect (http_client =
+    /// gcs_hmac or gcp_oauth): conditional tokens are GCS generations riding the ETag plumbing.
+    bool usesGcsConditionalDialect() const { return client_configuration.gcs_conditional_dialect; }
+
     /// For testing purposes only
     ClientCache * getRawCache() const { return cache.get(); }
 
@@ -273,6 +278,7 @@ private:
     /// otherwise region and endpoint redirection won't work
     using Aws::S3::S3Client::HeadObject;
     using Aws::S3::S3Client::GetObjectTagging;
+    using Aws::S3::S3Client::GetBucketVersioning;
     using Aws::S3::S3Client::ListObjectsV2;
     using Aws::S3::S3Client::ListObjects;
     using Aws::S3::S3Client::GetObject;
@@ -344,6 +350,17 @@ private:
     const ServerSideEncryptionKMSConfig sse_kms_config;
 
     LoggerPtr log;
+};
+
+/// Refuses every SDK-transparent retry and counts each consultation. Used by the
+/// ObjectStorageRetryProfile::SingleAttempt per-write profile (conditional writes whose retry
+/// decisions live ABOVE the SDK: the caller must resolve an uncertain PUT before reissuing).
+class SingleAttemptRetryStrategy final : public Aws::Client::RetryStrategy
+{
+public:
+    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long) const override; // NOLINT(google-runtime-int)
+    long CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long) const override { return 0; } // NOLINT(google-runtime-int)
+    long GetMaxAttempts() const override { return 1; } // NOLINT(google-runtime-int)
 };
 
 class ClientFactory
