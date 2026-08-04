@@ -18,7 +18,7 @@ Reach out to ClickHouse via the [contact form](https://clickhouse.com/cloud/brin
 <Accordion title="How long does infrastructure provisioning take, and what are common reasons it gets stuck?">
 Expect roughly 45–90 minutes end to end. The range is wide because most of that time is the cloud provider provisioning resources (the Kubernetes cluster, load balancers, network components), which takes an inconsistent amount of time from run to run and is outside ClickHouse's control. When provisioning stalls, the most common causes are on the account side:
 
-- The CloudFormation template or Terraform module was modified before applying it — for example, adding a `PermissionsBoundary`, or renaming the IAM role to satisfy a naming convention (on AWS it must be named exactly `ClickHouseManagementRole`). Apply the artifacts as provided — supported customizations are exposed as parameters, and any other change needs ClickHouse's approval first.
+- The CloudFormation template or Terraform module was modified before applying it — for example, adding a `PermissionsBoundary`, or renaming the IAM role to satisfy a naming convention (on AWS, keep the default `ClickHouseManagementRole` name unless ClickHouse has explicitly approved a different one). Apply the artifacts as provided — supported customizations are exposed as parameters, and any other change needs ClickHouse's approval first.
 - Organization-level policies (AWS SCPs, GCP organization policies such as `iam.allowedPolicyMemberDomains`, or Azure policies restricting role assignments) blocking role assumption or IAM bindings.
 - An external ID mismatch on the onboarding role (see the external ID question below).
 - Account quota limits (for example Elastic IPs or VPCs on AWS).
@@ -45,7 +45,7 @@ No. The Kubernetes cluster (EKS, GKE, or AKS) is created and fully managed by Cl
 </Accordion>
 
 <Accordion title="Can we run our own workloads in the BYOC cluster or cloud account?">
-In the cloud account: yes, as long as your resources do not touch ClickHouse-provisioned ones (on AWS these all carry the tag `clickhouse-byoc=true`), though a dedicated account remains the recommendation.
+In the cloud account: yes, as long as your resources do not touch ClickHouse-provisioned ones (on AWS these all carry the tag `clickhouse-byoc=true`). Keep in mind that on GCP and Azure the onboarding identities hold project- or subscription-scoped permissions, so anything you co-locate there falls within ClickHouse's permission scope — a dedicated account, project, or subscription remains the strong recommendation.
 
 In the Kubernetes cluster: it is possible with constraints — use your own node groups with taints and tolerations, stay out of ClickHouse-managed namespaces, and do not install cluster-wide admission controllers or policy engines, which can block reconciliation of ClickHouse components. Describe your plan to support first so we can confirm there are no collisions.
 </Accordion>
