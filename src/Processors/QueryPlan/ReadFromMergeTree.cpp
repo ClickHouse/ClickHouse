@@ -290,6 +290,7 @@ namespace Setting
     extern const SettingsBool apply_prewhere_after_final;
     extern const SettingsBool defer_partition_pruning_after_final;
     extern const SettingsBool distributed_index_analysis_only_on_coordinator;
+    extern const SettingsBool read_in_order_allow_per_partition_lazy_read;
 }
 
 namespace MergeTreeSetting
@@ -998,53 +999,6 @@ Pipe ReadFromMergeTree::readInOrder(
     return pipe;
 }
 
-Pipe ReadFromMergeTree::read(
-    RangesInDataParts parts_with_range,
-    const MergeTreeIndexBuildContextPtr & index_build_context,
-    Names required_columns,
-    ReadType read_type,
-    size_t max_streams,
-    size_t min_marks_for_concurrent_read,
-    bool use_uncompressed_cache)
-{
-    const auto & settings = context->getSettingsRef();
-    size_t sum_marks = parts_with_range.getMarksCountAllParts();
-
-    const size_t total_query_nodes = is_parallel_reading_from_replicas
-        ? std::min<size_t>(
-              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-              context->getSettingsRef()[Setting::max_parallel_replicas])
-        : 1;
-
-    PoolSettings pool_settings{
-        .threads = max_streams,
-        .sum_marks = sum_marks,
-        .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
-        .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
-        .use_uncompressed_cache = use_uncompressed_cache,
-        .use_const_size_tasks_for_remote_reading = settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
-        .total_query_nodes = total_query_nodes,
-    };
-
-    if (read_type == ReadType::ParallelReplicas)
-        return readFromPoolParallelReplicas(
-            std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
-
-    /// Reading from default thread pool is beneficial for remote storage because of new prefetches.
-    if (read_type == ReadType::Default && (max_streams > 1 || checkAllPartsOnRemoteFS(parts_with_range)))
-        return readFromPool(
-            std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
-
-    auto pipe = readInOrder(parts_with_range, index_build_context, required_columns, pool_settings, read_type, /*limit=*/0);
-
-    /// Use ConcatProcessor to concat sources together.
-    /// It is needed to read in parts order (and so in PK order) if single thread is used.
-    if (read_type == ReadType::Default && pipe.numOutputPorts() > 1)
-        pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
-
-    return pipe;
-}
-
 namespace
 {
 
@@ -1112,6 +1066,261 @@ struct PartRangesReadInfo
     }
 };
 
+using SplitRangesFunc = std::function<MarkRanges(const MarkRanges &, int)>;
+
+/// Splits parts_with_ranges into at most num_streams groups, each group assigned to one stream.
+/// Within each group the ranges of every part are further split by split_ranges_func to avoid
+/// reading too much data before the first block is produced.
+/// The caller must pass a PartRangesReadInfo that was built from the same parts_with_ranges.
+std::vector<RangesInDataParts> splitPartsIntoStreams(
+    RangesInDataParts parts_with_ranges,
+    size_t num_streams,
+    PartRangesReadInfo & info,
+    int direction,
+    const SplitRangesFunc & split_ranges_func,
+    UInt64 limit = 0)
+{
+    std::vector<RangesInDataParts> result;
+    if (parts_with_ranges.empty() || num_streams == 0)
+        return result;
+
+    const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
+    result.reserve(num_streams);
+
+    for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
+    {
+        size_t need_marks = min_marks_per_stream;
+        RangesInDataParts new_parts;
+
+        /// Loop over parts.
+        /// We will iteratively take part or some subrange of a part from the back
+        ///  and assign a stream to read from it.
+        while (need_marks > 0 && !parts_with_ranges.empty())
+        {
+            RangesInDataPart part = parts_with_ranges.back();
+            parts_with_ranges.pop_back();
+            size_t & marks_in_part = info.sum_marks_in_parts.back();
+
+            /// We will not take too few rows from a part.
+            if (marks_in_part >= info.min_marks_for_concurrent_read && need_marks < info.min_marks_for_concurrent_read)
+                need_marks = info.min_marks_for_concurrent_read;
+
+            /// Do not leave too few rows in the part.
+            if (marks_in_part > need_marks && marks_in_part - need_marks < info.min_marks_for_concurrent_read)
+                need_marks = marks_in_part;
+
+            MarkRanges ranges_to_get_from_part;
+
+            /// We take full part if it contains enough marks or
+            /// if we know limit and part contains less than 'limit' rows.
+            bool take_full_part = marks_in_part <= need_marks || (limit && limit < part.getRowsCount());
+
+            /// We take the whole part if it is small enough.
+            if (take_full_part)
+            {
+                ranges_to_get_from_part = part.ranges;
+
+                need_marks -= marks_in_part;
+                info.sum_marks_in_parts.pop_back();
+            }
+            else
+            {
+                /// Loop through ranges in part. Take enough ranges to cover "need_marks".
+                while (need_marks > 0)
+                {
+                    if (part.ranges.empty())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
+
+                    MarkRange & range = part.ranges.front();
+
+                    const size_t marks_in_range = range.end - range.begin;
+                    const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+                    ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
+                    range.begin += marks_to_get_from_range;
+                    marks_in_part -= marks_to_get_from_range;
+                    need_marks -= marks_to_get_from_range;
+                    if (range.begin == range.end)
+                        part.ranges.pop_front();
+                }
+                parts_with_ranges.emplace_back(part);
+            }
+
+            ranges_to_get_from_part = split_ranges_func(ranges_to_get_from_part, direction);
+            new_parts.emplace_back(
+                part.data_part,
+                part.parent_part,
+                part.part_index_in_query,
+                part.part_starting_offset_in_query,
+                std::move(ranges_to_get_from_part),
+                part.read_hints);
+        }
+
+        result.emplace_back(std::move(new_parts));
+    }
+
+    return result;
+}
+
+}
+
+Pipe ReadFromMergeTree::readInOrderByPartitions(
+    RangesInDataParts parts_with_ranges,
+    const MergeTreeIndexBuildContextPtr & index_build_context,
+    const Names & column_names,
+    PoolSettings pool_settings,
+    ReadType read_type,
+    UInt64 read_limit,
+    const SortDescription & sort_description,
+    ExpressionActionsPtr sorting_key_expr,
+    int partition_sort_direction,
+    size_t num_streams,
+    const SplitRangesFunc & split_ranges_func)
+{
+    if (parts_with_ranges.empty())
+        return {};
+
+    /// Use the actual partition key value (not the partition_id string) as the group key,
+    /// so that sorting below is by numeric/typed value rather than by lexicographic string order.
+    std::vector<std::pair<Row, RangesInDataParts>> partition_groups;
+    {
+        String current_partition_id;
+        for (auto & part_with_ranges : parts_with_ranges)
+        {
+            String partition_id = part_with_ranges.data_part->info.getPartitionId();
+            if (partition_groups.empty() || partition_id != current_partition_id)
+            {
+                partition_groups.emplace_back(part_with_ranges.data_part->partition.value, RangesInDataParts{});
+                current_partition_id = std::move(partition_id);
+            }
+            partition_groups.back().second.emplace_back(std::move(part_with_ranges));
+        }
+    }
+
+    if (partition_sort_direction < 0)
+        std::sort(partition_groups.begin(), partition_groups.end(),
+            [](const auto & a, const auto & b) { return a.first > b.first; });
+    else
+        std::sort(partition_groups.begin(), partition_groups.end(),
+            [](const auto & a, const auto & b) { return a.first < b.first; });
+
+    Pipes partition_pipes;
+    partition_pipes.reserve(partition_groups.size());
+
+    for (auto & [_, partition_parts] : partition_groups)
+    {
+        Pipe partition_pipe;
+        if (split_ranges_func)
+        {
+            PartRangesReadInfo partition_info(partition_parts, context->getSettingsRef(), *data_settings);
+            auto streams = splitPartsIntoStreams(
+                std::move(partition_parts), num_streams, partition_info, read_type == ReadType::InReverseOrder ? -1 : 1,
+                split_ranges_func, read_limit);
+            Pipes stream_pipes;
+            stream_pipes.reserve(streams.size());
+            for (auto & stream_parts : streams)
+                stream_pipes.emplace_back(readInOrder(std::move(stream_parts), index_build_context, column_names, pool_settings, read_type, read_limit));
+            std::erase_if(stream_pipes, [](const Pipe & p) { return p.empty(); });
+            if (stream_pipes.empty())
+                continue;
+            partition_pipe = Pipe::unitePipes(std::move(stream_pipes));
+        }
+        else
+        {
+            partition_pipe = readInOrder(
+                std::move(partition_parts), index_build_context, column_names, pool_settings, read_type, read_limit);
+        }
+
+        if (partition_pipe.empty())
+            continue;
+
+        partition_pipe.addSimpleTransform([&sorting_key_expr](const SharedHeader & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, sorting_key_expr);
+        });
+
+        if (partition_pipe.numOutputPorts() > 1)
+        {
+            auto transform = std::make_shared<MergingSortedTransform>(
+                partition_pipe.getSharedHeader(),
+                partition_pipe.numOutputPorts(),
+                sort_description,
+                block_size.max_block_size_rows,
+                /*max_block_size_bytes=*/0,
+                /*max_dynamic_subcolumns=*/std::nullopt,
+                SortingQueueStrategy::Batch,
+                /*limit=*/0,
+                /*always_read_till_end=*/false,
+                /*out_row_sources_buf=*/nullptr,
+                /*filter_column_name=*/std::nullopt,
+                /*use_average_block_sizes=*/false,
+                /*apply_virtual_row_conversions*/false);
+
+            partition_pipe.addTransform(std::move(transform));
+        }
+
+        partition_pipes.emplace_back(std::move(partition_pipe));
+    }
+
+    if (partition_pipes.empty())
+        return {};
+
+    if (partition_pipes.size() == 1)
+        return std::move(partition_pipes.front());
+
+    /// Unite all partition pipes and add ConcatProcessor to read them sequentially.
+    auto result_pipe = Pipe::unitePipes(std::move(partition_pipes));
+    auto concat = std::make_shared<ConcatProcessor>(result_pipe.getSharedHeader(), result_pipe.numOutputPorts());
+    result_pipe.addTransform(std::move(concat));
+
+    return result_pipe;
+}
+
+Pipe ReadFromMergeTree::read(
+    RangesInDataParts parts_with_range,
+    const MergeTreeIndexBuildContextPtr & index_build_context,
+    Names required_columns,
+    ReadType read_type,
+    size_t max_streams,
+    size_t min_marks_for_concurrent_read,
+    bool use_uncompressed_cache)
+{
+    const auto & settings = context->getSettingsRef();
+    size_t sum_marks = parts_with_range.getMarksCountAllParts();
+
+    const size_t total_query_nodes = is_parallel_reading_from_replicas
+        ? std::min<size_t>(
+              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+              context->getSettingsRef()[Setting::max_parallel_replicas])
+        : 1;
+
+    PoolSettings pool_settings{
+        .threads = max_streams,
+        .sum_marks = sum_marks,
+        .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+        .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
+        .use_uncompressed_cache = use_uncompressed_cache,
+        .use_const_size_tasks_for_remote_reading = settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
+        .total_query_nodes = total_query_nodes,
+    };
+
+    if (read_type == ReadType::ParallelReplicas)
+        return readFromPoolParallelReplicas(
+            std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
+
+    /// Reading from default thread pool is beneficial for remote storage because of new prefetches.
+    if (read_type == ReadType::Default && (max_streams > 1 || checkAllPartsOnRemoteFS(parts_with_range)))
+        return readFromPool(
+            std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
+
+    auto pipe = readInOrder(parts_with_range, index_build_context, required_columns, pool_settings, read_type, /*read_limit=*/0);
+
+    /// Use ConcatProcessor to concat sources together.
+    /// It is needed to read in parts order (and so in PK order) if single thread is used.
+    if (read_type == ReadType::Default && pipe.numOutputPorts() > 1)
+        pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
+
+    return pipe;
 }
 
 Pipe ReadFromMergeTree::readByLayers(
@@ -1383,6 +1592,137 @@ static ActionsDAG createProjection(const Block & header)
     return ActionsDAG(header.getNamesAndTypesList());
 }
 
+static bool arePrefixSortingColumnsFixed(
+    const StorageSnapshotPtr & storage_snapshot,
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+    const ContextPtr & context,
+    size_t partition_sort_key_index)
+{
+    if (partition_sort_key_index == 0)
+        return true;
+
+    if (!filter_actions_dag)
+        return false;
+
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+
+    for (size_t j = 0; j < partition_sort_key_index && j < sorting_key.column_names.size(); ++j)
+    {
+        const auto & col_name = sorting_key.column_names[j];
+
+        ActionsDAGWithInversionPushDown filter_dag(filter_actions_dag->getOutputs().front(), context, false);
+        auto key_expr = std::make_shared<ExpressionActions>(sorting_key.expression->getActionsDAG().clone());
+        KeyCondition key_condition(filter_dag, context, Names{col_name}, key_expr);
+
+        /// The column is "fixed" only if there is exactly one single-point range
+        /// Multiple single-point ranges (e.g. a IN (1, 2)) do NOT count as fixed
+        /// because different partitions may interleave on those values.
+        auto column_ranges = key_condition.extractBounds();
+        if (column_ranges.size() != 1)
+            return false;
+
+        const auto & range = column_ranges[0];
+        if (!range.left_included || !range.right_included || !Range::equals(range.left, range.right))
+            return false;
+    }
+
+    return true;
+}
+
+static std::optional<size_t> isPartitionKeyMonotonicInSortKey(
+    const StorageSnapshotPtr & storage_snapshot,
+    const InputOrderInfoPtr & input_order_info)
+{
+    const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
+    if (partition_key.column_names.empty())
+        return 0;
+
+    if (partition_key.column_names.size() > 1)
+        return std::nullopt;
+
+    /// The partition key's INPUT leaf must be one of these columns.
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+    std::unordered_map<String, size_t> sort_key_index;
+    for (size_t i = 0; i < std::min(input_order_info->used_prefix_of_sorting_key_size, sorting_key.column_names.size()); ++i)
+        sort_key_index[sorting_key.column_names[i]] = i;
+
+    const auto & dag = partition_key.expression->getActionsDAG();
+    const auto & outputs = dag.getOutputs();
+
+    /// Find the output node corresponding to the partition key column.
+    /// The expression DAG may have multiple outputs (e.g. the computed partition
+    /// column plus the original input columns), so we look up by name.
+    const auto & partition_col_name = partition_key.column_names[0];
+    const ActionsDAG::Node * partition_output = nullptr;
+    for (const auto * output : outputs)
+    {
+        if (output->result_name == partition_col_name)
+        {
+            partition_output = output;
+            break;
+        }
+    }
+    if (!partition_output)
+        return std::nullopt;
+
+    /// Disabling the optimization to be safe in ORDER BY k ASC NULLS LAST cases
+    if (partition_output->result_type && isNullableOrLowCardinalityNullable(partition_output->result_type))
+        return std::nullopt;
+
+    /// Walk the partition key output node back to its INPUT leaf, checking that
+    /// every function on the path is always-monotonic with exactly one non-constant argument
+    const auto * node = partition_output;
+    while (true)
+    {
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+            {
+                auto it = sort_key_index.find(node->result_name);
+                if (it != sort_key_index.end())
+                    return it->second;
+                return std::nullopt;
+            }
+
+            case ActionsDAG::ActionType::COLUMN:
+                return 0;
+
+            case ActionsDAG::ActionType::ALIAS:
+                node = node->children.front();
+                break;
+
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                if (!node->function_base || !node->function_base->hasInformationAboutMonotonicity())
+                    return std::nullopt;
+
+                const ActionsDAG::Node * monotonic_child = nullptr;
+                for (const auto * child : node->children)
+                {
+                    if (child->column)
+                        continue;
+                    if (monotonic_child) /// More than one non-const arg.
+                        return std::nullopt;
+                    monotonic_child = child;
+                }
+                if (!monotonic_child)
+                    return std::nullopt;
+
+                auto mono = node->function_base->getMonotonicityForRange(
+                    *monotonic_child->result_type, {}, {});
+                if (!mono.is_monotonic || !mono.is_always_monotonic || !mono.is_positive)
+                    return std::nullopt;
+
+                node = monotonic_child;
+                break;
+            }
+
+            default:
+                return std::nullopt;
+        }
+    }
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1500,6 +1840,50 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .total_query_nodes = total_query_nodes,
     };
 
+    size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
+    auto order_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
+    order_key_prefix_ast->children.resize(prefix_size);
+
+    auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
+    const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
+    std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+
+    SortDescription sort_description;
+    sort_description.compile_sort_description = settings[Setting::compile_sort_description];
+    sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
+
+    sort_description.reserve(prefix_size);
+    for (size_t i = 0; i < prefix_size; ++i)
+    {
+        if (!reverse_flags.empty() && reverse_flags[i])
+            sort_description.emplace_back(sorting_columns[i], input_order_info->direction * -1);
+        else
+            sort_description.emplace_back(sorting_columns[i], input_order_info->direction);
+    }
+
+    auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
+
+    bool use_lazy_partition_reading = settings[Setting::read_in_order_allow_per_partition_lazy_read]
+        && query_task_size_limit
+        && !is_parallel_reading_from_replicas
+        && !output_each_partition_through_separate_port
+        && countPartitions(parts_with_ranges) > 1;
+
+    /// Check whether we can use lazy partition reading optimization.
+    /// 1. The partition key is a monotonic function of some sorting key column C_i
+    /// 2. All sorting key columns C_0..C_{i-1} before C_i are fixed (pinned to
+    ///    constants) by the WHERE clause.
+    int partition_sort_direction = input_order_info->direction;
+    if (use_lazy_partition_reading)
+    {
+        auto idx = isPartitionKeyMonotonicInSortKey(storage_snapshot, input_order_info);
+        if (!idx || !arePrefixSortingColumnsFixed(storage_snapshot, query_info.filter_actions_dag, context, *idx))
+            use_lazy_partition_reading = false;
+        else if (!reverse_flags.empty() && reverse_flags[*idx])
+            partition_sort_direction = -partition_sort_direction;
+    }
+
     const bool is_local_plan_initiator = isParallelReplicasLocalPlanForInitiator();
     /// Split-stream topology requires both sides to speak the announcement-response protocol so
     /// each `#split_i` pool can ask the initiator "which parts does this stream own?". An older
@@ -1516,7 +1900,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     /// Genuine range splitting runs only for the initiator and for purely-local reads.
     /// Followers use all parts for every split and only need `num_streams` as the split count,
     /// since the initiator is the authority on split topology.
-    const bool need_split = is_local_plan_initiator || !is_parallel_reading_from_replicas;
+    /// For the lazy-partition-reading case, splitting is done per partition inside
+    /// `readInOrderByPartitions` instead of here, so we skip the global split.
+    const bool need_split = !use_lazy_partition_reading && (is_local_plan_initiator || !is_parallel_reading_from_replicas);
 
     /// Only the local-plan follower path needs all parts replicated across per-split pools
     /// (each split reads from a copy and filters down to its assigned subset). The legacy
@@ -1526,85 +1912,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts all_parts_for_replicas;
     if (is_local_plan_follower)
         all_parts_for_replicas = parts_with_ranges;
-
-    std::vector<RangesInDataParts> split_parts_and_ranges;
-    if (need_split)
-    {
-        const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
-        split_parts_and_ranges.reserve(num_streams);
-
-        for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
-        {
-            size_t need_marks = min_marks_per_stream;
-            RangesInDataParts new_parts;
-
-            /// Loop over parts.
-            /// We will iteratively take part or some subrange of a part from the back
-            ///  and assign a stream to read from it.
-            while (need_marks > 0 && !parts_with_ranges.empty())
-            {
-                RangesInDataPart part = parts_with_ranges.back();
-                parts_with_ranges.pop_back();
-                size_t & marks_in_part = info.sum_marks_in_parts.back();
-
-                /// We will not take too few rows from a part.
-                if (marks_in_part >= info.min_marks_for_concurrent_read && need_marks < info.min_marks_for_concurrent_read)
-                    need_marks = info.min_marks_for_concurrent_read;
-
-                /// Do not leave too few rows in the part.
-                if (marks_in_part > need_marks && marks_in_part - need_marks < info.min_marks_for_concurrent_read)
-                    need_marks = marks_in_part;
-
-                MarkRanges ranges_to_get_from_part;
-
-                /// We take full part if it contains enough marks or
-                /// if we know limit and part contains less than 'limit' rows.
-                bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
-
-                /// We take the whole part if it is small enough.
-                if (take_full_part)
-                {
-                    ranges_to_get_from_part = part.ranges;
-
-                    need_marks -= marks_in_part;
-                    info.sum_marks_in_parts.pop_back();
-                }
-                else
-                {
-                    /// Loop through ranges in part. Take enough ranges to cover "need_marks".
-                    while (need_marks > 0)
-                    {
-                        if (part.ranges.empty())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
-
-                        MarkRange & range = part.ranges.front();
-
-                        const size_t marks_in_range = range.end - range.begin;
-                        const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-
-                        ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
-                        range.begin += marks_to_get_from_range;
-                        marks_in_part -= marks_to_get_from_range;
-                        need_marks -= marks_to_get_from_range;
-                        if (range.begin == range.end)
-                            part.ranges.pop_front();
-                    }
-                    parts_with_ranges.emplace_back(part);
-                }
-
-                ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
-                new_parts.emplace_back(
-                    part.data_part,
-                    part.parent_part,
-                    part.part_index_in_query,
-                    part.part_starting_offset_in_query,
-                    std::move(ranges_to_get_from_part),
-                    part.read_hints);
-            }
-
-            split_parts_and_ranges.emplace_back(std::move(new_parts));
-        }
-    }
 
     Pipes pipes;
     /// Each split runs as an independent pool. If we pass the top-level `.threads = num_streams`
@@ -1618,16 +1925,35 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         return per_split;
     };
 
-    if (is_local_plan_initiator)
+    std::vector<RangesInDataParts> split_parts_and_ranges;
+    if (need_split)
     {
-        /// Initiator with local plan: each split gets its own subset of parts (genuine splitting).
-        const size_t num_splits = split_parts_and_ranges.size();
-        const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
-        for (size_t i = 0; i < num_splits; ++i)
+        split_parts_and_ranges = splitPartsIntoStreams(
+            std::move(parts_with_ranges), num_streams, info, input_order_info->direction, split_ranges, input_order_info->limit);
+
+        if (is_local_plan_initiator)
         {
-            pipes.emplace_back(readInOrder(
-                std::move(split_parts_and_ranges[i]), index_build_context, column_names, per_split_pool_settings, read_type,
-                input_order_info->limit, /*split_index=*/i));
+            /// Initiator with local plan: each split gets its own subset of parts (genuine splitting).
+            const size_t num_splits = split_parts_and_ranges.size();
+            const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
+            for (size_t i = 0; i < num_splits; ++i)
+            {
+                pipes.emplace_back(readInOrder(
+                    std::move(split_parts_and_ranges[i]), index_build_context, column_names, per_split_pool_settings, read_type,
+                    input_order_info->limit, /*split_index=*/i));
+            }
+        }
+        else /* local reading case */
+        {
+            /// Preserve master behaviour: every split gets the unmodified `pool_settings` (with
+            /// `.threads = num_streams`). The per-split divider only exists to keep the new
+            /// parallel-replicas split topology from inflating `min_marks_per_request` across the
+            /// per-split pools — local reads have no such concern.
+            for (auto && item : split_parts_and_ranges)
+            {
+                pipes.emplace_back(readInOrder(
+                    std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+            }
         }
     }
     else if (is_local_plan_follower)
@@ -1656,17 +1982,30 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges), index_build_context, column_names, pool_settings, read_type,
             input_order_info->limit));
     }
-    else /* local reading case */
+    else if (use_lazy_partition_reading)
     {
-        /// Preserve master behaviour: every split gets the unmodified `pool_settings` (with
-        /// `.threads = num_streams`). The per-split divider only exists to keep the new
-        /// parallel-replicas split topology from inflating `min_marks_per_request` across the
-        /// per-split pools — local reads have no such concern.
-        for (auto && item : split_parts_and_ranges)
-        {
-            pipes.emplace_back(readInOrder(
-                std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
-        }
+        Block original_pipe_header = *getOutputHeader();
+
+        auto pipe = readInOrderByPartitions(
+            std::move(parts_with_ranges),
+            index_build_context,
+            column_names,
+            pool_settings,
+            read_type,
+            input_order_info->limit,
+            sort_description,
+            sorting_key_expr,
+            partition_sort_direction,
+            num_streams,
+            split_ranges);
+
+        if (pipe.empty())
+            return {};
+
+        if (!isCompatibleHeader(pipe.getHeader(), original_pipe_header))
+            out_projection = createProjection(original_pipe_header);
+
+        return pipe;
     }
 
     std::erase_if(pipes, [](const Pipe & p) { return p.empty(); });
@@ -1677,30 +2016,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     if (need_preliminary_merge || output_each_partition_through_separate_port)
     {
-        size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
-        auto order_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
-        order_key_prefix_ast->children.resize(prefix_size);
-
-        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
-        const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
-        std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
-
-        SortDescription sort_description;
-        sort_description.compile_sort_description = settings[Setting::compile_sort_description];
-        sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
-
-        sort_description.reserve(prefix_size);
-        for (size_t i = 0; i < prefix_size; ++i)
-        {
-            if (!reverse_flags.empty() && reverse_flags[i])
-                sort_description.emplace_back(sorting_columns[i], input_order_info->direction * -1);
-            else
-                sort_description.emplace_back(sorting_columns[i], input_order_info->direction);
-        }
-
-        auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
-
         auto merge_streams = [&](Pipe & pipe)
         {
             pipe.addSimpleTransform([sorting_key_expr](const SharedHeader & header)

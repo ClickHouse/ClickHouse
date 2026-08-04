@@ -586,10 +586,23 @@ private:
         Names required_columns,
         PoolSettings pool_settings,
         ReadType read_type,
-        UInt64 limit,
+        UInt64 read_limit,
         /// Index of this split when reading in-order with parallel replicas; nullopt means
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt);
+
+    Pipe readInOrderByPartitions(
+        RangesInDataParts parts_with_ranges,
+        const MergeTreeIndexBuildContextPtr & index_build_context,
+        const Names & column_names,
+        PoolSettings pool_settings,
+        ReadType read_type,
+        UInt64 read_limit,
+        const SortDescription & sort_description,
+        ExpressionActionsPtr sorting_key_expr,
+        int partition_sort_direction,
+        size_t num_streams = 0,
+        const std::function<MarkRanges(const MarkRanges &, int)> & split_ranges_func = {});
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
