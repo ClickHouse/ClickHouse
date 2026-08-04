@@ -1126,6 +1126,12 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
     settings_str = " ".join(
         [
             get_additional_client_options(args),
+            # `get_additional_client_options` concatenates `CLICKHOUSE_CLIENT_OPT` with the
+            # `--client-option` values, and in the stress hung check they contain the same
+            # settings, so without this flag the client rejects the command with "Bad
+            # arguments: option '...' cannot be specified more than once" and the server
+            # stacktraces are lost exactly when they are needed to find the deadlock.
+            "--allow_repeated_settings",
             "--allow_introspection_functions=1",
             "--skip_unavailable_shards=1",
         ]
