@@ -69,6 +69,7 @@ namespace FailPoints
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char mt_select_parts_to_mutate_no_free_threads[];
 }
 
 namespace Setting
@@ -1555,6 +1556,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         return {};
 
     size_t max_source_part_size = CompactionStatistics::getMaxSourcePartSizeForMutation(*this);
+    fiu_do_on(FailPoints::mt_select_parts_to_mutate_no_free_threads, { max_source_part_size = 0; });
     if (max_source_part_size == 0)
     {
         LOG_DEBUG(
