@@ -68,15 +68,19 @@ class Server:
         return Shell.get_output(f"tail -n {lines} {self.log_file}")
 
 
-def write_html_report(outcomes, info):
-    """Render the examples that are not ok, so that a failure names the page and the source file."""
+def write_html_report(outcomes, stale, info):
+    """Render the examples that fail the run, so that a failure names the page and the source file.
+
+    The verdict of every example comes from the runner itself (the `verdict` field of the report),
+    so this rendering cannot disagree with the exit code: `unexpected` and `fixed` examples and
+    `stale` baseline entries fail the run, everything else passes."""
     import html
 
     def block(text, prefix):
         return "\n".join(prefix + html.escape(line) for line in text.splitlines())
 
-    unexpected = [o for o in outcomes if o["status"] != "ok" and o["status"] != o["known"]]
-    fixed = [o for o in outcomes if o["status"] == "ok" and o["known"]]
+    unexpected = [o for o in outcomes if o["verdict"] == "unexpected"]
+    fixed = [o for o in outcomes if o["verdict"] == "fixed"]
 
     with open(REPORT_HTML, "w", encoding="utf-8") as f:
         f.write("<html><body><pre style='font-size: 12pt; padding: 1em; line-height: 1.25;'>\n")
@@ -111,6 +115,14 @@ def write_html_report(outcomes, info):
             for outcome in fixed:
                 f.write(f"  {html.escape(outcome['id'])}\n")
 
+        if stale:
+            f.write(
+                f"\n<b style='color: red;'>{len(stale)} known failure(s) no longer exist and must be"
+                " removed from tests/docs_examples/known_failures.txt:</b>\n"
+            )
+            for example_id in stale:
+                f.write(f"  {html.escape(example_id)}\n")
+
         f.write("</pre></body></html>\n")
 
 
@@ -139,12 +151,16 @@ def main():
         import json
 
         with open(REPORT, encoding="utf-8") as f:
-            outcomes = json.load(f)
+            report = json.load(f)
+        outcomes = report["examples"]
+        stale = report["stale"]
         counts = {}
         for outcome in outcomes:
             counts[outcome["status"]] = counts.get(outcome["status"], 0) + 1
+        if stale:
+            counts["stale"] = len(stale)
         info = ", ".join(f"{status}: {count}" for status, count in sorted(counts.items()))
-        write_html_report(outcomes, info)
+        write_html_report(outcomes, stale, info)
 
     files = [path for path in (REPORT_HTML, REPORT, RUNNER_LOG, server.log_file) if os.path.isfile(path)]
     Result.create_from(results=results, stopwatch=stop_watch, files=files, info=info).complete_job()

@@ -354,16 +354,31 @@ HEADER = """\
 """
 
 
+def classify(outcome, known):
+    """The verdict of one outcome against the baseline: how the run treats it.
+
+    `ok` and `known` pass. `unstable` passes whatever the status is. `unexpected` fails the run,
+    and so does `fixed`, because the baseline entry has to be removed.
+    """
+    known_status = known.get(outcome.example.id, (None, ""))[0]
+    if known_status == UNSTABLE:
+        return "unstable"
+    if outcome.status == OK:
+        return "fixed" if known_status is not None else OK
+    return "known" if known_status == outcome.status else "unexpected"
+
+
+def stale_entries(outcomes, known):
+    """The baseline entries whose examples no longer exist. They fail the run as well."""
+    by_id = {o.example.id for o in outcomes}
+    return sorted(i for i in known if i not in by_id)
+
+
 def report(outcomes, known, verbose):
     """Compare the outcomes with the baseline and print what changed. Returns True if all is well."""
-    by_id = {o.example.id: o for o in outcomes}
-    unstable = {i for i, (status, _) in known.items() if status == UNSTABLE}
-    unexpected = [
-        o for o in outcomes
-        if o.status != OK and o.example.id not in unstable and known.get(o.example.id, (OK, ""))[0] != o.status
-    ]
-    fixed = sorted(i for i in known if i in by_id and i not in unstable and by_id[i].status == OK)
-    stale = sorted(i for i in known if i not in by_id)
+    unexpected = [o for o in outcomes if classify(o, known) == "unexpected"]
+    fixed = sorted(o.example.id for o in outcomes if classify(o, known) == "fixed")
+    stale = stale_entries(outcomes, known)
 
     total = len(outcomes)
     failing = sum(1 for o in outcomes if o.status != OK)
@@ -456,20 +471,24 @@ def main():
     if args.report:
         with open(args.report, "w", encoding="utf-8") as f:
             json.dump(
-                [
-                    {
-                        "id": o.example.id,
-                        "type": o.example.entity_type,
-                        "name": o.example.entity_name,
-                        "source": o.example.source,
-                        "status": o.status,
-                        "known": known.get(o.example.id, ("", ""))[0],
-                        "query": o.example.query,
-                        "documented": o.example.result,
-                        "detail": o.detail,
-                    }
-                    for o in sorted(outcomes, key=lambda o: o.example.id)
-                ],
+                {
+                    "examples": [
+                        {
+                            "id": o.example.id,
+                            "type": o.example.entity_type,
+                            "name": o.example.entity_name,
+                            "source": o.example.source,
+                            "status": o.status,
+                            "known": known.get(o.example.id, ("", ""))[0],
+                            "verdict": classify(o, known),
+                            "query": o.example.query,
+                            "documented": o.example.result,
+                            "detail": o.detail,
+                        }
+                        for o in sorted(outcomes, key=lambda o: o.example.id)
+                    ],
+                    "stale": stale_entries(outcomes, known),
+                },
                 f,
                 indent=1,
             )
