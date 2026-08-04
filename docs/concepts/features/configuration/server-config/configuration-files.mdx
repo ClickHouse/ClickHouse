@@ -133,6 +133,27 @@ Resulting in the following configuration:
 </clickhouse>
 ```
 
+#### How values are interpreted {#value-interpretation}
+
+`from_env` and `from_zk` differ in how the substituted value is interpreted:
+
+- A value substituted via `from_env` is always taken as literal text. XML special characters such as `&`, `<` and `>` are escaped automatically, so an environment variable can contain any XML-representable value, for example `a&b<c>d`, without breaking the configuration (see the note on XML-illegal control characters below). The value is never interpreted as XML, even if it happens to look like an XML fragment: `<a>1</a>` substitutes the literal text `<a>1</a>`.
+- A value substituted via `from_zk` depends on where it is used and on whether the value begins with `<`. A value that begins with `<` is always parsed as an XML fragment: this is how a subtree is spliced into any element, both a structural `<include from_zk="…"/>` and an ordinary container such as `<profiles from_zk="…"/>` — it is kept for backward compatibility, because earlier versions always interpreted a `from_zk` value as XML. A value that does not begin with `<` is interpreted according to where it is used: only a structural `<include from_zk="…"/>` parses a non-`<` value as YAML, and only a value that actually is a YAML *subtree* (a mapping or a sequence) is expanded, autodetected the same way as for configuration files (this allows a ZooKeeper node to hold an XML or a YAML subtree, see [Substitution with file content](#substitution-with-file-content) below). A plain scalar is kept as literal text even on `<include>`: `<include from_zk="…"/>` is not only the subtree-splicing form, it is also the generic "replace this element with the node contents" form, so it may sit under a leaf setting or a secret — for example `<password><include from_zk="/secret"/></password>` — and YAML is not identity-preserving for scalars, so `abc # rotated` keeps its `# rotated` suffix instead of being treated as a YAML comment. Note the one remaining ambiguity of the autodetection: a value referenced from `<include>` that is shaped like a YAML mapping or sequence is expanded as a subtree; to keep such a value literal, reference it from the leaf element directly (for example `<password from_zk="…"/>`), which never applies YAML autodetection. On any other element — whether a leaf substitution such as `<some_setting from_zk="…"/>` or `<password from_zk="…"/>`, or an ordinary container such as `<profiles from_zk="…"/>` — a non-`<` value is kept as literal text using its exact original bytes (XML special characters are escaped automatically, the same as for `from_env`), so a value such as `abc: def` stays the literal text `abc: def` instead of becoming an `<abc>def</abc>` sub-element. To splice a subtree into an ordinary element (rather than a structural `<include>`), provide it as an XML fragment (a value beginning with `<`).
+
+<Note>
+**Literal values must be valid XML 1.0 text**
+
+A literal substitution (`from_env`, or a non-`<` leaf `from_zk` value) preserves the exact bytes of the value for every character that XML 1.0 can represent as text. Control characters that are illegal in XML 1.0 — `0x00`–`0x08`, `0x0B`, `0x0C` and `0x0E`–`0x1F` — cannot be carried through an XML configuration at all (the XML specification forbids them even as numeric character references such as `&#1;`), and a value containing one is rejected when the substitution is processed. Tab (`\t`), line feed (`\n`) and carriage return (`\r`) are legal and round-trip byte-for-byte.
+</Note>
+
+<Note>
+**Upgrade behaviour for entity-encoded leaf values**
+
+Earlier versions reparsed every leaf `from_zk` value as XML, so a raw `&`, `<` or `>` was rejected as not well-formed and the only way to embed one was to XML-entity-encode it: a value stored as `a&amp;b` decoded to `a&b`, `&lt;a&gt;1&lt;/a&gt;` decoded to `<a>1</a>`, and `&#13;` decoded to a carriage return. A non-`<` leaf value is now kept as its exact original bytes, so those same nodes now resolve to the literal `a&amp;b`, `&lt;a&gt;1&lt;/a&gt;` and `&#13;`. This means only *plain-text* scalars keep their previous meaning unchanged: a leaf value that was entity-encoded for the old XML path must be stored raw instead (for example store `a&b`, which the old path rejected but the new one accepts as the literal text `a&b`).
+
+The same change applies to a plain scalar substituted through a structural `<include from_zk="…"/>` sitting under a leaf setting or a secret, for example `<password><include from_zk="/secret"/></password>`: a scalar is now kept as its exact original bytes there too, so `/secret = a&amp;b` (which used to decode to `a&b`) now resolves to the literal `a&amp;b` and must be stored raw as `a&b` instead. (A `from_zk` value that begins with `<`, or an actual YAML subtree referenced from `<include>`, is unaffected — only plain scalars are kept literal.)
+</Note>
+
 #### Default values {#default-values}
 
 An element with the `from_env` or `from_zk` attributes may additionally have the attribute `replace="1"` (the latter must appear before `from_env`/`from_zk`).
@@ -167,7 +188,7 @@ Resulting in configuration:
 
 It is also possible to replace parts of the configuration by file contents. This can be done in two ways:
 
-- *Substituting Values*: If an element has the attribute `incl`, its value will be replaced by the content of the referenced file. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [`include_from`](/reference/settings/server-settings/settings#include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](/reference/settings/server-settings/settings#macros)).
+- *Substituting Values*: If an element has the attribute `incl`, its value will be replaced by the content of the referenced file. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [`include_from`](/reference/settings/server-settings/settings/other#include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](/reference/settings/server-settings/settings/other#macros)).
 - *Substituting elements*: If you want to replace the entire element with a substitution, use `include` as the element name. The element name `include` can be combined with the attribute `from_zk = "/path/to/node"`. In this case, the element value is replaced by the contents of the ZooKeeper node at `/path/to/node`. This also works with you store an entire XML subtree as a Zookeeper node, it will be fully inserted into the source element.
 
 An example of this is shown below:
