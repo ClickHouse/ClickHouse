@@ -52,8 +52,7 @@ namespace
 /// Features are passed as individual columns, positionally: argument i (after the dictionary name) is bound
 /// to the model's i-th feature (the i-th key column, in declaration order). The optional trailing `params`
 /// is a constant `Map(String, <Int64>)` of XGBoost prediction parameters (for example
-/// `map('type', 0, 'iteration_end', 0)`), forwarded to the XGBoost prediction call. This function is the only
-/// way to query the model: an XGBoost dictionary does not support the generic dictionary interface.
+/// `map('type', 0, 'iteration_end', 0)`), forwarded to the XGBoost prediction call.
 class FunctionPredictXGBoost final : public IFunction
 {
 public:
@@ -113,9 +112,7 @@ public:
                     arguments[i].type->getName());
 
         /// The optional trailing prediction parameters must be a Map from parameter name (String) to an
-        /// integer value, e.g. map('type', 0) or {'type': 0}. Every prediction parameter XGBoost accepts here
-        /// is an integer or a boolean, so fractional values are rejected instead of being truncated: a typo
-        /// such as map('iteration_end', 2.9) must not silently predict with a different number of trees.
+        /// integer value, throw otherwise.
         if (feature_end < arguments.size())
         {
             const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments.back().type.get());
@@ -268,8 +265,7 @@ REGISTER_FUNCTION(PredictXGBoost)
         .description = "Predicts a numeric target for a feature vector using an "
                        "[`XGBOOST`](/sql-reference/statements/create/dictionary/layouts/xgboost) dictionary: "
                        "predictXGBoost(dictionary_name, feature1, feature2, ...[, params]). Features are passed positionally "
-                       "in the dictionary's key order. This is the only way to query such a dictionary: it holds a trained "
-                       "model instead of rows, so `dictGet` and `dictHas` are not supported for it.",
+                       "in the dictionary's key order.",
         .syntax = "predictXGBoost(dictionary_name, feature1[, feature2, ...][, params])",
         .arguments
         = {{"dictionary_name",
@@ -282,7 +278,7 @@ REGISTER_FUNCTION(PredictXGBoost)
             "Optional constant Map of XGBoost prediction parameters, from parameter name to an integer value, e.g. "
             "`map('type', 0, 'iteration_end', 0)`. Every accepted parameter is an integer or a boolean, so fractional "
             "values are rejected. See the "
-            "[prediction parameters](/sql-reference/statements/create/dictionary/layouts/xgboost#prediction-parameters) for "
+            "[XGBOOST](/sql-reference/statements/create/dictionary/layouts/xgboost) for "
             "the accepted keys.",
             {"Map(String, (U)Int8/16/32/64)"}}},
         .returned_value = {"The model prediction as Float64, one per row.", {"Float64"}},

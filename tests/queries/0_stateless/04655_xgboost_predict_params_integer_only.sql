@@ -37,15 +37,15 @@ SOURCE(CLICKHOUSE(TABLE 'training_04655'))
 LAYOUT(XGBOOST(objective 'reg:squarederror' num_iterations 10 max_depth 3))
 LIFETIME(0);
 
--- Integer parameter values are accepted, including a Bool for strict_shape and a narrower Int type.
+-- Integer parameter values are accepted, including a Bool and a narrower Int type.
 SELECT isFinite(predictXGBoost('model_04655_xgb', 1.0, 2.0, map('type', 0, 'iteration_end', 0)));
-SELECT isFinite(predictXGBoost('model_04655_xgb', 1.0, 2.0, map('strict_shape', false)));
+SELECT isFinite(predictXGBoost('model_04655_xgb', 1.0, 2.0, map('type', false)));
 SELECT isFinite(predictXGBoost('model_04655_xgb', 1.0, 2.0, map('iteration_end', toInt8(1))));
 
 -- Fractional values are rejected instead of being truncated.
 SELECT predictXGBoost('model_04655_xgb', 1.0, 2.0, map('iteration_end', 2.9)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT predictXGBoost('model_04655_xgb', 1.0, 2.0, map('type', 1.0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT predictXGBoost('model_04655_xgb', 1.0, 2.0, map('strict_shape', 0.5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT predictXGBoost('model_04655_xgb', 1.0, 2.0, map('iteration_begin', 0.5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- A single fractional value promotes the whole Map to Float64, so the Map as a whole is rejected.
 SELECT predictXGBoost('model_04655_xgb', 1.0, 2.0, map('type', 1, 'iteration_end', 2.5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

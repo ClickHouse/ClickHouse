@@ -134,6 +134,13 @@ void XGBoostModel::finalizeTraining()
     if (ingested_rows == 0)
         throw Exception(ErrorCodes::XGBOOST_ERROR, "No training data was provided");
 
+    // Validate the parameters provided by the user
+    const auto params = sanitizeTrainingParams(hps);
+
+    for (const auto & [key, value] : params)
+    {
+        throwOnError(XGBoosterSetParam(booster, key.c_str(), value.c_str()));
+    }
 
     chassert(labels.size() == ingested_rows);
     chassert(flattened_features.size() == ingested_rows * n_features);
@@ -146,14 +153,6 @@ void XGBoostModel::finalizeTraining()
 
     // Set the label for each row
     throwOnError(XGDMatrixSetFloatInfo(dmatrix, "label", labels.data(), ingested_rows));
-
-    // Validate the parameters provided by the user
-    const auto params = sanitizeTrainingParams(hps);
-
-    for (const auto & [key, value] : params)
-    {
-        throwOnError(XGBoosterSetParam(booster, key.c_str(), value.c_str()));
-    }
 
     // Train the model
     for (int i = 0; i < num_iterations; ++i)
@@ -207,7 +206,7 @@ ColumnPtr XGBoostModel::predict(const Block & batch, const PredictParameters & p
 
     throwOnError(XGDMatrixCreateFromMat(features.data(), rows, n_features, std::numeric_limits<float>::quiet_NaN(), &predict_dmatrix));
 
-    auto result = ColumnFloat64::create();
+    auto result = ColumnFloat64::create(rows);
 
     {
         std::lock_guard lock(predict_mutex);
@@ -223,22 +222,15 @@ ColumnPtr XGBoostModel::predict(const Block & batch, const PredictParameters & p
 
         throwOnError(XGBoosterPredictFromDMatrix(booster, predict_dmatrix, config.c_str(), &out_shape, &out_dim, &out_result));
 
-        size_t out_len = 1;
-        for (uint64_t i = 0; i < out_dim; ++i)
-            out_len *= out_shape[i];
-
-        /// One prediction per input row is the only shape a dictionary can serve: `predictXGBoost` returns a
-        /// single `Float64` per row.
-        if (out_len != rows)
+        if (out_dim != 1 || out_shape[0] != rows)
             throw Exception(
                 ErrorCodes::XGBOOST_ERROR,
-                "The model predicted {} value(s) for {} row(s). Only models that predict a single value per row are supported",
-                out_len,
+                "XGBoost returned a {}-dimensional prediction result for {} row(s), expected one value per row",
+                out_dim,
                 rows);
 
         auto & data = result->getData();
-        data.resize(out_len);
-        for (std::size_t i = 0; i < out_len; ++i)
+        for (std::size_t i = 0; i < rows; ++i)
             data[i] = static_cast<Float64>(out_result[i]);
     }
 
@@ -318,7 +310,7 @@ String XGBoostModel::sanitizePredictParams(const PredictParameters & params)
     config.set("training", false);
 
     static const std::unordered_set<String> allowed_keys{ // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        "type", "iteration_begin", "iteration_end", "strict_shape", "ntree_limit"};
+        "type", "iteration_begin", "iteration_end", "ntree_limit"};
 
     for (const auto & [key, value] : params)
     {
@@ -332,11 +324,7 @@ String XGBoostModel::sanitizePredictParams(const PredictParameters & params)
                 "because predictXGBoost returns a single Float64 per row",
                 value);
 
-        /// `strict_shape` is a boolean in XGBoost's config; the rest are integers.
-        if (key == "strict_shape")
-            config.set(key, value != 0);
-        else
-            config.set(key, value);
+        config.set(key, value);
     }
 
     /// `Poco::JSON::Object::stringify` requires a `std::ostream`
