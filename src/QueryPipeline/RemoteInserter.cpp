@@ -47,6 +47,14 @@ void RemoteInserter::initialize()
     modified_client_info.current_roles.reset();
 
     Settings settings = insert_settings;
+
+    /// Do not serialize compatibility-derived values as explicit changes: the remote server
+    /// re-derives them from the serialized `compatibility` setting and a remote profile may pin
+    /// them read-only. Keep the values for this side's codec selection, clear the `changed`
+    /// flags; the override below is marked changed afterwards, so it is still serialized
+    /// (see `MultiplexedConnections::sendQuery`).
+    settings.markSettingsChangedByCompatibilityAsUnchanged();
+
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
     ///
     /// RemoteInserter send Data blocks/packets to the remote shard,

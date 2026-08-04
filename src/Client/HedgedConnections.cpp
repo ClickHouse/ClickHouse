@@ -197,6 +197,13 @@ void HedgedConnections::sendQuery(
     {
         Settings modified_settings = settings;
 
+        /// Do not serialize compatibility-derived values as explicit changes: the remote server
+        /// re-derives them from the serialized `compatibility` setting and a remote profile may pin
+        /// them read-only. Keep the values for this side's codec selection, clear the `changed`
+        /// flags; the overrides below are marked changed afterwards, so they are still serialized
+        /// (see `MultiplexedConnections::sendQuery`).
+        modified_settings.markSettingsChangedByCompatibilityAsUnchanged();
+
         /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
         modified_settings[Setting::dialect] = Dialect::clickhouse;
         modified_settings[Setting::dialect].changed = false;

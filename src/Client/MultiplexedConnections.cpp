@@ -155,6 +155,15 @@ void MultiplexedConnections::sendQuery(
 
     Settings modified_settings = settings;
 
+    /// Settings whose values were derived from `compatibility` must not be serialized as explicit
+    /// changes: the remote server re-derives them from `compatibility` itself (which stays `changed`
+    /// and is serialized), and a remote profile may pin them as read-only. Keep the values - they
+    /// still select this side's network codec in `Connection::sendQuery` - but clear the `changed`
+    /// flags, exactly as `ClientBase::settingsWithoutCompatibilityDerived` does for the initial
+    /// client query. The demotion runs before the overrides below, so every override is marked
+    /// changed afterwards and is serialized.
+    modified_settings.markSettingsChangedByCompatibilityAsUnchanged();
+
     /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
     modified_settings[Setting::dialect] = Dialect::clickhouse;
     modified_settings[Setting::dialect].changed = false;
