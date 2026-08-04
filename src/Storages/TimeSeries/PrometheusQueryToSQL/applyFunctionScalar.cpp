@@ -20,7 +20,8 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
         if (arguments.size() != 1)
@@ -43,7 +44,7 @@ namespace
 
 
 SQLQueryPiece applyFunctionScalar(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & function_name = function_node->function_name;
     chassert(isFunctionScalar(function_name));
