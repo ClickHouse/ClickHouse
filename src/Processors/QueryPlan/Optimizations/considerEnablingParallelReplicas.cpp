@@ -306,6 +306,16 @@ void considerEnablingParallelReplicas(
         return;
     }
 
+    /// The replicas plan is built separately and keeps the original offset, so a trimmed analysis would make
+    /// it skip the same rows a second time.
+    if (source_reading_step->hasTrimmedRangesForOffset())
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Index analysis has leading granules trimmed for OFFSET and cannot be reused. Skipping optimization");
+        return;
+    }
+
     const auto analysis
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
