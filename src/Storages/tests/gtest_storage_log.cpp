@@ -13,7 +13,8 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
-#include <cctype>
+#include <unistd.h>
+
 #include <memory>
 #include <string_view>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -181,9 +182,19 @@ static String overlongColumnName()
     return String(static_cast<size_t>(NAME_MAX), 'c');
 }
 
-/// The diagnostic has to name the offending file and the bound, not just the error class, so that
-/// a message which dropped either still fails.
-static void expectNamesFileAndLimit(const DB::Exception & e)
+/// The bound the storage must report for `disk`: what fits in one path component once `.bin` is
+/// accounted for. Derived here the same way the storage derives it, so the test pins the value
+/// rather than the formula.
+static size_t expectedStreamNameLimit(const DB::DiskPtr & disk)
+{
+    const auto probed = pathconf(disk->getPath().c_str(), _PC_NAME_MAX);
+    const size_t name_max = probed == -1 ? NAME_MAX : static_cast<size_t>(probed);
+    return name_max - std::string_view{".bin"}.size();
+}
+
+/// The diagnostic has to name the offending file and the exact bound, not just the error class, so
+/// that a message which dropped or corrupted either still fails.
+static void expectNamesFileAndLimit(const DB::Exception & e, const DB::DiskPtr & disk)
 {
     using namespace DB;
     EXPECT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -192,13 +203,9 @@ static void expectNamesFileAndLimit(const DB::Exception & e)
     const String column = overlongColumnName();
     EXPECT_NE(message.find(column + ".bin"), String::npos) << message;
     EXPECT_NE(message.find("current length is " + std::to_string(column.length())), String::npos) << message;
-
-    /// The bound is whatever the disk reports, so require a digit after the phrase rather than a value.
-    static constexpr std::string_view limit_phrase = "max length of a stream name is ";
-    const auto limit_pos = message.find(limit_phrase);
-    EXPECT_NE(limit_pos, String::npos) << message;
-    if (limit_pos != String::npos)
-        EXPECT_TRUE(std::isdigit(static_cast<unsigned char>(message[limit_pos + limit_phrase.size()]))) << message;
+    EXPECT_NE(
+        message.find("max length of a stream name is " + std::to_string(expectedStreamNameLimit(disk))),
+        String::npos) << message;
 }
 
 /// The state a table created before the DDL check existed loads in: the definition is accepted
@@ -243,7 +250,7 @@ TEST(StorageLogOverlongName, writeIsRefusedWithTypedError)
     }
     catch (const Exception & e)
     {
-        expectNamesFileAndLimit(e);
+        expectNamesFileAndLimit(e, disk);
     }
 
     destroyDisk(disk);
@@ -315,7 +322,7 @@ TEST(StorageLogOverlongName, restoreIsRefusedWithTypedError)
     }
     catch (const Exception & e)
     {
-        expectNamesFileAndLimit(e);
+        expectNamesFileAndLimit(e, disk);
     }
 
     destroyDisk(disk);
