@@ -9,6 +9,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
@@ -89,7 +90,8 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            /// A lazily loaded table is wrapped in a proxy, which is not a StorageReplicatedMergeTree.
+            const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;
             if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))

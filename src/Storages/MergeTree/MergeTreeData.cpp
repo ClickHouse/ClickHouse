@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
@@ -7791,7 +7792,8 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
 void MergeTreeData::movePartitionToTable(const PartitionCommand & command, ContextPtr query_context)
 {
     String dest_database = query_context->resolveDatabase(command.to_database);
-    auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
+    /// The destination is named explicitly, so loading it is the expected cost of the command.
+    auto dest_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context));
 
     /// The target table and the source table are the same.
     if (dest_storage->getStorageID() == this->getStorageID())
@@ -7932,7 +7934,8 @@ Pipe MergeTreeData::alterPartition(
                     checkPartitionCanBeDropped(command.partition, query_context);
 
                 auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
-                auto from_storage = DatabaseCatalog::instance().getTable(resolved, query_context);
+                /// The source is named explicitly, so loading it is the expected cost of the command.
+                auto from_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(resolved, query_context));
 
                 auto * from_storage_merge_tree = dynamic_cast<MergeTreeData *>(from_storage.get());
                 if (!from_storage_merge_tree)
@@ -10410,7 +10413,8 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
     const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
-    return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
+    /// The source is named explicitly, so loading it is the expected cost of the command.
+    return checkStructureAndGetMergeTreeData(*resolveStorageProxyLoading(source_table), src_snapshot, my_snapshot);
 }
 
 /// must_on_same_disk=false is used only when attach partition; Both for same disk and different disk.

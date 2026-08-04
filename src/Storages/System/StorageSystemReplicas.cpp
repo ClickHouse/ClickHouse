@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Storages/System/StorageSystemReplicas.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/StatusRequestsPool.h>
@@ -193,7 +194,8 @@ void StorageSystemReplicas::readImpl(
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            /// A lazily loaded table is wrapped in a proxy, which is not a StorageReplicatedMergeTree.
+            const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;
 

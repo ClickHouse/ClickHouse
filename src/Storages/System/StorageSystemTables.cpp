@@ -28,6 +28,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageMaterializedView.h>
@@ -957,7 +958,8 @@ protected:
                     ++res_index;
                 }
 
-                auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
+                /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
+                auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(resolveStorageProxy(table));
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)

@@ -16,13 +16,11 @@ namespace DB
 class StorageTableProxy final : public StorageProxy
 {
 public:
-    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns)
+    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr()> get_nested_, StorageInMemoryMetadata cached_metadata)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
-        StorageInMemoryMetadata cached_metadata;
-        cached_metadata.setColumns(std::move(cached_columns));
         setInMemoryMetadata(cached_metadata);
     }
 
@@ -50,6 +48,12 @@ public:
         if (nested)
             return nested->getInMemoryMetadataPtr(context_, bypass_metadata_cache);
         return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
+    }
+
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
     }
 
     StoragePtr getNested() const override

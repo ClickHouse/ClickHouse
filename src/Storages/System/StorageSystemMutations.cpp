@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -82,7 +83,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
+            const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;
 

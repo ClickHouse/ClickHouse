@@ -26,12 +26,20 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/KeyDescription.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
+#include <Storages/TTLDescription.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
@@ -441,7 +449,105 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
         return false;
 
+    /// Only the MergeTree family is deferred. Other engines are unsafe behind a proxy for two
+    /// reasons: message queues such as Kafka start consuming in `startup`, which a proxy defers
+    /// indefinitely because nothing reads from them directly, and engines like Set or Join are
+    /// reached by casting to a concrete storage type, which a proxy does not satisfy.
+    /// An allowlist keeps a newly added engine eager until it is known to be safe.
+    if (!query.storage || !query.storage->engine || !query.storage->engine->name.ends_with("MergeTree"))
+        return false;
+
     return true;
+}
+
+/// Builds the metadata a lazy proxy reports until the real storage is created. Only the MergeTree
+/// family is lazy-loaded, so the MergeTree layout is reproduced from the `CREATE` query to keep
+/// observers such as `system.tables` and `system.data_skipping_indices` accurate before first access.
+static StorageInMemoryMetadata buildLazyTableMetadata(
+    const ASTCreateQuery & query, ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+{
+    StorageInMemoryMetadata metadata;
+
+    if (query.columns_list && query.columns_list->columns)
+        metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(
+            *query.columns_list->columns, local_context, mode));
+
+    const auto * storage_def = query.storage;
+    if (!storage_def)
+        return metadata;
+
+    ASTPtr partition_by_key;
+    if (storage_def->partition_by)
+        partition_by_key = storage_def->partition_by->ptr();
+
+    /// An undefined partition key is still stored as an empty description, as MergeTree does.
+    metadata.partition_key = KeyDescription::getKeyFromAST(
+        partition_by_key, metadata.columns, MergeTreeData::createVirtuals(nullptr), local_context);
+    metadata.virtuals = MergeTreeData::createVirtuals(&metadata.partition_key);
+
+    /// A PRIMARY KEY without an ORDER BY acts as the sorting key.
+    ASTPtr order_by_ast;
+    if (storage_def->order_by)
+        order_by_ast = storage_def->order_by->ptr();
+    else if (storage_def->primary_key)
+        order_by_ast = storage_def->primary_key->ptr();
+
+    /// VersionedCollapsingMergeTree is the only engine that adds a column to the sorting key, and
+    /// it takes the version as its last argument.
+    NamesAndTypesList additional_key_columns;
+    if (storage_def->engine->name.ends_with("VersionedCollapsingMergeTree") && storage_def->engine->arguments
+        && !storage_def->engine->arguments->children.empty())
+    {
+        String version_column;
+        if (tryGetIdentifierNameInto(storage_def->engine->arguments->children.back(), version_column)
+            && metadata.columns.hasPhysical(version_column))
+            additional_key_columns.emplace_back(version_column, metadata.columns.getPhysical(version_column).type);
+    }
+
+    if (order_by_ast)
+    {
+        metadata.sorting_key = KeyDescription::getKeyFromAST(
+            order_by_ast, metadata.columns, metadata.virtuals, local_context, additional_key_columns);
+
+        if (storage_def->primary_key)
+        {
+            metadata.primary_key = KeyDescription::getPrimaryKeyFromAST(
+                storage_def->primary_key->ptr(), metadata.sorting_key, metadata.columns, metadata.virtuals, local_context);
+        }
+        else
+        {
+            metadata.primary_key = KeyDescription::getKeyFromAST(
+                order_by_ast, metadata.columns, metadata.virtuals, local_context);
+            /// A null definition makes `isPrimaryKeyDefined` false while `hasPrimaryKey` stays true.
+            metadata.primary_key.definition_ast = nullptr;
+        }
+    }
+
+    if (storage_def->sample_by)
+        metadata.sampling_key = KeyDescription::getKeyFromAST(
+            storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, local_context);
+
+    if (storage_def->ttl_table)
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            storage_def->ttl_table->ptr(), metadata.columns, local_context, metadata.primary_key, /*is_attach*/ true);
+
+    if (query.columns_list)
+    {
+        if (query.columns_list->indices)
+            for (const auto & index : query.columns_list->indices->children)
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(
+                    index->clone(), metadata.columns, /*is_implicitly_created*/ false, /*escape_filenames*/ true, local_context));
+
+        if (query.columns_list->projections)
+            for (const auto & projection : query.columns_list->projections->children)
+                metadata.projections.add(ProjectionDescription::getProjectionFromAST(
+                    projection, metadata.columns, /*partition_key*/ nullptr, local_context, mode));
+
+        if (query.columns_list->constraints)
+            metadata.constraints = ConstraintsDescription(query.columns_list->constraints->children);
+    }
+
+    return metadata;
 }
 
 void DatabaseOrdinary::loadTableLazy(
@@ -454,10 +560,7 @@ void DatabaseOrdinary::loadTableLazy(
 
     LOG_TRACE(log, "Lazy-loading table {}", name.getFullName());
 
-    ColumnsDescription columns;
-    if (query.columns_list && query.columns_list->columns)
-        columns = InterpreterCreateQuery::getColumnsDescription(
-            *query.columns_list->columns, local_context, mode);
+    StorageInMemoryMetadata metadata = buildLazyTableMetadata(query, local_context, mode);
 
     StorageID table_id(name.database, query.getTable(), query.uuid);
     String table_data_path = getTableDataPath(query);
@@ -485,7 +588,7 @@ void DatabaseOrdinary::loadTableLazy(
     };
 
     auto proxy = std::make_shared<StorageTableProxy>(
-        table_id, std::move(get_nested), std::move(columns));
+        table_id, std::move(get_nested), std::move(metadata));
 
     attachTable(local_context, query.getTable(), proxy, table_data_path);
 }

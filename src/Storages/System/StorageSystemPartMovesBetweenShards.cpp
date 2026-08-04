@@ -9,6 +9,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/StorageSystemPartMovesBetweenShards.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -70,7 +71,8 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            /// A lazily loaded table is wrapped in a proxy, which is not a StorageReplicatedMergeTree.
+            const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;
             if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))

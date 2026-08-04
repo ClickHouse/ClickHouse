@@ -1,0 +1,41 @@
+<clickhouse>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+
+    <rabbitmq>
+        <username>root</username>
+        <password>clickhouse</password>
+    </rabbitmq>
+
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+    </backups>
+
+    <remote_servers>
+        <parallel_replicas_cluster>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica><host>instance</host><port>9000</port></replica>
+                <replica><host>instance</host><port>9000</port></replica>
+                <replica><host>instance</host><port>9000</port></replica>
+            </shard>
+        </parallel_replicas_cluster>
+        <single_shard_cluster>
+            <shard>
+                <replica><host>instance</host><port>9000</port></replica>
+            </shard>
+        </single_shard_cluster>
+    </remote_servers>
+
+    <macros>
+        <shard>1</shard>
+        <replica>r1</replica>
+    </macros>
+</clickhouse>

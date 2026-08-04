@@ -34,6 +34,7 @@
 #include <IO/S3/Client.h>
 #endif
 
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -450,7 +451,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 if (is_system)
                     ++total_number_of_tables_system;
 
-                const auto & table = iterator->table();
+                /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
+                const auto table = resolveStorageProxy(iterator->table());
                 if (!table)
                     continue;
 
@@ -639,7 +641,8 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
+            const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;
 

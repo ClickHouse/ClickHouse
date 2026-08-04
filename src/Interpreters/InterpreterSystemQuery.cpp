@@ -73,6 +73,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
@@ -1356,7 +1357,8 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// Naming a table explicitly makes loading it the expected cost of the command.
+    const StoragePtr table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
     auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
 
@@ -1431,7 +1433,10 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
-    if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    /// Naming a table explicitly makes loading it the expected cost of the command. The resolved
+    /// pointer must not outlive this check: `waitDetachedTableNotInUse` below waits for the last
+    /// reference to the detached table to be released.
+    if (!dynamic_cast<const StorageReplicatedMergeTree *>(resolveStorageProxyLoading(table).get()))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
@@ -2164,6 +2169,9 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
             break;
     }
 
+    /// Naming a table explicitly makes loading it the expected cost of the command.
+    table = resolveStorageProxyLoading(table);
+
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         auto log = getLogger("InterpreterSystemQuery");
@@ -2210,7 +2218,8 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 void InterpreterSystemQuery::waitLoadingParts()
 {
     getContext()->checkAccess(AccessType::SYSTEM_WAIT_LOADING_PARTS, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// Naming a table explicitly makes loading it the expected cost of the command.
+    StoragePtr table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
     if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
     {
@@ -2686,7 +2695,8 @@ void InterpreterSystemQuery::prewarmMarkCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
 
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// Naming a table explicitly makes loading it the expected cost of the command.
+    auto table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
@@ -2710,7 +2720,8 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
 
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// Naming a table explicitly makes loading it the expected cost of the command.
+    auto table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());

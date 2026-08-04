@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -161,7 +162,8 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
-                    StoragePtr storage = iterator->table();
+                    /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
+                    StoragePtr storage = resolveStorageProxy(iterator->table());
                     if (!storage)
                         continue;
 

@@ -11,6 +11,7 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 #include <Server/IServer.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/typeid_cast.h>
 
@@ -68,7 +69,8 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             // If they have some lag it will be reflected as soon as they are load.
             for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
             {
-                const auto & table = iterator->table();
+                /// A lazily loaded table is wrapped in a proxy, which is not a StorageReplicatedMergeTree.
+                const auto table = resolveStorageProxy(iterator->table());
                 if (!table)
                     continue;
 

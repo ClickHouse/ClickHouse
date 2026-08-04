@@ -16,6 +16,10 @@ public:
 
     virtual StoragePtr getNested() const = 0;
 
+    /// The wrapped storage if it already exists, or null. Never creates it, so that observers
+    /// iterating every table cannot trigger a lazy load or a remote call for a table function.
+    virtual StoragePtr tryGetNested() const { return nullptr; }
+
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
@@ -147,7 +151,55 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
 
+    /// Without this the base implementation rejects every mutation before `mutate` is reached.
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
+
+    bool supportsDelete() const override { return getNested()->supportsDelete(); }
+    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
+
+    /// Gates `ALTER TABLE ... MODIFY TTL`.
+    bool supportsTTL() const override { return getNested()->supportsTTL(); }
+    /// Gates `SELECT ... FROM t STREAM`.
+    bool supportsStreaming() const override { return getNested()->supportsStreaming(); }
+    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
+    bool supportsSparseSerialization() const override { return getNested()->supportsSparseSerialization(); }
+
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
+
+    /// `IStorage::backupData` is a no-op, so an unforwarded proxy would produce an empty backup
+    /// that still reports success.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    }
+
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    }
+
+    bool supportsBackupPartition() const override { return getNested()->supportsBackupPartition(); }
+    void finalizeRestoreFromBackup() override { getNested()->finalizeRestoreFromBackup(); }
+
+    /// The planner uses this to decide parallel replica eligibility, and the base default of
+    /// false silently disables parallel replicas for the nested table.
+    bool isMergeTree() const override { return getNested()->isMergeTree(); }
+
+    /// Gates the table-level `async_insert` setting, which is otherwise silently ignored.
+    bool areAsynchronousInsertsEnabled() const override { return getNested()->areAsynchronousInsertsEnabled(); }
+
+    /// The proxy's snapshot is bound to the proxy and carries no engine-specific data, which the
+    /// nested storage would misread, so build a snapshot from the nested storage instead.
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr query_context) const override
+    {
+        auto nested = getNested();
+        auto nested_metadata = nested->getInMemoryMetadataPtr(query_context, false);
+        auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, query_context);
+        return nested->supportsTrivialCountOptimization(nested_snapshot, query_context);
+    }
 
     void startup() override { getNested()->startup(); }
     void shutdown(bool is_drop) override { getNested()->shutdown(is_drop); }
@@ -178,5 +230,27 @@ public:
 
 };
 
+/// Resolves a proxy to the storage it wraps, for callers that reach a storage by casting to a
+/// concrete engine type. A lazily loaded table is a proxy until its first access; while the real
+/// storage does not exist yet the proxy is returned unchanged, so such a cast still fails and the
+/// caller skips the table instead of forcing it to load.
+inline StoragePtr resolveStorageProxy(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+    {
+        if (auto nested = proxy->tryGetNested())
+            return nested;
+    }
+    return storage;
+}
+
+/// Same, but creates the wrapped storage when it does not exist yet. For operations that name a
+/// table explicitly, where loading it is the expected cost of the operation.
+inline StoragePtr resolveStorageProxyLoading(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return proxy->getNested();
+    return storage;
+}
 
 }
