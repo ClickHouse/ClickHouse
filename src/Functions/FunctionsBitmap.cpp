@@ -10,17 +10,24 @@ namespace DB
 REGISTER_FUNCTION(Bitmap)
 {
     /// Documentation for bitmapBuild
-    FunctionDocumentation::Description description_bitmapBuild = "Builds a bitmap from an unsigned integer array. It is the opposite of function [`bitmapToArray`](/sql-reference/functions/bitmap-functions#bitmapToArray).";
+    FunctionDocumentation::Description description_bitmapBuild = "Builds a bitmap from an integer array. Supported element types are signed and unsigned integers of 8, 16, 32, or 64 bits. It is the opposite of function [`bitmapToArray`](/sql-reference/functions/bitmap-functions#bitmapToArray).";
     FunctionDocumentation::Syntax syntax_bitmapBuild = "bitmapBuild(array)";
     FunctionDocumentation::Arguments arguments_bitmapBuild = {
-        {"array", "Unsigned integer array.", {"Array(UInt*)"}},
+        {"array", "Integer array.", {"Array((U)Int*)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_bitmapBuild = {"Returns a bitmap from the provided array", {"AggregateFunction(groupBitmap, T)"}};
-    FunctionDocumentation::Examples examples_bitmapBuild = {{"Usage example", "SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);",
+    FunctionDocumentation::Examples examples_bitmapBuild = {
+        {"Usage example", "SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);",
         R"(
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
 │     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
+        )"},
+        {"Signed bitmap", "SELECT bitmapBuild([-128, -1]::Array(Int8)) AS res, toTypeName(res);",
+        R"(
+┌─res─┬─toTypeName(bitmapBuild([-128, -1]::Array(Int8)))─┐
+│     │ AggregateFunction(groupBitmap, Int8)             │
+└─────┴──────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapBuild = {20, 1};
@@ -30,17 +37,24 @@ REGISTER_FUNCTION(Bitmap)
     factory.registerFunction<FunctionBitmapBuild>(documentation_bitmapBuild);
 
     /// Documentation for bitmapToArray
-    FunctionDocumentation::Description description_bitmapToArray = "Converts a bitmap to an array of unsigned integers. It is the opposite of function [`bitmapBuild`](/sql-reference/functions/bitmap-functions#bitmapBuild).";
+    FunctionDocumentation::Description description_bitmapToArray = "Converts a bitmap to an array of its elements. The array element type matches the bitmap element type `T` (signed or unsigned integer). It is the opposite of function [`bitmapBuild`](/sql-reference/functions/bitmap-functions#bitmapBuild).";
     FunctionDocumentation::Syntax syntax_bitmapToArray = "bitmapToArray(bitmap)";
     FunctionDocumentation::Arguments arguments_bitmapToArray = {
         {"bitmap", "Bitmap to convert. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapToArray = {"Returns an array of unsigned integers contained in the bitmap", {"Array(UInt*)"}};
-    FunctionDocumentation::Examples examples_bitmapToArray = {{"Usage example", "SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;",
+    FunctionDocumentation::ReturnedValue returned_value_bitmapToArray = {"Returns an array of the elements contained in the bitmap", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_bitmapToArray = {
+        {"Usage example", "SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;",
         R"(
 ┌─res─────────────┐
 │ [1, 2, 3, 4, 5] │
 └─────────────────┘
+        )"},
+        {"Signed bitmap", "SELECT arraySort(bitmapToArray(bitmapBuild([-128, -1]::Array(Int8)))) AS res;",
+        R"(
+┌─res────────┐
+│ [-128, -1] │
+└────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapToArray = {20, 1};
