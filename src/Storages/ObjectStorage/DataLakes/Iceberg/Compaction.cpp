@@ -1251,6 +1251,9 @@ static bool writeMetadataFiles(
     MetadataGenerator metadata_generator(metadata_object);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
     auto generated_metadata_info = plan.generator.generateMetadataPathWithInfo();
+    /// Tracked even though the commit only creates it after winning the CAS: a partial write must
+    /// still be cleaned up. `version-hint.text` is deliberately excluded, being shared state.
+    plan.generated_metadata_paths.push_back(generated_metadata_info.path);
     std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
 
     std::unordered_map<Int64, UInt64> snapshot_id_to_records_count;
@@ -1738,32 +1741,12 @@ void compactIcebergTable(
     if (plan.need_optimize)
     {
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
-        writeDataFiles(
-            plan,
-            sample_block_,
-            object_storage_,
-            persistent_table_components.path_resolver,
-            persistent_table_components.schema_processor,
-            format_settings_,
-            context_,
-            write_format,
-            persistent_table_components.metadata_compression_method);
-        bool committed = writeMetadataFiles(
-            plan,
-            persistent_table_components.path_resolver,
-            object_storage_,
-            context_,
-            sample_block_,
-            write_format,
-            data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
-        /// Only delete the pre-compaction files if the compacted metadata was actually published.
-        /// If a concurrent writer won the metadata commit, `clearOldFiles` would delete the data and
-        /// metadata the table still references (now pointing at the other writer's snapshot).
-        if (!committed)
+        /// Nothing references the rewritten files until the metadata commit publishes them, so on
+        /// any failure they must be removed rather than left to accumulate a full copy of the table
+        /// per attempt. Only paths this rewrite generated are considered, so files a concurrent
+        /// winner created are never touched.
+        auto cleanup_generated = [&]()
         {
-            /// Nothing references the rewritten files, so remove them instead of leaking a full
-            /// copy of the table on every lost commit. Only paths this rewrite generated are
-            /// considered, so files the winning writer created are never touched.
             std::vector<String> generated;
             for (const auto & [_, data_file] : plan.path_to_data_file)
                 if (!data_file->patched_path.empty())
@@ -1771,6 +1754,42 @@ void compactIcebergTable(
             for (const auto & path : plan.generated_metadata_paths)
                 generated.push_back(persistent_table_components.path_resolver.resolve(path));
             removeGeneratedFiles(object_storage_, old_files, generated);
+        };
+
+        bool committed = false;
+        try
+        {
+            writeDataFiles(
+                plan,
+                sample_block_,
+                object_storage_,
+                persistent_table_components.path_resolver,
+                persistent_table_components.schema_processor,
+                format_settings_,
+                context_,
+                write_format,
+                persistent_table_components.metadata_compression_method);
+            committed = writeMetadataFiles(
+                plan,
+                persistent_table_components.path_resolver,
+                object_storage_,
+                context_,
+                sample_block_,
+                write_format,
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
+        }
+        catch (...)
+        {
+            cleanup_generated();
+            throw;
+        }
+
+        /// Only delete the pre-compaction files if the compacted metadata was actually published.
+        /// If a concurrent writer won the metadata commit, `clearOldFiles` would delete the data and
+        /// metadata the table still references (now pointing at the other writer's snapshot).
+        if (!committed)
+        {
+            cleanup_generated();
             throw Exception(
                 ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
                 "Iceberg compaction (OPTIMIZE) lost the metadata commit to a concurrent writer; "

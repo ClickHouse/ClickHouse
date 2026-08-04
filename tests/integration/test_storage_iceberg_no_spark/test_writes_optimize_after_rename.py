@@ -666,6 +666,13 @@ def test_optimize_aborts_on_metadata_commit_conflict(
     next_path = f"{metadata_dir}/v{n + 1}.metadata.json"
     data_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/data"
 
+    def object_set():
+        """Every data and metadata object, so a leak of any kind is visible."""
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"ls {data_dir} {metadata_dir} 2>/dev/null | sort"]
+        )
+        return set(line for line in listing.split("\n") if line.strip())
+
     def data_file_count():
         return int(
             instance.exec_in_container(
@@ -680,6 +687,9 @@ def test_optimize_aborts_on_metadata_commit_conflict(
     instance.exec_in_container(
         ["bash", "-c", f"echo -n {n} > {metadata_dir}/version-hint.text"]
     )
+    # Snapshot AFTER planting the winner, so it is part of the expected set rather than showing up
+    # as a leak.
+    objects_before = object_set()
 
     err = instance.query_and_get_error(
         f"OPTIMIZE TABLE {TABLE_NAME};",
@@ -689,14 +699,21 @@ def test_optimize_aborts_on_metadata_commit_conflict(
         },
     )
     assert "CONCURRENT_ACCESS_NOT_SUPPORTED" in err, err
-    # The pre-compaction data files must NOT have been deleted (clearOldFiles must be skipped)
-    # and the rewritten ones must NOT be left behind: nothing references them once the commit is
-    # lost, so a leak would accumulate a full copy of the table on every retry.
-    assert data_file_count() == before, (
-        f"data files changed after a lost commit: {data_file_count()} != {before} "
-        f"(fewer means pre-compaction files were deleted, more means rewritten files were orphaned)"
+    # Compare the FULL object set, not just the data files: an implementation could remove the
+    # rewritten data files while leaking manifests, manifest lists or a partially written metadata
+    # JSON, and a data-file-only count would not notice. The pre-compaction objects must all still
+    # be there (clearOldFiles skipped) and nothing new may remain, since nothing references the
+    # rewritten files once the commit is lost.
+    objects_after = object_set()
+    assert objects_after == objects_before, (
+        f"objects changed after a lost commit;\n"
+        f"  leaked (orphaned rewrite output): {sorted(objects_after - objects_before)}\n"
+        f"  missing (pre-compaction files deleted): {sorted(objects_before - objects_after)}"
     )
-    # The winning writer's metadata must survive the cleanup.
+    assert data_file_count() == before
+    # The winning writer's metadata must survive the cleanup (deleting it would be worse than the
+    # leak). It is part of objects_before, so the set comparison covers it; asserted separately to
+    # name the failure.
     assert (
         instance.exec_in_container(["bash", "-c", f"test -f {next_path} && echo yes || echo no"]).strip()
         == "yes"
