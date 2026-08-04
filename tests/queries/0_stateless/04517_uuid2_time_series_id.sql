@@ -12,7 +12,8 @@ SET allow_experimental_time_series_table = 1;
 -- TimeSeries table. A single value proves both inner tables agree on the `id` type. The table is dropped right
 -- after its check so the final INSERT test can use `merge` over the only remaining inner tables.
 
--- 1. version = 2: a plain TimeSeries table materializes the default bare `UUID` id to `UUID2` consistently.
+-- 1. version = 2: a plain TimeSeries table materializes the `UUID` inside the default `Tuple(UInt64, UUID)` id
+--    to `UUID2` consistently.
 SET uuid_type_version = 2;
 CREATE TABLE ts_v2_default ENGINE = TimeSeries;
 SELECT 'v2_default', arraySort(groupUniqArray(type)) FROM system.columns
@@ -49,11 +50,11 @@ WHERE database = currentDatabase() AND name = 'id'
   AND table LIKE '.inner_id.%.' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v1_uuid');
 DROP TABLE ts_v1_uuid;
 
--- 6. The auto-generated `id` for a `UUID2` table is a valid, non-zero identifier.
+-- 6. The auto-generated `id` with a `UUID2` component is a valid, non-zero identifier.
 SET uuid_type_version = 2;
 CREATE TABLE ts_insert ENGINE = TimeSeries;
 INSERT INTO ts_insert (metric_name, tags, time_series) VALUES ('http_requests', map('job', 'api'), [(toDateTime64('2020-01-01 00:00:00', 3), 42.0)]);
-SELECT 'insert', toTypeName(id), id != toUUID2('00000000-0000-0000-0000-000000000000'), count()
+SELECT 'insert', toTypeName(id), tupleElement(id, 2) != toUUID2('00000000-0000-0000-0000-000000000000'), count()
 FROM merge(currentDatabase(), '^\.inner_id\.tags\.')
 GROUP BY id;
 DROP TABLE ts_insert;

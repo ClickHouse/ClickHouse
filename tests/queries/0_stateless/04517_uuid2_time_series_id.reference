@@ -1,6 +1,6 @@
-v2_default	['UUID2']
+v2_default	['Tuple(UInt64, UUID2)']
 v2_tags_uuid	['UUID2']
 v2_uint64	['UInt64']
 explicit_uuid2	['UUID2']
 v1_uuid	['UUID']
-insert	UUID2	1	1
+insert	Tuple(UInt64, UUID2)	1	1
