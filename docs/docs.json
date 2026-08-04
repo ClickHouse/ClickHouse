@@ -114,9 +114,6 @@
               },
               {
                 "$ref": "./products/kubernetes-operator/navigation.json"
-              },
-              {
-                "$ref": "./products/clickhouse-private/navigation.json"
               }
             ],
             "tab": "Solutions"
@@ -126,7 +123,8 @@
               {
                 "item": "Ecosystem",
                 "pages": [
-                  "integrations/home"
+                  "integrations/home",
+                  "integrations/data-catalogs"
                 ]
               },
               {
