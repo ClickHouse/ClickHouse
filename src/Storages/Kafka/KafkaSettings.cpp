@@ -3,6 +3,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -175,5 +176,10 @@ SettingsChanges KafkaSettings::getFormatSettings() const
 bool KafkaSettings::hasBuiltin(std::string_view name)
 {
     return KafkaSettingsImpl::hasBuiltin(name);
+}
+
+void KafkaSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<KafkaSettingsImpl>(columns);
 }
 }

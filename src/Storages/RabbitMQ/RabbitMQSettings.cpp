@@ -3,6 +3,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Common/Exception.h>
@@ -123,5 +124,10 @@ SettingsChanges RabbitMQSettings::getFormatSettings() const
 bool RabbitMQSettings::hasBuiltin(std::string_view name)
 {
     return RabbitMQSettingsImpl::hasBuiltin(name);
+}
+
+void RabbitMQSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<RabbitMQSettingsImpl>(columns);
 }
 }

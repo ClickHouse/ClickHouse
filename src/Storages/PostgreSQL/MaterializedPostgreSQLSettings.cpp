@@ -7,6 +7,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Common/Exception.h>
 
 
@@ -90,6 +91,11 @@ void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
 bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
 {
     return MaterializedPostgreSQLSettingsImpl::hasBuiltin(name);
+}
+
+void MaterializedPostgreSQLSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<MaterializedPostgreSQLSettingsImpl>(columns);
 }
 }
 

@@ -3,6 +3,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
@@ -241,5 +242,10 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
     if (auto maybe_new_name = adjustSettingName(name); maybe_new_name.has_value())
         name = *maybe_new_name;
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
+}
+
+void ObjectStorageQueueSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<ObjectStorageQueueSettingsImpl>(columns);
 }
 }
