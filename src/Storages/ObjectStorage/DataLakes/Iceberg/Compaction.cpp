@@ -31,6 +31,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <boost/algorithm/string/trim.hpp>
 #include <fmt/format.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -66,6 +67,8 @@ namespace DB::Iceberg
 {
 
 static constexpr size_t MAX_COMPACTION_RETRIES = 100;
+/// `version-hint.text` holds a decimal metadata version; this only needs to bound a stray read.
+static constexpr size_t MAX_VERSION_HINT_SIZE = 4096;
 
 using namespace DB;
 
@@ -1584,14 +1587,43 @@ static bool writeMetadataFiles(
         /// A false return means the target metadata version already exists, so the compacted
         /// metadata was NOT published and the caller must skip `clearOldFiles`; deleting the
         /// pre-compaction files while the table points at another writer's snapshot loses data.
-        return Iceberg::writeMetadataFileAndVersionHint(
-            path_resolver,
-            generated_metadata_info,
-            json_representation,
-            plan.generator.generateVersionHint(),
-            object_storage,
-            context,
-            write_version_hint);
+        auto version_hint_path = plan.generator.generateVersionHint();
+        if (!Iceberg::writeMetadataFileAndVersionHint(
+                path_resolver,
+                generated_metadata_info,
+                json_representation,
+                version_hint_path,
+                object_storage,
+                context,
+                write_version_hint))
+            return false;
+
+        /// The helper reports success even when it exhausted its retries updating an existing
+        /// `version-hint.text`. Unlike the other write paths, compaction then deletes the metadata
+        /// the hint still names, which would leave `iceberg_use_version_hint = 1` readers unable to
+        /// discover any metadata, so require the hint to actually name the published version.
+        if (write_version_hint)
+        {
+            auto storage_hint_path = path_resolver.resolve(version_hint_path);
+            StoredObject hint_object(storage_hint_path);
+            if (object_storage->exists(hint_object))
+            {
+                auto [hint_data, _] = object_storage->readSmallObjectAndGetObjectMetadata(
+                    hint_object, context->getReadSettings(), MAX_VERSION_HINT_SIZE);
+                boost::algorithm::trim(hint_data);
+                if (hint_data != std::to_string(generated_metadata_info.version))
+                {
+                    LOG_WARNING(
+                        log,
+                        "Iceberg compaction published metadata version {} but version-hint.text still names {}; "
+                        "keeping the pre-compaction files so the table stays discoverable",
+                        generated_metadata_info.version,
+                        hint_data);
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 }
 
