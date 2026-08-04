@@ -194,7 +194,7 @@ jobs:
             if [ "$should_rerun" = "true" ]; then
               if gh run rerun "$run_id" --repo "$GH_REPO"; then
                 rerun_count=$((rerun_count + 1))
-                echo "  Triggered rerun: $run_url/attempts/2"
+                echo "  Triggered rerun: $run_url/attempts/$((run_attempt + 1))"
               else
                 echo "  Failed to trigger rerun (may already be rerunning)"
               fi

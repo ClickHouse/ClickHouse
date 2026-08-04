@@ -213,6 +213,9 @@ class JobConfigs:
                 # two files, so a change to either must run this job.
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
+                # The ci/tests/ guard for the auto-retry's fork gate reads this workflow,
+                # so a change to it must run this job.
+                "./.github/workflows/retry_infra_failures.yml",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
