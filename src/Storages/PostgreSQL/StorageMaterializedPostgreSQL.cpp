@@ -36,6 +36,7 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageFactory.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Storages/StoragePostgreSQL.h>
 
@@ -645,10 +646,15 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
         /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
         /// The certificate paths are not validated here: the `materialized_postgresql_ssl_*`
-        /// settings are merged in below, and the merged result is validated once, with the
-        /// replay exemption applied uniformly to both the named collection and the SETTINGS clause.
+        /// settings are merged in below, and the merged result is validated once — validating
+        /// the raw collection values here would reject a definition whose unsafe collection
+        /// value is overridden by a safe persisted setting. The named collection is looked up
+        /// again to tell, per option, whether the final value is part of the persisted definition
+        /// (a query override) or is re-read from the collection store on every replay.
+        auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getContext());
         auto configuration = StoragePostgreSQL::getConfiguration(
-            args.engine_args, args.getContext(), /*storage_settings=*/ nullptr, /*table_id=*/ nullptr, /*enforce_ssl_certificate_path_boundary=*/ false);
+            args.engine_args, args.getContext(), /*storage_settings=*/ nullptr, /*table_id=*/ nullptr,
+            StoragePostgreSQL::SSLCertificatePathValidation::DeferToCaller);
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
@@ -700,15 +706,30 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             configuration.ssl_key = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key];
 
         /// The SETTINGS clause could have introduced certificate paths on top of the named
-        /// collection, so validate the merged result. The `user_files` boundary check is skipped
-        /// when replaying previously persisted metadata, for the same reason as the address
-        /// validation above: a stored definition must keep loading even if `user_files_path`
-        /// changed since it was created. Relative paths are resolved against `user_files_path` in
-        /// both cases, so the stored definition keeps the meaning it had at CREATE time. A user
-        /// ATTACH with a full table definition is a fresh definition, not a replay, and stays
-        /// fail-closed.
-        const bool enforce_ssl_certificate_path_boundary = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax;
-        StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.getContext(), enforce_ssl_certificate_path_boundary);
+        /// collection, so validate the merged result. When replaying previously persisted metadata
+        /// the `user_files` boundary check is skipped for values fixed in the persisted definition
+        /// (the SETTINGS clause and query overrides of the named collection), for the same reason
+        /// as the address validation above: a stored definition must keep loading even if
+        /// `user_files_path` changed since it was created. A value read from the named collection
+        /// store gets no such exemption: it is re-read on every replay and
+        /// `ALTER NAMED COLLECTION` can change it after the table was created. Relative paths are
+        /// resolved against `user_files_path` in all cases, so the stored definition keeps the
+        /// meaning it had at CREATE time. A user ATTACH with a full table definition is a fresh
+        /// definition, not a replay, and stays fail-closed.
+        const bool is_replay = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+        auto enforce_ssl_boundary_for = [&](std::string_view option_name)
+        {
+            if (!is_replay)
+                return true;
+            if (option_name == "sslrootcert" && ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert].isChanged())
+                return false;
+            if (option_name == "sslcert" && ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert].isChanged())
+                return false;
+            if (option_name == "sslkey" && ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].isChanged())
+                return false;
+            return named_collection && !named_collection->isQueryOverridden(String(option_name));
+        };
+        StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.getContext(), enforce_ssl_boundary_for);
 
         auto connection_info = postgres::formatConnectionString(
             configuration.database,

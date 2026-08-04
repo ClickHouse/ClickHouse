@@ -619,15 +619,18 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
+        auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context);
+        if (named_collection)
         {
             /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
             /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
             /// The certificate paths are not validated here: the `materialized_postgresql_ssl_*`
-            /// settings are merged in below, and the merged result is validated once, with the
-            /// replay exemption applied uniformly to both the named collection and the SETTINGS clause.
+            /// settings are merged in below, and the merged result is validated once — validating
+            /// the raw collection values here would reject a definition whose unsafe collection
+            /// value is overridden by a safe persisted setting.
             configuration = StoragePostgreSQL::processNamedCollectionResult(
-                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false, /*enforce_ssl_certificate_path_boundary=*/ false);
+                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false,
+                StoragePostgreSQL::SSLCertificatePathValidation::DeferToCaller);
         }
         else
         {
@@ -711,12 +714,28 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.ssl_key = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key];
 
         /// The SETTINGS clause could have introduced certificate paths on top of the named
-        /// collection, so validate the merged result. The `user_files` boundary check is skipped
-        /// for an internal metadata replay for the same reason as the host filter above: a stored
-        /// definition must keep loading even if `user_files_path` changed since it was created.
-        /// Relative paths are resolved against `user_files_path` in both cases, so the stored
-        /// definition keeps the meaning it had at CREATE time.
-        StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.context, /*enforce_user_files_boundary=*/ !is_internal_metadata_replay);
+        /// collection, so validate the merged result. On an internal metadata replay the
+        /// `user_files` boundary check is skipped for values fixed in the persisted definition
+        /// (the SETTINGS clause and query overrides of the named collection), for the same reason
+        /// as the host filter above: a stored definition must keep loading even if
+        /// `user_files_path` changed since it was created. A value read from the named collection
+        /// store gets no such exemption: it is re-read on every replay and
+        /// `ALTER NAMED COLLECTION` can change it after the database was created. Relative paths
+        /// are resolved against `user_files_path` in all cases, so the stored definition keeps
+        /// the meaning it had at CREATE time.
+        auto enforce_ssl_boundary_for = [&](std::string_view option_name)
+        {
+            if (!is_internal_metadata_replay)
+                return true;
+            if (option_name == "sslrootcert" && ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert].isChanged())
+                return false;
+            if (option_name == "sslcert" && ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert].isChanged())
+                return false;
+            if (option_name == "sslkey" && ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].isChanged())
+                return false;
+            return named_collection && !named_collection->isQueryOverridden(String(option_name));
+        };
+        StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.context, enforce_ssl_boundary_for);
 
         auto connection_info = postgres::formatConnectionString(
             configuration.database,

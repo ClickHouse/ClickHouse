@@ -886,3 +886,109 @@ def test_materialized_postgresql_table_engine_ssl_settings_cannot_be_altered(sta
         assert node.query("SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'mpg_tbl_alter' AND create_table_query ILIKE '%config.xml%'").strip() == "0"
 
     node.query("DROP TABLE mpg_tbl_alter SYNC")
+
+
+def test_materialized_postgresql_settings_override_unsafe_named_collection_value(started_cluster):
+    # The `MaterializedPostgreSQL` engines merge the `materialized_postgresql_ssl_*`
+    # settings over a named collection, so certificate paths must be validated on the
+    # merged result, not on the raw collection values: a collection whose `sslrootcert`
+    # lies outside `user_files` is fine as long as the definition overrides it with a
+    # safe setting, and it must stay fine on a replay (`DETACH` / `ATTACH`), where the
+    # override is part of the persisted definition. Without the override the unsafe
+    # collection value does reach the connection and must be rejected at CREATE.
+    seed_table("mpg_nc_override_table", 5)
+    node.query("DROP TABLE IF EXISTS mpg_nc_override SYNC")
+    node.query("DROP NAMED COLLECTION IF EXISTS mpg_ssl_unsafe")
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION mpg_ssl_unsafe AS
+            user = 'postgres', password = '{pg_pass}', host = '{PG_HOST}', port = 5432,
+            database = 'postgres', table = 'mpg_nc_override_table',
+            sslmode = 'verify-full', sslrootcert = '/etc/clickhouse-server/config.xml'
+        """
+    )
+
+    # Without an override the unsafe collection value is the final value: fail-closed.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE mpg_nc_override (key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL(mpg_ssl_unsafe)
+        ORDER BY key
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert "PATH_ACCESS_DENIED" in error
+
+    # A safe `materialized_postgresql_ssl_root_cert` takes precedence over the unsafe
+    # collection value, so the CREATE must succeed and the connection must use it.
+    node.query(
+        f"""
+        CREATE TABLE mpg_nc_override (key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL(mpg_ssl_unsafe)
+        ORDER BY key
+        SETTINGS materialized_postgresql_ssl_root_cert = '{CA_CERT_PATH}'
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    wait_for(
+        lambda: node.query("SELECT count() FROM mpg_nc_override").strip() == "5",
+        120,
+        "MaterializedPostgreSQL table engine initial sync with an overridden root certificate",
+    )
+
+    # On a replay the override is part of the persisted definition, so the unsafe
+    # collection value it shadows must not fail the ATTACH.
+    node.query("DETACH TABLE mpg_nc_override PERMANENTLY")
+    node.query("ATTACH TABLE mpg_nc_override")
+    wait_for(
+        lambda: node.query("SELECT count() FROM mpg_nc_override").strip() == "5",
+        120,
+        "MaterializedPostgreSQL table engine re-attach with an overridden root certificate",
+    )
+
+    node.query("DROP TABLE mpg_nc_override SYNC")
+
+    # The database engine merges the same settings on its own registration path. Its
+    # replication starts in a background task, but the certificate-path validation is
+    # synchronous, so the failure without an override still surfaces at CREATE. The
+    # database engine wraps a whole database, so its collection must not carry a
+    # `table` key.
+    node.query("DROP DATABASE IF EXISTS mpg_db_nc_override")
+    node.query("DROP NAMED COLLECTION IF EXISTS mpg_ssl_unsafe_db")
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION mpg_ssl_unsafe_db AS
+            user = 'postgres', password = '{pg_pass}', host = '{PG_HOST}', port = 5432,
+            database = 'postgres',
+            sslmode = 'verify-full', sslrootcert = '/etc/clickhouse-server/config.xml'
+        """
+    )
+    error = node.query_and_get_error(
+        """
+        CREATE DATABASE mpg_db_nc_override
+        ENGINE = MaterializedPostgreSQL(mpg_ssl_unsafe_db)
+        SETTINGS materialized_postgresql_tables_list = 'mpg_nc_override_table'
+        """,
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+    assert "PATH_ACCESS_DENIED" in error
+
+    node.query(
+        f"""
+        CREATE DATABASE mpg_db_nc_override
+        ENGINE = MaterializedPostgreSQL(mpg_ssl_unsafe_db)
+        SETTINGS
+            materialized_postgresql_ssl_root_cert = '{CA_CERT_PATH}',
+            materialized_postgresql_tables_list = 'mpg_nc_override_table'
+        """,
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+    wait_for(
+        lambda: node.query("SELECT count() FROM mpg_db_nc_override.mpg_nc_override_table").strip() == "5",
+        120,
+        "MaterializedPostgreSQL database engine initial sync with an overridden root certificate",
+    )
+
+    node.query("DROP DATABASE mpg_db_nc_override")
+    node.query("DROP NAMED COLLECTION mpg_ssl_unsafe_db")
+    node.query("DROP NAMED COLLECTION mpg_ssl_unsafe")

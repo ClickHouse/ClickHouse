@@ -80,19 +80,34 @@ public:
         String addresses_expr;
     };
 
+    /// How `getConfiguration` / `processNamedCollectionResult` treat TLS/SSL certificate and key
+    /// paths found in the arguments (see `validateSSLCertificatePaths`); only the caller can tell
+    /// a metadata replay from fresh DDL.
+    enum class SSLCertificatePathValidation
+    {
+        /// Fresh DDL: every SQL-provided path must reside inside `user_files`.
+        Enforce,
+        /// A replay of previously persisted metadata: values that are part of the persisted
+        /// definition (query overrides of a named collection) are exempt from the boundary check,
+        /// so a stored definition keeps loading even if `user_files_path` changed since it was
+        /// created. The exemption never covers values taken from the named collection store:
+        /// those are re-read on every replay and `ALTER NAMED COLLECTION` can change them after
+        /// the object was created.
+        ReplayExemptPersisted,
+        /// The caller merges further settings over the returned configuration (the
+        /// `MaterializedPostgreSQL` engines apply the `materialized_postgresql_ssl_*` settings on
+        /// top of a named collection) and must validate the merged result itself: validating the
+        /// raw named-collection values here would reject a definition whose unsafe collection
+        /// value is overridden by a safe persisted setting.
+        DeferToCaller,
+    };
+
     /// `storage_settings` may be nullptr for callers that do not honor the `PostgreSQLSettings`
     /// (e.g. the `MaterializedPostgreSQL` engines): the setting names are then rejected in named
     /// collections instead of being accepted and silently ignored.
-    /// `enforce_ssl_certificate_path_boundary` must be false when the caller either revalidates the
-    /// final configuration itself (the `MaterializedPostgreSQL` engines merge the
-    /// `materialized_postgresql_ssl_*` settings in first) or replays previously persisted metadata,
-    /// where a stored definition must keep loading even if `user_files_path` changed since it was
-    /// created (see `validateSSLCertificatePaths`); only the caller can tell a replay from fresh DDL.
-    /// The replay exemption never covers values taken from a named collection: those are re-read on
-    /// every replay and `ALTER NAMED COLLECTION` can change them after the object was created.
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr, bool enforce_ssl_certificate_path_boundary = true);
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr, SSLCertificatePathValidation ssl_path_validation = SSLCertificatePathValidation::Enforce);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true, bool enforce_ssl_certificate_path_boundary = true);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true, SSLCertificatePathValidation ssl_path_validation = SSLCertificatePathValidation::Enforce);
 
     /// TLS/SSL certificate and key paths accepted from SQL (table functions, engines, DDL-created
     /// dictionaries) must reside inside `user_files_path`: the files are opened by the server process

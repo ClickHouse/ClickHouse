@@ -648,7 +648,7 @@ void StoragePostgreSQL::validateSSLCertificatePaths(
     validate_path(configuration.ssl_key, "sslkey");
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table, bool enforce_ssl_certificate_path_boundary)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table, SSLCertificatePathValidation ssl_path_validation)
 {
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
@@ -709,14 +709,18 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     /// objects depend on it. Without this, an object created against a valid collection could be
     /// rebound to a certificate or key outside `user_files` and pick it up on the next restart or
     /// short `ATTACH`. Only a value written into the query itself (an override of the collection)
-    /// keeps the exemption.
-    auto enforce_boundary_for = [&](std::string_view option_name)
+    /// keeps the exemption. Callers that merge further settings over this configuration validate
+    /// the merged result themselves instead (`SSLCertificatePathValidation::DeferToCaller`).
+    if (ssl_path_validation != SSLCertificatePathValidation::DeferToCaller)
     {
-        if (enforce_ssl_certificate_path_boundary)
-            return true;
-        return !named_collection.isQueryOverridden(String(option_name));
-    };
-    validateSSLCertificatePaths(configuration, context_, enforce_boundary_for);
+        auto enforce_boundary_for = [&](std::string_view option_name)
+        {
+            if (ssl_path_validation == SSLCertificatePathValidation::Enforce)
+                return true;
+            return !named_collection.isQueryOverridden(String(option_name));
+        };
+        validateSSLCertificatePaths(configuration, context_, enforce_boundary_for);
+    }
 
     if (storage_settings)
         storage_settings->loadFromNamedCollection(named_collection);
@@ -724,12 +728,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, bool enforce_ssl_certificate_path_boundary)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, SSLCertificatePathValidation ssl_path_validation)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true, enforce_ssl_certificate_path_boundary);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true, ssl_path_validation);
     }
     else
     {
@@ -801,8 +805,11 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         /// ATTACH with a full table definition is a fresh definition, not a replay, and stays
         /// fail-closed. This mirrors the `MaterializedPostgreSQL` engine registration below in
         /// this repository.
-        const bool enforce_ssl_certificate_path_boundary = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax;
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, enforce_ssl_certificate_path_boundary);
+        const bool is_replay = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+        auto configuration = StoragePostgreSQL::getConfiguration(
+            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id,
+            is_replay ? StoragePostgreSQL::SSLCertificatePathValidation::ReplayExemptPersisted
+                      : StoragePostgreSQL::SSLCertificatePathValidation::Enforce);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);
