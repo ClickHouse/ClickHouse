@@ -333,7 +333,8 @@ StorageEmbeddedRocksDB::~StorageEmbeddedRocksDB() = default;
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
     const auto timeout = std::chrono::milliseconds(query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
-    /// One budget for the whole call, so a lease arriving during a retry cannot extend it.
+    /// One budget for all the lease waits, so a lease arriving during a retry cannot extend it.
+    /// Acquiring rocksdb_ptr_mx below is not part of that budget and stays untimed.
     const auto deadline = std::chrono::steady_clock::now() + timeout;
 
     while (true)
