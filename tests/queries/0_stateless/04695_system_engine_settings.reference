@@ -1,0 +1,19 @@
+1
+engine_name	String
+name	String
+value	String
+default	String
+changed	UInt8
+description	String
+min	Nullable(String)
+max	Nullable(String)
+disallowed_values	Array(String)
+readonly	UInt8
+type	String
+is_obsolete	UInt8
+tier	Enum8('PRODUCTION' = 0, 'OBSOLETE' = 1, 'BETA' = 2, 'EXPERIMENTAL' = 3)
+1
+1
+MergeTree	index_granularity	0	0	0
+Memory	compress	false	Bool
+1
