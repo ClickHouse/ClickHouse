@@ -69,10 +69,9 @@ struct StorageInMemoryMetadata
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
 
-    /// New ENGINE clause (an ASTFunction) for ALTER TABLE ... MODIFY ENGINE. Null unless the engine
-    /// is being changed in the current alter. Not part of the persisted structure itself; it carries
-    /// the new engine clause from AlterCommand to applyMetadataChangesToCreateQuery so the stored
-    /// CREATE query's ENGINE is rewritten. Supported for the MergeTree family only.
+    /// New ENGINE clause (an ASTFunction) for MODIFY ENGINE, null unless the engine is being changed.
+    /// Not persisted structure: it carries the clause to applyMetadataChangesToCreateQuery, which
+    /// rewrites the stored CREATE query. MergeTree family only.
     ASTPtr new_engine;
 
     /// DEFINER <user_name>. Allows to specify a definer of the table.

@@ -1797,12 +1797,9 @@ static void checkDimensionsAreInSortingKey(const StorageInMemoryMetadata & metad
         boost::algorithm::join(offending_columns, ", "));
 }
 
-/// Up-front schema validation for GraphiteMergeTree, matching what GraphiteRollupSortedAlgorithm::defineColumns
-/// requires at merge time: the configured path/time/value/version columns must exist, and the value column must
-/// be Float64. Without this the engine clause validates only the config element, so a MODIFY ENGINE to
-/// GraphiteMergeTree can succeed and reload cleanly, then throw only once a background merge (or FINAL)
-/// instantiates the rollup algorithm. MergingParams::check has no Graphite branch (create-time GraphiteMergeTree
-/// keeps its historical "fail at merge" behavior), so this is called explicitly from the MODIFY ENGINE paths.
+/// The configured path/time/value/version columns must exist and the value column must be Float64, as
+/// GraphiteRollupSortedAlgorithm::defineColumns requires at merge time. Called only from the MODIFY ENGINE
+/// paths: create-time GraphiteMergeTree keeps its historical "fail at merge" behavior.
 static void checkGraphiteSchema(const Graphite::Params & params, const StorageInMemoryMetadata & metadata)
 {
     const auto & columns = metadata.getColumns();
@@ -2273,34 +2270,17 @@ void MergeTreeData::applyEngineModification(const ASTPtr & new_engine_ast, const
     if (!engine_func)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY ENGINE expects an engine function AST");
 
-    /// Validate the target against the metadata that this same ALTER produced (so a column added in
-    /// the same statement, before MODIFY ENGINE, is visible). The caller runs this before persisting
-    /// the rewritten CREATE query, so a rejection here never leaves an invalid engine clause on disk.
-    /// The new merge semantics take effect when the storage object is next constructed from the
-    /// persisted metadata.
-    ///
-    /// We intentionally do NOT mutate the live `merging_params` here. It is read lock-free from many
-    /// hot paths (query planning, background merges/mutations), often bound by const reference for the
-    /// duration of a query, while ALTER runs concurrently with SELECTs. An in-place swap would be a
-    /// data race, and an exclusive lock cannot be taken from inside ALTER (the query already holds the
-    /// table's drop_lock in read mode, and lock upgrading is forbidden). A safe live swap requires
-    /// turning `merging_params` into a MultiVersion value or recreating the storage object; that is a
-    /// separate change. For now the persisted change applies on the next table load.
+    /// `new_metadata` is the metadata this same ALTER produced, so a column added before MODIFY ENGINE
+    /// in the same statement is visible. The live `merging_params` is deliberately left untouched: it is
+    /// read lock-free from hot paths, so the new mode applies on the next table load.
     MergingParams new_params = MergingParams::parseFromEngineAST(engine_func->name, engine_func->arguments, local_context);
-    /// parseFromEngineAST has no settings, so it leaves allow_tuple_element_aggregation off. Derive it
-    /// from the (already changed, see StorageMergeTree::alter) settings so `check` enforces the same tuple
-    /// constraints the reload path does. getSettings() here reflects a MODIFY SETTING in the same ALTER.
+    /// parseFromEngineAST takes no settings, so derive the flag from the (already changed) ones.
     new_params.setAllowTupleElementAggregationFromSettings(*getSettings());
-    /// sanity_checks=true: MODIFY ENGINE chooses a new engine now, so it is create-time metadata, not the
-    /// grandfathering of legacy on-disk metadata that ATTACH does. In particular the AggregatingMergeTree
-    /// off-key-dimension guard (checkDimensionsAreInSortingKey, issue #751) must apply, or a
-    /// MergeTree -> AggregatingMergeTree switch could add a column that is silently collapsed during merges.
+    /// sanity_checks=true: MODIFY ENGINE picks an engine now, so this is create-time metadata rather than
+    /// the grandfathering of legacy on-disk metadata that ATTACH does.
     new_params.check(*getSettings(), new_metadata, /*sanity_checks=*/true);
 
-    /// MergingParams::check has no Graphite branch, so validate the Graphite schema (column existence +
-    /// Float64 value) up front here, matching what the rollup algorithm requires at merge time. Otherwise a
-    /// MODIFY ENGINE = GraphiteMergeTree with a missing or non-Float64 value column would reload cleanly and
-    /// only fail on the first merge.
+    /// MergingParams::check has no Graphite branch; the rollup algorithm needs these columns at merge time.
     if (new_params.mode == MergingParams::Graphite)
         checkGraphiteSchema(new_params.graphite_params, new_metadata);
 
@@ -5042,19 +5022,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
     }
 
-    /// Validate ALTER ... MODIFY ENGINE: it is gated behind an experimental setting, may only target
-    /// another MergeTree-family engine, and the resulting MergingParams must be valid for the table's
-    /// columns (after any column changes in the same ALTER are applied).
-    ///
-    /// The engine to validate is either the one this ALTER sets, or one still pending from an earlier
-    /// reload-only MODIFY ENGINE: `new_engine` is rewritten into the persisted CREATE but the live
-    /// `merging_params` stays at the old mode until the table is reloaded, so the pending engine lingers
-    /// on the live metadata. A later ALTER with no MODIFY ENGINE of its own can then invalidate that
-    /// pending engine -- e.g. `MODIFY SETTING allow_summing_columns_in_partition_or_order_key = 0` or
-    /// dropping a summing/sign/version column -- and, because the live `merging_params` is still the old
-    /// mode, neither the special-column guards nor the engine validation below would catch it, leaving an
-    /// unloadable CREATE on disk. Re-validate the pending engine here, before any live or persisted
-    /// metadata changes.
+    /// Engines to validate: the one this ALTER sets, plus any engine still pending from an earlier
+    /// reload-only MODIFY ENGINE. A pending engine is only in the persisted CREATE, so the live
+    /// `merging_params` guards below cannot see it and a later ALTER could otherwise invalidate it.
     std::vector<ASTPtr> engines_to_validate;
     bool has_modify_engine_command = false;
     for (const auto & command : commands)
@@ -5075,10 +5045,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "ALTER TABLE ... MODIFY ENGINE is not supported for Replicated*MergeTree tables yet");
 
-        /// Old-syntax tables (e.g. `MergeTree(date, key, 8192)`) keep the partition/sampling/sorting key
-        /// and granularity as positional arguments inside the engine clause. MODIFY ENGINE replaces the
-        /// whole engine function, which would drop those positional arguments and leave an unloadable
-        /// CREATE query. Reject them, as MODIFY ORDER BY / TTL / SAMPLE BY do below.
+        /// Old-syntax tables keep the keys and granularity as positional engine arguments, which replacing
+        /// the whole engine function would drop. Rejected, as MODIFY ORDER BY / TTL / SAMPLE BY do below.
         if (!is_custom_partitioned)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ALTER TABLE ... MODIFY ENGINE is not supported for tables created with the old syntax");
@@ -5097,10 +5065,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         engines_to_validate.push_back(command.engine);
     }
 
-    /// No MODIFY ENGINE in this ALTER: re-validate the engine left pending by an earlier reload-only
-    /// MODIFY ENGINE, if any, against the post-ALTER columns and settings. The command-specific gates
-    /// above (experimental setting, replication, old syntax) were already checked when that engine was
-    /// set, and protect the feature -- here we only protect metadata integrity, so they are not re-applied.
+    /// Re-validate a pending engine against the post-ALTER columns and settings. The gates above were
+    /// already applied when that engine was set; this only protects metadata integrity.
     if (!has_modify_engine_command)
     {
         auto current_metadata = getInMemoryMetadataPtr(local_context, false);
@@ -5110,12 +5076,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!engines_to_validate.empty())
     {
-        /// Apply the in-flight column and setting changes from the same ALTER so a column added before
-        /// MODIFY ENGINE (e.g. the sign/version column) is visible to the validation, and so a setting
-        /// changed in the same statement (e.g. allow_summing_columns_in_partition_or_order_key) is the
-        /// value MergingParams::check sees -- matching what registerStorageMergeTree would check on the
-        /// next load. Validating against the current settings instead would make this check disagree
-        /// with the reload path.
+        /// Validate against the metadata and settings this ALTER produces, not the current ones, so this
+        /// check agrees with what registerStorageMergeTree sees on the next load.
         auto current_metadata_handle = getInMemoryMetadataPtr(local_context, false);
         StorageInMemoryMetadata metadata_for_check = *current_metadata_handle;
         for (const auto & c : commands)
@@ -5123,11 +5085,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (c.type != AlterCommand::MODIFY_ENGINE)
                 c.apply(metadata_for_check, local_context);
         }
-        /// Build the candidate settings the same way changeSettings (and the next table load) do: start
-        /// from defaults and apply the final settings_changes. Building them as "current settings + the
-        /// changes" would be wrong for RESET SETTING -- a reset drops the setting from settings_changes,
-        /// so a delta on top of the current settings keeps the old value, while reload reverts it to the
-        /// default. Using defaults here keeps this check in agreement with the reload path.
+        /// From defaults plus the final settings_changes, as changeSettings and the next load do. A delta on
+        /// top of the current settings would keep the old value for RESET SETTING, which reload reverts.
         auto settings_for_check = getDefaultSettings();
         if (metadata_for_check.settings_changes)
             settings_for_check->applyChanges(
@@ -5144,14 +5103,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// Build the candidate MergingParams and validate it against the (possibly already altered)
             /// columns. parseFromEngineAST throws for a non-MergeTree or unknown engine name.
             MergingParams new_merging_params = MergingParams::parseFromEngineAST(engine_ast->name, engine_ast->arguments, local_context);
-            /// parseFromEngineAST leaves allow_tuple_element_aggregation off; derive it from the final
-            /// settings (with any in-flight MODIFY SETTING applied) so this check gates the tuple
-            /// constraints exactly as the reload path will -- otherwise a Summing/Aggregating/Coalescing
-            /// target with a Nullable Tuple column would pass here and only fail on the next ATTACH.
+            /// parseFromEngineAST takes no settings, so derive the flag from the post-ALTER ones.
             new_merging_params.setAllowTupleElementAggregationFromSettings(*settings_for_check);
-            /// sanity_checks=true: MODIFY ENGINE picks a new engine now (create-time metadata), so the
-            /// AggregatingMergeTree off-key-dimension guard (issue #751) applies here just as it would to a
-            /// CREATE. This is not the legacy-metadata grandfathering that ATTACH performs.
+            /// sanity_checks=true: MODIFY ENGINE picks an engine now, so this is create-time metadata rather
+            /// than the grandfathering of legacy on-disk metadata that ATTACH does.
             new_merging_params.check(*settings_for_check, metadata_for_check, /*sanity_checks=*/true);
 
             /// MergingParams::check has no Graphite branch; validate the Graphite schema up front here too,
@@ -5160,12 +5115,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (new_merging_params.mode == MergingParams::Graphite)
                 checkGraphiteSchema(new_merging_params.graphite_params, metadata_for_check);
 
-            /// registerStorageMergeTree rejects a special-mode MergeTree that has projections when
-            /// deduplicate_merge_projection_mode = throw. The reload-only design keeps the live mode
-            /// Ordinary, so without this the engine could switch to a special mode while projections
-            /// are present (or be added in the same/a later ALTER) and only fail on the next ATTACH.
-            /// metadata_for_check carries any ADD PROJECTION from this ALTER, so this covers an
-            /// explicit MODIFY ENGINE and an engine still pending from an earlier reload-only one.
+            /// registerStorageMergeTree rejects a special-mode MergeTree with projections under
+            /// deduplicate_merge_projection_mode = throw; reject here too rather than on the next ATTACH.
             if (new_merging_params.mode != MergingParams::Mode::Ordinary
                 && metadata_for_check.hasProjections()
                 && (*settings_for_check)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
