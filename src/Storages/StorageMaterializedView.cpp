@@ -1,6 +1,7 @@
 #include <thread>
 #include <Storages/StorageMaterializedView.h>
 
+#include <Storages/ColumnDefault.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -669,6 +670,15 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         if (create_query->targets)
             create_query->targets->resetInnerUUIDs();
 
+        /// Bypass the dropped-table size limits so CREATE OR REPLACE can drop a large leftover temp
+        /// table from a previous failed refresh instead of leaking it as `_tmp_replace_*` (issue #104900).
+        /// Set the settings on refresh_context itself rather than on a copy: createCopy does not preserve
+        /// the refresh DDL metadata (parent table UUID, DDL cancellation, enqueue checks) that
+        /// RefreshTask set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table
+        /// entries. doCreateOrReplaceTable's internal drop inherits these settings via the create context.
+        refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+        refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
         /// Notice that we discard the BlockIO that execute() returns. This means that in case of DatabaseReplicated we don't wait
@@ -727,6 +737,13 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
+    /// Don't apply dropped table size limits to tables produced by refreshable materialized views.
+    /// Set the settings on refresh_context itself rather than on a copy: createCopy does not preserve
+    /// the refresh DDL metadata (parent table UUID, DDL cancellation, enqueue checks) that RefreshTask
+    /// set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table entries.
+    refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+    refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+
     auto query_scope = QueryScope::create(refresh_context);
 
     auto drop_query = make_intrusive<ASTDropQuery>();
@@ -1066,18 +1083,40 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
         return std::nullopt;
 
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
-    auto view_columns = view_metadata->getColumns().getAll();
+    const auto & view_columns_description = view_metadata->getColumns();
     auto target_table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
     auto target_table_columns = target_table_metadata->getColumns();
     NameSet supported_columns;
-    for (const auto & [name, type] : view_columns)
+    for (const auto & [name, type] : view_columns_description.getAll())
     {
         auto target_column = target_table_columns.tryGetColumn(GetColumnsOptions::All, name);
-        if (target_column && target_column->type->equals(*type))
+        if (!target_column || !target_column->type->equals(*type))
+            continue;
+        /// The filter is forwarded into the raw target read, so the column must be physical there
+        /// just like here (same rule as StorageMerge): an ALIAS twin has no input it binds to.
+        const auto view_kind = view_columns_description.getDefault(name).value_or(ColumnDefault{}).kind;
+        const auto target_kind = target_table_columns.getDefault(name).value_or(ColumnDefault{}).kind;
+        if (columnDefaultKindHasSameType(view_kind, target_kind))
             supported_columns.insert(name);
     }
 
+    /// The loop above only compares against the target's *declared* columns. When the target
+    /// aggregates other tables itself (a `Merge`, another `MaterializedView`, ...), its declared
+    /// type can match while a leaf's differs, and the read delegated down to that leaf would then
+    /// re-derive PREWHERE against a type the plan did not expect. Intersect with what the target
+    /// itself allows so the constraint holds transitively. Target chains cannot cycle: a
+    /// self-target is rejected with BAD_ARGUMENTS and a loop with INFINITE_LOOP, both at DDL time.
+    if (const auto target_supported_columns = table->supportedPrewhereColumns())
+        std::erase_if(supported_columns, [&](const auto & name) { return !target_supported_columns->contains(name); });
+
     return supported_columns;
+}
+
+bool StorageMaterializedView::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->supportedPrewhereColumnsIncludeSubcolumns();
+    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory);

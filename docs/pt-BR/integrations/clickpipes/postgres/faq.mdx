@@ -199,10 +199,15 @@ O ClickPipes for Postgres busca mapear os tipos de dados do Postgres de forma o 
 Atualmente, não oferecemos suporte à definição de mapeamentos personalizados de tipos de dados como parte do pipe. No entanto, vale notar que o mapeamento padrão de tipos de dados usado pelo ClickPipes é bastante fiel aos tipos nativos. A maioria dos tipos de coluna do Postgres é replicada o mais próximo possível de seus equivalentes nativos no ClickHouse. Tipos de array de inteiros no Postgres, por exemplo, são replicados como arrays de inteiros no ClickHouse.
 
 <div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
-  ### Como as colunas JSON e JSONB são replicadas do Postgres?
+  ### Como as colunas `json` e `jsonb` são replicadas do Postgres?
 </div>
 
-As colunas JSON e JSONB são replicadas como tipo String no ClickHouse. Como o ClickHouse tem suporte nativo ao [tipo JSON](/pt-BR/reference/data-types/newjson), você pode criar uma visão materializada sobre as tabelas do ClickPipes para fazer a conversão, se necessário. Como alternativa, você pode usar [funções JSON](/pt-BR/reference/functions/regular-functions/json-functions) diretamente nas colunas String. Estamos trabalhando ativamente em um recurso que replica colunas JSON e JSONB diretamente para o tipo JSON no ClickHouse. A expectativa é que esse recurso esteja disponível em alguns meses.
+As colunas `json` e `jsonb` são replicadas como tipo String no ClickHouse devido a incompatibilidades com o [tipo JSON nativo](/pt-BR/reference/data-types/newjson). Por exemplo:
+
+* O PostgreSQL permite qualquer valor JSON válido no nível superior (strings, números, arrays), enquanto o tipo JSON do ClickHouse oferece suporte apenas a objetos.
+* Chaves que contêm pontos (por exemplo, &quot;app.kubernetes.io/name&quot;) também são interpretadas como caminhos aninhados pelo tipo JSON do ClickHouse, o que pode alterar a estrutura dos dados.
+
+Para processar strings JSON após um ClickPipe CDC do Postgres, você pode usar [funções JSON](/pt-BR/reference/functions/regular-functions/json-functions) diretamente nas colunas para extrair e trabalhar com os dados. Para melhorar o desempenho das consultas, você também pode usar uma visão materializada para extrair campos específicos em colunas tipadas ou fazer CAST da coluna para o tipo JSON nativo (tendo em mente que o CAST pode falhar se encontrar alguma incompatibilidade de tipo entre plataformas).
 
 <div id="what-happens-to-inserts-when-a-mirror-is-paused">
   ### O que acontece com os inserts quando um mirror é pausado?
@@ -221,7 +226,7 @@ Em resumo, embora os processos de sincronização e normalização sejam encerra
   ### A criação de ClickPipe pode ser automatizada ou feita por meio da API ou da CLI?
 </div>
 
-Um ClickPipe do Postgres também pode ser criado e gerenciado por meio de endpoints do [OpenAPI](/pt-BR/products/cloud/features/admin-features/api/openapi). Esse recurso está em beta, e a referência da API pode ser encontrada [aqui](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/beta). Também estamos trabalhando ativamente no suporte ao Terraform para criar ClickPipes do Postgres.
+Um ClickPipe do Postgres também pode ser criado e gerenciado por meio de endpoints do [OpenAPI](/pt-BR/products/cloud/features/admin-features/api/openapi). Esse recurso está em beta, e a referência da API pode ser encontrada [aqui](/pt-BR/products/cloud/api-reference/clickpipes/list-clickpipes). Também estamos trabalhando ativamente no suporte ao Terraform para criar ClickPipes do Postgres.
 
 <div id="how-do-i-speed-up-my-initial-load">
   ### Como acelerar a carga inicial?

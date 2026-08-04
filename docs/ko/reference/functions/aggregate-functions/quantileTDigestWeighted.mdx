@@ -28,7 +28,7 @@ State 크기 대비 정밀도 비율 측면에서는 이 함수가 `quantile`보
 이 경우 [`quantiles`](/ko/reference/functions/aggregate-functions/quantiles#quantiles) 함수를 사용하십시오.
 
 <Note>
-  `quantileTDigestWeighted`는 [매우 작은 데이터 세트에는 권장되지 않으며](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275), 상당한 오류를 초래할 수 있습니다.
+  `quantileTDigestWeighted`는 [매우 작은 데이터 집합에는 권장되지 않으며](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275), 상당한 오류를 초래할 수 있습니다.
   이 경우 대신 [`quantileTDigest`](/ko/reference/functions/aggregate-functions/quantileTDigest) 사용을 고려하십시오.
 </Note>
 
@@ -46,12 +46,12 @@ quantileTDigestWeighted(level)(expr, weight)
 
 **인수**
 
-* `expr` — 컬럼 값에 대한 표현식으로, 결과는 숫자 데이터 타입, Date 또는 DateTime이어야 합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
-* `weight` — 시퀀스 요소의 가중치가 들어 있는 컬럼입니다. 가중치는 값의 출현 횟수를 의미합니다. [`UInt*`](/ko/reference/data-types/int-uint)
+* `expr` — 컬럼 값에 대한 표현식으로, 결과는 숫자 데이터 타입, `Date` 또는 `DateTime`이어야 합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
+* `weight` — 시퀀스 원소의 가중치가 들어 있는 컬럼입니다. 가중치는 값의 출현 횟수를 의미합니다. [`UInt*`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-지정된 수준의 근사 분위수입니다. [`Float64`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
+지정된 수준의 근사 분위수입니다. `Date` 및 `DateTime` 입력의 경우 출력 형식은 입력 형식과 일치합니다. [`Float32`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
 
 **예시**
 

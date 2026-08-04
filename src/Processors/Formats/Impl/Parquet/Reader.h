@@ -352,6 +352,14 @@ struct Reader
         /// Note that older parquet writers may omit dictionary info in file metadata, so we don't
         /// necessarily know in advance whether the column chunk has a dictionary.
         Dictionary dictionary;
+        /// When the dictionary is decoded on the pruning path (`BloomFilterBlocksOrDictionary` stage),
+        /// its decoded footprint is reserved live against the shared pruning-stage budget through this
+        /// handle so it is visible to every row group pruning in parallel, not only after the batch
+        /// flushes (see `PruningMemoryReservation`, `ReadManager::runTask` / `pruningMemoryReservation`,
+        /// and `clearColumnChunk`, which releases `dictionary_reserved_bytes`). Both stay default /
+        /// zero when the dictionary is decoded later on the throttled data-read path instead.
+        PruningMemoryReservation dictionary_reservation;
+        size_t dictionary_reserved_bytes = 0;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
@@ -524,7 +532,21 @@ struct Reader
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
-    bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// On the dictionary-filter pruning path, pass a bounded `reservation` (see
+    /// `ReadManager::pruningMemoryReservation`): the decoded dictionary's full footprint is predicted
+    /// from the page header and reserved live against the shared `BloomFilterBlocksOrDictionary` stage
+    /// budget *before* anything is decoded, so a dictionary that would push the pruning memory past the
+    /// reader's high watermark - across the several row groups pruning in parallel - is rejected before
+    /// `Dictionary::decode` allocates anything and false is returned so the caller falls back to a full
+    /// scan for that column. On success the reservation is reduced to the dictionary's actual
+    /// `Dictionary::allocatedBytes` and that amount is returned in `*held_reserved_bytes` for the caller
+    /// to release when the chunk is cleared. This bounds a highly compressible dictionary whose decoded
+    /// size the compressed-page limit alone cannot bound; see the memory-budget note in
+    /// `hashDictionaryValues`. Pass a default (unbounded) reservation and `nullptr` on the data-read
+    /// path, where the dictionary must be decoded regardless of size.
+    bool decodeDictionaryPage(
+        ColumnChunk & column, const PrimitiveColumnInfo & column_info,
+        const PruningMemoryReservation & reservation = {}, size_t * held_reserved_bytes = nullptr);
 
     /// Whether the column chunk is eligible for dictionary-based row group filtering: it has a
     /// dictionary page no larger than `options.dictionary_filter_limit_bytes`, and all of its data
@@ -532,7 +554,12 @@ struct Reader
     bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
 
     /// Returns false if the row group was filtered out and should be skipped.
-    bool applyBloomAndDictionaryFilters(RowGroup & row_group);
+    /// `reservation` bounds the value sets built for dictionary filtering; it is the memory
+    /// still available for pruning, charged live to the shared `BloomFilterBlocksOrDictionary` stage
+    /// counter for the lifetime of each value set, so several dictionary-filtered columns in this row
+    /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
+    /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
+    bool applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation);
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);

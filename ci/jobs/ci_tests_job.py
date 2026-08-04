@@ -44,7 +44,9 @@ if __name__ == "__main__":
         pytest_command += " -k " + shlex.quote(k_expr)
 
     start_docker_in_docker()
-    with ClickHouseService() as service:
+    with ClickHouseService(
+        config_hooks=[ClickHouseService.install_base]
+    ) as service:
         test_result = Result.from_pytest_run(
             name="CI Tests",
             command=pytest_command,
