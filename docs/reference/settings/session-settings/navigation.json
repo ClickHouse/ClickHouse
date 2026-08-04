@@ -235,6 +235,7 @@
     "reference/settings/session-settings/timeout-overflow-mode",
     "reference/settings/session-settings/totals",
     "reference/settings/session-settings/trace-profile-events",
+    "reference/settings/session-settings/unique-key",
     "reference/settings/session-settings/update",
     "reference/settings/session-settings/url",
     "reference/settings/session-settings/use",

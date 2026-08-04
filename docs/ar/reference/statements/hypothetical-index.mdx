@@ -1,0 +1,154 @@
+---
+description: 'توثيق للفهارس الافتراضية (ماذا لو)'
+sidebarTitle: 'HYPOTHETICAL INDEX'
+slug: /sql-reference/statements/hypothetical-index
+title: 'الفهارس الافتراضية'
+doc_type: 'reference'
+---
+
+الفهارس الافتراضية هي فهارس تخطٍّ افتراضية مقيّدة بنطاق الجلسة، ويمكنك إلحاقها بجدول من عائلة `MergeTree` من دون بنائها أو تخزينها فعليًا. وهي لا توجد إلا داخل الجلسة الحالية، ويستخدمها [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif) لتقدير أثر فهرس تخطٍّ حقيقي في استعلام — وعادةً ما يكون ذلك في نسبة التخطّي (أي نسبة العلامات التي يمكن تخطّيها) وتكلفة تقريبية بالعلامات والبايتات.
+
+استخدم الفهارس الافتراضية لتقييم الفهارس المرشحة قبل تحمّل تكلفة بنائها فعليًا على القرص.
+
+<div id="create-hypothetical-index">
+  ## CREATE INDEX افتراضي
+</div>
+
+```sql
+CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name
+    ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
+```
+
+تتبع الصياغةُ ‎`ALTER TABLE ... ADD INDEX`‎، لكن لا يُنشأ أي فهرس ولا يُكتب — بل يُخزَّن وصف الفهرس فقط ضمن الجلسة الحالية.
+
+* `name` — اسم الفهرس؛ ويجب أن يكون فريدًا ضمن `(database, table)` في هذه الجلسة.
+* `expression` — العمود أو التعبير المراد فهرسته.
+* `TYPE type` — ‏`minmax`، ‏`set(N)`، ‏`bloom_filter(p)`، ‏`ngrambf_v1(...)`، ‏`tokenbf_v1(...)`. ‏`text` و`vector_similarity` غير مدعومَين ويُرفضان عند `CREATE`، لأن التحقق الفعلي في `ALTER TABLE ... ADD INDEX` يعتمد على إعدادات على مستوى الجدول لا يستطيع مخزن الجلسة وحده محاكاتها.
+* `GRANULARITY value` — عدد حبيبات البيانات لكل حبيبة فهرس. والقيمة الافتراضية هي 1.
+
+يجب أن يكون الجدول المستهدف جدولًا من عائلة `MergeTree` ضمن قاعدة بيانات `Atomic` (أي يجب أن يكون له معرّف UUID). وتُرفض الجداول التي لا تحتوي على معرّف UUID — مثل الجداول الموجودة في قاعدة بيانات `Ordinary` قديمة، أو جداول `MergeTree` ذات الصياغة القديمة — لأن مخزن الجلسة يربط الفهارس الافتراضية بمعرّف UUID الخاص بالجدول.
+
+**مثال**
+
+```sql
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+```
+
+<div id="evaluating-a-hypothetical-index-with-explain-whatif">
+  ## تقييم فهرس افتراضي باستخدام EXPLAIN WHATIF
+</div>
+
+إن تعريف فهرس افتراضي بحد ذاته لا يفعل شيئًا — ولمعرفة كيف سيؤثر في الاستعلام، شغّل [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif) على عبارة `SELECT` تمثيلية. يوضّح المُقدِّر مدى قابلية تطبيق كل فهرس مرشّح، وعدد العلامات التي سيقرأها، ونسبة التخطي الناتجة، وكيف أُنتِج هذا التقدير (`empirical` أو `statistical` أو `applicability_only`).
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+النتيجة:
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       631
+```
+
+`est_bytes` هو تقدير مستند إلى متوسط حجم الصف في الجدول، لذا يختلف الرقم الدقيق بحسب التخزين والضغط.
+
+لتجاوز الفحص التجريبي داخل الذاكرة والاعتماد بدلًا من ذلك على [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)، عرّفها أولًا للأعمدة المعنية (فهي معطّلة افتراضيًا)، ثم انتظر حتى تكتمل عملية التعديل `materialize`، وبعدها عطّل المسار التجريبي:
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+راجع مرجع [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif) للاطلاع على مخطط الإخراج الكامل والإعدادات.
+
+<div id="drop-hypothetical-index">
+  ## DROP HYPOTHETICAL INDEX
+</div>
+
+```sql
+DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
+```
+
+يزيل فهرسًا افتراضيًا من الجلسة الحالية.
+
+<div id="drop-all-hypothetical-indexes">
+  ## DROP ALL HYPOTHETICAL INDEXES
+</div>
+
+```sql
+DROP ALL HYPOTHETICAL INDEXES
+```
+
+يمسح جميع الفهارس الافتراضية المعرَّفة في الجلسة الحالية، بغضّ النظر عن الجدول.
+
+<div id="scope-and-lifetime">
+  ## النطاق ومدة البقاء
+</div>
+
+* لا تبقى الفهارس الافتراضية إلا ضمن **الجلسة الحالية** — فهي غير مرئية للجلسات الأخرى، وتُزال عند انتهاء الجلسة.
+* لا يؤدي تعريف أحدها أو إسقاطه إلى إنشاء أي فهرس، ولا يؤثر مطلقًا في الاستعلامات العادية على الجدول. كما أن `EXPLAIN WHATIF` التجريبي يقرأ بالفعل بيانات الجدول لبناء الفهرس المرشّح في الذاكرة، ويُحتسب هذا المسح ضمن حدود القراءة والحصص الخاصة بالجلسة.
+* افحص الفهارس الافتراضية الخاصة بالجلسة الحالية عبر [`system.hypothetical_indexes`](/ar/reference/system-tables/hypothetical_indexes).
+
+<div id="limitations">
+  ## القيود
+</div>
+
+تُرفَض العناصر المرشحة `text` و`vector_similarity` عند تنفيذ `CREATE HYPOTHETICAL INDEX`، لأن التحقق الفعلي منها يعتمد على إعدادات على مستوى الجدول لا يمكن لمخزن البيانات الخاص بالجلسة فقط محاكاتها.
+
+يعرض `EXPLAIN WHATIF` القيمة `status: not_applicable` للاستعلامات التي تتضمن `FINAL` (إذ يتداخل تقليم فهرس تخطٍّ مع `PrimaryKeyExpand`)، ويُرجِع الخطأ `NOT_IMPLEMENTED` عندما يُنفَّذ الاستعلام من projection (إذ لا تتم materialize لفهرس الجدول الأب على projection parts).
+
+تمثل القيمة التجريبية `skip_ratio` **حدًا أعلى**: فهي تحسب كل حبيبة متبقية على نحو مستقل، ولا تُنمذج دمج فجوات seek (`merge_tree_min_rows_for_seek` / `merge_tree_min_bytes_for_seek`)، ولا تجمع بين عنصر مرشح وفهرس تخطٍّ موجود ضمن شرط فصلي (`OR`). لذلك قد يقرأ الفهرس materialized الفعلي مقدارًا أكبر قليلًا، أو يُجري pruning في حالات لا يعكسها هذا التقدير.
+
+<div id="required-privileges">
+  ## الصلاحيات المطلوبة
+</div>
+
+يتطلب `CREATE HYPOTHETICAL INDEX` صلاحية `SELECT` على الأعمدة المشار إليها في تعبير الفهرس — وتكفي صلاحية `SELECT` على مستوى العمود (مثل `GRANT SELECT(b)`) — لأن `EXPLAIN WHATIF` في الوضع التجريبي يقرأ تلك الأعمدة.
+
+لا يتطلب `DROP HYPOTHETICAL INDEX` و`DROP ALL HYPOTHETICAL INDEXES` أي صلاحية إضافية؛ إذ يقتصران على إزالة الإدخالات من مخزن الجلسة المحلي.
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif)
+* [`system.hypothetical_indexes`](/ar/reference/system-tables/hypothetical_indexes)
+* [فهارس تخطي البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)
