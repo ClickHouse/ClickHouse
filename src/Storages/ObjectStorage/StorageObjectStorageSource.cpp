@@ -752,7 +752,8 @@ Chunk StorageObjectStorageSource::generate()
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
                                 total_groups,
-                                false
+                                false,
+                                /*apply_deleted_mask=*/true
                             );
                         }
                     }
@@ -876,7 +877,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
             if (query_condition_cache_key)
                 matching_marks = query_condition_cache->read(
-                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash);
+                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash,
+                    /*apply_deleted_mask=*/true);
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;

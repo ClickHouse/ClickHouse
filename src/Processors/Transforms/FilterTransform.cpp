@@ -376,7 +376,8 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
             condition->second,
             buffered_mark_ranges_info->mark_ranges,
             buffered_mark_ranges_info->marks_count,
-            buffered_mark_ranges_info->has_final_mark);
+            buffered_mark_ranges_info->has_final_mark,
+            buffered_mark_ranges_info->apply_deleted_mask);
 
         buffered_mark_ranges_info = nullptr;
 
@@ -401,7 +402,8 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
                 condition->second,
                 buffered_mark_ranges_info->mark_ranges,
                 buffered_mark_ranges_info->marks_count,
-                buffered_mark_ranges_info->has_final_mark);
+                buffered_mark_ranges_info->has_final_mark,
+                buffered_mark_ranges_info->apply_deleted_mask);
 
             buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
         }

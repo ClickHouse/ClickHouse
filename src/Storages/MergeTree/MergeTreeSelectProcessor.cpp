@@ -304,6 +304,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
                     part_name,
                     data_part_info->getIndexGranularity().getMarksCount(),
                     data_part_info->getIndexGranularity().hasFinalMark(),
+                    reader_settings.apply_deleted_mask,
                     res.read_mark_ranges));
             }
 
@@ -447,7 +448,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 prewhere_info->prewhere_actions.getNames()[0],
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part_info->getIndexGranularity().getMarksCount(),
-                                data_part_info->getIndexGranularity().hasFinalMark());
+                                data_part_info->getIndexGranularity().hasFinalMark(),
+                                reader_settings.apply_deleted_mask);
 
                             break;
                         }

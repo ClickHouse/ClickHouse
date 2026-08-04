@@ -153,7 +153,8 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
                     query_condition_cache_key,
-                    *format_filter_info->condition_hash);
+                    *format_filter_info->condition_hash,
+                    /*apply_deleted_mask=*/true);
                 if (matching_marks.has_value())
                 {
                     has_cache_entry = true;

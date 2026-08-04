@@ -21,12 +21,16 @@ namespace CurrentMetrics
 namespace DB
 {
 
-QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash)
+QueryConditionCache::Key QueryConditionCache::makeKey(
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, bool apply_deleted_mask)
 {
     SipHash hash;
     hash.update(table_id);
     hash.update(part_name);
     hash.update(condition_hash);
+    /// Mixed in only for the unusual case, so that the keys of ordinary reads stay what they were.
+    if (!apply_deleted_mask)
+        hash.update("apply_deleted_mask=0");
     return hash.get128();
 }
 
@@ -58,12 +62,12 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 
 void QueryConditionCache::write(
     const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
-    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
+    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark, bool apply_deleted_mask)
 {
     if (table_id == UUIDHelpers::Nil)
         return; /// Issue #92863: Certain database engines provide no table UUIDs
 
-    Key key = makeKey(table_id, part_name, condition_hash);
+    Key key = makeKey(table_id, part_name, condition_hash, apply_deleted_mask);
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id, part_name, condition_hash, condition); };
@@ -120,12 +124,13 @@ void QueryConditionCache::write(
         has_final_mark);
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, bool apply_deleted_mask, bool increment_profile_events)
 {
     if (table_id == UUIDHelpers::Nil)
         return {}; /// Issue #92864: Certain database engines provide no table UUIDs
 
-    Key key = makeKey(table_id, part_name, condition_hash);
+    Key key = makeKey(table_id, part_name, condition_hash, apply_deleted_mask);
 
     if (auto entry = cache.get(key))
     {

@@ -65,13 +65,18 @@ void assertSortedAndNonIntersecting(const MarkRanges & ranges);
 class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
 {
 public:
-    MarkRangesInfo(UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_);
+    MarkRangesInfo(
+        UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, bool apply_deleted_mask_,
+        MarkRanges mark_ranges_);
     void appendMarkRanges(const MarkRanges & mark_ranges_);
 
     UUID table_uuid;
     String part_name;
     size_t marks_count;
     bool has_final_mark;
+    /// Whether the read that produced the chunk hid lightweight-deleted rows. Part of the query
+    /// condition cache key, see QueryConditionCache::makeKey.
+    bool apply_deleted_mask;
     MarkRanges mark_ranges;
 };
 

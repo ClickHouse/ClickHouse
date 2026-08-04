@@ -1,0 +1,20 @@
+--- an ordinary read does not consume an apply_deleted_mask = 0 entry
+0
+0
+--- and an apply_deleted_mask = 0 read does not consume an ordinary entry
+0
+0
+--- within its own key space, apply_deleted_mask = 0 still prunes
+0
+0
+--- log_comment, (any QCC hit), (read no marks at all)
+04700_mask0_first	0	0
+04700_normal_after_mask0	0	0
+04700_normal_first	0	0
+04700_mask0_after_normal	0	0
+04700_mask0_prime	0	0
+04700_mask0_reuse	1	1
+--- results stay correct with the cache warm
+0
+10
+0
