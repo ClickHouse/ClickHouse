@@ -57,7 +57,6 @@
     "input_format_arrow_allow_missing_columns": "/reference/settings/formats/input-format",
     "input_format_arrow_case_insensitive_column_matching": "/reference/settings/formats/input-format",
     "input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference": "/reference/settings/formats/input-format",
-    "input_format_arrow_use_native_reader": "/reference/settings/formats/input-format",
     "input_format_avro_allow_missing_fields": "/reference/settings/formats/input-format",
     "input_format_avro_null_as_default": "/reference/settings/formats/input-format",
     "input_format_binary_decode_types_in_binary_format": "/reference/settings/formats/input-format",
@@ -138,6 +137,7 @@
     "input_format_parquet_allow_missing_columns": "/reference/settings/formats/input-format",
     "input_format_parquet_bloom_filter_push_down": "/reference/settings/formats/input-format",
     "input_format_parquet_case_insensitive_column_matching": "/reference/settings/formats/input-format",
+    "input_format_parquet_dictionary_filter_push_down": "/reference/settings/formats/input-format",
     "input_format_parquet_enable_json_parsing": "/reference/settings/formats/input-format",
     "input_format_parquet_enable_row_group_prefetch": "/reference/settings/formats/input-format",
     "input_format_parquet_filter_push_down": "/reference/settings/formats/input-format",
@@ -155,6 +155,7 @@
     "input_format_protobuf_flatten_google_wrappers": "/reference/settings/formats/input-format",
     "input_format_protobuf_oneof_presence": "/reference/settings/formats/input-format",
     "input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference": "/reference/settings/formats/input-format",
+    "input_format_read_datetime_number_as_raw_value": "/reference/settings/formats/input-format",
     "input_format_record_errors_file_path": "/reference/settings/formats/input-format",
     "input_format_skip_unknown_fields": "/reference/settings/formats/input-format",
     "input_format_try_infer_dates": "/reference/settings/formats/input-format",
@@ -189,7 +190,6 @@
     "output_format_arrow_string_as_string": "/reference/settings/formats/output-format",
     "output_format_arrow_unsupported_types_as_binary": "/reference/settings/formats/output-format",
     "output_format_arrow_use_64_bit_indexes_for_dictionary": "/reference/settings/formats/output-format",
-    "output_format_arrow_use_native_writer": "/reference/settings/formats/output-format",
     "output_format_arrow_use_signed_indexes_for_dictionary": "/reference/settings/formats/output-format",
     "output_format_avro_codec": "/reference/settings/formats/output-format",
     "output_format_avro_confluent_subject": "/reference/settings/formats/output-format",
@@ -427,7 +427,7 @@
       "path": "/reference/settings/formats/format",
       "label": "format_*",
       "settings": 5,
-      "characters": 3101
+      "characters": 3107
     },
     {
       "path": "/reference/settings/formats/format-avro",
@@ -480,14 +480,14 @@
     {
       "path": "/reference/settings/formats/input-format",
       "label": "input_format_*",
-      "settings": 125,
-      "characters": 55714
+      "settings": 126,
+      "characters": 58538
     },
     {
       "path": "/reference/settings/formats/output-format",
       "label": "output_format_*",
-      "settings": 104,
-      "characters": 49175
+      "settings": 103,
+      "characters": 48689
     },
     {
       "path": "/reference/settings/formats/schema-inference",
