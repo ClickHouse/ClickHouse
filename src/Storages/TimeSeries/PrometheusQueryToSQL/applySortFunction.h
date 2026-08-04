@@ -8,12 +8,10 @@ namespace DB::PrometheusQueryToSQL
 {
 struct ConverterContext;
 
-/// Returns true if the specified function is sort() or sort_desc().
+/// Returns true if the specified function is `sort` or `sort_desc`.
 bool isSortFunction(std::string_view function_name);
 
-/// Applies sort() or sort_desc() to an instant vector.
-/// These functions do not change the values — they only affect the output ordering
-/// of the final result (ascending for sort(), descending for sort_desc()).
+/// Applies `sort` or `sort_desc` to an instant vector and captures the order at this point.
 SQLQueryPiece applySortFunction(
     const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 }

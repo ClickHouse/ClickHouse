@@ -124,6 +124,7 @@ SQLQueryPiece applySimpleFunction(
 
                 res.store_method = StoreMethod::VECTOR_GRID;
                 res.metric_name_dropped = argument.metric_name_dropped;
+                res.has_sort_order = argument.has_sort_order;
 
                 break;
             }
@@ -167,6 +168,9 @@ SQLQueryPiece applySimpleFunction(
 
     builder.select_list.push_back(std::move(expression));
     builder.select_list.back()->setAlias((res.store_method == StoreMethod::SINGLE_SCALAR) ? ColumnNames::Value : ColumnNames::Values);
+
+    if (res.has_sort_order)
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortKey));
 
     builder.from_table = table_to_select_from;
 

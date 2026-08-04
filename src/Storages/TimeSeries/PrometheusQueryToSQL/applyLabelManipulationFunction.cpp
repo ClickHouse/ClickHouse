@@ -237,6 +237,12 @@ applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<
                 builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
                 builder.select_list.back()->setAlias(ColumnNames::Values);
 
+                if (res.has_sort_order)
+                {
+                    builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::SortKey)));
+                    builder.select_list.back()->setAlias(ColumnNames::SortKey);
+                }
+
                 context.subqueries.emplace_back(
                     SQLSubquery{context.subqueries.size(), std::move(first_argument.select_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
@@ -265,6 +271,9 @@ applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<
                 builder.select_list.back()->setAlias(ColumnNames::Group);
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+                if (res.has_sort_order)
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortKey));
 
                 context.subqueries.emplace_back(
                     SQLSubquery{context.subqueries.size(), std::move(label_replacing_query), SQLSubqueryType::TABLE});

@@ -72,6 +72,7 @@ namespace
         bool group_left = operator_node->group_left;
         bool group_right = operator_node->group_right;
         const auto & extra_labels = operator_node->extra_labels;
+        bool result_has_sort_order = group_right ? right_argument.has_sort_order : left_argument.has_sort_order;
 
         /// Step 1:
         /// new_left:
@@ -135,6 +136,16 @@ namespace
                 values->setAlias(ColumnNames::Values);
             }
             builder.select_list.push_back(std::move(values));
+
+            bool result_order_side = (side == left) ? !group_right : group_right;
+            if (result_order_side && result_has_sort_order)
+            {
+                ASTPtr sort_key = make_intrusive<ASTIdentifier>(ColumnNames::SortKey);
+                if (check_side_one)
+                    sort_key = makeASTFunction("any", std::move(sort_key));
+                sort_key->setAlias(ColumnNames::SortKey);
+                builder.select_list.push_back(std::move(sort_key));
+            }
 
             builder.from_table = side;
 
@@ -329,6 +340,16 @@ namespace
             builder.select_list.push_back(std::move(values));
             builder.select_list.back()->setAlias(ColumnNames::Values);
 
+            if (result_has_sort_order)
+            {
+                String & result_order_side = group_right ? right : left;
+                ASTPtr sort_key = make_intrusive<ASTIdentifier>(Strings{result_order_side, ColumnNames::SortKey});
+                if (check_no_duplicate_groups)
+                    sort_key = makeASTFunction("any", std::move(sort_key));
+                sort_key->setAlias(ColumnNames::SortKey);
+                builder.select_list.push_back(std::move(sort_key));
+            }
+
             builder.from_table = left;
 
             builder.join_kind = join_kind;
@@ -363,6 +384,7 @@ namespace
         res.end_time = left_argument.end_time;
         res.step = left_argument.step;
         res.metric_name_dropped = metric_name_dropped_from_result;
+        res.has_sort_order = result_has_sort_order;
 
         return res;
     }

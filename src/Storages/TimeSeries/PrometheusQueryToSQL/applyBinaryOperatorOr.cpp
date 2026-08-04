@@ -106,6 +106,13 @@ SQLQueryPiece applyBinaryOperatorOr(
 
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
+        if (right_argument.has_sort_order)
+        {
+            auto sort_key = make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::SortKey});
+            sort_key->setAlias(ColumnNames::SortKey);
+            builder.select_list.push_back(std::move(sort_key));
+        }
+
         builder.from_table = step1;
         builder.join_kind = JoinKind::Right;
         builder.join_strictness = JoinStrictness::Any;
@@ -174,6 +181,34 @@ SQLQueryPiece applyBinaryOperatorOr(
             make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Values})));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
+        if (left_argument.has_sort_order || right_argument.has_sort_order)
+        {
+            ASTPtr left_sort_key;
+            if (left_argument.has_sort_order)
+                left_sort_key = make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::SortKey});
+            else
+                left_sort_key = makeASTFunction("array", make_intrusive<ASTLiteral>(0.0));
+            left_sort_key
+                = makeASTFunction("arrayConcat", makeASTFunction("array", make_intrusive<ASTLiteral>(0.0)), std::move(left_sort_key));
+
+            ASTPtr right_sort_key;
+            if (right_argument.has_sort_order)
+                right_sort_key = make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::SortKey});
+            else
+                right_sort_key = makeASTFunction("array", make_intrusive<ASTLiteral>(0.0));
+            right_sort_key
+                = makeASTFunction("arrayConcat", makeASTFunction("array", make_intrusive<ASTLiteral>(1.0)), std::move(right_sort_key));
+
+            auto left_has_value = makeASTFunction(
+                "isNotNull",
+                makeASTFunction(
+                    "arrayElement", make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}), make_intrusive<ASTLiteral>(1u)));
+
+            builder.select_list.push_back(
+                makeASTFunction("if", std::move(left_has_value), std::move(left_sort_key), std::move(right_sort_key)));
+            builder.select_list.back()->setAlias(ColumnNames::SortKey);
+        }
+
         builder.from_table = left;
         builder.join_kind = JoinKind::Full;
         builder.join_strictness = JoinStrictness::All;
@@ -194,6 +229,7 @@ SQLQueryPiece applyBinaryOperatorOr(
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;
     res.step = left_argument.step;
+    res.has_sort_order = left_argument.has_sort_order || right_argument.has_sort_order;
 
     return res;
 }

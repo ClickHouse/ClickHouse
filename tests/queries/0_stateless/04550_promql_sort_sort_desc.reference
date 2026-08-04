@@ -14,3 +14,38 @@
 [('instance','host2')]	2023-11-14 22:13:20.000	20
 [('instance','host3')]	2023-11-14 22:13:20.000	40
 [('instance','host1')]	2023-11-14 22:13:20.000	60
+-- sort_desc is applied before unary negation
+[('instance','host1')]	2023-11-14 22:13:20.000	-30
+[('instance','host3')]	2023-11-14 22:13:20.000	-20
+[('instance','host2')]	2023-11-14 22:13:20.000	-10
+-- sort_desc order survives a non-monotonic value transformation
+[('instance','host1')]	2023-11-14 22:13:20.000	5
+[('instance','host3')]	2023-11-14 22:13:20.000	5
+[('instance','host2')]	2023-11-14 22:13:20.000	15
+-- sort_desc order follows the output side of vector matching
+[('instance','host1')]	2023-11-14 22:13:20.000	900
+[('instance','host3')]	2023-11-14 22:13:20.000	400
+[('instance','host2')]	2023-11-14 22:13:20.000	100
+-- sort_desc order follows the right output side with group_right
+[('instance','host1')]	2023-11-14 22:13:20.000	900
+[('instance','host3')]	2023-11-14 22:13:20.000	400
+[('instance','host2')]	2023-11-14 22:13:20.000	100
+-- and preserves the order of its left argument
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+-- unless preserves the order of its left argument
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+-- or preserves an ordered left prefix
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+[]	2023-11-14 22:13:20.000	99
+-- or preserves an ordered right suffix
+[]	2023-11-14 22:13:20.000	99
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+-- sort_desc ordering does not survive a subquery and range function
+1

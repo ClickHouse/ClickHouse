@@ -161,6 +161,12 @@ namespace
                 new_values->setAlias(ColumnNames::Values);
                 builder.select_list.push_back(std::move(new_values));
 
+                bool keep_sort_order = expression.has_sort_order && node_range.start_time == node_range.end_time;
+                if (keep_sort_order)
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortKey));
+                else
+                    expression.has_sort_order = false;
+
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
                 builder.from_table = subqueries.back().name;

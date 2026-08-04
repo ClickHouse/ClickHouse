@@ -1,7 +1,11 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySortFunction.h>
 
-#include <Common/Exception.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Common/Exception.h>
 
 
 namespace DB::ErrorCodes
@@ -40,10 +44,34 @@ SQLQueryPiece applySortFunction(
                         getPromQLText(argument, context), argument.type);
     }
 
-    /// sort() / sort_desc() do not change the values, they only affect the output ordering.
-    /// We pass the argument through unchanged and set the sort direction on the result.
-    argument.sort_direction = (function_name == "sort") ? 1 : -1;
     argument.node = function_node;
+
+    /// Range-query results have a fixed label order, and all other store methods contain at most one series.
+    if (argument.store_method != StoreMethod::VECTOR_GRID || argument.start_time != argument.end_time)
+    {
+        argument.has_sort_order = false;
+        return std::move(argument);
+    }
+
+    /// Capture the value at this point so later value transformations cannot change the chosen order.
+    SelectQueryBuilder builder;
+    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+    ASTPtr value = makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u));
+    ASTPtr normalized_value = (function_name == "sort") ? value->clone() : makeASTFunction("negate", value->clone());
+
+    builder.select_list.push_back(makeASTFunction(
+        "array",
+        makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value))),
+        makeASTFunction("toFloat64", std::move(normalized_value))));
+    builder.select_list.back()->setAlias(ColumnNames::SortKey);
+
+    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
+    builder.from_table = context.subqueries.back().name;
+
+    argument.select_query = builder.getSelectQuery();
+    argument.has_sort_order = true;
     return std::move(argument);
 }
 

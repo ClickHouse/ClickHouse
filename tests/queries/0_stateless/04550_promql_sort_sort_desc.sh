@@ -48,6 +48,39 @@ promql_client -q "sort(sort_desc(up))"
 echo "-- sort on expression: sort(up * 2) ascending (20, 40, 60)"
 promql_client -q "sort(up * 2)"
 
+echo "-- sort_desc is applied before unary negation"
+promql_client -q "-sort_desc(up)"
+
+echo "-- sort_desc order survives a non-monotonic value transformation"
+promql_client -q "abs(sort_desc(up - 25))"
+
+echo "-- sort_desc order follows the output side of vector matching"
+promql_client -q "sort_desc(up) * on(instance) up"
+
+echo "-- sort_desc order follows the right output side with group_right"
+promql_client -q "up * on(instance) group_right sort_desc(up)"
+
+echo "-- and preserves the order of its left argument"
+promql_client -q "sort_desc(up) and up"
+
+echo "-- unless preserves the order of its left argument"
+promql_client -q 'sort_desc(up) unless up{instance="host2"}'
+
+echo "-- or preserves an ordered left prefix"
+promql_client -q "sort_desc(up) or vector(99)"
+
+echo "-- or preserves an ordered right suffix"
+promql_client -q "vector(99) or sort_desc(up)"
+
+echo "-- sort_desc ordering does not survive a subquery and range function"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "
+SELECT
+    (SELECT groupArray(value) FROM prometheusQuery(ts, 'last_over_time(sort_desc(up)[1m:1m])', toDateTime64(1700000040, 3, 'UTC')))
+    =
+    (SELECT groupArray(value) FROM prometheusQuery(ts, 'last_over_time(up[1m:1m])', toDateTime64(1700000040, 3, 'UTC')))
+SETTINGS max_threads = 1
+"
+
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"

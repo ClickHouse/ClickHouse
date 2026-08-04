@@ -161,6 +161,7 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
 
     auto res = argument;
     res.node = operator_node;
+    res.has_sort_order = false;
 
     /// Step 1: aggregate over series, using `new_group` as an intermediate alias to avoid
     /// ambiguity with the input `group` column when the alias and the source column share the same name.

@@ -285,11 +285,11 @@ namespace
 
         builder.where = std::move(where);
 
-        /// If sort() / sort_desc() was applied, order the output by value.
-        if (result.sort_direction != 0)
+        /// Keep the order chosen where `sort` or `sort_desc` was applied.
+        if (result.has_sort_order)
         {
-            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-            builder.order_direction = result.sort_direction;
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortKey));
+            builder.order_direction = 1;
         }
 
         builder.with = std::move(context.subqueries);

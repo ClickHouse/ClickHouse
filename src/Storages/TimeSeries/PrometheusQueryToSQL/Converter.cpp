@@ -124,6 +124,8 @@ ASTPtr Converter::getSQL() const
     ConverterContext context{promql_tree, settings};
     auto query_piece = visitNode(promql_tree->getRoot(), context);
     query_piece.type = result_type;
+    if (result_type == ResultType::RANGE_VECTOR)
+        query_piece.has_sort_order = false;
     return finalizeSQL(std::move(query_piece), context);
 }
 

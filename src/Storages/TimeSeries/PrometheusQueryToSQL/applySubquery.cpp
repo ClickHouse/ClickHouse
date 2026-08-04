@@ -35,6 +35,7 @@ SQLQueryPiece applySubquery(const PQT::Subquery * subquery_node, SQLQueryPiece &
 
     expression.node = subquery_node;
     expression.type = ResultType::RANGE_VECTOR;
+    expression.has_sort_order = false;
     return std::move(expression);
 }
 

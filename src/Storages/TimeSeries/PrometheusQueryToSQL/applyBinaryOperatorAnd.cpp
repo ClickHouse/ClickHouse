@@ -134,6 +134,13 @@ SQLQueryPiece applyBinaryOperatorAnd(
 
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
+        if (left_argument.has_sort_order)
+        {
+            auto sort_key = make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::SortKey});
+            sort_key->setAlias(ColumnNames::SortKey);
+            builder.select_list.push_back(std::move(sort_key));
+        }
+
         builder.from_table = left;
 
         builder.join_kind = JoinKind::Left;
@@ -160,6 +167,7 @@ SQLQueryPiece applyBinaryOperatorAnd(
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;
     res.step = left_argument.step;
+    res.has_sort_order = left_argument.has_sort_order;
 
     return res;
 }

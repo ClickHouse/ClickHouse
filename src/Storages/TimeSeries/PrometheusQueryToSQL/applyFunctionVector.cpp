@@ -50,6 +50,7 @@ SQLQueryPiece applyFunctionVector(const PQT::Function * function_node, std::vect
     auto res = argument;
     res.node = function_node;
     res.type = ResultType::INSTANT_VECTOR;
+    res.has_sort_order = false;
     return res;
 }
 

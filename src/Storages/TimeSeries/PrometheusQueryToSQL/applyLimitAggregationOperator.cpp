@@ -256,6 +256,7 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     auto res = vector_arg;
     res.node = operator_node;
+    res.has_sort_order = false;
 
     /// Step 1: collect all series within each aggregation group.
     ///

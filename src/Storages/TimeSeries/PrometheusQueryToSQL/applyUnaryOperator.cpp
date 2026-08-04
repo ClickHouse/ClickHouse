@@ -105,6 +105,9 @@ SQLQueryPiece applyUnaryOperator(
 
             builder.select_list.back()->setAlias(ColumnNames::Values);
 
+            if (res.has_sort_order)
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortKey));
+
             context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
             builder.from_table = context.subqueries.back().name;
 

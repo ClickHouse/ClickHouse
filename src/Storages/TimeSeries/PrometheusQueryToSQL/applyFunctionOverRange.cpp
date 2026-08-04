@@ -162,6 +162,7 @@ SQLQueryPiece applyFunctionOverRange(
     SQLQueryPiece res = argument;
     res.node = node;
     res.type = ResultType::INSTANT_VECTOR;
+    res.has_sort_order = false;
 
     bool has_group = false;
     ASTPtr timestamps;

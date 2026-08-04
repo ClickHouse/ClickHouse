@@ -53,6 +53,7 @@ SQLQueryPiece applyFunctionScalar(
     auto res = argument;
     res.node = function_node;
     res.type = ResultType::SCALAR;
+    res.has_sort_order = false;
 
     switch (argument.store_method)
     {
