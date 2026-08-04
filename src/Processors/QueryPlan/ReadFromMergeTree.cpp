@@ -3067,8 +3067,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         std::optional<size_t> condition_hash;
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
                 && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
-                && !result.sampling.use_sampling)        /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
+                && !result.sampling.use_sampling         /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
                                                          /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
+                && !result.sampling.use_bernoulli_sampling) /// Same for Bernoulli sampling: keep sampled reads out of the cache entirely.
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
@@ -4277,7 +4278,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
     /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
-    if (result.sampling.use_sampling)
+    /// Bernoulli sampling must be excluded the same way: it drops rows inside the reader before the WHERE
+    /// `FilterTransform` runs, so a mark could be cached as non-matching after only its sampled subset was
+    /// inspected, making a later non-SAMPLE query with the same predicate skip rows it should return.
+    /// (Consulting the cache stays sound for sampled reads: entries are written only by unsampled reads and
+    /// assert "no row of this mark matches the predicate", which holds for any sampled subset as well.)
+    if (result.sampling.use_sampling || result.sampling.use_bernoulli_sampling)
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
