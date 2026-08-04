@@ -1,6 +1,6 @@
 allow_delta_kernel_rs	
 allow_experimental_delta_kernel_rs	allow_delta_kernel_rs
-0	0
+false	false
 0
-1	1
+true	true
 1
