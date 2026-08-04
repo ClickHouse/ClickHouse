@@ -250,7 +250,10 @@ ContextPtr makeStreamingContext(ContextPtr context_)
 SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
 {
     info.table_expression_modifiers = std::nullopt;
-    info.merge_tree_enable_remove_parts_from_snapshot_optimization = false;
+
+    info.query_tree.reset();
+    info.table_expression.reset();
+    info.planner_context.reset();
 
     info.prewhere_info.reset();
     info.filter_actions_dag.reset();
@@ -306,7 +309,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , max_block_size(max_block_size_)
     , subscription(std::move(subscription_))
     , log(getLogger("MergeTreeCommitOrderSequentialSource"))
-    , last_emitted_positions(buildMergeTreeCursor(query_info_.table_expression_modifiers->getStreamSettings()->cursor_tree))
+    , last_emitted_positions(buildMergeTreeCursor(query_info_.table_expression_modifiers->getStreamSettings()->cursor))
 {
 }
 
