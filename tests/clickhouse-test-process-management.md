@@ -84,7 +84,7 @@ clickhouse-test --cleanup
 Calls `cleanup_test_groups()`, which globs `{_GROUP_PID_PATH}/{_GROUP_PID_NAME}.*`
 (skipping `.tmp` files), reads each file, calls `kill_process_group(pgid, None)`
 on the recorded PGID, and removes the file.  It passes no `worker_pids`, so it
-matches every record regardless of name shape — it is an orphan sweep run when
+matches every record regardless of name shape: it is an orphan sweep run when
 nothing else is live, and the orphan it exists for may predate a name change.
 
 ### `clickhouse-test` startup
