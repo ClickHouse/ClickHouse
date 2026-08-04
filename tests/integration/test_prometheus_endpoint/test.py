@@ -10,7 +10,10 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", main_configs=["configs/prom_conf.xml"])
 node_labels = cluster.add_instance(
-    "node_labels", main_configs=["configs/prom_conf_labels.xml"]
+    "node_labels",
+    main_configs=["configs/prom_conf_labels.xml"],
+    # The `shard` label is defined with from_env in the config; this exercises env-based resolution.
+    env_variables={"PROM_SHARD": "shard-01"},
 )
 node_group_label_disabled = cluster.add_instance(
     "node_group_label_disabled",
@@ -115,9 +118,13 @@ def test_prometheus_endpoint_constant_labels(start_cluster):
         line = line.rstrip()
         if not line or line.startswith("#"):
             continue
-        # Every exposed metric must carry the constant labels from the config.
+        # Every exposed metric must carry the constant labels from the config. `shard` is defined with
+        # from_env="PROM_SHARD" (set to "shard-01"), so asserting its value also verifies that env-based
+        # label resolution works end-to-end (config preprocessing -> label enumeration -> /metrics).
         assert 'environment="staging"' in line, line
         assert 'shard="shard-01"' in line, line
+        # The unresolved placeholder must never leak into the output.
+        assert "PROM_SHARD" not in line, line
 
     # Constant labels are merged with the metric's own labels.
     assert (

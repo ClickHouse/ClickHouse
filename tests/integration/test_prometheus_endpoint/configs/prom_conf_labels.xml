@@ -12,7 +12,8 @@
         <errors>true</errors>
         <labels>
             <environment>staging</environment>
-            <shard>shard-01</shard>
+            <!-- Resolved from the PROM_SHARD environment variable to exercise the from_env path. -->
+            <shard from_env="PROM_SHARD"></shard>
         </labels>
     </prometheus>
 </clickhouse>
