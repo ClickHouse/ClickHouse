@@ -23,7 +23,7 @@ namespace
     /// Checks that the argument types are valid for `double_exponential_smoothing`:
     /// a range vector followed by two scalars.
     void checkArgumentTypes(
-        const PQT::Function * function_node,
+        const PrometheusQueryTree::Function * function_node,
         const std::vector<SQLQueryPiece> & arguments,
         const ConverterContext & context)
     {
@@ -53,7 +53,7 @@ namespace
     }
 
     Float64 extractConstantFactor(
-        const PQT::Function * function_node, const SQLQueryPiece & arg, std::string_view factor_name)
+        const PrometheusQueryTree::Function * function_node, const SQLQueryPiece & arg, std::string_view factor_name)
     {
         const auto & function_name = function_node->function_name;
 
@@ -78,7 +78,7 @@ bool isDoubleExponentialSmoothing(std::string_view function_name)
 
 
 SQLQueryPiece applyDoubleExponentialSmoothing(
-    const PQT::Function * function_node,
+    const PrometheusQueryTree::Function * function_node,
     std::vector<SQLQueryPiece> && arguments,
     ConverterContext & context)
 {
