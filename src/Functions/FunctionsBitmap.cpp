@@ -57,7 +57,7 @@ REGISTER_FUNCTION(Bitmap)
         {"start", "Start of the value range (inclusive). [`UInt*`](/sql-reference/data-types/int-uint)"},
         {"end", "End of the value range (exclusive). [`UInt*`](/sql-reference/data-types/int-uint)"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapSubsetInRange = {"Returns a bitmap containing only the set bits in the specified range", {"AggregateFunction(groupBitmap, T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_bitmapSubsetInRange = {"Returns a bitmap containing only the elements in the specified value range", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapSubsetInRange = {{"Usage example", "SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS res;",
         R"(
 ┌─res───────┐
@@ -79,7 +79,7 @@ REGISTER_FUNCTION(Bitmap)
         {"range_start", "Minimum element value to include (inclusive). [`UInt*`](/sql-reference/data-types/int-uint)"},
         {"cardinality_limit", "Maximum cardinality of the subset. [`UInt*`](/sql-reference/data-types/int-uint)"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_bitmapSubsetLimit = {"Returns a bitmap containing at most `cardinality_limit` set bits, starting from `range_start`", {"AggregateFunction(groupBitmap, T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_bitmapSubsetLimit = {"Returns a bitmap containing at most `cardinality_limit` elements with unsigned value at least `range_start`", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapSubsetLimit = {{"Usage example", "SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2))) AS res;",
         R"(
 ┌─res────┐
@@ -101,7 +101,7 @@ REGISTER_FUNCTION(Bitmap)
         {"offset", "Number of elements to skip in ascending unsigned value order (zero-based). [`UInt*`](/sql-reference/data-types/int-uint)"},
         {"cardinality_limit", "Maximum number of elements to include in the subset. [`UInt*`](/sql-reference/data-types/int-uint)"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subBitmap = {"Returns a bitmap containing at most `limit` set bits, starting after skipping `offset` set bits in ascending order", {"AggregateFunction(groupBitmap, T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_subBitmap = {"Returns a bitmap containing at most `cardinality_limit` elements after skipping `offset` elements in ascending unsigned value order", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_subBitmap = {{"Usage example", "SELECT bitmapToArray(subBitmap(bitmapBuild([1, 2, 3, 4, 5]), 2, 2)) AS res;",
         R"(
 ┌─res────┐

@@ -15,3 +15,26 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([-1, 0, 1]::Array(Int32)), 0,
 SELECT bitmapToArray(subBitmap(bitmapBuild([4294967297]::Array(UInt64)), 0, 1));
 SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([4294967297]::Array(UInt64)), 4294967297, 4294967298));
 SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([4294967297]::Array(UInt64)), 4294967297, 1));
+-- signed Int8/Int16: compare as unsigned, so -1 matches the threshold and -128/-32768 do not
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([-128, -1]::Array(Int8)), 200, 1));
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([-128, -1]::Array(Int8)), 200, 256));
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([-32768, -1]::Array(Int16)), 40000, 1));
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([-32768, -1]::Array(Int16)), 40000, 65536));
+-- same after promotion past the 32-element small set (Int8)
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-128, -1]::Array(Int8))), 200, 1));
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-128, -1]::Array(Int8))), 200, 256));
+-- same after promotion (Int16)
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int16)'), [-32768, -1]::Array(Int16))), 40000, 1));
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int16)'), [-32768, -1]::Array(Int16))), 40000, 65536));
+-- promoted UInt64: same value above UInt32 max
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild(arrayConcat(CAST(range(33), 'Array(UInt64)'), [4294967297]::Array(UInt64))),4 294967297, 4294967298));
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild(arrayConcat(CAST(range(33), 'Array(UInt64)'), [4294967297]::Array(UInt64))), 4294967297, 1));
+-- promoted Int8 subBitmap: unsigned order is 0..30, -128, -1
+SELECT bitmapToArray(subBitmap(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-128, -1]::Array(Int8))), 31, 1));
+SELECT bitmapToArray(subBitmap(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-128, -1]::Array(Int8))), 32, 1));
+-- promoted Int8: bitmapMin/Max/Contains use UnsignedT (not sign-extended UInt32 storage)
+-- -128..-96 => unsigned 128..160
+SELECT bitmapMin(bitmapBuild(arrayMap(x -> toInt8(x - 128), range(33))));
+SELECT bitmapMax(bitmapBuild(arrayMap(x -> toInt8(x - 128), range(33))));
+SELECT bitmapContains(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-1]::Array(Int8))), 255);
+SELECT bitmapContains(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-1]::Array(Int8))), 254);

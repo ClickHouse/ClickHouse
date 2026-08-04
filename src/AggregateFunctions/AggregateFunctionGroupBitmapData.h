@@ -449,24 +449,17 @@ public:
      */
     UInt8 rb_contains(UInt64 x) const /// NOLINT
     {
-        if (isSmall())
+        if constexpr (!std::is_same_v<T, UInt64>)
         {
-            if constexpr (!std::is_same_v<T, UInt64>)
-            {
-                if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
-                    return 0;
-            }
-
-            return small.find(static_cast<T>(x)) != small.end();
-        }
-
-        if constexpr (!std::is_same_v<Value, UInt64>)
-        {
-            if (x > static_cast<UInt64>(std::numeric_limits<Value>::max()))
+            if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
                 return 0;
         }
 
-        return roaring_bitmap->contains(static_cast<Value>(x));
+        /// Cast as T so narrow signed values retain a consistent, sign-extended Value through promotion.
+        if (isSmall())
+            return small.find(static_cast<T>(x)) != small.end();
+
+        return roaring_bitmap->contains(static_cast<Value>(static_cast<T>(x)));
     }
 
     /**
@@ -520,10 +513,12 @@ public:
         {
             for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
             {
-                if (*it < range_start)
+                /// Narrow signed values are stored sign-extended in UInt32, compare in UnsignedT domain.
+                const UInt64 uv = static_cast<UnsignedT>(*it);
+                if (uv < range_start)
                     continue;
 
-                if (*it < range_end)
+                if (uv < range_end)
                 {
                     r1.add(static_cast<T>(*it));
                     ++count;
@@ -572,7 +567,9 @@ public:
         UInt64 count = 0;
         for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
         {
-            if (*it < range_start)
+            /// Narrow signed values are stored sign-extended in UInt32, compare in UnsignedT domain.
+            const UInt64 uv = static_cast<UnsignedT>(*it);
+            if (uv < range_start)
                 continue;
 
             if (count < limit)
@@ -640,7 +637,8 @@ public:
             }
             return min_val;
         }
-        return roaring_bitmap->minimum();
+        /// Narrow signed values are stored sign-extended in UInt32; truncate to UnsignedT to match the small-set.
+        return static_cast<UnsignedT>(roaring_bitmap->minimum());
     }
 
     UInt64 rb_max() const /// NOLINT
@@ -658,7 +656,8 @@ public:
             }
             return max_val;
         }
-        return roaring_bitmap->maximum();
+        /// Narrow signed values are stored sign-extended in UInt32; truncate to UnsignedT to match the small-set.
+        return static_cast<UnsignedT>(roaring_bitmap->maximum());
     }
 
     /**
