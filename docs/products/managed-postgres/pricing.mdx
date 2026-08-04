@@ -91,8 +91,8 @@ The table below summarizes the features, capabilities, and limits included in ea
 
 Instance configurations are grouped into three categories to simplify infrastructure selection based on workload characteristics.
 
-- **Memory Optimized:** Designed for memory-intensive workloads with higher memory-to-CPU ratios (such as 1:8 or 1:4). Supports AWS Graviton-based `r8gd`, `r6gd`, `m6gd`, and `m8gd` families. Best suited for large working sets, high cache hit ratios, and memory-bound database workloads.
-- **Storage Optimized:** Designed for workloads that require large amounts of local NVMe storage without scaling compute proportionally. Supports AWS Graviton-based `i8g`, `i8ge`, `i7i` and `i7ie` families, with configurations offering up to 60 TB of local NVMe storage. Best suited for large datasets, time-series workloads, log and event storage, and storage-heavy OLTP workloads.
+- **Memory Optimized:** Designed for memory-intensive workloads with higher memory-to-CPU ratios (such as 1:8 or 1:4). Supports x86-based `r8id` and `r6id` families, and ARM64 (AWS Graviton-based) `r6gd` and `r8gd` families. Best suited for large working sets, high cache hit ratios, and memory-bound database workloads.
+- **Storage Optimized:** Designed for workloads that require large amounts of local NVMe storage without scaling compute proportionally. Supports x86-based `i7i` and `i7ie` families, and ARM64 (AWS Graviton-based) `i8g` and `i8ge` families, with configurations offering up to 60 TB of local NVMe storage. Best suited for large datasets, time-series workloads, log and event storage, and storage-heavy OLTP workloads.
 - **CPU Optimized:** Designed for compute-intensive workloads with lower memory-to-CPU ratios (typically around 1:2). Supports `c6gd` families and is best suited for high-concurrency transactional workloads and CPU-bound queries.
 
 ## Pricing calculator {#pricing-calculator}
