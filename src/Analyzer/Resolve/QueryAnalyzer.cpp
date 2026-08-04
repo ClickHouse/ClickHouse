@@ -5318,7 +5318,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
           */
         auto try_resolve_identifier_from_query_projection = [this, &find_aliased_node_in_projection](
                                                                    const String & identifier_full_name_,
-                                                                   const TableExpressionNodePtr & left_table_expression,
+                                                                   const QueryTreeNodePtr & left_table_expression,
                                                                    const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
         {
             const QueryNode * query_node = scope_.scope_node ? scope_.scope_node->as<QueryNode>() : nullptr;
@@ -5333,8 +5333,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             left_subquery->getProjection().getNodes().push_back(matched_node->clone());
             auto subquery_join_tree = left_table_expression;
             if (subquery_join_tree->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-                subquery_join_tree = subquery_join_tree->as<ArrayJoinNode &>().getTableExpressionNodeTyped();
-            left_subquery->getJoinTreeNode() = subquery_join_tree;
+                subquery_join_tree = subquery_join_tree->as<ArrayJoinNode &>().getTableExpression();
+            left_subquery->getJoinTree() = subquery_join_tree;
 
             IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
             /// We are using alias column mechanism for USING column from projection.
