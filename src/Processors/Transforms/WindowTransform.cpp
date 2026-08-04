@@ -416,10 +416,8 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 window_description.frame.session_window_threshold,
                 *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
 
-            /*
-             * Note that the value can be NaN, and we don't have a visitor
-             * for "greater", so we have to write the condition in double negation style.
-             */
+            // Negated "less" rather than "greater": there is no "greater" visitor, and the
+            // value can be NaN, which must fail this check.
             if (!accurateLess(Field(0), window_description.frame.session_window_threshold))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1045,15 +1043,10 @@ void WindowTransform::advanceFrameEndSession()
 {
     if (current_row < prev_frame_end)
     {
-        // The SESSION frames are disjoint, so if we found a frame once, all
-        // rows that constitute the frame will also have it as their window
-        // function frame. Note that the prev_frame_end is a past-the-end
-        // pointer that is initialized to start of partition, and this initial
-        // value can't compare "greater" than any row in partition. So this
-        // comparison can only be true if we have already found a frame, no
-        // additional checks needed.
+        // Sessions are disjoint, so every row of one shares the frame already found for it.
+        // This can only be true once a frame has been found: prev_frame_end starts at the
+        // partition start, which is not greater than any row in it.
         frame_ended = true;
-        // No reason for the frame end to advance in this case.
         assert(prev_frame_end == frame_end);
         return;
     }
