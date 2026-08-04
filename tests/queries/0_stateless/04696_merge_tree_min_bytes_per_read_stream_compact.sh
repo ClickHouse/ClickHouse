@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-random-merge-tree-settings, no-object-storage
 
+CLICKHOUSE_CLIENT_OPT="--max_threads_min_free_memory_per_thread=0"
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
-
-CLICKHOUSE_CLIENT_OPT="--max_threads_min_free_memory_per_thread=0"
 
 stream_count() {
     $CLICKHOUSE_CLIENT -q "

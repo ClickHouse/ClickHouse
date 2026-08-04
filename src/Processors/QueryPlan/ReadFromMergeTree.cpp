@@ -1426,7 +1426,17 @@ static std::optional<size_t> estimateReadBytes(
             /// Multiple subcolumns may overlap in streams. The complete physical column is a safe
             /// upper bound that counts every shared stream exactly once.
             if (col_bytes == 0)
+            {
+                /// If subcolumn pricing is unavailable, the fallback below charges the complete
+                /// physical column. Its type, rather than the requested subcolumn type, determines
+                /// whether the whole-part size can be scaled by the selected rows.
+                const auto physical_col = data_part.tryGetColumn(physical_name);
+                if (selected_rows < data_part.rows_count
+                    && (!physical_col || !canScaleSizeBySelectedRows(*physical_col->type)))
+                    return std::nullopt;
+
                 col_bytes = data_part.getColumnSize(physical_name).data_uncompressed;
+            }
 
             if (col_bytes == 0)
             {
