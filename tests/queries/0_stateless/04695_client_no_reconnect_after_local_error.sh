@@ -17,9 +17,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # makes the queries themselves slower, which no timeout here objects to.
 
 # The names are unique per run, so that concurrent runs of this test do not interfere.
-PROXY_PORT_FILE="${CLICKHOUSE_TMP}/04692_proxy_${CLICKHOUSE_DATABASE}.port"
-CLIENT_CONFIG="${CLICKHOUSE_TMP}/04692_client_${CLICKHOUSE_DATABASE}.xml"
-OUT_FILE="${CLICKHOUSE_TMP}/04692_out_${CLICKHOUSE_DATABASE}.txt"
+PROXY_PORT_FILE="${CLICKHOUSE_TMP}/04695_proxy_${CLICKHOUSE_DATABASE}.port"
+CLIENT_CONFIG="${CLICKHOUSE_TMP}/04695_client_${CLICKHOUSE_DATABASE}.xml"
+OUT_FILE="${CLICKHOUSE_TMP}/04695_out_${CLICKHOUSE_DATABASE}.txt"
 
 rm -f "$PROXY_PORT_FILE"
 
@@ -47,8 +47,8 @@ CLIENT_OPT=$(echo "${CLICKHOUSE_CLIENT_OPT}" | sed "s/--host=[^ ]*//g; s/--port=
 # the local error and lost the temporary table.
 # shellcheck disable=SC2086
 ${CLICKHOUSE_CLIENT_BINARY} ${CLIENT_OPT} --config-file "$CLIENT_CONFIG" --host 127.0.0.1 --port "$PROXY_PORT" --ignore-error --multiquery "
-    CREATE TEMPORARY TABLE t_04692 (x UInt8);
-    INSERT INTO t_04692 VALUES (1);
-    SELECT x FROM t_04692 INTO OUTFILE '${OUT_FILE}';
-    SELECT 'the session state is kept after a local error', x FROM t_04692;
+    CREATE TEMPORARY TABLE t_04695 (x UInt8);
+    INSERT INTO t_04695 VALUES (1);
+    SELECT x FROM t_04695 INTO OUTFILE '${OUT_FILE}';
+    SELECT 'the session state is kept after a local error', x FROM t_04695;
 " 2>&1 | grep -oF -e 'FILE_ALREADY_EXISTS' -e 'UNKNOWN_TABLE' -e 'NETWORK_ERROR' -e 'the session state is kept after a local error'
