@@ -3249,6 +3249,25 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 is_first = false;
                 have_error |= buzz_house;
                 error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
+
+                /// The AST fuzzer feeds whole test files to one session, often several files in
+                /// a row, so a statement that does not parse is expected rather than a finding -
+                /// e.g. SQL DDL of the next file read under a `dialect = 'kusto'` a previous file
+                /// left behind. Skip the statement and keep fuzzing (the per-query parse in
+                /// `processWithASTFuzzer` tolerates syntax errors the same way).
+                if (query_fuzzer_runs && !buzz_house)
+                {
+                    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
+                    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    Tokens tokens(this_query_begin, all_queries_end);
+                    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                        ++token_iterator;
+                    this_query_begin = token_iterator->end;
+                    current_exception.reset();
+                    continue;
+                }
+
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
