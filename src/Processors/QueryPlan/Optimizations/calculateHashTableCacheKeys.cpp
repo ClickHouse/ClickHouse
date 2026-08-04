@@ -233,7 +233,10 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
         {
             auto * node = stack.back();
             stack.pop_back();
-            if (typeid_cast<AggregatingStep *>(node->step.get()))
+            /// Without GROUP BY keys the method is `without_key`, whose `init` discards the size
+            /// hint, so such a key can never be consumed.
+            if (const auto * aggregating = typeid_cast<const AggregatingStep *>(node->step.get());
+                aggregating && !aggregating->getParams().keys.empty())
                 aggregating_nodes.push_back(node);
             for (auto * child : node->children)
                 stack.push_back(child);
