@@ -20,6 +20,14 @@ option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
 option (ENABLE_VORTEX "Enable the Vortex file format" ${ENABLE_LIBRARIES})
 
+# MSan: the MSan-instrumented Vortex library (with origin tracking) adds so much code
+# that linking `unit_tests_dbms` overflows `R_X86_64_PC32` relocations - the binary
+# exceeds the 2 GiB range of the small code model. Disable it under MSan, like
+# wasmtime and delta-kernel-rs.
+if (SANITIZE STREQUAL "memory")
+    set (ENABLE_VORTEX OFF)
+endif()
+
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_VORTEX)
     message(STATUS "prql, skim, polyglot, and vortex are disabled")
     return()
