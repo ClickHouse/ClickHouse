@@ -339,6 +339,17 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
     auto get_path = [&](const std::string & key, const std::string & contents_key)
     {
         auto value = named_collection.getOrDefault<String>(key, "");
+
+        /// Checked before the empty fast path: overriding a configured path with the empty string
+        /// would silently drop the credential the operator configured, e.g. disable the verification
+        /// of the server certificate against `ssl_ca`.
+        if (named_collection.isQueryOverridden(key))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden in a query. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+
         if (value.empty())
             return value;
 
@@ -346,13 +357,6 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "`{}` can only be specified in a named collection defined in the server configuration file. "
-                "Pass the contents of the file in `{}` instead",
-                key, contents_key);
-
-        if (named_collection.isQueryOverridden(key))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`{}` cannot be overridden in a query. "
                 "Pass the contents of the file in `{}` instead",
                 key, contents_key);
 
@@ -365,6 +369,13 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
             /// replaced through the contents form either.
             if (!named_collection.isOverridable(key, /* default_value= */ true))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+
+            /// Empty contents would not replace the configured path with another credential but
+            /// silently drop it, which is the same as overriding the path itself with ''.
+            if (named_collection.getOrDefault<String>(contents_key, "").empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` cannot be overridden with an empty `{}`", key, contents_key);
 
             return String{};
         }

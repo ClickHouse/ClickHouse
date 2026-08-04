@@ -1535,6 +1535,40 @@ def test_mysql_ssl_contents_override_configured_paths(started_cluster):
             cursor.execute("FLUSH PRIVILEGES")
 
 
+def test_mysql_ssl_empty_override_is_rejected(started_cluster):
+    """Overriding a configured TLS credential with the empty string is rejected like any other
+    query-supplied path.
+
+    `''` used to take the empty-value fast path before the query-override check, so
+    `mysql(mysql_with_ssl, ssl_ca = '')` silently dropped the CA the operator configured -
+    disabling the verification of the server certificate from SQL. The same applies to empty
+    contents: `ssl_ca_pem = ''` does not replace the configured path with another credential,
+    it drops it.
+    """
+    for key in ["ssl_ca", "ssl_cert", "ssl_key"]:
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(f"SELECT count() FROM mysql(mysql_with_ssl, {key} = '')")
+        assert "cannot be overridden in a query" in str(exception.value)
+
+    for key in ["ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"]:
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(f"SELECT count() FROM mysql(mysql_with_ssl, {key} = '')")
+        assert "cannot be overridden with an empty" in str(exception.value)
+
+    # The table and database engines share `getSSLParams` with the table function; the engine form
+    # is rejected when the storage is created. (The database engine cannot be exercised with
+    # `mysql_with_ssl` because it refuses the collection's `table` key before reading the TLS keys.)
+    node1.query("DROP TABLE IF EXISTS mysql_ssl_empty_override")
+    with pytest.raises(QueryRuntimeException) as exception:
+        node1.query(
+            """
+            CREATE TABLE mysql_ssl_empty_override (id UInt32)
+            ENGINE = MySQL(mysql_with_ssl, ssl_ca = '')
+            """
+        )
+    assert "cannot be overridden in a query" in str(exception.value)
+
+
 def test_mysql_reading_clone(started_cluster):
     table_name = "test_mysql_reading_clone"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
