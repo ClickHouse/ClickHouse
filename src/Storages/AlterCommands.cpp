@@ -143,6 +143,22 @@ void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null
         data_type = makeNullable(data_type);
 }
 
+/// A column declaration can syntactically carry more modifiers than `AlterCommand` transfers into
+/// `ColumnDescription`. Reject the ones ALTER cannot apply instead of silently dropping them.
+void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_col_decl, std::string_view alter_name)
+{
+    if (ast_col_decl.getStatisticsDesc())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot specify STATISTICS in ALTER TABLE ... {}. Use ALTER TABLE ... ADD STATISTICS or MODIFY STATISTICS instead",
+            alter_name);
+    if (ast_col_decl.getCollation())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot support collation in ALTER TABLE ... {}", alter_name);
+    if (ast_col_decl.primary_key_specifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot specify PRIMARY KEY in ALTER TABLE ... {}. The primary key can only be defined when the table is created",
+            alter_name);
+}
+
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -156,6 +172,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = AlterCommand::ADD_COLUMN;
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
+        checkColumnDeclarationIsSupportedByAlter(ast_col_decl, "ADD COLUMN");
 
         command.column_name = ast_col_decl.name;
         if (ast_col_decl.getType())
@@ -187,6 +204,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getTTL())
             command.ttl = ast_col_decl.getTTL();
 
+        if (ast_col_decl.getSettings())
+            command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
+
         command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
 
@@ -213,6 +233,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = AlterCommand::MODIFY_COLUMN;
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
+        checkColumnDeclarationIsSupportedByAlter(ast_col_decl, "MODIFY COLUMN");
+
         command.column_name = ast_col_decl.name;
         command.to_remove = removePropertyFromString(command_ast->remove_property);
 
@@ -630,6 +652,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
 
         column.ttl = ttl;
+
+        if (!settings_changes.empty())
+        {
+            MergeTreeColumnSettings::validate(settings_changes);
+            column.settings = settings_changes;
+        }
 
         /// The exact columns this ADD materializes (flatten_nested expansion + IF NOT EXISTS filter).
         /// Empty means a whole-command no-op. validate() advances its snapshot with the same set so

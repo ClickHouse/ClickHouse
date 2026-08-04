@@ -20,6 +20,23 @@ e	e comment
 f	f comment
 g	g comment
 h	h comment
+CREATE TABLE default.t_column_comment_order
+(
+    `a` UInt64 COMMENT 'a new comment' CODEC(LZ4),
+    `b` UInt64 COMMENT 'b newer comment' CODEC(ZSTD(1)),
+    `c` UInt64 DEFAULT 1 COMMENT 'c comment' CODEC(ZSTD(1)),
+    `d` DateTime,
+    `e` UInt64 COMMENT 'e new comment' CODEC(LZ4) TTL d + toIntervalDay(1),
+    `f` UInt64 COMMENT 'f newer comment' SETTINGS (max_compress_block_size = 4096),
+    `g` UInt64 COMMENT 'g comment' STATISTICS(tdigest),
+    `h` String EPHEMERAL COMMENT 'h comment',
+    `i` UInt64 COMMENT 'i comment' CODEC(ZSTD(1)),
+    `j` UInt64 COMMENT 'j comment' TTL d + toIntervalDay(2),
+    `k` UInt64 COMMENT 'k comment' SETTINGS (max_compress_block_size = 1024)
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 8192
 a	a new comment
 b	b newer comment
 c	c comment

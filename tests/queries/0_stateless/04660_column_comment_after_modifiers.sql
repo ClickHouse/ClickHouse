@@ -39,9 +39,20 @@ ALTER TABLE t_column_comment_order MODIFY COLUMN f SETTINGS (max_compress_block_
 ALTER TABLE t_column_comment_order MODIFY COLUMN e CODEC(LZ4) COMMENT 'e new comment';
 ALTER TABLE t_column_comment_order MODIFY COLUMN f SETTINGS (max_compress_block_size = 4096) COMMENT 'f newer comment' SETTINGS mutations_sync = 2;
 
--- `MODIFY COLUMN` applies neither `STATISTICS` nor `COLLATE` (`AlterCommand::parse` drops both),
--- so a leading one of them is still read as the type name and rejected, rather than being taken
--- for a modifier and silently applying only the comment. Use `ALTER TABLE ... MODIFY STATISTICS`.
+-- Both `ADD COLUMN` and `MODIFY COLUMN` carry per-column `SETTINGS` into the column description.
+SHOW CREATE TABLE t_column_comment_order FORMAT TSVRaw;
+
+-- `ALTER` cannot apply `STATISTICS`, `COLLATE` and `PRIMARY KEY`, so they are rejected rather
+-- than silently dropped. Use `ALTER TABLE ... ADD STATISTICS / MODIFY STATISTICS` for statistics.
+ALTER TABLE t_column_comment_order ADD COLUMN z UInt64 STATISTICS(tdigest) COMMENT 'z comment'; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_column_comment_order ADD COLUMN z String COLLATE utf8_bin COMMENT 'z comment'; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_column_comment_order ADD COLUMN z UInt64 PRIMARY KEY COMMENT 'z comment'; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 STATISTICS(tdigest) COMMENT 'g new comment'; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 COLLATE utf8_bin COMMENT 'g new comment'; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 PRIMARY KEY COMMENT 'g new comment'; -- { serverError BAD_ARGUMENTS }
+
+-- In a type-less `MODIFY COLUMN`, a leading `STATISTICS` or `COLLATE` is still read as the type
+-- name and rejected, rather than being taken for a modifier and silently applying only the comment.
 ALTER TABLE t_column_comment_order MODIFY COLUMN g STATISTICS(tdigest) COMMENT 'g new comment'; -- { serverError UNKNOWN_TYPE }
 ALTER TABLE t_column_comment_order MODIFY COLUMN g COLLATE utf8_bin COMMENT 'g new comment'; -- { clientError SYNTAX_ERROR }
 
