@@ -957,6 +957,38 @@ def test_optimize_rejected_after_nested_requiredness_change(
     assert f"field id {nested_id}" in err, err
 
 
+def test_compaction_keeps_everything_if_the_commit_throws():
+    """
+    The commit helper publishes the metadata before it inspects the version hint, and those hint
+    operations are unguarded, so an exception can escape after the table was already committed. The
+    call must therefore be wrapped and keep every file, or the cleanup would delete the rewritten
+    data that the published metadata references.
+
+    Asserted statically: making the helper throw after publishing needs fault injection inside
+    object storage, which an integration test cannot arrange.
+    """
+    source = pathlib.Path(__file__).resolve().parents[3] / (
+        "src/Storages/ObjectStorage/DataLakes/Iceberg/Compaction.cpp"
+    )
+    statements = " ".join(source.read_text().split())
+    assert "writeMetadataFileAndVersionHint" in statements, (
+        f"{source} no longer commits through writeMetadataFileAndVersionHint; update this guard"
+    )
+    # The `try {` must be the last thing before the call, and its handler must keep everything.
+    # Checking only for "a try somewhere earlier" would pass even with the wrapper deleted.
+    call = statements.index("Iceberg::writeMetadataFileAndVersionHint")
+    window = statements[max(0, call - 120) : call]
+    assert "try {" in window, (
+        "the metadata commit is no longer directly inside a try block, so a throw after publication "
+        f"would reach the cleanup handler; preceding text: {window!r}"
+    )
+    handler = statements[call : call + 1200]
+    assert "CommitResult::KeepEverything" in handler, (
+        "the metadata commit's exception handler no longer keeps every file, so a throw after "
+        "publication would delete data the committed metadata references"
+    )
+
+
 def test_compaction_never_cleans_up_the_commit_target():
     """
     The metadata name compaction commits to must never join the cleanup set. On a lost commit that
