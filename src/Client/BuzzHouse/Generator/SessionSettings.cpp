@@ -1818,6 +1818,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
     {"use_text_index_header_cache", trueOrFalseSetting},
     {"use_text_index_like_evaluation_by_dictionary_scan", trueOrFalseSetting},
+    {"use_text_index_negative_tokens_cache", trueOrFalseSetting},
     {"use_text_index_postings_cache", trueOrFalseSetting},
     {"use_text_index_tokens_cache", trueOrFalseSetting},
     {"use_uncompressed_cache", trueOrFalseSettingNoOracle},
