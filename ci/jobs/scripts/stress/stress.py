@@ -63,7 +63,10 @@ class RandomQueryKiller:
                 shell=True,
                 timeout=5,
             )
-            query_id = result.decode("utf-8").strip()
+            # Strip only the row delimiter: a query_id may legitimately start or end with
+            # a space, and TSV escapes the separators, so a raw newline is always the
+            # delimiter rather than part of the value.
+            query_id = result.decode("utf-8").removesuffix("\n")
             if query_id:
                 logging.info("Killing random query: %s", query_id)
                 # A query_id is arbitrary text (tests pass --query_id), so pass it as a query
@@ -121,7 +124,9 @@ class RandomQueryKiller:
                 shell=True,
                 timeout=5,
             )
-            line = result.decode("utf-8").strip()
+            # Strip only the row delimiter, so a name that starts or ends with a space
+            # survives; TSV escapes the separators, so a raw newline is the delimiter.
+            line = result.decode("utf-8").removesuffix("\n")
             if line:
                 mutation_id, db, table = line.split("\t")
                 logging.info("Killing random mutation: %s on %s.%s", mutation_id, db, table)
