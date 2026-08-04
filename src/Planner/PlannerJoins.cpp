@@ -1064,6 +1064,11 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!allowed_inner && !allowed_left)
         return {};
 
+    /// `DirectKeyValueJoin` looks rows up by the equality key only and never evaluates a mixed
+    /// (cross-side non-equi) `ON` condition, so accepting one here would silently drop it.
+    if (table_join->getMixedJoinExpression())
+        return {};
+
     const auto & clauses = table_join->getClauses();
     bool only_one_key = clauses.size() == 1 &&
         clauses[0].key_names_left.size() == 1 &&
@@ -1252,10 +1257,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             /*use_two_level_maps_=*/false, stats_collecting_params);
     }
 
-    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
+    /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a
+    /// hash-sharded set of independent per-shard merge joins (see `optimizeJoinByShards`).
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
     {
         if (FullSortingMergeJoin::isSupported(table_join))
-            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
+            return std::make_shared<FullSortingMergeJoin>(
+                table_join, right_table_expression_header, /*null_direction_=*/1,
+                /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
     }
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
