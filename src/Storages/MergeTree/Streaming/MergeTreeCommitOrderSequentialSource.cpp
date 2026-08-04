@@ -250,7 +250,10 @@ ContextPtr makeStreamingContext(ContextPtr context_)
 SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
 {
     info.table_expression_modifiers = std::nullopt;
-    info.merge_tree_enable_remove_parts_from_snapshot_optimization = false;
+
+    info.query_tree.reset();
+    info.table_expression.reset();
+    info.planner_context.reset();
 
     info.prewhere_info.reset();
     info.filter_actions_dag.reset();
