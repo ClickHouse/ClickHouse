@@ -772,10 +772,11 @@ static void buildORCSearchArgumentImpl(
                 break;
             }
 
-            /// traverseDownORCTypeByName may adjust the CH type while descending (a LIST of STRUCT
-            /// from a flattened Nested column becomes the array's nested type), and the adjusted
-            /// type is what the type-equality guard below must compare.
-            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, column_type, ignore_case);
+            /// The resolver rewrites the type it is given when it descends a LIST (a flattened
+            /// Nested column), so give it a scratch copy: the guards below must judge the key's
+            /// own type, which is what KeyCondition's RPN holds.
+            auto resolved_type = column_type;
+            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, resolved_type, ignore_case);
             if (!orc_type)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);

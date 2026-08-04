@@ -15,7 +15,8 @@ ${CLICKHOUSE_CLIENT} --query "
         map(toString(number % 7), number) AS m,
         [tuple(number, 'x')::Tuple(a UInt64, b String)] AS arrtup,
         if(number % 3 = 0, NULL, number)::Nullable(UInt64) AS nn,
-        range(number % 4) AS arr
+        range(number % 4) AS arr,
+        [tuple(number, toString(number % 31))]::Nested(na UInt64, nb String) AS n
     FROM numbers(100000)
     SETTINGS engine_file_truncate_on_insert = 1, output_format_orc_row_index_stride = 10000"
 
@@ -59,3 +60,12 @@ run_and_report array_of_tuple '' 'has(arrtup.a, 55555)'
 
 echo '-- a structure hint whose element type disagrees with the file must not prune'
 run_and_report type_mismatch 'id Int64, tup Tuple(`1` Int32, `2` String)' 'tup.1 = 55555'
+
+# A flattened Nested column is written as list<struct<...>>, so resolving `n.na` descends the
+# LIST-of-STRUCT branch, which rewrites the CH type to the element type. Results must stay
+# correct whether or not that shape prunes.
+echo '-- flattened Nested: the resolver descends a LIST of STRUCT'
+run_and_report nested_natural '' 'has(n.na, 55555)'
+run_and_report nested_flattened 'id Int64, n Nested(na UInt64, nb String)' 'has(n.na, 55555)'
+run_and_report nested_flattened_array 'id Int64, n Nested(na UInt64, nb String)' 'n.na = [55555]'
+run_and_report nested_flattened_string 'id Int64, n Nested(na UInt64, nb String)' "n.nb = ['7']"

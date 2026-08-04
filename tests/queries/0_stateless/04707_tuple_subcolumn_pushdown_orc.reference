@@ -21,3 +21,12 @@ array_of_tuple	200000
 -- a structure hint whose element type disagrees with the file must not prune
 1
 type_mismatch	200000
+-- flattened Nested: the resolver descends a LIST of STRUCT
+1
+nested_natural	200000
+1
+nested_flattened	200000
+1
+nested_flattened_array	200000
+3226
+nested_flattened_string	200000
