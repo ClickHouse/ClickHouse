@@ -6,6 +6,7 @@
 
 #include <bit>
 #include <limits>
+#include <numeric>
 
 namespace DB
 {
@@ -103,6 +104,7 @@ void parseBlock(
             static_cast<size_t>(pos - payload) + consumed, payload_bytes);
 }
 
+/// Append each requested document's absolute positions to `positions`, and its end offset to `offsets`.
 void emitRanks(
     const PaddedPODArray<UInt32> & freqs,
     const PaddedPODArray<UInt32> & values,
@@ -110,6 +112,19 @@ void emitRanks(
     PaddedPODArray<UInt32> & offsets,
     PaddedPODArray<UInt32> & positions)
 {
+    const size_t num_positions = std::accumulate(local_ranks.begin(), local_ranks.end(), size_t{},
+        [&freqs](size_t sum, UInt32 rank) { return sum + freqs[rank]; });
+
+    /// Offsets are UInt32; fail closed instead of silently wrapping the cumulative count.
+    if (positions.size() + num_positions > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Text index positions: more than {} positions for a single token", std::numeric_limits<UInt32>::max());
+
+    const size_t base = positions.size();
+    positions.resize(base + num_positions);
+    UInt32 * out = positions.data() + base;
+    offsets.reserve(offsets.size() + local_ranks.size());
+
     /// local_ranks is ascending, so the start offset advances monotonically over the freqs.
     UInt32 start = 0;
     UInt32 next_rank = 0;
@@ -118,20 +133,19 @@ void emitRanks(
         for (UInt32 r = next_rank; r < rank; ++r)
             start += freqs[r];
 
-        UInt32 position = 0;
-        for (UInt32 k = 0; k < freqs[rank]; ++k)
+        /// freqs are >= 1, so the first position is always present and is absolute; the rest are deltas.
+        const UInt32 freq = freqs[rank];
+        UInt32 position = values[start];
+        *out++ = position;
+        for (UInt32 k = 1; k < freq; ++k)
         {
-            position = (k == 0) ? values[start + k] : position + values[start + k];
-            positions.push_back(position);
+            position += values[start + k];
+            *out++ = position;
         }
 
-        /// Offsets are UInt32; fail closed instead of silently wrapping the cumulative count.
-        if (positions.size() > std::numeric_limits<UInt32>::max())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Text index positions: more than {} positions for a single token", std::numeric_limits<UInt32>::max());
-        offsets.push_back(static_cast<UInt32>(positions.size()));
+        offsets.push_back(static_cast<UInt32>(out - positions.data()));
 
-        start += freqs[rank];
+        start += freq;
         next_rank = rank + 1;
     }
 }
