@@ -255,8 +255,33 @@ if __name__ == "__main__":
                     f"no patch returned for changed file {settings_history_file} "
                     "(GitHub omits the patch for very large diffs)"
                 )
-            with open(settings_history_file, "r", encoding="utf-8", errors="ignore") as f:
-                file_lines = f.read().splitlines()
+            # The patch's new-file line numbers refer to the file as it is at the PR HEAD,
+            # but the CI checkout is the PR merged with the base branch, whose line numbers
+            # can differ: when the base branch grew an earlier `addSettingsChanges` block
+            # after the merge base, every line of the checkout below that block is shifted
+            # relative to the head file, and resolving the patch's line numbers against the
+            # checkout attributes the added entries to the wrong block - even the wrong
+            # namespace (a MergeTree entry reported as a Session one), failing the style
+            # check for an entry that sits in the correct block. Fetch the head version of
+            # the file, whose numbering is the one the patch was computed against.
+            head_sha = Shell.get_output(
+                f"gh api repos/{info.repo_name}/pulls/{pr_number} --jq .head.sha",
+                verbose=True,
+            ).strip()
+            if not head_sha:
+                raise RuntimeError(
+                    "could not resolve the PR head SHA for the settings-history diff"
+                )
+            head_file = Shell.get_output(
+                f'gh api -H "Accept: application/vnd.github.raw" '
+                f'"repos/{info.repo_name}/contents/{settings_history_file}?ref={head_sha}"',
+                verbose=True,
+            )
+            if not head_file.strip():
+                raise RuntimeError(
+                    f"no content returned for {settings_history_file} at {head_sha}"
+                )
+            file_lines = head_file.splitlines()
             changed_settings = parse_settings_history_changes(patch, file_lines)
             info.store_kv_data("settings_history_changed_settings", changed_settings)
             print(f"Stored settings-history changed settings: {changed_settings}")
