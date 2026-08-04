@@ -9,17 +9,8 @@
 7
 8
 9
--- right side is a Log table
+-- right side is system.one
 0
-1
-2
-3
-4
-5
-6
-7
-8
-9
 -- RIGHT ANY JOIN
 0
 1
@@ -31,15 +22,37 @@
 7
 8
 9
--- right side is system.one
+-- left ineligible, right eligible: JOIN is not offloaded
 0
--- left ineligible, right eligible: JOIN is offloaded
+-- left system.one, right eligible: JOIN is not offloaded
+0
+-- left ineligible, right eligible: JOIN is not offloaded with a local join
+0
+-- left ineligible, right eligible: results are correct
+0
 1
--- left Log, right eligible: JOIN is offloaded
+2
+3
+4
+5
+6
+7
+8
+9
+-- left ineligible, right eligible: results are correct with a local join
+0
 1
+2
+3
+4
+5
+6
+7
+8
+9
 -- both sides eligible: JOIN is offloaded
 1
--- results are correct when the JOIN is offloaded
+-- both sides eligible: results are correct
 0
 1
 2
