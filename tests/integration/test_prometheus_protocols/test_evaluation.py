@@ -899,6 +899,14 @@ def test_function_timestamp():
         [["[]", "1970-01-01 00:02:15.000", 120]],
     )
 
+    # Selector with combined @ and offset modifiers: returns the @ timestamp (120).
+    do_query_test(
+        "timestamp(test @ 120 offset 30s)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "120"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 120]],
+    )
+
     # Range query regression for offset-modified selector (/api/v1/query_range):
     # Verifies applyOffset realigns/duplicates selector results across multiple grid steps.
     do_range_query_test(
@@ -919,6 +927,22 @@ def test_function_timestamp():
     # Verifies fixed @ evaluation time realignment across multiple grid steps.
     do_range_query_test(
         "timestamp(test @ 120)",
+        135,
+        155,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[135, "120"], [145, "120"], [155, "120"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:15.000',120),('1970-01-01 00:02:25.000',120),('1970-01-01 00:02:35.000',120)]",
+            ]
+        ],
+    )
+
+    # Range query regression for combined @ and offset modified selector (/api/v1/query_range):
+    # Verifies that both modifiers interact correctly on the direct-selector fast path.
+    do_range_query_test(
+        "timestamp(test @ 120 offset 30s)",
         135,
         155,
         10,
