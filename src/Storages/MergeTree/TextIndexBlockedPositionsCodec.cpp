@@ -51,20 +51,22 @@ UInt64 readVarUIntFrom(const uint8_t *& pos, const uint8_t * end)
     }
 }
 
-/// Parse a block payload into per-rank freqs and the within-document delta value lane.
+/// Parse a block payload into per-rank value-lane bounds (`doc_offsets`, size docs_in_block + 1) and the
+/// within-document delta value lane. Frequencies are accumulated in place into exclusive prefix sums, so a
+/// rank's slice of the lane is [doc_offsets[rank], doc_offsets[rank + 1]).
 void parseBlock(
     const uint8_t * payload,
     size_t payload_bytes,
     size_t docs_in_block,
-    PaddedPODArray<UInt32> & freqs,
+    PaddedPODArray<UInt32> & doc_offsets,
     PaddedPODArray<UInt32> & values)
 {
     const uint8_t * pos = payload;
     const uint8_t * end = payload + payload_bytes;
 
-    freqs.resize(docs_in_block);
+    doc_offsets.resize(docs_in_block + 1);
     for (size_t i = 0; i < docs_in_block; ++i)
-        freqs[i] = 1;
+        doc_offsets[i] = 1;
 
     const UInt64 num_exceptions = readVarUIntFrom(pos, end);
     if (num_exceptions > docs_in_block)
@@ -86,7 +88,7 @@ void parseBlock(
         if ((freq < 2) || (freq > std::numeric_limits<UInt32>::max()) || (total + (freq - 1) > max_total))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Corrupt text index positions (blocked): invalid frequency {} (total would exceed {})", freq, max_total);
-        freqs[local_rank] = static_cast<UInt32>(freq);
+        doc_offsets[local_rank] = static_cast<UInt32>(freq);
         total += freq - 1;
         prev_rank = local_rank;
     }
@@ -95,6 +97,10 @@ void parseBlock(
     if (total > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupt text index positions: {} positions in a single block", total);
+
+    /// Frequencies become exclusive prefix sums. The tail entry closes the last document's slice.
+    std::exclusive_scan(doc_offsets.begin(), doc_offsets.begin() + docs_in_block, doc_offsets.begin(), UInt32{});
+    doc_offsets[docs_in_block] = static_cast<UInt32>(total);
 
     values.resize(total);
     const size_t consumed = PFor::decodeBlocks<UInt32>(pos, total, PFor::Delta::none, values.data(), end);
@@ -106,14 +112,14 @@ void parseBlock(
 
 /// Append each requested document's absolute positions to `positions`, and its end offset to `offsets`.
 void emitRanks(
-    const PaddedPODArray<UInt32> & freqs,
+    const PaddedPODArray<UInt32> & doc_offsets,
     const PaddedPODArray<UInt32> & values,
     std::span<const UInt32> local_ranks,
     PaddedPODArray<UInt32> & offsets,
     PaddedPODArray<UInt32> & positions)
 {
     const size_t num_positions = std::accumulate(local_ranks.begin(), local_ranks.end(), size_t{},
-        [&freqs](size_t sum, UInt32 rank) { return sum + freqs[rank]; });
+        [&doc_offsets](size_t sum, UInt32 rank) { return sum + (doc_offsets[rank + 1] - doc_offsets[rank]); });
 
     /// Offsets are UInt32; fail closed instead of silently wrapping the cumulative count.
     if (positions.size() + num_positions > std::numeric_limits<UInt32>::max())
@@ -125,28 +131,19 @@ void emitRanks(
     UInt32 * out = positions.data() + base;
     offsets.reserve(offsets.size() + local_ranks.size());
 
-    /// local_ranks is ascending, so the start offset advances monotonically over the freqs.
-    UInt32 start = 0;
-    UInt32 next_rank = 0;
     for (UInt32 rank : local_ranks)
     {
-        for (UInt32 r = next_rank; r < rank; ++r)
-            start += freqs[r];
-
-        /// freqs are >= 1, so the first position is always present and is absolute; the rest are deltas.
-        const UInt32 freq = freqs[rank];
-        UInt32 position = values[start];
+        const UInt32 lane_end = doc_offsets[rank + 1];
+        /// Every document has at least one position, and its first one is absolute; the rest are deltas.
+        UInt32 position = values[doc_offsets[rank]];
         *out++ = position;
-        for (UInt32 k = 1; k < freq; ++k)
+        for (UInt32 k = doc_offsets[rank] + 1; k < lane_end; ++k)
         {
-            position += values[start + k];
+            position += values[k];
             *out++ = position;
         }
 
         offsets.push_back(static_cast<UInt32>(out - positions.data()));
-
-        start += freq;
-        next_rank = rank + 1;
     }
 }
 
@@ -334,8 +331,8 @@ void TextIndexBlockedPositionsCodec::decodeBlock(
     in.readStrict(scratch.payload.data(), payload_bytes);
 
     parseBlock(reinterpret_cast<const uint8_t *>(scratch.payload.data()), payload_bytes,
-               dir.docsInBlock(block_idx), scratch.freqs, scratch.values);
-    emitRanks(scratch.freqs, scratch.values, local_ranks, offsets, positions);
+               dir.docsInBlock(block_idx), scratch.doc_offsets, scratch.values);
+    emitRanks(scratch.doc_offsets, scratch.values, local_ranks, offsets, positions);
 }
 
 void TextIndexBlockedPositionsCodec::decodeAll(
