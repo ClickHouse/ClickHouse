@@ -879,9 +879,19 @@ Increase these values if you experience timeout errors with large batches.
 
 #### Client network buffer {#client-network-buffer}
 
-The v2 client copies data between the socket and application memory through a buffer controlled by the `client_network_buffer_size` client option, which defaults to 300,000 bytes. A larger buffer can improve throughput on high-latency or high-bandwidth links, but the buffer is allocated per pooled connection, so oversizing it raises memory use and JVM garbage collection pressure across every connector task.
+When using client V2 (`"client_version": "V2"`), data is copied between the socket and application memory through a buffer controlled by `client_network_buffer_size` (in bytes). The default size is `300000` bytes. A larger buffer can improve throughput on high-latency or high-bandwidth links, but increases memory usage per connection task.
 
-The connector does not expose that option. Entries in `clickhouseSettings` are applied as query-level server settings, so `client_network_buffer_size` set there reaches ClickHouse as an unrecognized setting instead of resizing the client buffer. See [client configuration](/integrations/language-clients/java/client#client-configuration) for the full list of options available when you embed the Java client directly.
+All client options are configured via `jdbcConnectionProperties` rather than `clickhouseSettings`. For example:
+
+```json
+"jdbcConnectionProperties": "?client_network_buffer_size=1000000"
+```
+
+If you need to configure multiple client properties, join them with `&`:
+
+```json
+"jdbcConnectionProperties": "?ssl=true&client_network_buffer_size=1000000"
+```
 
 #### Monitoring and troubleshooting performance {#monitoring-performance}
 
