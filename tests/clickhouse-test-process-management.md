@@ -33,18 +33,20 @@ reaches an orphan as long as we know its PGID — no parent-chain walk needed.
 ```
 _GROUP_PID_PATH = {repo}/ci/tmp/
 _GROUP_PID_NAME = "clickhouse_test_group_pid"
+_RUN_TOKEN      = "<parent_pid>-<random hex>"   # minted once per invocation
 ```
 
 A worker process (`os.getpid()`) writes one file per group it launches:
 
 ```
-{repo}/ci/tmp/clickhouse_test_group_pid.<worker_pid>.<pgid>
+{repo}/ci/tmp/clickhouse_test_group_pid.<run_token>.<worker_pid>.<pgid>
 ```
 
 One PGID per file, and no two files ever share a name, so no cross-process
 locking is needed and a record that is kept because its group may still be live
-is not overwritten by that worker's next test.  The worker pid is what scopes a
-reap to one invocation's own records (see `worker_pids` below).  Files are
+is not overwritten by that worker's next test.  The run token is what scopes a
+reap to this invocation's own records (see `worker_pids` below); a worker pid
+alone cannot, being recyclable into a concurrent invocation's worker.  Files are
 written atomically via `write_text_atomic` (write to a `.tmp` sibling, then
 `rename`), so `--cleanup` never sees a partial write.
 
@@ -53,7 +55,7 @@ written atomically via `write_text_atomic` (write to a `.tmp` sibling, then
 ```python
 proc = Popen(command, shell=True, start_new_session=True, preexec_fn=cgroup_fn)
 # proc.pid == PGID after start_new_session=True
-write_text_atomic(test_process_group_record(), f"{proc.pid}\n")
+write_text_atomic(test_process_group_record(proc.pid), f"{proc.pid}\n")
 
 try:
     proc.wait(args.timeout)
@@ -81,7 +83,9 @@ clickhouse-test --cleanup
 
 Calls `cleanup_test_groups()`, which globs `{_GROUP_PID_PATH}/{_GROUP_PID_NAME}.*`
 (skipping `.tmp` files), reads each file, calls `kill_process_group(pgid, None)`
-on the recorded PGID, and removes the file.
+on the recorded PGID, and removes the file.  It passes no `worker_pids`, so it
+matches every record regardless of name shape — it is an orphan sweep run when
+nothing else is live, and the orphan it exists for may predate a name change.
 
 ### `clickhouse-test` startup
 
@@ -144,10 +148,11 @@ When the bash script exits normally (exit code is set), `kill_process_group` is
 
 ```python
 # process_result_impl
-if proc.returncode is None:              # only true on TimeoutExpired
+timed_out = proc.returncode is None      # only true on TimeoutExpired
+if timed_out:
     kill_process_group(os.getpgid(proc.pid), ...)
 elif test_process_group_is_gone(proc.pid):
-    forget_test_process_group()
+    forget_test_process_group(proc.pid)
 ```
 
 So background jobs the test script started without `wait` are still not killed

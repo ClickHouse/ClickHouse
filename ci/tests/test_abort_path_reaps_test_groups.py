@@ -44,6 +44,8 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _CLICKHOUSE_TEST = str(_REPO_ROOT / "tests" / "clickhouse-test")
 
@@ -197,22 +199,12 @@ def _spawn_leaderless_group(lifetime=600):
     return leader
 
 
-def _launch_real_test(ct, tmp_path, monkeypatch, lifetime=600, returncode=None, group=None):
-    """Drive the REAL ``run_single_test`` so the PGID record is written by the real code.
+def _make_case(tmp_path, monkeypatch):
+    """The ``TestCase`` stand-in ``process_result_impl`` reads its inputs from.
 
-    Only ``Popen`` is replaced, and it still starts a genuine process group in its own
-    session (``start_new_session=True``, as the real launch does) that outlives the abort -
-    so what is being observed is the record's real lifetime around a real live group, not a
-    hand-written stand-in.  A test that writes the record itself cannot detect the defect:
-    the whole bug is *when the real code removes it*.
-
-    ``returncode`` is what the stub reports for the leader; the default ``None`` keeps every
-    existing caller on the "still running" branch of ``process_result_impl``.
-
-    Returns the group's pgid.
+    Non-empty stderr and no reference file, so the FAIL return is taken and the code runs
+    past the kill site instead of returning early.
     """
-    group = group if group is not None else _spawn_group(lifetime=lifetime)
-
     monkeypatch.setenv("CLICKHOUSE_DATABASE", "test_abort_path_reaps_test_groups")
     monkeypatch.setenv("CLICKHOUSE_TMP", str(tmp_path))
     for mutated in (
@@ -267,7 +259,28 @@ def _launch_real_test(ct, tmp_path, monkeypatch, lifetime=600, returncode=None, 
         reference_file=None,
         show_whitespaces_in_diff=False,
         suite=None,
+        fatal_sanitizer_prefix=f"{stderr_file}-fatal",
+        debug_log_retry_substitution=None,
     )
+    return case, stderr_file
+
+
+def _launch_real_test(ct, tmp_path, monkeypatch, lifetime=600, returncode=None, group=None):
+    """Drive the REAL ``run_single_test`` so the PGID record is written by the real code.
+
+    Only ``Popen`` is replaced, and it still starts a genuine process group in its own
+    session (``start_new_session=True``, as the real launch does) that outlives the abort -
+    so what is being observed is the record's real lifetime around a real live group, not a
+    hand-written stand-in.  A test that writes the record itself cannot detect the defect:
+    the whole bug is *when the real code removes it*.
+
+    ``returncode`` is what the stub reports for the leader; the default ``None`` keeps every
+    existing caller on the "still running" branch of ``process_result_impl``.
+
+    Returns the group's pgid.
+    """
+    group = group if group is not None else _spawn_group(lifetime=lifetime)
+    case, _stderr_file = _make_case(tmp_path, monkeypatch)
 
     def popen_stub(command, **kwargs):
         # Hand the real code the real group: `run_single_test` records `proc.pid` as the
@@ -380,6 +393,103 @@ def test_record_survives_the_launch_and_is_dropped_after_the_kill(tmp_path, monk
         assert not _records(), (
             "the record must be dropped once the group is gone"
         )
+    finally:
+        if pgid:
+            _kill_group(pgid)
+        _clear_records()
+
+
+def _reason_for_a_timed_out_test(ct, tmp_path, monkeypatch, stderr_text):
+    """Run the REAL ``process_result_impl`` over a REAL timed-out ``Popen``.
+
+    No ``wait`` stub and no ``SimpleNamespace`` around the process: the classification
+    reads ``proc.returncode``, and only a real ``Popen`` can have it mutated by a ``wait``
+    inside the code under test.  A stubbed ``wait`` cannot, so an arm built on one is blind
+    to exactly this class of defect.
+
+    Returns ``(result, pgid)``; the caller owns the cleanup.
+    """
+    case, stderr_file = _make_case(tmp_path, monkeypatch)
+    stderr_file.write_text(stderr_text)
+    _patch(ct, pgrep=lambda **kw: [])
+
+    proc = subprocess.Popen(
+        "sleep 600 & sleep 600 & wait",
+        shell=True,
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    # The state `run_single_test` leaves behind when its `proc.wait(args.timeout)` raised.
+    try:
+        proc.wait(0.5)
+    except subprocess.TimeoutExpired:
+        pass
+    assert proc.returncode is None, (
+        "precondition: a timed-out test's leader must still be unreaped here, otherwise "
+        "this arm cannot tell a timeout from an exit"
+    )
+    ct["write_text_atomic"](
+        ct["test_process_group_record"](proc.pid), f"{proc.pid}\n"
+    )
+    return ct["TestCase"].process_result_impl(case, proc, 1.0), proc.pid
+
+
+def test_a_timed_out_test_is_still_reported_as_a_timeout(tmp_path, monkeypatch):
+    """The kill/reap block must not change what the timeout is reported AS.
+
+    ``process_result_impl`` decides the failure reason from ``proc.returncode`` 140 lines
+    below the kill site, and ``Popen.wait`` ASSIGNS that field rather than merely reading it.
+    So any ``wait`` between the two silently re-reports every timed-out test as
+    ``EXIT_CODE`` - a distinct bucket in ``TEST_FAILURE_PATTERNS``, so every future timeout
+    is mis-triaged - and the group liveness this file guards says nothing about it.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    pgid = None
+    try:
+        result, pgid = _reason_for_a_timed_out_test(
+            ct, tmp_path, monkeypatch, "a non-empty stderr, so a FAIL path is taken\n"
+        )
+        assert result.reason is ct["FailureReason"].TIMEOUT, (
+            f"a test that timed out must be reported as a timeout; got {result.reason!r}"
+        )
+        # And the group is really gone, so the assertion above cannot be satisfied by
+        # simply never killing anything.
+        assert not _wait_dead(pgid), "the timed-out test's group must still be killed"
+    finally:
+        if pgid:
+            _kill_group(pgid)
+        _clear_records()
+
+
+def test_a_timed_out_test_with_a_fatal_line_does_not_abort_the_run(tmp_path, monkeypatch):
+    """The escalation arm: a ` <Fatal> ` line must not turn a timeout into ``SERVER_DIED``.
+
+    ``SERVER_DIED`` calls ``stop_tests`` and raises ``StopTesting``, tearing down the whole
+    run - and it is reachable only from the ``returncode != 0`` branch, which a timeout must
+    never enter.  On a sanitizer build the client's own fatal log is appended to the very
+    stderr that branch searches, so such a line there is ordinary.  One misclassified
+    timeout would then abort a 12000-test run: the damage class this file exists to prevent.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    pgid = None
+    try:
+        result, pgid = _reason_for_a_timed_out_test(
+            ct,
+            tmp_path,
+            monkeypatch,
+            "2026.08.04 00:00:00.000000 [ 1 ] {} <Fatal> BaseDaemon: (version 26.8.1)\n",
+        )
+        assert result.reason is not ct["FailureReason"].SERVER_DIED, (
+            "a fatal line in a timed-out test's stderr must not escalate to SERVER_DIED: "
+            "that aborts the entire run"
+        )
+        assert result.reason is ct["FailureReason"].TIMEOUT, (
+            f"the reason must still be the timeout itself; got {result.reason!r}"
+        )
+        assert not _wait_dead(pgid), "the timed-out test's group must still be killed"
     finally:
         if pgid:
             _kill_group(pgid)
@@ -588,7 +698,10 @@ def test_reap_leaves_another_invocations_groups_alone():
         mine = _spawn_group()
         theirs = _spawn_group()
         # A foreign worker's record: same directory, a worker pid this run never started.
-        foreign = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{theirs.pid}.{theirs.pid}"
+        foreign = (
+            _GROUP_PID_PATH
+            / f"{_GROUP_PID_NAME}.{theirs.pid}-feed1234.{theirs.pid}.{theirs.pid}"
+        )
         ct["write_text_atomic"](
             ct["test_process_group_record"](mine.pid), f"{mine.pid}\n"
         )
@@ -605,6 +718,78 @@ def test_reap_leaves_another_invocations_groups_alone():
         for group in (mine, theirs):
             if group:
                 _kill_group(group.pid)
+        _clear_records()
+
+
+def test_a_recycled_worker_pid_does_not_widen_the_reap(tmp_path, monkeypatch):
+    """The scope key must identify the INVOCATION, not just a pid.
+
+    ``worker_pids`` holds bare numbers and is deliberately never pruned, so a retired
+    worker's pid stays in scope for the rest of the run.  ``pid_max`` is finite and the
+    records live in the repo-wide ``ci/tmp``, which concurrent invocations over one tree
+    share, so the OS recycling that number into a concurrent run's worker would put that
+    run's LIVE tests in this run's sweep - the same SIGKILL-a-stranger the scoping was
+    adopted to prevent, merely made less likely.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    _patch(ct, pgrep=lambda **kw: [])
+    theirs = None
+    try:
+        theirs = _spawn_group()
+        # The recycled-pid shape: a DIFFERENT invocation's token, but a worker pid that IS
+        # in this run's `worker_pids`. Matching on the pid alone cannot tell them apart.
+        foreign = (
+            _GROUP_PID_PATH
+            / f"{_GROUP_PID_NAME}.{os.getpid()}-feed1234.{os.getpid()}.{theirs.pid}"
+        )
+        ct["write_text_atomic"](foreign, f"{theirs.pid}\n")
+
+        ct["reap_recorded_test_groups"]({os.getpid()})
+
+        assert _alive(theirs.pid), (
+            "a concurrent invocation's live test group must survive a pid collision with "
+            "one of this run's own workers"
+        )
+        assert foreign.exists(), "and its record must not be consumed either"
+    finally:
+        if theirs:
+            _kill_group(theirs.pid)
+        _clear_records()
+
+
+def test_cleanup_still_consumes_records_written_by_an_older_runner():
+    """``--cleanup`` is an orphan sweep and must stay shape-agnostic.
+
+    It runs at job teardown when nothing else is live, and the orphan it exists for can
+    have been written by a runner from before the name changed.  Scoping that path on the
+    token would silently strand exactly those groups, leaking the wedge this file guards.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    _patch(ct, pgrep=lambda **kw: [])
+    legacy = []
+    try:
+        # Both historical shapes: `<worker>` and `<worker>.<pgid>`.
+        for name in (
+            f"{_GROUP_PID_NAME}.{os.getpid()}",
+            f"{_GROUP_PID_NAME}.{os.getpid()}.0",
+        ):
+            group = _spawn_group()
+            legacy.append(group)
+            ct["write_text_atomic"](_GROUP_PID_PATH / name, f"{group.pid}\n")
+
+        # `worker_pids is None`: the orphan sweep, which must match every record.
+        ct["cleanup_test_groups"]()
+
+        for group in legacy:
+            assert not _wait_dead(group.pid), (
+                "an orphan recorded by an older runner must still be reaped by --cleanup"
+            )
+        assert not _records(), "and its record must be consumed"
+    finally:
+        for group in legacy:
+            _kill_group(group.pid)
         _clear_records()
 
 
@@ -874,6 +1059,58 @@ def test_a_retained_record_survives_the_workers_next_launch(tmp_path, monkeypatc
         for group in (first, second):
             if group:
                 _kill_group(group.pid)
+        _clear_records()
+
+
+@pytest.mark.parametrize("sequential", [False, True], ids=["parallel", "sequential"])
+def test_a_signal_inside_the_reap_does_not_replace_the_abort(monkeypatch, sequential):
+    """A SIGTERM landing inside an outer reap must not mask the in-flight abort.
+
+    The reap catches ``except Exception``, and the runner's own ``Terminated`` is a
+    ``KeyboardInterrupt``, so it is not caught (measured).  Raised from a ``finally`` it
+    REPLACES the ``StopTesting`` propagating through it, and the job side then reads
+    ``143`` / "terminated unexpectedly" instead of the exit code it parses - the exact
+    misclassification the abort block's own SIGTERM mask exists to prevent.
+
+    Both new reap sites get an arm: they are separate ``finally`` blocks with separate
+    masks, so one arm can only ever pin one of them.
+
+    The signal is delivered from inside the reap rather than raced against it: the window is
+    a few syscalls wide, so a real SIGTERM cannot be aimed at it otherwise.  It IS a real
+    signal though - injecting a ready-made ``Terminated`` instead would assert nothing, since
+    a mask can only stop a signal from becoming an exception, not an exception already raised.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    real_cleanup = ct["kill_process_group"].__globals__["cleanup_test_groups"]
+
+    def signal_from_inside_the_reap(*args, **kwargs):
+        # Unmasked, `signal_handler` turns this into `Terminated` right here, and that
+        # replaces the `StopTesting` unwinding through the enclosing `finally`.
+        os.kill(os.getpid(), signal.SIGTERM)
+        return real_cleanup(*args, **kwargs)
+
+    # `__main__` installs the runner's handler and `runpy.run_path` does not run that block,
+    # so without this the default disposition would kill the test session outright.
+    before = signal.signal(signal.SIGTERM, ct["signal_handler"])
+    pgids = []
+    try:
+        monkeypatch.setitem(
+            ct["kill_process_group"].__globals__,
+            "cleanup_test_groups",
+            signal_from_inside_the_reap,
+        )
+        # `_abort_run` asserts the surfaced exception is `StopTesting`, so an unmasked reap
+        # fails inside it with `Terminated`.
+        pgids, _slept = _abort_run(ct, sequential=sequential)
+        assert signal.getsignal(signal.SIGTERM) is ct["signal_handler"], (
+            "the SIGTERM disposition must be restored after the reap, or every later "
+            "signal in the run is silently ignored"
+        )
+    finally:
+        signal.signal(signal.SIGTERM, before)
+        for pgid in pgids:
+            _kill_group(pgid)
         _clear_records()
 
 

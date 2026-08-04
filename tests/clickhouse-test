@@ -35,6 +35,7 @@ import sys
 import shlex
 import traceback
 import urllib.parse
+import uuid
 
 # for crc32
 import zlib
@@ -56,14 +57,18 @@ except ImportError:
 
 
 # Base path for the PGID files used by `--cleanup` to locate orphaned test process
-# groups.  One file per group, ``_GROUP_PID_NAME.<worker>.<pgid>``: the worker pid
-# scopes a reap to one invocation, the pgid keeps a kept record from being overwritten.
+# groups.  One file per group, ``_GROUP_PID_NAME.<token>.<worker>.<pgid>``: the token
+# scopes a reap to one invocation, the worker pid to one worker, and the pgid keeps a
+# kept record from being overwritten.
 # The CI hook can invoke `clickhouse-test --cleanup` even if the parent was
 # killed with SIGKILL before its cleanup code ran.
 # `__file__` is `{repo}/tests/clickhouse-test`, so this resolves to
 # `{repo}/ci/tmp/clickhouse_test_group_pid`.
 _GROUP_PID_PATH = Path(__file__).resolve().parent.parent / "ci" / "tmp"
 _GROUP_PID_NAME = "clickhouse_test_group_pid"
+# Identifies this INVOCATION, not this process: workers are forked, so they inherit it.
+# A pid alone cannot scope a reap, being recyclable into a concurrent run's worker.
+_RUN_TOKEN = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
 def write_text_atomic(path: Path, text: str) -> None:
@@ -79,7 +84,7 @@ def write_text_atomic(path: Path, text: str) -> None:
 
 def test_process_group_record(pgid: int) -> Path:
     """Path of the record for one test process group."""
-    return _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}.{pgid}"
+    return _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{_RUN_TOKEN}.{os.getpid()}.{pgid}"
 
 
 def test_process_group_is_gone(pgid: int) -> bool:
@@ -3160,7 +3165,10 @@ class TestCase:
         kill_output = ""
         if proc:
             pgid = proc.pid  # `start_new_session=True`, so the leader's pid is the pgid
-            if proc.returncode is None:
+            # Snapshot: anything that reaps the leader below sets `returncode`, and the
+            # classification further down must see the state the test really ended in.
+            timed_out = proc.returncode is None
+            if timed_out:
                 f = io.StringIO()
                 try:
                     with redirect_stdout(f):
@@ -3177,9 +3185,9 @@ class TestCase:
                         pass
                 finally:
                     kill_output = f.getvalue()
-                    # Reap the leader we just killed: it was left unreaped by the timed-out
-                    # `proc.wait`, and its zombie would make the group look alive below.
-                    # Bounded, and only on the timeout path, never per passing test.
+                    # Reap the leader we just killed, so its zombie does not keep the group
+                    # looking alive and strand the record below. Bounded, and only on the
+                    # timeout path. It sets `returncode`, hence the snapshot above.
                     try:
                         proc.wait(1)
                     except subprocess.TimeoutExpired:
@@ -3302,7 +3310,7 @@ class TestCase:
             ).strip()
 
         if proc:
-            if proc.returncode is None:
+            if timed_out:
                 if stderr:
                     description += stderr
                 if debug_log:
@@ -5455,7 +5463,14 @@ def do_run_tests(
                             runner_process_killed.set()
                         processes.remove(p)
         finally:
-            reap_recorded_test_groups(worker_pids)
+            # Masked like the abort block above: a SIGTERM landing in here raises
+            # `Terminated`, which is a `KeyboardInterrupt` and so escapes the reap's
+            # `except Exception`, replacing the exception the job side keys on.
+            old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            try:
+                reap_recorded_test_groups(worker_pids)
+            finally:
+                signal.signal(signal.SIGTERM, old_sigterm_handler)
 
     if test_suite.sequential_tests:
         # Sequential runner shares the total_failures_shared counter with parallel workers
@@ -5483,7 +5498,12 @@ def do_run_tests(
                 )
             )
         finally:
-            reap_recorded_test_groups(seq_worker_pids)
+            # Same mask as the parallel reap above, for the same reason.
+            old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            try:
+                reap_recorded_test_groups(seq_worker_pids)
+            finally:
+                signal.signal(signal.SIGTERM, old_sigterm_handler)
 
     return total_tests
 
@@ -6869,10 +6889,11 @@ def cleanup_test_groups(diagnostics=True, worker_pids=None):
             continue
         if worker_pids is not None:
             try:
-                # The worker pid is the field right after the prefix; the pgid follows it,
-                # so this must not read the LAST field.
+                # `<token>.<worker>.<pgid>`: match the token too, or a worker pid the OS
+                # recycled into a concurrent run would put that run's live tests in scope.
                 suffix = _pgid_file.name[len(_GROUP_PID_NAME) + 1 :]
-                if int(suffix.split(".", 1)[0]) not in worker_pids:
+                token, worker, _pgid = suffix.split(".", 2)
+                if token != _RUN_TOKEN or int(worker) not in worker_pids:
                     continue
             except ValueError:
                 continue
