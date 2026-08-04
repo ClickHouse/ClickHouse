@@ -1271,23 +1271,26 @@ void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
 {
     /// Like `updateHashWithValueRange`, this hashes the physical path layout: it does NOT guarantee
     /// equal hashes for a logically equal object whose paths are split differently between dynamic
-    /// columns and `shared_data` across blocks; the in-memory scatter consumers only need fast
-    /// per-query partitioning.
+    /// columns and `shared_data` across blocks.
     ///
-    /// Build the finalized per-row object hash by chaining the sub-objects in the existing
+    /// Build the finalized per-row object hash by chaining the sub-objects in the
     /// typed paths → dynamic paths → shared data order. `shared_data` always exists, so the
     /// buffer is always seeded (no empty-object special case needed).
+    ///
+    /// Paths must be visited in sorted order, not in map order: map order differs between column
+    /// instances holding the same data, and `GraceHashJoin` requires the same row to hash
+    /// identically before and after a spill round-trip through disk (see issue #112867).
     auto computeFinalizedInto = [&](UInt32 * out)
     {
         bool first = true;
-        for (const auto & [_, column] : typed_paths)
+        for (const auto & path : sorted_typed_paths)
         {
-            column->computeHashInto(row_begin, row_end, out, first);
+            typed_paths.find(path)->second->computeHashInto(row_begin, row_end, out, first);
             first = false;
         }
-        for (const auto & [_, column] : dynamic_paths_ptrs)
+        for (const auto & path : sorted_dynamic_paths)
         {
-            column->computeHashInto(row_begin, row_end, out, first);
+            dynamic_paths_ptrs.find(path)->second->computeHashInto(row_begin, row_end, out, first);
             first = false;
         }
         shared_data->computeHashInto(row_begin, row_end, out, first);
