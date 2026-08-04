@@ -22,10 +22,10 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO system.webassembly_modules (name, code)
     < "${CUR_DIR}"/wasm/buffered_abi.wasm
 
 # A WebAssembly UDF declared without DETERMINISTIC may return a different value for the same input, so
-# it must not become a join key. Its name is chosen by the user, so unlike the builtins of the same
-# class it cannot be refused by a name list. It is not constant-folded either, so it reaches the pass as
-# an ordinary function node. The DETERMINISTIC twin below is the control: it must stay eligible, so the
-# refusal keys on the declaration and not merely on the function being a UDF.
+# it must not become a join key. It is refused through `isDeterministicInScopeOfQuery`, which the UDF
+# reports from its own declaration. It is not constant-folded, so it reaches the pass as an ordinary
+# function node. The DETERMINISTIC twin below is the control: it must stay eligible, so the refusal
+# keys on the declaration and not merely on the function being a UDF.
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 SET enable_analyzer = 1;
 SET query_plan_enable_optimizations = 0;
