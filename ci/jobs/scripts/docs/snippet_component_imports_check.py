@@ -30,6 +30,7 @@ DECLARED_EXPORT_RE = re.compile(
     r"\bexport\s+(?:default\s+)?(?:const|let|var|function|class)\s+"
     r"([A-Z][A-Za-z0-9_]*)"
 )
+DOCS_MD_RE = re.compile(r'R"DOCS_MD\((?P<body>.*?)\)DOCS_MD"', re.DOTALL)
 TRANSLATION_DIRS = {"ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"}
 MINTLIFY_BUILTINS = {
     "Accordion",
@@ -119,29 +120,55 @@ def is_translation_source(source: str) -> bool:
     return len(parts) > 1 and parts[0] == "snippets" and parts[1] in TRANSLATION_DIRS
 
 
+def is_badge_component_import(binding: Binding) -> bool:
+    source_parts = Path(binding.source.lstrip("/")).parts
+    return (
+        len(source_parts) >= 3
+        and source_parts[0] == "snippets"
+        and "components" in source_parts
+        and (
+            binding.local.endswith("Badge")
+            or binding.exported.endswith("Badge")
+            or Path(binding.source).stem.endswith("Badge")
+        )
+    )
+
+
 def find_default_badge_imports(docs_root: Path) -> list[str]:
-    """Find badge imports that can make Mintlify omit the rest of a page."""
+    """Find badge imports in generated pages and their C++ source blocks."""
     errors: list[str] = []
+
+    def check_text(text: str, display_path: str) -> None:
+        for binding in parse_bindings(text):
+            if not binding.is_default or not is_badge_component_import(binding):
+                continue
+            errors.append(
+                f"{display_path}: use a named import for badge component "
+                f"{binding.local}"
+            )
+
     for path in sorted(docs_root.rglob("*")):
         if path.suffix not in {".md", ".mdx"}:
             continue
-        for binding in parse_bindings(
-            path.read_text(encoding="utf-8", errors="ignore")
-        ):
-            if not binding.is_default:
+        check_text(
+            path.read_text(encoding="utf-8", errors="ignore"),
+            path.relative_to(docs_root).as_posix(),
+        )
+
+    repository_root = docs_root.parent
+    source_root = repository_root / "src"
+    if source_root.is_dir():
+        for path in sorted(source_root.rglob("*")):
+            if path.suffix not in {".cpp", ".h"}:
                 continue
-            source_parts = Path(binding.source.lstrip("/")).parts
-            if (
-                len(source_parts) < 3
-                or source_parts[0] != "snippets"
-                or "components" not in source_parts
-                or not Path(binding.source).stem.endswith("Badge")
-            ):
-                continue
-            errors.append(
-                f"{path.relative_to(docs_root).as_posix()}: use a named import "
-                f"for badge component {Path(binding.source).stem}"
-            )
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            docs_blocks = DOCS_MD_RE.finditer(text)
+            for docs_block in docs_blocks:
+                check_text(
+                    docs_block.group("body"),
+                    path.relative_to(repository_root).as_posix(),
+                )
+
     return errors
 
 

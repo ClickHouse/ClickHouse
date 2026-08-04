@@ -63,6 +63,7 @@ REDIRECTS_CHECK = ("Check redirects", f"{LYCHEE} --mode redirects .")
 EXTERNAL_LINKS_CHECK = ("Check external links (warnings)", f"{LYCHEE} --mode external .")
 SNIPPET_IMPORTS_CHECK = (
     "Check snippet imports",
+    "python3 ../ci/jobs/scripts/docs/test_snippet_component_imports_check.py && "
     "python3 ../ci/jobs/scripts/docs/snippet_component_imports_check.py .",
 )
 CHANGELOGS_CHECK = (
