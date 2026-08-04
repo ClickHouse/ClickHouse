@@ -80,6 +80,8 @@ $CLICKHOUSE_CLIENT -q "
         (select exception != '' from refreshes where view = 'c'),
         (select position(exception, 'cancelled') > 0 from refreshes where view = 'c'),
         (select count() > 0 from system.text_log
-            where message = 'Cancelling refresh in ' || currentDatabase() || '.c');
+            where event_date >= yesterday() and event_time >= now() - 600
+                and message = 'Cancelling refresh in ' || currentDatabase() || '.c'
+            settings max_rows_to_read = 0);
     drop table c;
     drop table src;"
