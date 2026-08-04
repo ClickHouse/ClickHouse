@@ -11,13 +11,11 @@ binaries that run on Windows. There is no native Windows build - the Windows bin
 always cross-compiled, as they are for macOS and FreeBSD.
 
 :::note
-The Windows port is **not finished**. `clickhouse-client` and `clickhouse-local` do not link
-yet: the C++ runtime, the third-party libraries and all of Poco compile, and `src/` is in
-progress - `clickhouse_common_io`, the first library of it, is down to 141 errors in 70
-translation units from 497 in 112. What CI builds on every pull request is the
-`clickhouse-windows-ported` target, described in [Current state](#current-state) below, so the
-cross-build cannot regress while the rest lands. If you are picking this up, start from
-[Remaining work](#remaining-work) - it is an inventory of what is left, by subsystem.
+The Windows port **links but has never been run**. `clickhouse.exe` is produced by every CI
+build, and nothing has yet executed a single instruction of it - the development host is
+`aarch64` and its Wine has no `x86` emulator. Running it on an `x86-64` Windows machine is the
+next step. [Remaining work](#remaining-work) is an inventory of what is left after that, by
+subsystem.
 :::
 
 The cross-build for Windows is based on the [Build instructions](/resources/develop-contribute/build/build),
@@ -59,6 +57,13 @@ This installs the headers and import libraries under `/usr/x86_64-w64-mingw32`, 
 where the toolchain file looks for them. Point `-DMINGW_SYSROOT=...` at a different sysroot
 if yours lives elsewhere. Nothing else from the package is used - in particular not its GCC.
 
+mingw-w64 12 or newer is required: older releases (such as the 11 in Ubuntu 24.04) lack the
+`_l`-suffixed per-locale CRT functions (`_iswctype_l`, ...) that the libc++ locale support
+calls, in both the headers and `libmsvcrt.a`. If your distribution's package is older,
+install the `mingw-w64-common` and `mingw-w64-x86-64-dev` packages from a newer release the
+way `ci/docker/binary-builder/Dockerfile` does - they are data-only packages that install
+cleanly anywhere - and point `-DMINGW_SYSROOT` at them if not at the default location.
+
 ## Build ClickHouse {#build-clickhouse}
 
 ```bash
@@ -69,7 +74,7 @@ cmake -S . -B build-windows -G Ninja \
     -DENABLE_TESTS=OFF \
     -DENABLE_UTILS=OFF \
     -DENABLE_CLICKHOUSE_ALL=OFF
-ninja -C build-windows clickhouse-windows-ported
+ninja -C build-windows clickhouse
 ```
 
 `ENABLE_LIBRARIES=OFF` is what keeps the optional third-party libraries - Kafka, HDFS, the
@@ -86,17 +91,19 @@ wine build-windows/programs/clickhouse.exe local --query "SELECT 1"
 
 ## Current state {#current-state}
 
-What compiles for Windows today:
+What builds for Windows today:
 
 - the C++ runtime: libc++, libc++abi, LLVM libunwind (driving SEH on `x86_64`) and the
   compiler-rt builtins;
 - 117 third-party libraries, among them OpenSSL, Boost, zlib-ng, zstd, LZ4, re2, Abseil,
   cctz, c-ares, replxx and Snappy;
-- all of Poco - Foundation, Net, XML, JSON, Util and NetSSL.
+- all of Poco - Foundation, Net, XML, JSON, Util and NetSSL;
+- every library under `src`, and `programs`, which link into a native PE `clickhouse.exe`.
 
 `clickhouse-windows-ported`, defined in `cmake/windows/ported_targets.cmake`, is the first two
-of those - the third cannot be a cmake target yet, see
-[the gap in the CI coverage](#ci-coverage-gap).
+of those. It is built alongside `clickhouse` rather than being subsumed by it, because it is
+derived from the contrib list rather than from what the binary happens to link, so a
+third-party library that nothing depends on yet stays covered.
 
 The target is derived from the contrib list rather than being a hand-written copy of it, so a
 newly added third-party library is covered automatically. If yours does not build for Windows
@@ -114,83 +121,48 @@ Not built for Windows, and why:
 | Keeper, the JIT, the DWARF parser, `libfiu`, `liburing`, `numactl`, Rust | Server-side, Linux-specific, or no Windows target in the CI image. See `cmake/target.cmake`. |
 | `Poco::Net::NetworkInterface`, `MulticastSocket` | Upstream's Windows implementation needs members our Poco fork removed along with the rest of its Windows support. Nothing in ClickHouse uses either. |
 
-### A gap in the CI coverage {#ci-coverage-gap}
-
-Poco compiles for Windows but is **not** part of `clickhouse-windows-ported`, and so is not
-covered by CI yet. `_poco_foundation` links `clickhouse_common_io` - our fork routes
-`Poco::Logger` through ClickHouse's logging - so CMake will not archive the Poco libraries
-until `clickhouse_common_io` builds, and that is exactly what is still missing. Until then a
-regression in the Poco Windows sources would only show up locally:
-
-```bash
-ninja -C build-windows -k 0 base/poco/Foundation/lib_poco_foundation.a
-```
-
-which compiles every Poco translation unit and then fails at the archive step. Poco joins the
-gate on its own once `src/Common` builds - no change to `ported_targets.cmake` needed.
-
 ## Remaining work {#remaining-work}
 
-What stands between the current state and a working `clickhouse-local.exe`. The numbers are
-from `ninja -C build-windows -k 0 clickhouse_common_io`, which is the first library to get
-through and is currently at **141 errors in 70 translation units** (it started at 497 in 112).
-Everything after it - `dbms`, the parsers, the functions, the storages - is untouched and far
-larger.
+What stands between a binary that links and one that works.
 
-The error classes that remain are no longer mechanical: each is a subsystem that needs either
-a Windows implementation or an explicit, documented opt-out. Grouped by what has to be
-decided:
+**Run it.** Nothing here has been executed, only compiled and linked, so every runtime
+assumption in it is untested. This is the one item that blocks all the others from being
+meaningful. See the Wine note above: an `x86_64` PE binary needs an `x86_64` host or an
+emulator such as FEX.
 
-**Process and thread introspection** (no Windows equivalent of the POSIX interface; a client
-arguably needs none of it, so an opt-out is defensible - but it must be a stated one, not a
-silent no-op):
+**Debug info.** The build passes `-g0` on Windows. A PE image cannot exceed 4 GiB, the DWARF
+for this binary is several times that on its own, and PE has no `.gnu_debuglink` equivalent to
+carry it in a separate file. A crash therefore symbolizes to a module and an offset, not to a
+file and a line. Splitting the debug info out needs either a PDB writer or an out-of-band
+format of our own.
 
-| File | Needs |
-|---|---|
-| `Common/QueryProfiler.*` | `SIGPROF`/`SIGUSR1`/`SIGUSR2`, `siginfo_t`, `sigaction`. 16 of the errors are `constexpr` signal numbers. |
-| `Common/StackTrace.h` | `ucontext.h`. Windows equivalent is `RtlCaptureContext` + `CaptureStackBackTrace`. |
-| `Common/ThreadFuzzer.cpp` | POSIX signals and `pthread` interposition. |
-| `Common/ThreadProfileEvents.h`, `Common/AsynchronousMetrics.cpp` | `getrusage`, `/proc`. Windows has `GetProcessTimes`/`GetProcessMemoryInfo`. |
-| `Common/MemoryWorker.cpp` | `/proc`-based resident-set reads. |
-| `Common/setThreadName.cpp` | `prctl`. Windows has `SetThreadDescription`. |
-| `Common/checkStackSize.cpp`, `Common/FiberStack.cpp` | `getrlimit`. The stack bounds are in the TIB on Windows. |
+**No `Epoll` backend.** `src/Common/Epoll.*` is Linux-only, so everything that polls sockets
+through it - the parts of the client that wait on more than one connection at a time - does
+not work yet. Windows has `WSAPoll` and I/O completion ports; the wake-up path already has a
+Windows implementation in `WakeupFd`, built on a loopback socket pair because a Windows pipe
+cannot be waited on alongside sockets.
 
-**Files and file descriptors:**
+**Subsystems that report `NOT_IMPLEMENTED`,** each with the reason recorded at its site: local
+syslog, archive reading (`libarchive` needs a hand-written Windows `config.h`), conditional
+writes to the local object storage (they need `flock` on a directory and sub-second
+modification times), and the web terminal.
 
-| File | Needs |
-|---|---|
-| `Common/Allocator.cpp`, `Common/PageCache.cpp`, `Common/memory.cpp`, `IO/MMap*` | `sys/mman.h`. Windows has `CreateFileMapping`/`MapViewOfFile`, but no `MADV_DONTNEED`. |
-| `Common/StatusFile.cpp` | `flock`. Windows has `LockFileEx`. |
-| `Common/filesystemHelpers.h` | `statvfs`. Windows has `GetDiskFreeSpaceEx`. |
-| `Common/assertProcessUserMatchesDataOwner.cpp` | `pwd.h`. Windows has no `uid_t`; the check needs rethinking or skipping. |
-| `Common/ShellCommand.cpp`, `Common/waitForPid.cpp` | `fork`/`exec`/`waitpid`. Windows has `CreateProcess`. |
-| 13 sites | `O_CLOEXEC`. The Windows CRT spells it `_O_NOINHERIT`. |
+**Compiled out, all server-side or POSIX-only:** the sampling query profiler and the signal
+handlers (Windows reports faults through SEH instead), `ThreadFuzzer`, the `fork`-based
+watchdog, `ShellCommand` and everything built on it, the pseudo-terminal features, and the
+`su`/`docker-init`/`install` tools. Anything that needs one of these on Windows needs a
+Windows design first, not a stub.
 
-**Sockets and terminal:**
-
-| File | Needs |
-|---|---|
-| `Common/CaresPTRResolver.h`, `IO/SocketPeerClosed.cpp` | `poll.h`, `sys/socket.h`, and `MSG_DONTWAIT` - see the note on the emulated flag in `Poco/Net/SocketDefs.h`. |
-| `Common/isLocalAddress.cpp` | `getifaddrs`. Windows has `GetAdaptersAddresses`. |
-| `Common/TerminalSize.cpp` | `ioctl(TIOCGWINSZ)`. Windows has `GetConsoleScreenBufferInfo`. |
-| `Common/PipeFDs.cpp` | `pipe2`, `O_NONBLOCK`, `F_SETFL`. |
-
-**Odds and ends:** `timegm` (`_mkgmtime`), `strptime` (absent from mingw-w64), `setenv`
-(`_putenv_s`), `link` (`CreateHardLink`), `lstat`, `sysconf(_SC_PAGESIZE)`/`_SC_PHYS_PAGES`,
-`NAME_MAX`, `PIPE_BUF`.
-
-**Then, and only then:** the `std::filesystem::path` question in full. `base/base/pathToString.h`
-covers the sites that block `clickhouse_common_io`, but the codebase relies on the implicit
-`path`/`std::string` conversion in many more places, and every one of them has to choose an
-encoding. UTF-8 is the answer - `path::string()` is not, it goes through the active code page.
-
-**Also unverified:** nothing here has been *run*, only compiled. See the Wine note above; an
-`x86_64` PE binary needs an `x86_64` host or an emulator such as FEX.
+**`std::filesystem::path` conversions.** `base/base/pathToString.h` explains the problem and
+is used at every site that needed it so far, but the codebase keeps relying on the implicit
+`path`/`std::string` conversion that only exists on POSIX, so newly written code reintroduces
+the errors. UTF-8 is the answer - `path::string()` is not, it goes through the active code
+page.
 
 ## CI {#ci}
 
-The `Build (amd_windows)` job builds `clickhouse-windows-ported`. It is defined by
-`BuildTypes.AMD_WINDOWS` in `ci/defs/defs.py`, its cmake flags in
+The `Build (amd_windows)` job builds `clickhouse` and `clickhouse-windows-ported`. It is
+defined by `BuildTypes.AMD_WINDOWS` in `ci/defs/defs.py`, its cmake flags in
 `ci/jobs/build_clickhouse.py`, and it runs in the `clickhouse/binary-builder` image, which
-installs `mingw-w64`. The job produces no artifact, because there is no binary yet; switch
-its target to `clickhouse-bundle` once there is.
+installs `mingw-w64`. The job publishes no artifact: the binary has not been run, so there is
+nothing worth handing to anyone yet.

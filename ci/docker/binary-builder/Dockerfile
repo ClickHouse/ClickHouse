@@ -37,7 +37,6 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         clang-tidy-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         bolt-${LLVM_VERSION} \
-        mingw-w64 \
     && ln -sf /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
     && ln -sf /usr/bin/llvm-bolt-${LLVM_VERSION} /usr/bin/llvm-bolt \
@@ -45,11 +44,25 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-# `mingw-w64` above installs the Win32 API headers and the CRT import libraries under
+# mingw-w64 installs the Win32 API headers and the CRT import libraries under
 # /usr/x86_64-w64-mingw32, which is where cmake/windows/toolchain-x86_64.cmake looks for them.
-# Unlike the macOS SDK below it needs no unpacking - it is a distribution package. Only the
-# headers and import libraries are used: the compiler, linker and C++ runtime all come from our
-# own clang/lld and contrib/llvm-project.
+# Only the headers and import libraries are used: the compiler, linker and C++ runtime all come
+# from our own clang/lld and contrib/llvm-project.
+#
+# It cannot come from this distribution's repository: Ubuntu 24.04 ships mingw-w64 11, whose
+# headers and `libmsvcrt.a` lack the `_l`-suffixed per-locale CRT functions (`_iswctype_l`, ...)
+# that the libc++ 22 locale support calls. Take the packages from a newer Ubuntu instead: both
+# are data-only `all`-architecture packages (headers and import libraries, no host binaries)
+# depending only on each other, so they install cleanly on any base. The `launchpadlibrarian.net`
+# URLs are Launchpad's permanent per-file archive, unaffected by the package being superseded.
+RUN curl -fsSL -o /tmp/mingw-w64-common.deb "https://launchpadlibrarian.net/847416730/mingw-w64-common_13.0.0-2ubuntu1_all.deb" \
+    && curl -fsSL -o /tmp/mingw-w64-x86-64-dev.deb "https://launchpadlibrarian.net/847416735/mingw-w64-x86-64-dev_13.0.0-2ubuntu1_all.deb" \
+    && printf '%s\n' \
+        "da9b2cb14134ca0ef3a31302df50295a2dd6fee7aa4fd888b11c6f72f8ab939e /tmp/mingw-w64-common.deb" \
+        "da40b9e2ae89d98d44b547a9e4fd01862858edb176bade9f12ad143e7ae7efe4 /tmp/mingw-w64-x86-64-dev.deb" \
+      | sha256sum -c \
+    && dpkg -i /tmp/mingw-w64-common.deb /tmp/mingw-w64-x86-64-dev.deb \
+    && rm /tmp/mingw-w64-common.deb /tmp/mingw-w64-x86-64-dev.deb
 
 # Optional PGO+BOLT optimized toolchain override
 ARG TOOLCHAIN_COMMIT=9ba77fe643bd2b46b341a07320cf9b95a3e87384

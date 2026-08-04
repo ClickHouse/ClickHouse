@@ -58,6 +58,13 @@ This installs the headers and import libraries under `/usr/x86_64-w64-mingw32`, 
 where the toolchain file looks for them. Point `-DMINGW_SYSROOT=...` at a different sysroot
 if yours lives elsewhere. Nothing else from the package is used - in particular not its GCC.
 
+mingw-w64 12 or newer is required: older releases (such as the 11 in Ubuntu 24.04) lack the
+`_l`-suffixed per-locale CRT functions (`_iswctype_l`, ...) that the libc++ locale support
+calls, in both the headers and `libmsvcrt.a`. If your distribution's package is older,
+install the `mingw-w64-common` and `mingw-w64-x86-64-dev` packages from a newer release the
+way `ci/docker/binary-builder/Dockerfile` does - they are data-only packages that install
+cleanly anywhere - and point `-DMINGW_SYSROOT` at them if not at the default location.
+
 ## Build ClickHouse {#build-clickhouse}
 
 ```bash
