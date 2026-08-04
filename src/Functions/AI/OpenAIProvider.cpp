@@ -19,38 +19,6 @@ namespace ErrorCodes
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
-namespace
-{
-String extractProviderError(const String & response_body, int status_code)
-{
-    try
-    {
-        Poco::JSON::Parser err_parser;
-        auto err_json = err_parser.parse(response_body);
-        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
-        if (err_obj && err_obj->has("error"))
-        {
-            auto err = err_obj->getObject("error");
-            if (err)
-            {
-                String msg = err->optValue<String>("message", "");
-                String type = err->optValue<String>("type", "");
-                if (!msg.empty())
-                    return fmt::format("HTTP {} [{}]: {}", status_code, type, msg);
-            }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-    size_t max_len = 256;
-    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
-        response_body.substr(0, std::min(response_body.size(), max_len)));
-}
-}
-
-
 OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
     : endpoint(endpoint_)
     , api_key(api_key_)
@@ -117,7 +85,7 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("AI provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
     }
 
     Poco::JSON::Parser parser;
@@ -202,7 +170,7 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("AI provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
     }
 
     Poco::JSON::Parser parser;

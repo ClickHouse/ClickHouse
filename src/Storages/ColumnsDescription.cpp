@@ -1540,4 +1540,17 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     return std::move(*result);
 }
 
+bool prewhereSupportedColumnsContain(
+    const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name)
+{
+    if (supported_columns.contains(column_name))
+        return true;
+
+    if (!include_subcolumns)
+        return false;
+
+    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+    return column && column->isSubcolumn() && supported_columns.contains(column->getNameInStorage());
+}
+
 }
