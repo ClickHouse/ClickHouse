@@ -53,6 +53,14 @@ ENGINE = NATS(04665_nats_credentials, nats_credential_file = '/var/nats.creds');
 CREATE TABLE nats_credentials_in_settings (key UInt64) ENGINE = NATS(04665_nats_credential_file)
 SETTINGS nats_credentials = 'user JWT and seed'; -- { serverError CANNOT_CONNECT_NATS }
 
+-- A `SETTINGS` assignment of the key the collection already has is query-level as well,
+-- so providing both sources through the `SETTINGS` clause is ambiguous in both directions.
+CREATE TABLE nats_both_in_settings_over_file (key UInt64) ENGINE = NATS(04665_nats_credential_file)
+SETTINGS nats_credential_file = '/var/other.creds', nats_credentials = 'user JWT and seed'; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE nats_both_in_settings_over_credentials (key UInt64) ENGINE = NATS(04665_nats_credentials)
+SETTINGS nats_credentials = 'another user JWT and seed', nats_credential_file = '/var/nats.creds'; -- { serverError BAD_ARGUMENTS }
+
 DROP NAMED COLLECTION 04665_nats_credential_file;
 DROP NAMED COLLECTION 04665_nats_credentials;
 DROP NAMED COLLECTION 04665_nats_both;

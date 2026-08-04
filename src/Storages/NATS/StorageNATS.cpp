@@ -11,6 +11,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -900,6 +901,20 @@ void registerStorageNATS(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
 
         nats_settings->loadFromQuery(*args.storage_def);
+
+        /// A credential source assigned in the `SETTINGS` clause is query-level even when the named
+        /// collection provides the same key: the clause is applied on top of the collection values,
+        /// so the final value no longer comes from the collection.
+        if (args.storage_def->settings)
+        {
+            for (const auto & change : args.storage_def->settings->changes)
+            {
+                if (change.name == "nats_credential_file")
+                    credential_file_from_collection = false;
+                else if (change.name == "nats_credentials")
+                    credentials_from_collection = false;
+            }
+        }
 
         if (!(*nats_settings)[NATSSetting::nats_url].changed && !(*nats_settings)[NATSSetting::nats_server_list].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
