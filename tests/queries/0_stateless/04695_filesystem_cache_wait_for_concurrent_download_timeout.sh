@@ -35,7 +35,7 @@ $CLICKHOUSE_CLIENT --max_threads 1 \
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT file_segment_pause_before_write PAUSE"
 
 # The waiter needs the paused segment, gives up waiting after 100 ms and bypasses the cache.
-waiter_query_id="waiter_${CLICKHOUSE_DATABASE}"
+waiter_query_id="04695_waiter_${CLICKHOUSE_DATABASE}_${RANDOM}"
 $CLICKHOUSE_CLIENT --query_id "$waiter_query_id" --max_threads 1 \
     --enable_filesystem_cache 1 \
     --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0 \
@@ -50,7 +50,7 @@ wait
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['CachedReadBufferDownloadWaitTimeouts'] >= 1
+    SELECT ProfileEvents['FileSegmentWaitTimeouts'] >= 1
     FROM system.query_log
     WHERE current_database = currentDatabase() AND query_id = '$waiter_query_id' AND type = 'QueryFinish'
 "

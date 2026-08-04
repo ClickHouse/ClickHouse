@@ -25,6 +25,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
+    extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
@@ -621,7 +622,10 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
                 query_status->throwIfKilled();
             const auto now = std::chrono::steady_clock::now();
             if (now >= deadline)
+            {
+                ProfileEvents::increment(ProfileEvents::FileSegmentWaitTimeouts);
                 break;
+            }
             const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
             if (cv.wait_for(lk, slice, downloaded))
                 break;

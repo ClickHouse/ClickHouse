@@ -867,7 +867,6 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     M(CachedReadBufferCacheWriteStopped, "Number of times writing a file segment into the filesystem cache was stopped mid-download (space reservation or the cache write failed), after which the read continues bypassing the cache", ValueType::Number) \
     M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time", ValueType::Microseconds) \
-    M(CachedReadBufferDownloadWaitTimeouts, "Number of times a read bypassed the filesystem cache because waiting for a concurrent download of the same file segment reached `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`", ValueType::Number) \
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     M(CachedWriteBufferCacheWriteStopped, "Number of times write-through caching was stopped (space reservation or the cache write failed, or a covering segment was being evicted), after which the write continues without populating the cache", ValueType::Number) \
@@ -905,6 +904,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheCheckCorrectness, "Number of times FileCache::assertCacheCorrectness was called", ValueType::Number) \
     M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state", ValueType::Microseconds) \
+    M(FileSegmentWaitTimeouts, "Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)", ValueType::Number) \
     M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache", ValueType::Microseconds) \
     M(FileSegmentLockMicroseconds, "Lock file segment time", ValueType::Microseconds) \
     M(FileSegmentWriteMicroseconds, "File segment write() time", ValueType::Microseconds) \
