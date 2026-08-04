@@ -1,5 +1,6 @@
 array
 asciiCJK
+icu
 ngrambf_v1
 ngrams
 sparseGrams
@@ -8,3 +9,4 @@ splitByNonAlpha
 splitByString
 tokenbf_v1
 unicodeWord
+unicode_word
