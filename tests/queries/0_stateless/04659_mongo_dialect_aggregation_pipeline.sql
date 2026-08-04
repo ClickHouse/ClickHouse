@@ -5,7 +5,9 @@
 -- and `$limit`; a document `_id`, which becomes one `_id.<field>` column per key; `$count`; a
 -- `$match` after a `$group`, which filters the groups; `$project`; a `$set` that replaces a field;
 -- `$skip` before `$limit`; `$limit` before `$skip`, which takes the first documents and only then
--- drops some of them and so is not a single `LIMIT ... OFFSET ...`; `$unionWith`; `$regexFind`,
+-- drops some of them and so is not a single `LIMIT ... OFFSET ...`; `$unionWith`, whose branches
+-- may arrive in any order, so the `$group` over it uses the order-independent `$min` and `$max`
+-- rather than `$push`; `$regexFind`,
 -- which becomes the `match`, `idx` and `captures` fields of its result document; `$dateTrunc`;
 -- `$cond`; a range on one field together with the Extended JSON a driver sends for a long; and
 -- finally the stages and operators that are not supported, which have to be an error rather than
@@ -40,7 +42,7 @@ db.hits.aggregate([{"$sort" : {"ResolutionWidth" : 1}}, {"$skip" : 1}, {"$limit"
 
 db.hits.aggregate([{"$sort" : {"ResolutionWidth" : 1}}, {"$limit" : 2}, {"$skip" : 1}, {"$project" : {"ResolutionWidth" : 1}}]);
 
-db.hits.aggregate([{"$sort" : {"EventTime" : 1}}, {"$limit" : 1}, {"$unionWith" : {"coll" : "hits", "pipeline" : [{"$sort" : {"EventTime" : -1}}, {"$limit" : 1}]}}, {"$group" : {"_id" : null, "t" : {"$push" : "$EventTime"}}}, {"$project" : {"first" : {"$arrayElemAt" : ["$t", 0]}, "last" : {"$arrayElemAt" : ["$t", 1]}}}]);
+db.hits.aggregate([{"$sort" : {"EventTime" : 1}}, {"$limit" : 1}, {"$unionWith" : {"coll" : "hits", "pipeline" : [{"$sort" : {"EventTime" : -1}}, {"$limit" : 1}]}}, {"$group" : {"_id" : null, "first" : {"$min" : "$EventTime"}, "last" : {"$max" : "$EventTime"}}}, {"$project" : {"first" : 1, "last" : 1}}]);
 
 db.hits.aggregate([{"$set" : {"k" : {"$regexFind" : {"input" : "$URL", "regex" : "^https?://([^/]+)/"}}}}, {"$group" : {"_id" : {"$ifNull" : [{"$first" : "$k.captures"}, "$URL"]}, "c" : {"$sum" : 1}}}, {"$sort" : {"_id" : 1}}]);
 
