@@ -835,6 +835,35 @@ def test_a_bugfix_job_killed_between_build_types_keeps_the_previous_build(tmp_pa
     )
 
 
+def test_a_kill_entering_the_first_build_switch_keeps_labels_and_fatals(tmp_path):
+    """The window between the first build's final rows and the loop's own checkpoint.
+
+    The post-suite checkpoint runs before the first build type is labelled and before
+    `reconcile_bugfix_crash_repro`, and the loop's checkpoint is only reached after the
+    switch - whose `stop_server` can take a long time. A kill in between therefore
+    published the first build's rows stripped of the attribution and the fatal that
+    explain them. The arm above uses `block_call=2`, the SECOND switch, so it cannot see
+    this one.
+    """
+    status, rows = _kill_main_in_teardown(
+        tmp_path,
+        build_types=["bt_first", "bt_second"],
+        rows=[5, 6],
+        block_call=1,
+    )
+
+    unlabelled = [name for name, _, labels in rows if not labels]
+    assert not unlabelled, (
+        f"{len(unlabelled)} row(s) published without a build-type label ({unlabelled[:3]}"
+        "...): a kill entering the first switch loses the attribution already computed"
+    )
+    assert any(name == _FATAL_ROW_NAME for name, _, _ in rows), (
+        f"the reconciled fatal-log row is missing from {[name for name, _, _ in rows]}: "
+        "the report would not explain a crash in the first build type"
+    )
+    assert status == Result.Status.RUNNING, f"unexpected status [{status}]"
+
+
 def test_a_failing_first_build_type_publishes_its_labels_and_fatal_rows(tmp_path):
     """The post-suite checkpoint runs BEFORE the bugfix-validation rows are final.
 

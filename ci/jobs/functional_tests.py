@@ -1050,6 +1050,12 @@ def main():
                 r.set_label(build_types[0])
             reconcile_bugfix_crash_repro(test_result, first_bt_fatals)
 
+            # The labels and fatal rows above are the first build's final state, and the
+            # next iteration stops the server before producing anything new.
+            checkpoint_collected_results(
+                info.job_name, results + [test_result], info.is_local_run
+            )
+
             if test_result.is_ok():
                 for bugfix_bt in build_types[1:]:
                     print(f"\n=== Bugfix validation with {bugfix_bt} ===")
