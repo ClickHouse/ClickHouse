@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <numeric>
 
@@ -120,6 +121,21 @@ static size_t computePaddedDim(size_t dim)
 {
     constexpr size_t ALIGN = 8;
     return (dim + ALIGN - 1) / ALIGN * ALIGN;
+}
+
+static void validateScannSquaredL2Norm(double squared_norm, const char * vector_kind)
+{
+    /// ScaNN's float32 partitioning kernels expand squared L2 as
+    /// ||x||^2 + ||c||^2 - 2 * x.c. If both norms are below FLT_MAX / 4,
+    /// Cauchy-Schwarz guarantees that every term and their sum remain finite.
+    constexpr double max_safe_squared_norm = static_cast<double>(std::numeric_limits<float>::max()) / 4.0;
+    if (!std::isfinite(squared_norm) || squared_norm >= max_safe_squared_norm)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "{} vector squared L2 norm {} is too large for vector_similarity('scann', ...); maximum is {}",
+            vector_kind,
+            squared_norm,
+            max_safe_squared_norm);
 }
 
 template <typename DatapointIndex>
@@ -1061,6 +1077,13 @@ void MergeTreeIndexAggregatorVectorSimilarityScann::update(
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Zero-magnitude vector is not allowed for vector_similarity('scann', 'cosineDistance', ...) index");
         }
+        else
+        {
+            double sq_norm = 0.0;
+            for (size_t d = 0; d < dims; ++d)
+                sq_norm += static_cast<double>(dst[d]) * static_cast<double>(dst[d]);
+            validateScannSquaredL2Norm(sq_norm, "Indexed");
+        }
     }
 
     granule->num_vectors += rows_read;
@@ -1176,12 +1199,20 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     if (index_params.distance_name == "cosineDistance")
     {
         double sq_norm = 0.0;
-        for (float v : query) sq_norm += static_cast<double>(v) * static_cast<double>(v);
+        for (float v : query)
+            sq_norm += static_cast<double>(v) * static_cast<double>(v);
         if (sq_norm == 0.0 || !std::isfinite(sq_norm))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Zero-magnitude query vector is not allowed for vector_similarity('scann', 'cosineDistance', ...)");
         const float inv = static_cast<float>(1.0 / std::sqrt(sq_norm));
         for (float & v : query) v *= inv;
+    }
+    else
+    {
+        double sq_norm = 0.0;
+        for (float v : query)
+            sq_norm += static_cast<double>(v) * static_cast<double>(v);
+        validateScannSquaredL2Norm(sq_norm, "Query");
     }
 
     /// Run search.

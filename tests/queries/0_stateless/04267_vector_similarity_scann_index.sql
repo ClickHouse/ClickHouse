@@ -588,3 +588,38 @@ ORDER BY L2Distance(vector, [1.0, 0.0])
 LIMIT 10
 SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 0.5; -- { serverError INVALID_SETTING_VALUE }
 DROP TABLE tab_scann_fetch_multiplier;
+
+-- Test 24: Reject partition-training vectors whose squared norms overflow Float32.
+-- The vectors are finite and distinct, but ScaNN's expanded squared-L2 formula
+-- produces non-finite intermediate values and otherwise leaves the cluster ID invalid.
+-- This affects both L2Distance and dotProduct because ScaNN partitions both with squared L2.
+SELECT '24. Partition training rejects Float32 squared-norm overflow';
+DROP TABLE IF EXISTS tab_scann_l2_overflow;
+CREATE TABLE tab_scann_l2_overflow
+(
+    id UInt64,
+    vector Array(Float32),
+    INDEX vector_idx vector TYPE vector_similarity('scann', 'L2Distance', 2, 'f32', 44)
+)
+ENGINE = MergeTree
+ORDER BY id;
+INSERT INTO tab_scann_l2_overflow
+SELECT number, [toFloat32(1e20 + number * 1e15), toFloat32(number)]
+FROM numbers(1990); -- { serverError INCORRECT_DATA }
+SELECT 1;
+DROP TABLE tab_scann_l2_overflow;
+
+DROP TABLE IF EXISTS tab_scann_dot_overflow;
+CREATE TABLE tab_scann_dot_overflow
+(
+    id UInt64,
+    vector Array(Float32),
+    INDEX vector_idx vector TYPE vector_similarity('scann', 'dotProduct', 2, 'f32', 44)
+)
+ENGINE = MergeTree
+ORDER BY id;
+INSERT INTO tab_scann_dot_overflow
+SELECT number, [toFloat32(1e20 + number * 1e15), toFloat32(number)]
+FROM numbers(1990); -- { serverError INCORRECT_DATA }
+SELECT 1;
+DROP TABLE tab_scann_dot_overflow;

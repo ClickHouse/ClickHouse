@@ -58,3 +58,6 @@
 unrelated ALTER succeeds
 1
 23. vector_search_index_fetch_multiplier must be at least 1.0
+24. Partition training rejects Float32 squared-norm overflow
+1
+1
