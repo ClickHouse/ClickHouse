@@ -1356,7 +1356,13 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection)
 {
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
-    auto projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+    /// On a content-addressed disk a part is one atomic unit, so a temp projection sub-part (written
+    /// during a merge/mutate rebuild under `<proj>.tmp_proj`) must share the PARENT part's whole-part
+    /// transaction — its files are re-keyed into the parent manifest when `<proj>.tmp_proj` is renamed to
+    /// `<proj>.proj` (B58). On a non-CA disk a temp projection keeps its own sub-transaction (the
+    /// historical behavior): `use_parent_transaction = !is_temp_projection`.
+    const bool use_parent_transaction = !is_temp_projection || getDataPartStorage().isContentAddressed();
+    auto projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, use_parent_transaction);
     MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings());
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
 }
