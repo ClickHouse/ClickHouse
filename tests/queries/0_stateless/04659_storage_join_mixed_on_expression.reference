@@ -1,0 +1,19 @@
+--- rejected: a mixed ON condition on a Join-engine table ---
+--- still works: no mixed ON condition ---
+K1 join	1	20
+K1 join	2	20
+K1 join	3	20
+K1 oracle	1	20
+K1 oracle	2	20
+K1 oracle	3	20
+K2 equi	6
+K3 left-only	5
+K4 mergetree	6
+K6 joinGet	10
+K7 any	3
+K7 semi	3
+K7 anti	0
+K9 any inner	1
+K10 all inner	6
+K11 right equi	6
+--- other rejections keep their own error, the guard did not widen ---
