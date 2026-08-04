@@ -704,31 +704,35 @@ def _kill_main_in_teardown(
                 )
             )
         log = os.path.join(str(tmp_path), "main_probe.log")
-        log_handle = open(log, "wb")
-        proc = subprocess.Popen(
-            [sys.executable, script],
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-        deadline = time.monotonic() + 300
-        while time.monotonic() < deadline and not os.path.exists(blocked):
-            if proc.poll() is not None:
-                # The child's output is redirected to `log`, so `proc.stdout` is None:
-                # read the file, or this branch raises instead of reporting the exit.
-                raise AssertionError(
-                    "main() exited before reaching the teardown step this arm blocks "
-                    f"in:\n{_tail(log)}"
+        # The child runs in its own session and sleeps 600s once blocked, so every exit
+        # path has to reap it: an assertion below would otherwise leave it on the runner.
+        with open(log, "wb") as log_handle:
+            proc = subprocess.Popen(
+                [sys.executable, script],
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            try:
+                deadline = time.monotonic() + 300
+                while time.monotonic() < deadline and not os.path.exists(blocked):
+                    if proc.poll() is not None:
+                        # Output is redirected to `log`, so `proc.stdout` is None: read
+                        # the file, or this branch raises instead of reporting the exit.
+                        raise AssertionError(
+                            "main() exited before reaching the teardown step this arm "
+                            f"blocks in:\n{_tail(log)}"
+                        )
+                    time.sleep(0.02)
+                assert os.path.exists(blocked), (
+                    "main() never reached the blocking teardown step, output:\n"
+                    f"{_tail(log)}"
                 )
-            time.sleep(0.02)
-        assert os.path.exists(blocked), (
-            "main() never reached the blocking teardown step, output:\n"
-            f"{_tail(log)}"
-        )
-        # praktika's watchdog kills the whole process group (`TeePopen`).
-        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        proc.wait(timeout=60)
-        log_handle.close()
+            finally:
+                # praktika's watchdog kills the whole process group (`TeePopen`).
+                if proc.poll() is None:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.wait(timeout=60)
 
         Settings.TEMP_DIR = str(tmp_path)
         path = Result.file_name_static(_JOB_NAME)
