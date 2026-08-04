@@ -1935,10 +1935,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         throw Exception(
                             ErrorCodes::SUPPORT_IS_DISABLED,
                             "Cannot coordinate reading from table {} with parallel replicas: the initiator "
-                            "designated {} for coordinated reading, so the set of the underlying tables of this "
-                            "`Merge` table changed after the query was planned, or differs on this replica",
+                            "designated {} for coordinated reading while this replica designated {}, so the set "
+                            "of the underlying tables of this `Merge` table changed after the query was planned, "
+                            "or differs on this replica",
                             storage->getStorageID().getNameForLogs(),
-                            settings[Setting::parallel_replicas_designated_table].value);
+                            settings[Setting::parallel_replicas_designated_table].value,
+                            parallelReplicasDesignatedTableName(table_expression_for_parallel_replicas));
 
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
@@ -2143,16 +2145,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 QueryPlan query_plan_parallel_replicas;
                                 QueryPlanStepPtr reading_step = std::move(reading_node->step);
 
-                                /// A `Merge` table is not replicated itself, and for the `merge` table
-                                /// function it does not even exist on the replicas, so its own table
-                                /// status says nothing about the freshness of the data the query reads.
-                                /// Check the replication delay of its underlying replicated tables
-                                /// instead, so that `max_replica_delay_for_distributed_queries` keeps
-                                /// excluding a lagging replica from coordinated reading.
-                                std::vector<QualifiedTableName> tables_to_check;
-                                if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
-                                    tables_to_check = merge_storage->getReplicatedChildTableNames(query_context);
-
                                 /// A storage created by a table function (e.g. merge(...)) does not exist
                                 /// on remote replicas under its generated id, so the id must not be used
                                 /// to check tables status on remote replicas.
@@ -2164,8 +2156,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     table_expression_query_info.planner_context,
                                     query_context,
                                     table_expression_query_info.storage_limits,
-                                    std::move(reading_step),
-                                    std::move(tables_to_check));
+                                    std::move(reading_step));
                                 query_plan = std::move(query_plan_parallel_replicas);
                             }
                             else

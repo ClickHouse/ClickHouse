@@ -2,6 +2,8 @@
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
@@ -47,6 +49,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -844,6 +847,52 @@ static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr>
     return *local_replica_index;
 }
 
+/// Collect the full names of every replicated table the query fragment shipped to the replicas
+/// reads. The replicas execute the whole fragment, so a lagging replica returns stale data for any
+/// replicated table of the fragment, not only for the one designated for coordinated reading - a
+/// joined or subquery input as well. `TablesStatus` reports the replication delay only for
+/// replicated tables, and a `Merge` table (or the `merge` table function, which does not even exist
+/// on the replicas under its generated id) is represented by its underlying replicated tables.
+static std::vector<QualifiedTableName> collectReplicatedTablesToCheck(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    std::set<QualifiedTableName> tables;
+
+    std::vector<const IQueryTreeNode *> nodes_to_visit{query_tree.get()};
+    while (!nodes_to_visit.empty())
+    {
+        const auto * node = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (const auto * table_node = node->as<TableNode>())
+        {
+            const auto & storage = table_node->getStorage();
+            if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
+            {
+                auto child_tables = merge_storage->getReplicatedChildTableNames(context);
+                tables.insert(child_tables.begin(), child_tables.end());
+            }
+            else if (storage->supportsReplication())
+                tables.insert(table_node->getStorageID().getQualifiedName());
+        }
+        else if (const auto * table_function_node = node->as<TableFunctionNode>())
+        {
+            if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_node->getStorage().get()))
+            {
+                auto child_tables = merge_storage->getReplicatedChildTableNames(context);
+                tables.insert(child_tables.begin(), child_tables.end());
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+        {
+            if (child)
+                nodes_to_visit.push_back(child.get());
+        }
+    }
+
+    return {tables.begin(), tables.end()};
+}
+
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
@@ -854,8 +903,7 @@ void executeQueryWithParallelReplicas(
     PlannerContextPtr planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr analyzed_read_from_merge_tree,
-    std::vector<QualifiedTableName> tables_to_check)
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
     /// The storage id is empty when reading from a table function (the storage it creates
@@ -874,6 +922,16 @@ void executeQueryWithParallelReplicas(
         new_context->setSetting(
             "parallel_replicas_designated_table",
             parallelReplicasDesignatedTableName(findTableDesignatedForParallelReplicas(query_tree)));
+
+    /// A replica lagging behind by more than `max_replica_delay_for_distributed_queries` must not
+    /// participate in coordinated reading when falling back to stale replicas is switched off. The
+    /// fragment sent to the replicas can read several replicated tables (a `Merge` table stands for
+    /// its underlying replicated tables, and a joined or subquery input is read by the replicas
+    /// too), so check the freshness of all of them, not only of the table expression designated
+    /// for coordinated reading.
+    std::vector<QualifiedTableName> tables_to_check;
+    if (query_tree)
+        tables_to_check = collectReplicatedTablesToCheck(query_tree, context);
 
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
 
@@ -1056,8 +1114,7 @@ void executeQueryWithParallelReplicas(
     const PlannerContextPtr & planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr analyzed_read_from_merge_tree,
-    std::vector<QualifiedTableName> tables_to_check)
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
     rewriteJoinToGlobalJoin(modified_query_tree, context);
@@ -1079,8 +1136,7 @@ void executeQueryWithParallelReplicas(
         new_planner_context,
         context,
         storage_limits,
-        std::move(analyzed_read_from_merge_tree),
-        std::move(tables_to_check));
+        std::move(analyzed_read_from_merge_tree));
 }
 
 void executeQueryWithParallelReplicas(

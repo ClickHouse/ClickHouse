@@ -29,7 +29,10 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_pr_dim_stale SELECT number * 100 FROM numbers(20);
 "
 
-PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_allow_merge_tables = 1, max_replica_delay_for_distributed_queries = 1, fallback_to_stale_replicas_for_distributed_queries = 0"
+# `parallel_replicas_connect_timeout_ms` defaults to 300 ms, which a loaded CI machine overshoots,
+# and a replica that missed the connection window does not count as available - the fresh case would
+# then report 0 available replicas.
+PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_allow_merge_tables = 1, max_replica_delay_for_distributed_queries = 1, fallback_to_stale_replicas_for_distributed_queries = 0, parallel_replicas_connect_timeout_ms = 30000"
 
 # Whether any replica was admitted to coordinated reading.
 function replicas_used()
@@ -79,3 +82,32 @@ do
 
     replicas_used "$query_id"
 done
+
+# The replicas execute the whole shipped fragment, so a replica lagging on a replicated table that is
+# only joined to the `Merge` source must be excluded as well, even when the `Merge` children themselves
+# are not replicated and always look fresh. The merge-only control shows that with the same staleness
+# the replicas are still admitted when nothing replicated is read.
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE t_pr_merge_plain_1 (k UInt64) ENGINE = MergeTree ORDER BY k;
+    CREATE TABLE t_pr_merge_plain_2 (k UInt64) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO t_pr_merge_plain_1 SELECT number FROM numbers(1000);
+    INSERT INTO t_pr_merge_plain_2 SELECT number + 1000 FROM numbers(1000);
+"
+
+PLAIN_SETTINGS="$PR_SETTINGS, parallel_replicas_for_non_replicated_merge_tree = 1"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
+
+query_id="04667_${CLICKHOUSE_DATABASE}_control_$RANDOM"
+$CLICKHOUSE_CLIENT --query_id "$query_id" --query "
+    SELECT count(), sum(k) FROM merge(currentDatabase(), '^t_pr_merge_plain_') SETTINGS $PLAIN_SETTINGS"
+
+query_id_join="04667_${CLICKHOUSE_DATABASE}_joined_dim_stale_$RANDOM"
+$CLICKHOUSE_CLIENT --query_id "$query_id_join" --query "
+    SELECT count(), sum(m.k) FROM merge(currentDatabase(), '^t_pr_merge_plain_') AS m
+    INNER JOIN t_pr_dim_stale AS d ON m.k = d.k SETTINGS $PLAIN_SETTINGS"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
+
+replicas_used "$query_id"
+replicas_used "$query_id_join"

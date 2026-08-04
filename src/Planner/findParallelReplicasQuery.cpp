@@ -723,23 +723,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     /// A storage created by a table function (e.g. merge(...)) does not exist on remote replicas
     /// under its generated id, so the id must not be used to check tables status on remote replicas.
     StorageID storage_id = StorageID::createEmpty();
-    StoragePtr storage;
     if (const auto * table_node = table_expression->as<TableNode>())
-    {
         storage_id = table_node->getStorageID();
-        storage = table_node->getStorage();
-    }
-    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
-        storage = table_function_node->getStorage();
-
-    /// A `Merge` table is not replicated itself, and for the `merge` table function it does not even
-    /// exist on the replicas, so its own table status says nothing about the freshness of the data the
-    /// query reads. Check the replication delay of its underlying replicated tables instead, so that
-    /// `max_replica_delay_for_distributed_queries` keeps excluding a lagging replica from coordinated
-    /// reading on this path too (a whole `JOIN` or subquery offloaded to the replicas).
-    std::vector<QualifiedTableName> tables_to_check;
-    if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
-        tables_to_check = merge_storage->getReplicatedChildTableNames(context);
 
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
@@ -752,8 +737,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         std::move(new_planner_context),
         context,
         storage_limits,
-        nullptr,
-        std::move(tables_to_check));
+        nullptr);
 
     auto converting = ActionsDAG::makeConvertingActions(
         header->getColumnsWithTypeAndName(),
