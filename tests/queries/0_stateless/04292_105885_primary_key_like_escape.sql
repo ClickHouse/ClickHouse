@@ -16,7 +16,9 @@ SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (s String) ENGINE = MergeTree ORDER BY s;
+-- The five rows must land in a single granule for the primary-key ranges below to read 1/1.
+CREATE TABLE tab (s String) ENGINE = MergeTree ORDER BY s
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 
 INSERT INTO tab VALUES ('abc'), ('abc%'), ('abc%done'), ('abcd'), ('xyz');
 
@@ -75,7 +77,7 @@ DROP TABLE tab;
 
 DROP TABLE IF EXISTS tab2;
 
-CREATE TABLE tab2 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2;
+CREATE TABLE tab2 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2, index_granularity_bytes = 0;
 
 INSERT INTO tab2 VALUES ('a\\b01'), ('a\\b02'), ('a\\b03'), ('a\\b04'), ('abZZ'), ('zzz');
 
@@ -102,7 +104,7 @@ SET optimize_rewrite_like_perfect_affix = 0;
 
 DROP TABLE IF EXISTS tab3;
 
-CREATE TABLE tab3 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2;
+CREATE TABLE tab3 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2, index_granularity_bytes = 0;
 
 INSERT INTO tab3 VALUES ('a\\b01'), ('a\\b02'), ('a\\b03'), ('a\\b04'), ('abZZ'), ('zzz');
 
@@ -130,7 +132,7 @@ DROP TABLE tab3;
 
 DROP TABLE IF EXISTS tab4;
 
-CREATE TABLE tab4 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2;
+CREATE TABLE tab4 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2, index_granularity_bytes = 0;
 
 INSERT INTO tab4 VALUES ('aaa'), ('aab'), ('abcd'), ('xyz');
 

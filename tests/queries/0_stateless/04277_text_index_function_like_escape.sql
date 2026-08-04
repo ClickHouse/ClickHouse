@@ -21,9 +21,9 @@ ORDER BY (id)
 -- A moderate index_granularity keeps the text index small (few granules) so the
 -- flaky check stays well under its per-run time limit; the four single-value parts
 -- still demonstrate that a `LIKE ... ESCAPE` predicate prunes to the matching part.
--- max_bytes_to_merge_at_max_space_in_pool = 1: those four parts must stay separate for the
--- granule counts below to hold.
-SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1;
+-- The granule counts below hold only for this exact layout: index_granularity_bytes = 0 keeps
+-- granularity row-based, and max_bytes_to_merge_at_max_space_in_pool = 1 keeps the four parts separate.
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1024);
@@ -96,7 +96,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1;  -- see the note above
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;  -- see the note above
 
 INSERT INTO tab SELECT number, 'ClickHouseServer' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'clickhouseclient' FROM numbers(1024);
