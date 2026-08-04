@@ -164,7 +164,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table object with the same columns as the original PostgreSQL table.
 
