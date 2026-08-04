@@ -106,6 +106,7 @@ tuple needle size 1	0	1
 tuple needle size 1	1	0
 tuple needle alone	0	1
 tuple needle alone	1	0
+no conversion	0
 1
 1
 -- NULL nested inside a non-null Nullable(Tuple(...)) wrapper

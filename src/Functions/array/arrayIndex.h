@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int NO_COMMON_TYPE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using NullMap = PaddedPODArray<UInt8>;
@@ -1139,9 +1140,11 @@ private:
         catch (const Exception & e)
         {
             /// The peeled types are not comparable, which the comparison subsystem alone can decide:
-            /// its String arms are admitted by type and then converted per value. Decline, so the
-            /// existing dispatch answers exactly as it does today.
-            if (e.code() != ErrorCodes::NO_COMMON_TYPE && e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+            /// its String arms are admitted by type and then converted per value, and a supertype it
+            /// does accept may still have no conversion. Decline, so the existing dispatch answers
+            /// exactly as it does today.
+            if (e.code() != ErrorCodes::NO_COMMON_TYPE && e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+                && e.code() != ErrorCodes::NOT_IMPLEMENTED)
                 throw;
             return {};
         }

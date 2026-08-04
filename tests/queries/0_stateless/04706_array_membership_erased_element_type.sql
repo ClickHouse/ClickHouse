@@ -461,6 +461,15 @@ SELECT 'tuple needle size 1', id, has(v, n) AS got FROM t_block_needle_tuple ORD
 SELECT 'tuple needle alone', id, has(v, n) AS got FROM t_block_needle_tuple WHERE id = 0;
 SELECT 'tuple needle alone', id, has(v, n) AS got FROM t_block_needle_tuple WHERE id = 1;
 
+-- A peeled pair whose types have a supertype the comparison accepts but no conversion between them:
+-- equals reports that as NOT_IMPLEMENTED rather than a type rejection, and declining has to cover it
+-- too, or the call throws where it used to answer.
+DROP TABLE IF EXISTS t_no_conversion;
+CREATE TABLE t_no_conversion (v Array(Variant(IPv4, Float64)), n Variant(IPv4, Float64)) ENGINE = Memory;
+INSERT INTO t_no_conversion VALUES ([toIPv4('1.2.3.4')], toFloat64(5));
+
+SELECT 'no conversion', has(v, n) AS got FROM t_no_conversion;
+
 -- An admitted cell answers the same under both values of the mismatch setting: the comparison sees
 -- concrete types, so no adaptor is built and those settings do not reach it.
 DROP TABLE IF EXISTS t_setting;
