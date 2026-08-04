@@ -370,7 +370,11 @@ Implemented as a [mutation](/reference/statements/alter/index#mutations). The co
 
 `RECOMPRESS COLUMN` is not supported on tables with a `UNIQUE KEY`.
 
-It is also not supported for a column whose codec is lossy (such as `SZ3`) when a projection reads that column or a data skipping index depends on it: a lossy codec does not reproduce the original values, and the recompression does not rebuild the projections and indices, so they would keep describing the values as they were before the recompression. Drop the projection or the index, or rebuild it with `MATERIALIZE PROJECTION` / `MATERIALIZE INDEX` after the recompression. The drop may be part of the same `ALTER`, as long as it is written before the `RECOMPRESS COLUMN` -- for example `ALTER TABLE t DROP PROJECTION p, RECOMPRESS COLUMN val`. Written in the other order the recompression would run while the projection is still live, and it is rejected.
+It is also not supported for a column whose codec is lossy (such as `SZ3`) when something derived from the column would keep describing the values as they were before the recompression: a lossy codec does not reproduce the original values, and the recompression does not rebuild the dependents. This applies when:
+
+- a projection reads the column or a data skipping index depends on it. Drop the projection or the index, or rebuild it with `MATERIALIZE PROJECTION` / `MATERIALIZE INDEX` after the recompression. The drop may be part of the same `ALTER`, as long as it is written before the `RECOMPRESS COLUMN` -- for example `ALTER TABLE t DROP PROJECTION p, RECOMPRESS COLUMN val`. Written in the other order the recompression would run while the projection is still live, and it is rejected.
+- the partition key or the sorting key uses the column: the partition value, the part minmax index, the primary index and the physical order of the rows are not recalculated by the recompression, so parts and granules could be pruned incorrectly. Only a lossless codec can recompress such a column.
+- a stored `MATERIALIZED` column is computed from the column: its stored values are not recalculated by the recompression. Remove the `MATERIALIZED` property first (a `MODIFY COLUMN ... REMOVE MATERIALIZED` written before the `RECOMPRESS COLUMN` in the same `ALTER` works); it can be re-added afterwards and the column rebuilt with `MATERIALIZE COLUMN`.
 
 Syntax:
 

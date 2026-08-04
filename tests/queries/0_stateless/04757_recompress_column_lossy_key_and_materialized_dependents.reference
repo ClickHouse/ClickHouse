@@ -1,0 +1,5 @@
+partition key control	1000	499500	4
+materialized property removed first	1000	499500
+materialized over another column	1000	1000
+lossless dependents	1000	1000	1000
+1
