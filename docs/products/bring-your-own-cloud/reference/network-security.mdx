@@ -178,4 +178,4 @@ Metrics and logs are stored within the customer's BYOC VPC. Logs are currently s
 
 _Outbound, Public_
 
-State Exporter sends ClickHouse service state information to an SQS owned by ClickHouse Cloud.
+State Exporter sends ClickHouse service and backup state information (operational status events, not backup contents) to an SQS queue owned by ClickHouse Cloud.
