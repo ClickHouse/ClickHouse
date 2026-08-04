@@ -82,13 +82,29 @@ def test_process_group_record() -> Path:
     return _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
 
 
-def forget_test_process_group() -> None:
-    """Drop this worker's PGID record, once its process group is known to be dead.
+def test_process_group_is_gone(pgid: int) -> bool:
+    """Whether the kernel no longer knows of any process in `pgid`.
 
-    Sole remover on the normal paths: leaving a record behind would let a later
-    `--cleanup` signal an unrelated, PID-recycled group. The per-test alarm path does
-    not reach here, and needs no reaper of its own: `timeout_handler` calls
-    `stop_tests`, whose `cleanup_child_processes` already kills the group.
+    One syscall. An unreaped zombie counts as present, so this can only be
+    pessimistic, which is the safe direction for deciding to keep a record.
+    """
+    try:
+        os.killpg(pgid, 0)
+        return False
+    except ProcessLookupError:
+        return True
+    except OSError:
+        # EPERM and friends: not ours to judge, so keep the record.
+        return False
+
+
+def forget_test_process_group() -> None:
+    """Drop this worker's PGID record.
+
+    Only call this once the group is gone: the record is the only thing that can
+    lead a reaper to a live group, and a stale one would let a later `--cleanup`
+    signal an unrelated, PID-recycled group. Whenever the group may still be live
+    the record is kept, and the parent's abort-path reap is what consumes it.
     """
     test_process_group_record().unlink(missing_ok=True)
 
@@ -3143,6 +3159,7 @@ class TestCase:
         args = self.args
         kill_output = ""
         if proc:
+            pgid = proc.pid  # `start_new_session=True`, so the leader's pid is the pgid
             if proc.returncode is None:
                 f = io.StringIO()
                 try:
@@ -3153,18 +3170,27 @@ class TestCase:
                 except Exception as e:
                     # This worker's next test overwrites the record, so an escaping
                     # exception here would strand the group with nothing pointing at it.
-                    # `proc.pid` is the pgid (`start_new_session=True`).
                     print(f"Warning: could not kill the test group: {e}", file=sys.stderr)
                     try:
-                        os.killpg(proc.pid, signal.SIGKILL)
+                        os.killpg(pgid, signal.SIGKILL)
                     except OSError:
                         pass
                 finally:
                     kill_output = f.getvalue()
-                    forget_test_process_group()
-            else:
-                # The group exited on its own, so the record stops being needed here.
-                # `run_single_test` deliberately keeps it alive until this point.
+                    # Reap the leader we just killed: it was left unreaped by the timed-out
+                    # `proc.wait`, and its zombie would make the group look alive below.
+                    # Bounded, and only on the timeout path, never per passing test.
+                    try:
+                        proc.wait(1)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    # A returning `kill_process_group` does not rule out live members, and
+                    # a `BaseException` unwinds through here too (the runner's own
+                    # `Terminated`), so removal is gated on the group being gone.
+                    if test_process_group_is_gone(pgid):
+                        forget_test_process_group()
+            elif test_process_group_is_gone(pgid):
+                # The leader exited, but a backgrounded member can outlive it.
                 forget_test_process_group()
 
         description = ""
@@ -3666,7 +3692,7 @@ class TestCase:
                 cleanup_cgroup(cgroup_name)
             # NOT the place to drop the PGID record: on a timeout the group is still
             # running, and only that record can lead a reaper to it.
-            # `forget_test_process_group` drops it once the group is known to be dead.
+            # `process_result_impl` drops it once the group is gone.
 
         total_time = (datetime.now() - start_time).total_seconds()
 

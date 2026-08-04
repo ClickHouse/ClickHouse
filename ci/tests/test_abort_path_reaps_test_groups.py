@@ -96,7 +96,7 @@ def _kill_group(pgid):
 def _alive(pgid):
     """RUNNABLE PIDs still in `pgid`, read straight from /proc.
 
-    Neither the runner's `pgrep()` nor `ps -g` is usable here: both enumerate every process
+    Neither the runner's `pgrep` nor `ps -g` is usable here: both enumerate every process
     on the machine (measured at ~40 s each on a loaded machine), and this test polls.
     Reading `/proc/<pid>/stat` costs no subprocess per sample.
 
@@ -174,7 +174,30 @@ def _wait_dead(pgid, timeout=10):
     return _alive(pgid)
 
 
-def _launch_real_test(ct, tmp_path, monkeypatch, lifetime=600):
+def _spawn_leaderless_group(lifetime=600):
+    """A group whose LEADER has exited while a member lives on.
+
+    The shape of any ``.sh`` test that backgrounds something and returns: the leader's
+    ``returncode`` is then set, which says nothing about the group.  ``_spawn_group`` cannot
+    stand in - its leader ``wait``s, so it never reaches this state.
+    """
+    leader = subprocess.Popen(
+        f"sleep {lifetime} & exit 0",
+        shell=True,
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    leader.wait()
+    # `wait` has reaped the leader, so `_group_gone` being False here means a real member
+    # is up.  Polled with the cheap predicate; `_alive` stays the authority in the caller.
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline and _group_gone(leader.pid):
+        time.sleep(0.05)
+    return leader
+
+
+def _launch_real_test(ct, tmp_path, monkeypatch, lifetime=600, returncode=None, group=None):
     """Drive the REAL ``run_single_test`` so the PGID record is written by the real code.
 
     Only ``Popen`` is replaced, and it still starts a genuine process group in its own
@@ -183,9 +206,12 @@ def _launch_real_test(ct, tmp_path, monkeypatch, lifetime=600):
     hand-written stand-in.  A test that writes the record itself cannot detect the defect:
     the whole bug is *when the real code removes it*.
 
+    ``returncode`` is what the stub reports for the leader; the default ``None`` keeps every
+    existing caller on the "still running" branch of ``process_result_impl``.
+
     Returns the group's pgid.
     """
-    group = _spawn_group(lifetime=lifetime)
+    group = group if group is not None else _spawn_group(lifetime=lifetime)
 
     monkeypatch.setenv("CLICKHOUSE_DATABASE", "test_abort_path_reaps_test_groups")
     monkeypatch.setenv("CLICKHOUSE_TMP", str(tmp_path))
@@ -246,8 +272,21 @@ def _launch_real_test(ct, tmp_path, monkeypatch, lifetime=600):
     def popen_stub(command, **kwargs):
         # Hand the real code the real group: `run_single_test` records `proc.pid` as the
         # PGID, and `start_new_session=True` above makes that exactly true.
+        #
+        # `wait` is the fixture's own, so the reap after the kill really does reap: a stub
+        # that faked it would hide the zombie leader that makes a killed group look alive,
+        # and the liveness check would then never drop a record.  The FIRST call, standing
+        # in for the timed-out one in `run_single_test`, must not block.
+        first_wait = [True]
+
+        def wait_stub(timeout=None):
+            if first_wait[0]:
+                first_wait[0] = False
+                return None
+            return group.wait(timeout=timeout)
+
         return SimpleNamespace(
-            pid=group.pid, returncode=None, wait=lambda _timeout: None
+            pid=group.pid, returncode=returncode, wait=wait_stub
         )
 
     monkeypatch.setitem(ct["kill_process_group"].__globals__, "Popen", popen_stub)
@@ -306,11 +345,15 @@ def test_record_survives_the_launch_and_is_dropped_after_the_kill(tmp_path, monk
     _clear_records()
     ct = runpy.run_path(_CLICKHOUSE_TEST)
     killed = []
+    real_kill = ct["kill_process_group"]
 
     def spy(pgid, fatal_log, *a, **kw):
         # Snapshot at the exact moment the group is killed: this is when a reaper would
-        # need the record, so this is where its absence is fatal.
+        # need the record, so this is where its absence is fatal.  Then kill for real -
+        # removal is conditional on the group being gone, so a spy that only watched
+        # would assert the record is dropped while the group is still running.
         killed.append(sorted(p.name for p in _records()))
+        return real_kill(pgid, fatal_log, *a, **kw)
 
     _patch(ct, pgrep=lambda **kw: [], kill_process_group=spy)
     pgid = None
@@ -333,8 +376,9 @@ def test_record_survives_the_launch_and_is_dropped_after_the_kill(tmp_path, monk
         )
         # ...and nothing is left behind afterwards. A stale record would let a later
         # `--cleanup` signal an unrelated, PID-recycled group.
+        assert not _alive(pgid), "precondition: the kill must have emptied the group"
         assert not _records(), (
-            "the record must be dropped once the group has been dealt with"
+            "the record must be dropped once the group is gone"
         )
     finally:
         if pgid:
@@ -435,6 +479,95 @@ def test_failed_kill_neither_propagates_nor_strands_the_group(tmp_path, monkeypa
         _clear_records()
 
 
+def test_record_is_kept_while_a_background_member_outlives_the_leader(
+    tmp_path, monkeypatch
+):
+    """``proc.returncode`` is not evidence that the group is dead.
+
+    A ``.sh`` test that backgrounds anything and returns leaves ``returncode`` set while its
+    group still runs - and still holds the stdout it inherited, which is the wedge this file
+    exists to prevent.  Dropping the record there discards the only pointer to it.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    _patch(ct, pgrep=lambda **kw: [])
+    leader = None
+    try:
+        leader = _spawn_leaderless_group()
+        assert _alive(leader.pid), (
+            "precondition: the fixture's background member must outlive its leader, "
+            "otherwise this test proves nothing"
+        )
+        pgid, case, proc = _launch_real_test(
+            ct, tmp_path, monkeypatch, returncode=0, group=leader
+        )
+
+        ct["TestCase"].process_result_impl(case, proc, 1.0)
+
+        assert _alive(pgid), "precondition: the member must still be alive at this point"
+        assert _records(), (
+            "the record must survive a leader that merely exited, or nothing can ever "
+            "find the live group it left behind"
+        )
+
+        # And the record is still usable: the parent's reap finds and kills the group.
+        ct["cleanup_test_groups"]()
+        assert not _wait_dead(pgid), "the kept record must still lead a reaper to the group"
+    finally:
+        if leader:
+            _kill_group(leader.pid)
+        _clear_records()
+
+
+def test_record_is_kept_when_the_kill_is_interrupted(tmp_path, monkeypatch):
+    """A ``Terminated`` unwinding out of the kill must not discard a live group's record.
+
+    ``Terminated`` is a ``KeyboardInterrupt``, so it is not an ``Exception`` and passes
+    straight through the handler above - but it does run the ``finally``.  The parent's
+    ``terminate`` on the abort path delivers exactly that SIGTERM, and it can land inside
+    ``kill_process_group``'s SIGTSTP wait.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+
+    real_kill = ct["kill_process_group"]
+
+    def interrupted(pgid, fatal_log, *a, **kw):
+        raise ct["Terminated"](signal.SIGTERM)
+
+    _patch(ct, pgrep=lambda **kw: [], kill_process_group=interrupted)
+    pgid = None
+    try:
+        pgid, case, proc = _launch_real_test(ct, tmp_path, monkeypatch)
+        assert len(_alive(pgid)) >= 3, "precondition: the group must still be running"
+
+        # It must still propagate: `run_tests_array`'s `except KeyboardInterrupt` is what
+        # turns this into an orderly `stop_tests`.
+        raised = None
+        try:
+            ct["TestCase"].process_result_impl(case, proc, 1.0)
+        except BaseException as e:
+            raised = e
+        assert isinstance(raised, ct["Terminated"]), (
+            f"Terminated must keep propagating to the worker's handler; got {raised!r}"
+        )
+
+        assert _alive(pgid), "precondition: the group must still be alive here"
+        assert _records(), (
+            "an interrupted kill must leave the record in place; the group is alive and "
+            "nothing else can find it"
+        )
+        # Restore the real kill for the reap: the stub above stands in for a signal that
+        # arrives once, not for a broken `kill_process_group`.
+        _patch(ct, kill_process_group=real_kill)
+        ct["cleanup_test_groups"]()
+        assert not _wait_dead(pgid), "the kept record must still lead a reaper to the group"
+    finally:
+        if pgid:
+            _kill_group(pgid)
+        _clear_records()
+
+
 def test_reap_leaves_another_invocations_groups_alone():
     """The reap must be scoped to this run's own workers.
 
@@ -477,7 +610,7 @@ def _abort_run(ct, sequential, jobs=2):
 
     The worker stub creates a live group and records it through the real
     ``write_text_atomic``/``test_process_group_record`` pair, then blocks forever, so the
-    parent must ``terminate()`` and then ``kill()`` it - the exact CI shape, in which no
+    parent must ``terminate`` and then ``kill`` it - the exact CI shape, in which no
     Python ``finally`` in the worker can clean up.  Returns the group's pgid.
     """
     started = multiprocessing.Queue()
@@ -499,7 +632,7 @@ def _abort_run(ct, sequential, jobs=2):
     def parallel_worker(_payload):
         spawn_and_record()
         stop_testing.set()
-        # Ignore SIGTERM so the parent must reach its `p.kill()`: SIGKILL runs no Python
+        # Ignore SIGTERM so the parent must reach its `p.kill`: SIGKILL runs no Python
         # `finally`, which is exactly why the group is orphaned in CI.
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         while True:

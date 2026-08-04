@@ -690,8 +690,10 @@ def _describe(
     )
     # `returncode is None` is what the real runner leaves behind when `proc.wait(timeout)` raised
     # TimeoutExpired. `os.getpid()` is a pid that certainly exists, so `os.getpgid` resolves - and
-    # nothing is signalled, because the only killer is the recorder above.
-    proc = SimpleNamespace(pid=os.getpid(), returncode=None)
+    # nothing is signalled, because the only killer is the recorder above.  `wait` is reached on
+    # this arm only: after the kill the runner reaps the leader, so that its zombie cannot make
+    # the group look alive.
+    proc = SimpleNamespace(pid=os.getpid(), returncode=None, wait=lambda _timeout: None)
     result = ClickHouseTestCase.process_result_impl(stub, proc, 1.0)
     assert killed == [os.getpgid(os.getpid())], killed
     return result
