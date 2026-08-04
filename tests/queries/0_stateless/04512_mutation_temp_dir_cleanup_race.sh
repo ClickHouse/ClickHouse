@@ -26,6 +26,10 @@ function disable_failpoints()
 
 trap disable_failpoints EXIT
 
+# Scope all text_log reads below to this run of the test, so that stale rows from a previous run
+# (e.g. under a fixed --database, where the logger names are the same) cannot satisfy the checks.
+start_time=$($CLICKHOUSE_CLIENT --query "SELECT now64(6)")
+
 # `temporary_directories_lifetime = 1` makes the cleanup thread consider the temporary directory of
 # an in-flight mutation old enough to be removed, which is exactly what the test needs to check.
 $CLICKHOUSE_CLIENT --query "
@@ -44,13 +48,15 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 CLEANUP_ROWS="FROM system.text_log
-    WHERE logger_name LIKE '${CLICKHOUSE_DATABASE}.rmt%' AND message LIKE '%tmp_mut_%'
+    WHERE event_time_microseconds >= toDateTime64('$start_time', 6)
+        AND logger_name LIKE '${CLICKHOUSE_DATABASE}.rmt%' AND message LIKE '%tmp_mut_%'
         AND (message LIKE '%is in use (by merge/mutation/INSERT)%' OR message LIKE '%Removing temporary directory%')"
 
 # Every finished iteration of the cleanup thread logs this message, so it tells the test that the
 # cleanup thread has actually looked at the data directory, instead of just waiting for a while.
 CLEANUP_ITERATIONS="SELECT count() FROM system.text_log
-    WHERE logger_name = '${CLICKHOUSE_DATABASE}.rmt (CleanupThread)' AND message LIKE 'Scheduling next cleanup%'"
+    WHERE event_time_microseconds >= toDateTime64('$start_time', 6)
+        AND logger_name = '${CLICKHOUSE_DATABASE}.rmt (CleanupThread)' AND message LIKE 'Scheduling next cleanup%'"
 
 # Wait until the cleanup thread finishes at least $1 more iterations than it had at the moment of the call.
 function wait_for_cleanup_iterations()
