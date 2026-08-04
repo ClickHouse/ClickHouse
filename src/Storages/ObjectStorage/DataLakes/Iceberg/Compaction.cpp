@@ -1669,14 +1669,9 @@ static CommitResult writeMetadataFiles(
 
         plan.metadata_published = true;
 
-        /// The metadata is published from here on, so nothing below may report `Lost`.
-        ///
-        /// The helper reports success even when it exhausted its retries writing
-        /// `version-hint.text`, so the hint can be missing or still name the previous version, and
-        /// it updates an EXISTING hint whatever `write_version_hint` says (that flag only gates
-        /// creating an absent one). Compaction is the only caller that then deletes the metadata the
-        /// hint names, so check whenever a hint could be in play, and treat a failed check the same
-        /// as a stale hint rather than assuming the best.
+        /// Published from here on, so nothing below may report `Lost`. The hint may still be missing
+        /// or stale: the helper reports success either way, and it updates an existing hint whatever
+        /// `write_version_hint` says. A failed check counts as stale.
         String hint_data;
         try
         {
