@@ -122,6 +122,13 @@ real_frames=2
 sequence_consecutive=True
 frame0 delay=65535/1 rect=2x1+0+0 dispose=0 blend=0
 frame1 delay=65535/1 rect=2x1+0+0 dispose=0 blend=0
+--- over-long delay is rounded, not floored ---
+size=2x1 color_type=0
+acTL=num_frames=2 num_plays=0
+real_frames=2
+sequence_consecutive=True
+frame0 delay=43691/2 rect=2x1+0+0 dispose=0 blend=0
+frame1 delay=43691/2 rect=2x1+0+0 dispose=0 blend=0
 --- no t column, still image ---
 size=2x1 color_type=0
 acTL=absent

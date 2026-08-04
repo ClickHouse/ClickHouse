@@ -497,25 +497,29 @@ std::pair<UInt16, UInt16> PNGSerializer::Impl::delayFromUnits(UInt64 units) cons
         den /= common_divisor;
     }
 
-    /// Both parts are 16-bit, so a numerator that does not fit is scaled down together with the
-    /// denominator, which keeps the ratio. Once the denominator cannot absorb the scaling any more the
-    /// delay is longer than any that `fcTL` can express, and it is clamped to the longest one, in the same
-    /// spirit as the clamping applied to out-of-range pixel values.
+    /// Both parts are 16-bit; the denominator always fits, because the divisor setting is validated
+    /// against `MAX_DELAY_PART`, but the numerator can exceed it. A delay of `MAX_DELAY_PART` seconds
+    /// or more is longer than any that `fcTL` can express, and is clamped to the longest one, in the
+    /// same spirit as the clamping applied to out-of-range pixel values. The comparison is written with
+    /// a division, because a numerator close to the maximum of `UInt64` (two frames at the two ends of
+    /// the `t` domain) makes `MAX_DELAY_PART * den` the wrong thing to compute directly.
     if (num > MAX_DELAY_PART)
     {
-        /// The ceil-division is written without the usual `num + MAX_DELAY_PART - 1`, because a numerator
-        /// close to the maximum of `UInt64` (two frames at the two ends of the `t` domain) makes that
-        /// addition wrap around and the factor come out as zero.
-        const UInt64 factor = std::max<UInt64>(1, num / MAX_DELAY_PART + (num % MAX_DELAY_PART != 0));
-        if (den >= factor)
-        {
-            num /= factor;
-            den /= factor;
-        }
-        else
+        if (num / MAX_DELAY_PART >= den)
         {
             num = MAX_DELAY_PART;
             den = 1;
+        }
+        else
+        {
+            /// The delay itself fits, only its representation does not. Take the largest denominator that
+            /// brings the numerator into 16 bits and round the numerator to the nearest integer, so the
+            /// ratio is preserved as precisely as the chunk allows; a floor-division of both parts by a
+            /// common factor would distort a ratio whose parts the factor does not divide.
+            /// Here `num < MAX_DELAY_PART * den <= MAX_DELAY_PART^2`, so none of this overflows.
+            const UInt64 new_den = MAX_DELAY_PART * den / num;
+            num = (num * new_den + den / 2) / den;
+            den = new_den;
         }
     }
 

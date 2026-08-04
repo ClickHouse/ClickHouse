@@ -220,6 +220,19 @@ png_http "${DIMS}&output_format_image_time_multiplier_seconds=1&output_format_im
 " > "${OUT}/wide_gap.png"
 python3 "${PARSER}" "${OUT}/wide_gap.png"
 
+# A delay that does not fit into the 16-bit parts and whose scaling factor does not divide the
+# denominator: the pair is derived with rounding, not by floor-dividing both parts. A gap of 65536 units
+# of 1/3 s is 65536/3 s and comes out as 43691/2 = 21845.5 s, next to the exact 21845.33 s; a floor
+# division of both parts by the factor 2 would have given 32768/1 s, half as long again.
+echo "--- over-long delay is rounded, not floored ---"
+png_http "${DIMS}&output_format_image_time_divisor_seconds=3" "
+    SELECT * FROM VALUES('t UInt32, v UInt8',
+        (0, 1),
+        (65536, 2)
+    ) ORDER BY t FORMAT PNG
+" > "${OUT}/rounded_delay.png"
+python3 "${PARSER}" "${OUT}/rounded_delay.png"
+
 # Without a `t` column the output is a still image and carries no animation chunks.
 echo "--- no t column, still image ---"
 png_http "${DIMS}" "
