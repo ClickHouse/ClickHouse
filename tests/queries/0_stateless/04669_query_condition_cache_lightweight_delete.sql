@@ -30,19 +30,21 @@ WHERE database = currentDatabase() AND table = 't_qcc_lwd' AND NOT is_done;
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
--- `v = 123456789` matches no row, so after the first (priming) run every granule is known not to
--- match and the second run must read strictly fewer marks.
+-- `v = 123456789` matches no row, so after the first (priming) run every granule of every part is
+-- known not to match and the second run must read no marks at all. Asserting zero rather than
+-- "fewer" matters: only the part holding `id = 0` carries the mask, so if the insert ever lands in
+-- more than one part, a weaker assertion would be satisfied by the other parts pruning.
 SELECT count() FROM t_qcc_lwd WHERE v = 123456789 SETTINGS log_comment = '04669_lwd_prime';
 SELECT count() FROM t_qcc_lwd WHERE v = 123456789 SETTINGS log_comment = '04669_lwd_reuse';
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT '--- prime reads everything, reuse prunes';
--- Columns: (any QCC hit), (granules skipped). Expected: prime = 0 0, reuse = 1 1.
+-- Columns: (any QCC hit), (read no marks at all). Expected: prime = 0 0, reuse = 1 1.
 SELECT
     log_comment,
     ProfileEvents['QueryConditionCacheHits'] > 0,
-    toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
+    ProfileEvents['SelectedMarks'] = 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
@@ -64,6 +66,30 @@ SELECT '--- and the reverse direction is also unaffected';
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_lwd WHERE id = 0 SETTINGS apply_deleted_mask = 0;
 SELECT count() FROM t_qcc_lwd WHERE id = 0;
+
+SELECT '--- apply_deleted_mask = 0 neither writes nor consumes the cache';
+-- Such queries are kept out of the cache entirely instead of getting their own key space, so a
+-- repeated `apply_deleted_mask = 0` query does not prune. Both runs must miss and read every mark.
+-- Pinned here because it is the one behaviour this change gives up; a follow-up that keys entries by
+-- `apply_deleted_mask` instead of disabling them has to update this block deliberately.
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_lwd WHERE v = 123456789
+SETTINGS apply_deleted_mask = 0, log_comment = '04669_lwd_mask0_prime';
+SELECT count() FROM t_qcc_lwd WHERE v = 123456789
+SETTINGS apply_deleted_mask = 0, log_comment = '04669_lwd_mask0_reuse';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    log_comment,
+    ProfileEvents['QueryConditionCacheHits'] > 0,
+    ProfileEvents['SelectedMarks'] = 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment IN ('04669_lwd_mask0_prime', '04669_lwd_mask0_reuse')
+ORDER BY event_time_microseconds;
 
 SELECT '--- results stay correct with the cache warm';
 SELECT count() FROM t_qcc_lwd;
@@ -105,7 +131,7 @@ SELECT '--- pending-mutation prime reads everything, reuse prunes';
 SELECT
     log_comment,
     ProfileEvents['QueryConditionCacheHits'] > 0,
-    toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
+    ProfileEvents['SelectedMarks'] = 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'

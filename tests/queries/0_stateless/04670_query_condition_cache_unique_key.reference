@@ -1,0 +1,8 @@
+--- a UNIQUE KEY part cannot carry a materialized _row_exists mask
+0
+--- the cache still prunes for ordinary queries
+04670_uk_prime	0	0
+04670_uk_reuse	1	1
+--- results stay correct with the cache warm
+100000
+10

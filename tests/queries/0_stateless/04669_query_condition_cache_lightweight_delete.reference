@@ -11,6 +11,9 @@
 --- and the reverse direction is also unaffected
 1
 0
+--- apply_deleted_mask = 0 neither writes nor consumes the cache
+04669_lwd_mask0_prime	0	0
+04669_lwd_mask0_reuse	0	0
 --- results stay correct with the cache warm
 999999
 9
