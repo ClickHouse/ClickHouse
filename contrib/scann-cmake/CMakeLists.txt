@@ -510,6 +510,13 @@ target_include_directories(_scann SYSTEM PUBLIC
 # Required by ScaNN to skip Bazel-only code paths.
 target_compile_definitions(_scann PUBLIC SCANN_CMAKE_MODE=1)
 
+# ScaNN expects its build system to enable `MEMORY_SANITIZER` and provide the
+# `__msan_unpoison` declaration for its MSan-specific initialization.
+if (SANITIZE STREQUAL "memory")
+    target_compile_definitions(_scann PRIVATE MEMORY_SANITIZER=1)
+    target_compile_options(_scann PRIVATE "-include" "sanitizer/msan_interface.h")
+endif()
+
 # PLATFORM_IS_X86 / PLATFORM_IS_ARM64 are normally supplied by TensorFlow's platform
 # headers, which ClickHouse does not use. Without them, scann_cpu_info.cc compiles out all
 # CPUID detection and TestCPUFeature() returns false for every feature, so the runtime SIMD
