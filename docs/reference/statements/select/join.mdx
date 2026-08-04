@@ -221,7 +221,7 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-## NULL values in JOIN keys {#null-values-in-join-keys}
+## NULL and NaN values in JOIN keys {#null-values-in-join-keys}
 
 `NULL` is not equal to any value, including itself. This means that if a `JOIN` key has a `NULL` value in one table, it won't match a `NULL` value in the other table.
 
@@ -275,6 +275,13 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 └─────────┴───────┘
 ```
 
+`NaN` values in float `JOIN` keys do not follow the `NULL` rule above.
+A scalar comparison of two `NaN` values (`NaN = NaN`) is `0`, however, `JOIN` keys are not compared using scalar semantics - `NaN` keys may match.
+Whether they actually do is an implementation detail and depends on the join algorithm, the key type, and the session settings.
+Do not rely on a specific behavior.
+If you require that `NaN` rows do not match, map them to `NULL` values: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
+In an `ASOF JOIN`, the closest-match column is compared by ordering, which `NaN` does not support — filter such rows out on both sides.
+
 ## ASOF JOIN usage {#asof-join-usage}
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
@@ -325,7 +332,7 @@ For example, consider the following tables:
 `ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can't be joined.
 
 <Note>
-`ASOF JOIN` is supported only by `hash` and `full_sorting_merge` join algorithms.
+`ASOF JOIN` is supported only by the `hash` join algorithm and the merge join algorithms (`full_sorting_merge`, `parallel_full_sorting_merge`, `sorted_merge`, `parallel_sorted_merge`).
 It's **not** supported in the [Join](/reference/engines/table-engines/special/join) table engine.
 </Note>
 
