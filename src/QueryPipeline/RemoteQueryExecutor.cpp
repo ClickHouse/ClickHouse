@@ -497,6 +497,19 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
+    /// A distributed query must carry a known initiator version: the receiving server uses it for
+    /// version-gated compatibility decisions (e.g. whether to enable the analyzer, see `TCPHandler`).
+    /// A zero version means the initiating query context was not populated as an initial query
+    /// (a real client always reports its version, and a server that (re-)initiates a query fills it
+    /// with its own version). Sending zero silently triggers wrong compatibility downgrades on the
+    /// remote, so fail loudly instead.
+    if (modified_client_info.client_version_major == 0
+        && modified_client_info.client_version_minor == 0
+        && modified_client_info.client_version_patch == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Sending a distributed query with unknown (zero) client version. "
+            "The query context was not initialized as an initial query");
+
     /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
     /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
     modified_client_info.current_roles.reset();
