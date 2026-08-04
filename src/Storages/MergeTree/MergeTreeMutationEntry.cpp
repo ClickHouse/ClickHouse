@@ -41,6 +41,26 @@ std::vector<const MutationCommand *> commandsInTextForm(const MutationCommands &
     return result;
 }
 
+/// Persist the resolved partition scope of the commands so that neither loading the mutation
+/// nor executing it has to resolve the `IN PARTITION` literal through the current table
+/// metadata again. Resolving it again can throw after a safe partition key type change
+/// (e.g. `Enum8 -> Int8`), making an otherwise valid pending mutation block table loading or
+/// fail during execution.
+/// There is one (possibly empty, for a command without `IN PARTITION`) partition id per
+/// command serialized by `MutationCommands::writeText`, in the same order: `writeText` skips
+/// pure metadata commands, so they are skipped here too (see `MutationCommands::ast`).
+void writePartitionIdsOfCommands(const MutationCommands & commands, WriteBuffer & out)
+{
+    auto persisted_commands = commandsInTextForm(commands);
+    out << "partition ids: " << persisted_commands.size();
+    for (const auto * command : persisted_commands)
+    {
+        out << " ";
+        writeQuotedString(command->resolved_partition_id.value_or(""), out);
+    }
+    out << "\n";
+}
+
 }
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
@@ -97,22 +117,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
-        /// Persist the resolved partition scope of the commands so that neither loading the mutation
-        /// nor executing it has to resolve the `IN PARTITION` literal through the current table
-        /// metadata again. Resolving it again can throw after a safe partition key type change
-        /// (e.g. `Enum8 -> Int8`), making an otherwise valid pending mutation block table loading or
-        /// fail during execution.
-        /// There is one (possibly empty, for a command without `IN PARTITION`) partition id per
-        /// command written above, in the same order: `writeText` skips pure metadata commands, so
-        /// they are skipped here too (see `MutationCommands::ast`).
-        auto persisted_commands = commandsInTextForm(*commands);
-        *out << "partition ids: " << persisted_commands.size();
-        for (const auto * command : persisted_commands)
-        {
-            *out << " ";
-            writeQuotedString(command->resolved_partition_id.value_or(""), *out);
-        }
-        *out << "\n";
+        writePartitionIdsOfCommands(*commands, *out);
         if (tid.isNonTransactional())
         {
             csn = Tx::NonTransactionalCSN;
@@ -317,6 +322,9 @@ std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
     out << "commands: ";
     commands->writeText(out, /* with_pure_metadata_commands = */ false);
     out << "\n";
+
+    /// Keep the resolved partition scope in the backup so it is not lost with the mutation file.
+    writePartitionIdsOfCommands(*commands, out);
 
     return std::make_shared<BackupEntryFromMemory>(out.str());
 }
