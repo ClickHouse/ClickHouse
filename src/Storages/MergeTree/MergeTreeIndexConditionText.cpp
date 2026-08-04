@@ -1514,11 +1514,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        /// Only splitByNonAlpha, splitByString, ngrams, and asciiCJK tokenizers are supported with the `hasPhrase` function.
+        /// Only splitByNonAlpha, splitByString, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
+            IcuTokenizer::getExternalName(),
             NgramsTokenizer::getExternalName(),
         };
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))

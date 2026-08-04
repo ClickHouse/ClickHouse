@@ -1,5 +1,6 @@
 array
 asciiCJK
+icu
 keyValuePairs
 ngrambf_v1
 ngrams
@@ -9,3 +10,4 @@ splitByNonAlpha
 splitByString
 tokenbf_v1
 unicodeWord
+unicode_word
