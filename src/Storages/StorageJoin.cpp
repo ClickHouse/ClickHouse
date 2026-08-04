@@ -261,6 +261,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "ON section of JOIN with filter conditions is not implemented");
 
+    /// The prebuilt join is reused as is (see reuseJoinedData below), so it cannot serve an
+    /// expression the query derived: the names are unqualified, the saved block has a different
+    /// layout and the maps variant may differ.
+    if (analyzed_join->getMixedJoinExpression())
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+            "ON section of JOIN with a condition involving columns from both tables is not implemented for the Join table engine");
+
     const auto & key_names_right = join_on.key_names_right;
     const auto & key_names_left = join_on.key_names_left;
     if (key_names.size() != key_names_right.size() || key_names.size() != key_names_left.size())

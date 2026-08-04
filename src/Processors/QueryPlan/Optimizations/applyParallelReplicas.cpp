@@ -213,7 +213,11 @@ public:
         auto * original_split_node = current_node;
         const auto * parent_step = parent_node->step.get();
 
-        if (typeid_cast<const ExpressionStep *>(parent_step) || typeid_cast<const FilterStep *>(parent_step))
+        /// BuildRuntimeFilterStep sits above the join's build side, which for a RIGHT join is the coordinated
+        /// side, so the split step has to pass it too. The step becomes part of the plan fragment, where it
+        /// does nothing: a deserialized step cannot publish its filter, so every replica builds its own.
+        if (typeid_cast<const ExpressionStep *>(parent_step) || typeid_cast<const FilterStep *>(parent_step)
+            || typeid_cast<const BuildRuntimeFilterStep *>(parent_step))
         {
             /// Move the split step above the expression/filter step and update its header to match
             /// the new child, since the split step just passes data through.
