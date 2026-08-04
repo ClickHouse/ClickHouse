@@ -17,6 +17,6 @@ bool isFunctionTimestamp(std::string_view function_name);
 ///   returns the raw sample timestamp from storage.
 /// - For general instant vector expressions (e.g. `timestamp(test * 1)`, `timestamp(-test)`, `timestamp(timestamp(test))`,
 ///   `timestamp(test > bool 10)`), returns the query step evaluation timestamp (T_eval) for each present sample.
-SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyFunctionTimestamp(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

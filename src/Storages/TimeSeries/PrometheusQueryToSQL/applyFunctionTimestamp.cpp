@@ -35,19 +35,19 @@ namespace
     /// Returns the InstantSelector if `node` is a bare InstantSelector or an Offset node
     /// directly wrapping a bare InstantSelector; returns nullptr for any other expression
     /// (unary/binary operators, aggregations, functions, etc.).
-    const PQT::InstantSelector * peelToInstantSelector(const Node * node, const PQT::Offset *& offset_node)
+    const PrometheusQueryTree::InstantSelector * peelToInstantSelector(const Node * node, const PrometheusQueryTree::Offset *& offset_node)
     {
         if (node->node_type == NodeType::InstantSelector)
         {
-            return static_cast<const PQT::InstantSelector *>(node);
+            return static_cast<const PrometheusQueryTree::InstantSelector *>(node);
         }
         if (node->node_type == NodeType::Offset)
         {
-            const auto * offset = static_cast<const PQT::Offset *>(node);
+            const auto * offset = static_cast<const PrometheusQueryTree::Offset *>(node);
             if (offset->getExpression()->node_type == NodeType::InstantSelector)
             {
                 offset_node = offset;
-                return static_cast<const PQT::InstantSelector *>(offset->getExpression());
+                return static_cast<const PrometheusQueryTree::InstantSelector *>(offset->getExpression());
             }
         }
         return nullptr;
@@ -57,7 +57,7 @@ namespace
     /// timestamp(timestamp(test))). For non-selector expressions, Prometheus materializes the expression at each
     /// query step evaluation timestamp T_eval, returning T_eval (in seconds since epoch) for every present sample.
     SQLQueryPiece applyTimestampToGeneralExpression(
-        const PQT::Function * function_node, SQLQueryPiece && argument, ConverterContext & context)
+        const PrometheusQueryTree::Function * function_node, SQLQueryPiece && argument, ConverterContext & context)
     {
         switch (argument.store_method)
         {
@@ -177,7 +177,7 @@ bool isFunctionTimestamp(std::string_view function_name)
 
 
 SQLQueryPiece applyFunctionTimestamp(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     if (arguments.size() != 1)
     {
@@ -194,7 +194,7 @@ SQLQueryPiece applyFunctionTimestamp(
                         getPromQLText(arguments[0], context), arguments[0].type);
     }
 
-    const PQT::Offset * offset_node = nullptr;
+    const PrometheusQueryTree::Offset * offset_node = nullptr;
     const auto * instant_selector = peelToInstantSelector(function_node->getArguments().at(0), offset_node);
     if (instant_selector)
     {
