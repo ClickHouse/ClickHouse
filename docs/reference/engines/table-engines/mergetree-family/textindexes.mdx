@@ -82,6 +82,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | asciiCJK_v2
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -119,6 +120,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | asciiCJK_v2
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -157,6 +159,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
+- `asciiCJK_v2` uses [StringZilla](https://github.com/ashvardanian/StringZilla)'s UTF-8 implementation of Unicode word segmentation (UAX #29). It keeps connected Unicode word runs together while emitting individual CJK ideographs.
 - `icu(locale)` splits strings into word tokens using the [ICU](https://icu.unicode.org/) library's Unicode word segmentation (UAX #29). For scripts that do not put whitespace between words (e.g., Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so — unlike `asciiCJK` — such text is split into meaningful multi-character words instead of single characters. Here, "dictionary" means ICU's bundled word lists for those scripts (see [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)); ICU chooses the most likely split over those words.
   `locale` is the ICU locale passed to the segmenter; segmentation is mainly script- and dictionary-driven, and the locale selects ICU's locale-specific tailoring. It is a mandatory parameter, for example `tokenizer = icu('ja')` or `tokenizer = icu('zh')`.
   The available locales can be listed with `SELECT * FROM system.collations`.
@@ -517,7 +520,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
-| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | yes |
+| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `asciiCJK_v2`, `icu` | yes |
 | [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
@@ -804,7 +807,7 @@ Function [hasPhrase](/reference/functions/regular-functions/string-search-functi
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
 When the text index uses a postprocessor, the search phrase is normalized before the index lookup as well.
-Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, or `icu` tokenizers.
+Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `asciiCJK_v2`, or `icu` tokenizers.
 
 Example:
 
@@ -1213,7 +1216,7 @@ Within those granules, ClickHouse then verifies exact token adjacency.
 This process is relatively costly and slower than regular text search queries.
 To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, and `icu`.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `asciiCJK_v2`, and `icu`.
 The given phrase string is tokenized using the index's tokenizer.
 Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 

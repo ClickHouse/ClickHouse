@@ -288,6 +288,14 @@ static void registerTokenizers(TokenizerFactory & factory)
     factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
     factory.registerTokenizer("unicode_word", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
 
+    auto ascii_cjk_v2_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        assertParamsCount(args.size(), 0, AsciiCJKV2Tokenizer::getExternalName());
+        return std::make_unique<AsciiCJKV2Tokenizer>();
+    };
+
+    factory.registerTokenizer(AsciiCJKV2Tokenizer::getName(), ITokenizer::Type::AsciiCJKV2, ascii_cjk_v2_creator);
+
 #if USE_ICU
     auto icu_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {

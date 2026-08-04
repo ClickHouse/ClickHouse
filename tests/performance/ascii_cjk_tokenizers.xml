@@ -1,0 +1,36 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE ascii_cjk_tokenizer_data (language LowCardinality(String), text String) ENGINE = MergeTree ORDER BY language</create_query>
+    <fill_query><![CDATA[
+        INSERT INTO ascii_cjk_tokenizer_data
+        SELECT
+            ['chinese', 'japanese', 'korean', 'mixed'][number % 4 + 1],
+            concat(
+                [
+                    repeat('中华人民共和国是位于东亚的国家。自然资源丰富，历史文化悠久。', 8),
+                    repeat('日本語の文章を高速に検索するため、文字列を単語に分割します。', 8),
+                    repeat('대한민국은 동아시아에 위치한 국가입니다. 역사와 문화가 풍부합니다.', 8),
+                    repeat('ClickHouse处理大量文本 data بسرعة وبكفاءة عالية 503.', 8)
+                ][number % 4 + 1],
+                toString(number))
+        FROM numbers(250000)
+    ]]></fill_query>
+
+    <query>SELECT tokens(text, 'asciiCJK') FROM ascii_cjk_tokenizer_data WHERE language = 'chinese' FORMAT Null</query>
+    <query>SELECT tokens(text, (SELECT if(countIf(name = 'asciiCJK_v2') = 1, 'asciiCJK_v2', 'asciiCJK') FROM system.tokenizers)) FROM ascii_cjk_tokenizer_data WHERE language = 'chinese' FORMAT Null</query>
+    <query>SELECT tokens(text, 'icu', 'zh') FROM ascii_cjk_tokenizer_data WHERE language = 'chinese' FORMAT Null</query>
+    <query>SELECT tokens(text, 'asciiCJK') FROM ascii_cjk_tokenizer_data WHERE language = 'japanese' FORMAT Null</query>
+    <query>SELECT tokens(text, (SELECT if(countIf(name = 'asciiCJK_v2') = 1, 'asciiCJK_v2', 'asciiCJK') FROM system.tokenizers)) FROM ascii_cjk_tokenizer_data WHERE language = 'japanese' FORMAT Null</query>
+    <query>SELECT tokens(text, 'icu', 'ja') FROM ascii_cjk_tokenizer_data WHERE language = 'japanese' FORMAT Null</query>
+    <query>SELECT tokens(text, 'asciiCJK') FROM ascii_cjk_tokenizer_data WHERE language = 'korean' FORMAT Null</query>
+    <query>SELECT tokens(text, (SELECT if(countIf(name = 'asciiCJK_v2') = 1, 'asciiCJK_v2', 'asciiCJK') FROM system.tokenizers)) FROM ascii_cjk_tokenizer_data WHERE language = 'korean' FORMAT Null</query>
+    <query>SELECT tokens(text, 'icu', 'ko') FROM ascii_cjk_tokenizer_data WHERE language = 'korean' FORMAT Null</query>
+    <query>SELECT tokens(text, 'asciiCJK') FROM ascii_cjk_tokenizer_data WHERE language = 'mixed' FORMAT Null</query>
+    <query>SELECT tokens(text, (SELECT if(countIf(name = 'asciiCJK_v2') = 1, 'asciiCJK_v2', 'asciiCJK') FROM system.tokenizers)) FROM ascii_cjk_tokenizer_data WHERE language = 'mixed' FORMAT Null</query>
+    <query>SELECT tokens(text, 'icu', 'en') FROM ascii_cjk_tokenizer_data WHERE language = 'mixed' FORMAT Null</query>
+
+    <drop_query>DROP TABLE ascii_cjk_tokenizer_data</drop_query>
+</test>

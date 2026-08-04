@@ -34,6 +34,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        AsciiCJKV2,
         Icu,
 #if USE_MECAB
         Japanese,
@@ -444,6 +445,35 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+/// Tokenizer based on StringZilla's UTF-8 word break segmentation (UAX #29).
+/// It keeps word-forming segments and individual CJK ideographs while discarding separator segments.
+struct AsciiCJKV2Tokenizer final : public ITokenizerHelper<AsciiCJKV2Tokenizer>
+{
+    explicit AsciiCJKV2Tokenizer()
+        : ITokenizerHelper(Type::AsciiCJKV2)
+    {
+    }
+
+    static const char * getName() { return "asciiCJK_v2"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
+
+    bool nextInString(
+        const char * data,
+        size_t length,
+        size_t & __restrict pos,
+        size_t & __restrict token_start,
+        size_t & __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    bool supportsStringLike() const override { return false; }
+};
+
 /// Tokenizer based on ICU's word break iteration (UAX #29). For scripts without whitespace between
 /// words (e.g. Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so such text is
 /// split into meaningful word tokens rather than single characters.
@@ -538,6 +568,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::AsciiCJKV2:
+        {
+            const auto & ascii_cjk_v2_tokenizer = assert_cast<const AsciiCJKV2Tokenizer &>(tokenizer);
+            detail::forEachTokenImpl(ascii_cjk_v2_tokenizer, data, length, callback);
             return;
         }
         case ITokenizer::Type::Icu:
