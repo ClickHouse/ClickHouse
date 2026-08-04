@@ -6,3 +6,4 @@
 <5: start views resumes all>	2	2
 <6: granted pause works>
 <6: denied pause errors as expected>
+<7: cancel during refresh records an exception>	1	1	1
