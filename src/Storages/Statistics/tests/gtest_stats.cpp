@@ -785,9 +785,8 @@ protected:
         return stats->getStats().at(GetParam());
     }
 
-    /// Runs `mutate` under a memory limit so that it throws part way through, then asserts the memo
-    /// was dropped: the sketch already holds more distinct values than the memoized cardinality, so
-    /// a surviving memo is observable as a too-low estimate.
+    /// Requires `mutate` to throw under a memory limit and to leave more distinct values behind
+    /// than `distinct`, so that a surviving memo shows up as a too-low estimate.
     static void expectMemoDroppedWhenMutatorThrows(const ColumnStatisticsPtr & stats, size_t distinct, auto && mutate)
     {
         MainThreadStatus::getInstance();
@@ -813,10 +812,11 @@ protected:
         CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
         CurrentThread::get().untracked_memory_limit = 0;
         CurrentThread::flushUntrackedMemory();
-        total_memory_tracker.resetCounters();
-        thread_tracker.resetCounters();
-        total_memory_tracker.setHardLimit(1);
-        thread_tracker.setHardLimit(1);
+
+        /// Clamp relative to what is tracked; the objects built above are still alive, so zeroing
+        /// the counters would underflow the accounting when they are freed.
+        total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+        thread_tracker.setHardLimit(thread_tracker.get() + 1024);
 
         bool threw = false;
         try
@@ -895,10 +895,9 @@ TEST_P(UniqCardinalityInvalidation, BuildResetsCachedCardinalityWhenItThrows)
 
 TEST_P(UniqCardinalityInvalidation, MergeResetsCachedCardinalityWhenItThrows)
 {
-    /// Both sides must be in the same container class, so that the merge inserts element by
-    /// element and a grow part way through the loop is what throws. Merging a wider container
-    /// instead switches to it up front, which allocates before mutating anything, and merging two
-    /// already widest ones allocates nothing at all.
+    /// Keep both sides in the same container class: merging a wider one switches to it before
+    /// mutating anything, and two already widest ones allocate nothing, so neither shape reaches
+    /// the partial mutation this test needs.
     auto stats = build(0);
     auto other = build(static_cast<Int32>(distinct_per_block), 120);
 
