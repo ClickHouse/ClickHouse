@@ -16,49 +16,11 @@ configure_file(
     "${CURRENT_DIR_IN_BINARY}/clickhouse-template.g"
     COPYONLY)
 
-# The grammar is embedded at build time, when no runnable binary exists yet, so
-# the binary-derived all.dict (see tests/fuzz/update_dict.sh) is not available
-# here. Seed it from a dictionary derived from the sources instead: parser
-# keywords, function and data type names extracted from their registration
-# code, merged with the committed curated dictionary. It regenerates with the
-# sources, so it cannot drift the way a committed snapshot does.
-# The dictionary is derived from the registration code, so an incremental
-# build must rerun it when any scanned source changes, not only when the
-# script itself does. Keep this list in sync with the trees and files that
-# generate_source_dict.sh scans.
-file(GLOB_RECURSE CODEGEN_DICT_SCANNED_SOURCES CONFIGURE_DEPENDS
-    "${ClickHouse_SOURCE_DIR}/src/Functions/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/Functions/*.cpp"
-    "${ClickHouse_SOURCE_DIR}/src/AggregateFunctions/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/AggregateFunctions/*.cpp"
-    "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*.cpp"
-    "${ClickHouse_SOURCE_DIR}/src/DataTypes/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/DataTypes/*.cpp"
-    "${ClickHouse_SOURCE_DIR}/src/Formats/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/Formats/*.cpp"
-)
-list(APPEND CODEGEN_DICT_SCANNED_SOURCES
-    "${ClickHouse_SOURCE_DIR}/src/Processors/Transforms/WindowTransform.cpp"
-    "${ClickHouse_SOURCE_DIR}/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h"
-)
-
-add_custom_command(
-    OUTPUT
-        "${CURRENT_DIR_IN_BINARY}/codegen.dict"
-    COMMAND "${ClickHouse_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh" "${ClickHouse_SOURCE_DIR}" "${CURRENT_DIR_IN_BINARY}/codegen.dict"
-    DEPENDS
-        "${ClickHouse_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh"
-        "${ClickHouse_SOURCE_DIR}/src/Parsers/CommonParsers.h"
-        "${ClickHouse_SOURCE_DIR}/tests/fuzz/dictionaries/old.dict"
-        ${CODEGEN_DICT_SCANNED_SOURCES}
-)
-
+# Note that it depends on all.dict file!
 add_custom_command(
     OUTPUT
         "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
-    COMMAND ./update.sh "${CURRENT_DIR_IN_BINARY}/codegen.dict"
-    DEPENDS "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+    COMMAND ./update.sh "${ClickHouse_SOURCE_DIR}/tests/fuzz/all.dict"
 )
 
 add_custom_command(
@@ -77,11 +39,10 @@ set(CMAKE_INCLUDE_CURRENT_DIR TRUE)
 
 clickhouse_add_executable(codegen_select_fuzzer ${FUZZER_SRCS})
 
-set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused -Wno-unreachable-code-return -Wno-nullability-extension -Wno-missing-prototypes")
+set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused -Wno-unreachable-code-return -Wno-nullability-extension")
 
 # contrib/libprotobuf-mutator/src/libfuzzer/libfuzzer_macro.h:143:44: error: no newline at end of file [-Werror,-Wnewline-eof]
-# The DEFINE_BINARY_PROTO_FUZZER macro expands to functions (LLVMFuzzerCustomMutator, etc.) without prior declarations.
-target_compile_options (codegen_select_fuzzer PRIVATE -Wno-newline-eof -Wno-missing-prototypes)
+target_compile_options (codegen_select_fuzzer PRIVATE -Wno-newline-eof)
 
 target_link_libraries(protoc ch_contrib::fuzzer)
 

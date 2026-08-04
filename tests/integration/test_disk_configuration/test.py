@@ -22,7 +22,6 @@ def start_cluster():
             ],
             user_configs=[
                 "configs/users.d/dynamic_disk_settings.xml",
-                "configs/allow_server_credentials.xml",
             ],
             env_variables={
                 "MINIO_SECRET": minio_secret_key,
@@ -40,7 +39,6 @@ def start_cluster():
             ],
             user_configs=[
                 "configs/users.d/dynamic_disk_settings.xml",
-                "configs/allow_server_credentials.xml",
             ],
             metrika_xml="configs/metrika.xml",
             with_zookeeper=True,
@@ -655,10 +653,7 @@ def test_dynamic_disk_security_settings(start_cluster):
         "CREATE SETTINGS PROFILE IF NOT EXISTS allow_dynamic_disk_access "
         "SETTINGS dynamic_disk_allow_from_env = true, "
         "dynamic_disk_allow_include = true, "
-        "dynamic_disk_allow_from_zk = true, "
-        # The privileged user's `_ok` cases use `from_env` for a disk credential (a server env var), which the
-        # S3 user-credential restriction also blocks by default; allow it for this trusted profile.
-        "s3_allow_server_credentials_in_user_queries = 1"
+        "dynamic_disk_allow_from_zk = true"
     )
     node.query(
         "CREATE USER IF NOT EXISTS restricted_user SETTINGS PROFILE 'default'"
