@@ -1,5 +1,9 @@
 -- Tags: shard
 
+-- The formatter must not print a strictness modifier on a `PASTE JOIN`, because the parser rejects
+-- one and a formatted query carrying it fails on a remote server with `SYNTAX_ERROR`. It must still
+-- print the modifier, and the `PASTE` kind itself, everywhere the parser does accept them.
+
 SET join_default_strictness = 'ALL';
 SET any_join_distinct_right_table_keys = 0;
 SET enable_analyzer = 1;

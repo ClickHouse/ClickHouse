@@ -2144,6 +2144,10 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
         }
         case orc::TypeKind::UNION:
             return which.isVariant();
+        case orc::TypeKind::GEOMETRY:
+        case orc::TypeKind::GEOGRAPHY:
+            /// Added in ORC 2.3. We do not read these, so no target type can match such a branch.
+            return false;
     }
 
     return false;
