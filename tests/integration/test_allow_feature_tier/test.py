@@ -445,7 +445,7 @@ def test_server_level_merge_tree_settings_are_not_blocked_by_feature_tier(start_
         "SELECT value FROM system.settings WHERE name = 'compatibility'"
     ).strip()
     assert "1" == node.query(
-        "SELECT value FROM system.merge_tree_settings WHERE name = 'compute_exact_num_defaults_for_sparse_columns'"
+        "SELECT value FROM system.merge_tree_settings WHERE name = 'allow_commit_order_projection'"
     ).strip()
 
     for tier in ["1", "2"]:
@@ -468,9 +468,26 @@ def test_server_level_merge_tree_settings_are_not_blocked_by_feature_tier(start_
         assert output.strip() == "1"
         assert error == ""
 
-        # But setting the same value from a query is still rejected
+        # Re-declaring the value already in effect (forced by the server) from a query is a no-op, exactly
+        # like it is for a plain session/query setting, so it is allowed
         output, error = node.query_and_get_answer_with_error(
-            "ALTER TABLE test_server_level_settings MODIFY SETTING compute_exact_num_defaults_for_sparse_columns = 1"
+            "ALTER TABLE test_server_level_settings MODIFY SETTING allow_commit_order_projection = 1"
+        )
+        assert output == ""
+        assert error == ""
+
+        # But reverting it to the compiled default is a real change and is rejected, even though the
+        # resulting value matches the compiled default
+        output, error = node.query_and_get_answer_with_error(
+            "ALTER TABLE test_server_level_settings MODIFY SETTING allow_commit_order_projection = 0"
+        )
+        assert output == ""
+        assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+        # Same for `CREATE TABLE`
+        output, error = node.query_and_get_answer_with_error(
+            "CREATE TABLE test_experimental_revert (a UInt64) ENGINE = MergeTree ORDER BY a "
+            "SETTINGS allow_commit_order_projection = 0"
         )
         assert output == ""
         assert "Changes to EXPERIMENTAL settings are disabled" in error
@@ -483,6 +500,7 @@ def test_server_level_merge_tree_settings_are_not_blocked_by_feature_tier(start_
         assert output == ""
         assert "Changes to EXPERIMENTAL settings are disabled" in error
 
+        node.query("DROP TABLE IF EXISTS test_experimental_revert")
         node.query("DROP TABLE IF EXISTS test_experimental_server_level")
         node.query("DROP TABLE IF EXISTS test_server_level_settings")
 

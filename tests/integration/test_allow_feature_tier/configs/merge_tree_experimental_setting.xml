@@ -1,6 +1,6 @@
 <clickhouse>
     <!-- An EXPERIMENTAL `MergeTree` setting set by the operator. If its tier changes, use another one -->
     <merge_tree>
-        <compute_exact_num_defaults_for_sparse_columns>1</compute_exact_num_defaults_for_sparse_columns>
+        <allow_commit_order_projection>1</allow_commit_order_projection>
     </merge_tree>
 </clickhouse>

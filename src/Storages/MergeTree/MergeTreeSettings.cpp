@@ -2380,20 +2380,26 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
 
-    /// Settings whose value comes from the server itself (`compatibility` and the `merge_tree` config section)
-    /// instead of from a query. The feature tier check skips them, the same way the default profile is applied
-    /// without checking constraints. Otherwise a single EXPERIMENTAL or BETA setting in the config or in the
-    /// compatibility history makes every `CREATE TABLE` fail once the tier disallows it.
-    std::unordered_set<String> changed_by_server;
-
-    void markChangedByServer(std::string_view name) { changed_by_server.emplace(Traits::resolveName(name)); }
-    void unmarkChangedByServer(std::string_view name) { changed_by_server.erase(String(Traits::resolveName(name))); }
+    /// Settings a query sets to a value that differs from the one already in effect. Drives the feature tier
+    /// check in `sanityCheck`, mirroring `SettingsConstraints::getNewValueToCheck`: a no-op is exempt, any other
+    /// change is checked even if the new value equals the compiled default.
+    std::unordered_set<String> changed_by_query;
 
     /// Apply changes requested by a query, so they are subject to the feature tier check.
     void applyChangesFromQuery(const SettingsChanges & changes)
     {
         for (const auto & change : changes)
-            unmarkChangedByServer(change.name);
+        {
+            auto resolved_name = Traits::resolveName(change.name);
+
+            Field current_value;
+            bool has_current_value = tryGet(resolved_name, current_value);
+            Field new_value = castValueUtil(resolved_name, change.value);
+            if (has_current_value && new_value == current_value)
+                changed_by_query.erase(String(resolved_name));
+            else
+                changed_by_query.emplace(resolved_name);
+        }
         applyChanges(changes);
     }
 
@@ -2506,7 +2512,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
     {
         for (const auto & setting : all())
         {
-            if (!setting.isValueChanged() || changed_by_server.contains(String(setting.getName())))
+            if (!changed_by_query.contains(String(setting.getName())))
                 continue;
 
             auto tier = setting.getTier();
@@ -2767,8 +2773,7 @@ Field MergeTreeSettings::get(std::string_view name) const
 
 void MergeTreeSettings::set(std::string_view name, const Field & value)
 {
-    impl->unmarkChangedByServer(name);
-    impl->set(name, value);
+    impl->applyChangesFromQuery({SettingChange{name, value}});
 }
 
 SettingsChanges MergeTreeSettings::changes() const
@@ -2787,8 +2792,7 @@ void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr con
 {
     auto resolved_change = change;
     resolveDiskSetting(resolved_change, context, is_loading_from_existing_metadata);
-    impl->unmarkChangedByServer(resolved_change.name);
-    impl->applyChange(resolved_change);
+    impl->applyChangesFromQuery({resolved_change});
 }
 
 void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
@@ -2858,10 +2862,7 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
             auto previous_value = MergeTreeSettingsTraits::Accessor::instance().castValueUtil(setting_index, change.previous_value);
 
             if (get(final_name) != previous_value)
-            {
                 impl->set(final_name, previous_value);
-                impl->markChangedByServer(final_name);
-            }
         }
     }
 }
@@ -2921,10 +2922,7 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     try
     {
         for (const String & key : config_keys)
-        {
             impl->set(key, config.getString(config_elem + "." + key));
-            impl->markChangedByServer(key);
-        }
     }
     catch (Exception & e)
     {
