@@ -54,12 +54,12 @@ WORKFLOW_AUTHENTICATION_PUBLIC_PR_AUTHOR = "workflow-authentication-public[bot]"
 TRUSTED_DOCS_SYNCS = {
     "robot/docs-sync-clickhouse-connect": {
         "name": "ClickHouse Connect",
-        "path": "docs/integrations/language-clients/python",
+        "paths": ("docs/integrations/language-clients/python",),
         "author": WORKFLOW_AUTHENTICATION_PUBLIC_PR_AUTHOR,
     },
     "robot/docs-sync-chdb": {
         "name": "chDB",
-        "path": "docs/chdb",
+        "paths": ("docs/chdb", "docs/images/chdb"),
         "author": WORKFLOW_AUTHENTICATION_PUBLIC_PR_AUTHOR,
     },
 }
@@ -113,6 +113,10 @@ def _path_is_within(path, prefix):
     return path == prefix or path.startswith(prefix + "/")
 
 
+def _trusted_sync_paths(trusted_sync):
+    return trusted_sync.get("paths") or (trusted_sync["path"],)
+
+
 def _protected_docs_guard():
     # Fail direct edits both to generated regions and to docs folders whose
     # canonical source lives in another repo. This is aggregator-only, so it is
@@ -127,15 +131,17 @@ def _protected_docs_guard():
 
     trusted_sync = _trusted_docs_sync(info)
     if trusted_sync:
+        trusted_paths = _trusted_sync_paths(trusted_sync)
         unexpected_files = [
             path
             for path in changed_files
-            if not _path_is_within(path, trusted_sync["path"])
+            if not any(_path_is_within(path, prefix) for prefix in trusted_paths)
         ]
         if unexpected_files:
+            expected_paths = ", ".join(f"'{path}'" for path in trusted_paths)
             print(
                 f"Error: trusted {trusted_sync['name']} docs sync changed files "
-                f"outside '{trusted_sync['path']}':"
+                f"outside {expected_paths}:"
             )
             print("\n".join(f"  {path}" for path in unexpected_files))
             readonly_copies_ok = False
