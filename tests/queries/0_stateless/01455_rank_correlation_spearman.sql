@@ -51,6 +51,11 @@ SELECT rankCorr(x, y) FROM values('x Float64, y Float64', (0, 0), (0, nan), (1, 
 SELECT '0.949';
 SELECT roundBankers(rankCorr(x, y), 3) FROM values('x Float64, y Float64', (1, 1), (nan, 5), (1, 2), (2, nan), (2, 3), (3, 9));
 
+-- A state from an older server can hold unequal sizes, and it records no row pairing,
+-- so which observations survived is unrecoverable.
+SELECT 'nan';
+SELECT finalizeAggregation(CAST(unhex('040300000000000000000000000000000000000000000000F03F000000000000000000000000000000000000000000000000000000000000F03F') AS AggregateFunction(rankCorr, Float64, Float64)));
+
 DROP TABLE IF EXISTS moons;
 DROP TABLE IF EXISTS circles;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

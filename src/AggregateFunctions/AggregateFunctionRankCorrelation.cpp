@@ -31,15 +31,15 @@ struct RankCorrelationData : public StatisticalSample<Float64, Float64>
 {
     Float64 getResult()
     {
+        /// add() keeps the samples paired. Unequal sizes mean a state written by an older
+        /// server, which recorded no row pairing, so the surviving pairs are unrecoverable.
+        const size_t size = this->size_x;
+
+        if (size != this->size_y || size < 2)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
         const RanksArray ranks_x = computeRanksAndTieCorrection(this->x).first;
         const RanksArray ranks_y = computeRanksAndTieCorrection(this->y).first;
-
-        /// add() keeps the samples paired, but a state serialized by an older server can
-        /// still hold unequal sizes.
-        const size_t size = std::min(this->size_x, this->size_y);
-
-        if (size < 2)
-            return std::numeric_limits<Float64>::quiet_NaN();
 
         /// Spearman's coefficient is the Pearson correlation of the mid-ranks. The
         /// closed-form 1 - 6 * sum(d^2) / (n^3 - n) is only valid without ties, because
