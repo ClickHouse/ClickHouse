@@ -2971,7 +2971,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             false /*allow_table_expression*/);
 
         const auto * window_frame_session_window_threshold_node = window_node.getFrameSessionWindowThresholdNode()->as<ConstantNode>();
-        if (!window_frame_session_window_threshold_node || !isNumber(removeNullable(window_frame_session_window_threshold_node->getResultType())))
+        if (!window_frame_session_window_threshold_node || !isNativeNumber(removeNullable(window_frame_session_window_threshold_node->getResultType())))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Window frame SESSION window threshold must be constant with numeric type. Actual {}. In scope {}",
                 window_node.getFrameSessionWindowThresholdNode()->formatASTForErrorMessage(),

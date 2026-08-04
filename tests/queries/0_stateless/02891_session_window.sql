@@ -41,6 +41,11 @@ drop table 02891_session_window_blocks;
 
 -- Two windows that differ only in threshold must get different projection names, otherwise
 -- they collide into one output column name (and duplicate JSON keys).
+-- The threshold is a child of the window definition, so generic traversal and tree hashing
+-- see it. Without that the literal is missing from the AST and two windows differing only in
+-- threshold compare equal.
+explain ast select groupArray(n) over (order by n session 2) from t;
+
 -- Colliding names make this CREATE fail outright with ILLEGAL_COLUMN.
 create view 02891_session_window_names as select arrayJoin([1, 20]) n, groupArray(n) over (order by n session 1), groupArray(n) over (order by n session 2);
 select name from system.columns where database = currentDatabase() and table = '02891_session_window_names' order by position;
@@ -49,6 +54,9 @@ drop view 02891_session_window_names;
 -- The threshold type is validated the same way on both analyzer paths.
 select 1 n, count() over (order by n session '1') settings enable_analyzer = 1; -- { serverError BAD_ARGUMENTS }
 select 1 n, count() over (order by n session '1') settings enable_analyzer = 0; -- { serverError BAD_ARGUMENTS }
+-- A Decimal threshold is not a native number, exactly as for a RANGE OFFSET expression.
+select n, count() over (order by n session toDecimal64(0.5, 1)) from (select toFloat32(1) n) settings enable_analyzer = 1; -- { serverError BAD_ARGUMENTS }
+select n, count() over (order by n session toDecimal64(0.5, 1)) from (select toFloat32(1) n) settings enable_analyzer = 0; -- { serverError BAD_ARGUMENTS }
 
 -- The threshold survives AST JSON serialization, and it is mutually exclusive with the
 -- frame boundary fields in both directions.

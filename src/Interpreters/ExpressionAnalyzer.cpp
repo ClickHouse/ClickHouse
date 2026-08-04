@@ -775,7 +775,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                 context_.shared_from_this());
         /// Reject the same thresholds the analyzer path rejects: without this the value is
         /// silently coerced to the ORDER BY type, so `SESSION '1'` would be accepted here only.
-        if (!type || !isNumber(removeNullable(type)))
+        if (!type || !isNativeNumber(removeNullable(type)))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Window frame SESSION window threshold must be constant with numeric type. Actual {}",
                 definition.session_window_threshold->formatForErrorMessage());

@@ -712,7 +712,12 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     {
         node->frame_type = WindowFrame::FrameType::SESSION;
         ParserExpression parser_expression;
-        return parser_expression.parse(pos, node->session_window_threshold, expected);
+        if (!parser_expression.parse(pos, node->session_window_threshold, expected))
+            return false;
+        // Generic traversal and tree hashing only visit `children`, so an unattached
+        // threshold would make two windows differing only in it compare equal.
+        node->children.push_back(node->session_window_threshold);
+        return true;
     }
     else
     {
