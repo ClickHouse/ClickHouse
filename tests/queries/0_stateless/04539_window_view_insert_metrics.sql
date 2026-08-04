@@ -1,3 +1,7 @@
+-- Window views are not insert dependencies of their source tables. Keep this
+-- assertion with metric attribution so a future dependency implementation must
+-- explicitly classify its rows.
+
 SET allow_experimental_window_view = 1;
 SET allow_experimental_analyzer = 0;
 SET log_queries = 1;
@@ -6,46 +10,31 @@ SET log_queries_min_type = 'QUERY_FINISH';
 DROP TABLE IF EXISTS window_view_metrics_view;
 DROP TABLE IF EXISTS window_view_metrics_src;
 
-CREATE TABLE window_view_metrics_src
-(
-    num UInt32,
-    insertion_time DateTime64(9),
-    simulation_time DateTime64(9)
-)
-ENGINE = MergeTree
-ORDER BY num;
+CREATE TABLE window_view_metrics_src (id UInt64, ts DateTime) ENGINE = MergeTree ORDER BY id;
+CREATE WINDOW VIEW window_view_metrics_view ENGINE Memory AS
+    SELECT count(id) AS cnt, tumbleStart(window_id) AS window_start
+    FROM window_view_metrics_src
+    GROUP BY tumble(ts, INTERVAL '5' SECOND) AS window_id;
 
-CREATE WINDOW VIEW window_view_metrics_view
-(
-    num UInt32,
-    insertion_time DateTime,
-    simulation_time DateTime64(9)
-)
-ENGINE = Memory WATERMARK toIntervalSecond(5)
-AS SELECT
-    window_view_metrics_src.num AS num,
-    tumbleStart(window_id) AS insertion_time,
-    max(window_view_metrics_src.simulation_time) AS simulation_time
-FROM window_view_metrics_src
-WHERE window_view_metrics_src.num != 0
-GROUP BY
-    window_view_metrics_src.num,
-    tumble(CAST(toStartOfSecond(window_view_metrics_src.insertion_time), 'DateTime'), toIntervalSecond(1)) AS window_id;
+SELECT countIf(has(dependencies_table, 'window_view_metrics_view'))
+FROM system.tables
+WHERE database = currentDatabase();
 
 SET log_comment = '04539_window_view';
-INSERT INTO window_view_metrics_src VALUES
-    (1, toDateTime64('2024-10-01 12:30:00', 9), toDateTime64('2024-10-01 12:00:00', 9));
+INSERT INTO window_view_metrics_src SELECT number, toDateTime('2026-01-01 00:00:00') + number FROM numbers(7);
 SET log_comment = '';
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['DirectInsertedRows'],
-    ProfileEvents['MaterializedViewInsertedRows']
+    ProfileEvents['MaterializedViewInsertedRows'],
+    ProfileEvents['MaterializedViewInsertedBytes'],
+    ProfileEvents['InsertedRows'] = ProfileEvents['DirectInsertedRows'],
+    ProfileEvents['InsertedBytes'] = ProfileEvents['DirectInsertedBytes']
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND log_comment = '04539_window_view'
-  AND query LIKE 'INSERT INTO window_view_metrics_src%'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time_microseconds DESC

@@ -327,10 +327,10 @@
     \
     M(InsertedRows, "Number of rows INSERTed to all tables.", ValueType::Number) \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.", ValueType::Bytes) \
-    M(DirectInsertedRows, "Number of rows processed by the root INSERT pipeline, excluding rows produced by dependent materialized views.", ValueType::Number) \
-    M(DirectInsertedBytes, "Number of uncompressed bytes processed by the root INSERT pipeline, excluding bytes produced by dependent materialized views.", ValueType::Bytes) \
-    M(MaterializedViewInsertedRows, "Number of rows produced by dependent materialized views triggered by INSERT queries.", ValueType::Number) \
-    M(MaterializedViewInsertedBytes, "Number of uncompressed bytes produced by dependent materialized views triggered by INSERT queries.", ValueType::Bytes) \
+    M(DirectInsertedRows, "Number of rows written by INSERT pipelines into their immediate destination table, excluding rows written by insert-triggered materialized views into their target tables. Includes user INSERT queries and internal writes through the INSERT interpreter, such as system log flushes, Buffer table flushes, and refreshable materialized view refreshes.", ValueType::Number) \
+    M(DirectInsertedBytes, "Number of uncompressed bytes written by INSERT pipelines into their immediate destination table, excluding bytes written by insert-triggered materialized views into their target tables. Includes user INSERT queries and internal writes through the INSERT interpreter, such as system log flushes, Buffer table flushes, and refreshable materialized view refreshes.", ValueType::Bytes) \
+    M(MaterializedViewInsertedRows, "Number of rows produced by dependent materialized views triggered by INSERT pipelines.", ValueType::Number) \
+    M(MaterializedViewInsertedBytes, "Number of uncompressed bytes produced by dependent materialized views triggered by INSERT pipelines.", ValueType::Bytes) \
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Number) \
     M(RejectedInserts, "Number of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.", ValueType::Number) \
     M(DelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Milliseconds) \
