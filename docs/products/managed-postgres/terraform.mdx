@@ -17,12 +17,6 @@ ClickHouse Managed Postgres services can be created and managed using the `click
 This resource is in alpha and its behavior may change in future provider versions. It ships in the regular provider build. This page documents provider version **v3.21.0** and later. See the [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) for details.
 </Note>
 
-<Warning>
-**Upgrading from a provider earlier than v3.21.0**
-
-Earlier provider versions expect the API to echo credentials back and no longer work: they leave `connection_string` empty, and a service created without a declared `password` comes up with a generated password that is never captured anywhere. Upgrade to **v3.21.0** or later; your state migrates automatically on the first plan or apply. If any of your services rely on a server-generated password (no `password` in configuration), recover it first with `terraform state pull` and declare it, since v3.21.0 requires `password` or `password_wo` for a standard service.
-</Warning>
-
 ## Provider setup {#provider-setup}
 
 Add the ClickHouse provider to your Terraform configuration:
