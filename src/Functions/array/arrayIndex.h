@@ -3,8 +3,6 @@
 #include <cstddef>
 #include <optional>
 #include <type_traits>
-#include <unordered_map>
-#include <vector>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -26,6 +24,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/checkStackSize.h>
 #include <base/memcmpSmall.h>
@@ -543,9 +542,12 @@ public:
 
     FunctionArrayIndex() = default;
 
-    /// A null ContextPtr is benign: `equals` is then built with default ComparisonParams, mirroring
-    /// FunctionComparison::create. The relation stays correct, only query settings are not applied.
-    explicit FunctionArrayIndex(ContextPtr context_) : context(std::move(context_)), has_context(true) { }
+    /// A null context is benign: `equals` then resolves with default `ComparisonParams`, so the
+    /// relation stays correct and only query settings go unapplied.
+    explicit FunctionArrayIndex(ContextPtr context)
+        : equals_resolver(FunctionFactory::instance().get("equals", context))
+    {
+    }
 
     /// Get function name.
     String getName() const override { return name; }
@@ -823,7 +825,7 @@ private:
     /// discriminators at the site the peel will act on. `holder` keeps the returned column alive: a
     /// level of the descent may materialise a temporary, which the caller must outlive.
     static const ColumnVariant * findVariantAtPath(
-        const IColumn & elements, const std::vector<size_t> & path, ColumnPtr & holder)
+        const IColumn & elements, const VectorWithMemoryTracking<size_t> & path, ColumnPtr & holder)
     {
         const IColumn * current = &elements;
         auto held = current->getPtr();
@@ -863,12 +865,12 @@ private:
 
     /// The path of Tuple positions leading to the first erased type inside `type`, or nothing when
     /// `type` erases nothing. Mirrors hasTypeErasingElement's traversal, including its Array/Map stop.
-    static std::optional<std::vector<size_t>> findErasedPath(const IDataType & type)
+    static std::optional<VectorWithMemoryTracking<size_t>> findErasedPath(const IDataType & type)
     {
         checkStackSize();
 
         if (isDynamic(type) || isVariant(type))
-            return std::vector<size_t>{};
+            return VectorWithMemoryTracking<size_t>{};
 
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type.getPtr()).get());
         if (!tuple_type)
@@ -879,7 +881,7 @@ private:
         {
             if (auto nested = findErasedPath(*elements[position]))
             {
-                std::vector<size_t> path{position};
+                VectorWithMemoryTracking<size_t> path{position};
                 path.insert(path.end(), nested->begin(), nested->end());
                 return path;
             }
@@ -891,7 +893,7 @@ private:
     /// Group the rows by the one global discriminator all of that row's elements carry; NULL elements
     /// join any group, since the peel answers those from the null maps. A row whose elements disagree
     /// gets no group, and nothing means no group formed at all.
-    static std::optional<std::unordered_map<ColumnVariant::Discriminator, IColumn::Filter>> groupRowsByAlternative(
+    static std::optional<UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, IColumn::Filter>> groupRowsByAlternative(
         const ColumnArray & array, const DataTypePtr & element_type)
     {
         auto path = findErasedPath(*element_type);
@@ -906,7 +908,7 @@ private:
         const auto & offsets = array.getOffsets();
         const auto & local_discriminators = variant_column->getLocalDiscriminators();
 
-        std::unordered_map<ColumnVariant::Discriminator, IColumn::Filter> groups;
+        UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, IColumn::Filter> groups;
         ColumnArray::Offset current_offset = 0;
 
         for (size_t row = 0; row < offsets.size(); ++row)
@@ -1089,13 +1091,11 @@ private:
             }
         }
 
-        /// A resolver instance may resolve only one overload (IFunction.h), and the leaves of a Tuple
-        /// need one each, so this is obtained per pair rather than kept as a member.
         ColumnsWithTypeAndName equals_arguments{bare_elements, bare_needles};
         ColumnPtr equality_result;
         try
         {
-            auto equals_function = FunctionFactory::instance().get("equals", context)->build(equals_arguments);
+            auto equals_function = equals_resolver->build(equals_arguments);
             equality_result
                 = equals_function->execute(equals_arguments, equals_function->getResultType(), rows, /* dry_run = */ false);
         }
@@ -1190,7 +1190,7 @@ private:
     /// Returns nullptr for every other common type, leaving the existing dispatch untouched.
     ColumnPtr executeErasedEquality(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
-        if (!has_context)
+        if (!equals_resolver)
             return nullptr;
 
         auto common_type = tryGetDecayedCommonType(arguments);
@@ -2026,9 +2026,8 @@ private:
         return col_res;
     }
 
-    ContextPtr context;
-    /// False when the function was default-constructed, i.e. no context was supplied at all;
-    /// executeErasedEquality then declines. A supplied but null ContextPtr still resolves `equals`.
-    bool has_context = false;
+    /// Null only when default-constructed, i.e. no context was supplied at all; executeErasedEquality
+    /// then declines.
+    FunctionOverloadResolverPtr equals_resolver;
 };
 }
