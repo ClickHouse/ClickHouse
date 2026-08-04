@@ -240,7 +240,6 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -787,29 +786,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (settings[Setting::parallel_replicas_count] > 1)
         {
-            if (auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context))
-            {
-                LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
+            auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context);
+            /// `parseCustomKeyForTable` either parses the key or throws, it never returns nothing.
+            chassert(custom_key_ast);
 
-                auto custom_key_metadata = storage->getInMemoryMetadataPtr(context, false);
-                parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
-                    settings[Setting::parallel_replicas_count],
-                    settings[Setting::parallel_replica_offset],
-                    std::move(custom_key_ast),
-                    {settings[Setting::parallel_replicas_mode],
-                     settings[Setting::parallel_replicas_custom_key_range_lower],
-                     settings[Setting::parallel_replicas_custom_key_range_upper]},
-                    custom_key_metadata->columns,
-                    context);
-            }
-            else if (settings[Setting::parallel_replica_offset] > 0)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Parallel replicas processing with custom_key has been requested "
-                    "(setting 'max_parallel_replicas') but the table does not have custom_key defined for it "
-                    "or it's invalid (settings `parallel_replicas_custom_key`)");
-            }
+            LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
+
+            auto custom_key_metadata = storage->getInMemoryMetadataPtr(context, false);
+            parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
+                settings[Setting::parallel_replicas_count],
+                settings[Setting::parallel_replica_offset],
+                std::move(custom_key_ast),
+                {settings[Setting::parallel_replicas_mode],
+                 settings[Setting::parallel_replicas_custom_key_range_lower],
+                 settings[Setting::parallel_replicas_custom_key_range_upper]},
+                custom_key_metadata->columns,
+                context);
         }
         /// We disable prefer_localhost_replica because if one of the replicas is local it will create a single local plan
         /// instead of executing the query with multiple replicas
