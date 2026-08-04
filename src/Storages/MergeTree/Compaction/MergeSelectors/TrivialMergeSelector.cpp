@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 #include <Common/thread_local_rng.h>
 
@@ -7,14 +8,21 @@
 namespace DB
 {
 
+void registerTrivialMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPublicSelector("Trivial", MergeSelectorAlgorithm::TRIVIAL, [](const std::any &)
+    {
+        return std::make_shared<TrivialMergeSelector>();
+    });
+}
+
 PartsRanges TrivialMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const MergeConstraints & merge_constraints,
+    const MergeSizes & max_merge_sizes,
     const RangeFilter & range_filter) const
 {
-    chassert(merge_constraints.size() == 1, "Multi Select is not supported for TrivialMergeSelector");
-    const size_t max_total_size_to_merge = merge_constraints[0].max_size_bytes;
-    const size_t max_rows_in_part = merge_constraints[0].max_size_rows;
+    chassert(max_merge_sizes.size() == 1, "Multi Select is not supported for TrivialMergeSelector");
+    const size_t max_total_size_to_merge = max_merge_sizes[0];
 
     size_t num_partitions = parts_ranges.size();
     if (num_partitions == 0)
@@ -40,27 +48,20 @@ PartsRanges TrivialMergeSelector::select(
     std::vector<PartsRange> candidates;
     while (candidates.size() < settings.num_ranges_to_choose)
     {
-        const PartsRange & partition = parts_ranges[sorted_partition_indices[partition_idx]];
+        const PartsRange & partition = parts_ranges[partition_idx];
 
         if (1 + right - left == settings.num_parts_to_merge)
         {
             ++right;
 
             size_t total_size = 0;
-            size_t total_rows = 0;
-
             for (size_t i = left; i < right; ++i)
-            {
                 total_size += partition[i].size;
-                total_rows += partition[i].rows;
-            }
 
             const auto range_begin = partition.begin() + left;
             const auto range_end = partition.begin() + right;
 
-            if (total_size <= max_total_size_to_merge
-                && total_rows <= max_rows_in_part
-                && (!range_filter || range_filter({range_begin, range_end})))
+            if (total_size <= max_total_size_to_merge && (!range_filter || range_filter({range_begin, range_end})))
             {
                 candidates.emplace_back(range_begin, range_end);
                 if (candidates.size() == settings.num_ranges_to_choose)

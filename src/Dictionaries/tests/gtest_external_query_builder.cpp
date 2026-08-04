@@ -3,7 +3,6 @@
 #include <sstream>
 
 #include <Columns/ColumnString.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/AutoPtr.h>
@@ -45,7 +44,7 @@ static std::string buildWhereClause(IdentifierQuotingStyle style, const std::vec
     Columns key_columns;
     key_columns.push_back(std::move(col));
 
-    VectorWithMemoryTracking<size_t> rows;
+    std::vector<size_t> rows;
     for (size_t i = 0; i < values.size(); ++i)
         rows.push_back(i);
 

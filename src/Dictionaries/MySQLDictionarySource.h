@@ -47,19 +47,19 @@ public:
         const Configuration & configuration_,
         mysqlxx::PoolWithFailoverPtr pool_,
         const Block & sample_block_,
-        const MySQLStreamSettings & settings_);
+        const StreamSettings & settings_);
 
     /// copy-constructor is provided in order to support cloneability
     MySQLDictionarySource(const MySQLDictionarySource & other);
     MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockIO loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -91,7 +91,7 @@ private:
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
     mutable InvalidateQueryResponse invalidate_query_response;
-    const MySQLStreamSettings settings;
+    const StreamSettings settings;
 };
 
 }

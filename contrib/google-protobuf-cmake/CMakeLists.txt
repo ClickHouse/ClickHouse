@@ -109,17 +109,13 @@ set(libprotobuf_lite_files
 )
 
 add_library(_libprotobuf-lite ${libprotobuf_lite_files})
-if (NOT USE_MUSL)
-    target_link_libraries(_libprotobuf-lite pthread)
-endif()
 target_link_libraries(_libprotobuf-lite
+    pthread
     utf8_validity)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(_libprotobuf-lite log)
 endif()
-target_include_directories(_libprotobuf-lite SYSTEM PUBLIC
-  ${protobuf_source_dir}/src
-  ${protobuf_source_dir}/third_party/utf8_range)
+target_include_directories(_libprotobuf-lite SYSTEM PUBLIC ${protobuf_source_dir}/src)
 add_library(protobuf::libprotobuf-lite ALIAS _libprotobuf-lite)
 
 
@@ -190,7 +186,6 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/repeated_field.cc
   ${protobuf_source_dir}/src/google/protobuf/repeated_ptr_field.cc
   ${protobuf_source_dir}/src/google/protobuf/service.cc
-  ${protobuf_source_dir}/src/google/protobuf/symbol_checker.cc
   ${protobuf_source_dir}/src/google/protobuf/stubs/common.cc
   ${protobuf_source_dir}/src/google/protobuf/text_format.cc
   ${protobuf_source_dir}/src/google/protobuf/unknown_field_set.cc
@@ -208,19 +203,15 @@ add_library(_libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
 if (ENABLE_FUZZING)
     target_compile_options(_libprotobuf PRIVATE "-fsanitize-recover=all")
 endif()
-if (NOT USE_MUSL)
-    target_link_libraries(_libprotobuf pthread)
-endif()
 target_link_libraries(_libprotobuf
+    pthread
     ch_contrib::zlib
     utf8_validity
     ${protobuf_absl_used_targets})
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(_libprotobuf log)
 endif()
-target_include_directories(_libprotobuf SYSTEM PUBLIC
-  ${protobuf_source_dir}/src
-  ${protobuf_source_dir}/third_party/utf8_range)
+target_include_directories(_libprotobuf SYSTEM PUBLIC ${protobuf_source_dir}/src)
 add_library(protobuf::libprotobuf ALIAS _libprotobuf)
 
 
@@ -327,7 +318,6 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/python/helpers.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/python/pyi_generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/retention.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/ruby/rbs_generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/ruby/ruby_generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/accessor_case.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/accessors.cc
@@ -343,7 +333,6 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/context.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/crate_mapping.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/enum.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/extension.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/message.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/naming.cc
@@ -381,7 +370,6 @@ set(libprotoc_files
   ${protobuf_source_dir}/upb/mini_descriptor/link.c
   ${protobuf_source_dir}/upb/mini_table/compat.c
   ${protobuf_source_dir}/upb/mini_table/extension_registry.c
-  ${protobuf_source_dir}/upb/mini_table/generated_registry.c
   ${protobuf_source_dir}/upb/mini_table/internal/message.c
   ${protobuf_source_dir}/upb/mini_table/message.c
   ${protobuf_source_dir}/upb/reflection/cmake/google/protobuf/descriptor.upb_minitable.c
@@ -404,12 +392,10 @@ set(libprotoc_files
   ${protobuf_source_dir}/upb/reflection/service_def.c
   ${protobuf_source_dir}/upb/wire/decode.c
   ${protobuf_source_dir}/upb/wire/encode.c
-  ${protobuf_source_dir}/upb/wire/eps_copy_input_stream.c
-  ${protobuf_source_dir}/upb/wire/internal/decoder.c
-  ${protobuf_source_dir}/upb/wire/reader.c
   ${protobuf_source_dir}/upb_generator/common.cc
   ${protobuf_source_dir}/upb_generator/common/names.cc
   ${protobuf_source_dir}/upb_generator/file_layout.cc
+  ${protobuf_source_dir}/upb_generator/minitable/fasttable.cc
   ${protobuf_source_dir}/upb_generator/minitable/generator.cc
   ${protobuf_source_dir}/upb_generator/minitable/names.cc
   ${protobuf_source_dir}/upb_generator/minitable/names_internal.cc
@@ -427,34 +413,76 @@ target_include_directories(_libprotoc PRIVATE
 add_library(protobuf::libprotoc ALIAS _libprotoc)
 
 set(protoc_files ${protobuf_source_dir}/src/google/protobuf/compiler/main.cc)
-add_executable(protoc ${protoc_files})
-target_link_libraries(protoc _libprotoc _libprotobuf)
-if (NOT USE_MUSL)
-    target_link_libraries(protoc pthread)
-endif()
-target_link_libraries(protoc
-    utf8_validity
-    ${protobuf_absl_used_targets})
-target_include_directories(protoc PRIVATE
-    ${protobuf_source_dir}
-    ${protobuf_source_dir}/upb/reflection/cmake
-)
-add_executable(protobuf::protoc ALIAS protoc)
 
-if (ENABLE_FUZZING)
-    # `protoc` will be built with sanitizer and it could fail during ClickHouse build
-    # It easily reproduces in oss-fuzz building pipeline
-    # To avoid this we can try to build `protoc` without any sanitizer with option `-fno-sanitize=all`, but
-    # it this case we will face with linker errors, because libcxx still will be built with sanitizer
-    # So, we can simply suppress all of these failures with a combination this flag and an environment variable
-    # export MSAN_OPTIONS=exit_code=0
-    target_compile_options(protoc PRIVATE "-fsanitize-recover=all")
-endif()
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
+    AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
 
-add_native_target (protoc)
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
-    set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
-endif()
+    add_executable(protoc ${protoc_files})
+    target_link_libraries(protoc _libprotoc
+        _libprotobuf
+        pthread
+        utf8_validity
+        ${protobuf_absl_used_targets})
+    target_include_directories(protoc PRIVATE
+        ${protobuf_source_dir}
+        ${protobuf_source_dir}/upb/reflection/cmake
+    )
+    add_executable(protobuf::protoc ALIAS protoc)
+
+    if (ENABLE_FUZZING)
+        # `protoc` will be built with sanitizer and it could fail during ClickHouse build
+        # It easily reproduces in oss-fuzz building pipeline
+        # To avoid this we can try to build `protoc` without any sanitizer with option `-fno-sanitize=all`, but
+        # it this case we will face with linker errors, because libcxx still will be built with sanitizer
+        # So, we can simply suppress all of these failures with a combination this flag and an environment variable
+        # export MSAN_OPTIONS=exit_code=0
+        target_compile_options(protoc PRIVATE "-fsanitize-recover=all")
+    endif()
+else ()
+    # Build 'protoc' for host arch
+    set (PROTOC_BUILD_DIR "${protobuf_binary_dir}/build")
+
+    if (NOT EXISTS "${PROTOC_BUILD_DIR}/protoc")
+
+        # This is quite ugly but I cannot make dependencies work propery.
+
+        set(abseil_source_dir "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
+
+        execute_process(
+            COMMAND mkdir -p ${PROTOC_BUILD_DIR}
+            COMMAND_ECHO STDOUT
+            COMMAND_ERROR_IS_FATAL ANY
+        )
+
+        execute_process(
+            COMMAND ${CMAKE_COMMAND}
+                "-G${CMAKE_GENERATOR}"
+                "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                "-Dprotobuf_BUILD_TESTS=0"
+                "-Dprotobuf_BUILD_CONFORMANCE=0"
+                "-Dprotobuf_BUILD_EXAMPLES=0"
+                "-Dprotobuf_BUILD_PROTOC_BINARIES=1"
+                "-DABSL_ROOT_DIR=${abseil_source_dir}"
+                "-DABSL_ENABLE_INSTALL=0"
+                "${protobuf_source_dir}"
+            WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
+            COMMAND_ECHO STDOUT
+            COMMAND_ERROR_IS_FATAL ANY
+        )
+
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
+            COMMAND_ECHO STDOUT
+            COMMAND_ERROR_IS_FATAL ANY
+        )
+    endif ()
+
+    add_executable(protoc IMPORTED GLOBAL)
+    set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROTOC_BUILD_DIR}/protoc")
+    add_dependencies(protoc "${PROTOC_BUILD_DIR}/protoc")
+endif ()
 
 include("${ClickHouse_SOURCE_DIR}/contrib/google-protobuf-cmake/protobuf_generate.cmake")
 

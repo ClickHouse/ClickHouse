@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -77,11 +78,6 @@ struct ZooKeeperLogElement
 class ZooKeeperLog : public SystemLog<ZooKeeperLogElement>
 {
     using SystemLog<ZooKeeperLogElement>::SystemLog;
-    size_t duration_microseconds_threshold = 0;
-
-public:
-    void setDurationMicrosecondsThreshold(size_t duration_microseconds_threshold_) { duration_microseconds_threshold = duration_microseconds_threshold_; }
-    size_t getDurationMicrosecondsThreshold() const { return duration_microseconds_threshold; }
 };
 
 DataTypePtr getCoordinationErrorCodesEnumType();
