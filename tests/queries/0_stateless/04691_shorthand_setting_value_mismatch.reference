@@ -1,0 +1,7 @@
+SELECT 1 SETTINGS optimize_move_to_prewhere = false
+BAD_ARGUMENTS
+SELECT 1 SETTINGS optimize_move_to_prewhere = \'x\'
+BAD_ARGUMENTS
+SELECT 1 SETTINGS optimize_move_to_prewhere
+1
+1
