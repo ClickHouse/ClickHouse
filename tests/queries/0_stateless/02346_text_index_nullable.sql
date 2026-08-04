@@ -55,6 +55,11 @@ SELECT id FROM tab WHERE isNull(hasToken(str, 'hello')) ORDER BY id;
 SELECT '-- the predicate evaluates to NULL for the NULL rows, not to 0';
 SELECT id, hasToken(str, 'hello') AS matched FROM tab WHERE matched OR isNull(matched) ORDER BY id;
 
+-- The NULLs must not cost the direct read: only the null map is read instead of the column data.
+SELECT '-- the index is still read directly, and only the null map of the column with it';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(str, 'hello')) WHERE explain LIKE '%__text_index%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(str, 'hello')) WHERE explain LIKE '%str.null%';
+
 SELECT '-- has[Any|All]Token on NULL should not match anything';
 SELECT count() FROM tab WHERE hasToken(str, NULL);
 SELECT count() FROM tab WHERE hasAllToken(str, NULL);

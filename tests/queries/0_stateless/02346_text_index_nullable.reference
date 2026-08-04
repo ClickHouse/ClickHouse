@@ -27,6 +27,9 @@ Basic Nullable(String) expressions.
 2	\N
 4	\N
 5	1
+-- the index is still read directly, and only the null map of the column with it
+1
+1
 -- has[Any|All]Token on NULL should not match anything
 0
 0

@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
@@ -52,6 +53,8 @@ struct TextIndexReadInfo
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
 
+constexpr std::string_view NULL_MAP_SUBCOLUMN = "null";
+
 const ActionsDAG::Node * removeAliases(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -84,13 +87,23 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
-bool hasNullableDataArgument(const ActionsDAG::Node & function_node)
+/// Returns the argument whose NULL rows make the predicate itself NULL, if there is one.
+/// A constant Nullable argument (e.g. `hasToken(col, toNullable('foo'))`) does not: it is either NULL for
+/// every row, and then the index is not used at all, or it is never NULL.
+const ActionsDAG::Node * findNullableDataArgument(const ActionsDAG::Node & function_node)
 {
-    return std::ranges::any_of(function_node.children, [](const auto * child)
+    /// Its only use restores NULLs, so it must not apply to a predicate that has none.
+    if (!isNullableOrLowCardinalityNullable(function_node.result_type))
+        return nullptr;
+
+    for (const auto * child : function_node.children)
     {
         const auto * argument = removeAliases(child);
-        return !argument->column && isNullableOrLowCardinalityNullable(argument->result_type);
-    });
+        if (!argument->column && isNullableOrLowCardinalityNullable(argument->result_type))
+            return argument;
+    }
+
+    return nullptr;
 }
 
 /// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
@@ -347,6 +360,8 @@ public:
     struct ResultReplacement
     {
         IndexReadColumns added_columns;
+        /// (Sub)columns the replacement introduced, e.g. `.null`. They must be added for reading.
+        Names added_physical_columns;
         Names removed_columns;
         const ActionsDAG::Node * filter_node = nullptr;
     };
@@ -407,11 +422,19 @@ public:
 
         Names replaced_columns = actions_dag.getRequiredColumnsNames();
         NameSet replaced_columns_set(replaced_columns.begin(), replaced_columns.end());
+        NameSet original_inputs_set(original_inputs.begin(), original_inputs.end());
 
         for (const auto & column : original_inputs)
         {
             if (!replaced_columns_set.contains(column))
                 result.removed_columns.push_back(column);
+        }
+
+        for (const auto & column : replaced_columns)
+        {
+            /// Virtual columns are reported separately in `added_columns`.
+            if (!original_inputs_set.contains(column) && !isTextIndexVirtualColumn(column))
+                result.added_physical_columns.push_back(column);
         }
 
         return result;
@@ -535,11 +558,14 @@ private:
             return lhs.virtual_column_name < rhs.virtual_column_name;
         });
 
+        /// Taken from the original node because processTextIndexFunction may wrap it into an alias below.
+        const auto * nullable_argument = findNullableDataArgument(function_node);
+
         if (need_transform_function)
             processTextIndexFunction(replacement, selected_conditions, context);
 
-        if (direct_read_from_text_index && !hasNullableDataArgument(function_node))
-            replaceFunctionsToVirtualColumns(replacement, selected_conditions, virtual_column_to_node, context);
+        if (direct_read_from_text_index)
+            replaceFunctionsToVirtualColumns(replacement, selected_conditions, virtual_column_to_node, nullable_argument, context);
 
         return replacement;
     }
@@ -736,11 +762,50 @@ private:
         replacement.node = &actions_dag.addAlias(*new_function_node, function_node.result_name);
     }
 
+    /// Returns `if(<argument is NULL>, NULL, index_result)`, i.e. what the original predicate evaluates to.
+    /// In exact mode the argument is not read any more, so the NULLs come from its `.null` subcolumn instead;
+    /// `LowCardinality(Nullable)` has no such subcolumn, and hint mode reads the argument anyway.
+    const ActionsDAG::Node & addNullsOfArgument(
+        const ActionsDAG::Node & index_result,
+        const ActionsDAG::Node & nullable_argument,
+        bool is_exact_search,
+        const ContextPtr & context)
+    {
+        const ActionsDAG::Node * argument_is_null = nullptr;
+        DataTypePtr null_map_type = std::make_shared<DataTypeUInt8>();
+
+        if (is_exact_search
+            && nullable_argument.type == ActionsDAG::ActionType::INPUT
+            && nullable_argument.result_type->hasSubcolumn(NULL_MAP_SUBCOLUMN))
+        {
+            String null_map_name = nullable_argument.result_name + "." + String(NULL_MAP_SUBCOLUMN);
+
+            /// May already be an input, e.g. for a second predicate on the same column.
+            const auto & inputs = actions_dag.getInputs();
+            auto it = std::ranges::find(inputs, null_map_name, &ActionsDAG::Node::result_name);
+
+            argument_is_null = it != inputs.end() ? *it : &actions_dag.addInput(null_map_name, null_map_type);
+        }
+        else
+        {
+            auto is_null_function = FunctionFactory::instance().get("isNull", context);
+            argument_is_null = &actions_dag.addFunction(is_null_function, {&nullable_argument}, "");
+        }
+
+        DataTypePtr nullable_result_type = makeNullable(null_map_type);
+        MutableColumnConstPtr null_column = nullable_result_type->createColumnConst(0, Field{});
+        const auto & null_node = actions_dag.addColumn(std::move(null_column), nullable_result_type, "NULL");
+
+        auto if_function = FunctionFactory::instance().get("if", context);
+        return actions_dag.addFunction(if_function, {argument_is_null, &null_node, &index_result}, "");
+    }
+
     /// Optimizes text-search functions by replacing them with virtual columns.
     void replaceFunctionsToVirtualColumns(
         NodeReplacement & replacement,
         const std::vector<SelectedCondition> & all_conditions,
         std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
+        const ActionsDAG::Node * nullable_argument,
         const ContextPtr & context)
     {
         const ActionsDAG::Node & function_node = *replacement.node;
@@ -778,7 +843,13 @@ private:
                 ASTPtr default_expression;
 
                 if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact)
+                {
                     default_expression = convertNodeToAST(function_node);
+
+                    /// The NULLs would fail the cast to the UInt8 virtual column; `addNullsOfArgument` restores them.
+                    if (nullable_argument && default_expression)
+                        default_expression = makeASTFunction("ifNull", default_expression, make_intrusive<ASTLiteral>(Field(0)));
+                }
                 /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
                 else if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
@@ -813,6 +884,11 @@ private:
 
             replacement.node = &actions_dag.addFunction(function_builder, children, "");
         }
+
+        /// The UInt8 virtual column holds 0 where the predicate is NULL. Both are falsy in a filter, but
+        /// `NOT`, `isNull` and reading the value tell them apart.
+        if (nullable_argument)
+            replacement.node = &addNullsOfArgument(*replacement.node, *nullable_argument, has_exact_search, context);
 
         /// If the type of original function does not match the type of replacement,
         /// add a cast to the replacement to match the expected type (e.g. hasAnyTokens('hello world', toNullable('world'))).
@@ -857,7 +933,8 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
 
     const auto & indexes = read_from_merge_tree_step.getIndexes();
     bool is_final = read_from_merge_tree_step.isQueryWithFinal();
-    read_from_merge_tree_step.createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns, is_final);
+    read_from_merge_tree_step.createReadTasksForTextIndex(
+        indexes->skip_indexes, result.added_columns, result.added_physical_columns, result.removed_columns, is_final);
     return result.filter_node;
 }
 
