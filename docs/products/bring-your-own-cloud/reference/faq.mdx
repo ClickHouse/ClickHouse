@@ -49,6 +49,10 @@ Contact support to schedule maintenance windows. Please expect a minimum of a we
 Traffic between your Customer BYOC VPC and S3 uses HTTPS (port 443) via the AWS S3 API for table data, backups, and logs. When using S3 VPC endpoints, this traffic remains within the AWS network and doesn't traverse the public internet.
 </Accordion>
 
+<Accordion title="Why is my external ID emptyid?">
+BYOC infrastructures onboarded before external IDs were introduced use the placeholder value `emptyid` for backward compatibility. When you add new infrastructure on an AWS account with an existing legacy deployment, the console reuses this placeholder so that all infrastructures on the account keep a consistent trust configuration. If you would like to switch to a unique external ID, contact ClickHouse Support.
+</Accordion>
+
 <Accordion title="What ports are used for internal ClickHouse cluster communication?">
 Internal ClickHouse cluster communication within the Customer BYOC VPC uses:
 - Native ClickHouse protocol on port 9000
