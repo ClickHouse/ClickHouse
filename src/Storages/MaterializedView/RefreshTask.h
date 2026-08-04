@@ -97,9 +97,9 @@ public:
         /// Used for exponential backoff on errors.
         Int64 attempt_number = 0;
 
-        /// Random number in [-1e9, 1e9], for RANDOMIZE FOR. Re-rolled after every refresh attempt.
-        /// (Why write it to keeper instead of letting each replica toss its own coin? Because then refresh would happen earlier
-        /// on average, on the replica that generated the shortest delay. We could use nonuniform distribution to compensate, but this is easier.)
+        /// Random number in [-1e9, 1e9], re-rolled after every successful refresh. No longer the offset
+        /// applied to the refresh time, since each replica draws its own; it is the shared marker that
+        /// tells every replica when to redraw (see determineNextRefreshTime).
         Int64 randomness = 0;
 
         /// Whether any replica is executing a refresh right now.
@@ -307,6 +307,19 @@ private:
         bool out_of_schedule = false;
     };
 
+    /// What a RANDOMIZE FOR offset was drawn for. Redrawn whenever either changes.
+    struct RandomizedDrawKey
+    {
+        std::chrono::sys_seconds last_completed_timeslot;
+        Int64 success_generation;
+
+        bool operator==(const RandomizedDrawKey & rhs) const
+        {
+            return last_completed_timeslot == rhs.last_completed_timeslot
+                && success_generation == rhs.success_generation;
+        }
+    };
+
     struct SchedulingState
     {
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW or SYSTEM PAUSE VIEW.
@@ -316,6 +329,11 @@ private:
         std::optional<String> unexpected_error;
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
+
+        /// This replica's RANDOMIZE FOR offset, and what it was drawn for. See determineNextRefreshTime.
+        /// Not persisted, so a restart draws again and moves a pending refresh time.
+        std::optional<RandomizedDrawKey> randomized_draw_key;
+        Int64 randomness = 0;
 
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.

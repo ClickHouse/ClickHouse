@@ -124,6 +124,12 @@ namespace FailPoints
 namespace
 {
 
+/// Draw a random number for RANDOMIZE FOR. The range matches what addRandomSpread expects.
+Int64 drawRandomness()
+{
+    return std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
+}
+
 /// Whether the Keeper this view is coordinated through is missing a feature flag that coordination
 /// requires (MULTI_READ, CREATE_IF_NOT_EXISTS). readZnodesIfNeeded uses multi-read on the
 /// scheduling thread, where a throw aborts the whole server, so this must be detected up front and
@@ -476,6 +482,9 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
+        /// The retained RANDOMIZE FOR draw belongs to the old schedule, and the new one can compute the
+        /// same base deadline, so the key alone would not notice.
+        scheduling.randomized_draw_key.reset();
         std::vector<StorageID> deps = parseRefreshDependencies(
             new_strategy, view ? view->getStorageID().database_name : String{});
 
@@ -1636,7 +1645,17 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
     if (when == std::chrono::system_clock::time_point::max())
         waiting_for_dependencies = true;
     else
-        when = refresh_schedule.addRandomSpread(when, znode.randomness);
+    {
+        /// Keyed on znode state, never on `when`: a retry or a zero-period dependency refresh derives
+        /// `when` from the wall clock, which would redraw on every pass.
+        RandomizedDrawKey key {znode.last_completed_timeslot, znode.randomness};
+        if (!scheduling.randomized_draw_key.has_value() || *scheduling.randomized_draw_key != key)
+        {
+            scheduling.randomized_draw_key = key;
+            scheduling.randomness = drawRandomness();
+        }
+        when = refresh_schedule.addRandomSpread(when, scheduling.randomness);
+    }
 
     znode.previous_attempt_error = "";
     if (!znode.last_attempt_succeeded && znode.last_attempt_time.time_since_epoch().count() != 0)
@@ -2041,7 +2060,7 @@ void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
 
 void RefreshTask::CoordinationZnode::randomize()
 {
-    randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
+    randomness = drawRandomness();
 }
 
 String RefreshTask::CoordinationZnode::toString() const
