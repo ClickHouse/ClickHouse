@@ -96,7 +96,7 @@ UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size
 {
     /// `LZ4F_getBlockSize` maps these, but is declared only in the static-linking section of
     /// `lz4frame.h`, which does not compile here. The parsed header rejects any other value.
-    size_t max_block_size = 0;
+    UInt64 max_block_size = 0;
     switch (info.blockSizeID)
     {
         case LZ4F_default: [[fallthrough]];
