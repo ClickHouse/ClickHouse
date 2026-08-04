@@ -16,5 +16,5 @@ bool isSortFunction(std::string_view function_name);
 /// sort()/sort_desc() order by sample value (ascending/descending); sort_by_label()/sort_by_label_desc()
 /// order by the natural sort order of the given label values (ascending/descending).
 SQLQueryPiece applySortFunction(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 }

@@ -27,7 +27,7 @@ bool isSortFunction(std::string_view function_name)
 }
 
 SQLQueryPiece applySortFunction(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & function_name = function_node->function_name;
 
