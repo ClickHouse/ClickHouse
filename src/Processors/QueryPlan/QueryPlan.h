@@ -119,16 +119,16 @@ public:
     /// to the wire one after another.
     using SerializedChunks = std::vector<String>;
 
-    /// Serializes the query plan and caches the result, keyed by the effective version
-    /// (min of `max_supported_version` and the current one). The cache is per version: bytes
-    /// produced for one negotiated version must not be sent to a peer that advertised an older
-    /// one, and different replicas may advertise different versions within one query.
+    /// Serializes the query plan and keeps the bytes, one entry per version written. A peer that
+    /// cannot read the newest version is served an older one, and different replicas of one query
+    /// may need different versions, so bytes written for one version must never go to a peer that
+    /// asked for another.
     void ensureSerialized(size_t max_supported_version, UInt64 requested_version = 0) const;
 
-    /// Writes the cached bytes for the effective version derived from `max_supported_version`.
+    /// Writes the bytes kept for the version this peer will be sent.
     void writeSerializedTo(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version = 0) const;
 
-    /// Check if already serialized for the effective version derived from max_supported_version
+    /// Whether the bytes for the version this peer will be sent are already there.
     bool isSerialized(size_t max_supported_version, UInt64 requested_version = 0) const;
 
     void resolveStorages(const ContextPtr & context);
@@ -258,8 +258,8 @@ private:
     size_t max_threads = 0;
     bool concurrency_control = false;
 
-    /// Cached serialized representation, one entry per effective serialization version
-    /// (in practice 1-2 entries: the current version and possibly one older peer's version).
+    /// The serialized plan, one entry per version written. In practice one or two: the version
+    /// this server writes, and possibly an older one for a peer that cannot read it.
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     ///
     /// One plan is shared by all the replicas of a query, and each replica sends it from its own

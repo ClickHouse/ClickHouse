@@ -12,9 +12,9 @@ class QueryPlanStepRegistry
 public:
     using StepCreateFunction = std::function<QueryPlanStepPtr(IQueryPlanStep::Deserialization &)>;
 
-    /// How one payload format version differs from the one before it. A reader that knows an
-    /// older format prefix-reads an `Append` and lets the frame skip the rest, which would give it
-    /// garbage for a `Restructure`.
+    /// How one payload format version differs from the one before it. With an `Append` a reader
+    /// that knows an older format reads the fields it knows from the front and lets the frame skip
+    /// the rest; doing the same with a `Restructure` would hand it garbage.
     enum class PayloadChange
     {
         Append,
@@ -25,8 +25,8 @@ public:
     /// its payload adds the next version here, so a change can never reach the wire unclassified.
     struct PayloadFormat
     {
-        /// Defaulted to the strict one: a format whose entry says nothing must not let older
-        /// readers prefix-read it.
+        /// Defaulted to the strict one: a format whose entry says nothing must not be read by
+        /// older readers.
         PayloadChange change = PayloadChange::Restructure;
         /// The oldest plan version that may carry this format. 0 means any: a reader that skips
         /// what it does not know needs nothing from this format.
@@ -39,17 +39,17 @@ public:
         /// changed.
         std::map<UInt64, PayloadFormat> payload_formats;
 
-        /// The plan version this step name first appeared in. A step name unknown to a reader is
-        /// inherently must-understand, so plans containing the step need at least this version.
-        /// 0 means "as old as serialization itself" (folded to the base version).
+        /// The plan version this step name first appeared in. A reader that does not know the name
+        /// cannot run the plan at all, so plans using the step need at least this version.
+        /// 0 means the step is as old as plan serialization itself.
         UInt64 introduced_in_plan_version = 0;
 
         /// The newest payload format this server writes and knows in full.
         UInt64 maxFormatVersion() const { return payload_formats.empty() ? 1 : payload_formats.rbegin()->first; }
 
-        /// The oldest payload format whose reader can prefix-read `format_version`: everything
-        /// after the last restructure is an append onto it, so a reader that knows that much reads
-        /// the part it understands and the frame skips the rest.
+        /// The oldest payload format that can still read the front of a `format_version` payload:
+        /// everything after the last restructure only added fields, so a reader that knows that
+        /// much reads what it understands and the frame skips the rest.
         UInt64 prefixReadableFrom(UInt64 format_version) const
         {
             UInt64 base = 1;

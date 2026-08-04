@@ -143,8 +143,8 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
 
         node.payload_size = readCappedVarUInt(in, max_frame_bytes, "step payload bytes");
 
-        /// Future outline layouts append data here; a v5 reader skips it, which is what keeps
-        /// shape rendering working for plans of newer versions.
+        /// Later outline layouts add data here; a reader that does not know it skips it, which is
+        /// what keeps printing the shape of a plan from a newer server working.
         node.extension_bytes = readCappedSizedBytes(in, MAX_OUTLINE_FIELD_BYTES, "node extra bytes");
 
         outline.nodes.push_back(std::move(node));
@@ -177,10 +177,10 @@ void writeQueryPlanOutline(const PlanOutline & outline, WriteBuffer & out)
 
 PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UInt64 max_frame_bytes)
 {
-    /// Capped by the envelope as well as by the absolute limit: the outline lives inside the
-    /// envelope, so a frame larger than that must be rejected before anything is allocated or read,
-    /// or a small declared envelope could still make the reader take bytes belonging to the
-    /// protocol after it.
+    /// Limited by the plan body as well as by the absolute limit: the outline sits inside the body,
+    /// so an outline larger than the body has to be rejected before anything is read or allocated.
+    /// Otherwise a plan declaring a small body could still make the reader take bytes that belong
+    /// to the protocol after it.
     UInt64 outline_size = readCappedVarUInt(in, std::min(MAX_OUTLINE_BYTES, max_frame_bytes), "outline bytes");
 
     /// Copy the frame and parse from memory: parsing can then never read past the declared size,
@@ -307,9 +307,9 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
                         "this server knows up to {}",
                         node.step_name, i, node.step_format_version, node.payload_prefix_readable_from, known_formats));
             }
-            /// For a format this server knows, the writer's claim is checkable against the step's
-            /// own history: a writer understating it would have old readers accept bytes they must
-            /// not read positionally.
+            /// For a format this server knows, the claim can be checked against the step's own
+            /// history. A writer that understated it would have old readers accept bytes they
+            /// cannot read as if the old fields still came first.
             else if (node.payload_prefix_readable_from != info->prefixReadableFrom(node.step_format_version))
                 result.issues.push_back(fmt::format(
                     "step '{}' (node #{}) says payload format {} is readable from format {} but this "
@@ -317,9 +317,9 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
                     node.step_name, i, node.step_format_version, node.payload_prefix_readable_from,
                     info->prefixReadableFrom(node.step_format_version)));
 
-            /// Writer-honesty cross-check: a node's declared "needed to read" version must cover the
-            /// requirements this binary knows about. A writer that undercounted would otherwise make
-            /// old readers silently misexecute.
+            /// The version a node claims to need must cover what this server knows the step needs.
+            /// A writer that asked for too little would otherwise have old readers run the plan
+            /// wrongly without noticing.
             const UInt64 static_requirement = info->minPlanVersionForFormat(node.step_format_version);
             if (static_requirement > node.min_reader_plan_version)
                 result.issues.push_back(fmt::format(
@@ -366,9 +366,9 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
 
 UInt64 minReaderVersionForType(const IDataType &)
 {
-    /// Every type encoding in existence predates the outline format. A new `BinaryTypeIndex`
-    /// entry must return its introduced-at version here, otherwise old readers would fail while
-    /// decoding a header or set payload instead of rejecting the plan up front.
+    /// Every type encoding that exists today is older than the outline. A new `BinaryTypeIndex`
+    /// entry has to return the version it was added in here, or old readers would fail part way
+    /// through a header or a set instead of turning the plan down up front.
     return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
 }
 

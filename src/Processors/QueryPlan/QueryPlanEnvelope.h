@@ -13,21 +13,20 @@ namespace DB
 class WriteBuffer;
 class ReadBuffer;
 
-/// The outline section (Section A) of the v5 query-plan envelope: the stable, common per-node
-/// data of every plan — tree shape, step names and format versions, descriptions, output headers,
-/// changed settings, payload sizes — stored in front of the step payloads.
+/// The outline: the front part of a serialized query plan, carrying the data every step has in
+/// common - tree shape, step names and payload format versions, descriptions, output headers,
+/// changed settings, payload sizes. The step payloads follow it, one sized byte range each.
 ///
-/// Properties this layout provides:
-///  - a reader can validate that the whole plan is decodable (every step name and format version
-///    known, every non-ignorable setting known, every set kind known) without touching a single
-///    payload byte — see validateQueryPlanOutline;
-///  - the plan shape can be rendered even when some steps are unknown or carry a newer format
-///    version — see formatQueryPlanOutline;
-///  - payloads become independently framed byte ranges, read one at a time in outline order.
+/// Keeping all of that in front lets a reader:
+///  - check it can decode the whole plan (every step name and payload format known, every setting
+///    it has to act on known, every set kind known) before reading one payload byte, see
+///    `validateQueryPlanOutline`;
+///  - print the plan's shape even when some steps are unknown or newer, see
+///    `formatQueryPlanOutline`;
+///  - read one payload at a time instead of holding the whole plan.
 ///
-/// The outline wire layout is frozen append-only: future additions go into each node's
-/// extension_bytes bytes, which older readers skip, so shape rendering keeps working across plan
-/// versions.
+/// The layout only ever grows at the end: new per-node data goes into `extension_bytes`, which
+/// older readers skip, so both of those keep working for plans written by newer servers.
 struct PlanOutline
 {
     /// name + flags (bit 0: ignorable) + length-prefixed setting-field value bytes.
@@ -38,22 +37,24 @@ struct PlanOutline
         UInt64 child_count = 0;
         String step_name;                       /// QueryPlanStepRegistry key
         UInt64 step_format_version = 1;
-        /// The oldest payload format able to prefix-read this node's payload. A reader that knows
-        /// less than this rejects the plan rather than reading a restructured payload positionally.
+        /// The oldest payload format that can still be read from the front of this payload. A
+        /// reader that knows only older formats refuses the plan instead of reading fields that
+        /// have moved.
         UInt64 payload_prefix_readable_from = 1;
-        /// The oldest plan version able to read this node's content ("needed to read"), computed
-        /// by the writer from the step's registry info, its value-dependent requirements, header
-        /// types and settings. Lets a rejection name the blocking step.
+        /// The oldest plan version that can read this node, worked out by the writer from what the
+        /// node actually carries: the step's registered requirements, whatever the step asked for
+        /// while writing, its header types and its settings. Lets a rejection name the step that
+        /// blocked the plan.
         UInt64 min_reader_plan_version = 0;
         String step_description;
         SharedHeader header;                    /// nullptr for a step with no output header
         std::vector<SettingEntry> settings;
-        UInt64 payload_size = 0;                /// size of this node's slice of the payload section
-        String extension_bytes;                      /// empty in v5; skipped by readers that do not know it
+        UInt64 payload_size = 0;                /// bytes this node takes in the payload part
+        String extension_bytes;                 /// empty today; a reader skips what it does not know
     };
 
-    /// Nodes in left-to-right post-order over the serialized tree (Delayed* steps elided, as in
-    /// the plan walk), so every child precedes its parent and the root is the last node.
+    /// Every child comes before its parent and the root is last, with siblings left to right.
+    /// `Delayed*` steps are skipped here, the same way the plan walk skips them.
     std::vector<Node> nodes;
 
     struct SetEntry
@@ -67,15 +68,15 @@ struct PlanOutline
     std::vector<SetEntry> sets;
 };
 
-/// Writes Section A: VarUInt outline_size, then the outline bytes.
+/// Writes the outline: its size as a varint, then its bytes.
 void writeQueryPlanOutline(const PlanOutline & outline, WriteBuffer & out);
 
-/// Reads Section A written by writeQueryPlanOutline. Bounded: never reads past outline_size,
-/// rejects trailing bytes inside the frame and any size that exceeds the declared bounds.
-/// `max_frame_bytes` caps the outline frame itself and every payload size it declares; pass the
-/// size of the envelope holding them, since nothing inside it can be larger than that.
-/// Frame-layer violations throw CANNOT_PARSE_QUERY_PLAN; errors from nested codecs (e.g. header
-/// type decoding) keep their own codes and surface at the frame boundary.
+/// Reads an outline written by `writeQueryPlanOutline`. Never reads past the size the outline
+/// declares, and rejects both leftover bytes inside it and any size beyond the limits.
+/// `max_frame_bytes` limits the outline itself and every payload size it declares; pass the size
+/// of the plan body holding them, since nothing inside it can be larger.
+/// A broken layout throws `CANNOT_PARSE_QUERY_PLAN`; errors from what it decodes (a header type,
+/// say) keep their own codes.
 PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UInt64 max_frame_bytes);
 
 /// The tree rebuilt from the outline's child counts.
@@ -106,13 +107,12 @@ struct QueryPlanOutlineValidationResult
     String describe() const;
 };
 
-/// Capability check against this binary's registry and settings: verifies the reader has the
-/// handlers and metadata needed to decode the plan (step names, step format versions vs the
-/// registry info, non-ignorable settings, set kinds, structural consistency), and cross-checks
-/// the writer's declared per-node "needed to read" versions against this binary's registry info
-/// (a writer that undercounted is reported instead of silently misexecuting on old readers).
-/// It does not check that payload bytes are well-formed, nor that referenced tables exist.
-/// Collects all issues over a syntactically parseable outline.
+/// Checks that this server can decode the plan the outline describes: it knows every step name
+/// and payload format, every setting it would have to act on, every set kind, and the tree shape
+/// holds together. It also checks the writer's own claims about which reader version each node
+/// needs, so a writer that understated one is reported instead of quietly running wrong on old
+/// readers. It does not look at payload bytes and does not check that tables exist.
+/// Reports every problem it finds, not just the first.
 QueryPlanOutlineValidationResult validateQueryPlanOutline(
     const PlanOutline & outline, UInt64 head_min_reader_plan_version);
 
@@ -125,11 +125,11 @@ UInt64 minReaderVersionForType(const IDataType & type);
 /// their payload size; no payload is decoded and no catalog/storage work is done.
 String formatQueryPlanOutline(const PlanOutline & outline);
 
-/// Envelope sets channel (Section C): fills outline.sets (sorted by hash) and one payload per
-/// entry. A subquery set's payload is a complete serialized plan (with its own leading version).
-/// Also raises min_reader_plan_version with the sets' own requirements: tuple-set column types
-/// and, for subquery sets, the nested plan's declared "needed to read" version (recursively, so
-/// an old reader can never accept the outer stream and fail mid-set decode).
+/// Writes the sets the plan refers to: fills `outline.sets`, sorted by hash, and one payload per
+/// entry. A subquery set's payload is a whole serialized plan, version and all.
+/// Raises `min_reader_plan_version` with what the sets themselves need: the column types of a
+/// tuple set, and for a subquery set the version its own plan needs. That recursion is what stops
+/// an old reader from accepting the outer plan and only then failing on a set it cannot read.
 void serializeEnvelopeSets(
     SerializedSetsRegistry & registry,
     const QueryPlan::SerializationFlags & flags,
@@ -137,7 +137,7 @@ void serializeEnvelopeSets(
     std::vector<String> & payloads,
     UInt64 & min_reader_plan_version);
 
-/// Reads Section C per the outline's set entries; every payload must consume its frame exactly.
+/// Reads the set payloads the outline lists. Each one must consume exactly its own bytes.
 QueryPlanAndSets deserializeEnvelopeSets(
     QueryPlan plan,
     DeserializedSetsRegistry & registry,

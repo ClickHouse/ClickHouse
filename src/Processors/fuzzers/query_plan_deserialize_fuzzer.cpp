@@ -7,7 +7,7 @@
 
 using namespace DB;
 
-/// Feeds arbitrary bytes to `QueryPlan::deserialize` — the entry point that consumes the
+/// Feeds arbitrary bytes to `QueryPlan::deserialize`, the entry point that consumes the
 /// inter-server `QueryPlan` packet. The v4 outline-first format localizes malformed input at
 /// frame boundaries; any exception is fine, crashes and sanitizer reports are findings.
 

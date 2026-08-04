@@ -223,9 +223,9 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
     std::vector<String> payloads;
     UInt64 min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
 
-    /// Left-to-right post-order: children are emitted before their parent, so a reader builds each
-    /// step as its payload arrives and never has to hold the whole envelope. Delayed* steps are
-    /// elided as in the legacy walk.
+    /// Children are written before their parent, siblings left to right, so a reader builds each
+    /// step as its payload arrives instead of holding the whole plan. `Delayed*` steps are skipped
+    /// here, the same way the older walk skips them.
     struct Frame
     {
         Node * node = {};
@@ -274,10 +274,10 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         node->step->serialize(ctx);
         payload.finalize();
 
-        /// The step may have emitted an older payload form and lowered the context value; the
-        /// outline must advertise the format of the bytes actually written. Lowering is the only
-        /// intended move: a format above the registered maximum was never classified, so nothing
-        /// would have told older readers whether they may prefix-read it.
+        /// The step may have written an older form of its payload and lowered the value; the
+        /// outline has to name the format the bytes are really in. Lowering is the only move that
+        /// makes sense: a format above the newest registered one was never described, so nothing
+        /// would tell older readers what they may do with it.
         const UInt64 registered_max = info ? info->maxFormatVersion() : 1;
         if (ctx.step_format_version == 0 || ctx.step_format_version > registered_max)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -285,8 +285,8 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
                 outline_node.step_name, ctx.step_format_version, registered_max);
 
         outline_node.step_format_version = ctx.step_format_version;
-        /// Stated rather than left to the reader to assume: a reader that knows less than this
-        /// cannot prefix-read these bytes, whatever their format version suggests.
+        /// Said outright instead of left to the reader to guess: a reader that knows only formats
+        /// older than this cannot read these bytes at all, whatever their format version suggests.
         outline_node.payload_prefix_readable_from = info ? info->prefixReadableFrom(ctx.step_format_version) : 1;
         outline_node.payload_size = payload.str().size();
 
@@ -412,28 +412,28 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
     const size_t node_count = outline.nodes.size();
     const auto & children_indices = validation.shape.children;
 
-    /// Every declared frame is checked against the envelope before a single step is built, so a
-    /// plan whose sizes do not add up is rejected without constructing anything. Subtracting from
-    /// the budget keeps a hostile size from overflowing.
+    /// Every size the outline declares is checked against the body before a single step is built,
+    /// so a plan whose sizes do not add up is rejected without constructing anything. Counting down
+    /// from what is left keeps a huge size from overflowing.
     {
         UInt64 budget = body_size - consumed;
         for (const auto & outline_node : outline.nodes)
         {
             if (outline_node.payload_size > budget)
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                    "Query plan payload of step '{}' extends past the envelope", outline_node.step_name);
+                    "Query plan payload of step '{}' extends past the plan body", outline_node.step_name);
             budget -= outline_node.payload_size;
         }
         for (const auto & set : outline.sets)
         {
             if (set.payload_size > budget)
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                    "Serialized set {}_{} extends past the envelope", set.hash.low64, set.hash.high64);
+                    "Serialized set {}_{} extends past the plan body", set.hash.low64, set.hash.high64);
             budget -= set.payload_size;
         }
         if (budget != 0)
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                "Query plan envelope has {} bytes that no frame accounts for", budget);
+                "Query plan body has {} bytes that nothing in it accounts for", budget);
     }
 
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
@@ -442,10 +442,10 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
     QueryPlan plan;
     std::vector<Node *> nodes_by_index(node_count);
 
-    /// Nodes arrive children-first, so a forward walk always has the children of the node it is
-    /// building. Parents receive the constructed children's output headers (the same contract as
-    /// the legacy stream: serialized headers do not carry constants, steps refill them, and e.g.
-    /// `UnionStep` depends on child header constness).
+    /// Children arrive before their parent, so a forward walk always has the children of the node
+    /// it is building. A parent gets the output headers of the children as they were built, which
+    /// is what the older stream did too: headers on the wire drop constants, steps refill them, and
+    /// `UnionStep` for one looks at whether a child's header columns are constant.
     String payload_bytes;
     for (size_t idx = 0; idx < node_count; ++idx)
     {
@@ -478,7 +478,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
         {
             e.addMessage(fmt::format("while reading the payload of step '{}' (node #{}, {} bytes)",
                 outline_node.step_name, idx, outline_node.payload_size));
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan body is truncated: {}", e.message());
         }
 
         ReadBufferFromMemory payload(payload_bytes.data(), payload_bytes.size());

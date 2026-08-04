@@ -56,14 +56,14 @@ struct QueryPlanSerializationSettings
     /// Read settings updating only those present in the stream; missing ones keep defaults.
     void readBinary(ReadBuffer & in);
 
-    /// Whether a setting with this name (or alias) exists. Used by outline validation to tell
-    /// unknown settings from known ones without attempting to decode the value.
+    /// Whether a setting with this name, or an alias of it, exists. Validation uses it to spot an
+    /// unknown setting without trying to decode its value.
     static bool hasSetting(std::string_view name);
 
-    /// A changed setting as carried in the plan outline: the value bytes are length-prefixed on
-    /// the wire, so a reader can skip a setting it does not know when the writer marked it
-    /// ignorable, and must reject it otherwise (defaulting an unknown execution-affecting setting
-    /// would silently change behavior).
+    /// A changed setting as it travels in the plan outline. The value has its length in front of
+    /// it, so a reader can skip a setting it does not know when the writer marked it ignorable.
+    /// Otherwise it has to refuse the plan: leaving an unknown setting at its default would change
+    /// how the query runs without saying so.
     struct SerializedEntry
     {
         String name;
@@ -76,13 +76,13 @@ struct QueryPlanSerializationSettings
     /// Changed settings as outline entries.
     std::vector<SerializedEntry> getChangedEntries() const;
 
-    /// The oldest plan version whose readers understand this entry ("needed to read"). All
-    /// current settings and value encodings predate the outline format, so this returns the
-    /// base version; a setting or value variant introduced later must raise it here so plans
-    /// carrying it demand new enough readers (unless the entry is wire-flagged ignorable).
+    /// The oldest plan version that can read this entry. Every setting and value written today is
+    /// older than the outline, so this returns the base version. A setting or a new value of one
+    /// added later has to raise it here, so plans carrying it are only sent to readers new enough,
+    /// unless the entry is marked ignorable.
     static UInt64 minReaderVersionForEntry(const SerializedEntry & entry);
-    /// Apply entries: unknown entries are skipped when marked ignorable, rejected otherwise;
-    /// a value that does not consume exactly its frame is rejected.
+    /// Applies the entries. An unknown one is skipped if it is marked ignorable and refused if it
+    /// is not, and a value that does not use up exactly its own bytes is refused.
     void applyEntries(const std::vector<SerializedEntry> & entries);
 
     /// Generated operator[] overloads for each supported type category.

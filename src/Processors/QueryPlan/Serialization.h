@@ -26,16 +26,16 @@ struct IQueryPlanStep::Serialization
     /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
 
-    /// v5 outline streams: the payload format version this step is writing. Preset by the
-    /// framework to the step's registered maximum; a step that emits an older payload form
-    /// (e.g. toward an older stream version) must lower it, otherwise the outline would
-    /// advertise a format the bytes do not have and newer readers would misparse them.
+    /// The payload format version this step is writing, in a framed stream. Preset to the newest
+    /// format the step registered; a step that writes an older form of its payload, for an older
+    /// stream version, must lower it. Otherwise the outline would name a format the bytes are not
+    /// in and newer readers would misread them.
     UInt64 step_format_version = 1;
 
-    /// The oldest plan version able to read what was actually written so far ("needed to read").
-    /// A step raises it on the exact line that writes value-dependent content an old reader must
-    /// understand to execute correctly (e.g. a semantic flag) - without this the content would be
-    /// skipped as ignorable and an old reader would silently produce different results.
+    /// The oldest plan version that can read what has been written so far. A step raises it on the
+    /// very line that writes something an old reader would have to act on to run the plan
+    /// correctly, a flag that changes results for example. Without that the old reader would skip
+    /// the bytes as something it may ignore and quietly return different results.
     UInt64 min_reader_version = 0;
 
     void requireReaderVersion(UInt64 version_) { min_reader_version = std::max(min_reader_version, version_); }
@@ -68,14 +68,14 @@ struct IQueryPlanStep::Deserialization
     /// callbacks) may read their bytes but build a lightweight placeholder instead of a real step.
     bool skipping = false;
 
-    /// v5 outline streams: the payload format version this step was written with (1 otherwise).
-    /// A reader may see a version above the one it knows; the tail fields are then ignorable by
-    /// the append-only rule and are skipped via the payload frame.
+    /// The payload format version this step was written with, in a framed stream, 1 otherwise.
+    /// This may be higher than any format the reader knows: the fields at the end are then ones it
+    /// may ignore, and the payload's own size tells it where they stop.
     UInt64 step_format_version = 1;
 };
 
-/// Header encoding shared by the plan stream and the v5 outline section: column names and
-/// encoded types only, constants are refilled by steps.
+/// How a header goes on the wire, the same in the plan stream and in the outline: column names and
+/// encoded types only. Steps refill the constants.
 void serializeQueryPlanHeader(const Block & header, WriteBuffer & out);
 Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity);
 

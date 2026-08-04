@@ -179,8 +179,8 @@ std::vector<QueryPlanSerializationSettings::SerializedEntry> QueryPlanSerializat
     {
         SerializedEntry entry;
         entry.name = field.getName();
-        /// All current settings are must-understand (flags = 0). A future setting that an old
-        /// reader may safely default should set FLAG_IGNORABLE when its entries are produced.
+        /// A reader has to act on every setting written today, so no flags are set. A future
+        /// setting an old reader could safely leave at its default should set `FLAG_IGNORABLE`.
 
         WriteBufferFromOwnString value;
         accessor.writeBinary(*impl, accessor.find(field.getName()), value);

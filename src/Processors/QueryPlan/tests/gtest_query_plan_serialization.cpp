@@ -131,8 +131,8 @@ void registerStepsOnce()
             QueryPlanStepRegistry::registerPlanSteps();
         QueryPlanStepRegistry::instance().registerStep("TestSource", TestSourceStep::deserialize);
 
-        /// A step whose payload format v2 is must-understand: it needs a reader newer than the
-        /// version that introduced the outline.
+        /// A step whose payload format 2 can only be read by a server newer than the one that
+        /// introduced the outline.
         QueryPlanStepRegistry::StepSerializationInfo info;
         info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Restructure,
                                    /*min_plan_version=*/newer_than_outline_version};
@@ -401,7 +401,8 @@ TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
     auto & registry = QueryPlanStepRegistry::instance();
 
     /// A format version that skips the one before it is refused: the skipped change was never
-    /// classified, and that is what lets an older reader prefix-read a restructured payload.
+    /// described, and that is what lets an older reader read a restructured payload as if the old
+    /// fields still came first.
     {
         QueryPlanStepRegistry::StepSerializationInfo info;
         info.payload_formats[3] = {QueryPlanStepRegistry::PayloadChange::Append};
@@ -411,7 +412,7 @@ TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
     }
 
     /// A restructure needs nothing beyond the classification: the outline tells readers, per node,
-    /// how far back the payload can be prefix-read.
+    /// how far back a reader can still make sense of the payload.
     {
         QueryPlanStepRegistry::StepSerializationInfo info;
         info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Restructure};
@@ -419,7 +420,7 @@ TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
             registry.registerStep("TestClassifiedRestructure", TestSourceStep::deserialize, std::move(info)));
     }
 
-    /// An append needs nothing beyond the classification: older readers prefix-read it.
+    /// An append needs nothing more than saying so: older readers read the front and skip the rest.
     {
         QueryPlanStepRegistry::StepSerializationInfo info;
         info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Append};
@@ -729,8 +730,8 @@ TEST(QueryPlanOutline, ValidationChecksStepVersionAgainstRegistryInfo)
     outline.nodes[1].min_reader_plan_version = newer_than_outline_version;
     EXPECT_TRUE(validateQueryPlanOutline(outline, newer_than_outline_version).ok());
 
-    /// A version above the known maximum is an ignorable extension: the payload is prefix-readable
-    /// from a format this server knows, and nothing the registry says forbids it.
+    /// A version above the newest one known is an addition this reader may ignore: the payload can
+    /// still be read from a format this server knows, and nothing the registry says forbids it.
     outline.nodes[1].step_format_version = 3;
     EXPECT_TRUE(validateQueryPlanOutline(outline, newer_than_outline_version).ok());
 }

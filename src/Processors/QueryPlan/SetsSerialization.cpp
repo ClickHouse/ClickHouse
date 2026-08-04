@@ -179,8 +179,8 @@ static UInt64 planVersionIntroducingFormatKind(UInt64 format_kind)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested query plan has unknown body layout {}", format_kind);
 }
 
-/// The "needed to read" floor of a complete nested plan body: a v5+ body declares it in its head;
-/// a legacy body is readable exactly by readers of its leading version.
+/// The oldest reader version a whole nested plan needs. A framed body says so in its head; an
+/// older body can be read by exactly the readers of the version it starts with.
 static UInt64 nestedPlanBodyMinReader(const String & body)
 {
     ReadBufferFromMemory in(body.data(), body.size());
@@ -198,8 +198,8 @@ static UInt64 nestedPlanBodyMinReader(const String & body)
     UInt64 min_reader = 0;
     readVarUInt(min_reader, in);
 
-    /// A reader decides at the outer head, without looking inside the set payloads, so the floor
-    /// of the nested body layout has to be folded in here.
+    /// A reader decides at the outer head, without looking inside the set payloads, so whatever
+    /// the nested body's layout needs has to be counted here.
     return std::max(min_reader, planVersionIntroducingFormatKind(format_kind));
 }
 
@@ -267,10 +267,10 @@ void serializeEnvelopeSets(
             if (!plan)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
 
-            /// A complete plan with its own leading version, so the nested envelope is length-prefixed and
-            /// self-describing (unlike the legacy stream, which embeds the nested body inline). It is
-            /// written at the version the outer plan resolved to, not resolved again: a query that asks
-            /// for a version must get it for the whole plan, nested set plans included.
+            /// A whole plan with its own leading version, so it says how long it is and what it is,
+            /// which the older stream did not: there the nested plan just ran on inline. It is
+            /// written at the version the outer plan settled on rather than choosing again, because
+            /// a query that asks for a version has to get it for the nested plans too.
             plan->serialize(body, flags.version, flags.version);
         }
         else
@@ -312,10 +312,10 @@ QueryPlanAndSets deserializeEnvelopeSets(
         if (columns.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", entry.hash.low64, entry.hash.high64);
 
-        /// One frame at a time, into a reused buffer: only the largest set is ever held. Decoding
-        /// through a reader bounded to the frame keeps a nested plan from reading past its own
-        /// bytes into the next set or the outer protocol. The caller has already checked every
-        /// declared size against the envelope.
+        /// One set at a time, into a buffer that is reused, so only the largest set is ever held.
+        /// Reading through a buffer that stops at the set's own bytes keeps a nested plan from
+        /// running into the next set or into the protocol after the plan. The caller has already
+        /// checked every declared size against the body.
         frame_bytes.resize(entry.payload_size);
         try
         {
@@ -325,7 +325,7 @@ QueryPlanAndSets deserializeEnvelopeSets(
         {
             e.addMessage(fmt::format("while reading the payload of set {}_{} ({} bytes)",
                 entry.hash.low64, entry.hash.high64, entry.payload_size));
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan body is truncated: {}", e.message());
         }
 
         ReadBufferFromMemory body(frame_bytes.data(), frame_bytes.size());

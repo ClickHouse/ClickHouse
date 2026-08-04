@@ -7,7 +7,7 @@ namespace DB
 class FutureSet;
 using FutureSetPtr = std::shared_ptr<FutureSet>;
 
-/// Wire tag of a serialized set in the plan's sets channel.
+/// What kind of set this is, as written in the part of a serialized plan that carries its sets.
 enum class SetSerializationKind : UInt8
 {
     StorageSet = 1,

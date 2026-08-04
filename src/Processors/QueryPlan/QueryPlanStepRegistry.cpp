@@ -28,8 +28,8 @@ void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFun
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
 
     /// Payload formats run 2, 3, ... without gaps: a version that appears without the one before it
-    /// would mean a payload change nobody classified, and older readers decide whether they may
-    /// prefix-read a payload from exactly these entries.
+    /// would mean a payload change nobody described, and these entries are what tells an older
+    /// reader whether it may read a payload it only half knows.
     UInt64 expected_version = 2;
     for (const auto & [format_version, format] : info.payload_formats)
     {
