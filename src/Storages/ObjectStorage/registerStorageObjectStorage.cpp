@@ -62,16 +62,19 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// definition says. Only settings written in the definition itself express an intent to give this
     /// table its own `field_id`s; the ambient ones would otherwise silently make every existing
     /// Iceberg table unwritable for a user whose profile enables them, so they are reset before the
-    /// `FormatSettings` are built — early enough that an ambient value is not even parsed.
-    const bool field_ids_set_in_definition = args.storage_def->settings
-        && std::ranges::any_of(
-               args.storage_def->settings->changes,
-               [](const auto & change)
-               {
-                   return change.name == "output_format_parquet_column_field_ids"
-                       || change.name == "output_format_parquet_auto_assign_field_ids";
-               });
-    const bool ignore_ambient_field_ids = configuration->isIcebergConfiguration() && !field_ids_set_in_definition;
+    /// `FormatSettings` are built — early enough that an ambient value is not even parsed. Each of the
+    /// two settings is tracked separately: naming one of them in the definition must not stop the
+    /// other one's ambient value from being ignored.
+    const auto is_set_in_definition = [&](std::string_view name)
+    {
+        return args.storage_def->settings
+            && std::ranges::any_of(
+                   args.storage_def->settings->changes, [&](const auto & change) { return change.name == name; });
+    };
+    const bool column_field_ids_in_definition = is_set_in_definition("output_format_parquet_column_field_ids");
+    const bool auto_assign_field_ids_in_definition = is_set_in_definition("output_format_parquet_auto_assign_field_ids");
+    const bool ignore_ambient_field_ids = configuration->isIcebergConfiguration()
+        && !(column_field_ids_in_definition && auto_assign_field_ids_in_definition);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -85,9 +88,11 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         if (args.storage_def->settings)
             settings.applyChanges(args.storage_def->settings->changes);
 
-        /// Ambient defaults are ignored for Iceberg engines: the table metadata wins.
+        /// Ambient defaults are ignored for Iceberg engines: the table metadata wins. A setting named
+        /// in the definition keeps its definition value; only the settings absent from the definition
+        /// are reset.
         if (ignore_ambient_field_ids)
-            resetParquetFieldIdSettings(settings);
+            resetParquetFieldIdSettings(settings, !column_field_ids_in_definition, !auto_assign_field_ids_in_definition);
 
         format_settings = getFormatSettings(context, settings);
     }
@@ -103,8 +108,9 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// `RESTORE` from backup (`SECONDARY_CREATE`), a short `ATTACH TABLE t`, the tables attached by
     /// `ATTACH DATABASE` (`attach_short_syntax`) — is exempt, so existing tables always load; the
     /// write-time guard in `ParquetBlockOutputFormat` still protects such legacy tables.
-    if (configuration->isIcebergConfiguration() && field_ids_set_in_definition
-        && (!format_settings->parquet.column_field_ids.empty() || format_settings->parquet.auto_assign_field_ids)
+    if (configuration->isIcebergConfiguration()
+        && ((column_field_ids_in_definition && !format_settings->parquet.column_field_ids.empty())
+            || (auto_assign_field_ids_in_definition && format_settings->parquet.auto_assign_field_ids))
         && (args.mode == LoadingStrictnessLevel::CREATE
             || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax)))
         throw Exception(

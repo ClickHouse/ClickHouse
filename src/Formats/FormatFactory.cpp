@@ -108,10 +108,12 @@ FormatSettings getFormatSettings(const ContextPtr & context)
     return getFormatSettings(context, settings);
 }
 
-void resetParquetFieldIdSettings(Settings & settings)
+void resetParquetFieldIdSettings(Settings & settings, bool reset_column_field_ids, bool reset_auto_assign_field_ids)
 {
-    settings[Setting::output_format_parquet_column_field_ids] = Map{};
-    settings[Setting::output_format_parquet_auto_assign_field_ids] = false;
+    if (reset_column_field_ids)
+        settings[Setting::output_format_parquet_column_field_ids] = Map{};
+    if (reset_auto_assign_field_ids)
+        settings[Setting::output_format_parquet_auto_assign_field_ids] = false;
 }
 
 FormatSettings getFormatSettingsIgnoringParquetFieldIds(const ContextPtr & context)

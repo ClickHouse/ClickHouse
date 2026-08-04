@@ -71,8 +71,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
   * `field_id`s, so ambient (server/profile/session) values of these settings are ignored for such
   * tables. They are reset before the `FormatSettings` are built, so that an ambient value never
   * reaches the `FormatSettings` of an Iceberg table at all.
+  *
+  * The two flags allow resetting each setting independently: a table definition may name one of the
+  * settings explicitly, in which case only the other one carries an ambient value to ignore.
   */
-void resetParquetFieldIdSettings(Settings & settings);
+void resetParquetFieldIdSettings(Settings & settings, bool reset_column_field_ids = true, bool reset_auto_assign_field_ids = true);
 
 /// Same as `getFormatSettings(context)`, but with the Parquet `field_id` settings reset first.
 FormatSettings getFormatSettingsIgnoringParquetFieldIds(const ContextPtr & context);

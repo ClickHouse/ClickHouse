@@ -171,6 +171,26 @@ def test_writes_reject_field_id_settings(
         == "1\n2\n"
     )
 
+    # The two settings are tracked independently: naming one of them in the
+    # table definition (here with its default value) must not stop the other
+    # one's ambient value from being ignored. The ambient override map would
+    # otherwise be treated as definition-supplied and reject this valid CREATE.
+    partial_table = make_table_name("partial")
+    create_iceberg_table(
+        storage_type,
+        instance,
+        partial_table,
+        started_cluster_iceberg_no_spark,
+        "(x Int32)",
+        format_version,
+        settings=ambient_settings,
+        additional_settings=["output_format_parquet_auto_assign_field_ids = 0"],
+    )
+    instance.query(
+        f"INSERT INTO {partial_table} VALUES (1);", settings=ambient_settings
+    )
+    assert instance.query(f"SELECT * FROM {partial_table} ORDER BY ALL") == "1\n"
+
     # Ignoring the ambient settings also covers values that are malformed: they
     # are reset before the `FormatSettings` are built, so they are never parsed.
     # Otherwise a user with a broken value in their profile would still be
