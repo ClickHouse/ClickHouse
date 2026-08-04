@@ -693,6 +693,44 @@ def test_write_schema_drift_rejected():
     node.query("DROP TABLE bq_drift")
 
 
+def test_write_rejected_when_required_field_omitted():
+    # A table defined with an explicit subset of the BigQuery columns is readable, but writing is
+    # rejected up front when an omitted remote field is REQUIRED: the sink would never send that
+    # field, and `tabledata.insertAll` rejects every such row (streaming inserts do not apply the
+    # remote `defaultValueExpression`), so without the check the INSERT could only fail remotely,
+    # batch by batch.
+    mock_reset()
+    node.query("DROP TABLE IF EXISTS bq_subset")
+    node.query(
+        "CREATE TABLE bq_subset (s Nullable(String)) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_drift', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    # The subset is readable.
+    assert node.query("SELECT s FROM bq_subset") == "s0\n"
+    # ...but not writable: `i` (and `rec`) are REQUIRED and omitted from the definition.
+    error = node.query_and_get_error("INSERT INTO bq_subset VALUES ('x')")
+    assert "is `REQUIRED` but is not present" in error
+    # The write was rejected before any request.
+    assert mock_stats()["insert_requests"] == []
+    node.query("DROP TABLE bq_subset")
+
+    # A subset that omits only NULLABLE and REPEATED fields stays writable.
+    mock_reset()
+    node.query("DROP TABLE IF EXISTS bq_subset_ok")
+    node.query(
+        "CREATE TABLE bq_subset_ok (id Int64, name Nullable(String)) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'writable', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    node.query("INSERT INTO bq_subset_ok VALUES (7, 'subset')")
+    assert (
+        node.query(f"SELECT id, name FROM {bq('writable')} WHERE id = 7")
+        == "7\tsubset\n"
+    )
+    node.query("DROP TABLE bq_subset_ok")
+
+
 def test_insert_roundtrip():
     mock_reset()
     node.query(f"""
