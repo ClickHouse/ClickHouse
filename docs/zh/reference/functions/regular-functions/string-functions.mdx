@@ -324,7 +324,7 @@ SELECT base58Decode('JxF12TrwUP45BMd');
 
 首次引入版本：v22.7.0
 
-使用 [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) 对字符串进行编码。
+使用 [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-01) 对字符串进行编码。
 
 **语法**
 
@@ -361,6 +361,7 @@ SELECT base58Encode('ClickHouse');
 引入版本：v18.16.0
 
 根据 RFC 4648，对 [Base64](https://en.wikipedia.org/wiki/Base64) 表示的字符串进行解码。
+从 26.7 版本开始，输入中的空白字符——空格、制表符 (`\t`)、换行符 (`\n`)、回车符 (`\r`) 和换页符 (`\f`)——会被忽略 (早期版本会拒绝包含这些字符的输入) 。垂直制表符 (`\v`) 以及 Base64 字母表之外的任何其他字符都会被拒绝。
 如果出错，则会抛出异常。
 
 **语法**
@@ -438,6 +439,8 @@ SELECT base64Encode('clickhouse')
 引入版本：v24.6.0
 
 根据 RFC 4648，使用 URL 安全字母表对 [Base64](https://en.wikipedia.org/wiki/Base64) 表示的字符串进行解码。
+解码时也接受标准字母表 (`+` 和 `/`) 。
+自 26.7 版本起，会忽略输入中的空白字符：空格、制表符 (`\t`) 、换行符 (`\n`) 、回车符 (`\r`) 和换页符 (`\f`)  (更早版本会拒绝包含这些字符的输入) 。垂直制表符 (`\v`) 以及 Base64 字母表之外的任何其他字符都会被拒绝。
 出错时会抛出异常。
 
 **语法**
@@ -639,8 +642,8 @@ SELECT caseFoldUTF8('Straße')
 
 ```response title=Response
 ┌─caseFoldUTF8('Straße')─┐
-│ strasse                 │
-└─────────────────────────┘
+│ strasse                │
+└────────────────────────┘
 ```
 
 <div id="compareSubstrings">
@@ -1165,13 +1168,13 @@ editDistanceUTF8(s1, s2)
 **用法示例**
 
 ```sql title=Query
-SELECT editDistanceUTF8('我是谁', '我是我')
+SELECT editDistanceUTF8('我是谁', '我是我') AS distance
 ```
 
 ```response title=Response
-┌─editDistanceUTF8('我是谁', '我是我')──┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─distance─┐
+│        1 │
+└──────────┘
 ```
 
 <div id="encodeXMLComponent">
@@ -1661,9 +1664,6 @@ isValidASCII(str)
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
 ```
 
-```response title=Response
-```
-
 <div id="isValidUTF8">
   ## isValidUTF8
 </div>
@@ -2100,7 +2100,7 @@ SELECT s FROM t ORDER BY naturalSortKey(s)
 ```response title=Response
 ┌─s───┐
 │ a1  │
-| a02 │
+│ a02 │
 └─────┘
 ```
 
@@ -2190,7 +2190,7 @@ SELECT
 
 首次引入于：v21.11.0
 
-按照 [NFKC 规范化结果](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms) 对 UTF-8 字符串进行规范化。
+按照 [NFKC 规范化形式](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms) 对 UTF-8 字符串进行规范化。
 
 **语法**
 
@@ -2212,13 +2212,13 @@ normalizeUTF8NFKC(str)
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- 带圆圈的数字字符
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- 转换为 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③  │ 1 2 3           │
+│ ① ② ③    │ 1 2 3           │
 └──────────┴─────────────────┘
 ```
 
@@ -2289,8 +2289,8 @@ normalizeUTF8NFKD(str)
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + 下标 2 + O + 上标 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- 转换为 H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -2510,8 +2510,8 @@ SELECT removeDiacriticsUTF8('café résumé naïve')
 
 ```response title=Response
 ┌─removeDiacriticsUTF8('café résumé naïve')─┐
-│ cafe resume naive                          │
-└────────────────────────────────────────────┘
+│ cafe resume naive                         │
+└───────────────────────────────────────────┘
 ```
 
 <div id="repeat">
@@ -3293,13 +3293,13 @@ stringJaccardIndexUTF8(s1, s2)
 **使用示例**
 
 ```sql title=Query
-SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
+SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ```
 
 ```response title=Response
-┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
-│                                       0.75 │
-└─────────────────────────────────────────────┘
+┌─jaccard_index─┐
+│          0.75 │
+└───────────────┘
 ```
 
 <div id="substring">
@@ -3315,6 +3315,8 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
 * 如果 `offset` 为负数，则子串从字符串末尾向前数 `|offset|` 个字符处开始，而不是从开头开始。
 
 可选参数 `length` 用于指定返回子串的最大字节数。
+
+另请参见 [`digits`](/zh/reference/functions/regular-functions/other-functions#digits) 函数，该函数对数值中的数字执行类似的操作。
 
 **语法**
 
