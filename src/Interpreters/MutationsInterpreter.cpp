@@ -1186,27 +1186,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                     backQuote(command.column_name));
             }
 
-            /// A UNIQUE KEY column must not be rewritten outside the UNIQUE KEY dedup path, otherwise
-            /// duplicate live keys could be produced. `MergeTreeData::checkMutationIsPossible` rejects
-            /// MATERIALIZE COLUMN of a UNIQUE KEY column, but only by an exact name match, so it misses
-            /// two cases: (1) the target is the parent of a UNIQUE KEY subcolumn (`UNIQUE KEY (t.k)`,
-            /// `MATERIALIZE COLUMN t` rewrites the stored `t.k`), and (2) a *dependent* stored
-            /// MATERIALIZED column (recomputed in the extra stage below) is part of the UNIQUE KEY.
-            /// Resolve subcolumns here and refuse both the direct target and the dependent columns the
-            /// same way the sign / version columns are refused above.
-            Names unique_key_columns;
-            if (metadata_snapshot->hasUniqueKey())
-                unique_key_columns = metadata_snapshot->getUniqueKeyColumns();
-
-            if (column_required_by(command.column_name, unique_key_columns))
-            {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                    "Refused to materialize column {} because it is part of the UNIQUE KEY (directly, or as "
-                    "the parent of a UNIQUE KEY subcolumn). Rewriting it would change the stored key values "
-                    "outside the UNIQUE KEY dedup path, which could produce duplicate live keys",
-                    backQuote(command.column_name));
-            }
-
             /// A stored MATERIALIZED column may be computed from the column being materialized.
             /// Rewriting the source column would leave such dependent columns stale, so they are
             /// recomputed in an extra stage below. If a dependent column feeds the sorting key or
@@ -1257,15 +1236,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                         "and is used as the sign, version or is_deleted column of the table engine, which the "
                         "merge logic depends on. Recomputing it could change the collapsing or replacing "
                         "semantics of existing data",
-                        backQuote(command.column_name), backQuote(dependent_name));
-                }
-
-                if (column_required_by(dependent_name, unique_key_columns))
-                {
-                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                        "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
-                        "and is part of the UNIQUE KEY. Recomputing it would rewrite stored values outside the "
-                        "UNIQUE KEY dedup path, which could produce duplicate live keys",
                         backQuote(command.column_name), backQuote(dependent_name));
                 }
             }

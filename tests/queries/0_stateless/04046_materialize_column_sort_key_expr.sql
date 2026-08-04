@@ -221,12 +221,17 @@ DROP TABLE t_mat_ttl_subcolumn;
 -- and resolving each to its name in storage. As with the Tuple subcolumn case, recomputing the
 -- part's TTL bounds for a subcolumn dependency is not supported, so the command is refused.
 SET allow_experimental_json_type = 1;
+-- `toDateTime` over the Dynamic subcolumn `j.d` is now rejected as suspicious at CREATE
+-- (it cannot handle every type a Dynamic column can store). The point of this case is the
+-- dynamic-subcolumn TTL *dependency*, not the TTL expression itself, so allow it explicitly.
+SET allow_suspicious_ttl_expressions = 1;
 DROP TABLE IF EXISTS t_mat_ttl_dynamic_subcolumn;
 CREATE TABLE t_mat_ttl_dynamic_subcolumn
     (a Int, j JSON MATERIALIZED CAST(concat('{"d":"', toString(toDateTime(1800000000 + a)), '"}'), 'JSON'))
     ENGINE = MergeTree() ORDER BY a TTL j.d::DateTime + INTERVAL 1 DAY;
 ALTER TABLE t_mat_ttl_dynamic_subcolumn MATERIALIZE COLUMN j; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_dynamic_subcolumn;
+SET allow_suspicious_ttl_expressions = 0;
 
 -- Case 22: A `TTL ... DELETE WHERE <cond>` reads the columns of its WHERE condition (stored in
 -- `where_expression_columns`), which `getColumnDependencies` does not expand (it only expands the
