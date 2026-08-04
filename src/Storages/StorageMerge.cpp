@@ -105,27 +105,6 @@ extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
 }
 
-namespace
-{
-
-bool columnIsPhysical(ColumnDefaultKind kind)
-{
-    return kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized;
-}
-
-bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
-{
-    if (lhs == rhs)
-        return true;
-
-    if (columnIsPhysical(lhs) == columnIsPhysical(rhs))
-        return true;
-
-    return false;
-}
-
-}
-
 StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
@@ -377,6 +356,21 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
                 supported_columns.erase(column.name);
             }
         }
+
+        /// A column the child does not declare at all fails the same way: it is stripped from the
+        /// child's read list and filled with defaults only after the read, so a filter pushed into
+        /// that read has no input for it.
+        std::erase_if(supported_columns, [&](const auto & name) { return !table_columns.has(name); });
+
+        /// The loop above compares the root type against the child's *declared* columns. When the
+        /// child aggregates other tables itself (a nested `Merge`, a `MaterializedView`, ...), its
+        /// declared type can match while a leaf's differs. PREWHERE would then be built against the
+        /// root type and re-derived against the leaf's, so `ActionsDAG` sees a return type that
+        /// disagrees with the node it stored and throws `Unexpected return type from ...`.
+        /// Intersect with what the child itself allows, so the constraint holds transitively.
+        /// `supportsPrewhere` above is already transitive - it recurses through virtual dispatch.
+        if (const auto nested_supported_columns = table->supportedPrewhereColumns())
+            std::erase_if(supported_columns, [&](const auto & name) { return !nested_supported_columns->contains(name); });
     });
 
     return supported_columns;
@@ -448,6 +442,18 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
+}
+
+bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    /// The filter is re-derived against every child, so a subcolumn rides its origin column
+    /// only if all of them resolve it.
+    bool include_subcolumns = true;
+    forEachTable([&](const StoragePtr & table)
+    {
+        include_subcolumns = include_subcolumns && table->supportedPrewhereColumnsIncludeSubcolumns();
+    });
+    return include_subcolumns;
 }
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
