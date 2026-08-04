@@ -29,6 +29,10 @@ node_both_ports = cluster.add_instance(
 # on node_both_ports can be scoped to this instance's address and not break the test harness.
 node_plain_only = cluster.add_instance("node_plain_only")
 
+# Another plain-only server: the second address for the tests where one host resolves to
+# several addresses and the connection falls through from a dead address to a working one.
+node_extra = cluster.add_instance("node_extra")
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -450,6 +454,113 @@ def test_the_probed_address_is_used_for_the_connection():
             user="root",
         )
         blackhole_address(blackhole, add=False)
+
+
+def firewall_plain_port_of(server, add, action, extra=()):
+    """Apply an iptables rule on `server` to packets from node_plain_only to its plain port."""
+    server.exec_in_container(
+        [
+            "iptables",
+            "--wait",
+            "-A" if add else "-D",
+            "INPUT",
+            "-p",
+            "tcp",
+            *extra,
+            "--dport",
+            "9000",
+            "-s",
+            node_plain_only.ip_address,
+            "-j",
+            action,
+        ],
+        user="root",
+    )
+
+
+def test_the_remembered_address_is_refreshed_when_the_connection_falls_through():
+    # The address that answered is remembered so that a reconnect does not walk the resolved
+    # addresses from the start. But the remembered address can die, and `Connection::connect`
+    # then falls through to another resolved address of the same host and succeeds there. The
+    # remembered address has to be refreshed after every successful connect, and not only when
+    # the ports are probed: otherwise it stays stale forever, and every following reconnect
+    # waits out a whole connection timeout on the dead address again, even though the previous
+    # reconnect already learned the working one.
+    #
+    # Here `refreshedhost` resolves to `node_both_ports` and `node_extra`. The first connection
+    # goes to `node_both_ports` (the other one is rejected during the probing). Then new
+    # connections to it start being silently dropped (the established session is not affected)
+    # and `node_extra` becomes reachable. An `INSERT` rejected by a constraint makes the client
+    # disconnect and reconnect on the next query (see the test above): the first reconnect pays
+    # one connection timeout on the dead address and falls through to `node_extra`; the second
+    # reconnect has to go to `node_extra` right away, without waiting out the timeout again.
+    for server in (node_both_ports, node_extra):
+        server.query(
+            "CREATE TABLE IF NOT EXISTS refresh_trigger (x UInt8, CONSTRAINT c CHECK x < 5)"
+            " ENGINE = Memory"
+        )
+    node_plain_only.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf '%s refreshedhost\\n%s refreshedhost\\n' {node_both_ports.ip_address} {node_extra.ip_address} >> /etc/hosts",
+        ],
+        user="root",
+    )
+    firewall_plain_port_of(node_extra, add=True, action="REJECT")
+    extra_rejected = True
+    first_address_dropped = False
+
+    def swap_the_addresses():
+        nonlocal extra_rejected, first_address_dropped
+        time.sleep(5)
+        # New connections stall (as with a typical cloud firewall); the established one lives on.
+        firewall_plain_port_of(node_both_ports, add=True, action="DROP", extra=("--syn",))
+        first_address_dropped = True
+        firewall_plain_port_of(node_extra, add=False, action="REJECT")
+        extra_rejected = False
+
+    switcher = threading.Thread(target=swap_the_addresses)
+    switcher.start()
+    try:
+        start = time.time()
+        output = node_plain_only.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "clickhouse client --host refreshedhost --accept-invalid-certificate"
+                " --connect_timeout 15 --async_insert 0 --ignore-error"
+                " --max_block_size 1 --max_threads 1"
+                " --query \"SELECT sleepEachRow(1) FROM numbers(8) FORMAT Null;"
+                " INSERT INTO refresh_trigger VALUES (10);"
+                " SELECT 'in-between';"
+                " INSERT INTO refresh_trigger VALUES (10);"
+                " SELECT 'reconnected'\" < /dev/null 2>&1 || true",
+            ]
+        )
+        elapsed = time.time() - start
+        assert "in-between" in output, output
+        assert "reconnected" in output, output
+        # One connection timeout is unavoidable: the first reconnect discovers that the remembered
+        # address is dead. The second one must not pay it again (~24 s against ~39 s if it does).
+        assert elapsed < 32, f"The queries took {elapsed} seconds: {output}"
+    finally:
+        switcher.join()
+        if first_address_dropped:
+            firewall_plain_port_of(node_both_ports, add=False, action="DROP", extra=("--syn",))
+        if extra_rejected:
+            firewall_plain_port_of(node_extra, add=False, action="REJECT")
+        # `/etc/hosts` is bind-mounted into the container, so it can only be rewritten in place.
+        node_plain_only.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "grep -v refreshedhost /etc/hosts > /tmp/hosts && cat /tmp/hosts > /etc/hosts && rm /tmp/hosts",
+            ],
+            user="root",
+        )
+        for server in (node_both_ports, node_extra):
+            server.query("DROP TABLE IF EXISTS refresh_trigger")
 
 
 def test_explicit_port_is_not_upgraded():

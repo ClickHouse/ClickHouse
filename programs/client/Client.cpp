@@ -764,12 +764,19 @@ void Client::connect()
             hosts_and_ports[attempted_address_index].port = connection_parameters.port;
             hosts_and_ports[attempted_address_index].secure = connection_parameters.security == Protocol::Secure::Enable;
             if (port_unspecified && secure_unspecified)
-            {
                 hosts_and_ports[attempted_address_index].transport_auto_detected = true;
+            if (hosts_and_ports[attempted_address_index].transport_auto_detected)
+            {
                 /// Remember the address that has answered as well, and not only the port and the TLS mode:
                 /// the ports are not probed again on a reconnect, and without the address the connection
                 /// would start from the first address of the host once more and pay a whole connection
                 /// timeout for every unresponsive address in front of the one that works.
+                ///
+                /// The address is refreshed after every successful connect, and not only when the ports
+                /// were probed: a reconnect can fall through from the remembered address to another
+                /// resolved address of the same host when the old one stopped answering, and keeping
+                /// the dead address would make every following reconnect wait out a whole connection
+                /// timeout on it before falling through to the working one again.
                 hosts_and_ports[attempted_address_index].address = assert_cast<Connection &>(*connection).getResolvedAddress();
             }
 
