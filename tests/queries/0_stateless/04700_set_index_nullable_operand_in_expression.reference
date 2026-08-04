@@ -1,0 +1,6 @@
+plain	5
+to_nullable	5
+null_if	5
+scalar_subquery	5
+materialize	5
+nullable_constant	5

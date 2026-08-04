@@ -384,9 +384,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_data_types(index_description.data_types)
     , condition(buildCondition(index_description, filter_dag, context))
 {
-    for (const auto & name : index_description.sample_block.getNames())
-        if (!key_columns.contains(name))
-            key_columns.insert(name);
+    for (const auto & column : index_description.sample_block)
+        key_columns.emplace(column.name, column.type);
 
     if (!filter_dag.predicate)
         return;
@@ -660,8 +659,18 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
     auto column_name = tree_node.getColumnName();
-    if (key_columns.contains(column_name))
+    if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
     {
+        /// The name of a subexpression is computed from its constant-folded arguments, so a query
+        /// subexpression whose operand is `Nullable` renders to the same name as the plain index
+        /// expression while carrying a different type. Substituting the granule column for it
+        /// would drop that operand, yet the enclosing function keeps declaring the return type it
+        /// was resolved with, and `ExpressionActions::execute` binds inputs by name without
+        /// checking types. Fall back to `UNKNOWN_FIELD` so that the index does not prune granules
+        /// and the query goes through the regular filter path.
+        if (!node.result_type->equals(*key_column_it->second))
+            return nullptr;
+
         /// Check if we already created an INPUT for this key column
         auto it = key_column_inputs.find(column_name);
         if (it != key_column_inputs.end())
