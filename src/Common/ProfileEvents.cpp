@@ -122,6 +122,8 @@
     M(TextIndexReadDictionaryBlocks, "Number of times a text index dictionary block has been read from disk.", ValueType::Number) \
     M(TextIndexTokensCacheHits, "Number of times a text index token info has been found in the cache.", ValueType::Number) \
     M(TextIndexTokensCacheMisses, "Number of times a text index token info has not been found in the cache.", ValueType::Number) \
+    M(TextIndexTokensCacheNegativeHits, "Number of times an absent text index token has been found in the cache.", ValueType::Number) \
+    M(TextIndexTokensCacheNegativeMisses, "Number of absent text index tokens added to the cache after a dictionary lookup.", ValueType::Number) \
     M(TextIndexHeaderCacheHits, "Number of times a header has been found in the cache.", ValueType::Number) \
     M(TextIndexHeaderCacheMisses, "Number of times a header has not been found in the cache.", ValueType::Number) \
     M(TextIndexPostingsCacheHits, "Number of times a text index posting list has been found in the cache.", ValueType::Number) \
@@ -399,6 +401,7 @@
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.", ValueType::Number) \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.", ValueType::Microseconds) \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.", ValueType::Bytes) \
+    M(CompileRegexpFunction, "Number of times a regular expression was JIT-compiled to machine code.", ValueType::Number) \
     \
     M(ExecuteShellCommand, "Number of shell command executions.", ValueType::Number) \
     \
