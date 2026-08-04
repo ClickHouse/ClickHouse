@@ -6,7 +6,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True)
+node = cluster.add_instance("node", user_configs=["configs/users.xml"], stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -30,7 +30,10 @@ def test_basic(started_cluster):
         == "CREATE USER user_basic IDENTIFIED WITH no_password\n"
     )
     assert node.query("SELECT 1", user="user_basic") == "1\n"
-    assert node.query("SELECT valid_until FROM system.users WHERE name = 'user_basic'") == "['1970-01-01 00:00:00']\n"
+    assert (
+        node.query("SELECT valid_until FROM system.users WHERE name = 'user_basic'")
+        == "['1970-01-01 00:00:00']\n"
+    )
 
     # 2. With valid VALID UNTIL
     node.query("ALTER USER user_basic VALID UNTIL '06/11/2040 08:03:20 Z+3'")
@@ -40,7 +43,10 @@ def test_basic(started_cluster):
         == "CREATE USER user_basic IDENTIFIED WITH no_password VALID UNTIL \\'2040-11-06 05:03:20\\'\n"
     )
     assert node.query("SELECT 1", user="user_basic") == "1\n"
-    assert node.query("SELECT valid_until FROM system.users WHERE name = 'user_basic'") == "['2040-11-06 05:03:20']\n"
+    assert (
+        node.query("SELECT valid_until FROM system.users WHERE name = 'user_basic'")
+        == "['2040-11-06 05:03:20']\n"
+    )
     # 3. With expired VALID UNTIL
     node.query("ALTER USER user_basic VALID UNTIL '06/11/2010 08:03:20 Z+3'")
 
@@ -89,6 +95,44 @@ def test_basic(started_cluster):
 
     node.query("DROP USER IF EXISTS user_basic")
 
+    # 6. XML form, flat, future expiration: login allowed
+    assert (
+        node.query("SELECT currentUser()", user="xml_flat_valid", password="x")
+        == "xml_flat_valid\n"
+    )
+    assert (
+        node.query("SELECT valid_until FROM system.users WHERE name = 'xml_flat_valid'")
+        == "['2099-01-01 00:00:00']\n"
+    )
+
+    # 7. XML form, flat, already expired: login rejected
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="xml_flat_expired", password="x"
+    )
+    assert (
+        node.query(
+            "SELECT valid_until FROM system.users WHERE name = 'xml_flat_expired'"
+        )
+        == "['2010-01-01 00:00:00']\n"
+    )
+
+    # 8. XML form with non-plaintext auth (sha256_hex of 'secret') + valid_until
+    assert (
+        node.query("SELECT currentUser()", user="xml_sha256_valid", password="secret")
+        == "xml_sha256_valid\n"
+    )
+    assert (
+        node.query(
+            "SELECT valid_until FROM system.users WHERE name = 'xml_sha256_valid'"
+        )
+        == "['2099-01-01 00:00:00']\n"
+    )
+
+    # 9. ALTER on a config-defined user (read-only users_xml storage) must fail
+    assert node.query_and_get_error(
+        "ALTER USER xml_flat_valid VALID UNTIL '2050-01-01'"
+    )
+
 
 def test_details(started_cluster):
     node.query("DROP USER IF EXISTS user_details_infinity, user_details_time_only")
@@ -114,6 +158,16 @@ def test_details(started_cluster):
     )
 
     node.query("DROP USER IF EXISTS user_details_infinity, user_details_time_only")
+
+    # 3. XML form, 'infinity' literal -> time_t = 0 -> '1970-01-01 00:00:00'
+    assert (
+        node.query("SELECT currentUser()", user="xml_infinity", password="x")
+        == "xml_infinity\n"
+    )
+    assert (
+        node.query("SELECT valid_until FROM system.users WHERE name = 'xml_infinity'")
+        == "['1970-01-01 00:00:00']\n"
+    )
 
 
 def test_restart(started_cluster):
@@ -184,4 +238,31 @@ def test_multiple_authentication_methods(started_cluster):
     )
     assert error in node.query_and_get_error(
         "SELECT 1", user="user_basic", password="expired"
+    )
+
+    # XML form with <auth_methods>: per-method valid_until
+    assert (
+        node.query("SELECT currentUser()", user="xml_per_method", password="good")
+        == "xml_per_method\n"
+    )
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="xml_per_method", password="bad"
+    )
+    assert (
+        node.query("SELECT valid_until FROM system.users WHERE name = 'xml_per_method'")
+        == "['2099-01-01 00:00:00','2010-01-01 00:00:00']\n"
+    )
+
+    # XML form: user-level <valid_until> unconditionally replaces every per-method value
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="xml_user_level_replaces", password="a"
+    )
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="xml_user_level_replaces", password="b"
+    )
+    assert (
+        node.query(
+            "SELECT valid_until FROM system.users WHERE name = 'xml_user_level_replaces'"
+        )
+        == "['2010-01-01 00:00:00','2010-01-01 00:00:00']\n"
     )
