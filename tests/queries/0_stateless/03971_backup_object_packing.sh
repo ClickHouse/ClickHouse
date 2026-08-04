@@ -55,6 +55,9 @@ roundtrip "dedup" "Disk('backups', '${name}_4')" \
     "CREATE TABLE t (a UInt64, b UInt64) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0" \
     "INSERT INTO t SELECT number, number FROM numbers(50)" \
     "SETTINGS experimental_backup_pack_format=1"
+# A duplicate of a packed member must not write a loose own-object (it would land nested under data/...),
+# so the backup dir holds nothing but the manifest and the packs.
+find "${backups_disk_path}${name}_4" -type f ! -name '.backup' ! -name 'packs_*' | wc -l
 
 # Case 6: setting off (default) still works -> regression guard.
 roundtrip "setting-off" "Disk('backups', '${name}_6')" "$small_create" "$small_insert" ""

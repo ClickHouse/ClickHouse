@@ -11,6 +11,7 @@ multi-pack spilled
 BACKUP_CREATED
 RESTORED
 dedup identical
+0
 BACKUP_CREATED
 RESTORED
 setting-off identical

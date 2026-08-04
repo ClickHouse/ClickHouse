@@ -811,6 +811,12 @@ void BackupsWorker::writeBackupEntries(
     /// Packed entries are written by the pack pass below, not by the per-entry path.
     std::map<size_t, std::vector<size_t>> pack_to_member_indices = BackupPacker::selectPackMembers(file_infos);
 
+    /// Claim members' data file indexes before any job runs: a same-checksum duplicate of a member
+    /// (pack_id = -1) must lose startWritingFile in writeFile, or it would write a loose own-object.
+    for (const auto & [pack_id, member_indices] : pack_to_member_indices)
+        for (size_t index : member_indices)
+            backup_coordination->startWritingFile(file_infos[index].data_file_index);
+
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP);
 
