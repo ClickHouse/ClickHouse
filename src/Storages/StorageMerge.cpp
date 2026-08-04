@@ -1941,6 +1941,14 @@ void registerStorageMerge(StorageFactory & factory)
 
         String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
 
+        /// With an explicit column list, `CREATE` does not need schema inference and would not read the source tables,
+        /// so the unusable table definition would be stored; deny it right away, the same way as reading does,
+        /// see `DatabaseNameOrRegexp::getDatabaseIterator`.
+        if (!is_regexp && source_database_name_or_regexp == DatabaseCatalog::TEMPORARY_DATABASE
+            && args.mode <= LoadingStrictnessLevel::CREATE)
+            throw Exception(
+                ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
+
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
 

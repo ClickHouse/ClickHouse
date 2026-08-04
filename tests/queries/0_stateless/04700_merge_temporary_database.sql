@@ -24,3 +24,8 @@ SELECT * FROM merge(REGEXP('^_temporary_and_external_tables$'), '^_tmp_'); -- { 
 -- Naming it explicitly is denied, the same way as direct access to it is.
 SELECT * FROM merge('_temporary_and_external_tables', '^_tmp_'); -- { serverError DATABASE_ACCESS_DENIED }
 SELECT * FROM _temporary_and_external_tables.t_merge_temporary; -- { serverError DATABASE_ACCESS_DENIED }
+
+-- The same at `CREATE` time for the `Merge` engine: with an explicit column list, no read happens during `CREATE`,
+-- so the unusable table definition would be stored otherwise.
+CREATE TABLE t_merge_temporary_explicit (dummy UInt8)
+    ENGINE = Merge('_temporary_and_external_tables', '^_tmp_'); -- { serverError DATABASE_ACCESS_DENIED }
