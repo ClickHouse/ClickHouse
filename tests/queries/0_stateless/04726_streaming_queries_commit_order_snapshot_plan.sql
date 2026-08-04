@@ -5,6 +5,7 @@ SET optimize_use_projections = 1;
 SET optimize_read_in_order = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET enable_streaming_queries = 1;
 
 DROP TABLE IF EXISTS t_commit_order_snapshot SYNC;
 
