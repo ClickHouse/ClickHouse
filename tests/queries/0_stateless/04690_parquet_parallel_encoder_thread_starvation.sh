@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, no-sanitizers, long
 # Tag no-fasttest: needs the Parquet output format, which the fast-test build omits.
+# Tag no-sanitizers: ~67 clickhouse-local starts; under MSan the median run took 512 s of the
+# 600 s per-test cap and the tail got killed. The hang being guarded is not sanitizer-specific.
 # Tag long: many serial writes, and the flaky check runs many copies of a test at once.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -34,8 +36,10 @@ inject() { echo "--cannot_allocate_thread_fault_injection_probability=$1"; }
 
 # Positive control: with nothing injected the same write must complete, take the parallel encoder
 # path, and leave readable multi-row-group data. Without it a run that never reached the encoder
-# would be indistinguishable from a successful write.
-${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
+# would be indistinguishable from a successful write. Under timeout like every other write here:
+# trySchedule can fail for real on queue saturation (zero-wait path), so a regression can wedge
+# this write too, and it must surface as HUNG rather than stall the whole shard.
+timeout 120 ${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
     $SETUP
     SELECT getSetting('output_format_parquet_parallel_encoding'), getSetting('max_threads') > 1;
     $WRITE
@@ -44,15 +48,20 @@ ${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
 "
 rc=$?
 rm -rf "$WORK/db"
-if [ "$rc" -ne 0 ]
+if [ "$rc" -eq 124 ]
+then
+    echo "HUNG"
+    exit 1
+elif [ "$rc" -ne 0 ]
 then
     echo "CONTROL FAILED rc=$rc"
     exit 1
 fi
 
 # `changed` is what separates an explicitly set value from the default, so this asserts the exact
-# spelling really reaches the injector rather than being ignored.
-${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
+# spelling really reaches the injector rather than being ignored. No write happens here, but under
+# timeout anyway so no invocation in this file can wedge the shard.
+timeout 120 ${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
     SELECT countIf(toFloat64(value) > 0 AND changed)
     FROM system.server_settings
     WHERE name = 'cannot_allocate_thread_fault_injection_probability';
