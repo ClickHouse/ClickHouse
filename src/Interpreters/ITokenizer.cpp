@@ -848,7 +848,14 @@ bool isStringZillaWordSegment(const char * data, size_t length)
             continue;
         }
 
+#if defined(__clang__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wused-but-marked-unused"
+#endif
         const auto property = sz_rune_word_break_property(*code_point);
+#if defined(__clang__)
+#    pragma clang diagnostic pop
+#endif
         if ((property >= sz_utf8_word_break_aletter_k && property <= sz_utf8_word_break_katakana_k)
             || isCJKCodePoint(*code_point))
             return true;
