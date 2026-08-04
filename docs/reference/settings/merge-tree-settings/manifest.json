@@ -1,6 +1,6 @@
 {
   "version": 6,
-  "settings": 354,
+  "settings": 357,
   "anchorRoutes": {
     "adaptive_write_buffer_initial_size": "/reference/settings/merge-tree-settings/other",
     "add_implicit_sign_column_constraint_for_collapsing_engine": "/reference/settings/merge-tree-settings/other",
@@ -12,6 +12,7 @@
     "allow_coalescing_columns_in_partition_or_order_key": "/reference/settings/merge-tree-settings/allow",
     "allow_commit_order_projection": "/reference/settings/merge-tree-settings/allow",
     "allow_dimensions_outside_sorting_key": "/reference/settings/merge-tree-settings/allow",
+    "allow_experimental_adaptive_codec_selection": "/reference/settings/merge-tree-settings/allow-experimental",
     "allow_experimental_replacing_merge_with_cleanup": "/reference/settings/merge-tree-settings/allow-experimental",
     "allow_experimental_reverse_key": "/reference/settings/merge-tree-settings/allow-experimental",
     "allow_experimental_text_index_phrase_search": "/reference/settings/merge-tree-settings/allow-experimental",
@@ -327,6 +328,8 @@
     "temporary_directories_lifetime": "/reference/settings/merge-tree-settings/other",
     "text_index_dictionary_block_frontcoding_compression": "/reference/settings/merge-tree-settings/text-index",
     "text_index_dictionary_block_size": "/reference/settings/merge-tree-settings/text-index",
+    "text_index_max_memory_usage_before_flush": "/reference/settings/merge-tree-settings/text-index",
+    "text_index_max_processed_tokens_before_flush": "/reference/settings/merge-tree-settings/text-index",
     "text_index_posting_list_block_size": "/reference/settings/merge-tree-settings/text-index",
     "text_index_posting_list_codec": "/reference/settings/merge-tree-settings/text-index",
     "try_fetch_recompressed_part_timeout": "/reference/settings/merge-tree-settings/other",
@@ -875,8 +878,8 @@
     {
       "path": "/reference/settings/merge-tree-settings/allow-experimental",
       "label": "allow_experimental_*",
-      "settings": 3,
-      "characters": 1342
+      "settings": 4,
+      "characters": 2370
     },
     {
       "path": "/reference/settings/merge-tree-settings/always",
@@ -894,7 +897,7 @@
       "path": "/reference/settings/merge-tree-settings/cache-populated-by-fetch",
       "label": "cache_populated_by_fetch_*",
       "settings": 2,
-      "characters": 1238
+      "characters": 1258
     },
     {
       "path": "/reference/settings/merge-tree-settings/check",
@@ -984,7 +987,7 @@
       "path": "/reference/settings/merge-tree-settings/exclude",
       "label": "exclude_*",
       "settings": 2,
-      "characters": 2013
+      "characters": 2025
     },
     {
       "path": "/reference/settings/merge-tree-settings/fault-probability",
@@ -1044,19 +1047,19 @@
       "path": "/reference/settings/merge-tree-settings/materialize",
       "label": "materialize_*",
       "settings": 3,
-      "characters": 1338
+      "characters": 1362
     },
     {
       "path": "/reference/settings/merge-tree-settings/materialize-projections",
       "label": "materialize_projections_*",
       "settings": 2,
-      "characters": 1398
+      "characters": 1446
     },
     {
       "path": "/reference/settings/merge-tree-settings/max",
       "label": "max_*",
       "settings": 10,
-      "characters": 4045
+      "characters": 4064
     },
     {
       "path": "/reference/settings/merge-tree-settings/max-bytes",
@@ -1110,7 +1113,7 @@
       "path": "/reference/settings/merge-tree-settings/max-replicated",
       "label": "max_replicated_*",
       "settings": 6,
-      "characters": 3042
+      "characters": 3104
     },
     {
       "path": "/reference/settings/merge-tree-settings/max-suspicious-broken-parts",
@@ -1158,7 +1161,7 @@
       "path": "/reference/settings/merge-tree-settings/min",
       "label": "min_*",
       "settings": 8,
-      "characters": 3203
+      "characters": 3207
     },
     {
       "path": "/reference/settings/merge-tree-settings/min-age",
@@ -1170,7 +1173,7 @@
       "path": "/reference/settings/merge-tree-settings/min-bytes",
       "label": "min_bytes_*",
       "settings": 5,
-      "characters": 1617
+      "characters": 1627
     },
     {
       "path": "/reference/settings/merge-tree-settings/min-compressed",
@@ -1212,7 +1215,7 @@
       "path": "/reference/settings/merge-tree-settings/number-of",
       "label": "number_of_*",
       "settings": 6,
-      "characters": 3181
+      "characters": 3239
     },
     {
       "path": "/reference/settings/merge-tree-settings/object-shared",
@@ -1307,20 +1310,20 @@
     {
       "path": "/reference/settings/merge-tree-settings/text-index",
       "label": "text_index_*",
-      "settings": 4,
-      "characters": 1560
+      "settings": 6,
+      "characters": 2410
     },
     {
       "path": "/reference/settings/merge-tree-settings/use",
       "label": "use_*",
       "settings": 6,
-      "characters": 1523
+      "characters": 2696
     },
     {
       "path": "/reference/settings/merge-tree-settings/use-minimalistic",
       "label": "use_minimalistic_*",
       "settings": 2,
-      "characters": 652
+      "characters": 656
     },
     {
       "path": "/reference/settings/merge-tree-settings/vertical-merge",
