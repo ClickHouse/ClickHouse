@@ -470,11 +470,13 @@ _HOOK_PATH = os.path.join(
 )
 
 
-def _guarded_call_conditions(function_name):
-    """The `if` tests guarding every call to `function_name` under the `__main__` block.
+def _guarded_call_statements(function_name):
+    """The outermost `if` statements under `__main__` that contain a call to `function_name`.
 
-    The module is read, not imported: importing it would run the whole hook. Parsed rather
-    than grepped so a mention in a comment or a docstring cannot satisfy the assertion.
+    The module is read, not imported: importing it would run the whole hook, which fetches
+    build digests and master commits. Only the guarding statements are extracted, so they
+    can be EXECUTED below: an oracle that merely matched the condition text would accept a
+    guard that can never be true.
     """
     with open(_HOOK_PATH, "r", encoding="utf-8") as f:
         tree = ast.parse(f.read())
@@ -484,31 +486,68 @@ def _guarded_call_conditions(function_name):
         if isinstance(node, ast.If) and "__main__" in ast.unparse(node.test)
     ]
     assert len(main_blocks) == 1, "expected exactly one `if __name__ == '__main__':` block"
-    conditions = []
-    for node in ast.walk(main_blocks[0]):
-        if not isinstance(node, ast.If):
-            continue
-        for inner in ast.walk(node):
-            if (
-                isinstance(inner, ast.Call)
-                and isinstance(inner.func, ast.Name)
-                and inner.func.id == function_name
-            ):
-                conditions.append(ast.unparse(node.test))
-    return conditions
+
+    def calls(node):
+        return any(
+            isinstance(inner, ast.Call)
+            and isinstance(inner.func, ast.Name)
+            and inner.func.id == function_name
+            for inner in ast.walk(node)
+        )
+
+    # Walk the body, not the block itself: the `__main__` test is a guard too, and executing
+    # it here would always be false and never reach the guard under scrutiny.
+    guards = [
+        n
+        for statement in main_blocks[0].body
+        for n in ast.walk(statement)
+        if isinstance(n, ast.If) and calls(n)
+    ]
+    # Keep only the outermost, so every intervening guard is executed rather than skipped.
+    return [g for g in guards if not any(g is not o and g in ast.walk(o) for o in guards)]
 
 
-def test_main_calls_the_hook_when_the_settings_history_file_changed():
+def _run_main_guard(pr_number, is_merge_queue_event, changed_files):
+    """Execute the production guard verbatim; return whether it reached the hook call."""
+    statements = _guarded_call_statements("store_settings_history_changes")
+    assert statements, "__main__ does not call store_settings_history_changes"
+    reached = []
+    namespace = {
+        "info": _FakeInfo(
+            pr_number=pr_number, is_merge_queue_event=is_merge_queue_event
+        ),
+        "changed_files": changed_files,
+        "SETTINGS_HISTORY_FILE": SETTINGS_HISTORY_FILE,
+        "store_settings_history_changes": lambda *a, **k: reached.append(True),
+    }
+    for statement in statements:
+        exec(  # noqa: S102 - the statement comes from this repo's own hook
+            compile(ast.Module(body=[statement], type_ignores=[]), _HOOK_PATH, "exec"),
+            namespace,
+        )
+    return bool(reached)
+
+
+@pytest.mark.parametrize(
+    "pr_number,is_merge_queue_event,changed_files,expected",
+    [
+        (_PR, False, [SETTINGS_HISTORY_FILE], True),
+        # A merge-queue run has PR_NUMBER 0 and must still validate the file.
+        (0, True, [SETTINGS_HISTORY_FILE], True),
+        # The guard stays load-bearing in both directions, so a hook that always ran
+        # would fail these two rather than pass for the wrong reason.
+        (_PR, False, ["src/Core/Defines.h"], False),
+        (0, False, [SETTINGS_HISTORY_FILE], False),
+    ],
+)
+def test_main_calls_the_hook_exactly_when_it_should(
+    pr_number, is_merge_queue_event, changed_files, expected
+):
     """Nothing else pins the production wiring: every other cell calls the helpers directly,
-    so deleting the call from `__main__` would leave the whole file green."""
-    conditions = _guarded_call_conditions("store_settings_history_changes")
-    assert conditions, "__main__ does not call store_settings_history_changes"
-    assert any(
-        "SETTINGS_HISTORY_FILE in changed_files" in condition for condition in conditions
-    ), f"the call is not guarded by the changed-file condition: {conditions}"
-    assert any(
-        "is_merge_queue_event" in condition for condition in conditions
-    ), f"the call does not run in the merge queue: {conditions}"
+    so deleting the call from `__main__` would leave the whole file green. The guard is
+    executed rather than pattern-matched, because a guard amended with `and False`, or a call
+    nested under `if False:`, keeps every expected substring while never running in CI."""
+    assert _run_main_guard(pr_number, is_merge_queue_event, changed_files) is expected
 
 
 # --- the shared helper's default must not change for its 14 other callers ----
