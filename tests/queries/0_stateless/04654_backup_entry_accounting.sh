@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-ordinary-database
+# Tags: no-fasttest, no-ordinary-database, no-encrypted-storage
 # ^ backups need a running server with a configured 'backups' disk; the KeeperMap case below needs table UUIDs,
 #   without which renaming a table can move the data to the other one.
+#   encrypted disks add a random per-file IV, so no two files are byte-identical and nothing deduplicates.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
