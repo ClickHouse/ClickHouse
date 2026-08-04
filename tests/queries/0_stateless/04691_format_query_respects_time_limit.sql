@@ -1,5 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, long
 -- no-fasttest: needs enough rows of moderate SQL text that an unpatched parse loop overshoots the limit.
+-- long: ten statements each run until they hit the limit set below, so the test costs about ten times
+-- that limit, and the limit has to clear a sanitizer build's query-planning cost (see below).
 
 -- The query-parsing functions parse one row at a time inside a single pipeline task. Cancellation is
 -- only polled between tasks, so before the fix a whole block ran to completion and the query outlived
@@ -14,9 +16,12 @@
 -- stay under case 7's threshold, silently disarming it. The pins are per query so that they cannot
 -- leak into case 7's own read. Each timed query carries a `04691_` marker that case 7 counts.
 
--- The limit is what each timed query costs: they are limit-bound, not fixture-bound, so ten of them
--- cost ten times this. It has to stay well above the poll's own overshoot, one 64 KiB stride.
-SET max_execution_time = 0.3;
+-- `max_execution_time` runs from query start, so it also has to cover parsing, analysis, planning and
+-- pipeline construction. On a sanitizer build that prelude alone reached 276 ms of a 300 ms budget, and
+-- the query then timed out before reading a row, leaving the row loop below jointly unexercised. The
+-- limit therefore has to exceed the prelude by enough that what remains still reaches the loop; 3 s
+-- sits between the observed 1.6 s worst-case prelude and the tens of seconds an unpolled block costs.
+SET max_execution_time = 3;
 SET allow_fuzz_query_functions = 1;
 
 -- 1. formatQuery: many rows of moderate SQL text in one block.
@@ -79,8 +84,8 @@ SETTINGS max_block_size = 200000, max_threads = 1, timeout_overflow_mode = 'brea
 -- 7. The real assertion: every case above stopped near its limit rather than running its block out.
 --    The bound is on CPU time, not on `query_duration_ms`: wall clock also absorbs scheduling delay,
 --    and this test runs concurrently with copies of itself, so a wall-clock budget wide enough for a
---    starved host would have to exceed the pre-fix cost it exists to detect. Pre-fix these statements
---    burn tens of seconds of CPU against a 300 ms limit; with the fix, one stride of parsing more.
+--    starved host would have to exceed the pre-fix cost it exists to detect. Pre-fix a single one of
+--    these statements burns about 70 s of CPU; with the fix it stops within a stride of its limit.
 --    `count() = 10` keeps the assertion from going vacuous: countIf(...) = 0 over an empty result set is
 --    trivially true, so a marker that stopped matching would silently disarm the whole test.
 --    `type != 'QueryStart'` rather than `= 'ExceptionWhileProcessing'` because the break case above
@@ -94,8 +99,13 @@ SETTINGS max_block_size = 200000, max_threads = 1, timeout_overflow_mode = 'brea
 SET max_execution_time = 0;
 SYSTEM FLUSH LOGS query_log;
 
+--    `countIf(read_rows = 0) = 0` is what keeps the CPU bound from passing vacuously: a query that
+--    exhausted the limit during planning never reached the row loop, so it trivially satisfies a CPU
+--    bound while asserting nothing about cancellation. Observed on a sanitizer build, where 16 of 19
+--    runs read no rows at all and the whole test still reported success.
 SELECT 'all bounded',
        count() = 10
+   AND countIf(read_rows = 0) = 0
    AND countIf(ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] > 15000000) = 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
