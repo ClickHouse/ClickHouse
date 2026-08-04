@@ -165,16 +165,21 @@ class ReleaseProgress:
 
 
 class ReleaseContextManager:
-    def __init__(self, release_progress):
+    def __init__(self, release_progress, commit_sha=None):
         self.release_progress = release_progress
         self.release_info = None
+        # Only the STARTED branch (which mints a fresh ReleaseInfo) needs the
+        # commit ref; passed in explicitly so the class does not read the
+        # module-global `args` (it is unset when driven in-process from
+        # release_job.py, which imports these symbols rather than running main).
+        self.commit_sha = commit_sha
 
     def __enter__(self):
         if self.release_progress == ReleaseProgress.STARTED:
             self.release_info = ReleaseInfo(
                 release_branch="NA",
                 release_type="NA",
-                commit_sha=args.ref,
+                commit_sha=self.commit_sha,
                 release_tag="NA",
                 version="NA",
                 codename="NA",
@@ -993,24 +998,9 @@ def parse_args() -> argparse.Namespace:
         help="Creates and pushes git tag",
     )
     parser.add_argument(
-        "--push-new-release-branch",
-        action="store_true",
-        help="Creates and pushes new release branch and corresponding service gh tags for backports",
-    )
-    parser.add_argument(
         "--create-bump-version-pr",
         action="store_true",
         help="Updates version, contributors list and creates PR",
-    )
-    parser.add_argument(
-        "--download-packages",
-        action="store_true",
-        help="Downloads all required packages from s3",
-    )
-    parser.add_argument(
-        "--create-gh-release",
-        action="store_true",
-        help="Create GH Release object and attach all packages",
     )
     parser.add_argument(
         "--post-status",
@@ -1047,7 +1037,9 @@ if __name__ == "__main__":
         _ssh_agent.print_keys()
 
     if args.prepare_release_info:
-        with ReleaseContextManager(release_progress=ReleaseProgress.STARTED) as release_info:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
+        ) as release_info:
             assert (
                 args.ref and args.release_type
             ), "--ref and --release-type must be provided with --prepare-release-info"
@@ -1057,47 +1049,17 @@ if __name__ == "__main__":
                 dry_run=args.dry_run,
             )
 
-    if args.download_packages:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            p.run()
-
     if args.push_release_tag:
         with ReleaseContextManager(
             release_progress=ReleaseProgress.PUSH_RELEASE_TAG
         ) as release_info:
             release_info.push_release_tag(dry_run=args.dry_run)
 
-    if args.push_new_release_branch:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
-        ) as release_info:
-            release_info.push_new_release_branch(dry_run=args.dry_run)
-
     if args.create_bump_version_pr:
         with ReleaseContextManager(
             release_progress=ReleaseProgress.BUMP_VERSION
         ) as release_info:
             release_info.update_version_and_contributors_list(dry_run=args.dry_run)
-
-    if args.create_gh_release:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.CREATE_GH_RELEASE
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            release_info.create_gh_release(
-                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
-            )
 
     if args.post_status:
         release_info = ReleaseInfo.from_file()

@@ -352,13 +352,26 @@ def main():
             workdir=REPO_PATH,
         )
 
+    def prepare_release_info():
+        # Imported lazily so the module-level boto3 dependency of create_release
+        # is only needed on the release machine, not at praktika config time.
+        from ci.jobs.scripts.create_release import (
+            ReleaseContextManager,
+            ReleaseProgress,
+        )
+
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
+        ) as release_info:
+            release_info.prepare(
+                commit_ref=args.ref,
+                release_type=args.release_type,
+                dry_run=args.dry_run,
+            )
+
     step(
         name="Prepare Release Info",
-        command=[
-            f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
-            f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
-            f" {dry_run_flag}".strip()
-        ],
+        command=prepare_release_info,
         workdir=REPO_PATH,
     )
 
@@ -429,32 +442,64 @@ def main():
     # pushing the tag or opening the changelog PR, so a missing-artifacts run
     # aborts without leaving a tag / PR behind.
     if args.release_type == "patch" and not args.only_docker:
+
+        def download_packages():
+            from ci.jobs.scripts.create_release import (
+                PackageDownloader,
+                ReleaseContextManager,
+                ReleaseProgress,
+            )
+
+            with ReleaseContextManager(
+                release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
+            ) as release_info:
+                PackageDownloader(
+                    release=release_info.release_branch,
+                    commit_sha=release_info.commit_sha,
+                    version=release_info.version,
+                ).run()
+
         step(
             name="Download All Release Artifacts",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --download-packages"
-                f" {dry_run_flag}".strip()
-            ],
+            command=download_packages,
             workdir=REPO_PATH,
         )
 
     if create_new_release:
+
+        def push_release_tag():
+            from ci.jobs.scripts.create_release import (
+                ReleaseContextManager,
+                ReleaseProgress,
+            )
+
+            with ReleaseContextManager(
+                release_progress=ReleaseProgress.PUSH_RELEASE_TAG
+            ) as release_info:
+                release_info.push_release_tag(dry_run=args.dry_run)
+
         step(
             name="Push Git Tag for the Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --push-release-tag"
-                f" {dry_run_flag}".strip()
-            ],
+            command=push_release_tag,
             workdir=REPO_PATH,
         )
 
     if args.release_type == "new" and create_new_release:
+
+        def push_new_release_branch():
+            from ci.jobs.scripts.create_release import (
+                ReleaseContextManager,
+                ReleaseProgress,
+            )
+
+            with ReleaseContextManager(
+                release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
+            ) as release_info:
+                release_info.push_new_release_branch(dry_run=args.dry_run)
+
         step(
             name="Push New Release Branch",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --push-new-release-branch"
-                f" {dry_run_flag}".strip()
-            ],
+            command=push_new_release_branch,
             workdir=REPO_PATH,
         )
 
@@ -467,13 +512,24 @@ def main():
     # branch tip as the just-released version, recovers the existing release, and
     # never refuses a rerun as "out-of-order" or mints a release below the tip —
     # all without scanning git tags. See the deferred step near the end of main.
+    def create_bump_version_pr():
+        # Used at two sites: the early "new" bump (opens the master bump PR the
+        # enqueue step merges) and the deferred "patch" bump near the end of the
+        # run. Defined once here so both call it in-process.
+        from ci.jobs.scripts.create_release import (
+            ReleaseContextManager,
+            ReleaseProgress,
+        )
+
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.BUMP_VERSION
+        ) as release_info:
+            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
+
     if args.release_type == "new" and release_pr_absent:
         step(
             name="Bump CH Version and Update Contributors' List",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
-                f" {dry_run_flag}".strip()
-            ],
+            command=create_bump_version_pr,
             workdir=REPO_PATH,
         )
 
@@ -676,12 +732,28 @@ def main():
             workdir=REPO_PATH,
         )
 
+        def create_gh_release():
+            from ci.jobs.scripts.create_release import (
+                PackageDownloader,
+                ReleaseContextManager,
+                ReleaseProgress,
+            )
+
+            with ReleaseContextManager(
+                release_progress=ReleaseProgress.CREATE_GH_RELEASE
+            ) as release_info:
+                p = PackageDownloader(
+                    release=release_info.release_branch,
+                    commit_sha=release_info.commit_sha,
+                    version=release_info.version,
+                )
+                release_info.create_gh_release(
+                    packages_files=p.get_all_packages_files(), dry_run=args.dry_run
+                )
+
         step(
             name="Create GH Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
-                f" {dry_run_flag}".strip()
-            ],
+            command=create_gh_release,
             workdir=REPO_PATH,
         )
 
@@ -898,10 +970,7 @@ def main():
     if create_new_release and args.release_type == "patch":
         step(
             name="Bump CH Version and Update Contributors' List",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
-                f" {dry_run_flag}".strip()
-            ],
+            command=create_bump_version_pr,
             workdir=REPO_PATH,
         )
 
@@ -940,13 +1009,26 @@ def main():
     # let the aggregated job Result (praktika Slack feed) report the failing
     # setup step instead.
     if os.path.exists(RELEASE_INFO_FILE):
+
+        def post_status():
+            import dataclasses
+
+            from ci.jobs.scripts.create_release import ReleaseInfo
+
+            release_info = ReleaseInfo.from_file()
+            if release_info.is_new_release_branch():
+                title = "New release branch"
+            else:
+                title = "New release"
+            # Print the release-info summary for the job log / Slack context. Pass
+            # or fail is conveyed by the workflow job result, not re-derived here.
+            print(f"{title}: {release_info.release_tag}")
+            print(json.dumps(dataclasses.asdict(release_info), indent=2))
+
         results.append(
             Result.from_commands_run(
                 name="Post Slack Message",
-                command=[
-                    f"python3 ./ci/jobs/scripts/create_release.py --post-status"
-                    f" {dry_run_flag}".strip()
-                ],
+                command=post_status,
                 workdir=REPO_PATH,
             )
         )
