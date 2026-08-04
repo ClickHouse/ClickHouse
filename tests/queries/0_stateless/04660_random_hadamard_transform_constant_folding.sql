@@ -24,3 +24,10 @@ SELECT randomHadamardTransform(materialize([1, 2]::Array(Float32)), 0, materiali
 -- Argument validation is unaffected by the constant path.
 SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 0, 8); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT randomHadamardTransform([]::Array(Float32), 0, -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+-- An explicit 'output_dims' exceeds the transform length 0 of an empty vector, in both paths.
+SELECT randomHadamardTransform([]::Array(Float32), 0, 1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT randomHadamardTransform(materialize([]::Array(Float32)), 0, 1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+-- An empty vector without 'output_dims' still returns an empty array, in both paths.
+SELECT randomHadamardTransform([]::Array(Float32)), randomHadamardTransform(materialize([]::Array(Float32)));
