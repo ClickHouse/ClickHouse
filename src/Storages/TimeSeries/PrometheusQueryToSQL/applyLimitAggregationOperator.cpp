@@ -96,6 +96,66 @@ namespace
         bool is_array;
     };
 
+    /// Clamps a ratio scalar to [-1, 1] (Prometheus clamps out-of-range ratios and emits a warning).
+    ScalarType clampRatio(ScalarType scalar)
+    {
+        if (scalar > 1.0)
+            return 1.0;
+        if (scalar < -1.0)
+            return -1.0;
+        return scalar;
+    }
+
+    /// SQL version of clampRatio(): greatest(-1, least(1, x)).
+    ASTPtr clampRatio(ASTPtr scalar)
+    {
+        return makeASTFunction("greatest",
+            make_intrusive<ASTLiteral>(-1.0),
+            makeASTFunction("least", make_intrusive<ASTLiteral>(1.0), std::move(scalar)));
+    }
+
+    /// Converts the ratio parameter of `limit_ratio` to an AST expression usable in SQL.
+    /// Unlike getK() the ratio stays a Float64 in [-1, 1] (it must not be truncated to UInt64).
+    KArgument getRatio(SQLQueryPiece && r_arg, ConverterContext & context)
+    {
+        switch (r_arg.store_method)
+        {
+            case StoreMethod::CONST_SCALAR:
+            {
+                return {make_intrusive<ASTLiteral>(clampRatio(r_arg.scalar_value)), /* is_array = */ false};
+            }
+            case StoreMethod::SINGLE_SCALAR:
+            {
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(r_arg.select_query), SQLSubqueryType::SCALAR});
+                auto subquery_id = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+                /// Wrap with assumeNotNull() because scalar subqueries make their result nullable,
+                /// but StoreMethod::SINGLE_SCALAR always means one row.
+                auto assumed = makeASTFunction("assumeNotNull", std::move(subquery_id));
+                return {clampRatio(std::move(assumed)), /* is_array = */ false};
+            }
+            case StoreMethod::SCALAR_GRID:
+            {
+                /// SELECT arrayMap(x -> clampRatio(x), values) AS values FROM <scalar_grid>
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(r_arg.select_query), SQLSubqueryType::TABLE});
+                String inner_subquery_name = context.subqueries.back().name;
+
+                SelectQueryBuilder builder;
+                builder.from_table = inner_subquery_name;
+                builder.select_list.push_back(makeASTFunction("arrayMap",
+                    makeASTLambda({"x"}, clampRatio(make_intrusive<ASTIdentifier>("x"))),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                builder.select_list.back()->setAlias(ColumnNames::Values);
+
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::SCALAR});
+                return {make_intrusive<ASTIdentifier>(context.subqueries.back().name), /* is_array = */ true};
+            }
+            default:
+            {
+                throwUnexpectedStoreMethod(r_arg, context);
+            }
+        }
+    }
+
     /// Converts the k parameter to an AST expression usable in SQL.
     KArgument getK(SQLQueryPiece && k_arg, ConverterContext & context)
     {
@@ -175,8 +235,11 @@ namespace
         MakeASTForKIndices make_ast_for_k_indices;
 
         /// Whether `timeSeriesGroupToSamplingKey(group)` should be used as `sampling_keys`
-        /// to provide deterministic "pseudo-random" sampling for `limitk`.
+        /// to provide deterministic "pseudo-random" sampling for `limitk` and `limit_ratio`.
         bool use_sampling_keys = false;
+
+        /// Whether the first argument is a ratio in [-1, 1] (for `limit_ratio`) rather than a UInt64 count k.
+        bool is_ratio = false;
     };
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
@@ -215,6 +278,33 @@ namespace
                       makeASTForNonNullIndices(std::move(values)));
               },
               /* use_sampling_keys= */ true}},
+
+            {"limit_ratio",
+             {[](ASTPtr r, ASTPtr values, ASTPtr sampling_keys) -> ASTPtr
+              {
+                  /// Keep each non-null series whose deterministic sampling offset satisfies the ratio condition:
+                  ///   off(i) = toFloat64(sampling_keys[i]) / 2^64  in [0, 1)
+                  ///   keep i if (r >= 0 AND off < r) OR (r < 0 AND off >= 1 + r)
+                  ///
+                  /// `arrayFilter((i) -> if(r >= 0, off < r, off >= 1 + r),
+                  ///     arrayFilter((i, x) -> x IS NOT NULL, arrayEnumerate(values), values))`
+                  auto offset = makeASTFunction("divide",
+                      makeASTFunction("toFloat64",
+                          makeASTFunction("arrayElement", std::move(sampling_keys), make_intrusive<ASTIdentifier>("i"))),
+                      make_intrusive<ASTLiteral>(18446744073709551616.0)); /// 2^64
+
+                  auto condition = makeASTFunction("if",
+                      makeASTFunction("greaterOrEquals", r->clone(), make_intrusive<ASTLiteral>(0.0)),
+                      makeASTFunction("less", offset->clone(), r->clone()),
+                      makeASTFunction("greaterOrEquals", offset->clone(),
+                          makeASTFunction("plus", make_intrusive<ASTLiteral>(1.0), r->clone())));
+
+                  return makeASTFunction("arrayFilter",
+                      makeASTLambda({"i"}, std::move(condition)),
+                      makeASTForNonNullIndices(std::move(values)));
+              },
+              /* use_sampling_keys= */ true,
+              /* is_ratio= */ true}},
         };
 
         auto it = impl_map.find(operator_name);
@@ -250,7 +340,7 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     vector_arg = toVectorGrid(std::move(vector_arg), context);
 
-    KArgument prepared_k = getK(std::move(k_arg), context);
+    KArgument prepared_k = impl_info->is_ratio ? getRatio(std::move(k_arg), context) : getK(std::move(k_arg), context);
     ASTPtr k = std::move(prepared_k.ast);
     bool k_is_array = prepared_k.is_array;
 
