@@ -162,7 +162,9 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
                     query_tree_node = join_node.getLeftTableExpressionNode().get();
                 else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny
                     && supported_table_expression_types.contains(join_node.getLeftTableExpressionNode()->getNodeType()))
-                    query_tree_node = join_node.getLeftTableExpressionNode().get();
+                    /// For RIGHT JOIN the left side is materialized into a temporary table by
+                    /// buildQueryTreeForShard, so only the right side survives to be read with replicas.
+                    query_tree_node = join_node.getRightTableExpressionNode().get();
                 else
                     return {};
 
