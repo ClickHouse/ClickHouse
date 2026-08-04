@@ -947,16 +947,6 @@ std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(s
     return res;
 }
 
-/// The longest a single path component may be. `NAME_MAX` where the system defines one; Windows
-/// does not, because there the limit belongs to the filesystem rather than to the system - and it
-/// is 255 on every filesystem it can put this directory on (NTFS, ReFS, exFAT), which is the value
-/// `NAME_MAX` has on Linux anyway. See also `computeMaxTableNameLength`.
-#if defined(NAME_MAX)
-static constexpr size_t max_path_component_length = NAME_MAX;
-#else
-static constexpr size_t max_path_component_length = 255;
-#endif
-
 const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
 {
     if (!has_internal_replication)
@@ -964,15 +954,7 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
 
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)
-    {
-        const auto & path = prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
-        if (path.size() > max_path_component_length)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Path '{}' for async distributed INSERT is too long (exceed {} limit)", path, max_path_component_length);
-        }
-        return path;
-    }
+        return prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
 
     return paths.compact;
 }
