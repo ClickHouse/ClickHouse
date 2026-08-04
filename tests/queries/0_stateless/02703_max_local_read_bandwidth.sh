@@ -12,6 +12,8 @@ $CLICKHOUSE_CLIENT -m -q "
 "
 
 # Reading 2e5*8 bytes at 160000 B/s takes 1.6e6/160000-1 = 9 seconds (-1 is the 1s token burst).
+# The cap was 1e6 B/s over 1e6 rows, which owed exactly 7 seconds - the same value the
+# query_duration_ms assertion below demands, leaving the sleep assertion no margin.
 # The throttler only sleeps while the arrival rate exceeds the cap, so the cap must stay far
 # below the natural read rate or the sleep assertion flaps on loaded runners.
 $CLICKHOUSE_CLIENT -q "insert into data select * from numbers(2e5)"
