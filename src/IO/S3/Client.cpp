@@ -8,6 +8,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 
 #include <aws/core/Aws.h>
@@ -87,6 +88,8 @@ namespace ErrorCodes
 
 namespace S3
 {
+
+static constexpr size_t MAX_CACHES_BY_ENDPOINT_AND_BUCKET = 10000;
 
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
     : config(config_)
@@ -386,7 +389,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
 void Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
-    auto [it, inserted] = cache->region_for_bucket_cache.emplace(bucket, region);
+    auto [it, inserted] = cache->region_for_bucket_cache.insert_or_assign(bucket, region);
     if (inserted)
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
@@ -1164,7 +1167,8 @@ size_t ClientCacheRegistry::getClientRefcountForTesting(ClientCache * client)
 
 void ClientCacheRegistry::pruneExpiredCachesLocked()
 {
-    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.expired(); });
+    /// The registry itself is the only owner left, so no client can observe the cache disappearing.
+    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.use_count() == 1; });
 }
 
 std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket)
@@ -1176,16 +1180,13 @@ std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const s
     UInt128 key = hash.get128();
 
     std::lock_guard lock(cache_by_key_mutex);
-    if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
-    {
-        if (auto cached = it->second.lock(); cached)
-            return cached;
-        cache_by_endpoint_bucket.erase(it);
-    }
-    auto cache = std::make_shared<ClientCache>();
-    cache_by_endpoint_bucket[key] = cache;
 
-    pruneExpiredCachesLocked();
+    if (cache_by_endpoint_bucket.size() >= MAX_CACHES_BY_ENDPOINT_AND_BUCKET)
+        pruneExpiredCachesLocked();
+
+    auto & cache = cache_by_endpoint_bucket[key];
+    if (!cache)
+        cache = std::make_shared<ClientCache>();
 
     return cache;
 }
@@ -1212,7 +1213,8 @@ void ClientCacheRegistry::clearCacheForAll()
 
     {
         std::lock_guard lock(cache_by_key_mutex);
-        pruneExpiredCachesLocked();
+        for (const auto & [_, cache] : cache_by_endpoint_bucket)
+            cache->clearCache();
     }
 }
 
