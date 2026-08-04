@@ -40,6 +40,7 @@ SELECT '-- errors';
 ALTER TABLE t_modify_projection MODIFY PROJECTION nonexistent (SELECT v ORDER BY v) WITH SETTINGS (index_granularity = 128); -- { serverError NO_SUCH_PROJECTION_IN_TABLE }
 ALTER TABLE t_modify_projection MODIFY PROJECTION IF EXISTS nonexistent (SELECT v ORDER BY v) WITH SETTINGS (index_granularity = 128);
 ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT k ORDER BY k) WITH SETTINGS (index_granularity = 128); -- { serverError BAD_ARGUMENTS }
-ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (max_threads = 1); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (old_parts_lifetime = 100); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (max_threads = 1); -- { serverError UNKNOWN_SETTING }
 
 DROP TABLE t_modify_projection;
