@@ -124,6 +124,28 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 namespace
 {
 
+/// Local filesystem directory a disk stores its files in, or nullopt for a remote disk (whose
+/// `getPath` is not a filesystem path and is not comparable with one).
+std::optional<fs::path> localDiskPath(const DiskPtr & disk)
+{
+    if (!disk || disk->isRemote())
+        return {};
+
+    std::string path = disk->getPath();
+    while (path.size() > 1 && path.back() == '/')
+        path.pop_back();
+    if (path.empty())
+        return {};
+
+    return fs::weakly_canonical(path);
+}
+
+bool isPathPrefixOf(const fs::path & prefix, const fs::path & path)
+{
+    const auto [it, unused] = std::mismatch(prefix.begin(), prefix.end(), path.begin(), path.end());
+    return it == prefix.end();
+}
+
 bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::string & disk_config_prefix, const std::string &)
 {
     const auto disk_type = config.getString(disk_config_prefix + ".type", "local");
@@ -198,6 +220,46 @@ void KeeperContext::initializeDataDisk(const String & config_elem, const Poco::U
         && !coordination_settings[CoordinationSetting::storage_memory_only])
     {
         data_storage = getDataPathFromConfig(config_elem, config);
+
+        /// We wipe the node storage below, so it must not be shared with anything else. Both ways of
+        /// configuring it can collide with Keeper's own logs, snapshots and state: `data_storage_disk`
+        /// names a disk from `storage_configuration`, `data_storage_path` names a directory, and the
+        /// operator can point either of them at a place that is already in use. Refuse to start rather
+        /// than delete Keeper's own persistent state - or unrelated data - on the next restart.
+        {
+            std::vector<Storage> other_storages{
+                log_storage, latest_log_storage, snapshot_storage, latest_snapshot_storage, state_file_storage};
+            for (const auto & disk_name : old_log_disk_names)
+                other_storages.emplace_back(disk_name);
+            for (const auto & disk_name : old_snapshot_disk_names)
+                other_storages.emplace_back(disk_name);
+
+            const auto * data_disk_name = std::get_if<std::string>(&data_storage);
+            const std::optional<fs::path> data_path = localDiskPath(getDisk(data_storage));
+
+            for (const Storage & other : other_storages)
+            {
+                const auto * other_disk_name = std::get_if<std::string>(&other);
+                if (data_disk_name && other_disk_name && *data_disk_name == *other_disk_name)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Disk '{}' is used both for the Keeper node storage and for Keeper logs, snapshots or state. "
+                        "The node storage is wiped on startup, so it must not be shared.",
+                        *data_disk_name);
+
+                /// Containing the other directory is just as bad as being it: wiping the node storage
+                /// removes everything under it. (The opposite nesting is fine and is in fact the
+                /// default layout: the node storage is a subdirectory of the state file's directory,
+                /// and wiping it doesn't touch anything outside.)
+                const std::optional<fs::path> other_path = localDiskPath(getDisk(other));
+                if (data_path && other_path && isPathPrefixOf(*data_path, *other_path))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Directory '{}' of the Keeper node storage contains '{}', used for Keeper logs, snapshots or state. "
+                        "The node storage is wiped on startup, so it must not be shared.",
+                        data_path->string(), other_path->string());
+            }
+        }
 
         /// The on-disk node storage is not persistent across restarts: on startup the state is
         /// recovered from snapshots and logs, and leftover files from a previous run must not
