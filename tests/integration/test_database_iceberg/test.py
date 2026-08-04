@@ -854,7 +854,14 @@ def test_not_specified_catalog_type(started_cluster):
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
-    assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    # In 26.5 `CREATE DATABASE` does not validate `catalog_type` eagerly, so the
+    # error surfaces on first catalog access. `SHOW TABLES` no longer swallows
+    # catalog errors as an empty listing.
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    message = str(exc_info.value)
+    assert "Unspecified catalog type" in message, message
+    assert "Code: 36" in message, message
 
 
 def test_system_tables_with_nullptr_table(started_cluster):
