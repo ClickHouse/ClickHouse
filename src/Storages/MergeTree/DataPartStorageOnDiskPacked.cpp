@@ -895,10 +895,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             need_commit = true;
         }
 
-        /// This branch rewrites data.packed, so its content must be fsynced too. write_buf->sync()
-        /// only sets a deferred need_sync flag that finalizeWriter consumes, never fsyncing eagerly,
-        /// so (unlike the directory sync) the gate omits the external_transaction exclusion: this
-        /// also covers each projection archive, which is frozen under the shared transaction below.
+        /// This branch rewrites `data.packed`, so its contents need an fsync too. `sync` only sets a
+        /// deferred `need_sync` flag, so unlike the directory walk this gate has no
+        /// `external_transaction` exclusion: it must also cover a projection archive.
         const bool fsync_content = params.fsync_part_directory && !disk->isRemote();
 
         auto files = reader->getFileNames();
