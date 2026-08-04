@@ -21,6 +21,9 @@ node5 = cluster.add_instance(
     user_configs=["configs/allow_server_credentials.xml"],
 )
 node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.xml"])
+node7 = cluster.add_instance(
+    "node7", main_configs=["configs/config_with_pinned_port.xml"]
+)  # Allows only 127.0.0.1:3306 (port-pinned entry).
 
 
 @pytest.fixture(scope="module")
@@ -221,6 +224,57 @@ def test_mysql_dictionary_replica_host_filter(start_cluster):
     )
     assert "not allowed" in error, f"Expected host filter error, got: {error}"
     node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_replica_filter")
+
+
+def test_mysql_dictionary_replica_inherited_port_host_filter(start_cluster):
+    """A REPLICA(...) without its own PORT connects to the top-level PORT (mysqlxx::Pool
+    falls back to the parent prefix), so the host filter must validate that effective
+    port, not the 3306 default."""
+    # node7 allows only 127.0.0.1:3306 and 127.0.0.1:3308. 127.0.0.1 (instead of the
+    # unroutable 10.0.0.1 used above) makes any dial that passes the filter fail
+    # instantly with connection-refused instead of hanging until the connect timeout.
+    node7.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
+    node7.query(
+        """
+        CREATE DICTIONARY default.test_mysql_inherited_port (id UInt64, val String)
+        PRIMARY KEY id
+        SOURCE(MYSQL(
+            PORT 3307 USER 'root' PASSWORD 'pass' DB 'test' TABLE 'tbl'
+            REPLICA(PRIORITY 1 HOST '127.0.0.1')
+        ))
+        LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1)
+        """
+    )
+    # The replica inherits the denied top-level port 3307; before the fix the filter
+    # checked the 3306 default, passed, and dialed 127.0.0.1:3307 anyway.
+    error = node7.query_and_get_error(
+        "SELECT dictGet('default.test_mysql_inherited_port', 'val', toUInt64(1))"
+    )
+    assert "not allowed" in error, f"Expected host filter error, got: {error}"
+    node7.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
+
+    # A replica's own PORT takes precedence over the top-level PORT: 127.0.0.1:3308 is
+    # allowed, so the filter must pass and the failure is a plain connection error.
+    # 3308 differs from both the denied parent port 3307 and the 3306 default, so a
+    # regression that validated either of those instead of the replica's own port
+    # would fail this case.
+    node7.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
+    node7.query(
+        """
+        CREATE DICTIONARY default.test_mysql_own_port (id UInt64, val String)
+        PRIMARY KEY id
+        SOURCE(MYSQL(
+            PORT 3307 USER 'root' PASSWORD 'pass' DB 'test' TABLE 'tbl'
+            REPLICA(PRIORITY 1 HOST '127.0.0.1' PORT 3308)
+        ))
+        LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1)
+        """
+    )
+    error = node7.query_and_get_error(
+        "SELECT dictGet('default.test_mysql_own_port', 'val', toUInt64(1))"
+    )
+    assert "not allowed" not in error, f"Filter rejected an allowed replica: {error}"
+    node7.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
 
 
 def test_table_function_remote(start_cluster):
