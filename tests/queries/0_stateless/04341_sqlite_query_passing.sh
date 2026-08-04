@@ -60,10 +60,16 @@ SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT 
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE r.id SETTINGS external_table_strict_query = 1;
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE r.id = 1 SETTINGS external_table_strict_query = 1;
 
-SELECT '-- external_table_strict_query: a predicate on the source is rejected in every shape';
+SELECT '-- external_table_strict_query: a source predicate at the top level or as a conjunct is rejected';
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 AND r.id SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
+
+-- A disjunction mixing the two sides is dropped whole, so the guard sees no filter and does
+-- not fire. The counts must agree: this is a missed rejection, not a wrong answer.
+SELECT '-- external_table_strict_query: a disjunction mixing the source and the local side is not rejected';
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 OR r.flag SETTINGS external_table_strict_query = 1;
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 OR r.flag SETTINGS external_table_strict_query = 0;
 DROP TABLE local_r;
 
 SELECT '-- INSERT into a query-backed table function is rejected before schema inference';

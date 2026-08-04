@@ -28,7 +28,10 @@ val	Nullable(Float64)
 1
 2
 1
--- external_table_strict_query: a predicate on the source is rejected in every shape
+-- external_table_strict_query: a source predicate at the top level or as a conjunct is rejected
+-- external_table_strict_query: a disjunction mixing the source and the local side is not rejected
+1
+1
 -- INSERT into a query-backed table function is rejected before schema inference
 -- projection-count mismatch: an explicit structure with more columns than the query pads with defaults
 1	a	0
