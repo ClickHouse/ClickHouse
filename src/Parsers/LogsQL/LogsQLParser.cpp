@@ -1375,7 +1375,7 @@ ASTPtr LogsQLParser::parseFilterStream()
             if (lex.isKeyword("}"))
                 throwSyntaxError("missing a label filter after 'or' in the stream filter");
             or_groups.push_back(makeAnd(std::move(current_group)));
-            current_group.clear();
+            current_group = {};
         }
         else if (!lex.isKeyword("}"))
         {
@@ -1666,7 +1666,7 @@ ASTPtr LogsQLParser::parseFilterTime()
     String text = lex.nextCompoundToken();
     if (auto duration = tryParseDuration(text))
     {
-        query_time_range_ns = *duration;
+        query_time_range_ns = duration;
         auto offset = parseOptionalTimeOffset();
         ASTPtr lower = makeASTFunction("minus", makeASTFunction("now"), makeIntervalAST(*duration));
         return makeTimeCondition(lower, true, makeASTFunction("now"), false, offset.value_or(0));

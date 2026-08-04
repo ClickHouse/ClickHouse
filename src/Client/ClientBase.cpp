@@ -3038,7 +3038,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             {
                 only_comments_left = only_comments_left || LogsQLLexer(this_query_begin, all_queries_end).isEnd();
             }
-            catch (const Exception &)
+            catch (const Exception &) // NOLINT(bugprone-empty-catch)
             {
                 /// Malformed input (e.g. an unterminated string): let the parser report it properly.
             }

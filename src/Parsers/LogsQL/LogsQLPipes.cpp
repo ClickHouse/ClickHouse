@@ -394,8 +394,9 @@ bool LogsQLParser::isLikelyFilterPipe()
         lex.nextCompoundToken(field_name_stop_tokens);
         result = lex.isKeyword(":");
     }
-    catch (const Exception &)
+    catch (const Exception &) // NOLINT(bugprone-empty-catch)
     {
+        /// Not a field name (e.g. malformed input): this is not a shorthand filter pipe.
     }
     lex.restoreState(state);
     return result;
@@ -1817,7 +1818,7 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                     else if (auto duration = tryParseDuration(bucket))
                     {
                         interval = makeIntervalAST(*duration);
-                        current_stats_time_bucket_ns = *duration;
+                        current_stats_time_bucket_ns = duration;
                     }
                     else
                         throwSyntaxError(fmt::format("cannot parse the time bucket step {}", bucket));
@@ -2305,8 +2306,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
                 pooled->arguments->children.push_back(columnExpr(arg));
             value = pooled;
         }
-        String aggregate_name = name;
-        return {canonical, [aggregate_name, value](ASTPtr condition) { return makeAggregate(aggregate_name, {value->clone()}, condition); }};
+        return {canonical, [aggregate_name = name, value](ASTPtr condition) { return makeAggregate(aggregate_name, {value->clone()}, condition); }};
     }
 
     if (name == "sum" || name == "avg")

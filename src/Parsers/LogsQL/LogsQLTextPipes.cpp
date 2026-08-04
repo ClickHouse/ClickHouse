@@ -577,7 +577,7 @@ void LogsQLParser::parsePipeUnpack(Layer & layer, bool is_logfmt)
         if (is_logfmt)
         {
             /// key=value with optionally double-quoted values (approximated with JSON unquoting).
-            String key_pattern = fmt::format("(?:^| ){}=(\"(?:[^\"\\\\]|\\\\.)*\"|[^ ]*)", escapeRegexp(field));
+            String key_pattern = fmt::format(R"re((?:^|[ ]){}=("(?:[^"\\]|\\.)*"|[^ ]*))re", escapeRegexp(field));
             ASTPtr token = makeASTFunction("extract", columnExpr(source), makeString(key_pattern));
             value = makeASTFunction("if",
                 makeASTFunction("startsWith", token, makeString("\"")),
@@ -927,11 +927,11 @@ ASTPtr LogsQLParser::parseFilterPatternMatch(const String & field_name, const St
     /// (VictoriaLogs matches them with a hand-written greedy matcher with extra boundary rules).
     static constexpr const char * number = "(?:[0-9]+|[0-9a-fA-F]{4}(?:[0-9a-fA-F]{2})*)";
     const String uuid = fmt::format("{0}-{0}-{0}-{0}-{0}", number);
-    const String ip4 = fmt::format("{0}\\.{0}\\.{0}\\.{0}", number);
+    const String ip4 = fmt::format(R"({0}\.{0}\.{0}\.{0})", number);
     const String time_re = fmt::format("{0}:{0}:{0}(?:[.,]{0})?", number);
     const String date_re = fmt::format("(?:{0}-{0}-{0}|{0}/{0}/{0})", number);
     const String datetime_re = fmt::format("{0}[T ]{1}(?:Z|[+-]{2}:{2})?", date_re, time_re, number);
-    static constexpr const char * word = "(?:\"(?:[^\"\\\\]|\\\\.)*\"|`[^`]*`|'(?:[^'\\\\]|\\\\.)*'|[0-9A-Za-z_]*)";
+    static constexpr const char * word = R"re((?:"(?:[^"\\]|\\.)*"|`[^`]*`|'(?:[^'\\]|\\.)*'|[0-9A-Za-z_]*))re";
 
     const String & pattern = args[0];
     String regexp = "(?s)";
