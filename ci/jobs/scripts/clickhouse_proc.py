@@ -145,6 +145,13 @@ class ClickHouseProc:
         self.pid_0 = 0
         self.pid_1 = 0
         self.pid_2 = 0
+        # The watchdog chains above the servers, snapshotted at startup while
+        # the pids in the pid files are known to be alive - the teardown-time
+        # walk can find nothing when it starts inside the watchdog's restart
+        # gap, and these are what it falls back to (see `_stop_one_server`).
+        self.watchdogs_0 = ()
+        self.watchdogs_1 = ()
+        self.watchdogs_2 = ()
         self.port = 9000
         self.port_1 = 19000
         self.port_2 = 29000
@@ -501,12 +508,21 @@ class ClickHouseProc:
                     continue
                 started = True
                 print(f"Got pid from fs [{pid}]")
+                # Snapshot the watchdog chain now, while the pid just read is
+                # known to name a live server: `_stop_one_server` falls back to
+                # this snapshot when its own walk starts from a pid that is
+                # already dead. The watchdog keeps its pid across the respawns
+                # it performs, so the snapshot stays current until teardown.
+                watchdogs = self._server_watchdog_pids(int(pid))
                 if replica_num == 1:
                     self.pid_1 = int(pid)
+                    self.watchdogs_1 = watchdogs
                 elif replica_num == 2:
                     self.pid_2 = int(pid)
+                    self.watchdogs_2 = watchdogs
                 elif replica_num == 0:
                     self.pid_0 = int(pid)
+                    self.watchdogs_0 = watchdogs
                 else:
                     assert False
                 break
@@ -802,17 +818,31 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         print("Stop ClickHouse processes")
 
         Shell.check("ps -ef | grep  clickhouse")
-        for proc, pid_file, pid, run_path in (
-            (self.proc, self.pid_file, self.pid_0, self.run_path0),
-            (self.proc_1, self.pid_file_replica_1, self.pid_1, self.run_path1),
-            (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
+        for proc, pid_file, pid, watchdogs, run_path in (
+            (self.proc, self.pid_file, self.pid_0, self.watchdogs_0, self.run_path0),
+            (
+                self.proc_1,
+                self.pid_file_replica_1,
+                self.pid_1,
+                self.watchdogs_1,
+                self.run_path1,
+            ),
+            (
+                self.proc_2,
+                self.pid_file_replica_2,
+                self.pid_2,
+                self.watchdogs_2,
+                self.run_path2,
+            ),
         ):
             if proc and pid:
-                self._stop_one_server(proc, pid_file, pid, run_path, force)
+                self._stop_one_server(proc, pid_file, pid, watchdogs, run_path, force)
 
         return self
 
-    def _stop_one_server(self, proc, pid_file, startup_pid, run_path, force):
+    def _stop_one_server(
+        self, proc, pid_file, startup_pid, startup_watchdogs, run_path, force
+    ):
         """Stop one server, whatever pid it runs under now.
 
         The pid snapshotted when the server was started can be stale by
@@ -829,8 +859,15 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # Snapshotted before anything is signalled: once the server is gone, the
         # watchdog above it can no longer be found by walking up from the pid
         # file, and it is the one thing that can still bring a server back after
-        # the teardown - see `_stop_respawned_server`.
-        watchdogs = self._server_watchdog_pids(pid)
+        # the teardown - see `_stop_respawned_server`. The walk can already come
+        # up empty here: a teardown that begins inside the watchdog's restart
+        # gap - after one server exited, before the replacement rewrote the pid
+        # file - reads a dead pid and has no parents to walk. `startup_watchdogs`
+        # is the answer for that case: it was walked at startup from a pid known
+        # to be alive then, and the watchdog keeps its pid across the respawns
+        # it performs, so the startup snapshot still names the process that can
+        # bring a server back now.
+        watchdogs = self._server_watchdog_pids(pid) or list(startup_watchdogs)
         if force:
             # Use clickhouse stop --force when this issue is fixed
             # https://github.com/ClickHouse/ClickHouse/issues/99142

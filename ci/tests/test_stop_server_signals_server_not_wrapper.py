@@ -283,8 +283,14 @@ def _make_proc(monkeypatch, tmp_path, proc, pid, trap_timeout=10):
     ch = object.__new__(ClickHouseProc)
     ch.proc, ch.pid_0, ch.run_path0 = proc, pid, tmp_path
     ch.pid_file = tmp_path / "clickhouse-server.pid"
+    # As `start` does, snapshot the watchdog chain while the startup pid is
+    # known to be alive: it is what `stop_server` falls back to when the
+    # teardown begins inside the watchdog's restart gap and the walk from the
+    # (then dead) pid finds nothing.
+    ch.watchdogs_0 = ClickHouseProc._server_watchdog_pids(pid)
     ch.proc_1 = ch.proc_2 = None
     ch.pid_1 = ch.pid_2 = 0
+    ch.watchdogs_1 = ch.watchdogs_2 = ()
     ch.pid_file_replica_1 = ch.pid_file_replica_2 = None
     ch.run_path1 = ch.run_path2 = None
     # Keep the core-dump grace period short: the fake server has no core to write.
@@ -450,6 +456,58 @@ def test_stop_server_waits_out_a_watchdog_that_respawns_late(monkeypatch, tmp_pa
             )
         # And it did not manage to leave one behind on its way out either, now
         # or once its delay has fully elapsed.
+        time.sleep(respawn_delay + 1)
+        assert not ClickHouseProc._current_server_pid(pid_file), (
+            f"a server ({pid_file.read_text().strip()}) came up after "
+            "stop_server returned"
+        )
+        assert _status_lock_is_free(tmp_path), (
+            "the status lock was still held after stop_server returned; "
+            "`clickhouse local` cannot scrape this replica's system tables"
+        )
+    finally:
+        for watchdog in watchdogs:
+            _cleanup(proc, watchdog)
+        _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
+
+
+def test_stop_server_wins_when_teardown_starts_inside_the_restart_gap(
+    monkeypatch, tmp_path
+):
+    # The teardown can begin *inside* the watchdog's restart gap: one server
+    # has exited, the replacement has not yet rewritten the pid file. The pid
+    # file then names a dead pid, and the startup pid is that same dead pid, so
+    # a watchdog discovery that only walks up from either finds nothing - and a
+    # teardown with no watchdogs to wait for returns at once, while the still
+    # live watchdog publishes a replacement server a few seconds later, holding
+    # `<run_path>/status` against the scraping `clickhouse local`. The startup
+    # snapshot of the watchdog chain is what has to close this: it was taken
+    # while the first server was alive, and the watchdog's own pid does not
+    # change across the respawns it performs.
+    pid_file = tmp_path / "clickhouse-server.pid"
+    respawn_delay = 5
+    proc, startup_pid = _start_fake_server(
+        tmp_path, restart_mode="delayed", restart_delay=respawn_delay
+    )
+    watchdogs = ClickHouseProc._server_watchdog_pids(startup_pid)
+    try:
+        assert watchdogs, "the fake watchdog is not above the fake server"
+        # `_make_proc` snapshots the watchdogs while the server is alive, as
+        # `start` does - before the server dies below.
+        ch = _make_proc(monkeypatch, tmp_path, proc, startup_pid)
+        os.kill(startup_pid, signal.SIGKILL)
+        deadline = time.monotonic() + 60
+        while _pid_alive(startup_pid):
+            assert time.monotonic() < deadline, "the fake server did not die"
+            time.sleep(0.05)
+        # The teardown now starts with a dead pid in the pid file, a dead
+        # startup pid, and the replacement `respawn_delay` seconds away.
+        ch.stop_server()
+        for watchdog in watchdogs:
+            assert not _pid_alive(watchdog), (
+                f"the watchdog {watchdog} outlived a teardown that began in "
+                "its restart gap and is still free to bring a server back"
+            )
         time.sleep(respawn_delay + 1)
         assert not ClickHouseProc._current_server_pid(pid_file), (
             f"a server ({pid_file.read_text().strip()}) came up after "
