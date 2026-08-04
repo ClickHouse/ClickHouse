@@ -119,6 +119,10 @@ public:
     /// (`max_replica_delay_for_distributed_queries`).
     std::vector<QualifiedTableName> getReplicatedChildTableNames(const ContextPtr & query_context) const;
 
+    /// The database name (or regexp) the underlying tables are looked up in. For the one-argument
+    /// form of the `merge` table function this is the current database resolved at creation time.
+    const String & getSourceDatabaseNameOrRegexp() const { return database_name_or_regexp.source_database_name_or_regexp; }
+
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
         const String & source_database_name_or_regexp,

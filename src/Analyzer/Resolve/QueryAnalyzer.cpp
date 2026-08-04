@@ -64,6 +64,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -4899,6 +4900,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
+
+    /// The one-argument form of the merge table function resolves the implicit database on this
+    /// server, so bake it into the arguments as an explicit one: the query can be shipped to other
+    /// servers (a distributed query, a parallel replica), whose current database is not the
+    /// database of this session, and the regexp would be matched against the wrong database there.
+    if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
+        merge_storage && table_function_node_typed.getArguments().getNodes().size() == 1)
+    {
+        auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
+        argument_nodes.insert(argument_nodes.begin(), std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp()));
+    }
+
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 

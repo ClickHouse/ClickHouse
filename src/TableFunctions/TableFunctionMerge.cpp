@@ -4,6 +4,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -102,6 +103,11 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
         args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
         source_table_regexp = checkAndGetLiteralArgument<String>(args[0], "table_name_regexp");
+
+        /// The implicit database is resolved on the server that parses the query, so bake it into
+        /// the AST as an explicit argument: the query can be shipped to other servers (a distributed
+        /// query, a parallel replica), whose current database is not the database of this session.
+        args.insert(args.begin(), make_intrusive<ASTLiteral>(source_database_name_or_regexp));
     }
     else if (args.size() == 2)
     {
