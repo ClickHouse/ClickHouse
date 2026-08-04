@@ -114,16 +114,19 @@ public:
         const StorageEmbeddedRocksDB & storage_, std::shared_ptr<rocksdb::DB> db_, std::unique_ptr<rocksdb::Iterator> iterator_)
         : storage(storage_), db(std::move(db_)), iterator(std::move(iterator_))
     {
+        std::lock_guard lock(storage.full_scan_leases_mx);
+        ++storage.full_scan_leases;
     }
 
     ~RocksDBFullScanLease()
     {
-        /// Both references must be gone before the notify, and the release must happen under the
-        /// mutex truncate() evaluates its predicate on, or the wakeup is lost.
+        /// Both references must be gone before the notify, and the count must drop under the mutex
+        /// truncate() evaluates its predicate on, or the wakeup is lost.
         iterator.reset();
         {
             std::lock_guard lock(storage.full_scan_leases_mx);
             db.reset();
+            --storage.full_scan_leases;
         }
         storage.full_scan_leases_released.notify_all();
     }
@@ -329,44 +332,58 @@ StorageEmbeddedRocksDB::~StorageEmbeddedRocksDB() = default;
 
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
-    /// Held for the whole operation, so a null rocksdb_ptr is never observable outside it. Safe to
-    /// hold across the wait below: the full-scan iterator never re-acquires this mutex.
-    std::lock_guard lock(rocksdb_ptr_mx);
-    /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
-    /// the following initDB() threw (e.g. a read_only table whose data was wiped).
-    if (rocksdb_ptr)
-    {
-        /// Closing tears down the column families a live iterator still reads, and reopening the same
-        /// directory fails while an old handle holds its LOCK file, so wait for the last lease first.
-        RocksDBPtr draining = std::move(rocksdb_ptr);
+    const auto timeout = std::chrono::milliseconds(query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
+    /// One budget for the whole call, so a lease arriving during a retry cannot extend it.
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
 
-        const auto timeout = std::chrono::milliseconds(query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
-        const auto no_lease_left = [&] { return draining.use_count() == 1; };
+    while (true)
+    {
         {
-            std::unique_lock leases_lock(full_scan_leases_mx);
-            /// Zero means no timeout, as it does for the table locks this wait stands in for.
-            if (timeout == std::chrono::milliseconds::zero())
+            /// Exclusive for the whole close and reopen, so no null rocksdb_ptr is observable
+            /// outside and no lease can be taken between the count read and the close, which needs
+            /// this mutex shared. Never held across the wait below.
+            std::lock_guard lock(rocksdb_ptr_mx);
+            bool leased;
             {
-                full_scan_leases_released.wait(leases_lock, no_lease_left);
+                std::lock_guard leases_lock(full_scan_leases_mx);
+                leased = full_scan_leases != 0;
             }
-            else if (!full_scan_leases_released.wait_for(leases_lock, timeout, no_lease_left))
+            if (!leased)
             {
-                /// Restored under the still-held lock, so a timed out TRUNCATE changes nothing.
-                rocksdb_ptr = std::move(draining);
-                throw Exception(
-                    ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Cannot TRUNCATE table {}: a read of it is still in progress after {} ms",
-                    getStorageID().getNameForLogs(),
-                    timeout.count());
+                /// Closing tears down the column families a live iterator still reads, and
+                /// reopening the same directory fails while an old handle holds its LOCK file.
+                /// rocksdb_ptr may already be null if a previous truncate() emptied the directory
+                /// and the following initDB() threw (e.g. a read_only table whose data was wiped).
+                if (rocksdb_ptr)
+                {
+                    rocksdb_ptr->Close();
+                    rocksdb_ptr = nullptr;
+                }
+
+                (void)fs::remove_all(rocksdb_dir);
+                fs::create_directories(rocksdb_dir);
+                initDB();
+                return;
             }
         }
 
-        draining->Close();
+        std::unique_lock leases_lock(full_scan_leases_mx);
+        const auto no_lease_left = [this] { return TSA_SUPPRESS_WARNING_FOR_READ(full_scan_leases) == 0; };
+        /// Zero means no timeout, as it does for the table locks this wait stands in for.
+        if (timeout == std::chrono::milliseconds::zero())
+        {
+            full_scan_leases_released.wait(leases_lock, no_lease_left);
+        }
+        else if (!full_scan_leases_released.wait_until(leases_lock, deadline, no_lease_left))
+        {
+            /// Nothing has been closed or nulled, so a timed out TRUNCATE leaves the table as found.
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Cannot TRUNCATE table {}: a read of it is still in progress after {} ms",
+                getStorageID().getNameForLogs(),
+                timeout.count());
+        }
     }
-
-    (void)fs::remove_all(rocksdb_dir);
-    fs::create_directories(rocksdb_dir);
-    initDB();
 }
 
 void StorageEmbeddedRocksDB::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const

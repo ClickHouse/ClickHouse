@@ -18,6 +18,9 @@ zero timeout truncate succeeded	1
 zero timeout truncate waited	1
 zero timeout reader finished	1
 zero timeout reader read all rows	1
+mutation pulling	1
+truncate completed beside mutation	1
+mutation completed beside truncate	1
 rows after truncate	0
 direct	1
 through alias	1

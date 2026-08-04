@@ -31,6 +31,10 @@ $CLICKHOUSE_CLIENT -q "
 # flavour. Both timeouts are pinned rather than inherited: the CI config caps a wait at 60s, and the
 # runner fails any test that writes to stderr.
 READ_SETTINGS="max_threads = 1, max_block_size = 1, lock_acquire_timeout = 300"
+# Every count() below is compared against an exact literal, and the runner randomizes this setting,
+# under which the engine answers from rocksdb's key estimate instead. A low estimate would let a
+# build that destroyed the data pass the timeout arm's data-preservation assertion.
+EXACT_COUNT="optimize_trivial_approximate_count_query = 0"
 
 # $1 = table the scans read, $2 = table the truncate goes through, $3 = row label
 run_concurrent_scans_then_truncate() {
@@ -78,7 +82,7 @@ run_concurrent_scans_then_truncate() {
         rm -f "${outs[$i]}"
     done
 
-    echo -e "$label rows after truncate\t$($CLICKHOUSE_CLIENT -q "SELECT count() FROM rdb")"
+    echo -e "$label rows after truncate\t$($CLICKHOUSE_CLIENT -q "SELECT count() FROM rdb SETTINGS $EXACT_COUNT")"
     echo -e "$label readers finished\t$finished"
     echo -e "$label readers read all rows\t$read_all"
     $CLICKHOUSE_CLIENT -q "INSERT INTO rdb SELECT number, repeat('x', 200) FROM numbers(300000)"
@@ -115,7 +119,7 @@ echo -e "reader started\t$reader_started"
 
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 3" 2>&1 \
     | grep -c -m1 "TIMEOUT_EXCEEDED" | sed 's/^/truncate timed out on reader\t/'
-echo -e "rows kept after timeout\t$($CLICKHOUSE_CLIENT -q "SELECT count() FROM rdb")"
+echo -e "rows kept after timeout\t$($CLICKHOUSE_CLIENT -q "SELECT count() FROM rdb SETTINGS $EXACT_COUNT")"
 kill "$reader_pid" 2>/dev/null
 wait "$reader_pid" 2>/dev/null
 
@@ -166,14 +170,54 @@ rm -f "$zero_out"
 # got as far as emptying the table. The reader is already awaited, so this cannot wait on anything.
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb"
 
+# What the wait must NOT do: block the handle's other users. The readers above never take
+# rocksdb_ptr_mx, so on their own they cannot tell a wait that holds it from one that does not.
+# A mutation does take it, shared, from inside its own read pipeline, so it also holds a lease
+# the truncate is waiting for: waiting under the exclusive lock deadlocks the pair outright.
+# sleepEachRow rather than a row count bounds the mutation's window by wall clock, so the
+# window does not shrink on a faster build flavour.
+$CLICKHOUSE_CLIENT -q "INSERT INTO rdb SELECT number, repeat('x', 200) FROM numbers(60)"
+MUT_ID="mutation_$CLICKHOUSE_DATABASE"
+# The predicate has to match: a mutation that deletes nothing never reaches the write that takes
+# the mutex, and then there is no second lock to order against. What it deletes does not matter,
+# the truncate below empties the table either way.
+timeout 60 $CLICKHOUSE_CLIENT --query_id="$MUT_ID" -q "
+    ALTER TABLE rdb DELETE WHERE v LIKE 'x%' AND sleepEachRow(0.1) = 0
+    SETTINGS mutations_sync = 1, max_block_size = 1, max_threads = 1, lock_acquire_timeout = 300
+" > /dev/null 2>&1 &
+mutation_pid=$!
+
+# read_rows above one block, so the mutation is inside its pull loop and already holds its lease
+# rather than merely having been published to the ProcessList.
+mutation_pulling=0
+for _ in {1..400}; do
+    if [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$MUT_ID' AND read_rows > 10") -gt 0 ]]; then
+        mutation_pulling=1
+        break
+    fi
+    sleep 0.05
+done
+echo -e "mutation pulling\t$mutation_pulling"
+
+# Through the alias, for the reason given above: a direct TRUNCATE takes the target's exclusive
+# table lock first and would absorb the wait. The timeout is bounded rather than zero, and it is what
+# makes the cell report: waiting under the exclusive lock cannot be outwaited, because the mutation
+# needs that same lock to make the progress the wait is waiting for, so the truncate reaches its
+# deadline and this cell turns 0. A zero timeout there would instead hang until the runner gives up,
+# and would leave both queries wedged for the rest of the file.
+timeout 60 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 30" > /dev/null 2>&1
+echo -e "truncate completed beside mutation\t$(($? == 0 ? 1 : 0))"
+wait "$mutation_pid"
+echo -e "mutation completed beside truncate\t$(($? == 0 ? 1 : 0))"
+
 # The target is still usable through every route, so neither the storage nor its handle was lost.
 # INSERT ... SELECT rather than INSERT ... VALUES: the runner redirects only stdout and stderr, so
 # the client inherits the runner's stdin and a VALUES insert blocks on it until the test times out.
 $CLICKHOUSE_CLIENT -q "
-    SELECT 'rows after truncate', count() FROM rdb;
+    SELECT 'rows after truncate', count() FROM rdb SETTINGS $EXACT_COUNT;
     INSERT INTO rdb SELECT 1, 'a';
-    SELECT 'direct', count() FROM rdb;
-    SELECT 'through alias', count() FROM rdb_alias;
+    SELECT 'direct', count() FROM rdb SETTINGS $EXACT_COUNT;
+    SELECT 'through alias', count() FROM rdb_alias SETTINGS $EXACT_COUNT;
 "
 
 $CLICKHOUSE_CLIENT -q "

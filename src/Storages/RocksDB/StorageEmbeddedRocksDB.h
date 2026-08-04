@@ -145,8 +145,9 @@ private:
 
     mutable SharedMutex rocksdb_ptr_mx;
 
-    /// Notified by RocksDBFullScanLease once it has released iterator and handle, so truncate()
-    /// can wait for the last full scan to let go.
+    /// Leases outstanding on rocksdb_ptr. Taken only while holding rocksdb_ptr_mx at least shared,
+    /// so holding it exclusively both reads this and prevents the next one.
+    mutable size_t full_scan_leases TSA_GUARDED_BY(full_scan_leases_mx) = 0;
     mutable std::mutex full_scan_leases_mx;
     mutable std::condition_variable full_scan_leases_released;
 
