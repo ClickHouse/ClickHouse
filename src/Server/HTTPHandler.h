@@ -95,6 +95,11 @@ private:
         bool finalized = false;
         bool canceled = false;
 
+        /// The response is a stream of packets produced by a framing format (see
+        /// `framing_output_format`). Once `finalize` has started on such a response, nothing may
+        /// be appended to it anymore (see `trySendExceptionToClient`).
+        bool framed = false;
+
         bool exception_is_written = false;
         std::function<void(WriteBuffer &, int code, const String &)> exception_writer;
 
