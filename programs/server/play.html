@@ -7735,6 +7735,48 @@ function renderBinaryPayload(targetResultEl, chunks, imageMime)
     return false;
 }
 
+/// Sink for the base64-decoded payload bytes of a non-default output format under `EventStream`
+/// framing. The `Content-Type` no longer tells a binary format apart from a text one (every payload
+/// is base64-encoded into a single `data:` field), so the first packet decides: when the output
+/// format is an image one, or the first bytes carry an image signature, the payloads are collected
+/// and rendered as an image once the stream completes (`finish`); otherwise they are decoded as
+/// UTF-8 and rendered incrementally as raw text, exactly like the format's plain output would
+/// stream (a true binary format shows as its UTF-8 interpretation, like the non-framed path). The
+/// decoder is a streaming one, so a multi-byte sequence split across packets survives.
+function makeVerbatimPayloadSink(targetResultEl, format)
+{
+    const image_mime = imageMimeForFormat(format);
+    const chunks = [];
+    let mode = null;
+    const decoder = new TextDecoder();
+    return {
+        onBytes(bytes)
+        {
+            if (mode === null)
+                mode = (image_mime || imageMimeFromBytes(bytes)) ? 'image' : 'text';
+            if (mode === 'image')
+                chunks.push(bytes);
+            else
+                targetResultEl.updateRaw(decoder.decode(bytes, { stream: true }));
+        },
+        /// Complete the stream; returns true if an image was rendered. On a truncated stream the
+        /// collected image bytes are incomplete and the error is already shown, so skip the image
+        /// (partial text was already rendered incrementally, mirroring the plain streaming path).
+        finish(truncated)
+        {
+            if (mode === 'text')
+            {
+                const tail = decoder.decode();
+                if (tail) targetResultEl.updateRaw(tail);
+                return false;
+            }
+            if (mode !== 'image' || truncated)
+                return false;
+            return renderBinaryPayload(targetResultEl, chunks, image_mime);
+        },
+    };
+}
+
 /// Output formats whose plain (unframed) output does not contain the totals and the extremes rows:
 /// in their own text such a row is indistinguishable from an ordinary data row, so the format drops
 /// them. Under a framing format the packet kind tells them apart, so the server does emit them - as
@@ -7762,13 +7804,20 @@ function plainOutputDropsTotalsAndExtremes(format)
 /// Dispatch a single parsed SSE event (a packet of a framing `EventStream` response) to the result
 /// element. `options.onStop` is called when the result element asks to stop (e.g. a row limit was
 /// reached); `options.resourceMeter`, if given, receives profile-event batches for the live meters;
-/// `options.onBytes`, if given (binary output formats), receives the base64-decoded payload bytes;
-/// `options.onException` is called when an `exception` packet arrives (the query failed even if the
-/// HTTP status was already sent as 200); `options.format` is the output format the response carries
-/// (from the `X-ClickHouse-Format` header or the saved snapshot), used to reconstruct the plain
-/// output faithfully in the raw-text mode.
+/// `options.onBytes`, if given (a non-default output format under the base64 wire, see
+/// `makeVerbatimPayloadSink`), receives the base64-decoded payload bytes; `options.onException` is
+/// called when an `exception` packet arrives (the query failed even if the HTTP status was already
+/// sent as 200); `options.format` is the output format the response carries (from the
+/// `X-ClickHouse-Format` header or the saved snapshot), used to reconstruct the plain output
+/// faithfully in the raw-text mode. `options.base64` says the `data`/`totals`/`extremes` payloads
+/// are base64-encoded into a single `data:` field (the current wire contract, signalled by
+/// `payload=base64` in the response `Content-Type`); without it the payload is embedded as text,
+/// one `data:` field per line (a snapshot saved from an older server).
 function makeEventStreamHandler(targetResultEl, options = {})
 {
+    /// Streaming decoder for the base64-encoded payloads of the table path, so a multi-byte UTF-8
+    /// sequence split across packets survives (packets split at block boundaries, but stay safe).
+    const payload_decoder = options.base64 ? new TextDecoder() : null;
     /// State for reassembling the compact framed default format (see `framed_default_format`): the
     /// first two array lines of the stream carry the column names and the types; an extremes packet
     /// carries the min row first, then the max row.
@@ -7813,15 +7862,17 @@ function makeEventStreamHandler(targetResultEl, options = {})
             /// renders the totals and the extremes as such, told apart by the packet kind.
             if (name !== 'data' && (options.onBytes || options.rawText) && plainOutputDropsTotalsAndExtremes(options.format))
                 return;
-            /// For a binary or raw output format (`options.onBytes`), the payload is base64-encoded
-            /// (a single `data:` field). Decode it to bytes and hand them off to be rendered as an
-            /// image or raw text once the whole stream is read.
+            /// For a non-default output format under the base64 wire (`options.onBytes`), the
+            /// payload is base64-encoded (a single `data:` field). Decode it to bytes and hand them
+            /// off to the sink, which streams text incrementally or renders an image at the end.
             if (options.onBytes)
             {
                 options.onBytes(base64ToBytes(dataLines.join('')));
                 return;
             }
-            const payload = dataLines.join('\n');
+            const payload = payload_decoder
+                ? payload_decoder.decode(base64ToBytes(dataLines.join('')), { stream: true })
+                : dataLines.join('\n');
             /// For a non-default output format (`options.rawText`), the payload is the format's own
             /// text (e.g. `Pretty`, `TSV`), shown verbatim: concatenating the payloads reproduces
             /// exactly what the format would have written.
@@ -7947,14 +7998,18 @@ function dispatchEventStreamBlock(block, handleEvent)
 /// accumulates into the same state.
 function renderEventStreamText(text, targetResultEl, rawText, base64, format, tab)
 {
-    const binary_chunks = base64 ? [] : null;
+    /// Under the base64 wire the rendering mode is decided by the format, not the encoding: the
+    /// default format replays as a table (the handler decodes the payloads), any other format goes
+    /// through the verbatim sink (incremental raw text, or an image collected until the end).
+    const verbatim = (base64 && !isDefaultFormat(format)) ? makeVerbatimPayloadSink(targetResultEl, format) : null;
     if (tab && !tab.resources) tab.resources = freshResourceState();
     const handleEvent = makeEventStreamHandler(targetResultEl, {
         rawText,
         format,
+        base64,
         replay: true,
         resourceMeter: tab ? (events) => accumulateResourceEvents(tab.resources, events) : undefined,
-        onBytes: base64 ? (bytes) => binary_chunks.push(bytes) : undefined,
+        onBytes: verbatim ? (bytes) => verbatim.onBytes(bytes) : undefined,
     });
     for (const block of text.split('\n\n'))
     {
@@ -7968,7 +8023,7 @@ function renderEventStreamText(text, targetResultEl, rawText, base64, format, ta
     }
     /// The whole (already-finished) stream has been replayed: show the metric totals.
     targetResultEl.finalizeMetrics();
-    return binary_chunks ? renderBinaryPayload(targetResultEl, binary_chunks, imageMimeForFormat(format)) : false;
+    return verbatim ? verbatim.finish(false) : false;
 }
 
 /// Append streamed text to the string kept for the tab/history snapshot, but stop just past 100 KB.
@@ -8001,9 +8056,12 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
     /// stream the cap stops `reply` growing before the terminal exception arrives, and the
     /// failure snapshot needs the carrier to replay the error (see `compactFailureSnapshot`).
     let exception_block = null;
-    /// In base64 mode (binary output format) the decoded payload bytes are collected and rendered
-    /// (as an image or raw text) once the whole stream has been read.
-    const binary_chunks = base64 ? [] : null;
+    /// Under the base64 wire a non-default output format goes through the verbatim sink: the
+    /// decoded payload bytes stream incrementally as raw text, or - when the format is an image one
+    /// or the first bytes carry an image signature - are collected and rendered as an image once
+    /// the whole stream has been read. The default format is a table; the handler decodes its
+    /// payloads itself.
+    const verbatim = (base64 && !isDefaultFormat(format)) ? makeVerbatimPayloadSink(targetResultEl, format) : null;
 
     /// The realtime resource meters are fed from a TAB-OWNED state: the CPU counters in the
     /// `profile_events` packets are per-packet increments (not cumulative totals), so a batch
@@ -8030,7 +8088,8 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
         },
         rawText,
         format,
-        onBytes: base64 ? (bytes) => binary_chunks.push(bytes) : undefined,
+        base64,
+        onBytes: verbatim ? (bytes) => verbatim.onBytes(bytes) : undefined,
         onException: () => { saw_exception = true; },
     });
 
@@ -8123,9 +8182,10 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
         truncated = true;
     }
 
-    /// Render the collected binary payload (image or raw text) once the stream is complete. Skip it
-    /// on a truncated stream: the collected bytes are incomplete and the error is already shown.
-    const is_image = (binary_chunks && !truncated) ? renderBinaryPayload(targetResultEl, binary_chunks, imageMimeForFormat(format)) : false;
+    /// Complete the verbatim payload once the stream is done: flush the text decoder, or render the
+    /// collected image. A truncated stream skips the image: the collected bytes are incomplete and
+    /// the error is already shown.
+    const is_image = verbatim ? verbatim.finish(truncated) : false;
 
     /// The stream is complete: switch the metrics table to totals / query-average rates.
     targetResultEl.finalizeMetrics();
@@ -8528,9 +8588,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     let is_chart = false;
     let is_image = false;
     let is_error = false;
-    /// Whether the `EventStream` payloads are base64-encoded (a binary or raw output format). Kept so
-    /// the result snapshot records it and the history/tab replay path decodes the bytes rather than
-    /// rendering the base64 text verbatim (see `renderEventStreamText`).
+    /// Whether the `EventStream` payloads are base64-encoded, from `payload=base64` in the response
+    /// `Content-Type` (the current wire contract sets it always; a snapshot saved from an older
+    /// server carries text payloads without it). Kept so the result snapshot records it and the
+    /// history/tab replay path decodes the payloads rather than rendering the base64 text verbatim
+    /// (see `renderEventStreamText`).
     let is_base64 = false;
     /// The framing kind of the reply, recorded on the snapshot so the history/tab replay path
     /// dispatches on it EXPLICITLY instead of guessing from the payload's first bytes - a raw
@@ -8813,18 +8875,22 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         } else if (content_type.startsWith('text/event-stream')) {
             /// The framing `EventStream` format: data/totals/extremes packets carry the bytes of the
             /// output format; progress, log, and profile-event packets drive the progress indicator,
-            /// the logs view, and the realtime resource meters. The payload is line-delimited JSON
-            /// parsed into a table for the default format; raw text for another text format; or, when
-            /// the content type carries `payload=base64` (a binary or raw output format), base64 that
-            /// is decoded and rendered as an image or raw text.
+            /// the logs view, and the realtime resource meters. The `Content-Type` carries
+            /// `payload=base64`: every payload is base64-encoded into a single `data:` field. The
+            /// decoded payload is line-delimited JSON parsed into a table for the default format;
+            /// for any other format it is rendered as raw text, or as an image when the format is an
+            /// image one or the bytes carry an image signature (see `makeVerbatimPayloadSink`). A
+            /// content type without `payload=base64` is an older server whose payloads are embedded
+            /// as text, one `data:` field per line.
             framing_kind = 'event_stream';
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
             const raw_text = !base64 && !isDefaultFormat(format);
             const res = await readEventStream(response, targetResultEl, abortController, tab, posted_request_num, raw_text, base64, format);
             if (res.cancelled) { return { cancelled: true }; }
-            if (base64) { if (res.is_image) is_image = true; else is_raw = true; }
-            else if (raw_text) is_raw = true; else is_table = true;
+            if (res.is_image) is_image = true;
+            else if (isDefaultFormat(format)) is_table = true;
+            else is_raw = true;
             reply = res.reply;
             exception_carrier = res.exception_block;
             /// An `exception` packet can arrive after the HTTP status was already sent as 200 OK
@@ -9979,8 +10045,8 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
 
     /// A framing `EventStream` snapshot (data, logs, progress, and possibly an exception, all
     /// multiplexed as server-sent events). Replay the whole stream, then finish like a table.
-    /// A `base64` snapshot (binary or raw output format) is decoded to bytes and rendered as an
-    /// image or raw text, mirroring the live path; it is never a table.
+    /// A `base64` snapshot decodes its payloads: the default format replays as a table, any other
+    /// format as raw text or an image, mirroring the live path.
     if (kind === 'event_stream') {
         const base64 = !!snap.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
@@ -10324,15 +10390,16 @@ async function materializeResult(tab) {
 
     if (kind === 'event_stream') {
         /// A framing `EventStream` snapshot: replay the multiplexed data, logs, progress, and
-        /// (on failure) the exception. The default format is a table; any other text format is raw
-        /// text; a `base64` format (binary or raw output) is decoded and rendered as an image or raw
-        /// text (mirroring the live path in `postImpl`). Fall through to the shared finish on success.
+        /// (on failure) the exception. The default format is a table; any other format is raw text,
+        /// or an image when the decoded payload is one (mirroring the live path in `postImpl`).
+        /// Fall through to the shared finish on success.
         const base64 = !!result.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
         const rendered_image = renderEventStreamText(result.data, el, raw_text, base64, format, tab);
-        if (base64) { if (!rendered_image) is_raw = true; }
-        else if (raw_text) is_raw = true; else is_table = true;
+        if (rendered_image) { /* an image, neither a table nor raw text */ }
+        else if (isDefaultFormat(format)) is_table = true;
+        else is_raw = true;
         if (!result.ok) {
             /// Mirror the live failure path for a framed table (`postImpl`): the replayed partial
             /// rows get the same totals/coloring/transpose/layout finalization, and a header-only

@@ -7,9 +7,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The Web UI (`programs/server/play.html`) requests every query with the `EventStream` framing
 # format. The framing rejects `*WithProgress` formats (they already emit progress in-band), so the
 # page carries a separate default format for framed requests (`framed_default_format`) and
-# reassembles its compact rows client-side (`makeEventStreamHandler`): the first two array lines
-# are the column names and the types, the packet name tells data, totals, and extremes rows apart,
-# and an extremes packet carries the min row first, then the max row.
+# reassembles its compact rows client-side (`makeEventStreamHandler`): each payload packet is a
+# single base64-encoded `data:` field (the `Content-Type` carries `payload=base64`) that decodes to
+# the formatted block, the first two array lines of the decoded stream are the column names and the
+# types, the packet name tells data, totals, and extremes rows apart, and an extremes packet
+# carries the min row first, then the max row.
 #
 # This test pins that contract between the served page and the server: the page's framed default
 # format must be accepted by the framing and produce the packet shapes the reassembly relies on,
@@ -35,13 +37,15 @@ ${CLICKHOUSE_CURL} -sS -D "$header_file" \
     "${URL}&default_format=${framed_default_format}&framing_output_format=EventStream&send_logs_level=trace&extremes=1" \
     -d "SELECT number % 2 AS k, count() AS c FROM numbers(10) GROUP BY k WITH TOTALS ORDER BY k" > "$result_file"
 grep -o -m1 'text/event-stream' "$header_file"
-[ "$(grep -c 'payload=base64' "$header_file")" -eq 0 ] && echo 'text payload: OK'
+[ "$(grep -c 'payload=base64' "$header_file")" -ge 1 ] && echo 'base64 payload: OK'
 [ "$(grep -c '^event: exception' "$result_file")" -eq 0 ] && echo 'no exception: OK'
 
-# The payload lines of each packet kind, extracted from the SSE blocks (blank-line separated).
+# The decoded payloads of each packet kind: every payload packet is a single base64-encoded
+# `data:` field; the concatenation of the decoded payloads reconstructs the formatted output.
 sse_payload_lines()
 {
-    awk -v kind="event: $1" 'BEGIN { RS = ""; FS = "\n" } $1 == kind { for (i = 2; i <= NF; i++) if ($i ~ /^data:/) print substr($i, 7) }' "$result_file"
+    awk -v kind="event: $1" 'BEGIN { RS = ""; FS = "\n" } $1 == kind { for (i = 2; i <= NF; i++) if ($i ~ /^data:/) print substr($i, 7) }' "$result_file" \
+        | while read -r payload; do printf '%s' "$payload" | base64 -d; done
 }
 
 echo '--- names line, types line, then the data rows'
