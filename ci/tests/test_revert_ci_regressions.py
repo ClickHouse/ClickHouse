@@ -609,44 +609,73 @@ class FakeCIDB:
         return "".join(json.dumps(row) + "\n" for row in self.rows)
 
 
-def _runs(*failed, commits=None):
-    """One row per run, newest first, each on a commit of its own unless the
-    caller says otherwise."""
-    commits = commits or [f"{index:040x}" for index in range(len(failed))]
+def _commits(*failed, run_counts=None):
+    """One row per commit, newest first by the commit's first run, each tested
+    once unless the caller says otherwise."""
+    run_counts = run_counts or [1] * len(failed)
     return [
         {
-            "run_time": "2026-07-31 21:%02d:00" % (30 + index),
-            "commit_sha": commits[index],
+            "commit_sha": f"{index:040x}",
+            "first_run_time": "2026-07-31 21:%02d:00" % (59 - index),
             "failed": int(value),
+            "run_count": run_counts[index],
         }
         for index, value in enumerate(failed)
     ]
 
 
 def test_a_failure_that_keeps_happening_is_reverted():
-    assert job.already_fixed(FakeCIDB(_runs(0, 1, 0)), make_failure()) == ""
+    assert job.already_fixed(FakeCIDB(_commits(0, 1, 0)), make_failure()) == ""
 
 
 def test_a_failure_that_has_passed_ever_since_is_not_reverted():
     """The usual way a broken master is repaired is a follow-up commit, not a
     revert. Reverting then undoes a change nothing is wrong with any more."""
-    fixed = job.already_fixed(FakeCIDB(_runs(0, 0, 0)), make_failure())
+    fixed = job.already_fixed(FakeCIDB(_commits(0, 0, 0)), make_failure())
     assert "the failure is gone" in fixed
+    assert "3 newest commits" in fixed
     assert "3 runs" in fixed
-    assert "3 commits" in fixed
 
 
 def test_one_passing_commit_is_not_enough_to_call_a_failure_fixed():
     """A failure that does not hit on every run would look fixed after any
     single passing one."""
-    assert job.already_fixed(FakeCIDB(_runs(0)), make_failure()) == ""
+    assert job.already_fixed(FakeCIDB(_commits(0)), make_failure()) == ""
 
 
 def test_one_commit_tested_twice_is_one_piece_of_evidence():
     """A check is often re-run on the same commit. Two green runs of one commit
     say no more about a fix than one does."""
-    green = _runs(0, 0, commits=["d" * 40, "d" * 40])
+    green = _commits(0, run_counts=[2])
     assert job.already_fixed(FakeCIDB(green), make_failure()) == ""
+
+
+def test_a_rerun_of_the_old_bad_commit_does_not_hide_the_fix():
+    """A rerun of the bad commit fails again long after the fix has merged.
+    Its rows are the newest ones, but the commit itself is not: ordered by
+    each commit's first run it sits behind the green commits that fixed the
+    failure, and the fix is still seen."""
+    rows = _commits(0, 0, 1, run_counts=[1, 1, 3])
+    fixed = job.already_fixed(FakeCIDB(rows), make_failure())
+    assert "the failure is gone" in fixed
+    assert "2 newest commits" in fixed
+
+
+def test_reruns_of_one_green_commit_do_not_crowd_out_the_second():
+    """A check re-run many times on one green commit is one commit's worth of
+    evidence, not a full page of rows: the second green commit is still seen,
+    however often the first was re-run."""
+    rows = _commits(0, 0, 1, run_counts=[19, 1, 2])
+    fixed = job.already_fixed(FakeCIDB(rows), make_failure())
+    assert "the failure is gone" in fixed
+    assert "2 newest commits" in fixed
+    assert "20 runs" in fixed
+
+
+def test_a_failure_on_the_newest_commit_blocks_older_green_evidence():
+    """Green commits behind a failing one say nothing: the failure was still
+    there after them."""
+    assert job.already_fixed(FakeCIDB(_commits(1, 0, 0)), make_failure()) == ""
 
 
 def test_a_failure_nothing_has_run_since_is_reverted():
@@ -655,14 +684,21 @@ def test_a_failure_nothing_has_run_since_is_reverted():
     assert job.already_fixed(FakeCIDB([]), make_failure()) == ""
 
 
-def test_the_later_runs_are_looked_up_for_the_same_test_in_the_same_checks():
-    cidb = FakeCIDB(_runs(1))
+def test_the_later_commits_are_looked_up_for_the_same_test_in_the_same_checks():
+    cidb = FakeCIDB(_commits(1))
     job.already_fixed(cidb, make_failure())
     query = cidb.queries[0]
-    assert "check_start_time > toDateTime('2026-07-31 21:12:40')" in query
+    # The window opens at the failure's *first* occurrence: its last one moves
+    # with every rerun of a bad commit, and a cutoff there can hide the very
+    # commits that fixed the failure.
+    assert "check_start_time >= toDateTime('2026-07-31 13:28:40')" in query
+    # One row per commit, ordered by the commit's first run: a rerun moves a
+    # commit's newest run but never its first.
+    assert "GROUP BY commit_sha" in query
+    assert "ORDER BY min(check_start_time) DESC" in query
     # Aliasing the timestamp back to `check_start_time` would shadow the column
     # the comparison above reads, and the query would not run at all.
-    assert "AS run_time" in query
+    assert "AS first_run_time" in query
     assert "test_name = '04611_join_runtime_filters'" in query
     assert "head_ref = 'master'" in query
     # A test that did not run says nothing about whether it still fails.
@@ -672,7 +708,7 @@ def test_the_later_runs_are_looked_up_for_the_same_test_in_the_same_checks():
 def test_only_the_checks_the_failure_was_seen_in_are_asked():
     """A test runs in many more checks than it failed in, and whether it passes
     in a build that never showed the failure says nothing about the failure."""
-    cidb = FakeCIDB(_runs(1))
+    cidb = FakeCIDB(_commits(1))
     job.already_fixed(cidb, make_failure())
     assert (
         "check_name IN ('Stateless tests (amd_debug, parallel)', "

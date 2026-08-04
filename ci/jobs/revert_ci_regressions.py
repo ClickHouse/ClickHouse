@@ -368,36 +368,53 @@ def quote_sql_string(value: str) -> str:
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def runs_since_the_failure_query(failure: Failure, limit=20) -> str:
-    """Every run of this test on `master` newer than the failure's last
-    occurrence, newest first, each marked as failed or not.
+def commits_since_the_failure_query(failure: Failure, limit=20) -> str:
+    """Every `master` commit this test ran on since the failure first appeared,
+    one row per commit, newest first, each marked as failed or not.
 
-    The same shape as the query that picked the failure up: the outcome is in
-    `test_status`, and a `SKIPPED` row is not an outcome at all -- a test that
-    did not run says nothing about whether it still fails, so it is left out
-    rather than counted as a pass.
+    Per commit, not per run: whether the failure is fixed is a question about
+    the newest commits of `master`, and rows are a bad proxy for commits. A
+    late rerun of the old bad commit is newer than the green rows of the
+    commits that fixed it, and a check re-run several times on one green
+    commit fills any row budget with a single piece of evidence. So the runs
+    are grouped by commit, a commit that failed in any of its runs counts as
+    failing, and commits are ordered by their *first* run: a rerun moves a
+    commit's newest run but never its first, so this order tracks the order
+    the commits reached the branch in.
+
+    The window opens at the failure's first occurrence rather than its last
+    for the same reason: the last occurrence moves with every rerun of a bad
+    commit, and a cutoff placed there can hide the very commits that fixed
+    the failure.
+
+    The same outcome logic as the query that picked the failure up: the
+    outcome is in `test_status`, and a `SKIPPED` row is not an outcome at
+    all -- a test that did not run says nothing about whether it still fails,
+    so it is left out rather than counted as a pass.
 
     Restricted to the checks the failure was seen in. A test runs in many more,
     and whether it passes in a build it never failed in says nothing about the
     failure; the question here is whether the builds that showed it still do.
     """
     checks = ", ".join(quote_sql_string(name) for name in failure.check_names)
-    # The timestamp is projected under a name of its own: aliasing it back to
-    # `check_start_time` would shadow the column the `WHERE` compares, and the
-    # query would fail on comparing a `String` with a `DateTime`.
+    # The timestamps are projected under names of their own: aliasing one back
+    # to `check_start_time` would shadow the column the `WHERE` compares, and
+    # the query would fail on comparing a `String` with a `DateTime`.
     return f"""\
 SELECT
-    toString(check_start_time) AS run_time,
     commit_sha,
-    toUInt8(test_status LIKE 'F%' OR test_status LIKE 'E%') AS failed
+    toString(min(check_start_time)) AS first_run_time,
+    toUInt8(max(test_status LIKE 'F%' OR test_status LIKE 'E%')) AS failed,
+    toUInt32(count()) AS run_count
 FROM {Settings.CI_DB_TABLE_NAME}
-WHERE check_start_time > toDateTime({quote_sql_string(failure.last_failure_time)})
+WHERE check_start_time >= toDateTime({quote_sql_string(failure.first_failure_time)})
       AND head_ref = '{BASE_BRANCH}'
       AND startsWith(head_repo, 'ClickHouse/')
       AND check_name IN ({checks})
       AND test_name = {quote_sql_string(failure.test_name)}
       AND test_status != 'SKIPPED'
-ORDER BY check_start_time DESC
+GROUP BY commit_sha
+ORDER BY min(check_start_time) DESC
 LIMIT {int(limit)}
 FORMAT JSONEachRow
 """
@@ -411,25 +428,29 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
     before the revert rather than when the failure was picked up: a fix can be
     merged while the run is investigating, and this is the last moment at which
     the answer is still worth anything.
+
+    Walks the commits newest first and counts the green ones down to the
+    newest failing commit. The commits behind a failing one say nothing more:
+    either they are the bad commits themselves, or the failure was still there
+    after them.
     """
-    runs = parse_json_each_row(cidb.query(runs_since_the_failure_query(failure)))
-    # Nothing has run since. The failure is the newest thing known about this
-    # test in the checks it failed in, so it stands.
-    if not runs:
+    commits = parse_json_each_row(cidb.query(commits_since_the_failure_query(failure)))
+    green = []
+    for commit in commits:
+        if int(commit["failed"]):
+            break
+        green.append(commit)
+    # Not green enough to tell a fix from a failure that did not hit on this
+    # commit, or nothing has run since the failure at all. The next
+    # investigation of this failure asks again.
+    if len(green) < GREEN_COMMITS_TO_CONSIDER_FIXED:
         return ""
-    if any(int(run["failed"]) for run in runs):
-        return ""
-    # Green, but not green enough to tell a fix from a failure that did not hit
-    # on this commit. The next investigation of this failure asks again.
-    commits = {run["commit_sha"] for run in runs}
-    if len(commits) < GREEN_COMMITS_TO_CONSIDER_FIXED:
-        return ""
+    runs = sum(int(commit["run_count"]) for commit in green)
     return (
-        f"the failure is gone: every one of the {len(runs)} runs of it on "
-        f"{BASE_BRANCH} since {failure.last_failure_time} UTC passed, on "
-        f"{len(commits)} commits, the newest {runs[0]['commit_sha']} at "
-        f"{runs[0]['run_time']} UTC, so something merged in the meantime already "
-        f"fixed it"
+        f"the failure is gone: the {len(green)} newest commits of {BASE_BRANCH} "
+        f"that ran it all passed, in {runs} runs, the newest "
+        f"{green[0]['commit_sha']} first tested at {green[0]['first_run_time']} "
+        f"UTC, so something merged in the meantime already fixed it"
     )
 
 

@@ -272,7 +272,7 @@ The threshold counts commits rather than failing rows, so one bad commit that fa
 
 Only an unambiguous answer leads to an action.
 When the agent reports a regression with high confidence, and the named pull request passes the safety checks (merged into `master` within the last three days, not a revert itself, not already reverted, and the revert applies cleanly), the job reverts it, merges the revert immediately without waiting for checks, and opens a draft pull request titled `Reapply "..."` that reintroduces the change.
-Nothing is reverted once the failure is gone: a failure stays in the observation window for a whole day after it stopped, so right before reverting the job asks the CI database again, and a failure whose every run on `master` since then has passed is recorded as already fixed and left alone.
+Nothing is reverted once the failure is gone: a failure stays in the observation window for a whole day after it stopped, so right before reverting the job asks the CI database again, and a failure that the newest `master` commits to run it have all passed is recorded as already fixed and left alone.
 At most two pull requests are reverted per run.
 
 If your pull request was reverted:
