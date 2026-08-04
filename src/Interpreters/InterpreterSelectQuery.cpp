@@ -189,6 +189,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsBool query_plan_enable_optimizations;
@@ -682,6 +683,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         LOG_DEBUG(log, "JOINs are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
         context->setSetting("parallel_replicas_custom_key", String{""});
+    }
+
+    /// The kill switch for parallel replicas for queries with multiple tables (the analyzer applies it in `buildJoinTreeQueryPlan`)
+    if (joined_tables.tablesCount() > 1 && !settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
+        && context->canUseTaskBasedParallelReplicas())
+    {
+        LOG_DEBUG(log, "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
+        context->setSetting("enable_parallel_replicas", Field(0));
     }
 
     /// Check support for FINAL for parallel replicas

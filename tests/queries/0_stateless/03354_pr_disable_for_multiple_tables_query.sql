@@ -76,5 +76,16 @@ select count() from (explain select * from (select id from X union all (select i
 set parallel_replicas_for_queries_with_multiple_tables=0;
 select count() from (explain select * from (select id from X union all (select id from X union all select id from X)) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
 
+-- The legacy (pre-analyzer) interpreter must respect the setting as well: with
+-- parallel_replicas_only_with_analyzer = 0 task-based parallel replicas are allowed on that path,
+-- and the kill switch is applied in InterpreterSelectQuery before the storage read.
+set enable_analyzer = 0, parallel_replicas_only_with_analyzer = 0;
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() > 0 from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+-- A single-table query is not affected by the setting on the legacy path either.
+select count() > 0 from (explain select * from X) where explain ilike '%ReadFromRemoteParallelReplicas%';
+
 -- drop table X sync;
 -- drop table Y sync;
