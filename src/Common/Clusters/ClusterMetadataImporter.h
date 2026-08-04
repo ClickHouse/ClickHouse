@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <boost/noncopyable.hpp>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -58,7 +59,7 @@ private:
     };
 
     mutable std::mutex mutex;
-    bool shutdown_called = false;
+    std::atomic<bool> shutdown_called{false};
 
     ContextPtr context;
     String keeper_name;
@@ -80,6 +81,6 @@ private:
     bool refreshSnapshots();
 };
 
-using ClusterMetadataImporterPtr = std::shared_ptr<ClusterMetadataImporter>;
+using ClusterMetadataImporterPtr = std::unique_ptr<ClusterMetadataImporter>;
 
 }

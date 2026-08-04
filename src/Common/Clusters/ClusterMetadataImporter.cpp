@@ -116,6 +116,9 @@ void ClusterMetadataImporter::shutdown()
 
 std::vector<ClusterMetadataImporter::ImportedSnapshot> ClusterMetadataImporter::getLoadedSnapshots() const
 {
+    if (shutdown_called)
+        return {};
+
     std::lock_guard lock(mutex);
 
     std::vector<ImportedSnapshot> snapshots;

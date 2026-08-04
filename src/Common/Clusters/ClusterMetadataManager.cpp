@@ -300,112 +300,98 @@ void ClusterMetadataManager::initialize()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::initialize called before global context exists");
 
     config = parseConfig(context->getConfigRef());
-    if (config.enabled)
-    {
-        auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::initialize");
-        auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(config.keeper_name);
-        storage = std::make_shared<ClusterMetadataStorage>(
-            zookeeper,
-            config.local_root,
-            config.encrypted,
-            config.encryption_key_hex,
-            config.encryption_algorithm);
-        storage->initLayout();
-        reloadSnapshotUnlocked();
-
-        ddl_worker = std::make_unique<ClusterMetadataDDLWorker>(
-            context,
-            storage,
-            toString(ServerUUID::get()),
-            config.keeper_name,
-            config.max_log_entries_per_batch,
-            [this]
-            {
-                const String digest = reloadSnapshot();
-                requestSnapshotMaterialization();
-                return digest;
-            },
-            [this](const ClusterMetadataMutation & mutation)
-            {
-                return prepareMutation(mutation);
-            },
-            [this](const std::vector<ClusterMetadataMutation> & mutations)
-            {
-                return applyMutations(mutations);
-            });
-        initialized_replica_group = config.replica_group;
-
-        if (!config.imports.empty())
-        {
-            importer = std::make_shared<ClusterMetadataImporter>(
-                context,
-                config.keeper_name,
-                config.root_path,
-                config.encrypted,
-                config.encryption_key_hex,
-                config.encryption_algorithm,
-                config.imports,
-                [this] { requestSnapshotMaterialization(); });
-        }
-
-        materialization_task = context->getSchedulePool().createTask(
-            StorageID::createEmpty(), "ClusterMetadataMaterializer", [this] { materializationTask(); });
-    }
-    else
+    if (config.root_path.empty())
     {
         LOG_INFO(log, "ClusterMetadataManager initialized without `{}` configuration", CONFIG_PREFIX);
+        return;
     }
+
+    auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::initialize");
+    auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(config.keeper_name);
+    storage = std::make_shared<ClusterMetadataStorage>(
+        zookeeper,
+        config.local_root,
+        config.encrypted,
+        config.encryption_key_hex,
+        config.encryption_algorithm);
+    storage->initLayout();
+    reloadSnapshotUnlocked();
+
+    ddl_worker = std::make_unique<ClusterMetadataDDLWorker>(
+        context,
+        storage,
+        toString(ServerUUID::get()),
+        config.keeper_name,
+        config.max_log_entries_per_batch,
+        [this]
+        {
+            const String digest = reloadSnapshot();
+            requestSnapshotMaterialization();
+            return digest;
+        },
+        [this](const ClusterMetadataMutation & mutation)
+        {
+            return prepareMutation(mutation);
+        },
+        [this](const std::vector<ClusterMetadataMutation> & mutations)
+        {
+            return applyMutations(mutations);
+        });
+    initialized_replica_group = config.replica_group;
+
+    if (!config.imports.empty())
+    {
+        importer = std::make_unique<ClusterMetadataImporter>(
+            context,
+            config.keeper_name,
+            config.root_path,
+            config.encrypted,
+            config.encryption_key_hex,
+            config.encryption_algorithm,
+            config.imports,
+            [this] { requestSnapshotMaterialization(); });
+    }
+
+    materialization_task = context->getSchedulePool().createTask(
+        StorageID::createEmpty(), "ClusterMetadataMaterializer", [this] { materializationTask(); });
 
     initialized = true;
 
-    if (ddl_worker)
-    {
-        materialization_task->activateAndSchedule();
-        requestSnapshotMaterialization();
-        ddl_worker->startup();
-        if (importer)
-            importer->startup();
+    materialization_task->activateAndSchedule();
+    requestSnapshotMaterialization();
+    ddl_worker->startup();
+    if (importer)
+        importer->startup();
 
-        LOG_INFO(log, "ClusterMetadataManager initialized for replica group `{}`", initialized_replica_group);
-    }
+    LOG_INFO(log, "ClusterMetadataManager initialized for replica group `{}`", initialized_replica_group);
 }
 
 void ClusterMetadataManager::shutdown()
 {
-    ClusterMetadataImporterPtr importer_to_shutdown;
-    BackgroundSchedulePool::TaskHolder materialization_task_to_stop;
-    std::unique_ptr<ClusterMetadataDDLWorker> ddl_worker_to_shutdown;
-    {
-        std::lock_guard lock(mutex);
-        importer_to_shutdown = std::move(importer);
-        materialization_task_to_stop = std::move(materialization_task);
-        materialization_requested = false;
-    }
-    {
-        /// Take ownership away under `ddl_worker_mutex` so in-flight `commitMutation*` finish first,
-        /// then shut the worker down outside both manager locks (its threads callback into this manager).
-        std::lock_guard lock(ddl_worker_mutex);
-        ddl_worker_to_shutdown = std::move(ddl_worker);
-    }
-    /// Stop background tasks before taking the manager mutex for the rest of shutdown: they can call
-    /// back into this manager and take the same mutex.
-    if (importer_to_shutdown)
-        importer_to_shutdown->shutdown();
-    if (materialization_task_to_stop)
-        materialization_task_to_stop->deactivate();
-    if (ddl_worker_to_shutdown)
-        ddl_worker_to_shutdown->shutdown();
+    /// Flip first so concurrent DDL / materialization callbacks observe disabled state before we
+    /// tear down owned components. Stop background work outside `mutex`: their callbacks take it.
+    const bool was_initialized = initialized.exchange(false);
+
+    if (importer)
+        importer->shutdown();
+    if (materialization_task)
+        materialization_task->deactivate();
+    if (ddl_worker)
+        ddl_worker->shutdown();
 
     std::lock_guard lock(mutex);
-    if (initialized)
+    if (was_initialized)
         ClusterFactory::instance().replaceSQLCatalogClusters({});
+    importer.reset();
+    materialization_task = {};
+    ddl_worker.reset();
+    materialization_requested = false;
     storage.reset();
     snapshot = {};
     snapshot_version = 0;
     materialized_snapshot_version = 0;
     config = {};
     context = nullptr;
-    initialized = false;
 }
 
 ClusterMetadataConfig ClusterMetadataManager::parseConfig(
@@ -433,7 +419,6 @@ ClusterMetadataConfig ClusterMetadataManager::parseConfig(
             config_prefix);
 
     ClusterMetadataConfig result;
-    result.enabled = true;
     result.keeper_name = config.getString(config_prefix + ".keeper", String(zkutil::DEFAULT_ZOOKEEPER_NAME));
     result.root_path = config.getString(config_prefix + ".path", "");
     result.encrypted = config.getBool(config_prefix + ".encrypted", false);
@@ -491,7 +476,7 @@ void ClusterMetadataManager::reloadSnapshotUnlocked()
 
 String ClusterMetadataManager::reloadSnapshot()
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     String digest;
@@ -511,7 +496,7 @@ bool ClusterMetadataManager::hasShard(const String & shard_name) const
 
 std::optional<EndpointCatalogDefinition> ClusterMetadataManager::tryGetEndpoint(const String & endpoint_name) const
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     std::lock_guard lock(mutex);
@@ -523,7 +508,7 @@ std::optional<EndpointCatalogDefinition> ClusterMetadataManager::tryGetEndpoint(
 
 std::optional<ShardCatalogDefinition> ClusterMetadataManager::tryGetShard(const String & shard_name) const
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     std::lock_guard lock(mutex);
@@ -535,7 +520,7 @@ std::optional<ShardCatalogDefinition> ClusterMetadataManager::tryGetShard(const 
 
 std::optional<ClusterCatalogDefinition> ClusterMetadataManager::tryGetCluster(const String & cluster_name) const
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     std::lock_guard lock(mutex);
@@ -547,7 +532,7 @@ std::optional<ClusterCatalogDefinition> ClusterMetadataManager::tryGetCluster(co
 
 std::vector<String> ClusterMetadataManager::listEndpointNames() const
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
     std::lock_guard lock(mutex);
     return listMapKeys(snapshot.endpoints);
@@ -555,7 +540,7 @@ std::vector<String> ClusterMetadataManager::listEndpointNames() const
 
 std::vector<String> ClusterMetadataManager::listShardNames() const
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
     std::lock_guard lock(mutex);
     return listMapKeys(snapshot.shards);
@@ -563,16 +548,10 @@ std::vector<String> ClusterMetadataManager::listShardNames() const
 
 std::vector<String> ClusterMetadataManager::listClusterNames() const
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
     std::lock_guard lock(mutex);
     return listMapKeys(snapshot.clusters);
-}
-
-bool ClusterMetadataManager::isEnabled() const
-{
-    std::lock_guard lock(mutex);
-    return config.enabled;
 }
 
 void ClusterMetadataManager::throwIfDisabled() const
@@ -585,25 +564,14 @@ void ClusterMetadataManager::throwIfDisabled() const
 
 void ClusterMetadataManager::commitMutation(const ClusterMetadataMutation & mutation)
 {
-    std::lock_guard lock(ddl_worker_mutex);
-    if (!ddl_worker)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster metadata DDL worker is not initialized");
-
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::commitMutation");
     ddl_worker->enqueueMutationAndConfirmLocal(mutation);
 }
 
 BlockIO ClusterMetadataManager::commitMutationSync(const ClusterMetadataMutation & mutation, ContextPtr query_context)
 {
-    ClusterMetadataDDLWorker::EnqueuedMutationInfo enqueued;
-    {
-        std::lock_guard lock(ddl_worker_mutex);
-        if (!ddl_worker)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster metadata DDL worker is not initialized");
-
-        auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::commitMutationSync");
-        enqueued = ddl_worker->enqueueMutationForSync(mutation);
-    }
+    auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::commitMutationSync");
+    auto enqueued = ddl_worker->enqueueMutationForSync(mutation);
 
     BlockIO io;
     if (enqueued.is_noop)
@@ -644,7 +612,7 @@ BlockIO ClusterMetadataManager::finishCommit(const ClusterMetadataMutation & mut
 
 ClusterMetadataDDLWorker::PreparedMutation ClusterMetadataManager::prepareMutation(const ClusterMetadataMutation & mutation) const
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     ClusterMetadataStoragePtr local_storage;
@@ -838,7 +806,7 @@ ClusterMetadataDDLWorker::PreparedMutation ClusterMetadataManager::prepareMutati
 
 String ClusterMetadataManager::applyMutations(const std::vector<ClusterMetadataMutation> & mutations)
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     std::lock_guard lock(mutex);
@@ -1218,6 +1186,37 @@ void ClusterMetadataManager::materializeSnapshotClusters(
     }
 }
 
+void ClusterMetadataManager::materializeImportedClusters(
+    const std::vector<ClusterMetadataImporter::ImportedSnapshot> & imported_snapshots,
+    ContextPtr query_context,
+    std::map<String, ClusterPtr> & out) const
+{
+    for (const auto & imported_snapshot : imported_snapshots)
+    {
+        std::map<String, ClusterPtr> imported_clusters;
+        try
+        {
+            materializeSnapshotClusters(imported_snapshot.snapshot, query_context, imported_clusters);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                log, fmt::format("Failed to materialize imported clusters from replica group `{}`", imported_snapshot.replica_group));
+            continue;
+        }
+
+        for (auto & [name, cluster] : imported_clusters)
+        {
+            if (!out.emplace(name, cluster).second)
+                LOG_WARNING(
+                    log,
+                    "Imported SQL CLUSTER `{}` from replica group `{}` is shadowed by an already-visible cluster of the same name",
+                    name,
+                    imported_snapshot.replica_group);
+        }
+    }
+}
+
 void ClusterMetadataManager::requestSnapshotMaterialization()
 {
     std::lock_guard lock(mutex);
@@ -1271,16 +1270,12 @@ UInt64 ClusterMetadataManager::publishSnapshotToClusterFactory() const
     ContextPtr local_context;
     ClusterMetadataStorage::Snapshot local_snapshot;
     UInt64 version_snapshot = 0;
-    ClusterMetadataImporterPtr local_importer;
     {
         std::lock_guard lock(mutex);
         local_context = context;
         local_snapshot = snapshot;
         version_snapshot = snapshot_version;
-        local_importer = importer;
     }
-
-    const auto imported_snapshots = local_importer ? local_importer->getLoadedSnapshots() : std::vector<ClusterMetadataImporter::ImportedSnapshot>{};
 
     if (!local_context)
         local_context = Context::getGlobalContextInstance();
@@ -1289,33 +1284,11 @@ UInt64 ClusterMetadataManager::publishSnapshotToClusterFactory() const
 
     std::map<String, ClusterPtr> materialized;
     materializeSnapshotClusters(local_snapshot, local_context, materialized);
-
-    /// Imported (read-only) clusters fill in names not already defined locally; on a name collision the
-    /// local replica group always wins, and among imports the first configured group wins.
-    for (const auto & imported_snapshot : imported_snapshots)
-    {
-        std::map<String, ClusterPtr> imported_clusters;
-        try
-        {
-            materializeSnapshotClusters(imported_snapshot.snapshot, local_context, imported_clusters);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(
-                log, fmt::format("Failed to materialize imported clusters from replica group `{}`", imported_snapshot.replica_group));
-            continue;
-        }
-
-        for (auto & [name, cluster] : imported_clusters)
-        {
-            if (!materialized.emplace(name, cluster).second)
-                LOG_WARNING(
-                    log,
-                    "Imported SQL CLUSTER `{}` from replica group `{}` is shadowed by an already-visible cluster of the same name",
-                    name,
-                    imported_snapshot.replica_group);
-        }
-    }
+    /// Imported (read-only) clusters fill in names not already defined locally.
+    /// `importer` lifetime is ordered by shutdown (materialization deactivated before `reset`);
+    /// `getLoadedSnapshots` returns empty once importer shutdown has begun.
+    if (importer)
+        materializeImportedClusters(importer->getLoadedSnapshots(), local_context, materialized);
 
     for (auto & [_, cluster] : materialized)
         cluster->setDefinitionMetadata(ClusterDefinitionSource::SQLCatalog, version_snapshot);
@@ -1397,7 +1370,7 @@ ClusterPtr ClusterMetadataManager::materializeCluster(const String & cluster_nam
 
 String ClusterMetadataManager::getShowCreateShard(const String & shard_name) const
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     std::lock_guard lock(mutex);
@@ -1410,7 +1383,7 @@ String ClusterMetadataManager::getShowCreateShard(const String & shard_name) con
 
 String ClusterMetadataManager::getShowCreateCluster(const String & cluster_name) const
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     std::lock_guard lock(mutex);
@@ -1551,7 +1524,7 @@ BlockIO ClusterMetadataManager::createEndpoint(
     bool if_not_exists,
     bool sync, ContextPtr query_context)
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     return finishCommit(
@@ -1560,7 +1533,7 @@ BlockIO ClusterMetadataManager::createEndpoint(
 
 BlockIO ClusterMetadataManager::dropEndpoint(const String & endpoint_name, bool if_exists, bool sync, ContextPtr query_context)
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     return finishCommit(ClusterMetadataMutation::dropEndpoint(endpoint_name, if_exists), sync, query_context);
@@ -1568,7 +1541,7 @@ BlockIO ClusterMetadataManager::dropEndpoint(const String & endpoint_name, bool 
 
 BlockIO ClusterMetadataManager::alterEndpoint(const String & endpoint_name, const SettingsChanges & properties, bool sync, ContextPtr query_context)
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     if (properties.empty())
@@ -1585,7 +1558,7 @@ BlockIO ClusterMetadataManager::createShard(
     bool if_not_exists,
     bool sync, ContextPtr query_context)
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     /// Build the intended definition from the query. Existence / IF NOT EXISTS / name conflicts are
@@ -1598,7 +1571,7 @@ BlockIO ClusterMetadataManager::createShard(
 
 BlockIO ClusterMetadataManager::dropShard(const String & shard_name, bool if_exists, bool sync, ContextPtr query_context)
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     return finishCommit(ClusterMetadataMutation::dropShard(shard_name, if_exists), sync, query_context);
@@ -1609,7 +1582,7 @@ BlockIO ClusterMetadataManager::updateShardPropertiesFromSQL(const ASTAlterShard
     if (query.command != AlterShardCommand::ModifyShardProperties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::updateShardPropertiesFromSQL expects ModifyShardProperties");
 
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     if (query.shard_definition_properties.empty())
@@ -1634,7 +1607,7 @@ BlockIO ClusterMetadataManager::addReplicaToShardFromSQL(const ASTAlterShardQuer
     if (query.command != AlterShardCommand::AddReplica)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::addReplicaToShardFromSQL expects AddReplica");
 
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     if (query.replica_name.empty())
@@ -1651,7 +1624,7 @@ BlockIO ClusterMetadataManager::dropReplicaFromShardFromSQL(const ASTAlterShardQ
     if (query.command != AlterShardCommand::DropReplica)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::dropReplicaFromShardFromSQL expects DropReplica");
 
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     if (query.replica_name.empty())
@@ -1668,7 +1641,7 @@ BlockIO ClusterMetadataManager::replaceShardReplicasFromSQL(const ASTAlterShardQ
     if (query.command != AlterShardCommand::ReplaceReplicas)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::replaceShardReplicasFromSQL expects ReplaceReplicas");
 
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     if (query.replica_replace_clauses.empty())
@@ -1708,7 +1681,7 @@ BlockIO ClusterMetadataManager::createCluster(
     bool if_not_exists,
     bool sync, ContextPtr query_context)
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     if (members.empty())
@@ -1724,7 +1697,7 @@ BlockIO ClusterMetadataManager::createCluster(
 
 BlockIO ClusterMetadataManager::dropCluster(const String & cluster_name, bool if_exists, bool sync, ContextPtr query_context)
 {
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     return finishCommit(ClusterMetadataMutation::dropCluster(cluster_name, if_exists), sync, query_context);
@@ -1735,7 +1708,7 @@ BlockIO ClusterMetadataManager::addClusterMembersFromSQL(const ASTAlterClusterQu
     if (query.command != AlterClusterCommand::AddShard)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::addClusterMembersFromSQL expects AddShard");
 
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     if (query.add_shard_members.empty())
@@ -1752,7 +1725,7 @@ BlockIO ClusterMetadataManager::dropClusterMembersFromSQL(const ASTAlterClusterQ
     if (query.command != AlterClusterCommand::DropShard)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::dropClusterMembersFromSQL expects DropShard");
 
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     if (query.drop_shard_members.empty())
@@ -1769,7 +1742,7 @@ BlockIO ClusterMetadataManager::replaceClusterMembersFromSQL(const ASTAlterClust
     if (query.command != AlterClusterCommand::ReplaceClusterMembers)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::replaceClusterMembersFromSQL expects ReplaceClusterMembers");
 
-    if (!isEnabled())
+    if (!initialized)
         throwIfDisabled();
 
     if (query.member_replace_clauses.empty())

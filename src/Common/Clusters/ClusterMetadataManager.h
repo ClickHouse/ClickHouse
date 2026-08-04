@@ -13,6 +13,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <boost/noncopyable.hpp>
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -34,7 +35,6 @@ class ASTAlterShardQuery;
 /// Parsed `<cluster_metadata>` server configuration.
 struct ClusterMetadataConfig
 {
-    bool enabled = false;
     String keeper_name;
     String root_path;
     bool encrypted = false;
@@ -131,13 +131,9 @@ private:
     ClusterMetadataManager() = default;
 
     mutable std::mutex mutex;
-    /// Serializes access to `ddl_worker` ownership against shutdown.
-    /// Commit paths may hold this lock and then take `mutex` via `prepareMutation` / apply
-    /// (order: `ddl_worker_mutex` -> `mutex`). DDL callbacks (`prepareMutation`, `applyMutations`,
-    /// `reloadSnapshot`) must never acquire `ddl_worker_mutex`, or they would deadlock with
-    /// shutdown / in-flight commits.
-    mutable std::mutex ddl_worker_mutex;
-    bool initialized = false;
+    /// Cleared at the start of `shutdown` so new DDL / callback entry points bail out via
+    /// `throwIfDisabled` before `ddl_worker` (and other owned components) are torn down.
+    std::atomic<bool> initialized{false};
 
     ContextPtr context;
     ClusterMetadataConfig config;
@@ -153,7 +149,6 @@ private:
     const LoggerPtr log = getLogger("ClusterMetadataManager");
     static constexpr UInt64 MATERIALIZATION_INTERVAL_MS = 1000;
 
-    bool isEnabled() const;
     [[noreturn]] void throwIfDisabled() const;
     void commitMutation(const ClusterMetadataMutation & mutation);
     /// Enqueue mutation and return a status pipeline waiting for all registered replicas (`SYNC`).
@@ -191,6 +186,12 @@ private:
 
     void materializeSnapshotClusters(
         const ClusterMetadataStorage::Snapshot & source_snapshot,
+        ContextPtr query_context,
+        std::map<String, ClusterPtr> & out) const;
+    /// Materialize imported (read-only) clusters into `out`. Names already present are left unchanged
+    /// (local / earlier import wins); among imports, the first configured group wins.
+    void materializeImportedClusters(
+        const std::vector<ClusterMetadataImporter::ImportedSnapshot> & imported_snapshots,
         ContextPtr query_context,
         std::map<String, ClusterPtr> & out) const;
 };
