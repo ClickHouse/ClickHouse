@@ -8884,6 +8884,32 @@ PartitionIds MergeTreeData::resolvePartitionIdsForCommands(
     return PartitionIds{area.begin(), area.end()};
 }
 
+void MergeTreeData::rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const
+{
+    for (auto & command : commands)
+    {
+        auto alter = command.ast();
+        if (!alter || !alter->partition)
+            continue;
+
+        /// Skip commands that already carry a partition id (nothing to pin) and `ALL`
+        /// (not a scope that has to survive a partition key change).
+        const auto & partition_ast = alter->partition->as<const ASTPartition &>();
+        if (!partition_ast.value)
+            continue;
+
+        String partition_id = getPartitionIDFromQuery(ASTPtr(alter->partition), query_context);
+
+        auto handle = command.mutateAst();
+        auto new_partition = make_intrusive<ASTPartition>();
+        new_partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+        handle->setOrReplace(handle->partition, new_partition);
+        handle.commit();
+
+        command.resolved_partition_id = std::move(partition_id);
+    }
+}
+
 PartitionIds MergeTreeData::getAllPartitionIds() const
 {
     auto lock = readLockParts();

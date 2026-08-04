@@ -8433,6 +8433,14 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     mutation_entry.source_replica = replica_name;
     mutation_entry.commands = commands;
 
+    /// The entry is persisted in ZooKeeper only as the serialized text of the commands, and every
+    /// replica re-resolves the `IN PARTITION` clause from that text at execution time. Pin the
+    /// partition scope to the `IN PARTITION ID` form now, so that a later key-safe partition key
+    /// type change (e.g. `Enum8 -> Int8`) cannot make the persisted partition value unparseable
+    /// while the mutation is still pending. The `ID` form is decoded without the partition key
+    /// and is understood by all replicas, including older versions.
+    rewritePartitionScopeToIds(mutation_entry.commands, query_context);
+
     const String mutations_path = fs::path(zookeeper_path) / "mutations";
     const auto zookeeper = getZooKeeper();
 
