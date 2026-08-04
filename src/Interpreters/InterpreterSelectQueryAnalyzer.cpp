@@ -254,7 +254,15 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
+
+    /// Injecting `ORDER BY rand()` (setting `inject_random_order_for_select_without_order_by`) is only valid
+    /// for a query processed up to the final stage. If the query is planned only up to an intermediate stage
+    /// (e.g. a child plan of a `Merge` table processed to `WithMergeableState` because a sibling child is
+    /// `Distributed`), wrapping it into `SELECT * FROM (...) ORDER BY rand()` would cut the plan at the
+    /// wrapper level, so the child would return fully aggregated blocks without `AggregatedChunkInfo` where
+    /// partially aggregated blocks are expected, failing with a logical error in `MergingAggregatedTransform`.
+    const bool add_random_order_injection = select_query_options.to_stage == QueryProcessingStage::Complete;
+    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze, add_random_order_injection);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.

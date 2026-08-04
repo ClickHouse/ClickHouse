@@ -265,7 +265,7 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool add_random_order_injection)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
@@ -347,7 +347,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<OptimizeTrivialGroupByLimitPass>());
 
-    manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
+    if (add_random_order_injection)
+        manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 
     manager.addPass(std::make_unique<DisableParallelReplicasPass>());
 }
