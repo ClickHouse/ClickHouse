@@ -18,7 +18,9 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 128, index_granularity_bytes = 0;
+-- max_bytes_to_merge_at_max_space_in_pool = 1: the granule counts below hold only while each
+-- message value stays in its own part.
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1024);
@@ -89,7 +91,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 128, index_granularity_bytes = 0;
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello World ClickHouse is fast' FROM numbers(1024);
@@ -123,7 +125,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 128, index_granularity_bytes = 0;
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello World ClickHouse fast' FROM numbers(1024);
