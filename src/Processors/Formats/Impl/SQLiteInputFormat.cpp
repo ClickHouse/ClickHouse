@@ -238,8 +238,8 @@ When the ClickHouse table structure is specified explicitly, floating-point valu
 
 | Setting                                                                                                                     | Description                                      | Default   |
 |-----------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------|-----------|
-| [`input_format_sqlite_table_name`](/operations/settings/settings-formats#input_format_sqlite_table_name)           | The name of the table to read from SQLite input. If empty, the first table is used. | `''` |
-| [`output_format_sqlite_table_name`](/operations/settings/settings-formats#output_format_sqlite_table_name)         | The name of the table in SQLite output.          | `'table'` |
+| [`input_format_sqlite_table_name`](/reference/settings/formats/input-format#input_format_sqlite_table_name)           | The name of the table to read from SQLite input. If empty, the first table is used. | `''` |
+| [`output_format_sqlite_table_name`](/reference/settings/formats/output-format#output_format_sqlite_table_name)         | The name of the table in SQLite output.          | `'table'` |
 )DOCS_MD"});
 }
 
