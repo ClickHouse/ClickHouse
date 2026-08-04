@@ -49,7 +49,7 @@ The main ClickHouse Keeper configuration tag is `<keeper_server>` and has the fo
 | `digest_enabled`                     | Enable real-time data consistency check                                                                                                                                                                                                             | `True`                                                                                                       |
 | `create_snapshot_on_exit`            | Create a snapshot during shutdown                                                                                                                                                                                                                   | -                                                                                                            |
 | `hostname_checks_enabled`            | Enable sanity hostname checks for cluster configuration (e.g. if localhost is used with remote endpoints)                                                                                                                                           | `True`                                                                                                       |
-| `four_letter_word_white_list`        | White list of 4lw commands.                                                                                                                                                                                                                         | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, ydld` |
+| `four_letter_word_white_list`        | White list of 4lw commands.                                                                                                                                                                                                                         | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, rclc, clrs, ftfl, ydld, fcon, fcof, pfev, lgrq` |
 |`enable_ipv6`| Enable IPv6 | `True`|
 
 Other common parameters are inherited from the ClickHouse server config (`listen_host`, `logger`, and so on).
@@ -161,7 +161,7 @@ clickhouse keeper --config /etc/your_path_to_config/config.xml
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives general information about the server and connected clients, `srvr` gives extended details on the server, and `cons` gives extended details on connections.
 
-The 4lw commands have a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,ydld`.
+The 4lw commands have a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,fcon,fcof,pfev,lgrq`.
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
 
@@ -189,6 +189,7 @@ zk_packets_sent 68
 zk_num_alive_connections        1
 zk_outstanding_requests 0
 zk_server_state leader
+zk_full_consensus_mode  0
 zk_znode_count  4
 zk_watch_count  1
 zk_ephemerals_count     0
@@ -380,6 +381,18 @@ check_not_exists    0
 
 ```response
 Sent yield leadership request to leader.
+```
+
+- `fcon`: Request the leader to turn on full consensus mode. In this mode a write is committed only after it is acknowledged by all healthy voting members instead of a majority (a member that does not respond for several heartbeats, or lags behind the committed log by more than one append batch, is excluded from the quorum until it recovers, and commits never proceed with fewer acks than a majority). The command can be sent to any node: a follower forwards the request to the current leader, and the leader propagates the mode to all peers on a best-effort basis. Since the propagation is best-effort and the mode is neither persisted nor replicated through the Raft log, verify `zk_full_consensus_mode` in `mntr` output on every node after issuing the command, and re-issue it if some node did not receive it (for example, a restarted server always starts with the mode turned off, and a server running an older version ignores the request while still reporting success). Recovery mode (`rcvr`) takes precedence over full consensus mode.
+
+```response
+Sent full consensus mode ON request to leader.
+```
+
+- `fcof`: Request the leader to turn off full consensus mode and return to majority quorum. The same propagation and verification caveats as for `fcon` apply.
+
+```response
+Sent full consensus mode OFF request to leader.
 ```
 
 - `pfev`: Returns the values for all collected events. For each event it returns event name, event value, and event's description.

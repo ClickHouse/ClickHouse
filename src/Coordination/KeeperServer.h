@@ -213,6 +213,13 @@ public:
 
     void yieldLeadership();
 
+    /// Ask the leader to turn on/off full consensus mode
+    /// (commits require acks from all healthy voting members).
+    bool requestFullConsensusMode(bool enable);
+
+    /// Whether full consensus mode is enabled according to the local Raft parameters.
+    bool isFullConsensusMode() const;
+
     void recalculateStorageStats();
 
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }

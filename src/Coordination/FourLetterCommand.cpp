@@ -197,6 +197,12 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
         factory.registerCommand(feature_flags_command);
 
+        FourLetterCommandPtr full_consensus_on_command = std::make_shared<FullConsensusOnCommand>(keeper_dispatcher);
+        factory.registerCommand(full_consensus_on_command);
+
+        FourLetterCommandPtr full_consensus_off_command = std::make_shared<FullConsensusOffCommand>(keeper_dispatcher);
+        factory.registerCommand(full_consensus_off_command);
+
         FourLetterCommandPtr yield_leadership_command = std::make_shared<YieldLeadershipCommand>(keeper_dispatcher);
         factory.registerCommand(yield_leadership_command);
 
@@ -322,6 +328,7 @@ String MonitorCommand::run()
     print(ret, "outstanding_requests", keeper_info.outstanding_requests_count);
 
     print(ret, "server_state", keeper_info.getRole());
+    print(ret, "full_consensus_mode", keeper_info.is_full_consensus_mode ? 1 : 0);
 
     const auto storage_stats = state_machine.getStorageStats();
 
@@ -655,6 +662,20 @@ String YieldLeadershipCommand::run()
 {
     keeper_dispatcher.yieldLeadership();
     return "Sent yield leadership request to leader.";
+}
+
+String FullConsensusOnCommand::run()
+{
+    return keeper_dispatcher.requestFullConsensusMode(true)
+        ? "Sent full consensus mode ON request to leader."
+        : "Failed to send full consensus mode ON request to leader.";
+}
+
+String FullConsensusOffCommand::run()
+{
+    return keeper_dispatcher.requestFullConsensusMode(false)
+        ? "Sent full consensus mode OFF request to leader."
+        : "Failed to send full consensus mode OFF request to leader.";
 }
 
 #if USE_JEMALLOC

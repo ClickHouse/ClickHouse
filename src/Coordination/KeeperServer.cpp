@@ -1445,6 +1445,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     }
     result.is_standalone = !result.is_follower && result.follower_count == 0;
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
+    result.is_full_consensus_mode = isFullConsensusMode();
     return result;
 }
 
@@ -1495,6 +1496,16 @@ std::vector<KeeperChangelogStatus> KeeperServer::getChangelogsStatus() const
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
+}
+
+bool KeeperServer::requestFullConsensusMode(bool enable)
+{
+    return raft_instance->request_full_consensus_mode(enable);
+}
+
+bool KeeperServer::isFullConsensusMode() const
+{
+    return raft_instance->get_current_params().use_full_consensus_among_healthy_members_;
 }
 
 int64_t KeeperServer::getLeaderID() const

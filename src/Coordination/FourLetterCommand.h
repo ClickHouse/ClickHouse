@@ -432,6 +432,34 @@ struct YieldLeadershipCommand : public IFourLetterCommand
     ~YieldLeadershipCommand() override = default;
 };
 
+/// Request the leader to turn on full consensus mode:
+/// commits require acks from all healthy voting members.
+struct FullConsensusOnCommand : public IFourLetterCommand
+{
+    explicit FullConsensusOnCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "fcon"; }
+    String run() override;
+    ~FullConsensusOnCommand() override = default;
+};
+
+/// Request the leader to turn off full consensus mode
+/// and return to majority quorum.
+struct FullConsensusOffCommand : public IFourLetterCommand
+{
+    explicit FullConsensusOffCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "fcof"; }
+    String run() override;
+    ~FullConsensusOffCommand() override = default;
+};
+
 #if USE_JEMALLOC
 struct JemallocDumpStats : public IFourLetterCommand
 {

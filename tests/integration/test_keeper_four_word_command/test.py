@@ -165,6 +165,8 @@ def test_cmd_mntr(started_cluster):
         assert int(result["zk_num_alive_connections"]) == 1
         assert int(result["zk_outstanding_requests"]) == 0
 
+        assert int(result["zk_full_consensus_mode"]) == 0
+
         assert result["zk_server_state"] == "leader"
 
         # contains:
@@ -749,6 +751,65 @@ def test_cmd_ydld(started_cluster):
                     + " did not become follower after 30s of yielding leadership, maybe there is something wrong."
                 )
         assert keeper_utils.is_follower(cluster, node)
+
+
+def test_cmd_fcon_fcof(started_cluster):
+    def get_full_consensus_mode(node):
+        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="mntr")
+        reader = csv.reader(data.split("\n"), delimiter="\t")
+        result = {}
+        for row in reader:
+            if len(row) != 0:
+                result[row[0]] = row[1]
+        return int(result["zk_full_consensus_mode"])
+
+    def wait_full_consensus_mode(expected, resend_node, resend_cmd):
+        # The mode is propagated from the leader to followers asynchronously
+        # and on a best-effort basis (a busy peer may miss the propagation),
+        # so poll every node and periodically re-send the command, which is
+        # also the documented operator remedy for a missed propagation.
+        for node in [node1, node2, node3]:
+            retry = 0
+            while get_full_consensus_mode(node) != expected and retry < 30:
+                if retry % 5 == 4:
+                    keeper_utils.send_4lw_cmd(cluster, resend_node, cmd=resend_cmd)
+                time.sleep(1)
+                retry += 1
+            assert get_full_consensus_mode(node) == expected
+
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+
+        # Send the request to a follower to check that it is forwarded to the leader.
+        follower = None
+        for node in [node1, node2, node3]:
+            if keeper_utils.is_follower(cluster, node):
+                follower = node
+                break
+        assert follower is not None
+
+        data = keeper_utils.send_4lw_cmd(cluster, follower, cmd="fcon")
+        assert data == "Sent full consensus mode ON request to leader."
+        wait_full_consensus_mode(1, follower, "fcon")
+
+        # Writes must work while all members are healthy.
+        zk = get_fake_zk(follower.name, timeout=30.0)
+        zk.create("/test_4lw_fcon", b"value")
+        assert zk.get("/test_4lw_fcon")[0] == b"value"
+
+        data = keeper_utils.send_4lw_cmd(cluster, follower, cmd="fcof")
+        assert data == "Sent full consensus mode OFF request to leader."
+        wait_full_consensus_mode(0, follower, "fcof")
+    finally:
+        # Make sure the mode is off for the rest of the tests
+        # even if this test failed midway.
+        try:
+            keeper_utils.send_4lw_cmd(cluster, node1, cmd="fcof")
+        except:
+            pass
+        destroy_zk_client(zk)
 
 
 def test_cmd_lgrq(started_cluster):

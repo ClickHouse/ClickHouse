@@ -283,6 +283,12 @@ public:
         server->yieldLeadership();
     }
 
+    /// Ask the leader to turn on/off full consensus mode.
+    bool requestFullConsensusMode(bool enable)
+    {
+        return server->requestFullConsensusMode(enable);
+    }
+
     void recalculateStorageStats()
     {
         server->recalculateStorageStats();

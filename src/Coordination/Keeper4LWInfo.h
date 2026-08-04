@@ -24,6 +24,10 @@ struct Keeper4LWInfo
     bool has_leader;
     bool is_exceeding_mem_soft_limit;
 
+    /// Whether full consensus mode (commits require acks from all healthy
+    /// voting members) is enabled according to the local Raft parameters.
+    bool is_full_consensus_mode;
+
     uint64_t alive_connections_count;
     uint64_t outstanding_requests_count;
 
