@@ -3069,7 +3069,14 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
 /// Cloud only
 bool MergeTreeSettings::isSMTReadonlySetting(const String & name)
 {
-    return name == "enable_mixed_granularity_parts";
+    /// SharedMergeTree additionally allows altering the index granularity: each part carries its
+    /// own granularity, so parts written under different values coexist fine. Everything else
+    /// that is read-only for the other MergeTree engines is read-only here as well, so that a
+    /// setting added to `isReadonlySetting` does not silently stay alterable on SharedMergeTree.
+    if (name == "index_granularity" || name == "index_granularity_bytes")
+        return false;
+
+    return isReadonlySetting(name);
 }
 
 void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)
