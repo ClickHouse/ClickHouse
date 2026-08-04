@@ -205,7 +205,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0xFFFF.
+                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0x10FFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
                     pos += 10;
