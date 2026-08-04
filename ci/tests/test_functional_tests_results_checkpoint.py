@@ -1028,7 +1028,7 @@ def test_a_failing_arm_leaves_no_probe_child_running(tmp_path):
     )
 
 
-def test_the_probe_ignores_the_ambient_workflow_context(tmp_path, monkeypatch):
+def test_the_probe_ignores_the_ambient_workflow_context(tmp_path):
     """The condition under which every kill-based arm above ran only in CI.
 
     `Settings.WORKFLOW_STATUS_FILE` is built from the default `TEMP_DIR` when the class is
@@ -1040,42 +1040,42 @@ def test_the_probe_ignores_the_ambient_workflow_context(tmp_path, monkeypatch):
     `TEMP_DIR` points, which is what makes this behavioural rather than a text search.
     """
     status_file = Path(Settings.WORKFLOW_STATUS_FILE)
-    if status_file.exists():  # a real CI run of this suite: already the condition
-        planted = None
-    else:
-        status_file.parent.mkdir(parents=True, exist_ok=True)
-        env = {
-            field.name: ""
-            for field in dataclasses.fields(_Environment)
-            if field.default is dataclasses.MISSING
-            and field.default_factory is dataclasses.MISSING
+    env = {
+        field.name: ""
+        for field in dataclasses.fields(_Environment)
+        if field.default is dataclasses.MISSING
+        and field.default_factory is dataclasses.MISSING
+    }
+    # A non-empty `changed_files` is what reaches the branch: `main` guards on it, and it
+    # must be a test file so the batch-skip check is entered rather than skipped.
+    env.update(
+        SHA="0" * 40,
+        PR_NUMBER=113200,
+        EVENT_TYPE="pull_request",
+        JOB_KV_DATA=Utils.to_base64(
+            json.dumps({"changed_files": ["tests/queries/0_stateless/00001_select_1.sql"]})
+        ),
+    )
+    payload = json.dumps(
+        {
+            Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
+                "outputs": {"data": json.dumps(env)}
+            }
         }
-        env.update(
-            SHA="0" * 40,
-            PR_NUMBER=113200,
-            EVENT_TYPE="pull_request",
-            JOB_KV_DATA=Utils.to_base64(
-                json.dumps({"changed_files": ["tests/queries/0_stateless/00001_select_1.sql"]})
-            ),
-        )
-        status_file.write_text(
-            json.dumps(
-                {
-                    Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
-                        "outputs": {"data": json.dumps(env)}
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-        planted = status_file
+    )
+    status_file.parent.mkdir(parents=True, exist_ok=True)
+    # Always plant our own: on a runner this path already holds that job's context, whose
+    # `changed_files` are whatever the PR touched, so reusing it makes the arm depend on
+    # them being non-empty. Restore whatever was there.
+    existing = status_file.read_bytes() if status_file.exists() else None
+    status_file.write_text(payload, encoding="utf-8")
     try:
-        # Without the condition in place this arm is a duplicate of the plain kill arm.
-        assert status_file.exists(), "the ambient workflow-status file was not created"
         status, rows = _kill_main_in_teardown(tmp_path, rows=3)
     finally:
-        if planted is not None:
-            planted.unlink()
+        if existing is None:
+            status_file.unlink()
+        else:
+            status_file.write_bytes(existing)
 
     assert len(rows) == 3, (
         f"the probe published {len(rows)} rows instead of 3 with a workflow-status file "
