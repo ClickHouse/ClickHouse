@@ -39,7 +39,7 @@ class LazyEnv:
     def engine_clause(self, db, table, args=""):
         """The ENGINE clause for the parameterized table engine, with a unique coordination path."""
         if self.table_engine == "MergeTree":
-            return f"MergeTree" if not args else f"MergeTree({args})"
+            return f"MergeTree({args})" if args else "MergeTree"
         self._counter += 1
         path = f"/clickhouse/test_lazy/{db}/{table}_{self._counter}"
         joined = f"'{path}', 'r1'" + (f", {args}" if args else "")
