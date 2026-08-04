@@ -76,6 +76,8 @@ struct RelationStats
     /// Sound upper bound on the row count, available even when no point estimate is.
     /// Unset means "no bound known"; a set value is always >= the true row count.
     std::optional<UInt64> estimated_rows_upper = {};
+    /// `estimated_rows` is known to be <= the true row count. False unless proven.
+    bool estimated_rows_is_lower_bound = false;
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;

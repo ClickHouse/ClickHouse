@@ -75,6 +75,28 @@ SELECT 'unmeasured right side keeps orientation', count() > 0 FROM (
 
 SET param__internal_join_table_stat_hints = '{}';
 
+-- A right side read through the primary index is only an upper bound: `id < 100` selects a whole
+-- granule while `pad = 7` then drops nearly all of it, so its estimate exceeds its true row count
+-- by far. Comparing the left bound against such an estimate must not flip the join, or the bigger
+-- side would land on the build side.
+CREATE TABLE residual_04726 (id Int32, pad Int32) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+INSERT INTO residual_04726 SELECT number, number % 100000 FROM numbers(100000);
+
+-- The outer join must keep `residual_04726` as its build side, i.e. it must not become the first
+-- input of that join. Matching on position rather than on the join symbol keeps the assertion
+-- independent of the join kind the plan ends up using.
+SELECT 'overstated right side keeps orientation', countIf(
+        explain ILIKE '%residual_04726%' AND explain NOT ILIKE '%Join: residual\_04726%') = 1 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count()
+    FROM (SELECT * FROM dim_04726 JOIN nation_04726 USING (nation_id) WHERE name = '2') AS d
+    JOIN residual_04726 ON d.id = residual_04726.id
+    WHERE residual_04726.id < 100 AND residual_04726.pad = 7
+) WHERE explain ILIKE '%Join:%';
+
+DROP TABLE residual_04726;
+
 -- Results must be unaffected by the orientation change.
 SELECT 'rows', count() FROM (SELECT * FROM dim_04726 JOIN nation_04726 USING (nation_id) WHERE name = 'nowhere') AS d
     JOIN fact_04726 ON d.id = fact_04726.id;
