@@ -909,8 +909,32 @@ def test_glob_ast_parser_reduces_list_requests(started_cluster):
         )
         return result, list_requests
 
-    # Case 1: enum glob + literal brace group. dir_{0} is literal text under the AST
-    # parser, tale_{a,b}.csv is an enum, so the whole pattern expands to two exact keys.
+    # Case 1a: pure single-enum glob. Both engines expand tale_{a,b}.csv to two exact
+    # keys and read them without a single LIST.
+    for i, name in enumerate(("a", "b")):
+        put_s3_file_content(
+            started_cluster,
+            bucket,
+            "glob_ast_expand/dir_0/tale_" + name + ".csv",
+            f"{i},1,1\n".encode(),
+        )
+
+    query = (
+        f"select count(), sum(column1) from s3("
+        f"'http://{started_cluster.minio_redirect_host}:{started_cluster.minio_redirect_port}"
+        f"/{bucket}/glob_ast_expand/dir_0/tale_{{a,b}}.csv', 'CSV', '{table_format}')"
+    )
+    legacy_result, legacy_lists = run_and_count_lists(query, {"use_glob_ast_parser": 0})
+    ast_result, ast_lists = run_and_count_lists(query, {"use_glob_ast_parser": 1})
+    assert legacy_result.splitlines() == ["2\t1"]
+    assert ast_result.splitlines() == ["2\t1"]
+    assert legacy_lists == 0
+    assert ast_lists == 0
+
+    # Case 1b: enum glob + literal brace group. dir_{0} is literal text under the AST
+    # parser, but a literal '{' outside the enum disables exact-key expansion (matching
+    # the legacy contract, so absent alternatives are skipped instead of failed on) —
+    # both engines stay on the listing path.
     for i, name in enumerate(("a", "b")):
         put_s3_file_content(
             started_cluster,
@@ -928,10 +952,8 @@ def test_glob_ast_parser_reduces_list_requests(started_cluster):
     ast_result, ast_lists = run_and_count_lists(query, {"use_glob_ast_parser": 1})
     assert legacy_result.splitlines() == ["2\t1"]
     assert ast_result.splitlines() == ["2\t1"]
-    # Legacy declines to expand (two brace groups) and lists the prefix; the AST parser
-    # reads both keys directly without a single LIST.
     assert legacy_lists >= 1
-    assert ast_lists == 0
+    assert ast_lists >= 1
 
     # Case 2: literal brace group before a wildcard. Legacy cuts the listing prefix at
     # the raw '{', so it paginates over every tenant_* key; the AST parser keeps
