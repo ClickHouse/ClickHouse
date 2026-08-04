@@ -27,12 +27,14 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
     auto location_uri = Poco::URI(location, enable_url_encoding);
     if (!location_uri.isRelative())
         return location_uri;
-    /// Location header contains relative path. So we need to concatenate it
-    /// with path from the original URI and normalize it.
-    auto path = std::filesystem::weakly_canonical(std::filesystem::path(prev_uri.getPath()) / location);
-    location_uri = prev_uri;
-    location_uri.setPath(path);
-    return location_uri;
+    /// Location header contains a relative reference. Resolve it against the
+    /// previous URI per RFC 3986: this keeps the query string of the target and
+    /// correctly handles both absolute-path ("/data.csv") and relative-path
+    /// ("data.csv") references.
+    Poco::URI resolved_uri(prev_uri);
+    resolved_uri.resolve(location_uri);
+    resolved_uri.normalize();
+    return resolved_uri;
 }
 
 class ReadBufferFromSessionResponse : public DB::ReadBufferFromIStream
