@@ -1880,6 +1880,25 @@ Changelog::Changelog(
     catch (...)
     {
         tryLogCurrentException(log);
+
+        /// Starting one of the worker threads may throw, e.g. `CANNOT_SCHEDULE_TASK`. Unwinding
+        /// would then destroy the already-started joinable `ThreadFromGlobalPool`s, which aborts.
+        /// Finish the queues the workers block on and join whatever threads were started, so the
+        /// real error propagates instead. (`shutdown` cannot be used here: it dereferences the
+        /// thread pointers unconditionally, and some of them may not be created yet.)
+        if (!changelog_operation_queue.isFinished())
+            changelog_operation_queue.finish();
+        if (!write_operations.isFinished())
+            write_operations.finish();
+        if (!append_completion_queue.isFinished())
+            append_completion_queue.finish();
+
+        for (const auto * thread : {&background_changelog_operations_thread, &write_thread, &append_completion_thread})
+        {
+            if (*thread && (*thread)->joinable())
+                (*thread)->join();
+        }
+
         throw;
     }
 }
