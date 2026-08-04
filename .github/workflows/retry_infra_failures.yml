@@ -27,24 +27,41 @@ jobs:
           echo "Looking for failed PR workflow runs since $cutoff..."
           echo ""
 
-          # Get recent failed runs for the PR workflow that have not been retried yet
-          run_ids=$(gh run list \
+          # Get recent failed runs for the PR workflow that have not been retried yet.
+          # A fork PR's first attempt to run jobs is 2, so the loop below filters further.
+          run_entries=$(gh run list \
             --repo "$GH_REPO" \
             --workflow pull_request.yml \
             --status failure \
             --limit 50 \
             --json databaseId,attempt,createdAt \
-            --jq ".[] | select(.attempt == 1 and .createdAt >= \"$cutoff\") | .databaseId")
+            --jq ".[] | select(.attempt <= 2 and .createdAt >= \"$cutoff\") | \"\(.databaseId):\(.attempt)\"")
 
-          if [ -z "$run_ids" ]; then
+          if [ -z "$run_entries" ]; then
             echo "No recent failed runs found."
             exit 0
           fi
 
-          for run_id in $run_ids; do
+          for run_entry in $run_entries; do
             if [ "$rerun_count" -ge "$MAX_RERUNS" ]; then
               echo "Reached maximum of $MAX_RERUNS reruns, stopping."
               break
+            fi
+
+            run_id="${run_entry%%:*}"
+            run_attempt="${run_entry##*:}"
+
+            # Eligible = exactly one attempt executed. A fork PR's approval gate
+            # concludes attempt 1 as "action_required" with zero jobs, so attempt 2 is
+            # still its first real run; any other attempt-1 conclusion means a retry.
+            if [ "$run_attempt" != "1" ]; then
+              attempt1_conclusion=$(gh api \
+                "repos/$GH_REPO/actions/runs/$run_id/attempts/1" --jq '.conclusion' \
+                2>/dev/null || echo "")
+              if [ "$attempt1_conclusion" != "action_required" ]; then
+                echo "Skipping run $run_id: attempt 1 concluded '$attempt1_conclusion', already retried."
+                continue
+              fi
             fi
 
             run_url="https://github.com/$GH_REPO/actions/runs/$run_id"
