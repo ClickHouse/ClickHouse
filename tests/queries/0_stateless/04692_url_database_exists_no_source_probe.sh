@@ -39,6 +39,10 @@ echo '--- a missing file is reported as an access error, not as a missing file'
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DESCRIBE TABLE ${DB}.\`${MISSING_FILE}\`" 2>&1 | grep -o -m1 -e 'ACCESS_DENIED' -e 'FILE_DOESNT_EXIST'
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT * FROM ${DB}.\`${MISSING_FILE}\`" 2>&1 | grep -o -m1 -e 'ACCESS_DENIED' -e 'FILE_DOESNT_EXIST'
 
+echo '--- without the read source grant, resolution must not parse the delegate arguments (the parse errors would leak path policy before the grant is checked)'
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "DESCRIBE TABLE ${DB}.\`/etc/hosts\`" 2>&1 | grep -o -m1 -e 'PATH_ACCESS_DENIED' -e 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT * FROM ${DB}.\`${CLICKHOUSE_USER_FILES_UNIQUE}/*.csv\`" 2>&1 | grep -o -m1 -e 'PATH_ACCESS_DENIED' -e 'ACCESS_DENIED'
+
 echo '--- with the read source grant, EXISTS answers the actual state of the file'
 ${CLICKHOUSE_CLIENT} -q "GRANT READ ON FILE TO ${USER}"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "EXISTS TABLE ${DB}.\`${DATA_FILE}\`"

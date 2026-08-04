@@ -339,6 +339,14 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
     if (!checkFileURLExists(url, context_, throw_on_error))
         return {};
 
+    /// The delegate of a `file://` table must not be constructed without the read source grant
+    /// either: already the parsing of the arguments of the `file` table function observes the
+    /// filesystem (see `isFileReadGranted`), and the errors of that parsing (e.g. that the path is
+    /// outside of `user_files`) are reported before the source access check of the delegate runs.
+    /// Fail here with the same access error that check would have produced after the parsing.
+    if (classifyURLScheme(url) == URLSchemeTarget::File)
+        context_->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
     auto delegate = makeURLTableDelegate(url, name, context_, /* is_insert_query */ false);
     if (!delegate.storage)
         return nullptr;
