@@ -63,6 +63,8 @@ module "clickhouse_onboarding" {
 
 Replace `<version>` with the latest tag from the module's [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) — always use the latest release.
 
+The module outputs `clickhouse_management_role_arn`. In the standard flow you don't need to act on it — onboarding continues in the ClickHouse Cloud console — but keep it at hand: ClickHouse will ask for it if your setup deviates from the defaults (for example, a coordinated custom role name).
+
 <Note>
 The module was previously distributed as a tarball at `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. That URL remains available but is deprecated — use the GitHub module above.
 </Note>
