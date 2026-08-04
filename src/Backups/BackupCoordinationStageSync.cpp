@@ -769,7 +769,7 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
 
     {
         std::lock_guard lock{mutex};
-        if (state.host_with_error || ((failure_after_host_disconnected_for_seconds.count() == 0)))
+        if (state.host_with_error || (failure_after_host_disconnected_for_seconds.count() == 0))
             return;
 
         auto monotonic_now = std::chrono::steady_clock::now();
