@@ -1,4 +1,5 @@
 -- Tags: shard
+-- Random settings limits: max_threads=(None, 4)
 
 -- The shipping path under test only exists in the analyzer.
 SET enable_analyzer = 1;
