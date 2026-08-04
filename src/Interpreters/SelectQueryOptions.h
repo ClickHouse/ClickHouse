@@ -75,14 +75,6 @@ struct SelectQueryOptions
 
     size_t max_step_description_length = 0;
 
-    /** During read from MergeTree parts will be removed from snapshot after they are not needed.
-      * This optimization will break subsequent execution of the same query tree, because table node
-      * will no more have valid snapshot.
-      *
-      * TODO: Implement this functionality in safer way
-      */
-    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
-
     bool force_materialize_cte = false;
 
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
