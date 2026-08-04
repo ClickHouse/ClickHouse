@@ -341,9 +341,15 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
         RocksDBPtr draining = std::move(rocksdb_ptr);
 
         const auto timeout = std::chrono::milliseconds(query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
+        const auto no_lease_left = [&] { return draining.use_count() == 1; };
         {
             std::unique_lock leases_lock(full_scan_leases_mx);
-            if (!full_scan_leases_released.wait_for(leases_lock, timeout, [&] { return draining.use_count() == 1; }))
+            /// Zero means no timeout, as it does for the table locks this wait stands in for.
+            if (timeout == std::chrono::milliseconds::zero())
+            {
+                full_scan_leases_released.wait(leases_lock, no_lease_left);
+            }
+            else if (!full_scan_leases_released.wait_for(leases_lock, timeout, no_lease_left))
             {
                 /// Restored under the still-held lock, so a timed out TRUNCATE changes nothing.
                 rocksdb_ptr = std::move(draining);

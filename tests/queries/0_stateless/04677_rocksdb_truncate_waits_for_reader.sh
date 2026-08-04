@@ -36,10 +36,17 @@ READ_SETTINGS="max_threads = 1, max_block_size = 1, lock_acquire_timeout = 300"
 run_concurrent_scans_then_truncate() {
     local reader_table="$1" truncate_table="$2" label="$3"
     local seen="" reached=0
+    local pids=() outs=()
 
+    # sleepEachRow returns 0 for every row, so the sum is exactly the number of rows the scan read:
+    # a value, unlike a discarded stdout, that witnesses the scan running to completion.
     for j in 1 2 3; do
+        local out="$CLICKHOUSE_TMP/scan_${label}_${j}_$CLICKHOUSE_DATABASE.out"
+        rm -f "$out"
         $CLICKHOUSE_CLIENT --query_id="scan_${label}_${j}_$CLICKHOUSE_DATABASE" \
-            -q "SELECT sum(sleepEachRow(0.1)) FROM (SELECT k FROM $reader_table LIMIT 200) SETTINGS $READ_SETTINGS" > /dev/null &
+            -q "SELECT sum(sleepEachRow(0.1) + 1) FROM (SELECT k FROM $reader_table LIMIT 200) SETTINGS $READ_SETTINGS" > "$out" &
+        pids+=($!)
+        outs+=("$out")
     done
 
     # Accumulated across polls rather than read at one instant, and asserted: a scan that already
@@ -61,8 +68,19 @@ run_concurrent_scans_then_truncate() {
 
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $truncate_table SETTINGS lock_acquire_timeout = 300"
     echo -e "$label truncate succeeded\t$(($? == 0 ? 1 : 0))"
-    wait
+
+    # Waiting for the lease is only half the contract: a build that lets the truncate through but
+    # breaks the scan mid-iteration still empties the table, so the readers' own outcome is asserted.
+    local finished=0 read_all=0 i
+    for i in "${!pids[@]}"; do
+        wait "${pids[$i]}" && finished=$((finished + 1))
+        [[ $(cat "${outs[$i]}") == 200 ]] && read_all=$((read_all + 1))
+        rm -f "${outs[$i]}"
+    done
+
     echo -e "$label rows after truncate\t$($CLICKHOUSE_CLIENT -q "SELECT count() FROM rdb")"
+    echo -e "$label readers finished\t$finished"
+    echo -e "$label readers read all rows\t$read_all"
     $CLICKHOUSE_CLIENT -q "INSERT INTO rdb SELECT number, repeat('x', 200) FROM numbers(300000)"
 }
 
@@ -103,6 +121,50 @@ wait "$reader_pid" 2>/dev/null
 
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 30" \
     && echo -e "truncate after reader\t1"
+
+# A zero timeout means no timeout, as it does everywhere else the setting is read, so this TRUNCATE
+# must outwait the reader rather than give up on it at once. The reader is bounded, so a build that
+# regressed to waiting forever fails here instead of hanging until the runner's budget runs out.
+# Through the alias, which is the only route that reaches this wait with a reader still holding the
+# target: truncating directly takes an exclusive lock on it first, and that lock reads the same
+# setting, so it absorbs the whole wait and nothing about zero would be under test.
+$CLICKHOUSE_CLIENT -q "INSERT INTO rdb SELECT number, repeat('x', 200) FROM numbers(1000)"
+ZERO_READER_ID="zero_reader_$CLICKHOUSE_DATABASE"
+zero_out="$CLICKHOUSE_TMP/zero_reader_$CLICKHOUSE_DATABASE.out"
+rm -f "$zero_out"
+$CLICKHOUSE_CLIENT --query_id="$ZERO_READER_ID" -q "
+    SELECT sum(sleepEachRow(0.1) + 1) FROM (SELECT k FROM rdb LIMIT 100) SETTINGS max_block_size = 1, max_threads = 1
+" > "$zero_out" &
+zero_reader_pid=$!
+
+zero_reader_started=0
+for _ in {1..200}; do
+    if [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$ZERO_READER_ID' AND read_rows > 0") -gt 0 ]]; then
+        zero_reader_started=1
+        break
+    fi
+    sleep 0.05
+done
+echo -e "zero timeout reader started\t$zero_reader_started"
+
+zero_start=$SECONDS
+zero_err=$($CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 0" 2>&1)
+zero_rc=$?
+zero_elapsed=$((SECONDS - zero_start))
+echo -e "zero timeout truncate timed out\t$(grep -c "TIMEOUT_EXCEEDED" <<< "$zero_err")"
+echo -e "zero timeout truncate succeeded\t$((zero_rc == 0 ? 1 : 0))"
+# A boolean, not the duration: the reader's window is 10s, so a truncate that waited for it cannot
+# come back in under 2s, while the duration itself is not reference stable. A build that gives up at
+# once returns in well under a second, so the two outcomes are not adjacent.
+echo -e "zero timeout truncate waited\t$((zero_elapsed >= 2 ? 1 : 0))"
+zero_finished=0
+wait "$zero_reader_pid" && zero_finished=1
+echo -e "zero timeout reader finished\t$zero_finished"
+echo -e "zero timeout reader read all rows\t$([[ $(cat "$zero_out") == 100 ]] && echo 1 || echo 0)"
+rm -f "$zero_out"
+# Recovery, so the assertions below report on their own subject rather than on whether the arm above
+# got as far as emptying the table. The reader is already awaited, so this cannot wait on anything.
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb"
 
 # The target is still usable through every route, so neither the storage nor its handle was lost.
 # INSERT ... SELECT rather than INSERT ... VALUES: the runner redirects only stdout and stderr, so

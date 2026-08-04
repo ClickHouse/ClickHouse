@@ -17,7 +17,6 @@
 namespace rocksdb
 {
 class DB;
-class Iterator;
 class Statistics;
 }
 
