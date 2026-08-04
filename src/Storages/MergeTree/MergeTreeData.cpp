@@ -55,6 +55,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
@@ -10466,12 +10467,22 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
             (strict_match && my_descriptions.size() != src_descriptions.size()))
             return false;
 
+        /// The definition keeps the function name of an `APPLY` transformer as written, so
+        /// canonicalize clones before hashing: `APPLY SUM` and `APPLY sum` are the same
+        /// definition.
+        const auto comparison_hash = [](const ASTPtr & definition_ast)
+        {
+            auto ast = definition_ast->clone();
+            FunctionNameNormalizer::visitForComparison(ast.get());
+            return ast->getTreeHash(/*ignore_aliases=*/ false);
+        };
+
         std::set<IASTHash> my_definition_hashes;
         for (const auto & description : my_descriptions)
-            my_definition_hashes.insert(description.definition_ast->getTreeHash(/*ignore_aliases=*/ false));
+            my_definition_hashes.insert(comparison_hash(description.definition_ast));
 
         for (const auto & src_description : src_descriptions)
-            if (!my_definition_hashes.contains(src_description.definition_ast->getTreeHash(/*ignore_aliases=*/ false)))
+            if (!my_definition_hashes.contains(comparison_hash(src_description.definition_ast)))
                 return false;
 
         return true;

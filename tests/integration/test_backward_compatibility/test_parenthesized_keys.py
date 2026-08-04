@@ -160,6 +160,31 @@ def test_nested_parens_old_replica_joins_new_table(start_cluster):
     check_replication("t_parens_nested")
 
 
+def test_mixed_case_apply_projection_old_replica_joins_new_table(start_cluster):
+    """The function name of a projection's `COLUMNS(...) APPLY` transformer is stored exactly as
+    written by every released version, and an old replica compares the serialized `projections`
+    field byte-for-byte. The current version must therefore publish `APPLY SUM` as written (the
+    normalization that makes `APPLY SUM` and `APPLY sum` compare equal is comparison-only), or
+    the old replica would fail to join with METADATA_MISMATCH. The parenthesized `GROUP BY (a)`
+    inside the same
+    projection additionally requires the canonical (paren-free) serialization, which makes this
+    fail on versions that only fixed the key clauses."""
+    create = """
+        CREATE TABLE t_apply_case (a UInt32, b UInt32, c UInt32, d DateTime,
+            PROJECTION p (SELECT a, COLUMNS('b|c') APPLY SUM GROUP BY (a)))
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_apply_case', '{replica}')
+        ORDER BY (a, b)
+        """
+    node_new.query(create.format(replica="r1"))
+    node_old.query(create.format(replica="r2"))
+
+    # Both replicas keep the `APPLY` spelling as written.
+    for node in (node_new, node_old):
+        assert "APPLY SUM" in node.query("SHOW CREATE TABLE t_apply_case")
+
+    check_replication("t_apply_case")
+
+
 def test_upgrade_and_attach_partition_from(start_cluster):
     """A table created by the old version must load after an upgrade and be compatible with a
     freshly created parenthesized table in `ATTACH PARTITION FROM`. Must be the last test in the

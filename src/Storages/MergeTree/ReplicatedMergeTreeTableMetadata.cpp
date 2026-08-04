@@ -111,7 +111,9 @@ ASTPtr parseForComparison(IParser & parser, const String & str)
 {
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     /// Tolerate metadata written before function name normalization (`SUM(x)` vs `sum(x)`).
-    FunctionNameNormalizer::visit(ast.get());
+    /// The comparison-only variant also reaches the function name of a projection's `APPLY`
+    /// transformer, which is never normalized in the stored text.
+    FunctionNameNormalizer::visitForComparison(ast.get());
     return ast;
 }
 
