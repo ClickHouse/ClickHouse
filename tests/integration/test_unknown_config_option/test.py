@@ -220,6 +220,60 @@ node_many_user_names = cluster_many_user_names.add_instance(
     user_configs=["configs/users_many_unique_names.xml"],
 )
 
+# Regression case: the validator must follow each active users config's *effective*
+# `<include_from>` (the single merged value its own `ConfigProcessor` invocation reads after
+# `replace`/`remove` across the `users.d` fragment chain), not the union of raw pre-merge
+# declarations. Here a `users.d` fragment sets `<include_from>` to a source under `config.d`
+# (whose top-level tags would then be exempted) and a later fragment `remove`s it - the stale
+# source must no longer exempt its unknown top-level key, so startup must fail.
+cluster_users_include_from_removed = ClickHouseCluster(
+    __file__, name="users_include_from_removed"
+)
+node_users_include_from_removed = cluster_users_include_from_removed.add_instance(
+    "node_users_include_from_removed",
+    main_configs=["configs/config.d/users_stale_include_source.xml"],
+    user_configs=[
+        "configs/users.d/a_set_stale_include_from.xml",
+        "configs/users.d/z_remove_include_from.xml",
+    ],
+)
+caught_users_include_from_removed_exception = ""
+
+# Regression case: same, but the later fragment `replace`s the users-side `<include_from>` with a
+# different source. Only the new source's top-level tags may be exempted; the stale source's
+# unknown key must be rejected.
+cluster_users_include_from_replaced = ClickHouseCluster(
+    __file__, name="users_include_from_replaced"
+)
+node_users_include_from_replaced = cluster_users_include_from_replaced.add_instance(
+    "node_users_include_from_replaced",
+    main_configs=[
+        "configs/config.d/users_stale_include_source.xml",
+        "configs/config.d/users_new_include_source.xml",
+    ],
+    user_configs=[
+        "configs/users.d/a_set_stale_include_from.xml",
+        "configs/users.d/z_replace_include_from.xml",
+    ],
+)
+caught_users_include_from_replaced_exception = ""
+
+# Regression case: a removed users-side `<include_from from_zk=.../>` must not stay latched as
+# "unresolvable" - that would silently skip the whole validator. After the `remove`, the check
+# must run and reject an unrelated unknown key.
+cluster_users_zk_include_from_removed = ClickHouseCluster(
+    __file__, name="users_zk_include_from_removed"
+)
+node_users_zk_include_from_removed = cluster_users_zk_include_from_removed.add_instance(
+    "node_users_zk_include_from_removed",
+    main_configs=["configs/config.d/users_zk_latch_probe.xml"],
+    user_configs=[
+        "configs/users.d/a_set_zk_include_from.xml",
+        "configs/users.d/z_remove_include_from.xml",
+    ],
+)
+caught_users_zk_include_from_removed_exception = ""
+
 # Negative case: a non-static handler (e.g. `redirect`) ignores `response_content`. Only a
 # `static` handler consumes a `config://` reference, so the validator must NOT exempt a top-level
 # key referenced from `response_content` on a non-static handler — doing so would let a genuinely
@@ -566,6 +620,57 @@ def start_include_from_in_configd_cluster():
     cluster_include_from_in_configd.start()
     yield
     cluster_include_from_in_configd.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_removed_cluster():
+    global caught_users_include_from_removed_exception
+    try:
+        cluster_users_include_from_removed.start()
+    except Exception as e:
+        caught_users_include_from_removed_exception = str(e)
+        err_log = os.path.join(
+            node_users_include_from_removed.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_users_include_from_removed_exception += "\n" + f.read()
+    yield
+    cluster_users_include_from_removed.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_replaced_cluster():
+    global caught_users_include_from_replaced_exception
+    try:
+        cluster_users_include_from_replaced.start()
+    except Exception as e:
+        caught_users_include_from_replaced_exception = str(e)
+        err_log = os.path.join(
+            node_users_include_from_replaced.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_users_include_from_replaced_exception += "\n" + f.read()
+    yield
+    cluster_users_include_from_replaced.shutdown()
+
+
+@pytest.fixture
+def start_users_zk_include_from_removed_cluster():
+    global caught_users_zk_include_from_removed_exception
+    try:
+        cluster_users_zk_include_from_removed.start()
+    except Exception as e:
+        caught_users_zk_include_from_removed_exception = str(e)
+        err_log = os.path.join(
+            node_users_zk_include_from_removed.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_users_zk_include_from_removed_exception += "\n" + f.read()
+    yield
+    cluster_users_zk_include_from_removed.shutdown()
 
 
 @pytest.fixture
@@ -1052,6 +1157,36 @@ def test_users_config_with_many_unique_names_accepted(start_many_user_names_clus
         ).strip()
         == "600"
     )
+
+
+def test_users_include_from_removed_source_not_exempted(
+    start_users_include_from_removed_cluster,
+):
+    # A `users.d` fragment `remove`s the users-side `<include_from>`, so the active users
+    # config no longer consults the stale source under `config.d` - its unknown top-level
+    # key must be rejected instead of staying exempted by the raw pre-merge union.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_users_include_from_removed_exception
+    assert "my_stale_users_exempt" in caught_users_include_from_removed_exception
+
+
+def test_users_include_from_replaced_source_not_exempted(
+    start_users_include_from_replaced_cluster,
+):
+    # A `users.d` fragment `replace`s the users-side `<include_from>` with a new source.
+    # Only the new source's top-level tags may be exempted: the stale source's unknown key
+    # must be rejected, while the new source's key must NOT appear among the unknown keys.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_users_include_from_replaced_exception
+    assert "my_stale_users_exempt" in caught_users_include_from_replaced_exception
+    assert "my_new_users_exempt" not in caught_users_include_from_replaced_exception
+
+
+def test_users_zk_include_from_removed_does_not_skip_check(
+    start_users_zk_include_from_removed_cluster,
+):
+    # A removed users-side `<include_from from_zk=.../>` must not stay latched as
+    # unresolvable: the validator must still run and reject an unrelated unknown key.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_users_zk_include_from_removed_exception
+    assert "my_zk_latch_probe" in caught_users_zk_include_from_removed_exception
 
 
 def test_reload_rejects_unknown_then_accepts_config_ref(start_reload_cluster):

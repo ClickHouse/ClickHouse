@@ -2605,11 +2605,30 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// unresolvable top-level `<include from_zk=.../>` case.
         bool has_unresolvable_users_include_from_from_zk = false;
 
+        /// The raw top-level `<include_from>` declaration of one users-config file, before the
+        /// users-config merge. `UsersConfigAccessStorage::load` feeds each active users config
+        /// through its own `ConfigProcessor`, which merges the file with its `users.d`/`conf.d`
+        /// fragments *first* and only then reads the single merged `<include_from>` — so a later
+        /// fragment can `replace` or `remove` an earlier source. Record each file's raw declaration
+        /// here and let the caller fold the chain with the merger's semantics; unioning the raw
+        /// pre-merge values instead would keep a stale/overridden source, letting it exempt an
+        /// unrelated unknown server key (or latch an already-removed `from_zk` bail-out).
+        struct UsersIncludeFromDecl
+        {
+            bool has_remove = false;
+            bool has_replace = false;
+            String text;
+            bool has_from_env = false;
+            String from_env_name;
+            bool has_from_zk = false;
+        };
+
         /// Returns true iff the file is an actual merge candidate — i.e. it exists, parses, and has
         /// a root the merger accepts. Only such files contribute their top-level tags to the merged
-        /// config, so only they belong in `merge_files`. Also collects any `<include_from>` source
-        /// and, when `is_server_file` is set, any top-level `<include incl="X"/>` reference name.
-        auto scan_file = [&](const fs::path & p, bool is_server_file) -> bool
+        /// config, so only they belong in `merge_files`. When `is_server_file` is set, also collects
+        /// any top-level `<include incl="X"/>` reference name; otherwise records the file's raw
+        /// top-level `<include_from>` declaration into `users_include_from` for the caller to fold.
+        auto scan_file = [&](const fs::path & p, bool is_server_file, std::optional<UsersIncludeFromDecl> * users_include_from = nullptr) -> bool
         {
             if (!fs::exists(p))
                 return false;
@@ -2655,34 +2674,27 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         /// actually uses. Unioning the raw pre-merge sources here would keep a
                         /// stale/overridden source, causing both false negatives (the stale source
                         /// whitelists an unknown key) and false positives (a removed source wrongly
-                        /// suppresses the `/etc/metrika.xml` fallback). The users config, in contrast,
-                        /// is a separate `ConfigProcessor` invocation whose merged `<include_from>` is
-                        /// not exposed on the server `config`, so it is still collected from raw XML.
+                        /// suppresses the `/etc/metrika.xml` fallback). The users config is a separate
+                        /// `ConfigProcessor` invocation whose merged `<include_from>` is not exposed
+                        /// on the server `config`, so record its raw declaration for the caller to
+                        /// replay the merge across the users config's own fragment chain. Only the
+                        /// first `<include_from>` matters: `processConfig` reads the merged value via
+                        /// `getNodeByPath`, which yields the first node of that name.
                         if (is_server_file)
                             continue;
-                        String src = child->innerText();
-                        if (src.empty())
+                        if (users_include_from && !users_include_from->has_value())
                         {
                             auto * elem = static_cast<Poco::XML::Element *>(child);
-                            if (elem->hasAttribute("from_env"))
-                            {
-                                const String env_name = elem->getAttribute("from_env");
-                                if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
-                                    src = env_val;
-                            }
-                            else if (elem->hasAttribute("from_zk"))
-                            {
-                                /// `ConfigProcessor::processConfig` runs `doIncludesRecursive` on the
-                                /// `<include_from>` node itself before reading its value, so the path may
-                                /// come from ZooKeeper. That cannot be resolved at config-validation
-                                /// time, leaving the users-side substitution source unknown, so record it
-                                /// and bail out below rather than risk rejecting the source's top-level
-                                /// tags — fail open, never refuse to start a valid config.
-                                has_unresolvable_users_include_from_from_zk = true;
-                            }
+                            UsersIncludeFromDecl decl;
+                            decl.has_remove = elem->hasAttribute("remove");
+                            decl.has_replace = elem->hasAttribute("replace");
+                            decl.text = child->innerText();
+                            decl.has_from_env = elem->hasAttribute("from_env");
+                            if (decl.has_from_env)
+                                decl.from_env_name = elem->getAttribute("from_env");
+                            decl.has_from_zk = elem->hasAttribute("from_zk");
+                            *users_include_from = std::move(decl);
                         }
-                        if (!src.empty())
-                            include_from_paths.insert(std::move(src));
                     }
                     else if (is_server_file && child->nodeName() == "include")
                     {
@@ -2838,14 +2850,82 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         }
 
         /// Scan every active users config and the fragments merged into it, unless it is the main
-        /// config (already scanned).
+        /// config (already scanned). Fold each config's raw `<include_from>` declarations into the
+        /// single *effective* value its own `ConfigProcessor` invocation would read from the merged
+        /// tree, replaying `mergeRecursive`'s semantics across the fragment chain: `remove` drops
+        /// the node, `replace` substitutes it wholesale, and a default merge replaces the text
+        /// (dropping the substitution attributes when the later node carries a value) while the
+        /// later node's substitution attributes override. Only the effective source may exempt keys
+        /// or trigger the `from_zk` bail-out — a stale, overridden source must do neither.
         for (const auto & users_path : users_paths)
         {
             if (users_path == fs::path(config_path))
                 continue;
-            scan_file(users_path, /*is_server_file=*/false);
+
+            std::optional<UsersIncludeFromDecl> effective_include_from;
+            auto fold_users_file = [&](const fs::path & users_file)
+            {
+                std::optional<UsersIncludeFromDecl> decl;
+                if (!scan_file(users_file, /*is_server_file=*/false, &decl) || !decl)
+                    return;
+                if (decl->has_remove)
+                {
+                    effective_include_from.reset();
+                }
+                else if (decl->has_replace || !effective_include_from)
+                {
+                    effective_include_from = std::move(decl);
+                }
+                else
+                {
+                    /// Default merge: `mergeRecursive` strips the target's non-whitespace text and
+                    /// appends the later node's, so the later text always wins (even when empty).
+                    /// When the later node has a value, the target's substitution attributes are
+                    /// removed (`SUBSTITUTION_ATTRS`); `mergeAttributes` then overlays the later
+                    /// node's attributes on whatever remains.
+                    effective_include_from->text = decl->text;
+                    if (!decl->text.empty())
+                    {
+                        effective_include_from->has_from_env = false;
+                        effective_include_from->from_env_name.clear();
+                        effective_include_from->has_from_zk = false;
+                    }
+                    if (decl->has_from_env)
+                    {
+                        effective_include_from->has_from_env = true;
+                        effective_include_from->from_env_name = decl->from_env_name;
+                    }
+                    if (decl->has_from_zk)
+                        effective_include_from->has_from_zk = true;
+                }
+            };
+            fold_users_file(users_path);
             for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
-                scan_file(merge_file, /*is_server_file=*/false);
+                fold_users_file(merge_file);
+
+            if (!effective_include_from)
+                continue;
+
+            /// Resolve the effective declaration exactly like `doIncludesRecursive` resolves the
+            /// merged node: a literal value wins; otherwise `from_env` is resolvable here, while
+            /// `from_zk` cannot be resolved at config-validation time, so record it and bail out
+            /// below rather than risk rejecting the source's top-level tags — fail open, never
+            /// refuse to start a valid config.
+            String src = effective_include_from->text;
+            if (src.empty())
+            {
+                if (effective_include_from->has_from_env)
+                {
+                    if (const char * env_val = std::getenv(effective_include_from->from_env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
+                        src = env_val;
+                }
+                else if (effective_include_from->has_from_zk)
+                {
+                    has_unresolvable_users_include_from_from_zk = true;
+                }
+            }
+            if (!src.empty())
+                include_from_paths.insert(std::move(src));
         }
 
         /// `ConfigProcessor::parseConfig` accepts a non-regular config path (it has an explicit
