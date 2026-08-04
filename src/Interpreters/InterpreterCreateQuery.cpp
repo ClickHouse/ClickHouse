@@ -19,6 +19,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -1852,7 +1853,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
 
@@ -1862,7 +1863,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
         }
@@ -2724,7 +2725,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             [&current_context](const StorageID & to_drop_id)
             {
                 if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
+                {
+                    /// The replaced table is dropped after the swap, under an internal temporary name that
+                    /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
+                    AccessType drop_access = AccessType::DROP_TABLE;
+                    if (to_drop->isView())
+                        drop_access = AccessType::DROP_VIEW;
+                    else if (to_drop->isDictionary())
+                        drop_access = AccessType::DROP_DICTIONARY;
+                    current_context->checkAccess(drop_access, to_drop_id);
                     to_drop->checkTableSizeBelowDropLimit(current_context);
+                }
             });
         try
         {
@@ -2752,7 +2763,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
             if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
                 ast_drop->is_dictionary = replaced->isDictionary();
-            /// `pre_swap_check` already gated this; bypass to avoid double-consuming
+            /// `pre_swap_check` already authorized this drop against the replaced table's real name.
+            /// The temporary name cannot be covered by grants, so skip the access check on it.
+            ast_drop->no_access_check = true;
+            /// `pre_swap_check` also gated the size; bypass to avoid double-consuming
             /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
             auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
@@ -3158,7 +3172,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion to replicated is supported only for Atomic databases");
 
-    if (!create.storage || !create.storage->engine || create.storage->engine->name.find("MergeTree") == std::string::npos)
+    if (!create.storage || !create.storage->engine || !create.storage->engine->name.contains("MergeTree"))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion is supported only for MergeTree family engines");
 

@@ -35,14 +35,14 @@ void NO_INLINE iotaWithStep(T * begin, size_t count, T first_value, T step)
 template void iota(UInt8 * begin, size_t count, UInt8 first_value);
 template void iota(UInt32 * begin, size_t count, UInt32 first_value);
 template void iota(UInt64 * begin, size_t count, UInt64 first_value);
-#if defined(OS_DARWIN)
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE)
 template void iota(size_t * begin, size_t count, size_t first_value);
 #endif
 
 template void iotaWithStep(UInt8 * begin, size_t count, UInt8 first_value, UInt8 step);
 template void iotaWithStep(UInt32 * begin, size_t count, UInt32 first_value, UInt32 step);
 template void iotaWithStep(UInt64 * begin, size_t count, UInt64 first_value, UInt64 step);
-#if defined(OS_DARWIN)
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE)
 template void iotaWithStep(size_t * begin, size_t count, size_t first_value, size_t step);
 #endif
 }
