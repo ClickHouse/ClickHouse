@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -180,9 +181,12 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     addConvertingActions(*query_plan, header, context);
 
     // TODO: fix view with UNION case for enabled serialize_query_plan separately (use findReadingSteps() instead)
-    auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode());
-    if (node)
-        typeid_cast<ReadFromTableStep*>(node->step.get())->useParallelReplicas() = true;
+    if (auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode()))
+        typeid_cast<ReadFromTableStep *>(node->step.get())->useParallelReplicas() = true;
+    /// The read designated for coordination can also be the merge(...) table function
+    /// (the only table function eligible for parallel replicas).
+    else if (auto * table_function_node = findReadingStep<ReadFromTableFunctionStep>(query_plan->getRootNode()))
+        typeid_cast<ReadFromTableFunctionStep *>(table_function_node->step.get())->useParallelReplicas() = true;
 
     return query_plan;
 }

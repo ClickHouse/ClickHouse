@@ -247,14 +247,36 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         // std::cerr << query->dumpTree() << std::endl;
     }
 
+    bool use_parallel_replicas = false;
+    if (reading_from_table)
+        use_parallel_replicas = reading_from_table->useParallelReplicas();
+    else if (reading_from_table_function)
+        use_parallel_replicas = reading_from_table_function->useParallelReplicas();
+
     QueryPlan reading_plan;
     if (storage->isRemote() || is_storage_merge)
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
-        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
+
+        ContextPtr interpreter_context = context;
+        if (is_storage_merge)
+        {
+            /// Whether this `Merge` read participates in coordinated parallel reading was decided by
+            /// the initiator and shipped in the plan - honor it instead of letting the query settings
+            /// re-enable coordination for a read the initiator did not designate. The designated-table
+            /// hint carries the `__tableN` alias numbering of the whole original query, which cannot
+            /// match the aliases of this single-table query, so drop it - the leaf to read is already
+            /// pinned by the plan here.
+            auto mutable_context = Context::createCopy(context);
+            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
+            mutable_context->setSetting("parallel_replicas_designated_table", String{});
+            interpreter_context = std::move(mutable_context);
+        }
+
+        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), interpreter_context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
-        reading_plan.addInterpreterContext(context);
+        reading_plan.addInterpreterContext(interpreter_context);
     }
     else
     {
@@ -263,10 +285,6 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         storage_limits->emplace_back(buildStorageLimits(*context, options));
         select_query_info.storage_limits = std::move(storage_limits);
         select_query_info.query = std::move(query);
-
-        bool use_parallel_replicas = false;
-        if (reading_from_table)
-            use_parallel_replicas = reading_from_table->useParallelReplicas();
 
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
