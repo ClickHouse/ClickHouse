@@ -82,25 +82,12 @@ BackupWriterFile::BackupWriterFile(
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
 {
-    /// `backups.allowed_path` comes from the configuration, so the backup may have to create it and
-    /// some of its ancestors, whose entries are durable only once the directory holding them is
-    /// fsynced. Record that chain: from the allowed path up to the deepest ancestor that already
-    /// exists, and then every level above it. Existence is not proof of durability - a concurrent
-    /// backup may have created any part of the chain without yet fsyncing it - so the levels above the
-    /// boundary cannot be trusted either. Sampled here, before anything is written.
-    ///
-    /// The boundary bounds the parent walk in `syncFileToDisk`: every backup file is below the allowed
-    /// path, so the walk always reaches an already recorded directory and never leaves the
-    /// configured backup area. Bounding it matters because fsyncing a directory has to open it with
-    /// `O_DIRECTORY`, which needs read permission, while writing a backup only needs its ancestors
-    /// to be searchable, so an unbounded walk could fail a backup that works today. The levels above
-    /// the configured area are for that reason best-effort: one that cannot be opened is logged and
-    /// skipped, since a directory nobody asked ClickHouse to write in must not turn a working backup
-    /// into an error.
+    /// The chain the backup may have to create, sampled before anything is written. `boundary` is the
+    /// deepest ancestor that already exists, and also bounds the parent walk in `syncFileToDisk` to the
+    /// configured area: fsyncing needs `O_DIRECTORY`, which writing a backup does not.
     auto allowed_path = fs::path{allowed_path_}.lexically_normal();
 
-    /// `lexically_normal` keeps a trailing slash, while the ancestors derived from a file path never
-    /// have one, so the slashed spelling would never compare equal and both bounds below would miss.
+    /// `lexically_normal` keeps a trailing slash, which never compares equal to a file path's ancestors.
     if (!allowed_path.has_filename())
         allowed_path = allowed_path.parent_path();
 
@@ -117,10 +104,9 @@ BackupWriterFile::BackupWriterFile(
             break;
     }
 
-    /// Everything above the boundary, all the way to the filesystem root: a concurrent backup may have
-    /// created any number of levels of the chain without yet fsyncing their parents, so stopping one
-    /// level above the boundary would leave the entries of the levels above that unflushed. Uses the
-    /// fixed-point test rather than `has_relative_path` because this walk does reach the root.
+    /// Existence is not durability: a concurrent backup may have created any level above the boundary
+    /// without fsyncing its parent, so every level up to the root is recorded, best-effort. The
+    /// fixed-point test, not `has_relative_path`, because this walk does reach the root.
     if (boundary.has_relative_path())
     {
         for (auto dir = boundary.parent_path();; dir = dir.parent_path())
