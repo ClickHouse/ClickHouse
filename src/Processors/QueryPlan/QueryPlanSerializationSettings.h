@@ -104,6 +104,15 @@ struct QueryPlanSerializationSettings
     /// its shape keeps the conservative version bump.
     bool join_shape_supports_merge_join = false;
 
+    /// Whether `FullSortingMergeJoin` supports the serializing join step's shape, i.e. whether an
+    /// enabled `join_algorithm = 'full_sorting_merge'` / `'parallel_full_sorting_merge'` really
+    /// builds one for it instead of falling through to a later entry in the list. It consumes none
+    /// of the version-5 settings, so such a fragment must not be raised to version 5 just because
+    /// the `join_algorithm` set also contains a hash fallback that will never be reached. Not a
+    /// serialized setting; it only feeds getMinRequiredVersion. Defaults to false so a step that
+    /// does not know its shape keeps the conservative version bump.
+    bool join_shape_supports_full_sorting_merge_join = false;
+
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 

@@ -1146,6 +1146,53 @@ static bool shapeSupportsMergeJoin(const JoinOperator & join_operator)
     return !(join_expression.size() == 1 && join_expression.front().isFunction(JoinConditionOperator::Or));
 }
 
+/// Whether `FullSortingMergeJoin` supports this join's shape, i.e. whether an enabled
+/// `join_algorithm = 'full_sorting_merge'` / `'parallel_full_sorting_merge'` really builds one for it,
+/// so that a later hash fallback in the algorithm list is never reached (see tryCreateJoin in
+/// Planner/PlannerJoins.cpp). Mirrors `FullSortingMergeJoin::isSupported(table_join)` on what the
+/// serialized step knows:
+/// - the kind and strictness predicate (isMergeAlgorithmStrictnessAndKindSupported);
+/// - a single non-empty clause: as with `MergeJoin`, more than one `TableJoin` clause only comes from
+///   a single top-level `OR`, and an empty expression means a CROSS or constant-predicate join
+///   executed by `ConstantJoin`;
+/// - no leftover conditions: `FullSortingMergeJoin::isSupported` rejects per-side filter conditions
+///   and a mixed (cross-side) `ON` expression, and any expression element not consumed as an equality
+///   key becomes exactly one of those (see addJoinPredicatesToTableJoin and concatConditions above,
+///   where a from-neither-side leftover counts as a left filter condition too), so every element must
+///   be a plain `=` / null-safe `=` between one left-side and one right-side argument.
+///   `residual_filter` is irrelevant: it becomes a post-join `FilterStep`, never a TableJoin
+///   condition.
+/// - ASOF claims nothing (conservative version bump): its extra inequality-key extraction is not
+///   mirrored here.
+/// The remaining `isSupported` checks cannot fail on a serialized step: `hasUsing` is always false
+/// once a `JoinOperator` is set, and `joinUseNulls` / special storage apply only to a
+/// `JoinStepLogicalLookup` right side, which is not serializable in the first place.
+static bool shapeSupportsFullSortingMergeJoin(const JoinOperator & join_operator)
+{
+    if (join_operator.strictness == JoinStrictness::Asof)
+        return false;
+
+    if (!FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness))
+        return false;
+
+    if (willExecuteAsConstantJoin(join_operator))
+        return false;
+
+    const auto & join_expression = join_operator.expression;
+    if (join_expression.empty())
+        return false;
+
+    for (const auto & predicate : join_expression)
+    {
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            return false;
+        if (!((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
+            return false;
+    }
+    return true;
+}
+
 static QueryPlanNode buildPhysicalJoinImpl(
     std::vector<QueryPlanNode *> children,
     JoinOperator join_operator,
@@ -1718,8 +1765,11 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
         = !settings.join_executes_as_constant_join && !isPaste(join_operator.kind);
     /// Which implementation the enabled `join_algorithm` set resolves to also depends on the join's
     /// shape: with a shape `MergeJoin` supports, `prefer_partial_merge` never reaches its hash
-    /// fallback and `auto` builds a `JoinSwitcher`, and neither consumes `max_memory_usage`.
+    /// fallback and `auto` builds a `JoinSwitcher`, and neither consumes `max_memory_usage`; with a
+    /// shape `FullSortingMergeJoin` supports, `full_sorting_merge` / `parallel_full_sorting_merge`
+    /// never fall through to a later hash entry either, and it consumes neither setting.
     settings.join_shape_supports_merge_join = shapeSupportsMergeJoin(join_operator);
+    settings.join_shape_supports_full_sorting_merge_join = shapeSupportsFullSortingMergeJoin(join_operator);
 }
 
 static void serializeNodeList(

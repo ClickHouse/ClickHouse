@@ -136,6 +136,7 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
     , join_kind_consumes_in_memory_compression(settings.join_kind_consumes_in_memory_compression)
     , join_executes_as_constant_join(settings.join_executes_as_constant_join)
     , join_shape_supports_merge_join(settings.join_shape_supports_merge_join)
+    , join_shape_supports_full_sorting_merge_join(settings.join_shape_supports_full_sorting_merge_join)
     , impl(std::make_unique<QueryPlanSerializationSettingsImpl>(*settings.impl))
 {
 }
@@ -193,7 +194,10 @@ struct JoinSettingsConsumption
 /// only some shapes) contributes what it consumes and the scan continues, so the result is the union
 /// over the implementations the step can end up with.
 static JoinSettingsConsumption getJoinSettingsConsumption(
-    const std::vector<JoinAlgorithm> & algorithms, bool shape_supports_merge_join, bool spilling_to_disk_allowed)
+    const std::vector<JoinAlgorithm> & algorithms,
+    bool shape_supports_merge_join,
+    bool shape_supports_full_sorting_merge_join,
+    bool spilling_to_disk_allowed)
 {
     /// A hash-family implementation (`HashJoin`, `ConcurrentHashJoin`, `SpillingHashJoin`) consumes both
     /// settings: `enable_join_in_memory_compression` directly, and `max_memory_usage` as the
@@ -257,7 +261,11 @@ static JoinSettingsConsumption getJoinSettingsConsumption(
                 break;
             case JoinAlgorithm::FULL_SORTING_MERGE:
             case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
-                /// `FullSortingMergeJoin` or nothing, and it consumes neither setting.
+                /// `FullSortingMergeJoin` (which consumes neither setting) whenever the shape allows;
+                /// only an unsupported shape falls through to the next algorithm in the list, the
+                /// same way `partial_merge` does.
+                if (shape_supports_full_sorting_merge_join)
+                    return result;
                 break;
         }
     }
@@ -309,7 +317,10 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
         || (*this)[QueryPlanSerializationSetting::max_bytes_ratio_before_external_join] != 0.;
 
     const auto consumption = getJoinSettingsConsumption(
-        (*this)[QueryPlanSerializationSetting::join_algorithm], join_shape_supports_merge_join, spilling_to_disk_allowed);
+        (*this)[QueryPlanSerializationSetting::join_algorithm],
+        join_shape_supports_merge_join,
+        join_shape_supports_full_sorting_merge_join,
+        spilling_to_disk_allowed);
 
     const bool compression_matters = (*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression]
         && join_kind_consumes_in_memory_compression && consumption.in_memory_compression;

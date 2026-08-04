@@ -232,6 +232,33 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
     }
 
+    /// `full_sorting_merge` / `parallel_full_sorting_merge` build a `FullSortingMergeJoin` for every
+    /// shape it supports (the serializing step flags that via
+    /// join_shape_supports_full_sorting_merge_join), and it consumes neither version-5 setting. A hash
+    /// fallback listed after it is only reached for an unsupported shape, so a supported shape must
+    /// stay on the baseline version - otherwise a version-4 receiver (or a version-3 stateless worker)
+    /// rejects a fragment it would execute identically.
+    for (auto algorithm : {JoinAlgorithm::FULL_SORTING_MERGE, JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE})
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        settings.max_memory_usage_is_step_local = true;
+        settings[QueryPlanSerializationSetting::join_algorithm]
+            = std::vector<JoinAlgorithm>{algorithm, JoinAlgorithm::HASH};
+
+        settings.join_shape_supports_full_sorting_merge_join = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        settings.join_shape_supports_full_sorting_merge_join = false;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
+
+        /// A hash algorithm listed before it shadows the shape.
+        settings.join_shape_supports_full_sorting_merge_join = true;
+        settings[QueryPlanSerializationSetting::join_algorithm]
+            = std::vector<JoinAlgorithm>{JoinAlgorithm::HASH, algorithm};
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
+    }
+
     /// `auto` on a shape `MergeJoin` supports builds a `JoinSwitcher`, which inserts into its `HashJoin`
     /// with the limit check disabled: that `HashJoin` never runs the `max_memory_usage` trigger, so a
     /// step-local override stays on the baseline version. Compression, in contrast, is consumed there
