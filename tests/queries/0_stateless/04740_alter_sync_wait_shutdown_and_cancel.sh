@@ -8,8 +8,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 KILL_OUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_kill.out"
+QUEUE_OUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_queue.out"
 DROP_OUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_drop.out"
-trap 'rm -f "$KILL_OUT" "$DROP_OUT"' EXIT
+trap 'rm -f "$KILL_OUT" "$QUEUE_OUT" "$DROP_OUT"' EXIT
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE r1 (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04740/t', 'r1') ORDER BY k;
@@ -57,9 +58,40 @@ $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC" > /dev/null
 wait
 grep -om1 'Code: 394.*Query was cancelled' "$KILL_OUT" | sed 's/DB::Exception: //g; s/Received from [^ ]* //'
 
-# 3. Dropping the database calls flushAndPrepareForShutdown on both tables, which stops r2 from
+# 3. Same, but for the last of the three wait stages. Arms 1 and 2 block pullLogsToQueue, so they
+# only ever reach the first stage. Letting r2 pull the entry into its queue and blocking execution
+# instead sends the wait into waitForDisappear on the queue node.
+$CLICKHOUSE_CLIENT -q "SYSTEM START PULLING REPLICATION LOG r2; SYSTEM STOP REPLICATION QUEUES r2"
+$CLICKHOUSE_CLIENT -q "$TRUNCATE_UNLIMITED" > "$QUEUE_OUT" 2>&1 &
+wait_for_truncate
+# Reaching the third stage requires this TRUNCATE's own entry to be in r2's queue. The entry exists
+# by now, so the log size read here already counts it, and waiting for r2 to copy past that number
+# proves this entry was copied. Comparing against a freshly read log_max_index instead would prove
+# nothing: log_pointer is the maximum copied entry plus one and may point at an entry that does not
+# exist yet, so the arm could degenerate into a copy of arm 2.
+target=$($CLICKHOUSE_CLIENT -q "
+    SELECT log_max_index FROM system.replicas
+    WHERE database = currentDatabase() AND table = 'r2'")
+for _ in {1..600}; do
+    if [ "$($CLICKHOUSE_CLIENT -q "
+                SELECT log_pointer > $target FROM system.replicas
+                WHERE database = currentDatabase() AND table = 'r2'")" = "1" ]; then
+        echo 'entry queued on r2'
+        break
+    fi
+    sleep 0.5
+done
+query_id=$($CLICKHOUSE_CLIENT -q "
+    SELECT query_id FROM system.processes
+    WHERE current_database = currentDatabase() AND query LIKE 'TRUNCATE%' LIMIT 1")
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC" > /dev/null
+wait
+grep -om1 'Code: 394.*Query was cancelled' "$QUEUE_OUT" | sed 's/DB::Exception: //g; s/Received from [^ ]* //'
+
+# 4. Dropping the database calls flushAndPrepareForShutdown on both tables, which stops r2 from
 # ever processing the entry. The waiting TRUNCATE must give up so the DROP is not deadlocked behind
 # it. No cancellation is involved here, so this covers the shutdown escape on its own.
+$CLICKHOUSE_CLIENT -q "SYSTEM START REPLICATION QUEUES r2; SYSTEM STOP PULLING REPLICATION LOG r2"
 $CLICKHOUSE_CLIENT -q "$TRUNCATE_UNLIMITED" > "$DROP_OUT" 2>&1 &
 wait_for_truncate
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE} SYNC"
