@@ -95,6 +95,16 @@ To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keepe
 
 An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
 
+You can inspect the active storage type through `system.server_settings` and `getServerSetting`:
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+Changing the storage type requires a server restart; `SYSTEM RELOAD CONFIG` does not change the active backend.
+
 ## Storing named collections in configuration files {#storing-named-collections-in-configuration-files}
 
 ### XML example {#xml-example}
