@@ -222,7 +222,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
-        return data.type->getDynamicSubcolumnData(subcolumn_name, data, settings.array_level, throw_if_null);
+        res = data.type->getDynamicSubcolumnData(subcolumn_name, data, settings.array_level, throw_if_null);
 
     if (!res && throw_if_null)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, data.type->getName());
@@ -263,6 +263,9 @@ bool IDataType::hasDynamicSubcolumns() const
 
 DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) const
 {
+    if (auto result = tryGetSubcolumnTypeWithoutSerialization(subcolumn_name))
+        return *result;
+
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     auto subcolumn_data = getSubcolumnData(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->type : nullptr;
@@ -270,6 +273,9 @@ DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) cons
 
 DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 {
+    if (auto result = tryGetSubcolumnTypeWithoutSerialization(subcolumn_name); result && *result)
+        return *result;
+
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     return getSubcolumnData(subcolumn_name, data, {}, true)->type;
 }

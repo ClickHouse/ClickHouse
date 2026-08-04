@@ -1,4 +1,5 @@
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
@@ -11,6 +12,29 @@
 #include <gtest/gtest.h>
 
 using namespace DB;
+
+namespace
+{
+
+void expectSubcolumnType(const IDataType & type, std::string_view subcolumn, std::string_view expected_name)
+{
+    SCOPED_TRACE(String(subcolumn));
+    auto result = type.tryGetSubcolumnType(subcolumn);
+    EXPECT_EQ(type.hasSubcolumn(subcolumn), !expected_name.empty());
+
+    if (expected_name.empty())
+    {
+        EXPECT_EQ(result, nullptr);
+        EXPECT_THROW(type.getSubcolumnType(subcolumn), Exception);
+        return;
+    }
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->getName(), expected_name);
+    EXPECT_TRUE(result->equals(*type.getSubcolumnType(subcolumn)));
+}
+
+}
 
 /// Regression tests for STID 1477-2777 (BuzzHouse serverfuzz, amd_msan, 2026-04-25):
 /// `DataTypeObject::createObject` accessed `object_type_argument->parameter`,
@@ -198,7 +222,7 @@ TEST(DataTypeObject, CreateJSONWithValidAST)
     ASSERT_NE(type_default, nullptr);
 }
 
-TEST(DataTypeObject, TypeOnlySubcolumnLookupMatchesSerializationLookup)
+TEST(DataTypeObject, TypeOnlySubcolumnLookup)
 {
     auto type = DataTypeFactory::instance().get(
         "JSON("
@@ -233,18 +257,54 @@ TEST(DataTypeObject, TypeOnlySubcolumnLookupMatchesSerializationLookup)
     };
 
     for (const auto & [subcolumn, expected_name] : subcolumns)
-    {
-        SCOPED_TRACE(subcolumn);
-        auto expected = object.IDataType::tryGetSubcolumnType(subcolumn);
-        auto actual = object.tryGetSubcolumnType(subcolumn);
+        expectSubcolumnType(object, subcolumn, expected_name);
+}
 
-        ASSERT_EQ(static_cast<bool>(actual), static_cast<bool>(expected));
-        if (actual)
-        {
-            EXPECT_TRUE(actual->equals(*expected)) << "expected " << expected->getName() << ", got " << actual->getName();
-            EXPECT_EQ(actual->getName(), expected_name);
-        }
-        else
-            EXPECT_TRUE(expected_name.empty());
-    }
+TEST(DataTypeObject, TypeOnlySubcolumnLookupPreservesSerializationPrecedence)
+{
+    auto & factory = DataTypeFactory::instance();
+
+    auto array_collision = factory.get("JSON(a Array(UInt64), a.size0 String)");
+    expectSubcolumnType(*array_collision, "a.size0", "UInt64");
+
+    auto tuple_collision = factory.get("JSON(a Tuple(size0 String), a.size0 UInt64)");
+    expectSubcolumnType(*tuple_collision, "a.size0", "String");
+
+    auto multiple_prefixes = factory.get("JSON(a Array(JSON), a.b Int64)");
+    expectSubcolumnType(*multiple_prefixes, "a.b", "Int64");
+    expectSubcolumnType(*multiple_prefixes, "a.b.c", "Array(Dynamic)");
+
+    auto special_name_collision = factory.get(fmt::format(
+        "JSON({} UInt8)", DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION));
+    expectSubcolumnType(
+        *special_name_collision, DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, "UInt8");
+}
+
+TEST(DataTypeObject, TypeOnlySubcolumnLookupUsesCanonicalPathNames)
+{
+    auto nested_type = DataTypeFactory::instance().get("JSON(x UInt8)");
+    auto object = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{
+            {"escaped.dot", nested_type},
+            {R"(back\slash)", nested_type},
+            {"back`tick", nested_type},
+            {"spaced path", nested_type},
+        });
+
+    expectSubcolumnType(*object, "escaped.dot.x", "UInt8");
+    expectSubcolumnType(*object, R"(back\slash.x)", "UInt8");
+    expectSubcolumnType(*object, "back`tick.x", "UInt8");
+    expectSubcolumnType(*object, "spaced path.x", "UInt8");
+}
+
+TEST(DataTypeObject, TypeOnlySubcolumnLookupDefersToCustomSerialization)
+{
+    auto object = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{{"a", DataTypeFactory::instance().get("UInt8")}});
+    auto serialization = object->getDefaultSerialization();
+    object->setCustomization(std::make_unique<DataTypeCustomDesc>(DataTypeCustomNamePtr{}, std::move(serialization)));
+
+    expectSubcolumnType(*object, "a", "UInt8");
 }

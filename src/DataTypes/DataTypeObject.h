@@ -63,7 +63,6 @@ public:
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return true; }
-    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const override;
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
@@ -82,6 +81,9 @@ public:
 
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();
+
+protected:
+    std::optional<DataTypePtr> tryGetSubcolumnTypeWithoutSerialization(std::string_view subcolumn_name) const override;
 
 private:
     /// Don't change these constants, it can break backward compatibility.
