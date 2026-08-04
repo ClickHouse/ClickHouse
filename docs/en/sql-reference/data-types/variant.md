@@ -613,7 +613,7 @@ FROM values('v Variant(Decimal(7, 2), Float64)', 1.5, 2.5, NULL, 10);
 
 ### NULL values of a Variant argument {#null-values-of-a-variant-argument}
 
-A `Variant` value can be NULL, and the aggregate functions skip the rows where a `Variant` argument holds a NULL value, exactly as they skip the NULL values of a `Nullable` argument:
+A `Variant` value can be NULL, and the aggregate functions skip the rows where a `Variant` argument holds a NULL value, like they skip the NULL values of a `Nullable` argument:
 
 ```sql
 SELECT count(v), any(v), groupArray(v), uniqExact(v)
@@ -626,10 +626,14 @@ FROM values('v Variant(UInt64, String)', NULL, 1::UInt64, NULL, 'a');
 └──────────┴────────┴───────────────┴──────────────┘
 ```
 
+The equivalence with `Nullable` covers only the skipping of the NULL rows. Unlike a `Nullable` argument (or the `-Null` combinator), a `Variant` argument does not change the result type of the function or its result for an empty group: the function keeps its usual result type, and a group where every `Variant` value is NULL gets the same result as an empty set — for example, `groupConcat` over such a group returns the empty `String`, not NULL.
+
 :::note
 Before version `26.8`, the functions that accept a `Variant` natively aggregated those rows as ordinary values: `count` counted them, `any` could return NULL from a group that has non-NULL values, `groupArray` stored the NULLs, and the `uniq` family counted NULL as a distinct value. Set `aggregate_functions_skip_variant_nulls = 0` (or `SET compatibility = '26.7'`) to restore the previous behavior.
 
 This setting controls how new values are aggregated. It cannot change the meaning of an `AggregateFunction(f, Variant(...))` state that has already been written, because the state representation is the same in both modes: a state written by an older version keeps the values that went into it, including the ones that came from the NULL rows.
+
+Watch out for the persisted `AggregateFunction(f, Variant(...))` states — the intermediate states of materialized views and `AggregatingMergeTree` tables. The type name and the state layout are the same in both modes, so nothing stops a merge from combining a state written before the upgrade (which aggregated the NULL rows) with a state written after it (which skipped them), and the merged result follows neither contract consistently: for example, `countMerge` over such a mix counts the NULL rows of the old parts but not of the new ones. If a query over mixed states must keep returning the pre-`26.8` result, set `aggregate_functions_skip_variant_nulls = 0` before inserting new data, so that the new states are accumulated under the same rule as the historical ones; otherwise, expect the queries over the existing states to converge to the new NULL-skipping behavior only after the historical data is rewritten (`OPTIMIZE TABLE ... FINAL` does not help — re-merging old states does not remove the NULL rows already aggregated into them; the data has to be re-inserted from the source).
 :::
 
 Window functions handle their argument types themselves, so the `RESPECT NULLS` forms keep seeing the NULL rows of a `Variant` argument.
