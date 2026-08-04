@@ -114,9 +114,6 @@
               },
               {
                 "$ref": "./products/kubernetes-operator/navigation.json"
-              },
-              {
-                "sourceRef": "ClickHouse/airgap-docs"
               }
             ],
             "tab": "Solutions"
