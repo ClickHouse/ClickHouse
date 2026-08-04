@@ -155,7 +155,16 @@ void SettingsConstraints::check(const Settings & current_settings, const AlterSe
 {
     check(current_settings, profile_elements.add_settings, source);
     check(current_settings, profile_elements.modify_settings, source);
-    /// We don't check `drop_settings` here.
+
+    /// A dropped override reverts the setting to its compiled default; check that reversion like a MODIFY to it.
+    static const Settings default_settings;
+    for (const auto & element : profile_elements.drop_settings)
+    {
+        if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
+            continue;
+        SettingChange change(element.setting_name, default_settings.get(element.setting_name));
+        check(current_settings, change, source);
+    }
 }
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const

@@ -5877,9 +5877,17 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing.
         auto old_settings = storage_settings.get();
         auto copy = getDefaultSettings();
+
+        /// `RESET SETTING` drops a name from `new_changes` instead of setting it to the default, so add it
+        /// back explicitly with its reverted value - otherwise the feature tier check never sees it.
+        auto changes_with_resets = new_changes;
+        for (const auto & old_change : old_settings->changes())
+            if (!new_changes.tryGet(old_change.name))
+                changes_with_resets.emplace_back(old_change.name, copy->get(old_change.name));
+
         /// Compare against the table's live settings, not `copy`'s bare defaults, so an existing override isn't
         /// mistaken for a change made by this ALTER.
-        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true, old_settings.get());
+        copy->applyChanges(changes_with_resets, getContext(), /*is_loading_from_existing_metadata=*/true, old_settings.get());
         if (run_sanity_checks)
         {
             const auto & ac = getContext()->getAccessControl();

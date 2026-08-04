@@ -543,3 +543,85 @@ def test_altering_unrelated_setting_after_tightening_tier(start_cluster):
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP TABLE IF EXISTS test_unrelated_alter")
+
+
+def test_reset_setting_bypassing_feature_tier(start_cluster):
+    # RESET SETTING must be checked the same way as MODIFY SETTING to the default value
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS test_reset_bypass")
+    instance.query(
+        "CREATE TABLE test_reset_bypass (a UInt64) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS allow_commit_order_projection = 1"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER TABLE test_reset_bypass MODIFY SETTING allow_commit_order_projection = 0"
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER TABLE test_reset_bypass RESET SETTING allow_commit_order_projection"
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output = instance.query(
+        "SELECT engine_full FROM system.tables WHERE name = 'test_reset_bypass'"
+    )
+    assert "allow_commit_order_projection" in output
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS test_reset_bypass")
+
+
+def test_drop_setting_bypassing_feature_tier_for_user(start_cluster):
+    # DROP SETTING must be checked like MODIFY SETTING to the default value. The check compares against
+    # the acting user's own session, so that user needs the setting itself (granted while the tier was
+    # permissive) for the comparison to actually engage
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_drop_bypass")
+    instance.query(
+        "CREATE USER admin_with_experimental IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+    instance.query("GRANT ACCESS MANAGEMENT ON *.* TO admin_with_experimental")
+    instance.query(
+        "CREATE USER user_drop_bypass IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER USER user_drop_bypass SETTINGS allow_experimental_time_series_table = 0",
+        user="admin_with_experimental",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER USER user_drop_bypass DROP SETTING allow_experimental_time_series_table",
+        user="admin_with_experimental",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output = instance.query(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'",
+        user="user_drop_bypass",
+    )
+    assert output.strip() == "1"
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_drop_bypass")
