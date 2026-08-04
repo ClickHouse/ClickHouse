@@ -38,7 +38,7 @@ using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 class TableFunctionNode;
 using TableFunctionNodePtr = std::shared_ptr<TableFunctionNode>;
 
-class TableFunctionNode : public IQueryTreeNode
+class TableFunctionNode : public ITableExpressionNode
 {
 public:
     /// Construct table function node with table function name
