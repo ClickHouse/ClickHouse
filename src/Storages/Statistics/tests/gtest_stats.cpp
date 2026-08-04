@@ -6,7 +6,12 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
@@ -779,6 +784,56 @@ protected:
     {
         return stats->getStats().at(GetParam());
     }
+
+    /// Runs `mutate` under a memory limit so that it throws part way through, then asserts the memo
+    /// was dropped: the sketch already holds more distinct values than the memoized cardinality, so
+    /// a surviving memo is observable as a too-low estimate.
+    static void expectMemoDroppedWhenMutatorThrows(const ColumnStatisticsPtr & stats, size_t distinct, auto && mutate)
+    {
+        MainThreadStatus::getInstance();
+        ASSERT_EQ(stats->estimateCardinality(), distinct);
+
+        auto & thread_tracker = CurrentThread::get().memory_tracker;
+        const Int64 saved_untracked_limit = CurrentThread::get().untracked_memory_limit;
+        const Int64 saved_thread_limit = thread_tracker.getHardLimit();
+        const Int64 saved_total_limit = total_memory_tracker.getHardLimit();
+        const UInt64 saved_min_alloc = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+
+        auto lift = [&]
+        {
+            total_memory_tracker.setHardLimit(saved_total_limit);
+            thread_tracker.setHardLimit(saved_thread_limit);
+            CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
+            CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_alloc);
+        };
+        SCOPE_EXIT_SAFE({ lift(); });
+
+        /// `operator new` only enforces the limit above this size, and the per-thread untracked
+        /// buffer would otherwise absorb the container allocations.
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+        CurrentThread::get().untracked_memory_limit = 0;
+        CurrentThread::flushUntrackedMemory();
+        total_memory_tracker.resetCounters();
+        thread_tracker.resetCounters();
+        total_memory_tracker.setHardLimit(1);
+        thread_tracker.setHardLimit(1);
+
+        bool threw = false;
+        try
+        {
+            mutate();
+        }
+        catch (const Exception &)
+        {
+            threw = true;
+        }
+
+        /// Lift before asserting, because the assertions allocate too.
+        lift();
+
+        ASSERT_TRUE(threw) << "the mutator was expected to throw under the memory limit";
+        EXPECT_GT(stats->estimateCardinality(), distinct);
+    }
 };
 
 TEST_P(UniqCardinalityInvalidation, BuildResetsCachedCardinality)
@@ -823,6 +878,31 @@ TEST_P(UniqCardinalityInvalidation, DeserializeResetsCachedCardinality)
     uniqStat(stats)->deserialize(in, StatisticsFileVersion::V4);
 
     EXPECT_EQ(stats->estimateCardinality(), distinct_per_block);
+}
+
+TEST_P(UniqCardinalityInvalidation, BuildResetsCachedCardinalityWhenItThrows)
+{
+    auto stats = build(0);
+
+    /// Enough distinct values that the sketch has to grow its container while inserting them.
+    MutableColumnPtr more = DataTypeInt32().createColumn();
+    for (size_t i = 0; i < 100'000; ++i)
+        more->insert(static_cast<Int32>(distinct_per_block + i));
+    ColumnPtr more_column = std::move(more);
+
+    expectMemoDroppedWhenMutatorThrows(stats, distinct_per_block, [&] { stats->build(more_column); });
+}
+
+TEST_P(UniqCardinalityInvalidation, MergeResetsCachedCardinalityWhenItThrows)
+{
+    /// Both sides must be in the same container class, so that the merge inserts element by
+    /// element and a grow part way through the loop is what throws. Merging a wider container
+    /// instead switches to it up front, which allocates before mutating anything, and merging two
+    /// already widest ones allocates nothing at all.
+    auto stats = build(0);
+    auto other = build(static_cast<Int32>(distinct_per_block), 120);
+
+    expectMemoDroppedWhenMutatorThrows(stats, distinct_per_block, [&] { stats->merge(other); });
 }
 
 TEST_P(UniqCardinalityInvalidation, RepeatedReadsAreStable)

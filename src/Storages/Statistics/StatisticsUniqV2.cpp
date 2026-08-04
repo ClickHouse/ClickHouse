@@ -38,6 +38,9 @@ StatisticsUniqV2::~StatisticsUniqV2()
 
 void StatisticsUniqV2::build(const ColumnPtr & column)
 {
+    /// The sketch is mutated incrementally and can throw part way through, so reset in one place.
+    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
+
     const IColumn * raw_column_ptr = nullptr;
 
     /// For sparse and low cardinality columns an extra default
@@ -56,14 +59,15 @@ void StatisticsUniqV2::build(const ColumnPtr & column)
     }
 
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
-    cached_cardinality_plus_one.store(0, std::memory_order_relaxed);
 }
 
 void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)
 {
+    /// The sketch is mutated incrementally and can throw part way through, so reset in one place.
+    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
+
     const StatisticsUniqV2 * other = typeid_cast<const StatisticsUniqV2 *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
-    cached_cardinality_plus_one.store(0, std::memory_order_relaxed);
 }
 
 bool StatisticsUniqV2::isCompatibleWith(const IStatistics & other) const
