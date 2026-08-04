@@ -1,0 +1,259 @@
+{
+  "groups": [
+    {
+      "group": "Base de conocimientos",
+      "pages": [
+        {
+          "group": "Rendimiento y optimización",
+          "pages": [
+            "es/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
+            "es/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
+            "es/resources/support-center/knowledge-base/performance-optimization/check-query-processing-time-only",
+            "es/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries",
+            "es/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
+            "es/resources/support-center/knowledge-base/performance-optimization/improve-map-performance",
+            "es/resources/support-center/knowledge-base/performance-optimization/memory-limit-exceeded-for-query",
+            "es/resources/support-center/knowledge-base/performance-optimization/optimize-final-vs-final",
+            "es/resources/support-center/knowledge-base/performance-optimization/query-max-execution-time",
+            "es/resources/support-center/knowledge-base/performance-optimization/tips-tricks-optimizing-basic-data-types-in-clickhouse",
+            "es/resources/support-center/knowledge-base/performance-optimization/why-is-my-primary-key-not-used"
+          ]
+        },
+        {
+          "group": "Cloud",
+          "pages": [
+            "es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes",
+            "es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes",
+            "es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+            "es/resources/support-center/knowledge-base/cloud-services/change-billing-email",
+            "es/resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
+            "es/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+            "es/resources/support-center/knowledge-base/cloud-services/custom-dns-alias-for-instance",
+            "es/resources/support-center/knowledge-base/cloud-services/execute-system-queries-in-cloud",
+            "es/resources/support-center/knowledge-base/cloud-services/how-to-check-my-clickhouse-cloud-sevice-state",
+            "es/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys",
+            "es/resources/support-center/knowledge-base/cloud-services/ingest-failures-23-9-release",
+            "es/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
+            "es/resources/support-center/knowledge-base/cloud-services/opt-out-core-dump-collection",
+            "es/resources/support-center/knowledge-base/cloud-services/unable-to-access-cloud-service"
+          ]
+        },
+        {
+          "group": "Importación y exportación de datos",
+          "pages": [
+            "es/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
+            "es/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
+            "es/resources/support-center/knowledge-base/data-import-export/file-export",
+            "es/resources/support-center/knowledge-base/data-import-export/importing-geojason-with-nested-object-array",
+            "es/resources/support-center/knowledge-base/data-import-export/importing-and-working-with-json-array-objects",
+            "es/resources/support-center/knowledge-base/data-import-export/ingest-parquet-files-in-s3",
+            "es/resources/support-center/knowledge-base/data-import-export/json-import",
+            "es/resources/support-center/knowledge-base/data-import-export/json-extract-example",
+            "es/resources/support-center/knowledge-base/data-import-export/json-simple-example",
+            "es/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json",
+            "es/resources/support-center/knowledge-base/data-import-export/kafka-to-clickhouse-setup",
+            "es/resources/support-center/knowledge-base/data-import-export/mysql-to-parquet-csv-json",
+            "es/resources/support-center/knowledge-base/data-import-export/parquet-to-csv-json",
+            "es/resources/support-center/knowledge-base/data-import-export/postgresql-to-parquet-csv-json",
+            "es/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders"
+          ]
+        },
+        {
+          "group": "Configuración y ajustes",
+          "pages": [
+            "es/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
+            "es/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
+            "es/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
+            "es/resources/support-center/knowledge-base/configuration-settings/configure-a-user-setting",
+            "es/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+            "es/resources/support-center/knowledge-base/configuration-settings/ignoring-incorrect-settings",
+            "es/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases"
+          ]
+        },
+        {
+          "group": "Integraciones y bibliotecas cliente",
+          "pages": [
+            "es/resources/support-center/knowledge-base/integrations/node-js-example",
+            "es/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
+            "es/resources/support-center/knowledge-base/integrations/oracle-odbc",
+            "es/resources/support-center/knowledge-base/integrations/how-to-set-up-ch-on-docker-odbc-connect-mssql",
+            "es/resources/support-center/knowledge-base/integrations/python-clickhouse-connect-example",
+            "es/resources/support-center/knowledge-base/integrations/python-http-requests",
+            "es/resources/support-center/knowledge-base/integrations/terraform-example"
+          ]
+        },
+        {
+          "group": "Solución de problemas y errores",
+          "pages": [
+            "es/resources/support-center/troubleshooting/troubleshooting",
+            "es/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
+            "es/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+            "es/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
+            "es/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type",
+            "es/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+            "es/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos",
+            "es/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
+            "es/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
+            "es/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure"
+          ],
+          "root": "es/resources/support-center/troubleshooting/index"
+        },
+        {
+          "group": "Tablas y esquema",
+          "pages": [
+            "es/resources/support-center/knowledge-base/tables-schema/add-column",
+            "es/resources/support-center/knowledge-base/tables-schema/delete-old-data",
+            "es/resources/support-center/knowledge-base/tables-schema/exchangeStatementToSwitchTables",
+            "es/resources/support-center/knowledge-base/tables-schema/how-to-create-table-to-query-multiple-remote-clusters",
+            "es/resources/support-center/knowledge-base/tables-schema/recreate-table-across-terminals",
+            "es/resources/support-center/knowledge-base/tables-schema/runbook-json",
+            "es/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+            "es/resources/support-center/knowledge-base/tables-schema/search-across-node-for-tables-with-a-wildcard"
+          ]
+        },
+        {
+          "group": "Consultas y SQL",
+          "pages": [
+            "es/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
+            "es/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
+            "es/resources/support-center/knowledge-base/queries-sql/comparing-metrics-between-queries",
+            "es/resources/support-center/knowledge-base/queries-sql/filtered-aggregates",
+            "es/resources/support-center/knowledge-base/queries-sql/how-to-filter-a-clickhouse-table-by-an-array-column",
+            "es/resources/support-center/knowledge-base/queries-sql/how-to-insert-all-rows-from-another-table",
+            "es/resources/support-center/knowledge-base/queries-sql/pivot",
+            "es/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting",
+            "es/resources/support-center/knowledge-base/queries-sql/using-array-join-to-extract-and-query-attributes"
+          ]
+        },
+        {
+          "group": "Vistas materializadas y proyecciones",
+          "pages": [
+            "es/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
+            "es/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
+            "es/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
+            "es/resources/support-center/knowledge-base/materialized-views/projection-example"
+          ]
+        },
+        {
+          "group": "Monitorización y depuración",
+          "pages": [
+            "es/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
+            "es/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
+            "es/resources/support-center/knowledge-base/monitoring-debugging/generate-har-file",
+            "es/resources/support-center/knowledge-base/monitoring-debugging/mapping-of-system-metrics-to-prometheus-metrics",
+            "es/resources/support-center/knowledge-base/monitoring-debugging/outputSendLogsLevelTracesToFile",
+            "es/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray",
+            "es/resources/support-center/knowledge-base/monitoring-debugging/send-logs-level",
+            "es/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running",
+            "es/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations",
+            "es/resources/support-center/knowledge-base/monitoring-debugging/why-default-logging-verbose"
+          ]
+        },
+        {
+          "group": "Seguridad y control de acceso",
+          "pages": [
+            "es/resources/support-center/knowledge-base/security/check-users-roles",
+            "es/resources/support-center/knowledge-base/security/common-rbac-queries",
+            "es/resources/support-center/knowledge-base/security/remove-default-user",
+            "es/resources/support-center/knowledge-base/security/row-column-policy",
+            "es/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles"
+          ]
+        },
+        {
+          "group": "Gestión de datos",
+          "pages": [
+            "es/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
+            "es/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
+            "es/resources/support-center/knowledge-base/data-management/dictionaries-consistent-state",
+            "es/resources/support-center/knowledge-base/data-management/dictionary-using-strings",
+            "es/resources/support-center/knowledge-base/data-management/read-consistency",
+            "es/resources/support-center/knowledge-base/data-management/understanding-part-types-and-storage-formats",
+            "es/resources/support-center/knowledge-base/data-management/when-is-ttl-applied"
+          ]
+        },
+        {
+          "group": "Configuración e instalación",
+          "pages": [
+            "es/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
+            "es/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
+            "es/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
+            "es/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
+            "es/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
+            "es/resources/support-center/knowledge-base/setup-installation/production"
+          ]
+        },
+        {
+          "group": "General y preguntas frecuentes",
+          "pages": [
+            {
+              "group": "General",
+              "pages": [
+                "es/resources/support-center/knowledge-base/general-faqs/columnar-database",
+                "es/resources/support-center/knowledge-base/general-faqs/concurrency",
+                "es/resources/support-center/knowledge-base/general-faqs/cost-based",
+                "es/resources/support-center/knowledge-base/general-faqs/datalake",
+                "es/resources/support-center/knowledge-base/general-faqs/dbms-naming",
+                "es/resources/support-center/knowledge-base/general-faqs/dependencies",
+                "es/resources/support-center/knowledge-base/general-faqs/distributed-join",
+                "es/resources/support-center/knowledge-base/general-faqs/federated",
+                "es/resources/support-center/knowledge-base/general-faqs/how-do-i-contribute-code-to-clickhouse",
+                "es/resources/support-center/knowledge-base/general-faqs/mapreduce",
+                "es/resources/support-center/knowledge-base/general-faqs/ne-tormozit",
+                "es/resources/support-center/knowledge-base/general-faqs/olap",
+                "es/resources/support-center/knowledge-base/general-faqs/sql",
+                "es/resources/support-center/knowledge-base/general-faqs/updates",
+                "es/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
+                "es/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper"
+              ],
+              "root": "es/resources/support-center/knowledge-base/general-faqs/index"
+            },
+            {
+              "group": "Casos de uso",
+              "pages": [
+                "es/resources/support-center/knowledge-base/general-faqs/key-value",
+                "es/resources/support-center/knowledge-base/general-faqs/time-series",
+                "es/resources/support-center/knowledge-base/general-faqs/use-clickhouse-for-log-analytics",
+                "es/resources/support-center/knowledge-base/general-faqs/vector-search"
+              ],
+              "root": "es/resources/support-center/knowledge-base/general-faqs/use-cases-index"
+            },
+            {
+              "group": "Integración",
+              "pages": [
+                "es/resources/support-center/knowledge-base/data-import-export/json-import",
+                "es/resources/support-center/knowledge-base/integrations/oracle-odbc"
+              ],
+              "root": "es/resources/support-center/knowledge-base/integrations/index"
+            },
+            {
+              "group": "Operaciones",
+              "pages": [
+                "es/resources/support-center/knowledge-base/tables-schema/delete-old-data",
+                "es/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
+                "es/resources/support-center/knowledge-base/setup-installation/production",
+                "es/resources/support-center/knowledge-base/general-faqs/separate-storage"
+              ],
+              "root": "es/resources/support-center/knowledge-base/general-faqs/operations-index"
+            }
+          ],
+          "root": "es/resources/support-center/knowledge-base/general-faqs/faq-index"
+        },
+        {
+          "group": "Consejos y trucos",
+          "pages": [
+            "es/resources/support-center/tips-and-tricks/community-wisdom",
+            "es/resources/support-center/tips-and-tricks/cost-optimization",
+            "es/resources/support-center/tips-and-tricks/debugging-insights",
+            "es/resources/support-center/tips-and-tricks/materialized-views",
+            "es/resources/support-center/tips-and-tricks/performance-optimization",
+            "es/resources/support-center/tips-and-tricks/success-stories",
+            "es/resources/support-center/tips-and-tricks/too-many-parts"
+          ]
+        }
+      ],
+      "root": "es/resources/support-center/home"
+    }
+  ],
+  "icon": "/images/icons/icon-support-center.svg",
+  "item": "Centro de soporte"
+}
