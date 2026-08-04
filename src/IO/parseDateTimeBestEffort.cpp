@@ -936,12 +936,13 @@ ReturnType parseDateTimeBestEffortImpl(
     }
     else if (year == 0)
     {
-        /// Calendar year 0 is only representable in DateTime64. For DateTime, accepting it produces a negative
-        /// time_t that convertFromTime later clamps to the Unix epoch, which looks like a successful parse of
-        /// 1970-01-01 (e.g. parseDateTimeBestEffortOrNull('0000')) despite year 0 being out of supported range.
-        // Throw an explicit error instead.
+        /// Calendar year 0 is only representable in DateTime64. For DateTime, this input is accepted and clamped
+        /// to the Unix epoch to allow for the usage of 0000-0x-0x dates as placeholder values for unknown dates.
         if constexpr (!is_64)
-            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year 0 is out of supported range");
+        {
+            res = 0;
+            return ReturnType(true);
+        }
     }
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
