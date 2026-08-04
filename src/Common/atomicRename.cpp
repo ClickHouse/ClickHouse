@@ -242,4 +242,17 @@ bool renameExchangeIfSupported(const std::string & old_path, const std::string &
     return renameat2(old_path, new_path, RENAME_EXCHANGE);
 }
 
+void renameExchangeNonAtomic(const std::string & old_path, const std::string & new_path)
+{
+    if (fs::exists(new_path))
+    {
+        std::string temp_path = old_path + ".tmp_rename_exchange";
+        fs::rename(old_path, temp_path);
+        fs::rename(new_path, old_path);
+        fs::rename(temp_path, new_path);
+    }
+    else
+        fs::rename(old_path, new_path);
+}
+
 }
