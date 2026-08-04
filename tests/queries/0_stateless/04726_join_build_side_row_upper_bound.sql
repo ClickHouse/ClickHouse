@@ -97,6 +97,22 @@ SELECT 'overstated right side keeps orientation', countIf(
 
 DROP TABLE residual_04726;
 
+-- The plan arms above assert the orientation; this one asserts the effect it exists for, so a
+-- future change cannot keep the plan shape while losing the small build side at runtime.
+SELECT avg(val)
+FROM (SELECT * FROM dim_04726 JOIN nation_04726 USING (nation_id) WHERE name = 'nowhere') AS d
+JOIN fact_04726 ON d.id = fact_04726.id
+SETTINGS log_comment = '04726_build_side_profile_events' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'build side rows', if(ProfileEvents['JoinBuildTableRowCount'] < 1000, 'small',
+        format('fail: {}', ProfileEvents['JoinBuildTableRowCount']))
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+    AND current_database = currentDatabase() AND log_comment = '04726_build_side_profile_events'
+ORDER BY event_time DESC LIMIT 1;
+
 -- Results must be unaffected by the orientation change.
 SELECT 'rows', count() FROM (SELECT * FROM dim_04726 JOIN nation_04726 USING (nation_id) WHERE name = 'nowhere') AS d
     JOIN fact_04726 ON d.id = fact_04726.id;

@@ -4,5 +4,6 @@ dpsize	1
 dphyp	1
 unmeasured right side keeps orientation	1
 overstated right side keeps orientation	1
+build side rows	small
 rows	0
 rows non-empty filter	25

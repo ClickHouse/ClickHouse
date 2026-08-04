@@ -452,10 +452,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        /// The step reads the whole table, so the total row count is exact.
+        /// `totalRows` is a live counter while the step reads a fixed snapshot, so a concurrent
+        /// insert can push it above the number of rows actually read: not a lower bound.
         return RelationStats{
             .estimated_rows = estimated_rows,
-            .estimated_rows_is_lower_bound = true,
             .table_name = table_display_name,
             .source = RowEstimateSource::Statistics};
     }
