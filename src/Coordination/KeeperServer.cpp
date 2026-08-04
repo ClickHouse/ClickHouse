@@ -280,6 +280,8 @@ UInt64 getNowMonotonicMs()
     return static_cast<UInt64>(
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
 }
+
+constexpr int32_t min_leader_metrics_poll_interval_ms = 100;
 }
 
 KeeperServer::KeeperServer(
@@ -874,7 +876,7 @@ void KeeperServer::startLeaderMetricsPolling(int32_t poll_interval_ms)
 
     {
         std::lock_guard lock(leader_unavailable_metrics_mutex);
-        leader_unavailable_poll_interval_ms = poll_interval_ms;
+        leader_unavailable_poll_interval_ms = std::max(poll_interval_ms, min_leader_metrics_poll_interval_ms);
         leader_unavailable_polling_task.emplace(nuraft::cs_new<nuraft::timer_task<void>>(task_function));
     }
 
