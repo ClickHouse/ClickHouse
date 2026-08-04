@@ -34,6 +34,9 @@ public:
     /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
 
+    /// Function that fills system.engine_settings columns for a given engine
+    using FillEngineSettingsFn = void(*)(MutableColumns &);
+
     struct Arguments
     {
         const String & engine_name;
@@ -82,6 +85,7 @@ public:
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
+        FillEngineSettingsFn fill_engine_settings_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -120,6 +124,7 @@ public:
         .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
+        .fill_engine_settings_fn = nullptr,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const
