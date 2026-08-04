@@ -9,6 +9,14 @@ DROP TABLE IF EXISTS t_dedup_sparse_top_src SETTINGS ignore_drop_queries_probabi
 DROP TABLE IF EXISTS t_dedup_sparse_top_dst SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS t_dedup_sparse_plain_dst SETTINGS ignore_drop_queries_probability = 0;
 
+-- The INSERT SELECT dedup token embeds how the source read was chunked, so the retry only
+-- collides if both attempts chunk identically. Pin everything that shapes the read, or
+-- randomized settings and read-scheduler timing flake the dedup pairs to 40000.
+SET max_threads = 1;
+SET max_insert_threads = 1;
+SET max_block_size = 65409;
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+
 -- A sparse-serialized element inside a Tuple: the tuple element is default in all but 5 of 20000 rows.
 CREATE TABLE t_dedup_sparse_src (id UInt64, body Tuple(key UInt64, flag Bool))
 ENGINE = MergeTree ORDER BY id
