@@ -9,11 +9,11 @@
         <four_letter_word_allow_list>*</four_letter_word_allow_list>
 
         <coordination_settings>
-            <operation_timeout_ms>5000</operation_timeout_ms>
+            <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>30000</session_timeout_ms>
             <snapshot_distance>75</snapshot_distance>
             <raft_logs_level>trace</raft_logs_level>
-            <full_consensus_lagging_member_grace_period_ms>30000</full_consensus_lagging_member_grace_period_ms>
+            <full_consensus_lagging_member_grace_period_ms>3000</full_consensus_lagging_member_grace_period_ms>
         </coordination_settings>
 
         <raft_configuration>

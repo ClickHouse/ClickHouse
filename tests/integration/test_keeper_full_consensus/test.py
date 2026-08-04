@@ -80,7 +80,7 @@ def test_grace_period_not_applied_to_a_down_member(started_cluster):
     try:
         wait_nodes()
 
-        grace_period_ms = 30000
+        grace_period_ms = 3000
         for node in [node1, node2, node3]:
             conf = keeper_utils.send_4lw_cmd(cluster, node, cmd="conf")
             assert (
@@ -101,9 +101,11 @@ def test_grace_period_not_applied_to_a_down_member(started_cluster):
         zk.create("/test_grace_period_down_member", b"value")
         elapsed_ms = (time.monotonic() - started_at) * 1000
         assert zk.get("/test_grace_period_down_member")[0] == b"value"
-        # Generous bound: the exclusion window is a few heartbeats, and the
-        # point is only that it is not the grace period.
-        assert elapsed_ms < grace_period_ms / 2
+        # The exclusion window is `full_consensus_leader_limit` (4) heartbeats,
+        # i.e. ~2 s here, and the point is only that it is not the grace period
+        # on top of that. The bound has to stay below operation_timeout_ms,
+        # otherwise the write fails before this can be checked.
+        assert elapsed_ms < 2000 + grace_period_ms, elapsed_ms
 
         followers[1].start_clickhouse()
         wait_nodes()

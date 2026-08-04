@@ -118,7 +118,11 @@ private:
 
     void loadLatestConfig();
 
-    void enterRecoveryMode(nuraft::raft_params & params);
+    /// Warn and save the recovery cluster configuration.
+    void enterRecoveryMode();
+
+    /// Quorum sizes that let this instance commit on its own during recovery.
+    static void setRecoveryQuorumSizes(nuraft::raft_params & params);
 
     std::atomic_bool is_recovering = false;
 

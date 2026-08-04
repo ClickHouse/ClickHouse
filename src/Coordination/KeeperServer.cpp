@@ -94,6 +94,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsMilliseconds full_consensus_lagging_member_grace_period_ms;
+    extern const CoordinationSettingsMilliseconds session_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
@@ -490,7 +491,7 @@ void KeeperServer::loadLatestConfig()
     }
 }
 
-void KeeperServer::enterRecoveryMode(nuraft::raft_params & params)
+void KeeperServer::enterRecoveryMode()
 {
     LOG_WARNING(
         log,
@@ -505,6 +506,10 @@ void KeeperServer::enterRecoveryMode(nuraft::raft_params & params)
     new_config->get_servers() = last_local_config->get_servers();
 
     state_manager->save_config(*new_config);
+}
+
+void KeeperServer::setRecoveryQuorumSizes(nuraft::raft_params & params)
+{
     params.with_custom_commit_quorum_size(1);
     params.with_custom_election_quorum_size(1);
 }
@@ -514,10 +519,13 @@ void KeeperServer::forceRecovery()
     // notify threads containing the lock that we want to enter recovery mode
     is_recovering = true;
     ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
-    auto params = raft_instance->get_current_params();
-    enterRecoveryMode(params);
+    enterRecoveryMode();
     raft_instance->setConfig(state_manager->load_config());
-    raft_instance->update_params(params);
+    /// Modify the parameters in place instead of reading them, changing the copy and writing it
+    /// back: another thread can change an unrelated parameter in between (for example the full
+    /// consensus mode toggled by `fcon`/`fcof`), and the stale copy would silently revert it.
+    /// In the other direction, that change would silently revert the recovery quorum sizes.
+    raft_instance->modify_params([](nuraft::raft_params & params) { setRecoveryQuorumSizes(params); });
 }
 
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
@@ -593,6 +601,17 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         "full_consensus_lagging_member_grace_period_ms",
         log);
 
+    if (params.full_consensus_lagging_member_grace_period_ >= params.client_req_timeout_)
+        LOG_WARNING(
+            log,
+            "full_consensus_lagging_member_grace_period_ms ({}) is greater than or equal to operation_timeout_ms ({}). "
+            "While full consensus mode is on and a member is failing to sync, no write can be committed for the grace "
+            "period, so clients will see operation timeouts, and idle sessions expire once the grace period exceeds "
+            "session_timeout_ms ({}).",
+            params.full_consensus_lagging_member_grace_period_,
+            params.client_req_timeout_,
+            coordination_settings[CoordinationSetting::session_timeout_ms].totalMilliseconds());
+
     params.return_method_ = nuraft::raft_params::async_handler;
 
     nuraft::asio_service::options asio_opts{};
@@ -629,7 +648,10 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 #endif
     }
     if (is_recovering)
-        enterRecoveryMode(params);
+    {
+        enterRecoveryMode();
+        setRecoveryQuorumSizes(params);
+    }
 
     nuraft::raft_server::init_options init_options;
 
@@ -848,10 +870,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     {
         const auto finish_recovering = [&]
         {
-            auto new_params = raft_instance->get_current_params();
-            new_params.custom_commit_quorum_size_ = 0;
-            new_params.custom_election_quorum_size_ = 0;
-            raft_instance->update_params(new_params);
+            /// In place, so that a concurrent change of an unrelated parameter is not lost.
+            raft_instance->modify_params([](nuraft::raft_params & params)
+            {
+                params.custom_commit_quorum_size_ = 0;
+                params.custom_election_quorum_size_ = 0;
+            });
 
             LOG_INFO(log, "Recovery is done. You can continue using cluster normally.");
             is_recovering = false;
