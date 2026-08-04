@@ -521,27 +521,33 @@ void StorageBuffer::read(
             else
             {
                 auto src_table_query_info = query_info;
-                ActionsDAG converting_dag;
-                if (src_table_query_info.prewhere_info || src_table_query_info.row_level_filter)
-                {
-                    converting_dag = ActionsDAG::makeConvertingActions(
-                        header_after_adding_defaults.getColumnsWithTypeAndName(),
-                        header_without_derivable.getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Name,
-                        local_context);
-                }
+
+                /// The forwarded filters run as consecutive steps over one block, so a parent kept
+                /// alive by an earlier step already carries this table's type in the next one.
+                NameSet parents_converted_by_previous_filter;
 
                 /// The prefix converts the whole sample block, but the filter runs inside the
                 /// destination read, where only its own columns are known to have the declared
                 /// types. Keep just the filter's outputs; the rest converts after the read as usual.
                 auto merge_converting_prefix = [&](ActionsDAG filter_dag)
                 {
+                    auto source_columns = header_after_adding_defaults.getColumnsWithTypeAndName();
+                    for (auto & source_column : source_columns)
+                        if (parents_converted_by_previous_filter.contains(source_column.name))
+                            source_column.type = header_without_derivable.getByName(source_column.name).type;
+
+                    auto converting_dag = ActionsDAG::makeConvertingActions(
+                        source_columns,
+                        header_without_derivable.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name,
+                        local_context);
+
                     Names filter_outputs;
                     filter_outputs.reserve(filter_dag.getOutputs().size());
                     for (const auto * output : filter_dag.getOutputs())
                         filter_outputs.push_back(output->result_name);
 
-                    auto merged = ActionsDAG::merge(converting_dag.clone(), std::move(filter_dag));
+                    auto merged = ActionsDAG::merge(std::move(converting_dag), std::move(filter_dag));
 
                     /// A column the filter consumes is dropped from the read's output unless it is
                     /// also an output of the filter's actions. The parents below must survive, or
@@ -556,6 +562,8 @@ void StorageBuffer::read(
 
                         if (filter_output_names.insert(parent_name).second)
                             filter_outputs.push_back(parent_name);
+
+                        parents_converted_by_previous_filter.insert(parent_name);
                     }
 
                     merged.removeUnusedActions(filter_outputs);
