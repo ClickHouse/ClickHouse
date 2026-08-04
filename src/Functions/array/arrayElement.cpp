@@ -2452,6 +2452,7 @@ bool FunctionArrayElement<mode>::gatherReplicated(
     for (size_t i = 0; i < rows; ++i)
     {
         ssize_t nested_row = replication_indexes.getIndexAt(i);
+        /// `offsets[-1]` is a guaranteed zero (`PaddedPODArray` left padding), same as `ColumnArray::offsetAt`.
         ColumnArray::Offset begin = offsets[nested_row - 1];
         size_t array_size = offsets[nested_row] - begin;
 

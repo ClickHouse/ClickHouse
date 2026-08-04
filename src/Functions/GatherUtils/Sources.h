@@ -327,6 +327,7 @@ private:
             return;
         ssize_t nested_row = replication_indexes.getIndexAt(logical_row);
         row_num = nested_row;
+        /// `offsets[-1]` is a guaranteed zero (`PaddedPODArray` left padding), same as `ColumnArray::offsetAt`.
         prev_offset = offsets[nested_row - 1];
     }
 };
