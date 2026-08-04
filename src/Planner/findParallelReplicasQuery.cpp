@@ -93,8 +93,6 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
     return isTableNodeEligibleForParallelReplicas(table_node, storage, context);
 }
 
-static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context);
-
 /// Returns a list of (sub)queries (candidates) which may support parallel replicas.
 /// The rule is :
 /// subquery has only LEFT / RIGHT / ALL INNER JOIN (or none), and left / right part is MergeTree table or subquery candidate as well.
@@ -163,11 +161,9 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                     query_tree_node = join_node.getLeftTableExpressionNode().get();
                 else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny
-                    && supported_table_expression_types.contains(join_node.getLeftTableExpressionNode()->getNodeType())
-                    && findTableForParallelReplicas(join_node.getLeftTableExpressionNode().get(), context))
-                    /// For RIGHT JOIN only the right side is read with replicas, so it is the side to
-                    /// descend into. The left side must be eligible too: it is either materialized into
-                    /// a temporary table or sent to every replica as is.
+                    && supported_table_expression_types.contains(join_node.getLeftTableExpressionNode()->getNodeType()))
+                    /// For RIGHT JOIN the left side is materialized into a temporary table by
+                    /// buildQueryTreeForShard, so only the right side survives to be read with replicas.
                     query_tree_node = join_node.getRightTableExpressionNode().get();
                 else
                     return {};
