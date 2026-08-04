@@ -10201,49 +10201,23 @@ void MergeTreeData::Transaction::clear()
     chassert(precommitted_parts.size() >= precommitted_parts_need_rename.size());
     precommitted_parts.clear();
     precommitted_parts_need_rename.clear();
+    published_parts_pending_commit.clear();
 }
 
 void MergeTreeData::Transaction::renameParts()
 {
-    /// Parts published by this call, with the temporary directory each of them came from, so that
-    /// an aborted batch can be undone. Only tracked when the publish fence is armed
-    /// (`leader_election`); for every other engine the behaviour of this method is unchanged.
-    std::vector<std::pair<MutableDataPartPtr, String>> published_in_this_call;
-
-    /// Rename the parts published so far back to the temporary directories they came from. The
-    /// batch is aborted, so nothing of it may stay visible under a persistent name: otherwise the
-    /// next leader would load parts of a DDL that failed. The temporary names are process-scoped
-    /// under `leader_election` (`getPostfixForTempInsertName`), so restoring them cannot collide
-    /// with the new leader's own work. Best effort: a failure here is logged, not propagated, so
-    /// that the original rejection reaches the client.
-    auto undo_published_renames = [&]
-    {
-        for (auto it = published_in_this_call.rbegin(); it != published_in_this_call.rend(); ++it)
-        {
-            try
-            {
-                LOG_DEBUG(data.log, "Renaming part {} back to {}: the batch was aborted", it->first->name, it->second);
-                it->first->renameTo(it->second, true);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(data.log, "Cannot rename part " + it->first->name + " back to " + it->second);
-            }
-        }
-    };
-
     for (const auto & part_need_rename : precommitted_parts_need_rename)
     {
         if (publish_fence_epoch)
         {
             /// Publishing a batch is not atomic: the lease can expire between two renames, and
             /// everything renamed so far is already visible under its persistent name. Re-check
-            /// the fence before each rename, and undo the renames already done in this call.
+            /// the fence before each rename, and undo the renames already done if it fails.
             try
             {
                 /// Test hook: fail only after the first part of the batch has been published,
                 /// which is exactly the window this fence closes.
-                if (!published_in_this_call.empty())
+                if (!published_parts_pending_commit.empty())
                 {
                     fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_batch_rename,
                     {
@@ -10256,20 +10230,46 @@ void MergeTreeData::Transaction::renameParts()
             }
             catch (...)
             {
-                undo_published_renames();
+                undoPublishedRenames();
                 throw;
             }
 
             /// `getPartDirectory` is already relative to the table root and keeps the parent
             /// directory of a part staged from the detached namespace (`detached/attaching_…` for
-            /// `ATTACH PARTITION`), which is exactly what `renameTo` expects.
-            published_in_this_call.emplace_back(part_need_rename, part_need_rename->getDataPartStorage().getPartDirectory());
+            /// `ATTACH PARTITION`), which is exactly what `renameTo` expects. The journal entry is
+            /// kept until `commit` (not just for this call), so that a two-table operation whose
+            /// OTHER side fails after this batch fully published can still undo it
+            /// (see `undoPublishedRenames`).
+            published_parts_pending_commit.emplace_back(part_need_rename, part_need_rename->getDataPartStorage().getPartDirectory());
         }
 
         LOG_TEST(data.log, "Renaming part to {}", part_need_rename->name);
         part_need_rename->renameTo(part_need_rename->name, true);
     }
     precommitted_parts_need_rename.clear();
+}
+
+void MergeTreeData::Transaction::undoPublishedRenames()
+{
+    /// Rename the published parts back to the temporary directories they came from. The command
+    /// is aborted, so nothing of it may stay visible under a persistent name: otherwise the
+    /// next leader would load parts of a DDL that failed. The temporary names are process-scoped
+    /// under `leader_election` (`getPostfixForTempInsertName`), so restoring them cannot collide
+    /// with the new leader's own work. Best effort: a failure here is logged, not propagated, so
+    /// that the original rejection reaches the client.
+    for (auto it = published_parts_pending_commit.rbegin(); it != published_parts_pending_commit.rend(); ++it)
+    {
+        try
+        {
+            LOG_DEBUG(data.log, "Renaming part {} back to {}: the batch was aborted", it->first->name, it->second);
+            it->first->renameTo(it->second, true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(data.log, "Cannot rename part " + it->first->name + " back to " + it->second);
+        }
+    }
+    published_parts_pending_commit.clear();
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(bool is_refresh)

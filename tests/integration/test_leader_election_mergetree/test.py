@@ -2168,3 +2168,86 @@ def test_attach_partition_undoes_detached_changes_when_lease_goes_stale(started_
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_MOVE_SRC = "12345678-abcd-abcd-abcd-12345678ab22"
+SHARED_UUID_MOVE_DEST = "12345678-abcd-abcd-abcd-12345678ab23"
+
+
+def test_move_partition_dest_publish_undone_when_source_publish_fails(started_cluster):
+    """
+    Regression for the cross-transaction window of `MOVE PARTITION TO TABLE`: the command
+    publishes through TWO transactions — the destination parts first, then the source-side
+    covering empty parts. Each `renameParts` batch undoes its own renames when it fails in the
+    middle, but when the destination batch has already fully published and the SOURCE side then
+    fails, that completed batch used to stay visible under persistent names on shared storage:
+    `rollbackPartsToTemporaryState` does not move directories back, and a "temporary" part whose
+    directory no longer starts with `tmp` is never deleted. After a failover the next leader of
+    the destination table would load parts from a command that returned an exception.
+
+    The `merge_tree_leader_election_stale_lease_between_move_publishes` failpoint aborts the
+    command exactly in that window, and `Transaction::undoPublishedRenames` must rename the
+    published destination parts back to their temporary directories (where the regular rollback
+    then deletes them).
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_between_move_publishes"
+    src = "test_move_publish_src"
+    dest = "test_move_publish_dest"
+    try:
+        for table, uuid in ((src, SHARED_UUID_MOVE_SRC), (dest, SHARED_UUID_MOVE_DEST)):
+            node1.query(
+                f"""
+                CREATE TABLE {table} UUID '{uuid}' (x UInt64)
+                ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+                SETTINGS {TABLE_SETTINGS}
+                """
+            )
+            wait_for_leader([node1], table_name=table)
+
+        # Two parts in the moved partition, so the destination publishes a batch of two.
+        node1.query(f"INSERT INTO {src} VALUES (11)")
+        node1.query(f"INSERT INTO {src} VALUES (13)")
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="between the two publishes"):
+                node1.query(f"ALTER TABLE {src} MOVE PARTITION 1 TO TABLE {dest}")
+
+            # `WHERE x > 0` excludes the `x = 0` probe rows inserted by `wait_for_leader`.
+            assert int(node1.query(f"SELECT count() FROM {src} WHERE x > 0").strip()) == 2, (
+                "MOVE PARTITION was rejected but the source lost rows"
+            )
+            assert int(node1.query(f"SELECT count() FROM {dest} WHERE x > 0").strip()) == 0, (
+                "MOVE PARTITION was rejected but rows are visible on the destination"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The decisive check: reload both part sets from shared storage. If the published
+        # destination parts had not been renamed back and deleted, they would be picked up here.
+        for table in (src, dest):
+            node1.query(f"DETACH TABLE {table}")
+            node1.query(f"ATTACH TABLE {table}")
+            wait_for_leader([node1], table_name=table)
+        assert int(node1.query(f"SELECT count() FROM {src} WHERE x > 0").strip()) == 2, (
+            "The aborted MOVE PARTITION corrupted the source on shared storage"
+        )
+        assert int(node1.query(f"SELECT count() FROM {dest} WHERE x > 0").strip()) == 0, (
+            "A published destination part of the aborted MOVE PARTITION was left on shared storage"
+        )
+
+        # With the failpoint cleared the same command succeeds.
+        node1.query(f"ALTER TABLE {src} MOVE PARTITION 1 TO TABLE {dest}")
+        assert int(node1.query(f"SELECT count() FROM {src} WHERE x > 0").strip()) == 0
+        assert int(node1.query(f"SELECT count() FROM {dest} WHERE x > 0").strip()) == 2
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        for table in (src, dest):
+            try:
+                node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass

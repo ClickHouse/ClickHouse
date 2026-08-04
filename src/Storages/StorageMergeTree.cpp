@@ -101,6 +101,7 @@ namespace FailPoints
     extern const char merge_tree_leader_election_stale_epoch_before_commit[];
     extern const char merge_tree_leader_election_stale_lease_cleanup[];
     extern const char merge_tree_leader_election_stale_lease_before_clear_empty[];
+    extern const char merge_tree_leader_election_stale_lease_between_move_publishes[];
 }
 
 namespace Setting
@@ -4180,20 +4181,36 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 /// already published if the lease goes stale in the middle of a batch. Both parts
                 /// locks are held for the whole scope, so the reordering is not observable.
                 dest_transaction.renameParts();
+
+                /// Test hook for the cross-transaction window: the destination batch has fully
+                /// published, and the source-side publish below is about to fail.
+                fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_between_move_publishes,
+                {
+                    throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                        "Simulated leadership loss between the two publishes of MOVE PARTITION TO TABLE (leader_election)");
+                });
+
                 src_transaction.renameParts();
             }
             catch (...)
             {
-                /// None of the staged parts were renamed to their persistent names yet, and their
-                /// names are deterministic. A regular rollback would leave them in the working
-                /// sets as Outdated with storage still pointing at the temporary directories;
-                /// a later retry of the same `MOVE PARTITION` re-creates those exact directories,
-                /// and the lazy cleanup of the zombies would then destroy the retry's live part
-                /// storage. Remove them from the working sets entirely: they were never visible
-                /// to anyone. Skipped for `MergeTreeTransaction` to keep its CSN bookkeeping on
-                /// the regular rollback path.
+                /// Undoing what `renameParts` already published (each aborted batch undoes its
+                /// own renames) may still leave the OTHER side's fully-published batch visible
+                /// under persistent names: when the source-side publish fails, the destination
+                /// batch has already completed. Rename those parts back to their temporary
+                /// directories too — after that, none of the staged parts is left under a
+                /// persistent name, and their temporary names are deterministic. A regular
+                /// rollback would leave them in the working sets as Outdated with storage still
+                /// pointing at the temporary directories; a later retry of the same
+                /// `MOVE PARTITION` re-creates those exact directories, and the lazy cleanup of
+                /// the zombies would then destroy the retry's live part storage. Remove them from
+                /// the working sets entirely: they were never visible to anyone. Skipped for
+                /// `MergeTreeTransaction` to keep its CSN bookkeeping on the regular rollback
+                /// path.
                 if (!txn)
                 {
+                    dest_transaction.undoPublishedRenames();
+                    src_transaction.undoPublishedRenames();
                     dest_transaction.rollbackPartsToTemporaryState(&dest_data_parts_lock);
                     src_transaction.rollbackPartsToTemporaryState(&src_data_parts_lock);
                     /// Restore temporary ownership (cleared by `preparePartForCommit`) so the

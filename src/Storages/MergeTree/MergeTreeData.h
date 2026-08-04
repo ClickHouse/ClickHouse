@@ -386,6 +386,15 @@ public:
         /// names on shared storage, where the new leader can load them.
         void setPublishFenceEpoch(UInt64 admission_epoch) { publish_fence_epoch = admission_epoch; }
 
+        /// Rename the parts already published by `renameParts` back to the temporary directories
+        /// they came from. For two-table operations (`MOVE PARTITION TO TABLE`) that publish
+        /// through two transactions: when one side's batch has fully published and the other
+        /// side's publish then fails, the whole command is aborted and the completed batch must
+        /// not stay visible under persistent names on shared storage either. Only does anything
+        /// when the publish fence is armed (`leader_election`); a no-op otherwise. Best effort:
+        /// failures are logged, not thrown, so the original rejection reaches the client.
+        void undoPublishedRenames();
+
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
         void rollback(DataPartsLock * acquired_lock = nullptr);
@@ -415,6 +424,12 @@ public:
 
         /// Set by `setPublishFenceEpoch` under `leader_election`; empty otherwise.
         std::optional<UInt64> publish_fence_epoch;
+
+        /// Parts published by `renameParts`, with the temporary directory each of them came
+        /// from, kept until `commit` so that an abort after a fully-published batch (see
+        /// `undoPublishedRenames`) can still rename them back. Only tracked when the publish
+        /// fence is armed.
+        std::vector<std::pair<MutableDataPartPtr, String>> published_parts_pending_commit;
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
