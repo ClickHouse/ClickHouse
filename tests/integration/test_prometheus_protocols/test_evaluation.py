@@ -3563,6 +3563,14 @@ def test_aggregation_operators():
         [],
     )
 
+    # A runtime scalar phi below zero returns -Inf instead of reaching ClickHouse's quantile bounds check.
+    do_query_test(
+        "quantile(time() * 0 - 1, vector(2))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "-inf"]],
+    )
+
     # FIXME: quantile with phi depending on timestamp is not implemented yet.
     # phi = scalar(time()) / 200 varies per subquery step: 0.55, 0.60, 0.65, 0.70, 0.75.
     # do_query_test(
