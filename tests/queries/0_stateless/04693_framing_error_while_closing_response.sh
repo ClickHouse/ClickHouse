@@ -31,7 +31,11 @@ check_response()
 
 echo '--- streaming: a failure while closing the response truncates it'
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT http_output_finalize_throw"
-RESPONSE=$(${CLICKHOUSE_CURL} -s "${CLICKHOUSE_URL}&framing_output_format=JSONEachPacketString" \
+# The streaming case asserts that the packets written before the failure did reach the client, so the
+# response must actually stream: pin `http_wait_end_of_query` and `http_response_buffer_size` (the
+# test harness randomizes both), or the data packet would sit in a server-side buffer that the failing
+# finalization discards, and the client would receive nothing at all.
+RESPONSE=$(${CLICKHOUSE_CURL} -s "${CLICKHOUSE_URL}&framing_output_format=JSONEachPacketString&http_wait_end_of_query=0&http_response_buffer_size=0" \
     -d "SELECT number AS x FROM numbers(3) FORMAT JSONEachRow")
 CURL_EXIT=$?
 [[ $CURL_EXIT -ne 0 ]] && echo 'the client observes an aborted connection: OK' \
@@ -43,7 +47,10 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT http_output_finalize_throw"
 
 echo '--- buffered: a failure while closing the response truncates it'
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT http_output_finalize_throw"
-RESPONSE=$(${CLICKHOUSE_CURL} -s "${CLICKHOUSE_URL}&framing_output_format=JSONEachPacketString&wait_end_of_query=1" \
+# Use the `http_wait_end_of_query` setting rather than the `wait_end_of_query` URL parameter: the
+# parameter is ignored when an `http_wait_end_of_query` setting is present in the URL, which the test
+# harness randomizes.
+RESPONSE=$(${CLICKHOUSE_CURL} -s "${CLICKHOUSE_URL}&framing_output_format=JSONEachPacketString&http_wait_end_of_query=1" \
     -d "SELECT number AS x FROM numbers(3) FORMAT JSONEachRow")
 CURL_EXIT=$?
 [[ $CURL_EXIT -ne 0 ]] && echo 'the client observes an aborted connection: OK' \
