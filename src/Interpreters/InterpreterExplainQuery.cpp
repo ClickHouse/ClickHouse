@@ -32,6 +32,7 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -285,21 +286,44 @@ namespace
                 return;
             }
 
+            /// Stored view queries with `LIMIT SHUFFLE` are supported only by the analyzer, and
+            /// `InterpreterSelectQuery` below would throw from `StorageView::replaceWithSubquery`
+            /// while resolving such a view. This legacy syntax-explain visitor cannot expand them
+            /// correctly anyway, so leave the table reference intact instead of turning syntax
+            /// explain into an execution guard.
+            if (selectReadsFromLimitShuffleView(select, data.getContext()))
+                return;
+
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
             {
-                /// Stored view queries with `LIMIT SHUFFLE` are supported only by the analyzer.
-                /// This legacy syntax-explain visitor cannot expand them correctly, so leave the
-                /// table reference intact instead of turning syntax explain into an execution guard.
-                if (hasLimitShuffle(query_info.view_query))
-                    return;
-
                 ASTPtr tmp;
                 StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
             }
+        }
+
+        static bool selectReadsFromLimitShuffleView(const ASTSelectQuery & select, const ContextPtr & context)
+        {
+            const auto * table_expression = getTableExpression(select, 0);
+            if (!table_expression || !table_expression->database_and_table_name)
+                return false;
+
+            auto table_id = context->tryResolveStorageID(table_expression->database_and_table_name);
+            if (!table_id)
+                return false;
+
+            auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+            const auto * view = typeid_cast<const StorageView *>(table.get());
+            if (!view)
+                return false;
+
+            /// An ordinary view fills only `inner_query` of its select description
+            /// (see the `StorageView` constructor), so do not gate on `hasSelectQuery`.
+            auto metadata_snapshot = view->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            return hasLimitShuffle(metadata_snapshot->getSelectQuery().inner_query);
         }
     };
 

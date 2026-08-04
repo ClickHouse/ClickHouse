@@ -90,12 +90,15 @@ LIMIT 1 SHUFFLE
 SETTINGS allow_experimental_shuffle_query = 0, enable_analyzer = 1
 FORMAT Null; -- { serverError SUPPORT_IS_DISABLED }
 
+CREATE VIEW limit_shuffle_view AS SELECT number FROM numbers(10) LIMIT 1 SHUFFLE SETTINGS allow_experimental_shuffle_query = 1;
+
 EXPLAIN SYNTAX
 INSERT INTO limit_shuffle_insert_sink
 SELECT *
 FROM limit_shuffle_view
-SETTINGS enable_analyzer = 1
-FORMAT Null;
+SETTINGS enable_analyzer = 1;
+
+DROP VIEW limit_shuffle_view;
 
 EXPLAIN SYNTAX
 SELECT number
