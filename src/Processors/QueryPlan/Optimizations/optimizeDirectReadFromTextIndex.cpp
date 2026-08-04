@@ -608,15 +608,16 @@ private:
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
-        /// Preprocessor/postprocessor are index-path-only; off only the tokenizer is applied.
+        /// Only the preprocessor is index-path-only; the tokenizer and postprocessor also apply on the row-scan path.
         const bool index_is_used = condition.info->index != nullptr;
-        const bool apply_postprocessor = index_is_used && has_postprocessor;
+        const bool apply_preprocessor = index_is_used && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
+        const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
-        /// Nothing to inject when the function takes no tokenizer argument (hasToken) and the index is not used.
-        if (!(needApplyTokenizer(function_name) && tokenizer) && !index_is_used)
+        if (!apply_preprocessor && !apply_tokenizer && !apply_postprocessor)
             return;
 
-        if (index_is_used && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions())
+        if (apply_preprocessor)
         {
             const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
             chassert(preprocessor_dag.getOutputs().size() == 1);
@@ -641,7 +642,7 @@ private:
             }
         }
 
-        if (needApplyTokenizer(function_node.function_base->getName()) && tokenizer)
+        if (apply_tokenizer)
         {
             const String tokenizer_description = tokenizer->getDescription();
 
@@ -673,7 +674,7 @@ private:
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
-        if (needApplyPostprocessor(function_name) && apply_postprocessor)
+        if (apply_postprocessor)
         {
             auto haystack_name = getNameWithoutAliases(new_children[0]);
             ActionsDAG::NodeRawConstPtrs merged_outputs;

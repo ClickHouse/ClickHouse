@@ -18,3 +18,9 @@ preprocessor is applied only on the index path
 10
 -- EXPLAIN: SELECT-list injects the tokenizer but not the preprocessor
 Output: hasAnyTokens(s, [\'hello\'], \'splitByNonAlpha\')
+postprocessor is applied on the row-scan path too
+-- SELECT-list position: postprocessor applied
+10	10
+-- WHERE is consistent across use_skip_indexes
+10
+10

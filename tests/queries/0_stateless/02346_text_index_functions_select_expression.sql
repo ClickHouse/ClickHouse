@@ -85,3 +85,29 @@ SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
 ) WHERE explain ILIKE '%hasAnyTokens%';
 
 DROP TABLE tab;
+
+SELECT 'postprocessor is applied on the row-scan path too';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    id UInt64,
+    s String,
+    INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(s))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4;
+
+INSERT INTO tab SELECT number, if(number < 10, 'Hello', 'World') FROM numbers(1000);
+
+-- Unlike the preprocessor, the postprocessor normalizes tokens on every path, so a case-mismatched needle matches the same in the SELECT list, at use_skip_indexes = 0, and via the index.
+SELECT '-- SELECT-list position: postprocessor applied';
+
+SELECT countIf(hasToken(s, 'HELLO')), countIf(hasAnyTokens(s, ['HELLO'])) FROM tab;
+
+SELECT '-- WHERE is consistent across use_skip_indexes';
+
+SELECT count() FROM tab WHERE hasToken(s, 'HELLO') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasToken(s, 'HELLO') SETTINGS use_skip_indexes = 1;
+
+DROP TABLE tab;
