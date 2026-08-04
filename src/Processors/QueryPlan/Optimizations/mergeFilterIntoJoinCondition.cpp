@@ -133,7 +133,8 @@ bool isNodeLocalFunction(const String & function_name)
     return function_name == "queryID" || function_name == "FQDN" || function_name == "getServerPort"
         || function_name == "transactionID" || function_name == "randConstant"
         || function_name == "getClientHTTPHeader" || function_name == "now" || function_name == "now64"
-        || function_name == "showCertificate";
+        || function_name == "showCertificate" || function_name == "filesystemAvailable"
+        || function_name == "filesystemCapacity" || function_name == "filesystemUnreserved";
 }
 
 /// Reports on the physical representation of its argument, not its value, and the JOIN removes two

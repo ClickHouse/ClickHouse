@@ -16,11 +16,11 @@ SET explain_query_plan_default = 'legacy';        -- `Clauses:` is only printed 
 -- line at all, which would make L7, L8 and C7 pass whatever the guard does.
 SET prefer_localhost_replica = 1;
 
--- `tz` and `hdr` carry the non-constant arguments L11 and L12 need: with all arguments constant
--- those calls are folded before the pass runs and the rows would be vacuous.
-CREATE TABLE l (k UInt32, a UInt32, an Nullable(UInt32), tz String, hdr String) ENGINE = Log;
+-- `tz`, `hdr` and `disk` carry the non-constant arguments L11, L12 and L20 need: with all arguments
+-- constant those calls are folded before the pass runs and the rows would be vacuous.
+CREATE TABLE l (k UInt32, a UInt32, an Nullable(UInt32), tz String, hdr String, disk String) ENGINE = Log;
 CREATE TABLE r (k UInt32, b UInt8, bn Nullable(UInt8)) ENGINE = Log;
-INSERT INTO l SELECT number % 16, number, number, 'UTC', 'Content-Type' FROM numbers(20000);
+INSERT INTO l SELECT number % 16, number, number, 'UTC', 'Content-Type', 'default' FROM numbers(20000);
 INSERT INTO r SELECT number % 16, number % 16, number % 16 FROM numbers(320);
 
 -- Heavily overlapping intervals so runningConcurrency ramps over the whole 0..15 range, and a
@@ -267,6 +267,23 @@ SELECT count() = 0 FROM (
     SELECT rc.b AS rb FROM lc INNER JOIN rc ON lc.k = rc.k
     WHERE arrayMap(z -> toUInt8(runningConcurrency(z, lc.e) % 16), [lc.s])[1] = rc.b)
 SETTINGS query_plan_merge_filter_into_join_condition = 1;
+
+-- L20: the filesystem* family reads the executing node's disk map, which it captures when the
+-- function object is built, so like L8 it is refused by the name list rather than by a flag. A
+-- non-constant disk argument is what keeps the call live as a function node: with a constant
+-- argument it is folded before the pass runs and the row would be vacuous.
+SELECT countIf(explain ILIKE '%Clauses:%' AND explain ILIKE '%__table1.k, %') = 0 FROM (
+    EXPLAIN PLAN actions = 1 SELECT r.b FROM l INNER JOIN r ON l.k = r.k
+    WHERE toUInt8((filesystemAvailable(l.disk) + l.a) % 16) = r.b
+    SETTINGS query_plan_merge_filter_into_join_condition = 1);
+SELECT countIf(explain ILIKE '%Clauses:%' AND explain ILIKE '%__table1.k, %') = 0 FROM (
+    EXPLAIN PLAN actions = 1 SELECT r.b FROM l INNER JOIN r ON l.k = r.k
+    WHERE toUInt8((filesystemCapacity(l.disk) + l.a) % 16) = r.b
+    SETTINGS query_plan_merge_filter_into_join_condition = 1);
+SELECT countIf(explain ILIKE '%Clauses:%' AND explain ILIKE '%__table1.k, %') = 0 FROM (
+    EXPLAIN PLAN actions = 1 SELECT r.b FROM l INNER JOIN r ON l.k = r.k
+    WHERE toUInt8((filesystemUnreserved(l.disk) + l.a) % 16) = r.b
+    SETTINGS query_plan_merge_filter_into_join_condition = 1);
 
 -- Controls: a deterministic-in-scope-of-query expression must keep being merged. A `Clauses:` line
 -- listing two key groups (`(k, <expr>) = (k, b)`) means the extra term was merged.
