@@ -105,4 +105,37 @@ SETTINGS max_block_size = 8192, local_filesystem_read_prefetch = 0, max_threads 
 SELECT sum(length(`arr.t.a.size`)), countIf(`arr.id` != [id]) FROM t_nested_wrapped
 SETTINGS max_block_size = 8192, local_filesystem_read_prefetch = 0, max_threads = 1;
 
+-- `materialize` re-checks the built column against its declared type. A length aggregate alone
+-- passes on a wrongly typed column, so every wrapped path is asserted through it as well.
+SELECT sum(length(materialize(`arr.m.keys`))), sum(length(materialize(`arr.m.values`))),
+       sum(length(materialize(`arr.n.null`))), sum(length(materialize(`arr.t.a`)))
+FROM t_nested_wrapped
+SETTINGS max_block_size = 8192, local_filesystem_read_prefetch = 0, max_threads = 1;
+
 DROP TABLE t_nested_wrapped;
+
+DROP TABLE IF EXISTS t_nested_map_in_tuple;
+
+-- A Map reached through a Tuple element of the member.
+CREATE TABLE t_nested_map_in_tuple
+(
+    id UInt64,
+    `arr.id` Array(UInt64),
+    `arr.mt` Array(Tuple(k Map(String, UInt64), z UInt8))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         index_granularity = 8192, index_granularity_bytes = 0;
+
+INSERT INTO t_nested_map_in_tuple
+SELECT number, [number], [(map(toString(number), number), 1)] FROM numbers(20000);
+
+ALTER TABLE t_nested_map_in_tuple DROP COLUMN `arr.mt`;
+ALTER TABLE t_nested_map_in_tuple ADD COLUMN `arr.mt` Array(Tuple(k Map(String, UInt64), z UInt8));
+
+SELECT sum(length(materialize(`arr.mt.k.keys`))), sum(length(materialize(`arr.mt.k`))),
+       sum(length(materialize(`arr.mt.z`))), countIf(`arr.id` != [id])
+FROM t_nested_map_in_tuple
+SETTINGS max_block_size = 8192, local_filesystem_read_prefetch = 0, max_threads = 1;
+
+DROP TABLE t_nested_map_in_tuple;

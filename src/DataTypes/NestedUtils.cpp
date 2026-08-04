@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
@@ -721,6 +722,21 @@ DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
             ++it;
 
             type = type_tuple->getElement(*pos);
+        }
+        else if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+        {
+            /// `keys` and `values` are tuple elements of the Map's nested type, so they are on the
+            /// path like any other tuple element. Their array level is re-created by the caller.
+            if (it == tuple_elements.end())
+                break;
+
+            const auto & nested_tuple = assert_cast<const DataTypeTuple &>(*type_map->getNestedDataType());
+            auto pos = nested_tuple.tryGetPositionByName(*it);
+            if (!pos)
+                break;
+            ++it;
+
+            type = nested_tuple.getElement(*pos);
         }
         else
             break;
