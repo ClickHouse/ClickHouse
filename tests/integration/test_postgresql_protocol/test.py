@@ -7,6 +7,9 @@ import hashlib
 import logging
 import os
 import random
+import socket
+import ssl
+import struct
 import uuid
 from io import StringIO
 
@@ -63,6 +66,30 @@ cluster.add_instance(
 server_port = 5433
 
 
+def _read_exact(sock, size):
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            raise AssertionError("Connection closed before the complete PostgreSQL message was received")
+        data += chunk
+    return data
+
+
+def _read_startup_error(sock):
+    assert _read_exact(sock, 1) == b"E"
+    message_size = struct.unpack("!I", _read_exact(sock, 4))[0]
+    message = _read_exact(sock, message_size - 4)
+    assert b"C08P01\x00" in message
+
+
+def _assert_connection_closed(sock):
+    try:
+        assert sock.recv(1) == b""
+    except ConnectionResetError:
+        pass
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -77,6 +104,33 @@ def started_cluster():
         raise ex
     finally:
         cluster.shutdown()
+
+
+def test_malformed_startup_messages_do_not_consume_following_bytes(started_cluster):
+    node = cluster.instances["node"]
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(struct.pack("!I", 7))
+        _assert_connection_closed(sock)
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(struct.pack("!II", 8, 80877103))
+        assert _read_exact(sock, 1) == b"S"
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with context.wrap_socket(sock, server_hostname=node.ip_address) as tls_sock:
+            tls_sock.sendall(struct.pack("!II", 8, 196608))
+            _read_startup_error(tls_sock)
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(
+            struct.pack("!II", 13, 196608)
+            + b"user\x00default\x00\x00"
+            + b"following message bytes"
+        )
+        _read_startup_error(sock)
 
 
 def test_psql_client(started_cluster):
