@@ -1217,6 +1217,13 @@ def main():
                     if not bt_result.is_ok():
                         break
 
+            # Every exit from this block passes here, including the breaks that
+            # skip the in-loop call: the build-type labels, the reconciled fatal
+            # rows and the startup/setup ERROR rows all land after it.
+            checkpoint_collected_results(
+                info.job_name, results + [test_result], info.is_local_run
+            )
+
         if not info.is_local_run:
             CH.stop_log_exports()
 

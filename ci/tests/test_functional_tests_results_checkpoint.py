@@ -548,6 +548,12 @@ BUILD_TYPES = {build_types!r}
 ROWS = {rows!r}
 BLOCK_ON_STOP_SERVER_CALL = {block_call}
 BLOCKED_MARKER = {blocked!r}
+# "": all build types succeed. "first_fails": the first build type produces FAIL rows, so
+# `test_result.is_ok()` is false and the `build_types[1:]` loop never runs.
+# "startup_fails": `CH.start` returns False for the second build type, taking the
+# `startup_error` break.
+FAILURE_MODE = {failure_mode!r}
+FATAL_ROW_NAME = {fatal_row!r}
 
 # What `Runner._pre_run` leaves on disk before the job script starts.
 Result(name=JOB_NAME, status=Result.Status.RUNNING,
@@ -570,9 +576,12 @@ class _Proc:
         _calls["n"] += 1
         tag = BUILD_TYPES[_calls["n"] - 1] if BUILD_TYPES else "run"
         n = ROWS[_calls["n"] - 1] if isinstance(ROWS, list) else ROWS
-        return Result(name="Tests", status=Result.Status.OK, start_time=1700000000.0,
+        st = Result.Status.OK
+        if FAILURE_MODE == "first_fails" and _calls["n"] == 1:
+            st = Result.Status.FAIL
+        return Result(name="Tests", status=st, start_time=1700000000.0,
                       duration=1.0, results=[
-            Result(name="%s_%05d" % (tag, i), status=Result.Status.OK,
+            Result(name="%s_%05d" % (tag, i), status=st,
                    start_time=1700000000.0, duration=0.1) for i in range(n)])
 
 
@@ -600,6 +609,8 @@ class _CH:
             ):
                 open(BLOCKED_MARKER, "w").close()
                 time.sleep(600)
+            if name == "start" and FAILURE_MODE == "startup_fails" and _calls["n"] >= 1:
+                return False
             return True
 
         return _ok
@@ -607,8 +618,7 @@ class _CH:
     def check_fatal_messages_in_logs(self):
         # The real method always returns at least one row, and `extend_sub_results`
         # asserts a non-empty list.
-        return [Result.create_from(name="Exception in test runner",
-                                   status=Result.Status.OK)]
+        return [Result.create_from(name=FATAL_ROW_NAME, status=Result.Status.OK)]
 
 
 class _Targeting:
@@ -651,12 +661,16 @@ except SystemExit as e:
 """
 
 
+_FATAL_ROW_NAME = "FATAL_MARKER_ROW"
+
+
 def _kill_main_in_teardown(
-    tmp_path, build_types=None, rows=6174, block_call=None
+    tmp_path, build_types=None, rows=6174, block_call=None, failure_mode=""
 ):
     """Run `main()` and SIGKILL its process group inside teardown.
 
-    Returns (status, per_test_row_names). `status` is `None` when no result file exists.
+    Returns (status, per_test_rows). Each row is `(name, status, labels)`. `status` is
+    `None` when no result file exists.
     """
     original = Settings.TEMP_DIR
     try:
@@ -673,6 +687,8 @@ def _kill_main_in_teardown(
                     rows=rows,
                     block_call=block_call,
                     blocked=blocked,
+                    failure_mode=failure_mode,
+                    fatal_row=_FATAL_ROW_NAME,
                 )
             )
         log = os.path.join(str(tmp_path), "main_probe.log")
@@ -703,11 +719,16 @@ def _kill_main_in_teardown(
             return None, []
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        names = []
+        rows_out = []
         for child in data.get("results", []):
             if child.get("name") == "Tests":
-                names = [row["name"] for row in child.get("results", [])]
-        return data.get("status"), names
+                for row in child.get("results", []):
+                    labels = [
+                        label["name"] if isinstance(label, dict) else label
+                        for label in (row.get("ext") or {}).get("labels", [])
+                    ]
+                    rows_out.append((row["name"], row["status"], labels))
+        return data.get("status"), rows_out
     finally:
         Settings.TEMP_DIR = original
 
@@ -748,7 +769,7 @@ def test_a_bugfix_job_killed_between_build_types_keeps_the_previous_build(tmp_pa
         block_call=2,
     )
 
-    second = [name for name in rows if name.startswith("bt_second_")]
+    second = [name for name, _, _ in rows if name.startswith("bt_second_")]
     assert len(second) == 22, (
         f"the build type completed before the kill published {len(second)} rows instead "
         f"of 22 (got {rows[:3]}...): a single post-loop checkpoint would leave only "
@@ -759,6 +780,129 @@ def test_a_bugfix_job_killed_between_build_types_keeps_the_previous_build(tmp_pa
         "inversion runs later, so a terminal status here would publish the "
         "un-inverted verdict"
     )
+
+
+def test_a_failing_first_build_type_publishes_its_labels_and_fatal_rows(tmp_path):
+    """The post-suite checkpoint runs BEFORE the bugfix-validation rows are final.
+
+    Measured: the first build type FAILS, so `test_result.is_ok()` is false and the
+    `build_types[1:]` loop never runs at all. Between the post-suite checkpoint and
+    teardown, `main` still labels every row with the build type and folds in the fatal-log
+    rows via `reconcile_bugfix_crash_repro`. Without a checkpoint after that work, a
+    teardown kill publishes rows that do not say which build type produced them and omit
+    the fatal that explains the failure - the same data-loss window, one path over.
+    """
+    status, rows = _kill_main_in_teardown(
+        tmp_path,
+        build_types=["bt_first", "bt_second"],
+        rows=[5, 5],
+        failure_mode="first_fails",
+    )
+
+    assert status == Result.Status.RUNNING, (
+        f"the checkpoint published status [{status}] instead of leaving it non-terminal"
+    )
+    unlabelled = [name for name, _, labels in rows if "bt_first" not in labels]
+    assert not unlabelled, (
+        f"{len(unlabelled)} published rows carry no build-type label (e.g. {unlabelled[:3]}): "
+        "the labelling at the top of the bugfix-validation block happened after the last "
+        "checkpoint, so a teardown kill cannot say which build produced these rows"
+    )
+    assert any(name == _FATAL_ROW_NAME for name, _, _ in rows), (
+        "the fatal-log row folded in by reconcile_bugfix_crash_repro is missing from the "
+        f"published result (got {[name for name, _, _ in rows]}): the row that explains a "
+        "crash repro was collected and then discarded by the kill"
+    )
+
+
+def test_a_build_type_that_fails_to_start_publishes_its_error_row(tmp_path):
+    """The `startup_error` / `setup_error` breaks jump PAST the in-loop checkpoint.
+
+    Measured: the second build type's server never comes up, so `main` appends a
+    `Server startup (...)` ERROR row and breaks at once - before reaching the in-loop
+    checkpoint, which sits after the tests for that build type. The row naming why the job
+    errored must still be published when the kill lands in teardown.
+
+    The `bt_result`-not-ok break is deliberately NOT covered by a separate arm: it is
+    already after the in-loop checkpoint, so it needs no new call.
+    """
+    status, rows = _kill_main_in_teardown(
+        tmp_path,
+        build_types=["bt_first", "bt_second"],
+        rows=[5, 5],
+        failure_mode="startup_fails",
+    )
+
+    assert status == Result.Status.RUNNING, (
+        f"the checkpoint published status [{status}] instead of leaving it non-terminal"
+    )
+    startup = [
+        (name, row_status)
+        for name, row_status, _ in rows
+        if name.startswith("Server startup")
+    ]
+    assert startup == [("Server startup (bt_second)", Result.Status.ERROR)], (
+        "the ERROR row for the build type whose server failed to start is missing from the "
+        f"published result (got {[name for name, _, _ in rows]}): the break that appends it "
+        "skips the in-loop checkpoint, so the kill leaves a report that does not explain "
+        "the failure"
+    )
+
+
+def test_the_bugfix_validation_block_checkpoints_after_the_build_type_loop():
+    """A checkpoint must sit after the build-type loop, inside the bugfix block.
+
+    Structural as well as behavioural: the two arms above are also satisfied by adding a
+    checkpoint before every `break` individually, which is more code for the same effect
+    and drifts the moment a break is added. Pinning it after the loop keeps one call
+    covering all three exits, and fails loudly if a refactor moves it out of the block into
+    the shared teardown path, where it would no longer see the bugfix rows.
+    """
+    main = _find_function(_parse(_JOB_SCRIPT), "main")
+
+    # `main` has TWO `if is_bugfix_validation:` blocks: the setup one that downloads the
+    # master binaries, and the post-suite one under test. Select on the build-type loop, the
+    # same way the per-build-type arm above does, so the setup block cannot be measured by
+    # mistake - it has a `for` loop of its own and no checkpoint, which would fail here for
+    # the wrong reason.
+    blocks = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.If)
+        and isinstance(node.test, ast.Name)
+        and node.test.id == "is_bugfix_validation"
+        and any(
+            isinstance(sub, ast.Call)
+            and _is_named_call(sub, "check_fatal_messages_in_logs")
+            for sub in ast.walk(node)
+        )
+    ]
+    assert blocks, "the post-suite `if is_bugfix_validation:` block was not found in main()"
+
+    for block in blocks:
+        loops = [
+            node
+            for node in ast.walk(block)
+            if isinstance(node, ast.For)
+            and any(
+                isinstance(sub, ast.Call)
+                and _is_named_call(sub, "check_fatal_messages_in_logs")
+                for sub in ast.walk(node)
+            )
+        ]
+        assert loops, f"the block at line {block.lineno} has no build-type loop"
+        last_loop_end = max(node.end_lineno for node in loops)
+        after_loop = [
+            node.lineno
+            for node in _checkpoint_calls(block)
+            if node.lineno > last_loop_end
+        ]
+        assert after_loop, (
+            f"the bugfix-validation block at line {block.lineno} has no "
+            f"{_CHECKPOINT_HELPER} call after its build-type loop (ends at line "
+            f"{last_loop_end}): the build-type labels, the reconciled fatal rows and the "
+            "startup/setup ERROR rows are all produced after the last checkpoint inside it"
+        )
 
 
 # --- kill-based: atomicity, against a real process death -----------------------------
