@@ -65,6 +65,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
@@ -137,6 +138,7 @@
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 #include <atomic>
@@ -916,18 +918,11 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
-        try
-        {
-            auto parts_lock = readLockParts();
-            auto stats = part.data_part->loadStatistics(required_columns);
-            estimator_builder.markDataPart(part.data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
-        }
+        auto parts_lock = readLockParts();
+        auto stats = part.data_part->loadStatistics(required_columns);
+        estimator_builder.markDataPart(part.data_part);
+        for (const auto & [column_name, stat] : stats)
+            estimator_builder.addStatistics(column_name, stat);
     }
 
     return estimator_builder.getEstimator();
@@ -979,7 +974,8 @@ void MergeTreeData::checkProperties(
     bool attach,
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
-    ContextPtr local_context) const
+    ContextPtr local_context,
+    const MergeTreeSettings * alter_effective_settings) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1193,9 +1189,73 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    /// `enable_block_number_column` / `enable_block_offset_column` are merge-time invariants for
+    /// commit-order projections, so they must be validated against the settings the table WILL
+    /// have after this operation, not against arbitrary values. Otherwise
+    /// `ALTER TABLE ... MODIFY SETTING enable_block_number_column = 0` (or RESET SETTING) on a
+    /// table with such a projection would be accepted, yet a later merge / MATERIALIZE PROJECTION
+    /// rebuild would run without materializing the required `_block_number` / `_block_offset`.
+    ///
+    /// On CREATE / ATTACH the live `getSettings()` already IS the effective table settings, and on
+    /// the post-`changeSettings` validation in `alter()` (`checkMetadataProperties`) the live
+    /// settings have already been updated, so `getSettings()` is correct there too. Only
+    /// `checkAlterIsPossible` runs BEFORE `changeSettings`, with the live settings still holding
+    /// the OLD values; it passes `alter_effective_settings` computed the same way the real
+    /// settings-update path does (`getDefaultSettings()` overlaid with the full post-ALTER
+    /// override list), which also handles RESET SETTING correctly (a dropped override falls back
+    /// to the default). `getDefaultSettings()` is virtual, so it must NOT be called here: this
+    /// runs from `setProperties` during the base `MergeTreeData` constructor, before the derived
+    /// vtable exists.
+    const MergeTreeSettings & effective_settings = alter_effective_settings ? *alter_effective_settings : *getSettings();
+    /// The settings the table has BEFORE this operation. On CREATE / ATTACH this equals
+    /// `effective_settings` (no pending change). On the `checkAlterIsPossible` path it is the OLD
+    /// (pre-`ALTER`) value, while `effective_settings` is the post-`ALTER` value; the difference
+    /// lets us detect an `ALTER` that flips a gate from enabled to disabled.
+    const MergeTreeSettings & live_settings = *getSettings();
+
     for (const auto & projection : new_metadata.projections)
     {
-        if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
+        /// `allow_part_offset_column_in_projections` and `allow_commit_order_projection` are
+        /// pure CREATE-time feature gates: nothing at merge / MATERIALIZE PROJECTION time reads
+        /// them. They must fire only when THIS operation is responsible for pairing the projection
+        /// with a disabled gate, i.e. either:
+        ///   - the projection is introduced by the current operation (CREATE / ADD PROJECTION)
+        ///     while the effective gate is off; or
+        ///   - this `ALTER` flips the gate from enabled to disabled while the projection already
+        ///     exists (`MODIFY SETTING ... = 0` / `RESET SETTING`); a table with such a projection
+        ///     must not be able to turn the feature off (matches PR #104822's regression).
+        /// They must NOT fire on ATTACH (else an existing table becomes unattachable once the
+        /// setting is disabled, issue #102445), nor for an unrelated `ALTER` (e.g. `ADD COLUMN`)
+        /// that leaves an already-disabled gate untouched, nor for a mixed
+        /// `ADD PROJECTION` + enable-the-gate `ALTER` (the effective post-`ALTER` gate is on).
+        /// A projection is introduced now iff it is absent from `old_metadata`; on CREATE / ATTACH
+        /// the constructor passes the same metadata object as both old and new, so compare identity
+        /// to treat every projection there as introduced.
+        ///
+        /// `enable_block_number_column` / `enable_block_offset_column` are NOT CREATE-only: a
+        /// commit-order projection can be rebuilt from the base part during a horizontal merge
+        /// (MergeTask pushes it to projections_to_rebuild), and that rebuild only produces the
+        /// `_block_number` / `_block_offset` columns when these settings are enabled
+        /// (MergeTask::enabledBlockNumberColumn / enabledBlockOffsetColumn). So keep validating
+        /// them for every projection (even pre-existing, even on ATTACH) against the effective
+        /// settings below: attaching or altering with them disabled would let a later merge run
+        /// without the columns the projection requires.
+        const bool introduced_now = &old_metadata == &new_metadata || !old_metadata.projections.has(projection.name);
+
+        /// True when a CREATE-only gate that is off in the effective (post-operation) settings must
+        /// be treated as violated: this operation either introduces the projection or disables the
+        /// gate under a pre-existing one.
+        const auto create_gate_violated = [&](bool effective_enabled, bool live_enabled)
+        {
+            if (attach || effective_enabled)
+                return false;
+            return introduced_now || live_enabled;
+        };
+
+        if (projection.with_parent_part_offset
+            && create_gate_violated(
+                effective_settings[MergeTreeSetting::allow_part_offset_column_in_projections],
+                live_settings[MergeTreeSetting::allow_part_offset_column_in_projections]))
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -1204,35 +1264,35 @@ void MergeTreeData::checkProperties(
                 projection.name);
         }
 
-        if (projection.with_block_number)
-        {
-            if (!(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_number` column, but MergeTree setting `allow_commit_order_projection` is disabled",
-                    projection.name);
+        if (projection.with_block_number
+            && create_gate_violated(
+                effective_settings[MergeTreeSetting::allow_commit_order_projection],
+                live_settings[MergeTreeSetting::allow_commit_order_projection]))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_number` column, but MergeTree setting `allow_commit_order_projection` is disabled",
+                projection.name);
 
-            if (!(*getSettings())[MergeTreeSetting::enable_block_number_column])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_number` column, but MergeTree setting `enable_block_number_column` is disabled",
-                    projection.name);
-        }
+        if (projection.with_block_offset
+            && create_gate_violated(
+                effective_settings[MergeTreeSetting::allow_commit_order_projection],
+                live_settings[MergeTreeSetting::allow_commit_order_projection]))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_offset` column, but MergeTree setting `allow_commit_order_projection` is disabled",
+                projection.name);
 
-        if (projection.with_block_offset)
-        {
-            if (!(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_offset` column, but MergeTree setting `allow_commit_order_projection` is disabled",
-                    projection.name);
+        if (projection.with_block_number && !effective_settings[MergeTreeSetting::enable_block_number_column])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_number` column, but MergeTree setting `enable_block_number_column` is disabled",
+                projection.name);
 
-            if (!(*getSettings())[MergeTreeSetting::enable_block_offset_column])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
-                    projection.name);
-        }
+        if (projection.with_block_offset && !effective_settings[MergeTreeSetting::enable_block_offset_column])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
+                projection.name);
     }
 
     const auto validate_complex_projection = [&](const std::string & projection_name, const std::vector<std::string> & forbid_columns)
@@ -3246,18 +3306,11 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
-        try
-        {
-            auto parts_lock = readLockParts();
-            auto stats = data_part->loadStatistics();
-            estimator_builder.markDataPart(data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", data_part->info.getPartNameV1()));
-        }
+        auto parts_lock = readLockParts();
+        auto stats = data_part->loadStatistics();
+        estimator_builder.markDataPart(data_part);
+        for (const auto & [column_name, stat] : stats)
+            estimator_builder.addStatistics(column_name, stat);
     }
     std::lock_guard<std::mutex> lock(stats_mutex);
     cached_estimator = estimator_builder.getEstimator();
@@ -4796,7 +4849,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context);
+        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -4908,7 +4961,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context);
+    commands.apply(new_metadata, local_context, (*getSettings())[MergeTreeSetting::share_nested_offsets]);
 
     /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
     /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes
@@ -5011,20 +5064,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    /// Reject deprecated statistics types (currently `minmax`) when they are introduced through
-    /// `ALTER TABLE ... MODIFY SETTING auto_statistics_types = ...`. This is a shared check reached by
-    /// both ordinary and replicated tables. Only an explicit change to the setting in this statement is
-    /// inspected, so loading or otherwise altering an existing table that already carries `minmax` in the
-    /// setting is unaffected.
-    for (const auto & command : commands)
-    {
-        if (command.type == AlterCommand::MODIFY_SETTING)
-        {
-            Field value;
-            if (command.settings_changes.tryGet("auto_statistics_types", value))
-                validateAutoStatisticsTypes(value.safeGet<String>());
-        }
-    }
 
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
@@ -5451,7 +5490,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
+
+    /// `checkAlterIsPossible` runs before `changeSettings`, so the live settings still hold the OLD
+    /// values. Reconstruct the effective post-ALTER settings the same way the real settings-update
+    /// path does (`getDefaultSettings()` overlaid with the full post-ALTER override list) so the
+    /// setting-dependent projection checks in `checkProperties` validate against what the table WILL
+    /// have. This handles RESET SETTING correctly: a dropped override falls back to the default.
+    MergeTreeSettingsPtr alter_effective_settings = getSettings();
+    if (new_metadata.settings_changes)
+    {
+        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto copy = getDefaultSettings();
+        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        alter_effective_settings = std::move(copy);
+    }
+    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
@@ -6478,10 +6531,12 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
             empty_info, partition, empty_part_name, source_part->getMetadataSnapshot(), NO_TRANSACTION_PTR);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        scope_guard rollback_tx_guard = [&]() { transaction.rollback(&lock); };
 
-        /// It will add the empty part to the set of Outdated parts without making it Active (exactly what we need)
-        transaction.rollback(&lock);
+        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        new_data_part->getDataPartStorage().commitTransaction();
+        rollback_tx_guard.reset();
+
         new_data_part->remove_time.store(0, std::memory_order_relaxed);
         /// Such parts are always local, they don't participate in replication, they don't have shared blobs.
         /// So we don't have locks for shared data in zk for them, and can just remove blobs (this avoids leaving garbage in S3)
@@ -9579,19 +9634,23 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
     return false;
 }
 
-CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
+MergeTreeData::PartCompressionCodec MergeTreeData::getCompressionCodecForPart(
+    const StorageMetadataPtr & metadata_snapshot,
+    size_t part_size_compressed,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    time_t current_time) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
 
     if (best_ttl_entry)
-        return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
+        return {
+            .codec = CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {}),
+            .is_explicit_recompression = !CompressionCodecFactory::isDefaultCodec(best_ttl_entry->recompression_codec)};
 
     auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
     if (!codec_setting.empty())
-        return CompressionCodecFactory::instance().get(codec_setting);
+        return {.codec = CompressionCodecFactory::instance().get(codec_setting)};
 
     /// On the first write into an empty table `getTotalActiveSizeInBytes()` is `0`, which would
     /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
@@ -9602,7 +9661,7 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
         ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
         : 0.0;
 
-    return getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio);
+    return {.codec = getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio)};
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const
@@ -10284,8 +10343,20 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         storage_snapshot->metadata->getColumns().getAll().getNames(),
         storage_snapshot->metadata,
         query_info,
+        /*top_k_filter_info=*/std::nullopt,
         query_context,
-        query_context->getSettingsRef()[Setting::max_threads]);
+        query_context->getSettingsRef()[Setting::max_threads],
+        /*max_block_numbers_to_read=*/nullptr,
+        /// This is the pre-plan estimate for automatic parallel-replicas sizing. It runs before
+        /// `tryOptimizeTopK`, so it cannot know whether the read will be stamped as a TopK read, and
+        /// therefore whether the `use_query_condition_cache_for_top_k` gate applies to it. Analyzing an
+        /// `ORDER BY ... LIMIT n` query as an apparent plain read here would let it reuse plain
+        /// `SELECT ... WHERE` entries (changing the estimate, and with it `max_parallel_replicas`) and
+        /// record index-analysis exclusions back under the plain condition hash - exactly the
+        /// interaction the gate is supposed to prevent. The estimate is a throwaway analysis, so simply
+        /// do not touch the cache here; the read that actually executes runs its own analysis with the
+        /// gate that matches its final shape.
+        /*use_query_condition_cache=*/false);
 
     UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
@@ -12174,11 +12245,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
         sync_guard = new_data_part_storage->getDirectorySyncGuard();
 
-    /// An empty part has zero size, so this chooses the minimal compression method:
-    /// either the table-level `default_compression_codec` setting, or the default lz4 / a
-    /// compression method with zero thresholds on absolute and relative part size.
-    /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected for an empty part.
-    auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
+    /// Zero size picks the minimal compression method. Empty TTL infos so no `RECOMPRESS` codec is selected for an empty part.
+    auto compression_codec = getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr)).codec;
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     auto skip_indices = index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings());
@@ -12199,7 +12267,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /*reset_columns_=*/false,
         /*blocks_are_granules_size=*/false,
         /*write_settings=*/{},
-        /*written_offset_substreams=*/nullptr);
+        /*written_offset_substreams=*/nullptr,
+        /*try_adaptive_codec=*/ false); /// Empty 0-row part (also reached by mutations): no data is written, so the flag has no effect.
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 

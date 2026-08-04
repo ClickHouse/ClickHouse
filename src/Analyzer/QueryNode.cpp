@@ -43,7 +43,7 @@ namespace ErrorCodes
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , settings_changes(std::move(settings_changes_))
 {
@@ -256,10 +256,10 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     buffer << std::string(indent + 2, ' ') << "PROJECTION\n";
     getProjection().dumpTreeImpl(buffer, format_state, indent + 4);
 
-    if (getJoinTree())
+    if (children[join_tree_child_index])
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "JOIN TREE\n";
-        getJoinTree()->dumpTreeImpl(buffer, format_state, indent + 4);
+        children[join_tree_child_index]->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     if (getPrewhere())
@@ -430,6 +430,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     {
         state.update(setting_change.name.size());
         state.update(setting_change.name);
+        state.update(setting_change.shorthand);
 
         auto setting_change_value_dump = setting_change.value.dump();
         state.update(setting_change_value_dump.size());
@@ -538,7 +539,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_ast));
 
     ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
-    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree(), options);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[join_tree_child_index], options);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
     if (getPrewhere())
