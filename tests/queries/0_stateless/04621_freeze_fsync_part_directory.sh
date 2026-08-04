@@ -100,6 +100,9 @@ for storage in "full 0" "packed 1000000000"; do
     # Content durability: Packed freeze rewrites data.packed, so enabling the setting must fsync one
     # more file (the rewritten archive) without a projection and two more with one (main + projection).
     # Full storage hardlinks its files and rewrites no archive, so its FileSync delta is 0.
+    # The setting-off baseline is asserted too, not only the delta: a build that fsyncs the archive
+    # unconditionally and adds the requested sync on top would show a correct delta off a wrong base.
+    # Freeze itself writes only increment.txt, so the baseline is 1 for either layout.
     plain_delta=$((on_fs - off_fs))
     proj_delta=$((on_proj_fs - off_proj_fs))
     if [[ "$name" == "packed" ]]; then
@@ -108,6 +111,11 @@ for storage in "full 0" "packed 1000000000"; do
     else
         exp_plain_delta=0
         exp_proj_delta=0
+    fi
+    if [[ "$off_fs" -eq 1 && "$off_proj_fs" -eq 1 ]]; then
+        echo "${name} off content: baseline FileSync = 1"
+    else
+        echo "${name} off content: baseline FileSync = $off_fs / with projection $off_proj_fs (expected 1 and 1)"
     fi
     if [[ "$plain_delta" -eq "$exp_plain_delta" ]]; then
         echo "${name} content: data archive synced"
