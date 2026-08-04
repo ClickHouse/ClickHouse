@@ -85,9 +85,11 @@ void registerTableFunctionObfuscate(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionObfuscate>(
         {
             .description = R"(
-Obfuscates the result of a query, producing a table that retains some statistical properties of the source data (cardinalities, value distributions, string lengths, compression ratios, etc.) while replacing the actual values with different ones.
+Obfuscates the result of a query, producing a table that retains some statistical properties of the source data (cardinalities, value distributions, string lengths, compression ratios, etc.) while replacing most of the actual values with different ones.
 
 It is designed to publish almost real production data for usage in benchmarks. The transformation is deterministic for a given seed, controlled by the `obfuscate_*` settings. It uses some cryptographic primitives, but the result should never be considered secure.
+
+Some pieces of the data are intentionally preserved exactly, matching the `clickhouse obfuscator` tool: `Date` values pass through unchanged; `DateTime` values keep the exact source date component (as displayed in the column's timezone) and only obfuscate the time of day; `Nullable` columns keep the original null map, so which rows are `NULL` does not change; `Array` columns keep the original array sizes. Do not rely on this table function to hide dates or the pattern of missing values.
 
 The table function is a repeating, effectively infinite source: it trains on the result of the inner query and then re-executes that query to generate obfuscated rows, advancing the seed on every pass. Always bound the output with an outer `LIMIT` (as in the example below); otherwise the query runs until cancelled.
 
