@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
-#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryPipelineExecutor.h>
@@ -17,11 +16,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-extern const SettingsBool enable_xgboost;
-}
 
 namespace ErrorCodes
 {
@@ -40,11 +34,11 @@ XGBoostDictionary::XGBoostDictionary(
     , configuration(std::move(configuration_))
     , log(getLogger("XGBoostDictionary"))
 {
-    loadData();
+    trainModel();
 }
 
 
-void XGBoostDictionary::loadData()
+void XGBoostDictionary::trainModel()
 {
     /// Build the training header: features columns in declaration order, followed by the single
     /// target attribute. The XGBoost backend treats every column other than the target as a feature, so the
@@ -100,9 +94,8 @@ ColumnPtr XGBoostDictionary::getColumn(
     const DataTypes &,
     DefaultOrFilter) const
 {
-    /// The dictionary holds a trained model, not rows: there is no attribute to look up, and the "key" is a
-    /// feature vector to predict from rather than a stored key. `predictXGBoost` is the only way to query it,
-    /// which also keeps the experimental `enable_xgboost` setting in charge of every prediction.
+    /// Disabled because there is no Context here, which means it is not possible to block access
+    /// in case `enable_xgboost` is disabled.
     throw Exception(
         ErrorCodes::UNSUPPORTED_METHOD,
         "An XGBoost dictionary does not support `dictGet`. Use function `predictXGBoost('{}', feature_1, ...)` to predict",
@@ -143,18 +136,12 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary layout `xgboost` is disabled because ClickHouse was built without XGBoost support");
 #else
-        /// A dictionary defined in a configuration file never goes through `InterpreterCreateQuery`, so the
-        /// `enable_xgboost` check that guards `CREATE DICTIONARY` does not see it. Enforce the
-        /// setting here for that path, against the server settings, since a configuration-file dictionary
-        /// belongs to no session.
-        ///
-        /// A DDL dictionary is exempt: it reaches this creator on every load, including the load that
-        /// startup and ATTACH perform for a dictionary created earlier, and those must not depend on the
-        /// setting being on now - `InterpreterCreateQuery` already gated its creation.
-        if (!created_from_ddl && !global_context->getSettingsRef()[Setting::enable_xgboost])
+
+        /// Only CREATE DICTIONARY is supported.
+        if (!created_from_ddl)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "The XGBOOST dictionary layout is experimental. Set `enable_xgboost = 1` to enable it");
+                "An XGBoost dictionary defined in a configuration file is not supported. Use `CREATE DICTIONARY`");
 
         /// The structure must be a complex key of one or more numeric feature columns, followed by exactly one
         /// floating-point attribute: the training target.
@@ -190,10 +177,7 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
 
         const String layout_prefix = config_prefix + ".layout.xgboost";
 
-        /// The target is always the single attribute (the only column not part of the feature key), so it is
-        /// inferred from the structure and is not a layout parameter. Every layout parameter is an XGBoost
-        /// hyperparameter; the hyperparameters are collected by name and validated against the backend's
-        /// allowlist when the model trains (see XGBoostModel).
+        /// Collect training parameters
         Poco::Util::AbstractConfiguration::Keys layout_keys;
         config.keys(layout_prefix, layout_keys);
 

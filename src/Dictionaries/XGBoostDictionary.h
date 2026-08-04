@@ -17,14 +17,9 @@
 namespace DB
 {
 
-/// A computational dictionary that trains an XGBoost model once at load time and then predicts a numeric
+/// A computational dictionary that trains an XGBoost model at load time and then predicts a numeric
 /// target from a feature vector. The feature columns form the complex key (any native numeric type), and the
 /// single attribute is the training target (`Float32` or `Float64`).
-/// The source supplies the training rows as `(feature_1, ..., feature_k, target)`.
-///
-/// The `predictXGBoost` function is the only way to query the model: it takes the features as individual
-/// arguments. The dictionary holds a model rather than rows, so the generic dictionary interface is not
-/// supported - `getColumn` (`dictGet`), `hasKeys` (`dictHas`) and `read` all throw.
 class XGBoostDictionary final : public IDictionary
 {
 public:
@@ -94,18 +89,17 @@ public:
     const VectorWithMemoryTracking<String> & getFeatureNames() const;
 
     /// Runs inference on a block whose columns are the features (named as in `getFeatureNames`), returning a
-    /// Float64 column of predictions with one element per row. Counts the predicted rows in the dictionary
-    /// query statistics, as this is the only way the model is queried.
+    /// Float64 column of predictions with one element per row
     ColumnPtr predict(const Block & features, const PredictParameters & params) const;
 
 private:
-    void loadData();
+    void trainModel();
 
     DictionaryStructure dict_struct;
     DictionarySourcePtr source_ptr;
     Configuration configuration;
 
-    /// Trained once while the dictionary is being constructed and never modified afterwards.
+    /// Trained once while the dictionary is being constructed
     std::unique_ptr<XGBoostModel> model;
 
     mutable std::atomic<size_t> query_count{0};
