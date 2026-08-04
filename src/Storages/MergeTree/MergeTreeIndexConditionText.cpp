@@ -5,6 +5,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -18,6 +19,7 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -853,6 +855,82 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
+enum class JSONAllValuesMatchKind : uint8_t
+{
+    Direct,
+    IdentityCast,
+    StringCast,
+};
+
+/// Match a JSON subcolumn against a `JSONAllValues` index without accepting casts that can change
+/// the indexed representation. A cast to `String` is safe because `JSONAllValues` uses the same
+/// `serializeText` representation for JSON values.
+static std::optional<JSONAllValuesMatchKind> tryMatchNodeToJSONAllValuesIndex(
+    const RPNBuilderTreeNode & node,
+    const Block & header)
+{
+    if (node.isFunction())
+    {
+        auto function = node.toFunctionNode();
+        const auto function_name = function.getFunctionName();
+        if ((function_name == "CAST" || function_name == "_CAST") && function.getArgumentsSize() == 2)
+        {
+            auto argument = function.getArgumentAt(0);
+            if (!tryMatchJSONSubcolumnToIndex(argument.getColumnName(), header, "JSONAllValues"))
+                return std::nullopt;
+
+            const auto * node_dag = node.getDAGNode();
+            const auto * argument_dag = argument.getDAGNode();
+            if (!node_dag || !argument_dag)
+                return std::nullopt;
+
+            if (node_dag->result_type->equals(*argument_dag->result_type))
+                return JSONAllValuesMatchKind::IdentityCast;
+
+            if (node_dag->result_type->getTypeId() == TypeIndex::String)
+                return JSONAllValuesMatchKind::StringCast;
+
+            return std::nullopt;
+        }
+    }
+
+    if (tryMatchJSONSubcolumnToIndex(node.getColumnName(), header, "JSONAllValues"))
+        return JSONAllValuesMatchKind::Direct;
+
+    return std::nullopt;
+}
+
+/// `convertFieldToType` needs the source type to preserve domain-specific representations such as
+/// `Date` to `DateTime`. Propagate that information recursively for array constants.
+static Field tryConvertFieldToTypeForJSONAllValues(
+    const Field & value,
+    const DataTypePtr & source_type,
+    const DataTypePtr & target_type)
+{
+    const auto * source_array = typeid_cast<const DataTypeArray *>(source_type.get());
+    const auto * target_array = typeid_cast<const DataTypeArray *>(target_type.get());
+    if (source_array && target_array && value.getType() == Field::Types::Array)
+    {
+        const auto & source_values = value.safeGet<Array>();
+        Array converted_values;
+        converted_values.reserve(source_values.size());
+
+        for (const auto & source_value : source_values)
+        {
+            auto converted_value = tryConvertFieldToTypeForJSONAllValues(
+                source_value, source_array->getNestedType(), target_array->getNestedType());
+            if (converted_value.isNull() && !canContainNull(*target_array->getNestedType()))
+                return {};
+
+            converted_values.emplace_back(std::move(converted_value));
+        }
+
+        return converted_values;
+    }
+
+    return tryConvertFieldToType(value, *target_type, source_type.get());
+}
+
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
 {
     VectorWithMemoryTracking<std::string_view> needles;
@@ -903,7 +981,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
     }
-    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
+    else if (auto json_match = tryMatchNodeToJSONAllValuesIndex(index_column_node, header))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -911,10 +989,49 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
-        if (!is_special_text_index_function && !WhichDataType(value_type).isStringOrFixedString())
+        if (!is_special_text_index_function)
         {
-            value_field = serializeFieldAsText(value_field, value_type);
-            value_type = std::make_shared<DataTypeString>();
+            DataTypePtr serialization_type = value_type;
+            const auto * key_dag = index_column_node.getDAGNode();
+
+            if (*json_match != JSONAllValuesMatchKind::StringCast && key_dag)
+            {
+                const auto & key_type = key_dag->result_type;
+                const auto key_data_type = WhichDataType(key_type);
+                DataTypePtr target_type;
+
+                if (function_name == "equals" && !key_data_type.isDynamic() && !key_data_type.isVariant())
+                    target_type = key_type;
+                else if (function_name == "has")
+                {
+                    if (const auto * key_array = typeid_cast<const DataTypeArray *>(key_type.get()))
+                        target_type = key_array->getNestedType();
+                }
+
+                if (target_type)
+                {
+                    auto converted_value = tryConvertFieldToTypeForJSONAllValues(value_field, value_type, target_type);
+                    if (converted_value.isNull())
+                        return false;
+
+                    value_field = std::move(converted_value);
+                    serialization_type = std::move(target_type);
+
+                    /// A missing non-nullable JSON path evaluates to the type's default value, but
+                    /// `JSONAllValues` does not store a value for that path. The index cannot prove
+                    /// that a comparison with the default value is false.
+                    if (function_name == "equals"
+                        && !canContainNull(*serialization_type)
+                        && value_field == serialization_type->getDefault())
+                        return false;
+                }
+            }
+
+            if (!WhichDataType(serialization_type).isStringOrFixedString())
+            {
+                value_field = serializeFieldAsText(value_field, serialization_type);
+                value_type = std::make_shared<DataTypeString>();
+            }
         }
     }
 
@@ -1653,7 +1770,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     {
         return header.has(node.getColumnName())
             || hasIndexForMapElementValue(node)
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+            || tryMatchNodeToJSONAllValuesIndex(node, header).has_value();
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
