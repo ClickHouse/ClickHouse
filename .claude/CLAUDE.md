@@ -6,11 +6,11 @@ Do not create stacked pull requests. Every pull request must target `master` dir
 
 When writing text such as documentation, comments, or commit messages, wrap literal names from ClickHouse SQL language, classes and functions, or literal excerpts from log messages inside inline code blocks, such as: `MergeTree`.
 
-When adding headers to documentation files under `docs/`, every header must include an explicit anchor in the form `{#kebab-case-anchor}` at the end of the header line, e.g. `## My Section {#my-section}`. This is mandatory for all heading levels. New documentation files must also include a frontmatter block at the top (before the first heading) with `description`, `sidebar_label`, `sidebar_position`, `slug`, `title`, and `doc_type` fields, modelled on existing files such as `docs/en/development/continuous-integration.md`.
+When adding headers to documentation files under `docs/`, every header must include an explicit anchor in the form `{#kebab-case-anchor}` at the end of the header line, e.g. `## My Section {#my-section}`. This is mandatory for all heading levels. New documentation files must also include a frontmatter block at the top (before the first heading) with `description`, `sidebarTitle`, `slug`, `title`, and `doc_type` fields, modelled on existing English `.mdx` files under `docs/`.
 
 When writing text such as documentation, comments, or commit messages, write names of functions and methods as `f` instead of `f()` - we prefer it for mathematical purity when it refers a function itself rather than its application.
 
-Whenever changes are added, modified, or deleted that relate to the `Native` format - its wire/serialization format, type encodings (e.g. `LowCardinality`, `Array`, `Map`, `Variant`, `Dynamic`, `JSON`), the block/column structure, the compression frame, the `NativeReader`/`NativeWriter`, or the user-facing doc `docs/en/interfaces/formats/Native.md` - also update the official specification `docs/en/interfaces/specs/NativeFormat.md` (slug `/interfaces/specs/NativeFormat`) accordingly in the same change. The spec is the single source of truth for the format; if unsure whether the spec needs updating, flag it.
+Whenever changes are added, modified, or deleted that relate to the `Native` format - its wire/serialization format, type encodings (e.g. `LowCardinality`, `Array`, `Map`, `Variant`, `Dynamic`, `JSON`), the block/column structure, the compression frame, the `NativeReader`/`NativeWriter`, or the user-facing doc `docs/reference/formats/Native.mdx` - also update the official specification `docs/reference/interfaces/specs/NativeFormat.mdx` (slug `/interfaces/specs/NativeFormat`) accordingly in the same change. The spec is the single source of truth for the format; if unsure whether the spec needs updating, flag it.
 
 When mentioning logical errors, say "exception" instead of "crash", because they don't crash the server in the release build.
 
@@ -144,6 +144,8 @@ When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly 
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
+When removing a feature, do not write tests asserting that the feature no longer exists (for example, a test checking that a removed function or setting now throws an error). Instead, delete the tests of the removed feature. Such tests only pin down the absence of something and become noise.
+
 When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
@@ -176,4 +178,3 @@ Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency, even thoug
 ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
-

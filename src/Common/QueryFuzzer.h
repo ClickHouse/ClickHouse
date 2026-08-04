@@ -28,6 +28,7 @@ class ASTColumnDeclaration;
 class ASTDropQuery;
 class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
+class ASTRefreshStrategy;
 class ASTSetQuery;
 class ASTStorage;
 struct ASTTableExpression;
@@ -209,7 +210,13 @@ private:
 
     // Some debug fields for detecting problematic ASTs with loops.
     // These are reset for each fuzzMain call.
-    std::unordered_set<const IAST *> debug_visited_nodes;
+    // The map keeps a reference to every visited node instead of only its address: fuzzing
+    // legitimately drops parts of the query (a column list replaced by an inferred one, a dropped
+    // constraint or projection, a key clause removed from a storage definition), and once a visited
+    // node is destroyed the allocator is free to hand its address to a node created later, which
+    // would look exactly like a loop. Holding the node alive makes the address unique for the whole
+    // fuzzMain call, so pointer identity is a valid answer to "have I visited this node before".
+    std::unordered_map<const IAST *, ASTPtr> debug_visited_nodes;
     ASTPtr * debug_top_ast = nullptr;
 
     std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
@@ -231,6 +238,9 @@ private:
     ASTPtr makeFuzzedAsteriskLikeMatcher();
     /// Builds an `ASTColumnsTransformerList` with fuzzed `APPLY` / `EXCEPT` / `REPLACE` transformers.
     ASTPtr makeFuzzedColumnTransformers();
+    /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
+    /// occasionally qualified with a known table name.
+    ASTPtr makeFuzzedVirtualColumn();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
@@ -242,6 +252,7 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
     void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
@@ -253,10 +264,17 @@ private:
     void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
     void fuzzTableFunctionName(ASTPtr & table_function);
+    void fuzzClusterFunctionArguments(ASTFunction & fn);
+    void fuzzMergeFunctionArguments(ASTFunction & fn);
+    String makeBraceExpansion();
+    String makeRemoteHostDescriptor(bool secure);
+    void wrapTableAsDistributed(ASTTableExpression & table);
+    void wrapTableAsMerge(ASTTableExpression & table);
+    void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
-    ASTPtr tryNegateNextPredicate(const ASTPtr & pred, int prob);
+    ASTPtr fuzzPredicate(const ASTPtr & pred, int negProb);
     ASTPtr setIdentifierAliasOrNot(ASTPtr & exp);
     ASTPtr addJoinClause();
     ASTPtr addArrayJoinClause();
