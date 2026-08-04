@@ -736,7 +736,8 @@ The values are the contents of the corresponding PEM files, which can be copied 
 
 The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
 
-## Data types support {#data_types-support}
+<a id="data_types-support"></a>
+## Data types support {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
 |----------------------------------|--------------------------------------------------------------|
@@ -753,8 +754,14 @@ The same credentials can also be given as paths to files on the server, in `ssl_
 | DATE                             | [Date](/reference/data-types/date)               |
 | DATETIME, TIMESTAMP              | [DateTime](/reference/data-types/datetime)       |
 | BINARY                           | [FixedString](/reference/data-types/fixedstring) |
+| POINT                            | [Point](/reference/data-types/geo#point)         |
+| LINESTRING                       | [LineString](/reference/data-types/geo#linestring) |
+| POLYGON                          | [Polygon](/reference/data-types/geo#polygon)     |
+| MULTILINESTRING                  | [MultiLineString](/reference/data-types/geo#multilinestring) |
+| MULTIPOLYGON                     | [MultiPolygon](/reference/data-types/geo#multipolygon) |
+| GEOMETRY                         | [Geometry](/reference/data-types/geo#geometry)   |
 
-All other MySQL data types are converted into [String](/reference/data-types/string).
+The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](/reference/settings/session-settings/mysql#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](/reference/data-types/geo#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](/reference/data-types/string) (the raw WKB) like all other MySQL data types.
 
 [Nullable](/reference/data-types/nullable) is supported.
 
