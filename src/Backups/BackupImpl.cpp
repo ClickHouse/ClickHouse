@@ -5,7 +5,11 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
-#include <Backups/getBackupDataFileName.h>
+#include <Backups/BackupPacker.h>
+#include <IO/PackedFilesReader.h>
+#include <IO/PackedFilesWriter.h>
+#include <IO/PackedFilesIO.h>
+#include <fmt/format.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
@@ -33,6 +37,9 @@
 
 #include <charconv>
 #include <filesystem>
+#include <optional>
+#include <set>
+#include <unordered_set>
 
 
 namespace ProfileEvents
@@ -76,11 +83,21 @@ namespace fs = std::filesystem;
 namespace
 {
     const int INITIAL_BACKUP_VERSION = 1;
-    /// We may use lightweight backup in version 2.
-    const int CURRENT_BACKUP_VERSION = 2;
+    /// Lightweight snapshot backups are written as version 2.
+    const int LIGHTWEIGHT_SNAPSHOT_VERSION = 2;
+    /// Object-packed backups are version 3: a member isn't a standalone blob, so a pre-v3 server must refuse
+    /// one rather than read a whole pack as a single file.
+    const int PACKED_FORMAT_VERSION = 3;
+    const int CURRENT_BACKUP_VERSION = 3;
     constexpr auto BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP = "base_backup_copy_s3_credentials_from_backup";
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
+
+    /// Pack object name (flat, derived from the pack id); the pack count lives in the manifest header.
+    String getBackupPackObjectName(size_t pack_id)
+    {
+        return fmt::format("packs_{:04}", pack_id);
+    }
 
     String hexChecksum(UInt128 checksum)
     {
@@ -106,6 +123,16 @@ namespace
         if (path.starts_with('/'))
             return path.substr(1);
         return path;
+    }
+
+    /// A backup stores one object per data_file_name -- byte-identical files share one, and a file that is empty
+    /// or comes entirely from the base backup has none. This is what `num_entries` / `size_of_entries` count, so
+    /// the write and the read path must both go through here or `system.backups` reports two different numbers.
+    bool claimPhysicalEntry(const BackupFileInfo & info, std::unordered_set<String> & counted_objects)
+    {
+        if (info.data_file_name.empty())
+            return false;
+        return counted_objects.emplace(info.data_file_name).second;
     }
 
     /// Validate that a file name from a backup does not contain path traversal sequences.
@@ -155,7 +182,7 @@ BackupImpl::BackupImpl(
     : params(std::move(params_))
     , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
-    , use_archive(!archive_params_.archive_name.empty())
+    , layout(!archive_params_.archive_name.empty() ? BackupLayout::Archive : BackupLayout::PerFile)
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
@@ -175,12 +202,13 @@ BackupImpl::BackupImpl(
     : params(std::move(params_))
     , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
-    , use_archive(!archive_params_.archive_name.empty())
+    , layout(!archive_params_.archive_name.empty()
+            ? BackupLayout::Archive
+            : (params.backup_pack_format ? BackupLayout::Packed : BackupLayout::PerFile))
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
     , data_file_name_generator(params.data_file_name_generator)
-    , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , backup_id(params.backup_id)
@@ -188,6 +216,12 @@ BackupImpl::BackupImpl(
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
 {
+    /// Single source of truth for the archive+pack mutual exclusion (covers S3, File/Disk, Azure, and any
+    /// future engine): packing bundles objects, which an archive destination has no path for.
+    if (!archive_params_.archive_name.empty() && params.backup_pack_format)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Object packing (backup_pack_format) is not supported with an archive destination");
+
     open();
 }
 
@@ -197,7 +231,7 @@ BackupImpl::BackupImpl(
     std::shared_ptr<IBackupReader> reader_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
-    , use_archive(!archive_params_.archive_name.empty())
+    , layout(!archive_params_.archive_name.empty() ? BackupLayout::Archive : BackupLayout::PerFile)
     , archive_params(archive_params_)
     , open_mode(OpenMode::UNLOCK)
     , reader(reader_)
@@ -246,7 +280,7 @@ void BackupImpl::open()
         timestamp = std::time(nullptr);
         if (!uuid)
             uuid = UUIDHelpers::generateV4();
-        lock_file_name = use_archive ? (archive_params.archive_name + ".lock") : ".lock";
+        lock_file_name = isArchive() ? (archive_params.archive_name + ".lock") : ".lock";
         lock_file_before_first_file_checked = false;
         writing_finalized = false;
 
@@ -257,7 +291,7 @@ void BackupImpl::open()
         checkLockFile(true);
     }
 
-    if (use_archive)
+    if (isArchive())
         openArchive();
 
     if (open_mode == OpenMode::READ || open_mode == OpenMode::UNLOCK)
@@ -276,7 +310,7 @@ void BackupImpl::close()
 
 void BackupImpl::openArchive()
 {
-    if (!use_archive)
+    if (!isArchive())
         return;
 
     const String & archive_name = archive_params.archive_name;
@@ -433,13 +467,44 @@ void BackupImpl::writeBackupMetadata()
     checkLockFile(true);
 
     std::unique_ptr<WriteBuffer> out;
-    if (use_archive)
+    if (isArchive())
         out = archive_writer->writeFile(".backup");
     else
         out = writer->writeFile(".backup");
 
+    /// Iterate in place instead of copying all file infos (a backup can contain millions).
+    size_t num_all_file_infos = 0;
+    bool base_backup_in_use = false;
+    Int64 max_pack_id = -1;
+    /// Keyed by data_file_name, not pack_id: a reference inherits its target's name but keeps pack_id == -1,
+    /// so a per-file test on pack_id would answer differently for the two depending on the iteration order.
+    std::unordered_set<String> packed_object_names;
+    coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
+    {
+        ++num_all_file_infos;
+        if (info.base_size)
+            base_backup_in_use = true;
+        max_pack_id = std::max(max_pack_id, info.pack_id);
+        if (info.pack_id >= 0)
+            packed_object_names.emplace(info.data_file_name);
+    });
+
+    if (num_all_file_infos == 0)
+        throw Exception(ErrorCodes::BACKUP_IS_EMPTY, "Backup must not be empty");
+
+    /// Bump the version and emit num_packs only if a pack was actually written; an all-large-blob packed
+    /// backup is a one-object-per-file backup and stays readable by older servers.
+    const bool has_packs = isPacked() && (max_pack_id >= 0);
+    num_packs = has_packs ? static_cast<size_t>(max_pack_id + 1) : 0;
+
+    int version_to_write = INITIAL_BACKUP_VERSION;
+    if (has_packs)
+        version_to_write = PACKED_FORMAT_VERSION;
+    else if (params.is_lightweight_snapshot)
+        version_to_write = LIGHTWEIGHT_SNAPSHOT_VERSION;
+
     *out << "<config>";
-    *out << "<version>" << (params.is_lightweight_snapshot ? CURRENT_BACKUP_VERSION : INITIAL_BACKUP_VERSION) << "</version>";
+    *out << "<version>" << version_to_write << "</version>";
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
@@ -449,18 +514,9 @@ void BackupImpl::writeBackupMetadata()
         *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
              << "</data_file_name_generator>";
 
-    /// Iterate in place instead of copying all file infos (a backup can contain millions).
-    size_t num_all_file_infos = 0;
-    bool base_backup_in_use = false;
-    coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
-    {
-        ++num_all_file_infos;
-        if (info.base_size)
-            base_backup_in_use = true;
-    });
-
-    if (num_all_file_infos == 0)
-        throw Exception(ErrorCodes::BACKUP_IS_EMPTY, "Backup must not be empty");
+    /// No per-file pack pointer is written; restore reconstructs pack names from the count and reads indexes.
+    if (has_packs)
+        *out << "<num_packs>" << num_packs << "</num_packs>";
 
     if (base_backup_info)
     {
@@ -500,6 +556,7 @@ void BackupImpl::writeBackupMetadata()
     total_size = 0;
     num_entries = 0;
     size_of_entries = 0;
+    std::unordered_set<String> counted_objects;
 
     *out << "<contents>";
     coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
@@ -530,16 +587,15 @@ void BackupImpl::writeBackupMetadata()
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
                 *out << "<data_file>" << xml << info.data_file_name << "</data_file>";
+            if (packed_object_names.contains(info.data_file_name))
+                *out << "<packed>true</packed>";
             if (info.encrypted_by_disk)
                 *out << "<encrypted_by_disk>true</encrypted_by_disk>";
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files
-            || (info.size && (info.size != info.base_size)
-                && (info.data_file_name.empty()
-                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
-        if (has_entry)
+        /// Packs are accounted per object below, not per member (see writeFilePack).
+        if (claimPhysicalEntry(info, counted_objects) && !packed_object_names.contains(info.data_file_name))
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;
@@ -548,6 +604,13 @@ void BackupImpl::writeBackupMetadata()
         *out << "</file>";
     });
     *out << "</contents>";
+
+    /// One entry per pack object, sized from writeFilePack's recorded pack_object_sizes (see writeFilePack).
+    for (const auto & [pack_id, pack_size] : pack_object_sizes)
+    {
+        ++num_entries;
+        size_of_entries += pack_size;
+    }
 
     *out << "</config>";
 
@@ -565,7 +628,7 @@ void BackupImpl::readBackupMetadata()
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupReadMetadataMicroseconds);
 
     std::unique_ptr<ReadBuffer> in;
-    if (use_archive)
+    if (isArchive())
     {
         if (!archive_reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Archive {} is not a backup", backup_name_for_logging);
@@ -586,6 +649,8 @@ void BackupImpl::readBackupMetadata()
     total_size = 0;
     num_entries = 0;
     size_of_entries = 0;
+    std::unordered_set<String> counted_objects;
+    std::unordered_set<String> declared_packed_files;
 
     bool contents_seen = false;
 
@@ -638,6 +703,25 @@ void BackupImpl::readBackupMetadata()
 
         if (h.contains("backup_id"))
             backup_id = req("backup_id");
+
+        if (h.contains("num_packs"))
+        {
+            num_packs = to_uint64(req("num_packs"), "num_packs");
+            /// Packing is detected from the manifest, not from a setting: promote the layout here so the read
+            /// path routes packed members off it.
+            if (num_packs > 0)
+            {
+                if (layout == BackupLayout::Archive)
+                    throw Exception(ErrorCodes::BACKUP_DAMAGED,
+                        "Archive backup cannot contain packed objects (num_packs > 0)");
+                /// Keep the version field authoritative: an older server would misread packs_* as ordinary files.
+                if (version < PACKED_FORMAT_VERSION)
+                    throw Exception(ErrorCodes::BACKUP_DAMAGED,
+                        "Backup {}: Metadata declares {} packs but its version {} predates the packed format (version {})",
+                        backup_name_for_logging, num_packs, version, PACKED_FORMAT_VERSION);
+                layout = BackupLayout::Packed;
+            }
+        }
 
         if (h.contains("base_backup") && !base_backup_info)
         {
@@ -726,6 +810,17 @@ void BackupImpl::readBackupMetadata()
             info.encrypted_by_disk = get_bool("encrypted_by_disk", false);
         }
 
+        if (get_bool("packed", false))
+        {
+            if (info.data_file_name.empty())
+                throw Exception(
+                    ErrorCodes::BACKUP_DAMAGED,
+                    "Backup {}: File {} is marked as packed but stores no data in this backup",
+                    backup_name_for_logging,
+                    quoteString(info.file_name));
+            declared_packed_files.emplace(info.data_file_name);
+        }
+
         if (!info.object_key.empty())
         {
             if (original_endpoint.empty() || original_namespace.empty())
@@ -753,8 +848,8 @@ void BackupImpl::readBackupMetadata()
 
         ++num_files;
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
-        if (has_entry)
+        /// UNLOCK never reads these counters, and `counted_objects` would grow per part (see above).
+        if ((open_mode != OpenMode::UNLOCK) && claimPhysicalEntry(info, counted_objects))
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;
@@ -790,9 +885,52 @@ void BackupImpl::readBackupMetadata()
     if (!contents_seen)
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
 
+    /// Packed backup: load each pack's front index once so packed members can be located at read time.
+    if ((open_mode == OpenMode::READ) && (num_packs > 0))
+    {
+        loadPackIndexes();
+
+        /// Recompute pack-aware to match the write side (see writeFilePack): a pack is one entry sized index +
+        /// bodies, its index size being its smallest member offset since the bodies follow it. Rebuilding from
+        /// file_infos + packs alone is safe only because packing and a lightweight snapshot are exclusive.
+        chassert(lightweight_snapshot_file_infos.empty());
+
+        std::unordered_map<String, UInt64> pack_index_size;
+        std::unordered_map<String, UInt64> pack_body_size;
+        for (const auto & [member_name, location] : packed_members)
+        {
+            auto [it, inserted] = pack_index_size.try_emplace(location.pack_object, location.offset);
+            if (!inserted)
+                it->second = std::min(it->second, location.offset);
+            pack_body_size[location.pack_object] += location.size;
+        }
+
+        num_entries = 0;
+        size_of_entries = 0;
+        for (const auto & [size_and_checksum, info] : file_infos)
+        {
+            if (info.size <= info.base_size)
+                continue; /// Fully from the base backup: no body stored in this backup.
+            if (packed_members.contains(info.data_file_name))
+                continue; /// A packed member; accounted per pack object below.
+            ++num_entries;
+            size_of_entries += info.size - info.base_size;
+        }
+        for (const auto & [pack_object, body_size] : pack_body_size)
+        {
+            ++num_entries;
+            size_of_entries += pack_index_size[pack_object] + body_size;
+        }
+    }
+
+    /// Deliberately outside the num_packs branch: deleting that one element would otherwise skip the pack
+    /// indexes and route every declared-packed member to the own-object path.
+    if (open_mode == OpenMode::READ)
+        checkPacksMatchManifest(declared_packed_files);
+
     uncompressed_size = size_of_entries + str.size();
     compressed_size = uncompressed_size;
-    if (!use_archive)
+    if (!isArchive())
         setCompressedSize();
 
     LOG_TRACE(log, "Backup {}: Metadata was read", backup_name_for_logging);
@@ -801,7 +939,7 @@ void BackupImpl::readBackupMetadata()
 void BackupImpl::checkBackupDoesntExist() const
 {
     String file_name_to_check_existence;
-    if (use_archive)
+    if (isArchive())
         file_name_to_check_existence = archive_params.archive_name;
     else
         file_name_to_check_existence = ".backup";
@@ -988,6 +1126,107 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileByObjectKey(const Ba
     return lightweight_snapshot_reader->readFile(info.object_key);
 }
 
+void BackupImpl::loadPackIndexes()
+{
+    for (size_t pack_id = 0; pack_id < num_packs; ++pack_id)
+    {
+        const String pack_object = getBackupPackObjectName(pack_id);
+
+        /// No catch-all around readFile/readIndex below: a transient transport or auth error must keep its own
+        /// type so a retry can succeed, instead of being relabeled corruption and condemning a valid backup.
+        if (!reader->fileExists(pack_object))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: pack object {} is missing",
+                backup_name_for_logging,
+                quoteString(pack_object));
+
+        const UInt64 pack_object_size = reader->getFileSize(pack_object);
+
+        auto in = reader->readFile(pack_object);
+        const auto index = PackedFilesReader::readIndex(*in);
+
+        for (const auto & [member_name, file_offset] : index)
+        {
+            if (!packed_members
+                     .emplace(member_name, MemberLocation{pack_object, file_offset.offset, file_offset.size, pack_object_size})
+                     .second)
+                throw Exception(
+                    ErrorCodes::BACKUP_DAMAGED,
+                    "Backup {}: Member {} appears in more than one pack",
+                    backup_name_for_logging,
+                    quoteString(member_name));
+        }
+    }
+}
+
+void BackupImpl::checkPacksMatchManifest(const std::unordered_set<String> & declared_packed_files) const
+{
+    for (const auto & data_file_name : declared_packed_files)
+    {
+        if (!packed_members.contains(data_file_name))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: Data file {} is marked as packed in the metadata but no pack contains it",
+                backup_name_for_logging,
+                quoteString(data_file_name));
+    }
+
+    for (const auto & [member_name, _] : packed_members)
+    {
+        if (!declared_packed_files.contains(member_name))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: Pack member {} is not marked as packed in the metadata",
+                backup_name_for_logging,
+                quoteString(member_name));
+    }
+
+    if (packed_members.empty())
+        return; /// Nothing packed: skip the walk over file_infos, which can hold millions of entries.
+
+    /// The restore fast path copies the index's byte range verbatim (see copyFileToDisk), so an index that
+    /// understates a member's length would restore a short file and report success. `file_infos` is keyed by
+    /// (size, checksum), so a deduplicated blob is checked once, against the entry restore resolves.
+    for (const auto & [size_and_checksum, info] : file_infos)
+    {
+        auto it = packed_members.find(info.data_file_name);
+        if (it == packed_members.end())
+            continue;
+
+        const auto & member = it->second;
+        if ((member.offset > member.pack_object_size) || (member.size > member.pack_object_size - member.offset))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: Pack member {} at offset {} with size {} does not fit in its pack object {} of {} bytes",
+                backup_name_for_logging,
+                quoteString(info.data_file_name),
+                member.offset,
+                member.size,
+                quoteString(member.pack_object),
+                member.pack_object_size);
+
+        if (member.size + info.base_size != info.size)
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: Pack member {} holds {} bytes in the pack index but the metadata declares {} bytes "
+                "for it (entry size {}, base size {})",
+                backup_name_for_logging,
+                quoteString(info.data_file_name),
+                member.size,
+                info.size - info.base_size,
+                info.size,
+                info.base_size);
+    }
+}
+
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readPackedMember(const MemberLocation & member) const
+{
+    /// TODO(backup-packing): opens the pack per member (a ranged GET each on S3); a batch-restore API could
+    /// open each pack once and slice all its members.
+    return PackedFilesReader::viewMember(reader->readFileForView(member.pack_object), member.pack_object, member.offset, member.size);
+}
+
 std::unique_ptr<ReadBufferFromFileBase>
 BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
 
@@ -1006,6 +1245,7 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
     }
 
     BackupFileInfo info;
+    std::optional<MemberLocation> packed_location;
     {
         std::lock_guard lock{mutex};
         auto it = file_infos.find(size_and_checksum);
@@ -1019,6 +1259,8 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
                 file_name);
         }
         info = it->second;
+        if (auto pit = packed_members.find(info.data_file_name); pit != packed_members.end())
+            packed_location = pit->second;
     }
 
     if (info.encrypted_by_disk != read_encrypted)
@@ -1035,8 +1277,10 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
     if (info.size > info.base_size)
     {
         /// Make `read_buffer` if there is data for this backup entry in this backup.
-        if (use_archive)
+        if (isArchive())
             read_buffer = archive_reader->readFile(info.data_file_name, /*throw_on_not_found=*/true);
+        else if (packed_location)
+            read_buffer = readPackedMember(*packed_location);
         else
             read_buffer = reader->readFile(info.data_file_name);
     }
@@ -1133,6 +1377,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     }
 
     BackupFileInfo info;
+    std::optional<MemberLocation> packed_location;
     {
         std::lock_guard lock{mutex};
         auto it = file_infos.find(size_and_checksum);
@@ -1145,6 +1390,8 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
                 formatSizeAndChecksum(size_and_checksum));
         }
         info = it->second;
+        if (auto pit = packed_members.find(info.data_file_name); pit != packed_members.end())
+            packed_location = pit->second;
     }
 
     if (info.encrypted_by_disk && !destination_disk->getDataSourceDescription().is_encrypted)
@@ -1157,10 +1404,19 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
 
     bool file_copied = false;
 
-    if (info.size && !info.base_size && !use_archive)
+    if (info.size && !info.base_size && !isArchive() && !packed_location)
     {
-        /// Data comes completely from this backup.
+        /// Data comes completely from this backup as its own whole object.
         reader->copyFileToDisk(info.data_file_name, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode);
+        file_copied = true;
+    }
+    else if (info.size && !info.base_size && !isArchive() && packed_location)
+    {
+        /// Copy only the member's range: a whole-object copy of the source would copy the entire pack. A
+        /// packed member that also has a base falls through to the generic path, which concatenates the two.
+        reader->copyFileRangeToDisk(packed_location->pack_object, packed_location->offset, packed_location->size,
+                                    packed_location->pack_object_size, info.encrypted_by_disk, destination_disk,
+                                    destination_path, write_mode);
         file_copied = true;
     }
     else if (info.size && (info.size == info.base_size))
@@ -1245,7 +1501,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         out->finalize();
     };
 
-    if (use_archive)
+    if (isArchive())
     {
         LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}, adding to archive", info.data_file_name, src_file_desc, info.data_file_index);
         write_info_to_archive(info.data_file_name);
@@ -1263,7 +1519,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     }
 
     std::function<void(const String &)> copy_file_inside_backup;
-    if (use_archive)
+    if (isArchive())
     {
         copy_file_inside_backup = write_info_to_archive;
     }
@@ -1283,6 +1539,74 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         size_of_entries += info.size - info.base_size;
         uncompressed_size += info.size - info.base_size;
     }
+}
+
+
+void BackupImpl::writeFilePack(size_t pack_id, const PackMembers & members)
+{
+    /// Packs are driven by pack_id, independent of layout; archives are rejected at construction, so a pack
+    /// must never land in an archive.
+    chassert(!isArchive());
+
+    if (open_mode == OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
+
+    if (writing_finalized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
+
+    if (members.empty())
+        return;
+
+    if (!lock_file_before_first_file_checked.exchange(true))
+        checkLockFile(true);
+
+    /// Each member streams its physical suffix [base_size, size), like own-object writes. Members are read
+    /// representatives (BackupPacker::selectPackMembers), so base_size matches what restore reconstructs the
+    /// (size, checksum) class with.
+    std::vector<BackupPacker::MemberSource> pack_members;
+    pack_members.reserve(members.size());
+    UInt64 total_physical_size = 0;
+    UInt64 total_logical_size = 0;
+    for (const auto & [info, entry] : members)
+    {
+        const UInt64 physical_size = info.size - info.base_size;
+        total_physical_size += physical_size;
+        total_logical_size += info.size;
+        pack_members.push_back(BackupPacker::MemberSource{
+            info.data_file_name,
+            physical_size,
+            [entry, base_size = info.base_size, read_settings = writer->getReadSettings()]() -> std::unique_ptr<ReadBuffer>
+            {
+                auto read_buffer = entry->getReadBuffer(read_settings);
+                if (base_size != 0)
+                    read_buffer->seek(base_size, SEEK_SET);
+                return read_buffer;
+            }});
+    }
+
+    const String pack_object = getBackupPackObjectName(pack_id);
+    LOG_TRACE(log, "Writing backup pack {} with {} members", pack_object, members.size());
+    constexpr UInt8 pack_version = PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE;
+    BackupPacker::writePack(writer->writeFile(pack_object), pack_members, pack_version);
+
+    /// Canonical packed accounting: a pack is one entry sized as the serialized front index plus every member's
+    /// physical bytes (summing member sizes alone drops the index); num_files/total_size still track logical
+    /// files. writeBackupMetadata and readBackupMetadata mirror this.
+    Strings member_names;
+    member_names.reserve(pack_members.size());
+    for (const auto & pack_member : pack_members)
+        member_names.push_back(pack_member.name);
+    const UInt64 pack_object_size
+        = PackedFilesWriter::getSerializedIndexSize(member_names, pack_version) + total_physical_size;
+
+    std::lock_guard lock{mutex};
+    num_files += members.size();
+    total_size += total_logical_size;
+    ++num_entries;
+    size_of_entries += pack_object_size;
+    uncompressed_size += pack_object_size;
+    /// Recorded for the authoritative recompute in writeBackupMetadata (which resets these counters).
+    pack_object_sizes[pack_id] = pack_object_size;
 }
 
 
@@ -1318,7 +1642,7 @@ void BackupImpl::finalizeWriting()
 
 void BackupImpl::setCompressedSize()
 {
-    if (use_archive)
+    if (isArchive())
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
     else
         compressed_size = uncompressed_size;
@@ -1387,20 +1711,26 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
 
         Strings files_to_remove;
 
-        if (use_archive)
+        if (isArchive())
         {
             files_to_remove.push_back(archive_params.archive_name);
         }
         else
         {
             files_to_remove.push_back(".backup");
+            std::set<size_t> pack_ids;
             coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & file_info)
             {
+                /// A member's data_file_name is a key inside a pack, not an object; remove pack objects once.
+                if (file_info.pack_id >= 0)
+                    pack_ids.insert(static_cast<size_t>(file_info.pack_id));
                 /// Skip entries with no data file — an empty file, or one wholly covered by the base backup.
                 /// Their `data_file_name` is empty, which would otherwise resolve to the backup root.
-                if (!file_info.data_file_name.empty())
+                else if (!file_info.data_file_name.empty())
                     files_to_remove.push_back(file_info.data_file_name);
             });
+            for (size_t pack_id : pack_ids)
+                files_to_remove.push_back(getBackupPackObjectName(pack_id));
         }
 
         if (!checkLockFile(false))

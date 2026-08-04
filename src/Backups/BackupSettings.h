@@ -103,6 +103,17 @@ struct BackupSettings
     /// when `data_file_name_generator` is `Checksum`.
     std::optional<size_t> data_file_name_prefix_length;
 
+    /// Experimental: pack many small backup blobs into a bounded set of larger objects (the PackedFilesIO
+    /// ".packed" format) to cut the number of objects written. Opt-in, single-node, any destination that is not
+    /// an archive; only restore's server-side ranged copy is S3-specific, elsewhere the range is read through IO.
+    bool backup_pack_format = false;
+
+    /// Target size of one pack object. Packing fills packs up to about this size.
+    UInt64 backup_pack_size = 33554432; /// 32 MiB
+
+    /// Blobs whose physical payload is smaller than this get packed; blobs at or above it stay their own object.
+    UInt64 backup_pack_min_size = 1048576; /// 1 MiB
+
     /// Should we back up data from refreshable materialized view targets?
     ///
     /// Data is skipped only for targets of refreshable views that fully

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/Types.h>
+/// Complete type needed: readFileForView() returns a std::unique_ptr to it inline.
+#include <IO/ReadBufferFromFileBase.h>
 
 #include <map>
 
@@ -11,7 +13,6 @@ namespace DB
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
-class ReadBufferFromFileBase;
 class WriteBuffer;
 enum class WriteMode : uint8_t;
 struct WriteSettings;
@@ -28,6 +29,10 @@ public:
     virtual UInt64 getFileSize(const String & file_name) = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) = 0;
+
+    /// Opens `file_name` for wrapping in ReadBufferFromFileView, which cannot sit on an mmap or direct-IO
+    /// buffer. Only local readers adjust; object storage ignores local filesystem read settings.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFileForView(const String & file_name) { return readFile(file_name); }
 
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
     /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).

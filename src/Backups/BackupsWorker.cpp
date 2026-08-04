@@ -8,6 +8,7 @@
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupInMemory.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupPacker.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackupEntry.h>
@@ -17,6 +18,8 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/getBackupDataFileName.h>
 #include <Core/UUID.h>
+
+#include <map>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
@@ -405,6 +408,25 @@ struct BackupsWorker::BackupStarter
 
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
+        /// ON CLUSTER routes through BackupCoordinationOnCluster, which does not forward
+        /// backup_pack_format into the packing Config -- so packing would be silently a no-op.
+        /// Reject until ON CLUSTER packing is implemented.
+        if (on_cluster && backup_settings.backup_pack_format)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "backup_pack_format is not supported with ON CLUSTER yet");
+
+        /// A lightweight snapshot stores files by object_key (kept in lightweight_snapshot_file_infos, not
+        /// file_infos). Packing has no path for those, and the read-side pack accounting assumes a packed
+        /// backup has no object_key files -- reject the combination rather than silently mis-account.
+        if (backup_settings.backup_pack_format && backup_settings.experimental_lightweight_snapshot)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "backup_pack_format is not supported with experimental_lightweight_snapshot");
+
+        /// The plain path (deduplicate_files=0) doesn't build the dedup identity/data_file_index packing needs.
+        if (backup_settings.backup_pack_format && !backup_settings.deduplicate_files)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "backup_pack_format is not supported with deduplicate_files=0");
+
         if (!backup_settings.backup_uuid)
             backup_settings.backup_uuid = UUIDHelpers::generateV4();
 
@@ -623,6 +645,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
     backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
+    backup_create_params.backup_pack_format = backup_settings.backup_pack_format;
     backup_create_params.data_file_name_generator = backup_settings.data_file_name_generator;
     chassert(backup_settings.data_file_name_prefix_length);
     backup_create_params.data_file_name_prefix_length = *backup_settings.data_file_name_prefix_length;
@@ -785,6 +808,15 @@ void BackupsWorker::writeBackupEntries(
 
     std::atomic_bool failed = false;
 
+    /// Packed entries are written by the pack pass below, not by the per-entry path.
+    std::map<size_t, std::vector<size_t>> pack_to_member_indices = BackupPacker::selectPackMembers(file_infos);
+
+    /// Claim members' data file indexes before any job runs: a same-checksum duplicate of a member
+    /// (pack_id = -1) must lose startWritingFile in writeFile, or it would write a loose own-object.
+    for (const auto & [pack_id, member_indices] : pack_to_member_indices)
+        for (size_t index : member_indices)
+            backup_coordination->startWritingFile(file_infos[index].data_file_index);
+
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP);
 
@@ -814,6 +846,10 @@ void BackupsWorker::writeBackupEntries(
         }
 
         const auto & file_info = file_infos[index];
+
+        /// The pack pass below still needs this entry to read the member's bytes, so don't move it.
+        if (file_info.pack_id >= 0)
+            continue;
 
         /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
         /// function. The exception is file_info, which is itself a reference to `file_infos`, created before the runner (so it will be
@@ -845,6 +881,57 @@ void BackupsWorker::writeBackupEntries(
                             backup->getCompressedSize(),
                             0, 0);
                 }
+            }
+            catch (...)
+            {
+                failed = true;
+                throw;
+            }
+        };
+
+        if (always_single_threaded)
+        {
+            job();
+            continue;
+        }
+
+        runner.enqueueAndKeepTrack(std::move(job));
+    }
+
+    /// One job per pack: packs share no state and write distinct objects, so they run in parallel with each
+    /// other and with the own-object writes above. Members within a pack stay serial (one writer per object).
+    for (const auto & [pack_id, member_indices] : pack_to_member_indices)
+    {
+        if (failed)
+            break;
+
+        auto job = [&failed, &process_list_element, &backup, &file_infos, &backup_entries, this, is_internal_backup,
+                    &backup_id, pack_id, member_indices, current_component = Coordination::getCurrentComponent()]()
+        {
+            auto local_component_guard = Coordination::setCurrentComponent(current_component);
+            if (failed)
+                return;
+            try
+            {
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
+
+                IBackup::PackMembers members;
+                members.reserve(member_indices.size());
+                for (size_t index : member_indices)
+                    members.emplace_back(file_infos[index], backup_entries[index].second);
+
+                backup->writeFilePack(pack_id, members);
+
+                if (!is_internal_backup)
+                    setNumFilesAndSize(
+                        backup_id,
+                        backup->getNumFiles(),
+                        backup->getTotalSize(),
+                        backup->getNumEntries(),
+                        backup->getUncompressedSize(),
+                        backup->getCompressedSize(),
+                        0, 0);
             }
             catch (...)
             {

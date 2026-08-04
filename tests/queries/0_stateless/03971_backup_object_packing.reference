@@ -1,0 +1,36 @@
+BACKUP_CREATED
+RESTORED
+small-only identical
+BACKUP_CREATED
+RESTORED
+mixed identical
+BACKUP_CREATED
+RESTORED
+multi-pack identical
+multi-pack spilled
+BACKUP_CREATED
+RESTORED
+dedup identical
+0
+BACKUP_CREATED
+RESTORED
+setting-off identical
+BACKUP_CREATED
+BACKUP_CREATED
+RESTORED
+incremental identical
+is not supported with an archive destination
+BACKUP_CREATED
+BACKUP_CREATED
+1	1
+RESTORED
+1	1
+BACKUP_CREATED
+Archive backup cannot contain packed objects
+not supported with deduplicate_files
+BACKUP_CREATED
+marked as packed in the metadata but no pack contains it
+in the pack index but the metadata declares
+marked as packed in the metadata but no pack contains it
+is not marked as packed in the metadata
+predates the packed format
