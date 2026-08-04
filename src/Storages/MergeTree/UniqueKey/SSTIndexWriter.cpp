@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/sortBlock.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <base/scope_guard.h>
@@ -13,6 +14,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteSettings.h>
 
@@ -276,7 +278,9 @@ struct SSTIndexWriter::Impl
     /// Target file in the part storage. Opened lazily on the first
     /// `addEncoded` so an empty input produces no `.sst` file.
     std::unique_ptr<WriteBufferFromFileBase> out_file;
-    /// Custom RocksDB env that redirects SST writes into `out_file`.
+    /// Hashing wrapper over `out_file` so checksum is computed during write.
+    std::unique_ptr<HashingWriteBuffer> hashing_out;
+    /// Custom RocksDB env that redirects SST writes into `hashing_out`.
     std::unique_ptr<rocksdb::Env> sst_env;
     std::unique_ptr<rocksdb::SstFileWriter> writer;
     bool opened = false;
@@ -317,8 +321,9 @@ void SSTIndexWriter::openOutputStreamOnFirstEntry()
 
     part_storage.createDirectories();
     impl->out_file = part_storage.writeFile(FILE_NAME, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, impl->write_settings);
+    impl->hashing_out = std::make_unique<HashingWriteBuffer>(*impl->out_file);
 
-    impl->sst_env = rocksdb::NewCompositeEnv(std::make_shared<WriteBufferFileSystem>(impl->out_file.get()));
+    impl->sst_env = rocksdb::NewCompositeEnv(std::make_shared<WriteBufferFileSystem>(impl->hashing_out.get()));
     impl->writer = std::make_unique<rocksdb::SstFileWriter>(rocksdb::EnvOptions{}, makeSSTOptions(impl->sst_env.get()));
 
     /// Empty path: the custom filesystem ignores the name and always hands
@@ -431,9 +436,13 @@ UInt64 SSTIndexWriter::finalizeToStorage()
     }
 
     /// Close the RocksDB writer first — this flushes the SST footer through
-    /// our `WriteBuffer`-backed file. Then finalize the outer `WriteBuffer`
-    /// so the part storage commits the bytes.
+    /// our `WriteBuffer`-backed file. Then finalize the hashing wrapper
+    /// (populates the checksum) and the outer `WriteBuffer` so the part
+    /// storage commits the bytes.
     finish();
+    impl->hashing_out->finalize();
+    sst_checksum = MergeTreeDataPartChecksums::Checksum{
+        impl->hashing_out->count(), impl->hashing_out->getHash()};
     impl->out_file->finalize();
 
     finalized = true;
@@ -454,19 +463,56 @@ UInt64 SSTIndexWriter::write(
     const std::vector<bool> & sort_reverse_flags,
     const IColumn::Permutation * permutation,
     UInt64 max_encoded_size,
-    ContextPtr context)
+    ContextPtr context,
+    MergeTreeDataPartChecksums::Checksum & out_checksum)
 {
     if (uk_names.empty())
         return 0;
 
 #if USE_ROCKSDB
     if (isBlockSortedByUniqueKey(uk_names, sort_names, sort_reverse_flags, block))
-        return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context);
-    return writeFromBlockUnsorted(part_storage, block, uk_names, permutation, max_encoded_size, context);
+        return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context, out_checksum);
+    return writeFromBlockUnsorted(part_storage, block, uk_names, permutation, max_encoded_size, context, out_checksum);
 #else
     (void)sort_names; (void)sort_reverse_flags;
-    return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context);
+    return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context, out_checksum);
 #endif
+}
+
+void SSTIndexWriter::writeDenseIndexOnInsert(
+    IDataPartStorage & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Block & block,
+    const IColumn::Permutation * permutation,
+    UInt64 max_encoded_size,
+    ContextPtr context,
+    MergeTreeDataPartChecksums::Checksum & out_checksum)
+{
+    /// Caller (`MergeTreeDataWriter`) ensures the table has a UNIQUE KEY.
+    /// `SSTIndexWriter` accounts for `UniqueKeySSTWriteMicroseconds` itself, and
+    /// throws SUPPORT_IS_DISABLED without RocksDB: a UNIQUE KEY INSERT that cannot
+    /// build the dense index fails closed rather than publishing a part with no
+    /// `unique_key_index.sst`.
+    ///
+    /// The SST must be a standalone file: every reader (load-time validation and
+    /// the probe) opens it by raw filesystem path via RocksDB. On packed part
+    /// storage `writeFile` would silently bury it inside the archive and every
+    /// subsequent load of the part would fail - fail the INSERT loudly instead.
+    /// (`MergeTreeDataWriter` forces Full storage for UNIQUE KEY parts.)
+    if (storage.getType() != MergeTreeDataPartStorageType::Full)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE KEY dense index requires full part storage, got part storage type {}",
+            storage.getType().toString());
+    write(
+        storage,
+        block,
+        metadata_snapshot->getUniqueKeyColumns(),
+        metadata_snapshot->getSortingKeyColumns(),
+        metadata_snapshot->getSortingKeyReverseFlags(),
+        permutation,
+        max_encoded_size,
+        context,
+        out_checksum);
 }
 
 
@@ -476,13 +522,14 @@ UInt64 SSTIndexWriter::writeFromBlock(
     const Names & unique_key_column_names,
     const IColumn::Permutation * permutation,
     size_t max_encoded_size,
-    ContextPtr context)
+    ContextPtr context,
+    MergeTreeDataPartChecksums::Checksum & out_checksum)
 {
 #if USE_ROCKSDB
     if (unique_key_column_names.empty())
         return 0;
 
-    /// Reject malformed blocks before the empty-block fast path —
+    /// Reject malformed blocks before the empty-block fast path -
     /// `block.rows()` reports only the first column's size.
     block.checkNumberOfRows();
     if (block.rows() == 0)
@@ -509,10 +556,12 @@ UInt64 SSTIndexWriter::writeFromBlock(
     SSTIndexWriter writer(part_storage, context);
     for (size_t i = 0; i < num_rows; ++i)
         writer.addEncoded(encoded[i], static_cast<UInt32>(i));
-    return writer.finalizeToStorage();
+    UInt64 entries = writer.finalizeToStorage();
+    out_checksum = writer.getSSTChecksum();
+    return entries;
 #else
     (void)part_storage; (void)block; (void)unique_key_column_names;
-    (void)permutation; (void)max_encoded_size; (void)context;
+    (void)permutation; (void)max_encoded_size; (void)context; (void)out_checksum;
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "SSTIndexWriter::writeFromBlock requires RocksDB support (USE_ROCKSDB=1)");
 #endif
@@ -525,7 +574,8 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
     const Names & unique_key_column_names,
     const IColumn::Permutation * permutation,
     size_t max_encoded_size,
-    ContextPtr context)
+    ContextPtr context,
+    MergeTreeDataPartChecksums::Checksum & out_checksum)
 {
 #if USE_ROCKSDB
     if (unique_key_column_names.empty())
@@ -587,10 +637,12 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
     SSTIndexWriter writer(part_storage, context);
     for (size_t i = 0; i < num_rows; ++i)
         writer.addEncoded(encoded[i], source_to_part_offset[uk_perm[i]]);
-    return writer.finalizeToStorage();
+    UInt64 entries = writer.finalizeToStorage();
+    out_checksum = writer.getSSTChecksum();
+    return entries;
 #else
     (void)part_storage; (void)block; (void)unique_key_column_names;
-    (void)permutation; (void)max_encoded_size; (void)context;
+    (void)permutation; (void)max_encoded_size; (void)context; (void)out_checksum;
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "SSTIndexWriter::writeFromBlockUnsorted requires RocksDB support (USE_ROCKSDB=1)");
 #endif

@@ -16,49 +16,77 @@
 /// without RocksDB, and its only caller (the probe factory / gtests) is guarded.
 #if USE_ROCKSDB
 
-#include <rocksdb/status.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 
-namespace rocksdb
-{
-    class SstFileReader;
-}
+#include <rocksdb/env.h>
+#include <rocksdb/iterator.h>
+#include <rocksdb/options.h>
+#include <rocksdb/sst_file_reader.h>
+#include <rocksdb/table.h>
+#include <rocksdb/table_properties.h>
 
 namespace DB
 {
 
 class IMergeTreeDataPart;
 class DeleteBitmap;
+class ReadBufferFromFileBase;
 
-/// Opened-reader handle for a part's `unique_key_index.sst` sidecar. Owns the
-/// `SstFileReader` shared_ptr so the file descriptor outlives the open call.
-/// A null `reader` denotes an invalid handle (a negative open).
+/// Opens a RocksDB SST read through a ClickHouse `ReadBuffer` (a custom `Env`).
+/// Storage mode reads via `IDataPartStorage` (a remote sidecar read in place);
+/// injected mode wraps one external `SeekableReadBuffer` the caller keeps alive.
+/// `sst_env` is declared before `index_reader` so it outlives it. A constructed
+/// object is open: `Open` failure throws `CANNOT_OPEN_FILE`. Implementation in .cpp.
+class SSTFileReader
+{
+public:
+    SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name, const UniqueKeyIndexCachePtr & block_cache);
+
+    /// Injected mode: `buffer` is not owned and must outlive this reader. The file
+    /// name is empty - the injected file system ignores it and serves `buffer`.
+    SSTFileReader(SeekableReadBuffer & buffer, uint64_t file_size, const UniqueKeyIndexCachePtr & block_cache);
+
+    std::unique_ptr<rocksdb::Iterator> newIterator(const rocksdb::ReadOptions & options) const;
+
+    std::shared_ptr<const rocksdb::TableProperties> getProperties() const;
+
+private:
+    void init(const String & file_name, const UniqueKeyIndexCachePtr & block_cache);
+
+    /// Declared before `index_reader` so the Env outlives the reader.
+    std::unique_ptr<rocksdb::Env> sst_env;
+    std::unique_ptr<rocksdb::SstFileReader> index_reader;
+};
+
+using SSTFileReaderPtr = std::shared_ptr<SSTFileReader>;
+
+/// Opened-reader handle for a part's `unique_key_index.sst`. Owns the
+/// `SSTFileReader` (and thus the Env + RocksDB reader), so the buffer outlives the
+/// open call.
 ///
 /// TODO(unique-key): route handles through a reader cache (open once, share across probes).
 struct SSTReaderHandle
 {
-    std::shared_ptr<rocksdb::SstFileReader> reader;
+    SSTFileReaderPtr reader;
 };
 
-/// Result of a non-throwing open: the reader plus the raw RocksDB `Status`, so
-/// callers can distinguish a corruption from a transient failure themselves.
-/// `reader` is null when `status` is not ok.
-struct SSTOpenResult
-{
-    std::shared_ptr<rocksdb::SstFileReader> reader;
-    rocksdb::Status status;
-};
+/// Open through `DataPartStorage`: a remote sidecar (S3 etc.) is read in place.
+/// `block_cache` (usually the shared `UniqueKeyIndexCache`) is wired into the
+/// table options; null means no block cache. A returned reader is open; open
+/// failure throws `CANNOT_OPEN_FILE`.
+SSTFileReaderPtr openSSTReaderFromStorage(
+    const DataPartStoragePtr & storage,
+    const String & sst_file_name,
+    const UniqueKeyIndexCachePtr & block_cache = {});
 
-/// Single source of truth for the SST read-open options (bloom policy + table
-/// factory that must match what `SSTIndexWriter` produced). Opens the sidecar and
-/// returns the reader + status without throwing.
-SSTOpenResult tryOpenSSTReaderFromPath(const String & sst_path);
-
-/// Open an SST sidecar directly by local filesystem path. SST-only: knows
-/// nothing about caching, parts, or the dense-index block cache. Throws
-/// `CANNOT_OPEN_FILE` if RocksDB cannot open the path.
-///
-/// TODO(unique-key): part-aware opener + dense-index block cache in the open options.
-SSTReaderHandle openSSTReaderFromPath(const String & sst_path);
+/// Open over an externally managed `ReadBuffer` (any source, not just a part
+/// storage). The buffer is not owned and must outlive the returned reader. The
+/// file size is taken from `buffer.tryGetFileSize()`; a buffer that cannot report
+/// it fails closed (throws). A returned reader is open; open failure throws.
+SSTFileReaderPtr openSSTReaderFromBuffer(
+    ReadBufferFromFileBase & buffer,
+    const UniqueKeyIndexCachePtr & block_cache = {});
 
 /// UNIQUE KEY `IProbeTargetPart` backed by an opened `unique_key_index.sst`.
 /// The driver owns encoding and hands over encoded bytes; the SST's embedded
