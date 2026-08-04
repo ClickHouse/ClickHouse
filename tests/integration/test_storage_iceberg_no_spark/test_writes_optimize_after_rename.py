@@ -298,17 +298,39 @@ def test_optimize_preserves_partition_spec(
     )
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 3
 
-    # A fresh INSERT after compaction must still be partitioned: the partition spec was
-    # preserved, so each partition value lands in its own data file. Before the fix the spec was
-    # empty and the new rows went into a single unpartitioned file.
+    # The persisted spec is the contract, and query results cannot stand in for it: `part` is a
+    # stored column, so `WHERE part = ...` returns the right rows even out of an unpartitioned file
+    # (pruning is an optimization, not a correctness mechanism). Assert the metadata itself.
+    meta_after, _ = _read_latest_metadata(instance, TABLE_NAME)
+    specs = meta_after.get("partition-specs") or []
+    default_spec_id = meta_after.get("default-spec-id")
+    default_spec = next((s for s in specs if s.get("spec-id") == default_spec_id), None)
+    assert default_spec is not None, (
+        f"OPTIMIZE lost the default partition spec: default-spec-id={default_spec_id}, specs={specs}"
+    )
+    assert [f.get("name") for f in default_spec.get("fields") or []] == ["part"], (
+        f"partition spec lost its field after OPTIMIZE: {default_spec}"
+    )
+
+    # A fresh INSERT after compaction must still be partitioned: the spec survived, so each
+    # partition value lands in its own data file.
     instance.query(
         f"INSERT INTO {TABLE_NAME} VALUES (0,5,'e'),(1,6,'f');",
         settings={"allow_insert_into_iceberg": 1},
     )
 
-    # Partition pruning must return exactly the live rows of a single partition. If the metadata
-    # had lost its partition spec, the post-OPTIMIZE writes would be unpartitioned and pruning by
-    # `part` would drop live rows (or scan everything).
+    # Every live data file carries a partition tuple ('{0}' / '{1}'); an unpartitioned write
+    # would show up as '{}'.
+    assert (
+        int(
+            instance.query(
+                f"SELECT countIf(partition = '{{}}') FROM system.iceberg_files "
+                f"WHERE table = '{TABLE_NAME}' AND content = 'DATA'"
+            )
+        )
+        == 0
+    ), "a data file was written without a partition tuple after OPTIMIZE"
+
     assert (
         instance.query(f"SELECT id, value FROM {TABLE_NAME} WHERE part = 0 ORDER BY id")
         == "1\ta\n5\te\n"
