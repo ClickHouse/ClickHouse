@@ -829,10 +829,34 @@ Int64 getReservedMergeMemory()
     return background_memory_reserved.load(std::memory_order_relaxed);
 }
 
-void reserveMergeMemory(Int64 bytes)
+namespace
 {
-    background_memory_reserved.fetch_add(bytes, std::memory_order_relaxed);
-    CurrentMetrics::add(CurrentMetrics::MergesMutationsMemoryReservation, bytes);
+
+/// CompactionStatistics::estimateNeededMemoryForMerge returns UInt64 and saturates to the UInt64
+/// maximum when a bound is unlimited (e.g. an object storage multipart upload ceiling with no
+/// inflight cap). The reservation counter is Int64, so a plain cast would wrap such an estimate
+/// negative, and reserving it would then *loosen* the admission gate; saturate the conversion instead.
+Int64 clampMergeMemoryReservation(UInt64 bytes)
+{
+    return static_cast<Int64>(std::min<UInt64>(bytes, std::numeric_limits<Int64>::max()));
+}
+
+}
+
+Int64 reserveMergeMemory(Int64 bytes)
+{
+    /// Saturating add: several concurrent reservations clamped near the Int64 maximum must not
+    /// overflow the counter. The amount actually accounted is returned so that the matching
+    /// release keeps the counter exact.
+    Int64 current = background_memory_reserved.load(std::memory_order_relaxed);
+    Int64 added = 0;
+    do
+    {
+        added = std::min(bytes, std::numeric_limits<Int64>::max() - current);
+    } while (!background_memory_reserved.compare_exchange_weak(current, current + added, std::memory_order_relaxed));
+
+    CurrentMetrics::add(CurrentMetrics::MergesMutationsMemoryReservation, added);
+    return added;
 }
 
 void releaseMergeMemory(Int64 bytes)
@@ -841,8 +865,9 @@ void releaseMergeMemory(Int64 bytes)
     CurrentMetrics::sub(CurrentMetrics::MergesMutationsMemoryReservation, bytes);
 }
 
-std::optional<MergeMemoryReservation> MergeMemoryReservation::tryReserve(Int64 bytes)
+std::optional<MergeMemoryReservation> MergeMemoryReservation::tryReserve(UInt64 requested)
 {
+    const Int64 bytes = clampMergeMemoryReservation(requested);
     const Int64 limit = background_memory_tracker.getSoftLimit();
     Int64 current = background_memory_reserved.load(std::memory_order_relaxed);
 
@@ -850,19 +875,21 @@ std::optional<MergeMemoryReservation> MergeMemoryReservation::tryReserve(Int64 b
     {
         /// Gate only when a limit is set and something is already reserved, so that a single merge
         /// whose estimate exceeds the whole limit can still make progress (never block forever).
-        if (limit != 0 && current != 0 && current + bytes > limit)
+        /// The condition is written subtraction-first because `current + bytes` can overflow Int64.
+        if (limit != 0 && current != 0 && bytes > limit - current)
             return std::nullopt;
 
-        if (background_memory_reserved.compare_exchange_weak(current, current + bytes, std::memory_order_relaxed))
+        /// Saturating add, as in reserveMergeMemory.
+        const Int64 added = std::min(bytes, std::numeric_limits<Int64>::max() - current);
+        if (background_memory_reserved.compare_exchange_weak(current, current + added, std::memory_order_relaxed))
         {
-            CurrentMetrics::add(CurrentMetrics::MergesMutationsMemoryReservation, bytes);
-            return MergeMemoryReservation(bytes);
+            CurrentMetrics::add(CurrentMetrics::MergesMutationsMemoryReservation, added);
+            return MergeMemoryReservation(added);
         }
     }
 }
 
-MergeMemoryReservation MergeMemoryReservation::reserve(Int64 bytes)
+MergeMemoryReservation MergeMemoryReservation::reserve(UInt64 requested)
 {
-    reserveMergeMemory(bytes);
-    return MergeMemoryReservation(bytes);
+    return MergeMemoryReservation(reserveMergeMemory(clampMergeMemoryReservation(requested)));
 }

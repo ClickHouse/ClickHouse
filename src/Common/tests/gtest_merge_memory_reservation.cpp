@@ -2,6 +2,7 @@
 
 #include <Common/MemoryTracker.h>
 
+#include <limits>
 #include <utility>
 
 /// The reservation primitives (background_memory_tracker, MergeMemoryReservation, getReservedMergeMemory)
@@ -91,6 +92,33 @@ TEST_F(MergeMemoryReservationTest, UnlimitedWhenSoftLimitZero)
         ASSERT_EQ(getReservedMergeMemory(), 2'000'000'000);
     }
 
+    ASSERT_EQ(getReservedMergeMemory(), 0);
+}
+
+TEST_F(MergeMemoryReservationTest, HugeEstimateSaturatesInsteadOfWrappingNegative)
+{
+    background_memory_tracker.setSoftLimit(1000);
+
+    {
+        /// The estimator saturates to the UInt64 maximum when a bound is unlimited. Reserving such an
+        /// estimate must clamp to the Int64 maximum and keep the gate closed - a wrapped-negative
+        /// reservation would instead *loosen* the gate as the merge footprint grows.
+        auto huge = MergeMemoryReservation::reserve(std::numeric_limits<UInt64>::max());
+        ASSERT_EQ(getReservedMergeMemory(), std::numeric_limits<Int64>::max());
+        ASSERT_FALSE(canEnqueueBackgroundTask());
+
+        /// A second unconditional huge reservation must not overflow the counter either.
+        auto another = MergeMemoryReservation::reserve(std::numeric_limits<UInt64>::max());
+        ASSERT_EQ(getReservedMergeMemory(), std::numeric_limits<Int64>::max());
+        ASSERT_FALSE(canEnqueueBackgroundTask());
+
+        /// And while the counter is saturated, conditional reservations are rejected.
+        auto rejected = MergeMemoryReservation::tryReserve(1);
+        ASSERT_FALSE(rejected.has_value());
+        ASSERT_EQ(getReservedMergeMemory(), std::numeric_limits<Int64>::max());
+    }
+
+    /// Releases are symmetric with what was actually accounted, so the counter returns to zero.
     ASSERT_EQ(getReservedMergeMemory(), 0);
 }
 

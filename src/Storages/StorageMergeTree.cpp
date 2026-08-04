@@ -1768,11 +1768,11 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /// The user explicitly requested this merge (OPTIMIZE), so it must not be silently
                 /// skipped by the reservation gate: reserve unconditionally. The reservation still
                 /// throttles selection of background merges via canEnqueueBackgroundTask.
-                memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(needed_memory));
+                memory_reservation = MergeMemoryReservation::reserve(needed_memory);
             }
             else
             {
-                memory_reservation = MergeMemoryReservation::tryReserve(static_cast<Int64>(needed_memory));
+                memory_reservation = MergeMemoryReservation::tryReserve(needed_memory);
                 if (!memory_reservation)
                 {
                     if (isTTLMergeType(future_part->merge_type))
@@ -1807,10 +1807,10 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             const bool actual_output_on_remote_disk = actual_disk->isRemote();
             if (actual_output_on_remote_disk || actual_output_on_remote_disk != output_may_be_on_remote_disk)
             {
-                memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
+                memory_reservation = MergeMemoryReservation::reserve(
                     CompactionStatistics::estimateNeededMemoryForMerge(
                         *future_part, metadata_snapshot, merge_context, *getSettings(), actual_output_on_remote_disk,
-                        CompactionStatistics::getDiskWriteBufferMemory(actual_disk), deduplicate, cleanup)));
+                        CompactionStatistics::getDiskWriteBufferMemory(actual_disk), deduplicate, cleanup));
             }
 
             tagger->memory_reservation = std::move(*memory_reservation);

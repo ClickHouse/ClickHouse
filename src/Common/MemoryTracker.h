@@ -349,8 +349,10 @@ bool isTotalMemoryTrackerInitialized();
 /// Returns the currently reserved amount (bytes) for background merges.
 Int64 getReservedMergeMemory();
 
-/// Account `bytes` as reserved. Used by `MergeMemoryReservation`.
-void reserveMergeMemory(Int64 bytes);
+/// Account `bytes` as reserved. Used by `MergeMemoryReservation`. The addition saturates so that
+/// concurrent huge reservations can never overflow (and thereby wrap negative and loosen the gate);
+/// returns the amount actually accounted, which is what must be passed to `releaseMergeMemory`.
+Int64 reserveMergeMemory(Int64 bytes);
 void releaseMergeMemory(Int64 bytes);
 
 /// RAII holder of a merge memory reservation. Releases the reservation on destruction.
@@ -383,14 +385,19 @@ public:
 
     ~MergeMemoryReservation() { release(); }
 
+    /// Both factories take the estimate as UInt64 because CompactionStatistics::estimateNeededMemoryForMerge
+    /// saturates to the UInt64 maximum when a bound is unlimited (e.g. an object storage multipart upload
+    /// ceiling with no inflight cap); the conversion to the Int64 reservation counter saturates at the
+    /// Int64 maximum instead of wrapping negative (which would loosen the gate as the estimate grows).
+
     /// Reserve `bytes` only if it fits within the merges/mutations memory soft limit
     /// (a single merge larger than the limit is always allowed, so progress is never blocked).
     /// Returns an empty optional if the reservation would exceed the limit.
-    static std::optional<MergeMemoryReservation> tryReserve(Int64 bytes);
+    static std::optional<MergeMemoryReservation> tryReserve(UInt64 bytes);
 
     /// Reserve `bytes` unconditionally (used where the operation is already committed to run,
     /// so that the reservation still contributes to the gate for other, not-yet-started merges).
-    static MergeMemoryReservation reserve(Int64 bytes);
+    static MergeMemoryReservation reserve(UInt64 bytes);
 
     Int64 getBytes() const { return bytes; }
 

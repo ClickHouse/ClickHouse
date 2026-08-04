@@ -369,10 +369,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// means the disk - local, or remote like HDFS - has no multipart upload buffers and the local
     /// per-stream estimate applies.
     const DiskPtr output_disk = reserved_space->getDisk();
-    memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
+    memory_reservation = MergeMemoryReservation::reserve(
         CompactionStatistics::estimateNeededMemoryForMerge(
             *future_merged_part, metadata_snapshot, task_context, *storage_settings_ptr, output_disk->isRemote(),
-            CompactionStatistics::getDiskWriteBufferMemory(output_disk), entry.deduplicate, entry.cleanup)));
+            CompactionStatistics::getDiskWriteBufferMemory(output_disk), entry.deduplicate, entry.cleanup));
 
     /// Account TTL merge
     if (isTTLMergeType(future_merged_part->merge_type))
