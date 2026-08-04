@@ -97,5 +97,8 @@ wait_for_truncate
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE} SYNC"
 echo 'database dropped'
 wait
-grep -om1 'Code: 341.*Timeout exceeded while waiting for replicas r2 to process entry log-[0-9]*' "$DROP_OUT" \
-    | sed 's/DB::Exception: //g; s/Received from [^ ]* //; s/log-[0-9]*/log-N/'
+# r1 can also lose the race to the shutdown latch, so require r2 as a member in any order.
+grep -om1 'Code: 341.*Timeout exceeded while waiting for replicas [^.]* to process entry log-[0-9]*' "$DROP_OUT" \
+    | sed 's/DB::Exception: //g; s/Received from [^ ]* //; s/log-[0-9]*/log-N/' \
+    | grep -E 'replicas ([a-z0-9_]+, )*r2(, [a-z0-9_]+)* to process' \
+    | sed -E 's/replicas [^ ]*(, [^ ]*)* to process/replicas r2 to process/'
