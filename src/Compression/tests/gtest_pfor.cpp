@@ -285,6 +285,12 @@ TEST(PForSelfDescribing, FailClosed)
     EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>(lone_cont)).empty());
     const std::vector<uint8_t> count_only = {0x05};
     EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>(count_only)).empty());
+    EXPECT_EQ(PFor::decompressedCount(std::span<const uint8_t>(count_only)), 0u);
+
+    /// A count too large for the body must not be reported as a size to preallocate: 129 values cannot fit one byte.
+    const std::vector<uint8_t> count_over_body = {0x81, 0x01, 0x00, 0x00};
+    EXPECT_EQ(PFor::decompressedCount(std::span<const uint8_t>(count_over_body)), 0u);
+    EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>(count_over_body)).empty());
 
     /// Invalid flag byte: reserved mode 3, and an undefined high bit set.
     const std::vector<uint8_t> mode3 = {0x01, 0x03, 0x00};
@@ -323,6 +329,29 @@ TEST(PForBlockDecode, RejectsImpossibleExceptionHeader)
     EXPECT_EQ(PFor::decodeBlocks<uint32_t>(hb_zero.data(), 1, PFor::Delta::none, &out, hb_zero.data() + hb_zero.size()), 0u);
     const std::vector<uint8_t> hb_over = {4, 1, 29};  // hb > typeBits(32) - b(4): patch shifts out of range
     EXPECT_EQ(PFor::decodeBlocks<uint32_t>(hb_over.data(), 1, PFor::Delta::none, &out, hb_over.data() + hb_over.size()), 0u);
+}
+
+/// A duplicate exception position would OR two patches into one value, so the block must be rejected.
+TEST(PForBlockDecode, RejectsUnorderedExceptionPositions)
+{
+    /// Hand-built single normal block, cnt = 8: b = 4, e = 2, hb = 4, then 4 base bytes, 2 position bytes, 1 patch byte.
+    const std::vector<uint8_t> block = {4, 2, 4, 0x11, 0x11, 0x11, 0x11, 3, 5, 0x21};
+    constexpr size_t position_of_first = 7;
+    std::vector<uint32_t> out(8 + 64, 0);
+    auto decode = [&](const std::vector<uint8_t> & in)
+    { return PFor::decodeBlocks<uint32_t>(in.data(), 8, PFor::Delta::none, out.data(), in.data() + in.size()); };
+
+    /// Sanity: increasing positions decode and consume the whole block.
+    EXPECT_EQ(decode(block), block.size());
+
+    std::vector<uint8_t> duplicate = block;
+    duplicate[position_of_first + 1] = duplicate[position_of_first];
+    EXPECT_EQ(decode(duplicate), 0u);
+
+    std::vector<uint8_t> decreasing = block;
+    decreasing[position_of_first] = block[position_of_first + 1];
+    decreasing[position_of_first + 1] = block[position_of_first];
+    EXPECT_EQ(decode(decreasing), 0u);
 }
 
 /// The bounded varint reader must reject overlong (> 64-bit) encodings, not silently wrap them.

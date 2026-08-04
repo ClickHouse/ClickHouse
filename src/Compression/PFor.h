@@ -54,10 +54,8 @@ struct Header
     const uint8_t * end = nullptr;
 };
 
-/// Parse the self-describing header fail-closed (bounded varint + validated flag byte); nullopt on
-/// truncation, an undefined flag bit, an invalid mode, or an element-width (UInt32/UInt64) mismatch.
-template <typename T>
-inline std::optional<Header> parseHeader(std::span<const uint8_t> in) noexcept
+/// Parse the self-describing header fail-closed; `expected_element_size` 0 accepts either stored width.
+inline std::optional<Header> parseHeader(std::span<const uint8_t> in, size_t expected_element_size) noexcept
 {
     Header h;
     h.end = in.data() + in.size();
@@ -69,11 +67,22 @@ inline std::optional<Header> parseHeader(std::span<const uint8_t> in) noexcept
         return std::nullopt;
     if ((flags & 3u) == 3u)                       // mode must be none/d0/d1
         return std::nullopt;
-    if (((flags & 4u) != 0) != (sizeof(T) == 8))  // stored element width must match T
+    const size_t element_size = (flags & 4u) ? sizeof(uint64_t) : sizeof(uint32_t);
+    if (expected_element_size && (element_size != expected_element_size))
         return std::nullopt;
     h.mode = static_cast<Delta>(flags & 3u);
     h.body = p;
+    /// A block holds at most BLOCK values per byte, so a larger count cannot fit the body.
+    if (h.count > static_cast<uint64_t>(h.end - h.body) * BLOCK)
+        return std::nullopt;
     return h;
+}
+
+/// Parse the header of a buffer of T values; fails unless the stored element width matches T.
+template <typename T>
+inline std::optional<Header> parseHeader(std::span<const uint8_t> in) noexcept
+{
+    return parseHeader(in, sizeof(T));
 }
 
 /// Decompress a self-describing buffer into `out`; returns the value count, or 0 on malformed/truncated input.
@@ -88,13 +97,11 @@ inline size_t decompressInto(std::span<const uint8_t> in, T * out) noexcept
     return static_cast<size_t>(h->count);
 }
 
-/// Number of values stored in a self-describing buffer (reads only the header); 0 if truncated.
+/// Number of values in a self-describing buffer of either width, safe to preallocate against; 0 if malformed.
 inline size_t decompressedCount(std::span<const uint8_t> in) noexcept
 {
-    uint64_t count = 0;
-    if (!detail::getVarintChecked(in.data(), in.data() + in.size(), count))
-        return 0;
-    return static_cast<size_t>(count);
+    const std::optional<Header> h = parseHeader(in, 0);
+    return h ? static_cast<size_t>(h->count) : 0;
 }
 
 /// Allocating convenience wrappers around compressInto/decompressInto.
@@ -112,9 +119,6 @@ inline std::vector<T> decompress(std::span<const uint8_t> in) // STYLE_CHECK_ALL
 {
     const std::optional<Header> h = parseHeader<T>(in);
     if (!h)
-        return {};
-    /// A block holds at most BLOCK values per byte, so a larger count cannot fit the body — reject before allocating.
-    if (h->count > static_cast<uint64_t>(h->end - h->body) * BLOCK)
         return {};
     std::vector<T> out(static_cast<size_t>(h->count)); // STYLE_CHECK_ALLOW_STD_CONTAINERS
     if (h->count && decodeBlocks<T>(h->body, static_cast<size_t>(h->count), h->mode, out.data(), h->end) == 0)

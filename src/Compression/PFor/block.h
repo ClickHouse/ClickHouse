@@ -8,7 +8,7 @@
 //        byte1 = e        number of exceptions (values needing more than b bits)
 //        byte2 = hb       (only if e > 0) high-bit width of the exception patches
 //        base             cnt values, low b bits each, bit-packed
-//        positions        e bytes (each < cnt), the exception indices
+//        positions        e bytes, the exception indices: strictly increasing, each < cnt
 //        patches          e values, hb bits each, bit-packed; patch = value >> b
 // Decode unpacks the base then ORs each exception's high bits back in; b minimises total bytes.
 // A full 128-value uint32 block with b in [1,31] uses the SIMD vertical layout, else the scalar packer (same packedBytes, so the stream is identical).
@@ -237,7 +237,8 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
         p += patch_bytes;
         for (unsigned j = 0; j < e; ++j)
         {
-            if (pos[j] >= cnt)
+            // blockEncode emits strictly increasing positions; a duplicate would OR two patches into one value.
+            if ((pos[j] >= cnt) || ((j > 0) && (pos[j] <= pos[j - 1])))
                 return 0;
             out[pos[j]] |= patches[j] << b;
         }
