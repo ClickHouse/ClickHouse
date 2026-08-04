@@ -1,6 +1,6 @@
 from praktika import Job, Secret, Workflow
 
-from ci.defs.defs import BASE_BRANCH, SECRETS
+from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
 
 # Scheduled patch-release driver (praktika port of the legacy
 # .github/workflows/auto_releases.yml + tests/ci/auto_release.py).
@@ -13,11 +13,16 @@ from ci.defs.defs import BASE_BRANCH, SECRETS
 # starting the next, because CreateRelease's concurrency group keeps only the
 # most recent pending run and would otherwise silently drop a branch.
 #
-# It runs on the release-maker runner (same as CreateRelease): besides reading
-# GitHub and dispatching/watching runs, its artifact-readiness gate lists the
-# release packages in S3 through `S3Helper` (boto3 + credentials), which the
-# cheap style-check runner does not have. The heavy release work still happens
-# in the dispatched CreateRelease runs.
+# It runs on the cheap `arm_small` pool, NOT on `amd-release-maker`. It must not
+# share a runner pool with CreateRelease: this job blocks in `gh run watch` for
+# the whole batch, so if it held a release-maker slot it would starve the very
+# CreateRelease runs it dispatched (which need that same scarce label) - a
+# self-contention that stalled a dry run for hours. `arm_small` is abundant, so
+# holding one slot while waiting is harmless. The artifact-readiness gate still
+# lists packages in S3 via `S3Helper` (boto3), which resolves credentials from
+# the runner's IAM instance role - available on `arm_small`, so no release-maker
+# runner is needed just to read S3. The heavy release work runs in the dispatched
+# CreateRelease runs on `amd-release-maker`.
 
 robot_token_secret = Secret.Config(
     name="ROBOT_CLICKHOUSE_COMMIT_TOKEN",
@@ -38,9 +43,10 @@ MAX_RELEASE_BRANCHES = 6
 
 auto_release_job = Job.Config(
     name="AutoReleaseInfo",
-    # Same runner CreateRelease uses: the artifact-readiness gate needs S3
-    # access (boto3 via S3Helper), unavailable on the style-check runner.
-    runs_on=["self-hosted", "amd-release-maker"],
+    # Cheap, abundant pool: this job only reads GitHub + S3 and blocks watching
+    # the CreateRelease runs it dispatches. Keep it off `amd-release-maker` so it
+    # never competes with those runs for that scarce label (see the note above).
+    runs_on=RunnerLabels.ARM_SMALL,
     command="PYTHONPATH=. python3 ./ci/jobs/auto_release_job.py",
     timeout=(CREATE_RELEASE_TIMEOUT_H * MAX_RELEASE_BRANCHES + 1) * 3600,
     enable_gh_auth=True,

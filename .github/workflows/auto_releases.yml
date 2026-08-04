@@ -60,7 +60,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "AutoReleases" --ci --timestamp
 
   autoreleaseinfo:
-    runs-on: [self-hosted, amd-release-maker]
+    runs-on: [self-hosted, arm-small]
     needs: [config_workflow]
     name: "AutoReleaseInfo"
     timeout-minutes: 785
