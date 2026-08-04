@@ -13,11 +13,20 @@ set(PULSAR_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 set(PROTO_DIR "${LIBRARY_DIR}/proto")
 
+# Use the native protoc when cross-compiling or using musl - the freshly built
+# protoc targets the target platform and cannot run on the host
+# (the same rule as in protobuf_generate.cmake).
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+    set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+else()
+    set(NATIVE_protoc $<TARGET_FILE:protoc>)
+endif()
+
 add_custom_command(
     OUTPUT "${PULSAR_GENERATED_DIR}/lib/PulsarApi.pb.h" "${PULSAR_GENERATED_DIR}/lib/PulsarApi.pb.cc"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PULSAR_GENERATED_DIR}/lib"
-    COMMAND $<TARGET_FILE:protoc> -I "${PROTO_DIR}" --cpp_out="${PULSAR_GENERATED_DIR}/lib" "${PROTO_DIR}/PulsarApi.proto"
-    DEPENDS protoc "${PROTO_DIR}/PulsarApi.proto"
+    COMMAND ${NATIVE_protoc} -I "${PROTO_DIR}" --cpp_out="${PULSAR_GENERATED_DIR}/lib" "${PROTO_DIR}/PulsarApi.proto"
+    DEPENDS ${NATIVE_protoc} "${PROTO_DIR}/PulsarApi.proto"
     COMMENT "Generating Pulsar protobuf sources")
 
 file(READ "${LIBRARY_DIR}/version.txt" PULSAR_CLIENT_VERSION)
@@ -35,6 +44,14 @@ list(APPEND SRCS "${PULSAR_GENERATED_DIR}/lib/PulsarApi.pb.cc")
 # so this file is compiled from a patched copy.
 list(REMOVE_ITEM SRCS "${LIBRARY_DIR}/lib/ProtobufNativeSchema.cc")
 list(APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/patched/ProtobufNativeSchema.cc")
+
+# Use the LZ4 library bundled with ClickHouse instead of the copy vendored
+# inside pulsar-client-cpp, so that only one LZ4 implementation is linked into
+# the binary. The codec source is compiled from a patched copy that includes
+# the contrib <lz4.h>.
+list(REMOVE_ITEM SRCS "${LIBRARY_DIR}/lib/lz4/lz4.cc")
+list(REMOVE_ITEM SRCS "${LIBRARY_DIR}/lib/CompressionCodecLZ4.cc")
+list(APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/patched/CompressionCodecLZ4.cc")
 
 # Make sure the protobuf sources are generated before any library source is compiled.
 set_property(SOURCE ${SRCS} APPEND PROPERTY OBJECT_DEPENDS "${PULSAR_GENERATED_DIR}/lib/PulsarApi.pb.h")
@@ -64,6 +81,7 @@ target_link_libraries(_pulsar
     boost::filesystem
     ch_contrib::zlib
     ch_contrib::zstd
+    ch_contrib::lz4
     OpenSSL::Crypto
     OpenSSL::SSL
     ch_contrib::snappy
