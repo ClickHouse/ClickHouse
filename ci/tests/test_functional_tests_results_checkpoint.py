@@ -1038,37 +1038,50 @@ def test_the_probe_ignores_the_ambient_workflow_context(tmp_path):
     `Targeting.is_functional_test_file`, absent from the stub, so `main` dies before the
     teardown step the arms block in. Reproduced by planting that file where the default
     `TEMP_DIR` points, which is what makes this behavioural rather than a text search.
+
+    Redirecting is enough on its own, and the arm does not require the child to find a
+    file there: `changed_files` only ever reaches the environment through the workflow
+    status file, so the `from_env` fallback the redirect leads to cannot carry one. That
+    is asserted below rather than left implicit, since it is what makes the one-line
+    redirect a complete fix instead of half of one.
     """
-    status_file = Path(Settings.WORKFLOW_STATUS_FILE)
-    env = {
-        field.name: ""
-        for field in dataclasses.fields(_Environment)
-        if field.default is dataclasses.MISSING
-        and field.default_factory is dataclasses.MISSING
-    }
-    # A non-empty `changed_files` is what reaches the branch: `main` guards on it, and it
-    # must be a test file so the batch-skip check is entered rather than skipped.
-    env.update(
-        SHA="0" * 40,
-        PR_NUMBER=113200,
-        EVENT_TYPE="pull_request",
-        JOB_KV_DATA=Utils.to_base64(
-            json.dumps({"changed_files": ["tests/queries/0_stateless/00001_select_1.sql"]})
-        ),
-    )
-    payload = json.dumps(
-        {
-            Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
-                "outputs": {"data": json.dumps(env)}
-            }
+    def payload(changed_files):
+        env = {
+            field.name: ""
+            for field in dataclasses.fields(_Environment)
+            if field.default is dataclasses.MISSING
+            and field.default_factory is dataclasses.MISSING
         }
+        env.update(
+            SHA="0" * 40,
+            PR_NUMBER=113200,
+            EVENT_TYPE="pull_request",
+            JOB_KV_DATA=Utils.to_base64(json.dumps({"changed_files": changed_files})),
+        )
+        return json.dumps(
+            {
+                Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
+                    "outputs": {"data": json.dumps(env)}
+                }
+            }
+        )
+
+    # The redirected path is left empty, so the child takes the `from_env` fallback, whose
+    # fixed `JOB_KV_DATA` keys cannot produce a `changed_files`.
+    assert "changed_files" not in _Environment.from_env().JOB_KV_DATA, (
+        "the environment fallback now carries changed_files: redirecting the status file "
+        "no longer isolates the probe on its own"
     )
+
+    status_file = Path(Settings.WORKFLOW_STATUS_FILE)
     status_file.parent.mkdir(parents=True, exist_ok=True)
-    # Always plant our own: on a runner this path already holds that job's context, whose
-    # `changed_files` are whatever the PR touched, so reusing it makes the arm depend on
-    # them being non-empty. Restore whatever was there.
+    # Always plant our own hostile context: on a runner this path already holds that job's,
+    # whose `changed_files` are whatever the PR touched, so reusing it would make the arm
+    # depend on them being non-empty. Restore whatever was there.
     existing = status_file.read_bytes() if status_file.exists() else None
-    status_file.write_text(payload, encoding="utf-8")
+    status_file.write_text(
+        payload(["tests/queries/0_stateless/00001_select_1.sql"]), encoding="utf-8"
+    )
     try:
         status, rows = _kill_main_in_teardown(tmp_path, rows=3)
     finally:
