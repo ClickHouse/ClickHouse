@@ -222,7 +222,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
-        res = data.type->getDynamicSubcolumnData(subcolumn_name, data, settings.array_level, throw_if_null);
+        return data.type->getDynamicSubcolumnData(subcolumn_name, data, settings.array_level, throw_if_null);
 
     if (!res && throw_if_null)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, data.type->getName());
