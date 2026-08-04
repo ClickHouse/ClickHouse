@@ -44,6 +44,13 @@ class RandomQueryKiller:
     scenarios where the client unexpectedly disconnects (issue #39803).
     """
 
+    # Subprocess caps for one loop iteration: a SELECT to pick a victim, then the kill.
+    _SELECT_TIMEOUT = 5
+    _KILL_QUERY_TIMEOUT = 5
+    _KILL_MUTATION_TIMEOUT = 15
+    # Longest an iteration can run, plus margin, so stop() outlasts one of them.
+    _JOIN_TIMEOUT = _SELECT_TIMEOUT + _KILL_MUTATION_TIMEOUT + 5
+
     def __init__(self, interval: float = 3.0):
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -61,13 +68,16 @@ class RandomQueryKiller:
                 "AND elapsed > 0.1 "
                 "ORDER BY rand() LIMIT 1\" 2>/dev/null",
                 shell=True,
-                timeout=5,
+                timeout=self._SELECT_TIMEOUT,
             )
             # Strip only the row delimiter: a query_id may legitimately start or end with
             # a space, and TSV escapes the separators, so a raw newline is always the
             # delimiter rather than part of the value.
             query_id = result.decode("utf-8").removesuffix("\n")
             if query_id:
+                # Shutdown may have been requested while the SELECT above was running.
+                if self._stop_event.is_set():
+                    return
                 logging.info("Killing random query: %s", query_id)
                 # A query_id is arbitrary text (tests pass --query_id), so pass it as a query
                 # parameter instead of interpolating it: parameters are read with
@@ -83,7 +93,7 @@ class RandomQueryKiller:
                         "KILL QUERY WHERE query_id = {query_id:String} ASYNC",
                     ],
                     stderr=subprocess.DEVNULL,
-                    timeout=5,
+                    timeout=self._KILL_QUERY_TIMEOUT,
                 )
         except Exception as e:
             # Errors are expected (server busy, no queries, etc.)
@@ -122,13 +132,16 @@ class RandomQueryKiller:
                 "WHERE NOT is_done AND NOT is_killed "
                 "ORDER BY rand() LIMIT 1\" 2>/dev/null",
                 shell=True,
-                timeout=5,
+                timeout=self._SELECT_TIMEOUT,
             )
             # Strip only the row delimiter, so a name that starts or ends with a space
             # survives; TSV escapes the separators, so a raw newline is the delimiter.
             line = result.decode("utf-8").removesuffix("\n")
             if line:
                 mutation_id, db, table = line.split("\t")
+                # Shutdown may have been requested while the SELECT above was running.
+                if self._stop_event.is_set():
+                    return
                 logging.info("Killing random mutation: %s on %s.%s", mutation_id, db, table)
                 # Names are arbitrary text, so pass them as query parameters instead of
                 # interpolating: parameters are read with deserializeTextEscaped, the exact
@@ -153,7 +166,7 @@ class RandomQueryKiller:
                         "AND table = {table:String} AND mutation_id = {mutation_id:String}",
                     ],
                     stderr=subprocess.DEVNULL,
-                    timeout=15,
+                    timeout=self._KILL_MUTATION_TIMEOUT,
                 )
         except Exception as e:
             # Errors are expected (server busy, no mutations, table dropped meanwhile, etc.)
@@ -187,7 +200,15 @@ class RandomQueryKiller:
         if self._thread is None:
             return
         self._stop_event.set()
-        self._thread.join(timeout=10)
+        # Outlast one full in-flight iteration: the stop flag is only checked between the
+        # SELECT and the kill, so a request arriving just after that check still has to
+        # wait out the kill client call. The caller goes on to the hung check and
+        # DROP DATABASE, which must not race a killer that is still running.
+        self._thread.join(timeout=self._JOIN_TIMEOUT)
+        if self._thread.is_alive():
+            # Keep the handle so a later start() cannot spawn a second killer.
+            logging.error("Random query/client/mutation killer did not stop in time")
+            return
         self._thread = None
 
 
