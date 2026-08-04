@@ -764,6 +764,10 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                 || mutations_snapshot->hasPatchParts()
                 || mutations_snapshot->hasLightweightDeletedMask()))
                 all_min_max = false;
+
+            /// Masking policies rewrite values at read time; raw statistics must not bypass them.
+            if (all_min_max && reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
+                all_min_max = false;
         }
 
         if (all_min_max)
