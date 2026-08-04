@@ -1841,7 +1841,6 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         if (!query_info.isStream() && merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
-    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
     else if (!parts)
     {
         if (!query_info.isStream())

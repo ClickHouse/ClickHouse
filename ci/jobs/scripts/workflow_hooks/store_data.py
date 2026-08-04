@@ -1,4 +1,5 @@
 import copy
+import json
 import re
 
 from ci.defs.job_configs import JobConfigs
@@ -241,22 +242,47 @@ if __name__ == "__main__":
                     "could not resolve the PR number for the settings-history diff"
                 )
             # `.patch` is the unified diff for just this file (hunks only, no file header).
-            patch = Shell.get_output(
+            # `.contents_url` from the same entry points at the file at the very commit the
+            # patch was computed against, so both are read from one revision even if the PR
+            # is updated in between.
+            file_entry = Shell.get_output(
                 f"gh api repos/{info.repo_name}/pulls/{pr_number}/files --paginate "
-                f"--jq '.[] | select(.filename == \"{settings_history_file}\") | .patch'",
+                f"--jq '.[] | select(.filename == \"{settings_history_file}\") "
+                "| {patch, contents_url}'",
                 verbose=True,
             )
-            if patch.strip() in ("", "null"):
+            if not file_entry.strip():
+                raise RuntimeError(
+                    f"no diff entry returned for changed file {settings_history_file}"
+                )
+            file_entry = json.loads(file_entry)
+            patch = file_entry["patch"] or ""
+            if not patch.strip():
                 # The file is in changed_files but no usable patch came back. GitHub omits the
-                # per-file patch for very large diffs; the `.patch` field is then null, which
-                # `jq -r` prints as the literal string "null". We cannot determine the changed
-                # settings, so fail closed instead of assuming there is nothing to check.
+                # per-file patch for very large diffs; the `.patch` field is then null. We
+                # cannot determine the changed settings, so fail closed instead of assuming
+                # there is nothing to check.
                 raise RuntimeError(
                     f"no patch returned for changed file {settings_history_file} "
                     "(GitHub omits the patch for very large diffs)"
                 )
-            with open(settings_history_file, "r", encoding="utf-8", errors="ignore") as f:
-                file_lines = f.read().splitlines()
+            # The patch's new-file line numbers refer to the file as it is at the PR HEAD,
+            # but the CI checkout is the PR merged with the base branch, whose line numbers
+            # can differ: when the base branch grew an earlier `addSettingsChanges` block
+            # after the merge base, every line of the checkout below that block is shifted
+            # relative to the head file, and resolving the patch's line numbers against the
+            # checkout attributes the added entries to the wrong block - even the wrong
+            # namespace (a MergeTree entry reported as a Session one), failing the style
+            # check for an entry that sits in the correct block. Fetch the head version of
+            # the file, whose numbering is the one the patch was computed against.
+            contents_url = file_entry["contents_url"]
+            head_file = Shell.get_output(
+                f'gh api -H "Accept: application/vnd.github.raw" "{contents_url}"',
+                verbose=True,
+            )
+            if not head_file.strip():
+                raise RuntimeError(f"no content returned for {contents_url}")
+            file_lines = head_file.splitlines()
             changed_settings = parse_settings_history_changes(patch, file_lines)
             info.store_kv_data("settings_history_changed_settings", changed_settings)
             print(f"Stored settings-history changed settings: {changed_settings}")
