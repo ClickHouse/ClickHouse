@@ -33,7 +33,7 @@ struct AggregateFunctionTimeseriesMadToGridTraits
 
     /// R-7 (inclusive) quantile of a sorted, non-empty range, matching Prometheus's `quantile()` helper
     /// and `quantileExactInclusive`.
-    static Float64 quantileR7Sorted(const std::vector<ValueType> & sorted, Float64 phi)
+    static Float64 quantileR7Sorted(const std::vector<ValueType> & sorted, Float64 phi) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         const size_t n = sorted.size();
         if (n == 1)
@@ -96,7 +96,7 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             if (combined.values.empty())
                 return std::nullopt;
 
-            std::vector<ValueType> sorted_values(combined.values.begin(), combined.values.end());
+            std::vector<ValueType> sorted_values(combined.values.begin(), combined.values.end()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
             /// A NaN sample makes the median (and hence the deviation) undefined, so propagate NaN rather than
             /// silently dropping it (matches Prometheus `mad_over_time`).
@@ -109,7 +109,7 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             std::sort(sorted_values.begin(), sorted_values.end());
             const Float64 median = quantileR7Sorted(sorted_values, 0.5);
 
-            std::vector<ValueType> deviations;
+            std::vector<ValueType> deviations; // STYLE_CHECK_ALLOW_STD_CONTAINERS
             deviations.reserve(sorted_values.size());
             for (const auto v : sorted_values)
                 deviations.push_back(static_cast<ValueType>(std::abs(static_cast<Float64>(v) - median)));

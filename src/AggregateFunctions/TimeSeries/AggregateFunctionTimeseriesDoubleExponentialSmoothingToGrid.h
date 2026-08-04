@@ -88,7 +88,7 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
             if (combined.samples.size() < 2)
                 return std::nullopt;
 
-            std::vector<std::pair<TimestampType, ValueType>> sorted(combined.samples.begin(), combined.samples.end());
+            std::vector<std::pair<TimestampType, ValueType>> sorted(combined.samples.begin(), combined.samples.end()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
             std::sort(sorted.begin(), sorted.end(),
                 [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
