@@ -287,6 +287,29 @@ ATTACH TABLE t_agg_final;
 SELECT 'aggregating final', k, sumMerge(s) FROM t_agg_final FINAL GROUP BY k ORDER BY k;
 DROP TABLE t_agg_final;
 
+-- (w) the optional engine arguments are carried through, not just accepted: `ReplacingMergeTree(ver, del)`
+-- selects the highest-version row and drops a row marked deleted, and `SummingMergeTree(x)` sums only the
+-- listed column. Dropping or reordering an optional argument changes these results.
+CREATE TABLE t_rep_del (k UInt32, v UInt32, ver UInt32, del UInt8) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_rep_del VALUES (1, 100, 1, 0);
+INSERT INTO t_rep_del VALUES (1, 200, 2, 0);
+INSERT INTO t_rep_del VALUES (2, 300, 1, 0);
+INSERT INTO t_rep_del VALUES (2, 400, 2, 1);
+ALTER TABLE t_rep_del MODIFY ENGINE = ReplacingMergeTree(ver, del);
+DETACH TABLE t_rep_del;
+ATTACH TABLE t_rep_del;
+SELECT 'replacing is_deleted', k, v, ver, del FROM t_rep_del FINAL ORDER BY k;
+DROP TABLE t_rep_del;
+
+CREATE TABLE t_sum_explicit (k UInt32, x UInt64, y UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_sum_explicit VALUES (1, 10, 7);
+INSERT INTO t_sum_explicit VALUES (1, 20, 9);
+ALTER TABLE t_sum_explicit MODIFY ENGINE = SummingMergeTree(x);
+DETACH TABLE t_sum_explicit;
+ATTACH TABLE t_sum_explicit;
+SELECT 'summing explicit', k, x, y FROM t_sum_explicit FINAL ORDER BY k;
+DROP TABLE t_sum_explicit;
+
 -- (s) the engine clause survives a round trip through the `clickhouse_json` AST dialect.
 SET allow_experimental_json_ast_dialect = 1;
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = ReplacingMergeTree'));
