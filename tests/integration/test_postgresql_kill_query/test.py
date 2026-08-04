@@ -149,6 +149,200 @@ def wait_for_proxy_listener_closed(host, port):
     raise AssertionError("PostgreSQL proxy listener is still accepting connections")
 
 
+class BeginStallingProxy:
+    """Forwards the PostgreSQL wire protocol, but withholds a `BEGIN READ ONLY` from the
+    server until release() is called.
+
+    `pqxx::ReadTransaction`'s constructor issues that statement, so stalling it pins the
+    reading source inside the transaction constructor: `onStart` has not published `tx` yet,
+    which is exactly the window a cancel has to arrive in to be lost.
+
+    `skip` exists because the source's transaction is not the only one on the wire. Reading
+    through `postgresql()` without an explicit column list first fetches the table structure,
+    which opens its own read transaction. Stalling that earlier one pins the query in
+    analysis instead, where it is killed before a pipeline exists and the source never runs.
+    """
+
+    BEGIN = b"BEGIN READ ONLY"
+
+    def __init__(self, skip=0):
+        self._skip = skip
+        self._seen = 0
+        self._seen_lock = threading.Lock()
+        self._release = threading.Event()
+        self._stalled = threading.Event()
+        self._sock = None
+        self._threads = []
+        self._stop = False
+
+    def _should_stall(self):
+        # Connections are pumped by independent threads, so the counter is shared state.
+        with self._seen_lock:
+            self._seen += 1
+            return self._seen > self._skip
+
+    def _pump(self, source, destination, is_client_to_server):
+        stalled_once = False
+        while not self._stop:
+            try:
+                data = source.recv(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not data:
+                break
+
+            if is_client_to_server and not stalled_once and self.BEGIN in data:
+                stalled_once = True
+                if self._should_stall():
+                    self._stalled.set()
+                    # Hold the statement back. The bounded wait keeps a failure surfacing as
+                    # an assertion in the test body rather than as a hung worker.
+                    self._release.wait(timeout=60)
+
+            try:
+                destination.sendall(data)
+            except OSError:
+                break
+
+        for s in (source, destination):
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    def _serve(self):
+        while not self._stop:
+            try:
+                downstream, _ = self._sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                upstream.connect(self._address)
+            except OSError:
+                downstream.close()
+                continue
+
+            downstream.settimeout(1)
+            upstream.settimeout(1)
+            for args in ((downstream, upstream, True), (upstream, downstream, False)):
+                t = threading.Thread(target=self._pump, args=args, daemon=True)
+                self._threads.append(t)
+                t.start()
+
+    def start(self, address):
+        self._address = address
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("", 0))
+        self._sock.listen()
+        self._sock.settimeout(1)
+        self._runner = threading.Thread(target=self._serve, daemon=True)
+        self._runner.start()
+        return self._sock.getsockname()[1]
+
+    def wait_until_stalled(self, timeout=60):
+        if not self._stalled.wait(timeout=timeout):
+            raise AssertionError("proxy never saw BEGIN READ ONLY")
+
+    def release(self):
+        self._release.set()
+
+    def stop(self):
+        self._stop = True
+        self._release.set()
+        if self._sock:
+            self._sock.close()
+        for t in self._threads:
+            t.join(timeout=5)
+
+
+def test_kill_query_while_transaction_is_starting(started_cluster, setup_infinite_query):
+    """A cancel arriving while the transaction is still being constructed must not be lost.
+
+    In that window `onStart` has not published `tx`, so `onCancel` cannot cancel anything --
+    it only consumes the one-shot `is_completed` flag. Without a recheck after publication,
+    `onStart` then proceeds into the blocking COPY and the cancellation is dropped, so the
+    query keeps running until PostgreSQL finishes it on its own.
+    """
+    _, _ = setup_infinite_query
+    proxy = BeginStallingProxy()
+    port = proxy.start((started_cluster.postgres_ip, started_cluster.postgres_port))
+    proxy_host = socket.gethostbyname(socket.gethostname())
+    query_id = str(uuid.uuid4())
+    query_errors = []
+
+    # An engine table with a declared structure, created before the proxy starts stalling, so
+    # that the read is the only thing that opens a transaction (see BeginStallingProxy).
+    node1.query("DROP TABLE IF EXISTS stalled_counter")
+    node1.query(
+        f"""CREATE TABLE stalled_counter (counter Nullable(Int32))
+ENGINE = PostgreSQL(
+    '{proxy_host}:{port}',
+    'postgres_database',
+    'infinite_counter',
+    'postgres',
+    'ClickHouse_PostgreSQL_P@ssw0rd')"""
+    )
+
+    def execute_query():
+        _, error = node1.query_and_get_answer_with_error(
+            "SELECT * FROM stalled_counter",
+            query_id=query_id,
+            timeout=120,
+        )
+        query_errors.append(error)
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    try:
+        # The source is now pinned inside the transaction constructor, before `tx` is published.
+        proxy.wait_until_stalled()
+
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+
+        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+        # Let the cancel be delivered to the source while it is still stalled, so that
+        # `onCancel` runs with `tx` still null and consumes the flag.
+        assert_eq_with_retry(
+            node1,
+            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+    finally:
+        proxy.release()
+
+    # The recheck must abandon the read. Without it the source enters the COPY and the query
+    # runs on against an endless view, so this join times out.
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "cancelled query kept running after the transaction started"
+    assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+        "0",
+        retry_count=60,
+        sleep_time=0.5,
+    )
+    proxy.stop()
+    node1.query("DROP TABLE stalled_counter")
+
+
 def test_kill_query_when_postgresql_cancel_connection_fails(
     started_cluster, setup_sleepy_view
 ):

@@ -99,6 +99,16 @@ void PostgreSQLSource<T>::onStart()
         tx = std::move(new_tx);
     }
 
+    /// A cancel arriving while the transaction was being constructed saw `tx` still null, so it
+    /// consumed `is_completed` and skipped its own teardown. Do that teardown here, otherwise the
+    /// connection is returned to the pool with the transaction left open.
+    if (is_completed.load())
+    {
+        if (connection_holder)
+            connection_holder->setBroken();
+        return;
+    }
+
     LOG_TEST(getLogger("PostgreSQLSource"), "Stream data from database");
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
 }
