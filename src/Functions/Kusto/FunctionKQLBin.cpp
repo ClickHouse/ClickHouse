@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -18,42 +19,51 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 namespace
 {
 
-/// Runs the numeric case as `multiply(floor(divide(x, y)), y)`, or `multiply(intDiv(x, y), y)`
-/// when both operands are integers. Holding the already-built functions keeps the per-block
-/// work down to executing them.
+/// Runs the numeric case as a short, pre-built plan over already-resolved functions: each step
+/// executes one function over earlier slots and appends its result as a new slot. Holding the
+/// already-built functions keeps the per-block work down to executing them.
 class FunctionKQLBinNumeric final : public IFunctionBase
 {
 public:
-    FunctionKQLBinNumeric(FunctionBasePtr quotient_, FunctionBasePtr round_down_, FunctionBasePtr product_, DataTypes argument_types_)
-        : quotient(std::move(quotient_))
-        , round_down(std::move(round_down_))
-        , product(std::move(product_))
-        , argument_types(std::move(argument_types_))
+    /// A slot is one intermediate value: an argument, a constant, or a step's result.
+    struct Slot
+    {
+        DataTypePtr type;
+        /// Set for constant slots only; the column materializes at execution time.
+        std::optional<Field> constant;
+    };
+
+    struct Step
+    {
+        FunctionBasePtr function;
+        std::vector<size_t> arguments;
+        size_t result;
+    };
+
+    FunctionKQLBinNumeric(std::vector<Slot> slots_, std::vector<Step> steps_, DataTypes argument_types_)
+        : slots(std::move(slots_)), steps(std::move(steps_)), argument_types(std::move(argument_types_))
     {
     }
 
     String getName() const override { return "kqlBin"; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
-    const DataTypePtr & getResultType() const override { return product->getResultType(); }
+    const DataTypePtr & getResultType() const override { return slots[steps.back().result].type; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
-        return quotient->isSuitableForShortCircuitArgumentsExecution(arguments);
+        return steps.front().function->isSuitableForShortCircuitArgumentsExecution(arguments);
     }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<Executable>(quotient, round_down, product);
+        return std::make_unique<Executable>(slots, steps);
     }
 
 private:
     class Executable final : public IExecutableFunction
     {
     public:
-        Executable(FunctionBasePtr quotient_, FunctionBasePtr round_down_, FunctionBasePtr product_)
-            : quotient(std::move(quotient_)), round_down(std::move(round_down_)), product(std::move(product_))
-        {
-        }
+        Executable(std::vector<Slot> slots_, std::vector<Step> steps_) : slots(std::move(slots_)), steps(std::move(steps_)) { }
 
         String getName() const override { return "kqlBin"; }
 
@@ -66,34 +76,36 @@ private:
         ColumnPtr
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
-            ColumnWithTypeAndName rounded{
-                quotient->execute(arguments, quotient->getResultType(), input_rows_count, /*dry_run=*/false),
-                quotient->getResultType(),
-                "rounded"};
-
-            /// Absent when the operands are integers: `intDiv` has already rounded down.
-            if (round_down)
+            std::vector<ColumnWithTypeAndName> columns(slots.size());
+            for (size_t i = 0; i < slots.size(); ++i)
             {
-                ColumnsWithTypeAndName round_arguments{rounded};
-                rounded = ColumnWithTypeAndName{
-                    round_down->execute(round_arguments, round_down->getResultType(), input_rows_count, /*dry_run=*/false),
-                    round_down->getResultType(),
-                    "rounded"};
+                if (i < arguments.size())
+                    columns[i] = arguments[i];
+                else if (slots[i].constant)
+                    columns[i]
+                        = ColumnWithTypeAndName{slots[i].type->createColumnConst(input_rows_count, *slots[i].constant), slots[i].type, ""};
             }
 
-            ColumnsWithTypeAndName product_arguments{rounded, arguments[1]};
-            return product->execute(product_arguments, result_type, input_rows_count, /*dry_run=*/false);
+            for (const auto & step : steps)
+            {
+                ColumnsWithTypeAndName step_arguments;
+                for (size_t argument : step.arguments)
+                    step_arguments.push_back(columns[argument]);
+                const DataTypePtr & step_type = &step == &steps.back() ? result_type : slots[step.result].type;
+                columns[step.result] = ColumnWithTypeAndName{
+                    step.function->execute(step_arguments, step_type, input_rows_count, /*dry_run=*/false), step_type, ""};
+            }
+
+            return columns[steps.back().result].column;
         }
 
     private:
-        FunctionBasePtr quotient;
-        FunctionBasePtr round_down;
-        FunctionBasePtr product;
+        std::vector<Slot> slots;
+        std::vector<Step> steps;
     };
 
-    FunctionBasePtr quotient;
-    FunctionBasePtr round_down;
-    FunctionBasePtr product;
+    std::vector<Slot> slots;
+    std::vector<Step> steps;
     DataTypes argument_types;
 };
 
@@ -178,27 +190,61 @@ private:
 
         /// Numbers: `floor(value / roundTo) * roundTo`. Integers divide exactly, so they skip
         /// the detour through floating point.
-        const bool both_integral = isInteger(value_type) && isInteger(bin_type);
-        auto quotient = FunctionFactory::instance().get(both_integral ? "intDiv" : "divide", getContext())->build(arguments);
+        std::vector<FunctionKQLBinNumeric::Slot> slots{{arguments[0].type, {}}, {arguments[1].type, {}}};
+        std::vector<FunctionKQLBinNumeric::Step> steps;
 
-        FunctionBasePtr round_down;
-        DataTypePtr rounded_type = quotient->getResultType();
-        if (!both_integral)
+        const auto add_step = [&](const String & function_name, std::vector<size_t> step_arguments)
         {
-            ColumnsWithTypeAndName round_arguments{ColumnWithTypeAndName{nullptr, rounded_type, "rounded"}};
-            round_down = FunctionFactory::instance().get("floor", getContext())->build(round_arguments);
-            rounded_type = round_down->getResultType();
-        }
+            ColumnsWithTypeAndName built_over;
+            for (size_t argument : step_arguments)
+                built_over.push_back(ColumnWithTypeAndName{nullptr, slots[argument].type, ""});
+            auto function = FunctionFactory::instance().get(function_name, getContext())->build(built_over);
+            slots.push_back({function->getResultType(), {}});
+            steps.push_back({std::move(function), std::move(step_arguments), slots.size() - 1});
+            return slots.size() - 1;
+        };
+        const auto add_constant = [&](const DataTypePtr & type, Field constant)
+        {
+            slots.push_back({type, std::move(constant)});
+            return slots.size() - 1;
+        };
 
-        ColumnsWithTypeAndName product_arguments{ColumnWithTypeAndName{nullptr, rounded_type, "rounded"}, arguments[1]};
-        auto product = FunctionFactory::instance().get("multiply", getContext())->build(product_arguments);
+        constexpr size_t value_slot = 0;
+        constexpr size_t bin_slot = 1;
+        if (WhichDataType(value_type).isUInt() && WhichDataType(bin_type).isUInt())
+        {
+            /// Unsigned operands never need the floor adjustment below, and must not take it:
+            /// its `minus` would flip the result to a signed type.
+            const size_t quotient = add_step("intDiv", {value_slot, bin_slot});
+            add_step("multiply", {quotient, bin_slot});
+        }
+        else if (isInteger(value_type) && isInteger(bin_type))
+        {
+            /// `intDiv` truncates toward zero, so when the division is inexact and the operands'
+            /// signs differ, the truncated quotient sits one bin above the floor.
+            const size_t zero = add_constant(std::make_shared<DataTypeUInt8>(), Field(UInt64(0)));
+            const size_t quotient = add_step("intDiv", {value_slot, bin_slot});
+            const size_t remainder = add_step("modulo", {value_slot, bin_slot});
+            const size_t inexact = add_step("notEquals", {remainder, zero});
+            const size_t value_negative = add_step("less", {value_slot, zero});
+            const size_t bin_negative = add_step("less", {bin_slot, zero});
+            const size_t signs_differ = add_step("notEquals", {value_negative, bin_negative});
+            const size_t adjust = add_step("and", {inexact, signs_differ});
+            const size_t rounded = add_step("minus", {quotient, adjust});
+            add_step("multiply", {rounded, bin_slot});
+        }
+        else
+        {
+            const size_t quotient = add_step("divide", {value_slot, bin_slot});
+            const size_t rounded = add_step("floor", {quotient});
+            add_step("multiply", {rounded, bin_slot});
+        }
 
         DataTypes argument_types;
         for (const auto & argument : arguments)
             argument_types.push_back(argument.type);
 
-        return std::make_shared<FunctionKQLBinNumeric>(
-            std::move(quotient), std::move(round_down), std::move(product), std::move(argument_types));
+        return std::make_shared<FunctionKQLBinNumeric>(std::move(slots), std::move(steps), std::move(argument_types));
     }
 };
 
