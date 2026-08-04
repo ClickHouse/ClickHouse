@@ -10,7 +10,7 @@ integration:
    - category: 'clickpipes'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/clickpipes/_changing_tls_settings.mdx';
@@ -67,7 +67,7 @@ Make sure you're logged in to your ClickHouse Cloud account. If you don't have a
 4. Fill in the connection details for your source MySQL database which you configured in the prerequisites step.
 
 <Info>
-   Before you start adding your connection details make sure that you have whitelisted ClickPipes IP addresses in your firewall rules. On the following page you can find a [list of ClickPipes IP addresses](/integrations/clickpipes/home#list-of-static-ips).
+   Before you start adding your connection details make sure that you have whitelisted ClickPipes IP addresses in your firewall rules. On the following page you can find a [list of ClickPipes IP addresses](/integrations/clickpipes/networking/static-ips).
    For more information refer to the source MySQL setup guides linked at [the top of this page](#prerequisites).
 </Info>
 
@@ -90,7 +90,7 @@ You can specify SSH tunneling details if your source MySQL database isn't public
 4. Click on "Verify Connection" to verify the connection.
 
 <Note>
-Make sure to whitelist [ClickPipes IP addresses](/integrations/clickpipes/home#list-of-static-ips) in your firewall rules for the SSH bastion host so that ClickPipes can establish the SSH tunnel.
+Make sure to whitelist [ClickPipes IP addresses](/integrations/clickpipes/networking/static-ips) in your firewall rules for the SSH bastion host so that ClickPipes can establish the SSH tunnel.
 </Note>
 
 Once the connection details are filled in, click `Next`.
@@ -104,6 +104,7 @@ You can configure the advanced settings if needed. A brief description of each s
 - **Pull batch size**: The number of rows to fetch in a single batch. This is a best effort setting and may not be respected in all cases.
 - **Snapshot number of rows per partition**: This is the number of rows that will be fetched in each partition during the initial snapshot. This is useful when you have a large number of rows in your tables and you want to control the number of rows fetched in each partition.
 - **Snapshot number of tables in parallel**: This is the number of tables that will be fetched in parallel during the initial snapshot. This is useful when you have a large number of tables and you want to control the number of tables fetched in parallel.
+- **Server ID**: Optional parameter to set the server ID for the MySQL binlog replication. If not set, ClickPipes will generate a random server ID that might change over the ClickPipe lifecycle. Use it to deterministically identify your ClickPipe at the source MySQL server side.
 
 ### Configure the tables {#configure-the-tables}
 

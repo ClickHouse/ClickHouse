@@ -70,7 +70,7 @@ SHOW max_replication_slots; -- 10 である必要があります
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` パブリケーションには、指定したテーブルから生成される変更イベント一式が含まれ、後でレプリケーションストリームを取り込むために使用されます。
+`clickpipes` パブリケーションは、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケーションする意図がある場合を除き、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
 <div id="safe-list-clickpipes-ips">
   ## ClickPipes の IP を許可リストに登録

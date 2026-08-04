@@ -24,6 +24,7 @@ class PageCache;
 class IAsynchronousReader;
 class IBackup;
 class LongConnectionLimit;
+class EncryptionHeaderCache;
 struct AsyncReadCounters;
 
 using FileCachePtr = std::shared_ptr<FileCache>;
@@ -166,6 +167,11 @@ public:
     /// (the executor takes the stateless one-shot path when it is unset).
     void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
 
+    /// Let the executor cache this file's encryption headers in `cache`. Set only for encrypted disks
+    /// on random-object-key backends (see `DiskEncrypted::prepareRead`); deterministic-path backends
+    /// and url / external reads leave it null, so a reused key can't serve a stale header.
+    void needEncryptionHeaderCache(std::shared_ptr<EncryptionHeaderCache> cache) { encryption_header_cache = std::move(cache); }
+
     /// -- Build the final ReadBuffer chain --
     /// Uses the ReadSettings stored in the source stage.
     std::unique_ptr<ReadBufferFromFileBase> build() const;
@@ -234,6 +240,8 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
+    /// Global encryption-header cache for the executor; null unless a random-object-key disk set it.
+    std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
 
     LoggerPtr log = getLogger("ReadPipeline");
 

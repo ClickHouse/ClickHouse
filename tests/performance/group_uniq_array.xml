@@ -1,0 +1,12 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT groupUniqArray(number % 64) FROM numbers(50000000) FORMAT Null</query>
+    <query>SELECT groupUniqArray(number % 4096) FROM numbers(30000000) FORMAT Null</query>
+    <query>SELECT groupUniqArray(number % 262144) FROM numbers(30000000) FORMAT Null</query>
+    <query>SELECT groupUniqArray(toUInt8(number % 200)) FROM numbers(50000000) FORMAT Null</query>
+    <query>SELECT groupUniqArray(toFloat64(number % 64)) FROM numbers(50000000) FORMAT Null</query>
+    <query>SELECT groupUniqArray(toString(number % 4096)) FROM numbers(5000000) FORMAT Null</query>
+</test>

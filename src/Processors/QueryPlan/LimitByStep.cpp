@@ -205,6 +205,11 @@ void LimitByStep::applyOrder(const SortDescription & sort_description)
     sorted_columns_descr = sort_description;
 }
 
+QueryPlanStepPtr LimitByStep::clone() const
+{
+    return std::make_unique<LimitByStep>(*this);
+}
+
 void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry)
 {
