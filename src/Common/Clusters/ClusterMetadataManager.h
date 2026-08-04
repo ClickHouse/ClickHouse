@@ -177,7 +177,6 @@ private:
         const std::vector<String> & endpoint_names,
         UInt32 weight,
         bool internal_replication) const;
-    void resolveEndpointsForShard(ShardCatalogDefinition & shard, const ClusterMetadataStorage::Snapshot & source_snapshot) const;
     static void resolveShardEndpoints(
         ShardCatalogDefinition & shard,
         const std::unordered_map<String, EndpointCatalogDefinition> & endpoints);

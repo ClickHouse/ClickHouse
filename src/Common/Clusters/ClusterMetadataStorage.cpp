@@ -421,21 +421,6 @@ void ClusterMetadataStorage::validateShardsExist(const std::vector<String> & sha
     }
 }
 
-String ClusterMetadataStorage::getMetadataRoot() const
-{
-    return metadataRoot();
-}
-
-String ClusterMetadataStorage::encodePayloadForKeeper(const String & data) const
-{
-    return encodeData(data);
-}
-
-String ClusterMetadataStorage::decodePayloadFromKeeper(const String & data) const
-{
-    return decodeData(data);
-}
-
 String ClusterMetadataStorage::metadataRoot() const
 {
     return joinPath(replica_group_root, "metadata");

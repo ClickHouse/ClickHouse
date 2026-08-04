@@ -69,9 +69,9 @@ public:
     void validateShardsExist(const std::vector<String> & shard_names) const;
 
     const String & getReplicaGroupRoot() const { return replica_group_root; }
-    String getMetadataRoot() const;
-    String encodePayloadForKeeper(const String & data) const;
-    String decodePayloadFromKeeper(const String & data) const;
+    /// Encode/decode catalog payloads stored in Keeper (optional encryption).
+    String encodeData(const String & data) const;
+    String decodeData(const String & data) const;
 
 private:
     zkutil::ZooKeeperPtr zookeeper;
@@ -103,9 +103,6 @@ private:
     ShardCatalogDefinition readShard(const String & name, Coordination::Stat * stat) const;
     ClusterCatalogDefinition readCluster(const String & name, Coordination::Stat * stat) const;
     void rebuildReferenceIndex() const;
-
-    String encodeData(const String & data) const;
-    String decodeData(const String & data) const;
 };
 
 using ClusterMetadataStoragePtr = std::shared_ptr<ClusterMetadataStorage>;

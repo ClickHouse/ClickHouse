@@ -282,7 +282,7 @@ ClusterMetadataDDLWorker::EnqueuedMutation ClusterMetadataDDLWorker::enqueueMuta
         appendMutationOps(ops, prepared_mutation.metadata_mutation);
         storage->appendWriteSnapshotDigestOps(ops, prepared_mutation.digest);
         ops.emplace_back(zkutil::makeCreateRequest(entry_path, "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(joinPath(entry_path, "entry"), storage->encodePayloadForKeeper(mutation.serialize()), zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(joinPath(entry_path, "entry"), storage->encodeData(mutation.serialize()), zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(joinPath(entry_path, "finished"), "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(joinPath(entry_path, "active"), "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeSetRequest(replica_digest_path, prepared_mutation.digest, -1));
@@ -581,7 +581,7 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
                     throw zkutil::KeeperException::fromPath(entry_data_responses[response_index].error, entry_data_paths[response_index]);
 
                 auto mutation = ClusterMetadataMutation::deserialize(
-                    storage->decodePayloadFromKeeper(entry_data_responses[response_index].data));
+                    storage->decodeData(entry_data_responses[response_index].data));
                 entries[entries_to_read[response_index].second].mutation = std::move(mutation);
             }
         }

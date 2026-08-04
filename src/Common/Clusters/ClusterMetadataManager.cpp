@@ -558,7 +558,7 @@ void ClusterMetadataManager::throwIfDisabled() const
 {
     throw Exception(
         ErrorCodes::INVALID_CONFIG_PARAMETER,
-        "SQL-managed cluster metadata requires `{}` to be configured in the server config",
+        "SQL cluster catalog is not initialized; configure `{}` in the server config",
         CONFIG_PREFIX);
 }
 
@@ -830,7 +830,7 @@ void ClusterMetadataManager::normalizeSnapshot(ClusterMetadataStorage::Snapshot 
     {
         if (shard.name.empty())
             shard.name = shard_name;
-        resolveEndpointsForShard(shard, target);
+        resolveShardEndpoints(shard, target.endpoints);
     }
 }
 
@@ -930,7 +930,7 @@ void ClusterMetadataManager::applyMutationToSnapshot(
             {
                 auto & shard = shard_entry.second;
                 if (std::find(shard.endpoint_names.begin(), shard.endpoint_names.end(), mutation.name) != shard.endpoint_names.end())
-                    resolveEndpointsForShard(shard, target);
+                    resolveShardEndpoints(shard, target.endpoints);
             }
             break;
         }
@@ -943,7 +943,7 @@ void ClusterMetadataManager::applyMutationToSnapshot(
             auto shard = ShardCatalogDefinition::deserialize(mutation.definition_data);
             if (shard.name.empty())
                 shard.name = mutation.name;
-            resolveEndpointsForShard(shard, target);
+            resolveShardEndpoints(shard, target.endpoints);
             target.shards[mutation.name] = std::move(shard);
             break;
         }
@@ -973,7 +973,7 @@ void ClusterMetadataManager::applyMutationToSnapshot(
             {
                 auto & shard = shard_entry.second;
                 if (std::find(shard.endpoint_names.begin(), shard.endpoint_names.end(), mutation.name) != shard.endpoint_names.end())
-                    resolveEndpointsForShard(shard, target);
+                    resolveShardEndpoints(shard, target.endpoints);
             }
             break;
         }
@@ -1008,7 +1008,7 @@ void ClusterMetadataManager::applyMutationToSnapshot(
                     throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Endpoint `{}` is already listed on SQL SHARD `{}`", endpoint_name, mutation.name);
                 shard.endpoint_names.push_back(endpoint_name);
             }
-            resolveEndpointsForShard(shard, target);
+            resolveShardEndpoints(shard, target.endpoints);
             break;
         }
         case ClusterMetadataMutation::Type::DropShardReplicas:
@@ -1031,7 +1031,7 @@ void ClusterMetadataManager::applyMutationToSnapshot(
                     throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cannot DROP the last replica from SQL SHARD `{}`", mutation.name);
                 endpoint_names.erase(endpoint_it);
             }
-            resolveEndpointsForShard(shard_it->second, target);
+            resolveShardEndpoints(shard_it->second, target.endpoints);
             break;
         }
         case ClusterMetadataMutation::Type::ReplaceShardReplicas:
@@ -1080,7 +1080,7 @@ void ClusterMetadataManager::applyMutationToSnapshot(
             }
 
             applyShardPropertiesPatch(shard, properties);
-            resolveEndpointsForShard(shard, target);
+            resolveShardEndpoints(shard, target.endpoints);
             break;
         }
         case ClusterMetadataMutation::Type::AddClusterMembers:
@@ -1468,13 +1468,6 @@ void ClusterMetadataManager::resolveShardEndpoints(
             throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cluster metadata endpoint `{}` does not exist", endpoint_name);
         shard.endpoints.push_back(it->second);
     }
-}
-
-void ClusterMetadataManager::resolveEndpointsForShard(
-    ShardCatalogDefinition & shard,
-    const ClusterMetadataStorage::Snapshot & source_snapshot) const
-{
-    resolveShardEndpoints(shard, source_snapshot.endpoints);
 }
 
 ShardCatalogDefinition ClusterMetadataManager::buildShardDefinition(
