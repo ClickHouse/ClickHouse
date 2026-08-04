@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel-replicas
+# Tags: no-fasttest
 # A row policy scoped to a role must be honored on the parallel-replica read nodes: the initiator's
 # ACTIVE role (SET ROLE) has to be propagated so the remote replicas evaluate the policy as that
 # principal, not as their fallback/default identity. This is only possible over an interserver-secret

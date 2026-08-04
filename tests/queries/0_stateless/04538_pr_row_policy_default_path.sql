@@ -34,7 +34,7 @@ SELECT ProfileEvents['ParallelReplicasUsedCount'] > 0 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND log_comment = '04538_local_plan_1' AND is_initial_query = 1
     AND current_database = currentDatabase()
-ORDER BY event_time DESC LIMIT 1;
+ORDER BY event_time DESC LIMIT 1 SETTINGS enable_parallel_replicas = 0;
 
 SELECT ProfileEvents['ParallelReplicasUsedCount'] > 0 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'
