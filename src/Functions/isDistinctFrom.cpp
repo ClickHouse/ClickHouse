@@ -80,14 +80,14 @@ ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals, true /* is null safe cm
     const ColumnWithTypeAndName & column_type_name1,
     size_t input_rows_count) const
 {
-    /// executeArrayLexicographicEqualityImpl expects the resolver to return 1 for equal element
-    /// pairs, so use the null-safe equality probe (`FunctionIsNotDistinctFrom`) for inversion
+    /// `executeArrayLexicographicEqualityImpl` expects the resolver to return 1 for equal element
+    /// pairs, so use the null-safe equality probe (`FunctionIsNotDistinctFrom`); the impl inverts
+    /// the per-row result for `NotEqualsOp` instantiations.
     FunctionOverloadResolverPtr equals_resolver
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
 
     return executeArrayLexicographicEqualityImpl(
         equals_resolver,
-        /*invert=*/true,
         column_type_name0,
         column_type_name1,
         input_rows_count);

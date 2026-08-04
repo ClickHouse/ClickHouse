@@ -74,8 +74,6 @@ ColumnPtr FunctionComparison<GreaterOp, NameGreater>::executeArrayLexicographic(
     return executeArrayLexicographicLessGreaterImpl(
         equals_resolver,
         order_resolver,
-        /*order_is_less=*/false,
-        /*or_equals=*/false,
         column_type_name0,
         column_type_name1,
         input_rows_count);

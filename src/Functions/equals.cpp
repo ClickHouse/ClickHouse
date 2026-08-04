@@ -65,7 +65,6 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeArrayLexicographic(
 
     return executeArrayLexicographicEqualityImpl(
         equals_resolver,
-        /*invert=*/false,
         column_type_name0,
         column_type_name1,
         input_rows_count);

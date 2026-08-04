@@ -1469,14 +1469,16 @@ private:
     }
 
     /// Lexicographic equality of two arrays: they are equal iff their lengths match and all aligned elements are equal
-    /// (a NULL element is equal only to another NULL). `invert` turns the result into inequality for `!=` and `isDistinctFrom`.
+    /// (a NULL element is equal only to another NULL). For `!=` and `isDistinctFrom` (instantiated with `NotEqualsOp`)
+    /// the result is inverted into inequality.
     ColumnPtr executeArrayLexicographicEqualityImpl(
         const FunctionOverloadResolverPtr & equals_resolver,
-        bool invert,
         const ColumnWithTypeAndName & column_type_name0,
         const ColumnWithTypeAndName & column_type_name1,
         size_t input_rows_count) const
     {
+        static constexpr bool invert = IsOperation<Op>::not_equals;
+
         GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
 
         ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
@@ -1521,12 +1523,15 @@ private:
     ColumnPtr executeArrayLexicographicLessGreaterImpl(
         const FunctionOverloadResolverPtr & equals_resolver,
         const FunctionOverloadResolverPtr & order_resolver,
-        bool order_is_less, /// direction for NULL ordering and the length tie-break
-        bool or_equals,     /// true for `<=` and `>=`
         const ColumnWithTypeAndName & column_type_name0,
         const ColumnWithTypeAndName & column_type_name1,
         size_t input_rows_count) const
     {
+        /// Direction for NULL ordering and the length tie-break.
+        static constexpr bool order_is_less = IsOperation<Op>::less || IsOperation<Op>::less_or_equals;
+        /// True for `<=` and `>=`.
+        static constexpr bool or_equals = IsOperation<Op>::less_or_equals || IsOperation<Op>::greater_or_equals;
+
         GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
 
         ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
