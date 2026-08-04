@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/ExecutableSettings.h>
 #include <Common/Exception.h>
 
@@ -80,5 +81,10 @@ void ExecutableSettings::applyChanges(const SettingsChanges & changes)
 bool ExecutableSettings::hasBuiltin(std::string_view name)
 {
     return ExecutableSettingsImpl::hasBuiltin(name);
+}
+
+void ExecutableSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<ExecutableSettingsImpl>(columns);
 }
 }
