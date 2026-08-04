@@ -73,14 +73,6 @@ Ignore case when matching Arrow columns with CH columns.
 
 Skip columns with unsupported types while schema inference for format Arrow
 
-## input_format_arrow_use_native_reader {#input_format_arrow_use_native_reader}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the Apache Arrow library."}]}]}/>
-
-Use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
-
 ## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -858,6 +850,14 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
 
 Ignore case when matching Parquet columns with CH columns.
 
+## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
+
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1048576"},{"label": "New setting enabling Parquet row-group pruning based on dictionary page contents (reader v3). The value is the maximum dictionary page size in bytes for which the optimization applies; 0 (the previous behavior) disables it."}]}]}/>
+
+When reading Parquet files (with reader v3), skip whole row groups based on the WHERE/PREWHERE expressions and the dictionary page contents, when all data pages of a column chunk are dictionary-encoded. The value is the maximum dictionary page size (in bytes) for which this optimization is applied; set to 0 to disable. This takes precedence over the bloom filter when both are available.
+
 ## input_format_parquet_enable_json_parsing {#input_format_parquet_enable_json_parsing}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -983,6 +983,31 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Skip fields with unsupported types while schema inference for format Protobuf
+
+## input_format_read_datetime_number_as_raw_value {#input_format_read_datetime_number_as_raw_value}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "From 26.8, an unquoted number for a `DateTime`\/`DateTime64` column in the `JSON` and `Values`\/`Quoted` paths (and in `JSONExtract` and typed `JSON`) is a Unix timestamp in seconds, consistent with the `Values` format, `CAST` and `toDateTime64`. Set this to `true` (or `SET compatibility = '26.7'`) to restore the pre-26.8 behavior, where a bare unquoted integer fed to a `DateTime64` column was read as the raw scaled value (ticks). The tab-separated, CSV and other escaped\/whole-text formats are not governed by this setting."}]}]}/>
+
+Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
+`DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
+
+Disabled by default: an unquoted number is a Unix timestamp in seconds (with optional sub-second precision),
+consistent with the `Values` format, `CAST` and `toDateTime64`. Enable it (or `SET compatibility = '26.7'`) to
+restore the behavior of versions up to and including 26.7, where a bare unquoted integer fed to a `DateTime64`
+column was interpreted as the raw scaled value (ticks). The legacy path accepts only such a bare integer:
+with the setting enabled, a number with a fractional or exponent part is rejected by the row input paths
+(as before 26.8), while in `JSONExtract` and the typed `JSON` type a fractional number is still read as
+seconds for `DateTime64` and rejected for `DateTime` (also as before 26.8). In the `Values` format itself,
+a number the streaming parser rejects then falls back to SQL expression evaluation and is read as seconds,
+both before 26.8 and with this setting enabled — so the `Values` behavior for a fractional number is the
+same in every configuration.
+
+This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths (the `Quoted` path
+covers every format parsing fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and
+`Template`/`CustomSeparated`/`Regexp` configured with `Quoted` field escaping). The tab-separated, CSV and other
+escaped/whole-text formats are unaffected: there a large unquoted `DateTime64` number is still read as ticks.
 
 ## input_format_record_errors_file_path {#input_format_record_errors_file_path}
 
