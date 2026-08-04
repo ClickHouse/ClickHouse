@@ -1295,7 +1295,7 @@ FROM
         String example_result;          /// expected result for the shared example dataset
     };
 
-    const std::vector<TsOfRegistration> ts_of_registrations = {
+    const std::vector<TsOfRegistration> ts_of_registrations = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
         {"timeSeriesTsOfFirstToGrid", "ts_of_first_over_time", "earliest (smallest timestamp) sample", "[NULL,NULL,110,110,110,130,140,190,190]"},
         {"timeSeriesTsOfLastToGrid",  "ts_of_last_over_time",  "latest (largest timestamp) sample",    "[NULL,NULL,120,130,140,140,140,190,210]"},
         {"timeSeriesTsOfMinToGrid",   "ts_of_min_over_time",   "minimum-value sample (latest one on ties)", "[NULL,NULL,120,120,120,130,140,190,200]"},

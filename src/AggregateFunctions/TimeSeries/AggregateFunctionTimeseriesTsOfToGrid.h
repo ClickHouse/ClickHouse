@@ -99,7 +99,7 @@ struct AggregateFunctionTimeseriesTsOfToGridTraits
                 }
 
                 /// Both real: pick the extreme value; on ties keep the latest (largest) timestamp.
-                bool take;
+                bool take = false;
                 if constexpr (kind_ == TimeseriesTsOfKind::Min)
                     take = (other.value < value) || (other.value == value && other.timestamp > timestamp);
                 else
