@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-flaky-check
+# Tags: long, no-fasttest, no-parallel-replicas, no-flaky-check
 # Test for https://github.com/ClickHouse/ClickHouse/issues/113003
 # Skip-index condition building matched a filter column name against JSONAllPaths(...) index
 # columns by enumerating every dot split of the name and formatting a lookup key per split. The
@@ -26,24 +26,27 @@ LONG_SUFFIX=$(printf 'a%.0s' $(seq 1 170))
 $CLICKHOUSE_CLIENT -nm -q "
     SET enable_json_type = 1, allow_suspicious_indices = 1;
 
+    -- index_granularity is pinned on every table: the granule counts asserted below are
+    -- ceil(rows / index_granularity), which the test runner otherwise randomizes.
+
     -- No JSON column at all, so the matcher can never succeed: the reported shape.
     CREATE TABLE plain (s String, INDEX ix s TYPE bloom_filter GRANULARITY 1)
-    ENGINE = MergeTree ORDER BY tuple();
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
     -- index_columns carries a long NON-JSON entry. Bounding the split enumeration by the longest
     -- index column would leave this arm quadratic.
     CREATE TABLE longidx (s String, INDEX ilong concat(s, '${LONG_SUFFIX}') TYPE bloom_filter GRANULARITY 1)
-    ENGINE = MergeTree ORDER BY tuple();
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
     -- A JSONAllPaths index IS present, so an early-out keyed on its absence cannot fire.
     CREATE TABLE withjson (s String, j JSON,
         INDEX ix s TYPE bloom_filter GRANULARITY 1,
         INDEX jx JSONAllPaths(j) TYPE bloom_filter GRANULARITY 1)
-    ENGINE = MergeTree ORDER BY tuple();
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
     -- Token indexes reach the same matcher through a different condition class.
     CREATE TABLE tokens (s String, INDEX ix s TYPE tokenbf_v1(256, 2, 0) GRANULARITY 1)
-    ENGINE = MergeTree ORDER BY tuple();
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
     INSERT INTO plain SELECT 'v' || toString(number % 10) FROM numbers(1000);
     INSERT INTO longidx SELECT 'v' || toString(number % 10) FROM numbers(1000);
@@ -65,7 +68,7 @@ alloc_bytes_for() {
     ALLOC_BYTES=$($CLICKHOUSE_CLIENT -q "
         SELECT ProfileEvents['MemoryAllocatedWithoutCheckBytes']
         FROM system.query_log
-        WHERE query_id = '${query_id}' AND type = 'QueryFinish'")
+        WHERE current_database = currentDatabase() AND query_id = '${query_id}' AND type = 'QueryFinish'")
     [ -n "$ALLOC_BYTES" ] && [ "$ALLOC_BYTES" -gt 0 ]
 }
 
