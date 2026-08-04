@@ -40,7 +40,8 @@ Settings networkCompressionSettings(const Settings & settings)
 
     /// The server re-derives the settings that `compatibility` changed, and a profile may pin them as
     /// read-only, so an explicitly serialized compatibility-derived value would make the helper query fail
-    /// where an ordinary query succeeds. Drop them first, exactly as ordinary queries do.
+    /// where an ordinary query succeeds. Drop them first, exactly as ordinary queries do, to tell an
+    /// explicit override apart from a derived value.
     const Settings * source = &settings;
     Settings settings_without_compat;
     if (settings.hasSettingsChangedByCompatibility())
@@ -51,9 +52,24 @@ Settings networkCompressionSettings(const Settings & settings)
     }
 
     Settings result;
+
+    /// `compatibility` itself is an explicit user setting; forward it so the server applies it to the
+    /// helper query the same way it does to an ordinary query of this session. Setting it re-derives its
+    /// effects inside `result`, so the network settings it changed get their derived values back.
+    if (source->isChanged("compatibility"))
+        result.set("compatibility", source->get("compatibility"));
+
+    /// An explicit override wins over a derived value; `set` also stops tracking the setting as
+    /// compatibility-derived, so it survives the demotion below and is serialized to the server
+    /// (the server cannot re-derive an explicit override).
     for (std::string_view name : compression_setting_names)
         if (source->isChanged(name))
             result.set(name, source->get(name));
+
+    /// The derived values must select the client-side network codec in `Connection::sendQuery`, but they
+    /// must not be serialized as explicit changes. Keep the values, clear the `changed` flags.
+    result.markSettingsChangedByCompatibilityAsUnchanged();
+
     return result;
 }
 

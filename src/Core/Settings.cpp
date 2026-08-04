@@ -8914,6 +8914,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
     void resetSettingsChangedByCompatibility();
+    void markSettingsChangedByCompatibilityAsUnchanged();
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
@@ -9077,6 +9078,14 @@ void SettingsImpl::resetSettingsChangedByCompatibility()
     settings_changed_by_compatibility_setting.clear();
 }
 
+void SettingsImpl::markSettingsChangedByCompatibilityAsUnchanged()
+{
+    for (const auto & setting_name : settings_changed_by_compatibility_setting)
+        markUnchanged(setting_name);
+
+    settings_changed_by_compatibility_setting.clear();
+}
+
 void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 {
     /// First, revert all changes applied by previous compatibility setting
@@ -9205,6 +9214,11 @@ bool Settings::hasSettingsChangedByCompatibility() const
 void Settings::resetSettingsChangedByCompatibility()
 {
     impl->resetSettingsChangedByCompatibility();
+}
+
+void Settings::markSettingsChangedByCompatibilityAsUnchanged()
+{
+    impl->markSettingsChangedByCompatibilityAsUnchanged();
 }
 
 VectorWithMemoryTracking<String> Settings::getHints(const String & name) const

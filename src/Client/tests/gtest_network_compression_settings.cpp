@@ -37,19 +37,34 @@ TEST(NetworkCompressionSettings, EmptyForAnUntouchedSession)
     EXPECT_TRUE(networkCompressionSettings(settings).changes().empty());
 }
 
-TEST(NetworkCompressionSettings, DropsCompatibilityDerivedValues)
+TEST(NetworkCompressionSettings, CompatibilityDerivedValuesActButAreNotSerialized)
 {
     /// `compatibility` older than the release that flipped the network defaults derives
-    /// `network_compression_method` / `network_zstd_compression_level` back to the old values. The server
-    /// derives them on its own, and a profile may pin them as read-only, so they must not be serialized
-    /// explicitly into the helper query — the same rule ordinary queries follow via
-    /// `ClientBase::settingsWithoutCompatibilityDerived`.
+    /// `network_compression_method` / `network_zstd_compression_level` back to the old values. The derived
+    /// values must select the client-side codec of the helper query (`Connection::sendQuery` reads them by
+    /// value), but they must not be serialized explicitly — the server re-derives them from `compatibility`
+    /// itself, and a profile may pin them as read-only. `compatibility` itself is forwarded so the server
+    /// treats the helper query like an ordinary query of this session. The same rule ordinary queries follow
+    /// via `ClientBase::settingsWithoutCompatibilityDerived`.
     Settings settings;
     settings.set("compatibility", "26.6");
     ASSERT_TRUE(settings.isChanged("network_compression_method"));
     ASSERT_TRUE(settings.isChanged("network_zstd_compression_level"));
 
-    EXPECT_TRUE(networkCompressionSettings(settings).changes().empty());
+    const Settings result = networkCompressionSettings(settings);
+
+    EXPECT_TRUE(result.isChanged("compatibility"));
+    EXPECT_EQ(result.get("compatibility").safeGet<String>(), "26.6");
+
+    EXPECT_FALSE(result.isChanged("network_compression_method"));
+    EXPECT_FALSE(result.isChanged("network_zstd_compression_level"));
+    EXPECT_EQ(result.get("network_compression_method").safeGet<String>(),
+              settings.get("network_compression_method").safeGet<String>());
+    EXPECT_EQ(result.get("network_zstd_compression_level").safeGet<UInt64>(),
+              settings.get("network_zstd_compression_level").safeGet<UInt64>());
+
+    /// Only `compatibility` goes over the wire.
+    EXPECT_EQ(result.changes().size(), 1u);
 }
 
 TEST(NetworkCompressionSettings, KeepsAnExplicitOverrideOfACompatibilityDerivedValue)
@@ -64,4 +79,5 @@ TEST(NetworkCompressionSettings, KeepsAnExplicitOverrideOfACompatibilityDerivedV
     EXPECT_TRUE(result.isChanged("network_compression_method"));
     EXPECT_EQ(result.get("network_compression_method").safeGet<String>(), "NONE");
     EXPECT_FALSE(result.isChanged("network_zstd_compression_level"));
+    EXPECT_TRUE(result.isChanged("compatibility"));
 }

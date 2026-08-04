@@ -24,10 +24,10 @@ struct Settings;
 /// session settings: `Connection::sendQuery` serializes every changed setting into the query packet, so
 /// passing the whole session would make such a query run under, for example, a non-default `dialect`.
 ///
-/// Values that the `compatibility` setting derived are not considered changed here: the server re-derives
-/// them from `compatibility` itself, and serializing them explicitly would break under a profile that pins
-/// them as read-only. This mirrors what `ClientBase::settingsWithoutCompatibilityDerived` does for ordinary
-/// queries.
+/// `compatibility` is forwarded and the values it derived are kept but marked unchanged: they still select
+/// the client-side network codec, while the server re-derives them from `compatibility` itself — serializing
+/// them explicitly would break under a profile that pins them as read-only. This mirrors what
+/// `ClientBase::settingsWithoutCompatibilityDerived` does for ordinary queries.
 Settings networkCompressionSettings(const Settings & settings);
 
 /// Should we celebrate a bit?

@@ -1507,7 +1507,11 @@ std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
     if (!settings.hasSettingsChangedByCompatibility())
         return {};
     Settings result = settings;
-    result.resetSettingsChangedByCompatibility();
+    /// Keep the derived values but clear their `changed` flags: `Connection::sendQuery` picks the
+    /// client-side network codec from the values (so `compatibility` rolls back the codec of the
+    /// compressed packets this client sends), while only changed settings are serialized (so the
+    /// server re-derives them from `compatibility` itself and honors its own constraints).
+    result.markSettingsChangedByCompatibilityAsUnchanged();
     return result;
 }
 
