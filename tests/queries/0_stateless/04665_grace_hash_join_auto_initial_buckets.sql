@@ -55,7 +55,7 @@ SELECT
 FROM system.query_log
 WHERE
     current_database = currentDatabase()
-    AND log_comment LIKE '04665_%'
+    AND log_comment IN ('04665_planner_auto', '04665_explicit', '04665_runtime_auto')
     AND type = 'QueryFinish'
 GROUP BY log_comment
 ORDER BY log_comment;
