@@ -12,6 +12,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory);
 void registerDatabaseDictionary(DatabaseFactory & factory);
 void registerDatabaseMemory(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory);
+void registerDatabaseURL(DatabaseFactory & factory);
 void registerDatabaseReplicated(DatabaseFactory & factory);
 void registerDatabaseOverlay(DatabaseFactory & factory);
 #if CLICKHOUSE_CLOUD
@@ -54,6 +55,7 @@ void registerDatabases()
     registerDatabaseDictionary(factory);
     registerDatabaseMemory(factory);
     registerDatabaseFilesystem(factory);
+    registerDatabaseURL(factory);
     registerDatabaseReplicated(factory);
     registerDatabaseOverlay(factory);
 #if CLICKHOUSE_CLOUD
