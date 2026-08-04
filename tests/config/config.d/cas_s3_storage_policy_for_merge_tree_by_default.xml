@@ -1,0 +1,66 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <cas_s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <!-- Phase 0 (mount safety): required, validated identity of the layout subtree this
+                     server owns. Single-server stateless lane → a stable literal id. -->
+                <server_root_id>stateless-ca-s3</server_root_id>
+                <!-- RustFS (M-W D-W8): the CA pool needs ENFORCED conditional ops (exact-token
+                     DELETE must 412 on mismatch) - MinIO OSS silently ignores If-Match on DELETE
+                     and the fail-closed capability probe rejects it. RustFS runs on a dedicated
+                     port (11121); MinIO keeps serving the non-CA s3 disks. Bucket `test`, a
+                     dedicated key prefix for this disk. -->
+                <endpoint>http://localhost:11121/test/cas_s3/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <!-- Real server-local scratch dir for the write-buffer spill. -->
+                <scratch_path>cas_s3_scratch/</scratch_path>
+                <!-- Background GC pacing: the incarnation protocol's fence/recheck handshake
+                     replaces the old grace window (M-W D-W5); a short interval so reclamation
+                     happens during the run. -->
+                <gc_enabled>1</gc_enabled>
+                <gc_interval_sec>5</gc_interval_sec>
+            </cas_s3>
+            <!-- Optional local filesystem cache in front of the cacheless CA-S3 disk (mirrors how plain-s3
+                 backs its policy with `cached_s3`). Validated: once warm it serves reads from local disk
+                 (0 S3 GETs, ~local latency) vs raw CA re-fetching every read from RustFS. NOT the lane
+                 default on purpose — it adds a one-time populate cost to single-pass reads and routes
+                 large single-pass WRITES (e.g. stateful dataset prep) through the cache; the stateless
+                 suite is mostly single-pass, so raw CA is the better default here. Available as an opt-in
+                 policy (`cas_s3_cache`) for workloads that re-read; the merge_tree default
+                 below can be flipped to it in one line. -->
+            <cas_s3_cache>
+                <type>cache</type>
+                <disk>cas_s3</disk>
+                <path>cas_s3_cache/</path>
+                <max_size>5368709120</max_size>
+            </cas_s3_cache>
+        </disks>
+        <policies>
+            <cas_s3>
+                <volumes>
+                    <main>
+                        <disk>cas_s3</disk>
+                    </main>
+                </volumes>
+            </cas_s3>
+            <cas_s3_cache>
+                <volumes>
+                    <main>
+                        <disk>cas_s3_cache</disk>
+                    </main>
+                </volumes>
+            </cas_s3_cache>
+        </policies>
+    </storage_configuration>
+    <merge_tree>
+        <storage_policy>cas_s3</storage_policy>
+    </merge_tree>
+    <!-- System logs are intentionally left on the cas_s3 default policy (the earlier B86
+         workaround that pinned every system log to the local `default` policy has been removed): the CA
+         write path must handle the frequent small-flush system-log workload directly. If a flush stall
+         resurfaces, fix the CA flush path rather than re-routing the logs off it. -->
+</clickhouse>

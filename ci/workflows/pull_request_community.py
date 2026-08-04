@@ -2,12 +2,18 @@ import copy
 from praktika import Workflow, Artifact
 
 from ci.defs.defs import BASE_BRANCH, DOCKERS, ArtifactConfigs, JobNames
+from ci.defs.altinity_jobs import AltinityJobConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
+FUNCTIONAL_TESTS_JOBS = [
+    *JobConfigs.functional_tests_jobs,
+    *AltinityJobConfigs.cas_functional_tests_jobs,
+]
+
 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
     job.name
-    for job in JobConfigs.functional_tests_jobs
+    for job in FUNCTIONAL_TESTS_JOBS
     if any(
         substr in job.name
         for substr in (
@@ -24,7 +30,7 @@ STYLE_AND_FAST_TESTS = [
 ]
 
 PLAIN_FUNCTIONAL_TEST_JOB = [
-    j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
+    j for j in FUNCTIONAL_TESTS_JOBS if "amd_debug, parallel" in j.name
 ][0]
 
 def _normalize_gh_aliases(items):
@@ -74,7 +80,7 @@ workflow = Workflow.Config(
                 if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
                 else []
             )
-            for j in JobConfigs.functional_tests_jobs if 'coverage' not in j.name
+            for j in FUNCTIONAL_TESTS_JOBS if 'coverage' not in j.name
         ],
         *[
             job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)

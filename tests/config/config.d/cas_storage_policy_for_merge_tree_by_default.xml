@@ -1,0 +1,35 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <cas>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <!-- Phase 0 (mount safety): required, validated identity of the layout subtree this
+                     server owns. Single-server stateless lane → a stable literal id. -->
+                <server_root_id>stateless-ca-local</server_root_id>
+                <!-- Local object-storage pool root, under the server store. -->
+                <path>cas_pool/</path>
+                <!-- Real server-local scratch dir for the write-buffer spill. -->
+                <scratch_path>cas_scratch/</scratch_path>
+                <!-- Background GC pacing: the incarnation protocol's fence/recheck handshake
+                     replaces the old grace window (M-W D-W5); a short interval so reclamation
+                     happens during the run. -->
+                <gc_enabled>1</gc_enabled>
+                <gc_interval_sec>5</gc_interval_sec>
+            </cas>
+        </disks>
+        <policies>
+            <cas>
+                <volumes>
+                    <main>
+                        <disk>cas</disk>
+                    </main>
+                </volumes>
+            </cas>
+        </policies>
+    </storage_configuration>
+    <merge_tree>
+        <storage_policy>cas</storage_policy>
+    </merge_tree>
+</clickhouse>

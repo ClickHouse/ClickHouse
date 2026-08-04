@@ -230,6 +230,32 @@ done
 # CLICKHOUSE_URL already includes "?"
 git grep -P 'CLICKHOUSE_URL(|_HTTPS)(}|}/|/|)\?' $ROOT_PATH/tests/queries/0_stateless/*.sh && echo "CLICKHOUSE_URL already includes '?', use '&' to append query parameters"
 
+# A bare double quote inside a `-q """ ... """` block ends the string early.
+# Bash treats """ as an empty string followed by an open quote, so everything up to the next quote is
+# one argument. A quote anywhere inside -- including in a SQL comment -- closes it there, and the rest
+# of the block becomes shell words. The script stays syntactically valid, so `bash -n` and shellcheck
+# both pass; the only symptom is that the client receives a truncated query and reports a syntax error
+# pointing at whatever followed the quote. Escape it as \" or use single quotes.
+python3 - "$ROOT_PATH" <<'PYEOF'
+import glob, os, re, sys
+
+for path in sorted(glob.glob(os.path.join(sys.argv[1], "tests/queries/0_stateless/*.sh"))):
+    inside = False
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for number, line in enumerate(handle, 1):
+            if not inside:
+                if re.search(r'(-q|--query)\s+"""\s*$', line.strip()):
+                    inside = True
+                continue
+            # The block can close mid-line (`... LIMIT 10;"""`), so only what precedes the
+            # closing delimiter is still inside it.
+            body, closed, _ = line.partition('"""')
+            if '"' in re.sub(r'\\"', "", body):
+                print(f"{path}:{number}: bare double quote inside a -q \"\"\" block ends the SQL early")
+            if closed:
+                inside = False
+PYEOF
+
 # Large files checked into git.
 # Every byte committed is cloned by every contributor forever and cannot be removed without history rewriting.
 # Binary blobs (JARs, archives, .so, datasets) should be downloaded at test time or built from source.

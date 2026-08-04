@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+-- no-cas-storage: FETCH PARTITION is supported on a cas disk (the gate is lifted, byte-fetch lands into detached/, see 05002), but this test fetches a 100-part partition CONCURRENTLY via the FETCH thread pool. Those parallel fetches all read-modify-write the SHARED "detached" ref object; the read side of that hot pointer object is not serialized against the truncating in-place rewrite of the local object storage, so a concurrent reader can see a torn ref/manifest (CANNOT_READ_ALL_DATA / NO_FILE_IN_DATA_PART). The atomic pointer-object publish needed to make concurrent fan-out safe is a deferred backlog item (B66a); single-part FETCH works (01650 + 05002).
 -- Tag: no-parallel - to avoid polluting FETCH PARTITION thread pool with other fetches
 -- Tag: no-replicated-database - replica_path is different
 

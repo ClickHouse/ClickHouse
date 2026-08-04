@@ -1,4 +1,4 @@
- -- Tags: long, zookeeper
+-- Tags: long, zookeeper
 
 -- Replicated
 

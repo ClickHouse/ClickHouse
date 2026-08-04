@@ -1,6 +1,7 @@
 from praktika import Artifact, Job
 
 from ci.defs.defs import TEMP_DIR, ArtifactNames, RunnerLabels
+from ci.defs.job_configs import common_ft_job_config
 
 
 class AltinityArtifactNames:
@@ -68,4 +69,54 @@ class AltinityJobConfigs:
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/source_upload.py",
         timeout=3600,
+    )
+    # Stateless tests with a content-addressed disk as the default MergeTree storage.
+    cas_functional_tests_jobs = common_ft_job_config.parametrize(
+        # CAS over S3: RustFS, not MinIO OSS, because the incarnation pool needs
+        # enforced conditional deletes.
+        Job.ParamSet(
+            parameter="amd_binary, cas s3 storage, parallel",
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            requires=[ArtifactNames.CH_AMD_BINARY_GH],
+        ),
+        # The sanitizer lanes are sharded because an unsharded one exceeds the 6h
+        # GitHub job timeout and is killed before it uploads any results.
+        *[
+            Job.ParamSet(
+                parameter=f"amd_asan_ubsan, cas s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+                requires=[ArtifactNames.CH_AMD_ASAN_UBSAN_GH],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_tsan, cas s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_TSAN_GH],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_msan, cas s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                requires=[ArtifactNames.CH_AMD_MSAN_GH],
+            )
+            for total_batches in (3,)
+            for batch in range(1, total_batches + 1)
+        ],
+        Job.ParamSet(
+            parameter="arm_binary, cas s3 storage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            requires=[ArtifactNames.CH_ARM_BINARY_GH],
+        ),
+        # CAS over local object storage.
+        Job.ParamSet(
+            parameter="amd_binary, cas storage, parallel",
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            requires=[ArtifactNames.CH_AMD_BINARY_GH],
+        ),
     )

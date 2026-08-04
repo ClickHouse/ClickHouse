@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-shared-merge-tree, long
+# Tags: zookeeper, no-shared-merge-tree, long, no-cas-storage
+# no-cas-storage: test asserts system.parts.path is an absolute local FS path; on a cas disk the path is a relative object-storage key (orthogonal part-file path-shape)
 # no-shared-merge-tree: depend on local fs
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

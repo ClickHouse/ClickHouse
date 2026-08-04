@@ -13,6 +13,11 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.workflows.pull_request import REGULAR_BUILD_NAMES
 
+FUNCTIONAL_TESTS_JOBS = [
+    *JobConfigs.functional_tests_jobs,
+    *AltinityJobConfigs.cas_functional_tests_jobs,
+]
+
 # Add long retention tags to subset of artifacts
 clickhouse_binaries_with_tags = []
 for artifact in ArtifactConfigs.clickhouse_binaries + ArtifactConfigs.clickhouse_stripped_binaries:
@@ -55,7 +60,7 @@ workflow = Workflow.Config(
         *JobConfigs.compatibility_test_jobs,
         *[
             j
-            for j in JobConfigs.functional_tests_jobs
+            for j in FUNCTIONAL_TESTS_JOBS
             if "coverage" not in j.name
         ],
         # *JobConfigs.functional_test_llvm_coverage_jobs,

@@ -14,11 +14,16 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
-ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
+FUNCTIONAL_TESTS_JOBS = [
+    *JobConfigs.functional_tests_jobs,
+    *AltinityJobConfigs.cas_functional_tests_jobs,
+]
+
+ALL_FUNCTIONAL_TESTS = [job.name for job in FUNCTIONAL_TESTS_JOBS]
 
 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
     job.name
-    for job in JobConfigs.functional_tests_jobs
+    for job in FUNCTIONAL_TESTS_JOBS
     if any(
         substr in job.name
         for substr in (
@@ -40,7 +45,7 @@ STYLE_AND_FAST_TESTS = [
 REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 
 PLAIN_FUNCTIONAL_TEST_JOB = [
-    j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
+    j for j in FUNCTIONAL_TESTS_JOBS if "amd_debug, parallel" in j.name
 ][0]
 
 workflow = Workflow.Config(
@@ -91,7 +96,7 @@ workflow = Workflow.Config(
                 if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
                 else []
             )
-            for j in JobConfigs.functional_tests_jobs
+            for j in FUNCTIONAL_TESTS_JOBS
             if "coverage" not in j.name
         ],
         *[
