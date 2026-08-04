@@ -3,11 +3,16 @@
 --
 -- `wouldReadInOrderBeUseful` matches the storage's sorting key against the
 -- requested sort description but is unaware of FINAL-time gating in
--- `ReadFromMergeTree::requestReadingInOrder`, which rejects
--- `direction != 1 && query_info.isFinal()`. Without the FINAL+descending gate
+-- `ReadFromMergeTree::requestReadingInOrder`, which rejects a reverse direction
+-- with FINAL unless the storage supports it. Without the FINAL+descending gate
 -- in `topKThroughJoin`, the deferral would fire, the second pass would still
 -- reject the read, and both optimizations would be lost. This test pins the
 -- relevant settings on and checks that an inner `Sort + Limit` is injected.
+--
+-- `optimize_read_in_reverse_order_final = 0` below keeps the second pass rejecting
+-- the descending read: with that setting on, a `ReplacingMergeTree` supports reading
+-- in reverse order with FINAL and the deferral is sound (see
+-- 04657_top_k_through_join_final_reverse_order).
 
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
@@ -21,14 +26,14 @@ CREATE TABLE t_r_final (k Int64, value String) ENGINE = MergeTree() ORDER BY k;
 INSERT INTO t_l_final SELECT number, repeat('a', 8) FROM numbers(1000);
 INSERT INTO t_r_final SELECT number, repeat('b', 8) FROM numbers(1000);
 
--- FINAL + DESC: pass 2's `requestReadingInOrder` rejects descending direction
+-- FINAL + DESC: pass 2's `requestReadingInOrder` rejects the descending direction
 -- with FINAL, so `topKThroughJoin` must NOT defer. Expect two Sort + Limit
 -- pairs in the plan (the outer pair + the injected pair on the preserved input).
 SELECT 'final_desc' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, countIf(explain LIKE '%Limit%') AS limit_count
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS optimize_read_in_order = 1,
+    SETTINGS optimize_read_in_order = 1, optimize_read_in_reverse_order_final = 0,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
