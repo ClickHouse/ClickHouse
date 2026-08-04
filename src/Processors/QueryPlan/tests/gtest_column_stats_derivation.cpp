@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 
 using namespace DB;
@@ -294,6 +295,57 @@ TEST(ColumnStatsDerivation, DeepChainOfFunctionsResolves)
 /// The bound propagates through a chain of deterministic single-argument functions: no link can
 /// increase the distinct count, so the final output is still bounded by the source column. A
 /// multi-argument link anywhere in the chain breaks the propagation.
+TEST(ColumnStatsDerivation, LineageDistinguishesIdentityFromDistinctValueBounds)
+{
+    tryRegisterFunctions();
+
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & input = dag.addInput("n", int_type);
+
+    const auto & alias = dag.addAlias(input, "alias");
+    dag.addOrReplaceInOutputs(alias);
+    addOutputFunction(dag, "materialize", {&input}, "materialized");
+    addOutputFunction(dag, "abs", {&input}, "magnitude");
+    const auto & casted = dag.addCast(input, std::make_shared<DataTypeUInt8>(), "narrowed", getContext().context);
+    dag.addOrReplaceInOutputs(casted);
+    addOutputFunction(dag, "plus", {&input, &input}, "doubled");
+
+    const auto lineage = traceActionsDAGLineage(dag);
+    const auto & outputs = dag.getOutputs();
+    auto kind_for = [&](const String & output_name) -> std::optional<ActionsDAGLineageKind>
+    {
+        for (const auto & fact : lineage)
+            if (outputs[fact.output_position]->result_name == output_name && fact.input)
+                return fact.input->kind;
+        return {};
+    };
+
+    EXPECT_EQ(kind_for("alias"), ActionsDAGLineageKind::Identity);
+    EXPECT_EQ(kind_for("materialized"), ActionsDAGLineageKind::ValuePreserving);
+    EXPECT_EQ(kind_for("magnitude"), ActionsDAGLineageKind::DistinctValuesBound);
+    EXPECT_EQ(kind_for("narrowed"), ActionsDAGLineageKind::DistinctValuesBound);
+    EXPECT_FALSE(kind_for("doubled"));
+}
+
+TEST(ColumnStatsDerivation, LineageUsesInputPositionsWithDuplicateNames)
+{
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & first = dag.addInput("n", int_type);
+    const auto & second = dag.addInput("n", int_type);
+    dag.addOrReplaceInOutputs(first);
+    const auto & alias = dag.addAlias(second, "second_n");
+    dag.addOrReplaceInOutputs(alias);
+
+    const auto lineage = traceActionsDAGLineage(dag);
+    ASSERT_EQ(lineage.size(), 2u);
+    ASSERT_TRUE(lineage[0].input);
+    ASSERT_TRUE(lineage[1].input);
+    EXPECT_EQ(lineage[0].input->input_position, 0u);
+    EXPECT_EQ(lineage[1].input->input_position, 1u);
+}
+
 TEST(ColumnStatsDerivation, ChainOfFunctionsPropagatesBound)
 {
     tryRegisterFunctions();
