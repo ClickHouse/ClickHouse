@@ -12,7 +12,7 @@ required column: the bloom filter prunes a non-present value
 {"result":[{"count()":0}],"rows_read":0}
 String over ten row groups, null_as_default on: nulls decode to '', no row group must be pruned
 {"result":[{"count()":500}],"rows_read":1000}
-String over ten row groups, null_as_default on, both disjuncts on the nullable column
+String over ten row groups, null_as_default on, disjunction with an atom on another column
 {"result":[{"count()":501}],"rows_read":1000}
 String over ten row groups read as Nullable: the bloom filter still prunes a non-present value
 {"result":[{"count()":0}],"rows_read":0}

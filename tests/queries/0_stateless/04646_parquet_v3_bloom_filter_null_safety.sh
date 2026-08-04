@@ -87,8 +87,8 @@ ${CLICKHOUSE_CLIENT} --query="
 echo "String over ten row groups, null_as_default on: nulls decode to '', no row group must be pruned"
 run 0 1 "select count() from file('${DATA_FILE_3}', Parquet, 'id UInt64, n String') where n = ''"
 
-echo "String over ten row groups, null_as_default on, both disjuncts on the nullable column"
-run 0 1 "select count() from file('${DATA_FILE_3}', Parquet, 'id UInt64, n String') where n = '' or n = 'v3'"
+echo "String over ten row groups, null_as_default on, disjunction with an atom on another column"
+run 0 1 "select count() from file('${DATA_FILE_3}', Parquet, 'id UInt64, n String') where n = '' or id = 1"
 
 # Control: read as Nullable the guard does not apply, so the bloom filter must still prune everything.
 echo "String over ten row groups read as Nullable: the bloom filter still prunes a non-present value"
