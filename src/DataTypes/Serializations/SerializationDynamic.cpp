@@ -713,7 +713,7 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
 
     auto field_type = applyVisitor(FieldToDataType(), field);
     encodeDataType(field_type, ostr);
-    field_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
+    getDataTypesCache().getSerialization(field_type->getName())->serializeBinary(field, ostr, settings);
 }
 
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
@@ -725,7 +725,7 @@ void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, c
         return;
     }
 
-    field_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
+    getDataTypesCache().getSerialization(field_type->getName())->deserializeBinary(field, istr, settings);
 }
 
 void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
