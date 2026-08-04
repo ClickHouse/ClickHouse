@@ -316,6 +316,13 @@ private:
     bool isInitialSnapshotCompleted();
     void markInitialSnapshotCompleted(const String & lsn);
 
+    /// Throws when the Keeper session backing this worker's /leader node is no longer alive. Fences the
+    /// coordinated `startSynchronization` steps that must only be performed by the live active worker
+    /// (loading the shared snapshot, publishing the snapshot marker, starting the consumer): a worker that
+    /// lost its session mid-snapshot has already been replaced and must abort instead of publishing a
+    /// stale marker over its successor's replacement snapshot.
+    void assertReplicationLeadershipIsLive() const;
+
     ConsumerPtr getConsumer();
 
     StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);

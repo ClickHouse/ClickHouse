@@ -90,6 +90,7 @@ namespace FailPoints
 {
     extern const char materialized_postgresql_fail_teardown_after_shutdown[];
     extern const char materialized_postgresql_pause_before_register_replica[];
+    extern const char materialized_postgresql_pause_before_marking_snapshot_completed[];
 }
 
 class TemporaryReplicationSlot
@@ -1080,6 +1081,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         bool all_tables_loaded = true;
         for (const auto & [table_name, storage] : materialized_storages)
         {
+            /// Abort as soon as leadership is lost: once the Keeper session backing /leader expires,
+            /// another replica may already have won the election, truncated the shared nested tables and
+            /// started a replacement snapshot, and this worker's inserts would interleave with it.
+            assertReplicationLeadershipIsLive();
+
             try
             {
                 nested_storages.emplace(table_name, loadFromSnapshot(*tmp_connection, snapshot_name, table_name, storage->as<StorageMaterializedPostgreSQL>()));
@@ -1101,6 +1107,16 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         /// from the slot's confirmed LSN instead of redoing the snapshot (see isInitialSnapshotCompleted).
         if (coordination_enabled)
         {
+            /// Holds the worker between loading the snapshot and publishing the marker, so a test can
+            /// expire its Keeper session here and verify that a worker that lost its leadership
+            /// mid-snapshot cannot publish a stale marker over a successor's replacement snapshot.
+            fiu_do_on(FailPoints::materialized_postgresql_pause_before_marking_snapshot_completed,
+            {
+                LOG_INFO(log, "Pausing before marking the initial snapshot as completed until failpoint "
+                         "materialized_postgresql_pause_before_marking_snapshot_completed is disabled");
+                FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_marking_snapshot_completed);
+            });
+
             if (all_tables_loaded)
                 markInitialSnapshotCompleted(start_lsn);
             else
@@ -1188,6 +1204,12 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     }
 
     tx.commit();
+
+    /// A worker that lost its leadership session while setting up - most importantly while loading the
+    /// initial snapshot - must not start a consumer: the new active worker owns the shared slot now, and a
+    /// stale consumer could grab it first and starve the legitimate one. PostgreSQL's single-active-session
+    /// rule on the slot is only a backstop against concurrent consumption, not against the wrong consumer.
+    assertReplicationLeadershipIsLive();
 
     /// Pass current connection to consumer. It is not std::moved implicitly, but a shared_ptr is passed.
     /// Consumer and replication handler are always executed one after another (not concurrently) and share the same connection.
@@ -2474,14 +2496,47 @@ bool PostgreSQLReplicationHandler::isInitialSnapshotCompleted()
 }
 
 
+void PostgreSQLReplicationHandler::assertReplicationLeadershipIsLive() const
+{
+    if (!coordination_enabled)
+        return;
+
+    /// Called only from the coordinated `startSynchronization` path, which runs inside `coordinationFunc`
+    /// after this worker won /leader, so `leader_node` and `coordination_zookeeper` are set by then and are
+    /// not mutated concurrently (`shutdown` deactivates the coordination task before touching them).
+    if (!leader_node || !coordination_zookeeper || coordination_zookeeper->expired())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "The Keeper session backing this replica's replication leadership is no longer alive, "
+            "so another replica may already have taken over as the active worker. Aborting this attempt; "
+            "coordination retries and re-elects a leader");
+}
+
+
 void PostgreSQLReplicationHandler::markInitialSnapshotCompleted(const String & lsn)
 {
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::markInitialSnapshotCompleted");
 
-    auto zookeeper = getContext()->getZooKeeper();
+    /// The marker must be published only by a worker that still holds the live leadership. A worker whose
+    /// Keeper session expired mid-snapshot has already been replaced: the new leader saw no marker,
+    /// truncated the shared nested tables and started a replacement snapshot, and a marker published now
+    /// would describe a snapshot that no longer exists in the tables - a later failover would then skip
+    /// `initial_sync` and permanently lose the rows the replacement snapshot never finished copying.
+    assertReplicationLeadershipIsLive();
+
     const String marker_path = coordination_keeper_path + "/snapshot_completed";
-    zookeeper->createAncestors(marker_path);
-    zookeeper->createIfNotExists(marker_path, lsn);
+
+    /// A stale marker can be left when the shared slot disappeared without a full teardown (it is exactly
+    /// what put us on the redo-the-snapshot path); replace it so the recorded LSN matches the new slot.
+    /// Both requests go through the session that backs /leader, never through a fresh one: an expired
+    /// session fails them, which is the authoritative fence - only a live leader can publish the marker.
+    coordination_zookeeper->tryRemove(marker_path);
+
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCheckRequest(coordination_keeper_path + "/leader", -1));
+    ops.emplace_back(zkutil::makeCreateRequest(marker_path, lsn, zkutil::CreateMode::Persistent));
+    coordination_zookeeper->multi(ops);
+
     LOG_INFO(log, "Marked the initial snapshot as completed (lsn: {})", lsn);
 }
 
@@ -2514,6 +2569,12 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
 
     if ((!is_attach && !coordination_enabled) || !publication_exists)
     {
+        /// This branch is re-entered on the same handler whenever the publication has to be recreated (for
+        /// example after it was dropped externally, or after retrying a failure before it existed), so the
+        /// SQL-quoted table list is built in a local variable: `tables_list` keeps the raw form the retries
+        /// and re-elections started from, and is never turned into an already-quoted value that a second
+        /// pass would quote again.
+        String publication_tables_list = tables_list;
         if (tables_list.empty())
         {
             if (materialized_storages.empty())
@@ -2525,8 +2586,8 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
                 buf << doubleQuoteWithSchema(storage_data.first);
                 buf << ",";
             }
-            tables_list = buf.str();
-            tables_list.resize(tables_list.size() - 1);
+            publication_tables_list = buf.str();
+            publication_tables_list.resize(publication_tables_list.size() - 1);
         }
         else if (!is_materialized_postgresql_database)
         {
@@ -2535,18 +2596,18 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             /// quoting pass that `fetchRequiredTables` applies for the database engine. Quote it here,
             /// otherwise `CREATE PUBLICATION ... FOR TABLE ONLY <name>` folds an upper-case table name
             /// to lower case and fails with `relation "..." does not exist`.
-            tables_list = doubleQuoteWithSchema(tables_list);
+            publication_tables_list = doubleQuoteWithSchema(tables_list);
         }
 
-        if (tables_list.empty())
+        if (publication_tables_list.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
 
         /// 'ONLY' means just a table, without descendants.
-        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteString(publication_name), tables_list);
+        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteString(publication_name), publication_tables_list);
         try
         {
             tx.exec(query_str);
-            LOG_DEBUG(log, "Created publication {} with tables list: {}", doubleQuoteString(publication_name), tables_list);
+            LOG_DEBUG(log, "Created publication {} with tables list: {}", doubleQuoteString(publication_name), publication_tables_list);
         }
         catch (Exception & e)
         {

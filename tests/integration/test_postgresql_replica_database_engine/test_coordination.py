@@ -2599,3 +2599,164 @@ def test_single_table_drop_after_coordination_identity_change_tears_down_origina
         else:
             instance.restart_clickhouse()
         instance.query("DROP TABLE IF EXISTS test_single_table SYNC")
+
+
+def test_lost_leadership_during_snapshot_does_not_publish_stale_marker(started_cluster):
+    # If the active worker's Keeper session expires while it is loading the initial snapshot, another
+    # replica wins /leader, sees no snapshot_completed marker, truncates the shared nested tables and
+    # starts a replacement snapshot. The deposed worker must then abort instead of publishing the marker:
+    # a marker written by a worker that already lost its leadership describes a snapshot the replacement
+    # has truncated away, so if the new leader dies before finishing its reload, the next leader would
+    # trust the stale marker, skip initial_sync and permanently lose the rows that were never copied.
+    # Both instances are parked right before the marker write by a pauseable failpoint; the deposed one
+    # is released first, while the new leader is still mid-snapshot - exactly the window in which the
+    # stale marker used to be written.
+    pause_line = "Pausing before marking the initial snapshot as completed"
+    abort_line = "Keeper session expired, releasing replication leadership"
+    failpoint = "materialized_postgresql_pause_before_marking_snapshot_completed"
+
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pause_baseline1 = count_in_all_logs(instance, pause_line)
+    pause_baseline2 = count_in_all_logs(instance2, pause_line)
+    pm = PartitionManager()
+    try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        instance2.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+        # Create on the first replica only, so it deterministically becomes the active worker, loads
+        # the snapshot and parks right before publishing the marker.
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        wait_for_new_log_occurrence(instance, pause_line, pause_baseline1, timeout=90)
+        assert wait_for_leader(instance) == "coord_instance1"
+
+        # The second replica joins as a standby.
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+
+        # Expire the parked leader's Keeper session. The standby takes over, sees no marker, truncates
+        # the shared nested tables, starts the replacement snapshot - and parks before its own marker
+        # write, keeping the takeover mid-snapshot.
+        pm.drop_instance_zk_connections(instance)
+        wait_for_leader(instance2, expected="coord_instance2")
+        wait_for_new_log_occurrence(instance2, pause_line, pause_baseline2, timeout=120)
+
+        # Release the deposed worker while the takeover is still mid-snapshot. Its leadership session is
+        # gone, so it must abort without publishing the marker or starting a consumer.
+        abort_baseline = count_in_all_logs(instance, abort_line)
+        pm.heal_all()
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        wait_for_new_log_occurrence(instance, abort_line, abort_baseline, timeout=120)
+        assert not marker_znode_exists(instance2)
+
+        # Release the live leader: it publishes the marker and starts consuming.
+        instance2.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        wait_for_marker(instance2)
+    finally:
+        pm.heal_all()
+        for node in (instance, instance2):
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 200
+    assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
+
+
+def test_single_table_publication_recreated_after_external_drop(started_cluster):
+    # The publication of a coordinated single-table engine is recreated by the same handler whenever it
+    # disappears from PostgreSQL (an external drop, or a retry of a failure before it existed). The
+    # recreation must be idempotent with respect to the table-name quoting: the first CREATE PUBLICATION
+    # used to write the SQL-quoted form back into the handler's tables_list, so the recreation quoted it
+    # a second time and asked PostgreSQL for a relation whose name literally contains double quotes,
+    # wedging the self-healing path in a permanent retry loop.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    keeper_path = "/clickhouse/mat_pg/{shard}/single_table_pub_recreate"
+    demotion_line = "Keeper session expired, releasing replication leadership"
+    instance.query(
+        f"CREATE TABLE test_single_pub (key Int64, value Int64) "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
+        f"PRIMARY KEY key "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '{keeper_path}', "
+        f"materialized_postgresql_replica_name = '{{replica}}'",
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+
+    def wait_for_count(expected, timeout=90):
+        for _ in range(timeout):
+            try:
+                if int(instance.query("SELECT count() FROM test_single_pub")) == expected:
+                    return
+            except Exception:
+                pass
+            time.sleep(1)
+        raise AssertionError(f"test_single_pub did not reach {expected} rows")
+
+    pm = PartitionManager()
+    try:
+        wait_for_count(100)
+
+        publications = pg_query(
+            "SELECT pubname FROM pg_publication WHERE pubname LIKE '%test_table%'"
+        )
+        assert len(publications) == 1, publications
+        publication_name = publications[0][0]
+        pg_query(f'DROP PUBLICATION "{publication_name}"')
+
+        # Force the same handler through its recreation path: expire the worker's Keeper session, so
+        # the re-election re-runs startSynchronization -> createPublicationIfNeeded with the publication
+        # absent, on a handler that has already quoted the table name once.
+        demotion_baseline = count_in_all_logs(instance, demotion_line)
+        pm.drop_instance_zk_connections(instance)
+        wait_for_new_log_occurrence(
+            instance, demotion_line, demotion_baseline, timeout=120
+        )
+        pm.heal_all()
+
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            if pg_query(
+                f"SELECT pubname FROM pg_publication WHERE pubname = '{publication_name}'"
+            ):
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError(f"publication {publication_name} was not recreated")
+
+        # The recreated publication publishes the correctly (singly) quoted table.
+        assert pg_query(
+            f"SELECT tablename FROM pg_publication_tables WHERE pubname = '{publication_name}'"
+        ) == [("test_table",)]
+
+        # Replication resumed through the recreated publication.
+        instance.query(
+            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+        )
+        wait_for_count(200)
+
+        instance.query("DROP TABLE test_single_pub SYNC")
+    finally:
+        pm.heal_all()
+        instance.query("DROP TABLE IF EXISTS test_single_pub SYNC")
