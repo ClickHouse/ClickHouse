@@ -5,12 +5,12 @@
  * Mintlify equivalent of clickhouse-docs's `src/theme/SettingsInfoBlock`.
  *
  * Usage:
- *   import SettingsInfoBlock from "/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+ *   import { SettingsInfoBlock } from "/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
  *
  *   <SettingsInfoBlock type="Bool" default_value="0" />
  *   <SettingsInfoBlock type="String" default_value="''" changeable_without_restart="No" />
  */
-const SettingsInfoBlock = ({ type, default_value, changeable_without_restart }) => {
+export const SettingsInfoBlock = ({ type, default_value, changeable_without_restart }) => {
   return (
     <div
       className="not-prose"

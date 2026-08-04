@@ -1192,8 +1192,8 @@ void registerStorageMergeTree(StorageFactory & factory)
 
     factory.registerStorage("MergeTree", create, features, Documentation{
         .description = String(R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 # MergeTree table engine
 

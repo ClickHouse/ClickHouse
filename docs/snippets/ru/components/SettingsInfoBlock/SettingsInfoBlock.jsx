@@ -1,4 +1,4 @@
-const SettingsInfoBlock = ({ type, default_value, changeable_without_restart }) => {
+export const SettingsInfoBlock = ({ type, default_value, changeable_without_restart }) => {
   return (
     <div
       className="not-prose"

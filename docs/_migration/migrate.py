@@ -910,6 +910,13 @@ def transform_imports(text: str, lk: Lookups, issues: list[str], source_docu_pat
             return ""
         return f"import {spec} from '{target_url}';"
 
+    def _named_component_spec(spec: str, exported_name: str) -> str:
+        if not re.fullmatch(r"\w+", spec):
+            return spec
+        if spec == exported_name:
+            return f"{{ {exported_name} }}"
+        return f"{{ {exported_name} as {spec} }}"
+
     def replace(m: re.Match) -> str:
         spec = m.group("spec").strip()
         src = m.group("src")
@@ -1020,12 +1027,7 @@ def transform_imports(text: str, lk: Lookups, issues: list[str], source_docu_pat
             for n in candidates:
                 folder = THIS_REPO / "snippets" / "components" / n / f"{n}.jsx"
                 flat = THIS_REPO / "snippets" / "components" / f"{n}.jsx"
-                mintlify_spec = spec
-                if "/badges/" in src and re.fullmatch(r"\w+", spec):
-                    # Mintlify's MDX compiler requires page badges to use their
-                    # named exports. A default import can render the badge and
-                    # silently omit every sibling that follows it.
-                    mintlify_spec = f"{{ {n} }}" if spec == n else f"{{ {n} as {spec} }}"
+                mintlify_spec = _named_component_spec(spec, n)
                 if folder.exists():
                     return f'import {mintlify_spec} from "/snippets/components/{n}/{n}.jsx";'
                 if flat.exists():
@@ -1041,12 +1043,20 @@ def transform_imports(text: str, lk: Lookups, issues: list[str], source_docu_pat
             name = tail.rsplit("/", 1)[-1]
             folder = THIS_REPO / "snippets" / "components" / name / f"{name}.jsx"
             flat = THIS_REPO / "snippets" / "components" / f"{name}.jsx"
+            mintlify_spec = _named_component_spec(spec, name)
             if folder.exists():
-                return f'import {spec} from "/snippets/components/{name}/{name}.jsx";'
+                return f'import {mintlify_spec} from "/snippets/components/{name}/{name}.jsx";'
             if flat.exists():
-                return f'import {spec} from "/snippets/components/{name}.jsx";'
+                return f'import {mintlify_spec} from "/snippets/components/{name}.jsx";'
             issues.append(f"unmapped @site/src import: {src}")
             return f"{{/* MIGRATE: unmapped import {src!r} */}}"
+
+        if (
+            src.startswith("/snippets/")
+            and "/components/" in src
+            and src.endswith(".jsx")
+        ):
+            return f'import {_named_component_spec(spec, spec)} from "{src}";'
 
         # @site/src/lib/<...>/<Name>  ->  /snippets/lib/<Name>.jsx
         if src.startswith("@site/src/lib/"):

@@ -806,7 +806,7 @@ static void registerStorageHDFS(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 # HDFS table engine
 
@@ -2210,9 +2210,6 @@ void registerStorageDeltaLake(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 # DeltaLake table engine
 
 This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (from v25.10).

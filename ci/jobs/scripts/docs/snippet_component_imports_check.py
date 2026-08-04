@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Mintlify component imports.
+"""Validate Mintlify component imports and exports.
 
 Every snippet resolves its own imports. A page-level import is not visible to
 a snippet imported by that page, and the same rule applies recursively when a
@@ -7,8 +7,8 @@ snippet renders another snippet. This check requires every non-built-in MDX
 tag to have a local import and prevents snippets from importing the custom
 Image component, which can collide with a page-level Image import.
 
-Badge components must use named imports. Mintlify can render a default-imported
-badge while silently omitting the page content that follows it.
+Components must use named imports and provide matching named exports. Mintlify
+can render a default-imported component while silently omitting page content.
 """
 
 from __future__ import annotations
@@ -31,6 +31,15 @@ DECLARED_EXPORT_RE = re.compile(
     r"([A-Z][A-Za-z0-9_]*)"
 )
 DOCS_MD_RE = re.compile(r'R"DOCS_MD\((?P<body>.*?)\)DOCS_MD"', re.DOTALL)
+DEFAULT_EXPORT_RE = re.compile(r"\bexport\s+default\b")
+DEFAULT_EXPORT_NAME_RE = re.compile(
+    r"\bexport\s+default\s+([A-Z][A-Za-z0-9_]*)\s*;"
+)
+NAMED_EXPORT_RE = re.compile(
+    r"\bexport\s+(?:const|let|var|function|class)\s+"
+    r"([A-Za-z_$][A-Za-z0-9_$]*)"
+)
+EXPORT_LIST_RE = re.compile(r"\bexport\s*\{(?P<names>[^}]*)\}")
 TRANSLATION_DIRS = {"ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"}
 MINTLIFY_BUILTINS = {
     "Accordion",
@@ -53,6 +62,7 @@ class Binding:
     local: str
     source: str
     is_default: bool = False
+    is_namespace: bool = False
 
 
 def without_fenced_code(text: str) -> str:
@@ -107,7 +117,14 @@ def parse_bindings(text: str) -> list[Binding]:
                 bindings.append(Binding(names[0], names[-1], source))
         elif spec.startswith("*"):
             local = re.split(r"\s+as\s+", spec, maxsplit=1)[-1]
-            bindings.append(Binding(Path(source).stem, local, source))
+            bindings.append(
+                Binding(
+                    Path(source).stem,
+                    local,
+                    source,
+                    is_namespace=True,
+                )
+            )
     return bindings
 
 
@@ -120,35 +137,101 @@ def is_translation_source(source: str) -> bool:
     return len(parts) > 1 and parts[0] == "snippets" and parts[1] in TRANSLATION_DIRS
 
 
-def is_badge_component_import(binding: Binding) -> bool:
-    source_parts = Path(binding.source.lstrip("/")).parts
+def is_component_source(source: str) -> bool:
+    source_parts = Path(source.lstrip("/")).parts
     return (
         len(source_parts) >= 3
         and source_parts[0] == "snippets"
         and "components" in source_parts
-        and (
-            binding.local.endswith("Badge")
-            or binding.exported.endswith("Badge")
-            or Path(binding.source).stem.endswith("Badge")
-        )
+        and source.endswith(".jsx")
+    ) or source.startswith(
+        ("@theme/", "@site/src/components/", "@site/src/theme/")
     )
 
 
-def find_default_badge_imports(docs_root: Path) -> list[str]:
-    """Find badge imports in generated pages and their C++ source blocks."""
+def named_component_exports(text: str) -> set[str]:
+    exports = set(NAMED_EXPORT_RE.findall(text))
+    for match in EXPORT_LIST_RE.finditer(text):
+        for piece in match.group("names").split(","):
+            piece = piece.strip()
+            if not piece:
+                continue
+            names = re.split(r"\s+as\s+", piece, maxsplit=1)
+            exported = names[-1]
+            if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", exported):
+                exports.add(exported)
+    return exports
+
+
+def find_component_export_errors(docs_root: Path) -> list[str]:
+    """Require every JSX component with a default export to export its name."""
     errors: list[str] = []
+    snippets_root = docs_root / "snippets"
+    for path in sorted(snippets_root.rglob("*.jsx")):
+        relative_path = path.relative_to(docs_root)
+        if "components" not in relative_path.parts:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        named_exports = named_component_exports(text)
+        default_exports = DEFAULT_EXPORT_NAME_RE.findall(text)
+        for default_export in default_exports:
+            if default_export not in named_exports:
+                errors.append(
+                    f"{relative_path.as_posix()}: component {default_export} "
+                    "must have a named export"
+                )
+        if DEFAULT_EXPORT_RE.search(text) and not default_exports:
+            errors.append(
+                f"{relative_path.as_posix()}: anonymous default component "
+                "must be replaced by a named export"
+            )
+        if path.stem[0].isupper() and not named_exports and not default_exports:
+            errors.append(
+                f"{relative_path.as_posix()}: component module must have a "
+                "named export"
+            )
+    return errors
+
+
+def find_component_import_errors(docs_root: Path) -> list[str]:
+    """Require named component imports in files and C++ documentation blocks."""
+    errors: list[str] = []
+
+    exports_cache: dict[Path, set[str]] = {}
+
+    def exports_for(path: Path) -> set[str]:
+        if path not in exports_cache:
+            exports_cache[path] = named_component_exports(
+                path.read_text(encoding="utf-8", errors="ignore")
+            )
+        return exports_cache[path]
 
     def check_text(text: str, display_path: str) -> None:
         for binding in parse_bindings(text):
-            if not binding.is_default or not is_badge_component_import(binding):
+            if not is_component_source(binding.source):
                 continue
-            errors.append(
-                f"{display_path}: use a named import for badge component "
-                f"{binding.local}"
-            )
+            if binding.is_default or binding.is_namespace:
+                errors.append(
+                    f"{display_path}: use a named import for component "
+                    f"{binding.local}"
+                )
+                continue
+            if not binding.source.startswith("/snippets/"):
+                continue
+            target = docs_root / binding.source.lstrip("/")
+            if not target.is_file():
+                errors.append(
+                    f"{display_path}: component import does not exist: "
+                    f"{binding.source}"
+                )
+            elif binding.exported not in exports_for(target):
+                errors.append(
+                    f"{display_path}: component {binding.source} does not "
+                    f"export {binding.exported} by name"
+                )
 
     for path in sorted(docs_root.rglob("*")):
-        if path.suffix not in {".md", ".mdx"}:
+        if path.suffix not in {".md", ".mdx", ".jsx"}:
             continue
         check_text(
             path.read_text(encoding="utf-8", errors="ignore"),
@@ -242,7 +325,8 @@ def main() -> int:
     checked = 0
     checked_images = 0
 
-    errors.extend(find_default_badge_imports(docs_root))
+    errors.extend(find_component_export_errors(docs_root))
+    errors.extend(find_component_import_errors(docs_root))
 
     for path in sorted(snippets_root.rglob("*")):
         if path.suffix not in {".md", ".mdx"}:

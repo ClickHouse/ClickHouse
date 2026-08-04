@@ -4,13 +4,13 @@
  * Mintlify shim of clickhouse-docs's `src/components/WideTableWrapper`.
  *
  * Usage:
- *   import WideTableWrapper from "/snippets/components/WideTableWrapper/WideTableWrapper.jsx";
+ *   import { WideTableWrapper } from "/snippets/components/WideTableWrapper/WideTableWrapper.jsx";
  *
  *   <WideTableWrapper>
  *     | col1 | col2 | … |
  *   </WideTableWrapper>
  */
-const WideTableWrapper = ({ children }) => {
+export const WideTableWrapper = ({ children }) => {
   const containerStyle = {
     overflow: "auto",
     maxWidth: "100%",

@@ -1,4 +1,4 @@
-const MergeTreeSettingsExplorer = () => {
+export const MergeTreeSettingsExplorer = () => {
   // Mintlify's production renderer evaluates the exported component without
   // preserving module-scope bindings. Lazy state keeps the generated data in
   // that evaluation scope while constructing it only once per mount.

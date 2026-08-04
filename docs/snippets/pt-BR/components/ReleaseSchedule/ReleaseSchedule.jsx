@@ -1,4 +1,4 @@
-const ReleaseSchedule = ({ releases = [] }) => {
+export const ReleaseSchedule = ({ releases = [] }) => {
   const StatusIndicator = ({ status }) => {
     const color =
       status === "green" ? "#22c55e" :

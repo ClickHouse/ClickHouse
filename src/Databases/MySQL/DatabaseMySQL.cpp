@@ -669,7 +669,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         .source_access_type = AccessTypeObjects::Source::MYSQL,
     }, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 # MySQL database engine
 

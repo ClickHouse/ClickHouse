@@ -1,4 +1,4 @@
-const MergeTreeSettingsExplorer = () => {
+export const MergeTreeSettingsExplorer = () => {
   // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 평가할 때
   // 모듈 스코프 바인딩을 보존하지 않습니다. Lazy state는 생성된 데이터를
   // 해당 평가 스코프 내에 유지하면서 마운트당 한 번만 생성합니다.

@@ -269,7 +269,7 @@ void registerStorageSQLite(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 # SQLite table engine
 

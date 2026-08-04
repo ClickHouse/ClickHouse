@@ -171,7 +171,7 @@ void registerStorageS3Queue(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
+import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 # S3Queue table engine
 

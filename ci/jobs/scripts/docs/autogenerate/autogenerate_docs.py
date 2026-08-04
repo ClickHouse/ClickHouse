@@ -133,7 +133,7 @@ SETTINGS_SPLIT_FAMILIES = {
         "detail_component_imports": (
             'import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";',
             'import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";',
-            'import SettingsInfoBlock from "/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";',
+            'import { SettingsInfoBlock } from "/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";',
             'import { VersionHistory } from "/snippets/components/VersionHistory/VersionHistory.jsx";',
         ),
         "max_characters": SESSION_SETTINGS_MAX_CHARS_PER_PAGE,
@@ -1088,11 +1088,11 @@ def _component_imports_for_page(preamble, markdown, fallback_imports=()):
         if symbol in seen_symbols:
             continue
         if re.search(rf"<{re.escape(symbol)}\b", markdown):
-            # Mintlify badge modules and `VersionHistory` must use their named
-            # exports. Default imports omit the component or its MDX siblings.
+            # Mintlify component modules must use named exports. Default
+            # imports can omit the component or its MDX siblings.
             if (
-                (symbol.endswith("Badge") or symbol == "VersionHistory")
-                and import_line.startswith(f"import {symbol} from ")
+                import_line.startswith(f"import {symbol} from ")
+                and re.search(r"from\s+['\"][^'\"]+\.jsx['\"]", import_line)
             ):
                 import_line = import_line.replace(
                     f"import {symbol} from ",
@@ -1208,7 +1208,7 @@ def _settings_explorer_component(pages, family=None):
 
     entries_json = json.dumps(
         [explorer_entry(page) for page in pages], separators=(",", ":"))
-    template = '''const __COMPONENT_NAME__ = () => {
+    template = '''export const __COMPONENT_NAME__ = () => {
   // Mintlify's production renderer evaluates the exported component without
   // preserving module-scope bindings. Lazy state keeps the generated data in
   // that evaluation scope while constructing it only once per mount.
@@ -1499,7 +1499,10 @@ def split_settings_page(dest, content, docs_dir, family_name):
     }
     manifest_path = shard_dir / "manifest.json"
 
-    preamble_without_imports = IMPORT_RE.sub("", preamble).strip()
+    preamble_without_imports = IMPORT_RE.sub("", preamble)
+    preamble_without_imports = NAMED_IMPORT_RE.sub(
+        "", preamble_without_imports
+    ).strip()
     # Mintlify renders the frontmatter title as the page H1. Some generated
     # Docusaurus bodies repeat that title as a Markdown H1; keep it out of the
     # overview shell so the split page has a single visible title, but retain
@@ -1509,7 +1512,7 @@ def split_settings_page(dest, content, docs_dir, family_name):
     preamble_without_imports = _strip_settings_explorer(
         preamble_without_imports, family)
     explorer_import = (
-        f'import {family["component_name"]} from '
+        f'import {{ {family["component_name"]} }} from '
         f'"/{family["component_path"]}";'
     )
     root_content = (

@@ -1402,7 +1402,7 @@ void registerStorageLog(StorageFactory & factory)
 
     factory.registerStorage("Log", create_fn, features, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 # Log table engine
 
@@ -1504,7 +1504,7 @@ SELECT * FROM log_table ORDER BY timestamp
 
     factory.registerStorage("TinyLog", create_fn, features, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 # TinyLog table engine
 

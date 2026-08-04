@@ -1,4 +1,4 @@
-const WideTableWrapper = ({ children }) => {
+export const WideTableWrapper = ({ children }) => {
   const containerStyle = {
     overflow: "auto",
     maxWidth: "100%",

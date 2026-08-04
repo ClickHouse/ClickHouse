@@ -4,7 +4,7 @@
  * clickhouse-docs's `src/components/ReleaseSchedule`.
  *
  * Usage:
- *   import ReleaseSchedule from "/snippets/components/ReleaseSchedule/ReleaseSchedule.jsx";
+ *   import { ReleaseSchedule } from "/snippets/components/ReleaseSchedule/ReleaseSchedule.jsx";
  *
  *   <ReleaseSchedule releases={[
  *     { version: "25.4", fast_start_date: "...", ... fast_progress: "green", ... },
@@ -12,7 +12,7 @@
  *   ]} />
  */
 
-const ReleaseSchedule = ({ releases = [] }) => {
+export const ReleaseSchedule = ({ releases = [] }) => {
   const StatusIndicator = ({ status }) => {
     const color =
       status === "green" ? "#22c55e" :

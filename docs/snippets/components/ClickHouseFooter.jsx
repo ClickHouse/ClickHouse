@@ -1,6 +1,6 @@
 
 
-const ClickHouseFooter = () => {
+export const ClickHouseFooter = () => {
   return (
     <div className="flex flex-col bg-neutral-900 pb-8 pt-16 -mx-[100vw] px-[100vw] mt-20">
       <div className="mx-auto w-full max-w-7xl justify-between gap-8 pb-11 md:flex lg:gap-10">
