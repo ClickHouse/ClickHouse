@@ -18,6 +18,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/Arena.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -25,6 +26,8 @@
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
 #include <IO/ReadBufferFromString.h>
+
+#include <optional>
 
 
 namespace DB
@@ -544,10 +547,10 @@ static ALWAYS_INLINE typename Map::mapped_type * findOrInsert(Map & map, const t
 }
 
 /// The same for a key that had to be serialized into `arena` first.
-/// The arena is not rolled back per row, so a key that the map does not take stays resident for the
-/// whole function - which would make the memory grow with every looked up argument, not just with
-/// the argument that seeds the map. Roll such a key back right away: on the lookup-only path, and
-/// on the filling path when the key was already there.
+/// A key that the map does not take would stay resident until the arena is reclaimed at the row
+/// boundary - which would make the memory grow with every looked up argument, not just with the
+/// argument that seeds the map. Roll such a key back right away: on the lookup-only path, and on
+/// the filling path when the key was already there.
 template <bool insert, typename Map>
 static ALWAYS_INLINE typename Map::mapped_type * findOrInsertSerialized(Map & map, Arena & arena, std::string_view key)
 {
@@ -603,7 +606,19 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     auto null_map_column = ColumnUInt8::create();
     NullMap & null_map = assert_cast<ColumnUInt8 &>(*null_map_column).getData();
 
-    Arena arena;
+    /// Whether the map keys are values serialized into an arena, as opposed to numbers or strings
+    /// referencing the source column directly.
+    constexpr bool serialized_keys
+        = !is_numeric_column && !std::is_same_v<ColumnType, ColumnString> && !std::is_same_v<ColumnType, ColumnFixedString>;
+
+    /// The arena holding the serialized keys of `map`. `map.clear()` does not free them (a
+    /// `ClearableHashMap` only advances its version), so the arena is recreated at every row
+    /// boundary - otherwise the keys inserted for every previous row would stay resident until the
+    /// end of the block, and the memory would grow with the whole column instead of being bounded
+    /// by one row of the argument that seeds the map.
+    std::optional<Arena> arena;
+    if constexpr (serialized_keys)
+        arena.emplace();
 
     Map map;
     VectorWithMemoryTracking<size_t> prev_off(args, 0);
@@ -644,6 +659,11 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     for (size_t row = 0; row < rows; ++row)
     {
         map.clear();
+        if constexpr (serialized_keys)
+        {
+            if (arena->usedBytes())
+                arena.emplace();
+        }
 
         bool all_has_nullable = all_nullable;
         bool current_has_nullable = false;
@@ -698,7 +718,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     else
                     {
                         const char * data = nullptr;
-                        value = findOrInsertSerialized<fill_map>(map, arena, column->serializeValueIntoArena(i, arena, data, nullptr));
+                        value = findOrInsertSerialized<fill_map>(map, *arena, column->serializeValueIntoArena(i, *arena, data, nullptr));
                     }
 
                     /// Here we count the number of element appearances, but no more than once per array.
@@ -809,9 +829,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 {
                     const char * data = nullptr;
                     /// Only a lookup - the serialized key is not kept, see `findOrInsertSerialized`.
-                    const std::string_view key = columns[0]->serializeValueIntoArena(i, arena, data, nullptr);
+                    const std::string_view key = columns[0]->serializeValueIntoArena(i, *arena, data, nullptr);
                     pair = map.find(key);
-                    arena.rollback(key.size());
+                    arena->rollback(key.size());
                 }
 
                 if (!current_has_nullable)
