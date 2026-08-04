@@ -1424,6 +1424,15 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     /// otherwise fall back to bucket-ascending order (old parts without the index stream).
     else
     {
+        /// The `bucket_indexes` stream is a flat array with one entry per key-value pair, so the
+        /// number of entries that belong to the first `rows_offset` rows is not known in advance
+        /// and those entries cannot be skipped on their own. Read the skipped rows together with
+        /// the requested ones, reassemble the whole range in the original order and drop the
+        /// prefix afterwards, so that the index stream stays in sync with the bucket streams.
+        const bool reorder_with_skipped_rows = map_state->has_bucket_index && rows_offset != 0;
+        const size_t buckets_rows_offset = reorder_with_skipped_rows ? 0 : rows_offset;
+        const size_t buckets_limit = reorder_with_skipped_rows ? rows_offset + limit : limit;
+
         VectorWithMemoryTracking<ColumnPtr> map_buckets(buckets_info_state->buckets);
         for (size_t bucket = 0; bucket != buckets_info_state->buckets; ++bucket)
         {
@@ -1431,7 +1440,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().bucket = bucket;
             map_buckets[bucket] = column_map.cloneEmpty();
             ColumnPtr nested_ptr = assert_cast<const ColumnMap &>(*map_buckets[bucket]).getNestedColumnPtr();
-            nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, map_state->bucket_nested_states[bucket], cache);
+            nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_ptr, buckets_rows_offset, buckets_limit, settings, map_state->bucket_nested_states[bucket], cache);
             settings.path.pop_back();
         }
 
@@ -1454,7 +1463,17 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
                 bucket_index_column, 0, total_kv_pairs, settings, map_state->bucket_index_state, cache);
             settings.path.pop_back();
 
-            collectMapFromBucketsWithOrder(map_buckets, *bucket_index_column, column_map);
+            if (reorder_with_skipped_rows)
+            {
+                auto whole_range_column = column_map.cloneEmpty();
+                collectMapFromBucketsWithOrder(map_buckets, *bucket_index_column, *whole_range_column);
+                if (whole_range_column->size() > rows_offset)
+                    column_map.insertRangeFrom(*whole_range_column, rows_offset, whole_range_column->size() - rows_offset);
+            }
+            else
+            {
+                collectMapFromBucketsWithOrder(map_buckets, *bucket_index_column, column_map);
+            }
         }
         else
         {
