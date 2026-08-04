@@ -1,6 +1,5 @@
 #include <Parsers/ASTAlterQuery.h>
 
-#include <Core/ServerSettings.h>
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
