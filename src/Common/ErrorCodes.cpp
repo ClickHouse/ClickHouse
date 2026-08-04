@@ -5,7 +5,9 @@
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 #include <Common/CurrentThread.h>
+#endif
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
@@ -705,7 +707,6 @@ APPLY_FOR_ERROR_CODES(M)
 
 ErrorValues values;
 
-
 namespace
 {
 constexpr size_t COUNT = []()
@@ -717,6 +718,7 @@ constexpr size_t COUNT = []()
     return i;
 }();
 
+/** One `std::string_view` per defined error code. Unlike `ErrorPairHolder`, names are needed by the standalone parser. */
 #define X(VALUE, NAME) std::string_view{#NAME},
 std::array<std::string_view, COUNT> g_names{APPLY_FOR_ERROR_CODES(X)};
 #undef X
@@ -745,11 +747,17 @@ public:
 
     ErrorPairHolder & operator[](ErrorCode code)
     {
+#if defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
+        static_cast<void>(code);
+        static ErrorPairHolder value;
+        return value;
+#else
         if (const auto found = index.find(code); found != index.end())
         {
             return dense[found->second];
         }
         throw std::runtime_error{fmt::format("out of range {}", code)};
+#endif
     }
 
     ErrorCode clamp(ErrorCode code) const { return index.contains(code) ? code : std::prev(index.end())->first; }
@@ -771,7 +779,13 @@ public:
     std::ranges::subrange<ErrorArrayIndex::const_iterator> getIndex() const { return {index.cbegin(), index.cend()}; }
 
 private:
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
+    /** One `ErrorPairHolder` per defined error code, each holding local and remote errors, their messages,
+      * format strings, query ids, stack traces, and a mutex. The server needs these for `system.errors`;
+      * the standalone parser needs names only and uses a single stub holder instead.
+      */
     std::array<ErrorPairHolder, COUNT> dense{};
+#endif
     /// Index always points to correct entries and is sorted by ErrorCode
     ErrorArrayIndex index;
 };
@@ -822,29 +836,34 @@ void extendedMessage(ErrorCode error_code, bool remote, size_t error_index, cons
 
 size_t ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
 {
+    size_t error_index = 0;
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     const auto now = std::chrono::system_clock::now();
 
     std::lock_guard lock(mutex);
     auto & error = remote ? value.remote : value.local;
 
-    size_t error_index = error.count++;
+    error_index = error.count++;
     error.message = message;
     error.format_string = format_string;
     error.trace = trace;
     error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
     error.query_id = CurrentThread::getQueryId();
+#endif
 
     return error_index;
 }
 
 void ErrorPairHolder::extendedMessage(bool remote, size_t error_index, const std::string & new_message)
 {
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     std::lock_guard lock(mutex);
     auto & error = remote ? value.remote : value.local;
 
     /// This function is supposed to extend the current message.
     if ((error.count == error_index + 1) && new_message.starts_with(error.message))
         error.message = new_message;
+#endif
 }
 
 ErrorPair ErrorPairHolder::get()
