@@ -38,15 +38,16 @@ DROP TABLE t_shared;
 
 DROP TABLE IF EXISTS t_reordered;
 
--- Overwriting only lost the range when the live rule was not declared last, so pin the
--- order that already worked too: the slot must not depend on declaration order.
+-- The live rule is declared in the middle, so neither the first nor the last rule
+-- finalized carries the range: the slot must not depend on declaration order.
 CREATE TABLE t_reordered (tier String, ts DateTime('UTC'))
 ENGINE = MergeTree ORDER BY tier
 TTL ts + INTERVAL 1 MONTH DELETE WHERE tier = 'b',
-    ts + INTERVAL 1 MONTH DELETE WHERE tier = 'a'
+    ts + INTERVAL 1 MONTH DELETE WHERE tier = 'a',
+    ts + INTERVAL 1 MONTH DELETE WHERE tier = 'c'
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
-INSERT INTO t_reordered VALUES ('a', '2020-01-01 00:00:00'), ('a', '2099-01-01 00:00:00'), ('b', '2020-01-01 00:00:00');
+INSERT INTO t_reordered VALUES ('a', '2020-01-01 00:00:00'), ('a', '2099-01-01 00:00:00'), ('b', '2020-01-01 00:00:00'), ('c', '2020-01-01 00:00:00');
 
 OPTIMIZE TABLE t_reordered FINAL;
 
@@ -54,6 +55,27 @@ SELECT 'reordered', rows_where_ttl_info.min, rows_where_ttl_info.max
 FROM system.parts WHERE database = currentDatabase() AND table = 't_reordered' AND active;
 
 DROP TABLE t_reordered;
+
+DROP TABLE IF EXISTS t_two_live;
+
+-- Two rules each keep a live row, so the shared slot must span both: min from 'a', max from 'b'.
+-- Any form of assignment would keep only one rule's range.
+CREATE TABLE t_two_live (tier String, ts DateTime('UTC'))
+ENGINE = MergeTree ORDER BY tier
+TTL ts + INTERVAL 1 MONTH DELETE WHERE tier = 'a',
+    ts + INTERVAL 1 MONTH DELETE WHERE tier = 'b'
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_two_live VALUES ('a', '2020-01-01 00:00:00'), ('a', '2099-01-01 00:00:00'), ('b', '2020-01-01 00:00:00'), ('b', '2100-01-01 00:00:00');
+
+OPTIMIZE TABLE t_two_live FINAL;
+
+SELECT 'two live', rows_where_ttl_info.min, rows_where_ttl_info.max
+FROM system.parts WHERE database = currentDatabase() AND table = 't_two_live' AND active;
+
+SELECT 'two live rows', tier, ts FROM t_two_live ORDER BY ALL;
+
+DROP TABLE t_two_live;
 
 DROP TABLE IF EXISTS t_distinct;
 
