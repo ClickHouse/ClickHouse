@@ -330,7 +330,10 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             std::uniform_int_distribution<int> jrange(1, 10);
 
             lv->set_no_quote_str(
-                fmt::format("'{}'{}", strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator)), complex ? "::JSON" : ""));
+                fmt::format(
+                    "'{}'{}",
+                    strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator), this->fc.fuzz_floating_points),
+                    complex ? "::JSON" : ""));
         }
         break;
         case LitOp::LitNULLVal: lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL); break;
