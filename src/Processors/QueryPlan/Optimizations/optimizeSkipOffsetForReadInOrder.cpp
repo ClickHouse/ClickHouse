@@ -5,12 +5,36 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Interpreters/ActionsDAG.h>
 
 #include <limits>
 #include <optional>
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// Map a column name down through the Expression steps between the Sorting and the read, which the analyzer
+/// uses to qualify names (`k` -> `__table1.k`). Only renames are followed: anything computed, including a
+/// monotonic function of the key, has no counterpart among the read's own columns and gives up.
+static std::optional<String> resolveThroughRenames(const String & name, const std::vector<const ActionsDAG *> & dags)
+{
+    String current = name;
+    for (auto it = dags.rbegin(); it != dags.rend(); ++it)
+    {
+        const auto * node = (*it)->tryFindInOutputs(current);
+        if (!node)
+            return {};
+
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return {};
+
+        current = node->result_name;
+    }
+    return current;
+}
 
 /// Pattern: Limit(offset>0)|Offset -> [Expression|Sorting|Limit(offset==0)]* -> ReadFromMergeTree (forward
 /// read-in-order). Drop the leading granules consumed by the offset during reading and reduce the offset by
@@ -47,9 +71,15 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
         }
     }
 
+    /// The order the offset counts rows in, resolved into the read's own column names.
+    SortDescription offset_order;
+    std::vector<const ActionsDAG *> dags_below_sorting;
+
     auto apply = [&](size_t offset, auto && set_offset)
     {
-        if (const size_t skipped_rows = reading->skipRowsForOffset(offset))
+        if (offset_order.empty())
+            return;
+        if (const size_t skipped_rows = reading->skipRowsForOffset(offset, offset_order))
             set_offset(offset - skipped_rows);
     };
 
@@ -105,13 +135,29 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
 
         /// Sorting preserves the leading rows. An Expression does too, unless it contains an arrayJoin, which
         /// expands rows and makes the offset count post-expansion rows rather than source rows.
-        if (typeid_cast<SortingStep *>(step))
+        if (auto * sorting_step = typeid_cast<SortingStep *>(step))
+        {
+            /// A second Sorting re-orders the rows the offset sees, so the leading granules of the read are
+            /// no longer the ones it consumes.
+            if (!offset_order.empty())
+                return;
+
+            for (const auto & column : sorting_step->getSortDescription())
+            {
+                auto resolved = resolveThroughRenames(column.column_name, dags_below_sorting);
+                if (!resolved)
+                    return;
+                offset_order.emplace_back(*resolved, column.direction, column.nulls_direction);
+            }
             continue;
+        }
 
         if (auto * expression_step = typeid_cast<ExpressionStep *>(step))
         {
             if (expression_step->getExpression().hasArrayJoin())
                 return;
+            if (offset_order.empty())
+                dags_below_sorting.push_back(&expression_step->getExpression());
             continue;
         }
 

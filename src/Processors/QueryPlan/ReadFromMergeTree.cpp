@@ -3312,9 +3312,9 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     return true;
 }
 
-size_t ReadFromMergeTree::skipRowsForOffset(size_t offset)
+size_t ReadFromMergeTree::skipRowsForOffset(size_t offset, const SortDescription & sort_description)
 {
-    if (offset == 0 || offset_granules_skipped)
+    if (offset == 0 || offset_rows_skipped.has_value())
         return 0;
 
     /// Only forward read-in-order is supported.
@@ -3341,18 +3341,20 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset)
     if (!isSafePrimaryKey(metadata->getPrimaryKey()) || !metadata->getSortingKeyReverseFlags().empty())
         return 0;
 
-    /// The cut point is proven on the raw key values from the primary index, so the merge order has to be
-    /// those same columns. `optimizeReadInOrder` also keeps an in-order read for a monotonic transformation
-    /// of the key (e.g. `ORDER BY toDate(ts)` on a table sorted by `ts`), where granules strictly separated
-    /// on `ts` can still be tied in the merge order and dropping one changes which tied rows survive.
-    const size_t prefix_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
-    const auto & sort_description = query_info.input_order_info->sort_description_for_merging;
-    const auto & sorting_key_columns = metadata->getSortingKey().column_names;
-    if (sort_description.size() != prefix_size || prefix_size > sorting_key_columns.size())
+    /// The cut point is proven on raw key values from the primary index, so the order the offset counts rows
+    /// in has to be the read's own key order. `optimizeReadInOrder` also keeps an in-order read for a
+    /// monotonic transformation of the key (e.g. `ORDER BY toDate(ts)` on a table sorted by `ts`), where
+    /// granules strictly separated on `ts` can still be tied in that order and dropping one changes which
+    /// tied rows survive; such a description names the expression instead and is rejected here.
+    const auto & read_order = getSortDescription();
+    const size_t prefix_size = sort_description.size();
+    if (prefix_size == 0 || prefix_size > read_order.size()
+        || prefix_size > query_info.input_order_info->used_prefix_of_sorting_key_size)
         return 0;
 
     for (size_t i = 0; i < prefix_size; ++i)
-        if (sort_description[i].direction != 1 || sort_description[i].column_name != sorting_key_columns[i])
+        if (sort_description[i].direction != 1 || read_order[i].direction != 1
+            || sort_description[i].column_name != read_order[i].column_name)
             return 0;
 
     auto & result = getAnalysisResult();
@@ -3365,7 +3367,7 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset)
                 return 0;
 
     const size_t skipped_rows = skipLeadingGranulesForOffset(result.parts_with_ranges, offset, prefix_size, /*in_reverse_order=*/false, log);
-    offset_granules_skipped = true;
+    offset_rows_skipped = skipped_rows;
     if (skipped_rows == 0)
         return 0;
 
