@@ -61,6 +61,7 @@ cat "$TMP_DIR"/*.dict "$CURATED_DICT" | LC_ALL=C sort | uniq > "$OUTPUT_DIR/all.
 # surface, so extractor gaps cannot regress silently.
 echo "Checking that the source-derived dictionary covers the binary-derived one"
 "$SCRIPT_DIR/generate_source_dict.sh" "$SOURCE_ROOT" "$TMP_DIR/source.dict"
+# BEGIN: dictionary coverage check
 # comm compares by collation, so it must use the locale its inputs were sorted
 # with. It exits non-zero only when the comparison itself fails, never on a diff.
 if ! MISSING_TOKENS=$(LC_ALL=C comm -23 <(LC_ALL=C sort -u "$OUTPUT_DIR/all.dict") <(LC_ALL=C sort -u "$TMP_DIR/source.dict")); then
@@ -74,3 +75,4 @@ if [ -n "$MISSING_TOKENS" ]; then
          "compile time and cannot be derived from the sources - add it to tests/fuzz/dictionaries/old.dict."
     exit 1
 fi
+# END: dictionary coverage check
