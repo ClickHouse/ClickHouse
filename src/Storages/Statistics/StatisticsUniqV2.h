@@ -4,6 +4,8 @@
 #include <Storages/Statistics/Statistics.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -28,6 +30,11 @@ private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
     AggregateDataPtr data;
+
+    /// Memoized `estimateCardinality` + 1, so 0 means "not computed yet" without reserving a
+    /// representable cardinality (an all NULL column legitimately has 0 distinct values).
+    /// Must be reset by every mutator of `data`. Relaxed: all racers store the identical value.
+    mutable std::atomic<UInt64> cached_cardinality_plus_one{0};
 };
 
 bool uniqV2StatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

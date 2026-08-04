@@ -55,12 +55,14 @@ void StatisticsUniqV2::build(const ColumnPtr & column)
     }
 
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
+    cached_cardinality_plus_one.store(0, std::memory_order_relaxed);
 }
 
 void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniqV2 * other = typeid_cast<const StatisticsUniqV2 *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
+    cached_cardinality_plus_one.store(0, std::memory_order_relaxed);
 }
 
 bool StatisticsUniqV2::isCompatibleWith(const IStatistics & other) const
@@ -95,17 +97,23 @@ void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*ver
             is_null, collector_is_nullable);
 
     collector->deserialize(data, buf);
+    cached_cardinality_plus_one.store(0, std::memory_order_relaxed);
 }
 
 UInt64 StatisticsUniqV2::estimateCardinality() const
 {
+    /// Finalizing the sketch is a pure function of the state, so it can be memoized. It is not
+    /// cheap: uniqCombined64 runs a 54 iteration `long double` loop, software binary128 on aarch64.
+    if (const UInt64 cached = cached_cardinality_plus_one.load(std::memory_order_relaxed))
+        return cached - 1;
+
     auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
     /// When all input values are NULL the null-wrapper returns NULL (no non-null values seen).
     /// That means 0 distinct non-null values.
-    if (column->isNullAt(0))
-        return 0;
-    return column->getUInt(0);
+    const UInt64 cardinality = column->isNullAt(0) ? 0 : column->getUInt(0);
+    cached_cardinality_plus_one.store(cardinality + 1, std::memory_order_relaxed);
+    return cardinality;
 }
 
 bool uniqV2StatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)

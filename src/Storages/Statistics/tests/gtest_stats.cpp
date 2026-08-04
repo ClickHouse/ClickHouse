@@ -751,3 +751,102 @@ TEST(Statistics, BasicDefaultCountArray)
     EXPECT_DOUBLE_EQ(*eq_empty, 2.0);
 }
 
+/// `estimateCardinality` memoizes the finalized sketch, so every mutator of the aggregate state must
+/// drop that memo. A missed reset would return a stale cardinality, which is worse than recomputing.
+/// This contract is not observable through SQL: no query path reads a cardinality and then mutates the
+/// same statistics object (the estimator builder merges before publishing, and statistics are
+/// deserialized into fresh objects on every load), hence a unit test.
+class UniqCardinalityInvalidation : public ::testing::TestWithParam<StatisticsType>
+{
+protected:
+    static constexpr size_t distinct_per_block = 40;
+
+    static ColumnStatisticsPtr build(Int32 first_value, size_t distinct = distinct_per_block)
+    {
+        tryRegisterAggregateFunctions();
+        auto data_type = std::make_shared<DataTypeInt32>();
+        MutableColumnPtr col = data_type->createColumn();
+        for (size_t i = 0; i < distinct; ++i)
+            col->insert(first_value + static_cast<Int32>(i));
+        auto stats = createTestStats({GetParam()}, data_type);
+        stats->build(std::move(col));
+        return stats;
+    }
+
+    /// The single statistics object under test, so that `IStatistics::deserialize` can be driven
+    /// directly (`ColumnStatistics::deserialize` would return a fresh object and prove nothing).
+    static const StatisticsPtr & uniqStat(const ColumnStatisticsPtr & stats)
+    {
+        return stats->getStats().at(GetParam());
+    }
+};
+
+TEST_P(UniqCardinalityInvalidation, BuildResetsCachedCardinality)
+{
+    auto stats = build(0);
+    EXPECT_EQ(stats->estimateCardinality(), distinct_per_block);
+
+    MutableColumnPtr more = DataTypeInt32().createColumn();
+    for (size_t i = 0; i < distinct_per_block; ++i)
+        more->insert(static_cast<Int32>(distinct_per_block + i));
+    stats->build(std::move(more));
+
+    EXPECT_EQ(stats->estimateCardinality(), 2 * distinct_per_block);
+}
+
+TEST_P(UniqCardinalityInvalidation, MergeResetsCachedCardinality)
+{
+    auto stats = build(0);
+    EXPECT_EQ(stats->estimateCardinality(), distinct_per_block);
+
+    stats->merge(build(static_cast<Int32>(distinct_per_block)));
+
+    EXPECT_EQ(stats->estimateCardinality(), 2 * distinct_per_block);
+}
+
+TEST_P(UniqCardinalityInvalidation, DeserializeResetsCachedCardinality)
+{
+    /// `uniqCombined64` switches container as the sketch grows and its reader can only widen the
+    /// container, so read into a state that is still in the smallest one (at most 16 distinct values).
+    static constexpr size_t few = 5;
+    auto stats = build(0, few);
+    EXPECT_EQ(stats->estimateCardinality(), few);
+
+    String serialized;
+    {
+        WriteBufferFromString out(serialized);
+        uniqStat(build(0))->serialize(out);
+        out.finalize();
+    }
+
+    ReadBufferFromString in(serialized);
+    uniqStat(stats)->deserialize(in, StatisticsFileVersion::V4);
+
+    EXPECT_EQ(stats->estimateCardinality(), distinct_per_block);
+}
+
+TEST_P(UniqCardinalityInvalidation, RepeatedReadsAreStable)
+{
+    auto stats = build(0);
+    const UInt64 first = stats->estimateCardinality();
+    EXPECT_EQ(first, distinct_per_block);
+    EXPECT_EQ(stats->estimateCardinality(), first);
+    EXPECT_EQ(stats->estimateCardinality(), first);
+
+    /// A cardinality of 0 must also be cacheable, which is why the memo stores `cardinality + 1`.
+    auto data_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+    MutableColumnPtr all_null = data_type->createColumn();
+    all_null->insertDefault();
+    all_null->insertDefault();
+    auto null_stats = createTestStats({GetParam()}, data_type);
+    null_stats->build(std::move(all_null));
+    EXPECT_EQ(null_stats->estimateCardinality(), 0u);
+    EXPECT_EQ(null_stats->estimateCardinality(), 0u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BothUniqImplementations,
+    UniqCardinalityInvalidation,
+    ::testing::Values(StatisticsType::Uniq, StatisticsType::UniqV2),
+    [](const ::testing::TestParamInfo<StatisticsType> & param_info)
+    { return param_info.param == StatisticsType::Uniq ? "Uniq" : "UniqV2"; });

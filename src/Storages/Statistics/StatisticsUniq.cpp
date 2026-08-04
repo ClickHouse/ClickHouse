@@ -1,4 +1,5 @@
 #include <Storages/Statistics/StatisticsUniq.h>
+#include <base/scope_guard.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -45,12 +46,14 @@ void StatisticsUniq::build(const ColumnPtr & column)
     }
 
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
+    cached_cardinality_plus_one.store(0, std::memory_order_relaxed);
 }
 
 void StatisticsUniq::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
+    cached_cardinality_plus_one.store(0, std::memory_order_relaxed);
 }
 
 bool StatisticsUniq::isCompatibleWith(const IStatistics & other) const
@@ -72,6 +75,9 @@ void StatisticsUniq::serialize(WriteBuffer & buf)
 
 void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
+    /// Several exits below, plus a partially applied state if a read throws, so reset in one place.
+    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
+
     bool is_null = false;
     readBinary(is_null, buf);
     auto nested_func = collector->getNestedFunction();
@@ -96,9 +102,15 @@ void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*versi
 
 UInt64 StatisticsUniq::estimateCardinality() const
 {
+    /// Finalizing the sketch is a pure function of the state, so it can be memoized.
+    if (const UInt64 cached = cached_cardinality_plus_one.load(std::memory_order_relaxed))
+        return cached - 1;
+
     auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
-    return column->getUInt(0);
+    const UInt64 cardinality = column->getUInt(0);
+    cached_cardinality_plus_one.store(cardinality + 1, std::memory_order_relaxed);
+    return cardinality;
 }
 
 bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
