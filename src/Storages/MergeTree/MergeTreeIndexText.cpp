@@ -1283,7 +1283,6 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
                 info.offsets.emplace_back(0);
                 info.ranges.emplace_back(info.embedded_postings.front(), info.embedded_postings.back());
             }
-            /// TextIndexUsedEmbeddedPostings is incremented by the callers, batched per dictionary block.
         }
     }
     else
@@ -1402,10 +1401,6 @@ std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(
         ++j;
     }
 
-    size_t num_embedded = std::count_if(result.begin(), result.end(),
-        [](const auto & info) { return !info->embedded_postings.empty(); });
-    ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings, num_embedded);
-
     return result;
 }
 
@@ -1421,10 +1416,6 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
 
     for (size_t i = 0; i < num_tokens; ++i)
         token_infos.emplace_back(deserializeTokenInfo(istr, postings_serialization));
-
-    size_t num_embedded = std::count_if(token_infos.begin(), token_infos.end(),
-        [](const auto & info) { return !info.embedded_postings.empty(); });
-    ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings, num_embedded);
 
     return DictionaryBlock{std::move(tokens_column), std::move(token_infos), std::move(tokens_format)};
 }

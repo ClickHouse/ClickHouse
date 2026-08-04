@@ -8,6 +8,7 @@ namespace ProfileEvents
 {
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
+    extern const Event TextIndexUsedEmbeddedPostings;
 }
 
 namespace DB
@@ -229,10 +230,10 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
 
     if (!token_info->embedded_postings.empty())
     {
-        /// Queries touch only the searched tokens, so a transient bitmap per token is cheap here.
         PostingList embedded;
         embedded.addMany(token_info->embedded_postings.size(), token_info->embedded_postings.data());
         addPostings(token, embedded);
+        ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
     }
 }
 
