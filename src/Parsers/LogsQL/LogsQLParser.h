@@ -52,6 +52,11 @@ private:
         std::optional<UInt64> offset;
         bool has_aggregation = false;
         bool has_projection = false;
+
+        /// Set by the join pipe.
+        ASTPtr join_subquery;                /// ASTSelectWithUnionQuery of the right side.
+        std::vector<String> join_using;      /// The `by (...)` fields.
+        bool join_inner = false;             /// LEFT JOIN by default.
     };
 
     /// A parsed stats function which can be materialized into an aggregate function AST
@@ -72,6 +77,17 @@ private:
     Context context;
     size_t depth = 0;
     const char * parsed_end = nullptr;
+
+    /// Set by options(time_offset=...): shifts all `_time` filters into the past.
+    Int64 options_time_offset_ns = 0;
+    /// Set by options(global_filter=(...)): ANDed into the query and all its subqueries.
+    ASTPtr options_global_filter;
+    /// The length of the last parsed top-level `_time` range with a known length.
+    /// Used as the denominator of the `rate()` and `rate_sum()` stats functions.
+    std::optional<Int64> query_time_range_ns;
+    /// The `_time` bucket step of the stats pipe being parsed, if any: it takes precedence
+    /// over the query time range as the denominator of `rate()` and `rate_sum()`.
+    std::optional<Int64> current_stats_time_bucket_ns;
 
     /// Guards against deeply nested queries.
     struct IncreaseDepth
@@ -119,7 +135,11 @@ private:
     ASTPtr parseFilterStringRange(const String & field_name);
     ASTPtr parseFilterLenRange(const String & field_name);
     ASTPtr parseFilterIPv4Range(const String & field_name);
+    ASTPtr parseFilterIPv6Range(const String & field_name);
     ASTPtr parseFilterFieldComparison(const String & field_name, const String & func);
+    ASTPtr parseFilterStreamId();
+    ASTPtr parseFilterCommonCase(const String & field_name, bool equals);
+    ASTPtr parseFilterJSONArrayContainsAny(const String & field_name);
     ASTPtr parseFilterStream();
     ASTPtr parseFilterTime();
     ASTPtr parseFilterDayRange();
@@ -142,6 +162,9 @@ private:
     {
         ASTPtr start;
         ASTPtr end;
+        /// Set when the bound is an absolute timestamp: nanoseconds since epoch in UTC.
+        std::optional<Int64> start_ns;
+        std::optional<Int64> end_ns;
     };
 
     TimeBound parseTimeBound();
@@ -170,9 +193,66 @@ private:
     void parsePipeTop(Layer & layer);
     void parsePipeFirstLast(Layer & layer, bool is_last);
     void parsePipeMath(Layer & layer);
+    void parsePipeLen(Layer & layer);
+    void parsePipeCoalesce(Layer & layer);
+    void parsePipeDecolorize(Layer & layer);
+    void parsePipeSplit(Layer & layer);
+    void parsePipeUnpackWords(Layer & layer);
+    void parsePipeTimeAdd(Layer & layer);
+    void parsePipeSample(Layer & layer);
+    void parsePipeGenerateSequence(Layer & layer);
+    void parsePipeFieldValues(Layer & layer);
+    void parsePipeJSONArrayLen(Layer & layer);
+    void parsePipeReplace(Layer & layer, bool is_regexp);
+    void parsePipeUnion(Layer & layer);
+    void parsePipeHash(Layer & layer);
+    void parsePipeUnroll(Layer & layer);
+    void parsePipePack(Layer & layer, bool is_logfmt);
+    void parsePipeJoin(Layer & layer);
+    void parsePipeExtract(Layer & layer, bool is_regexp);
+    void parsePipeFormat(Layer & layer);
+    void parsePipeUnpack(Layer & layer, bool is_logfmt);
+    void parsePipeRunningStats(Layer & layer, bool is_total);
+
+    ASTPtr parseFilterPatternMatch(const String & field_name, const String & func_name);
+
+    /// One step of an extract/format pattern: a literal prefix followed by an optional field placeholder.
+    struct PatternStep
+    {
+        String prefix;
+        String field;      /// Empty for anonymous placeholders (<>, <_>, <*>) and for the trailing literal.
+        bool plain = false;
+    };
+    std::vector<PatternStep> parsePatternSteps(const String & pattern);
+
+    /// Applies extracted/formatted values to the layer: replaces existing columns
+    /// (when `use_replace`) or appends new computed columns.
+    void applyComputedFields(Layer & layer, const std::vector<std::pair<String, ASTPtr>> & fields, bool use_replace);
+
+    /// Parses the optional `if (<filters>)` clause used by several pipes. Returns nullptr if absent or empty.
+    ASTPtr parseOptionalIfCondition();
+
+    /// Parses `(<filters>)` with the current token at '('. Returns nullptr for an empty `()`.
+    ASTPtr parseParenthesizedFilter();
+
+    /// Replaces the column with an expression at the current layer: `SELECT * REPLACE (<expression> AS <column>)`.
+    void applyColumnReplacement(Layer & layer, const String & column, ASTPtr expression);
+
+    /// Appends `expression AS alias` to the current layer's select list (keeping `*` as the base).
+    void appendComputedColumn(Layer & layer, ASTPtr expression, const String & alias);
 
     std::vector<SortField> parseSortFields();
     UInt64 parseLimitValue();
+
+    /// Applies sorting with the optional rank column and per-partition top-N.
+    void applySortWithExtras(
+        Layer & layer,
+        const std::vector<SortField> & fields,
+        bool global_desc,
+        const std::vector<String> & partition_fields,
+        const String & rank_name,
+        std::optional<UInt64> sort_limit,
+        std::optional<UInt64> sort_offset);
 
     /// An expression for sorting by the given field at the current layer. If the layer's select list
     /// has an expression aliased with this name, the expression itself is used: `ORDER BY alias`

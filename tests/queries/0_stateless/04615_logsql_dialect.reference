@@ -127,3 +127,73 @@ error: cannot open file /var/lib/data
 fatal error: cannot allocate memory
 1
 error	1
+2024-01-01 10:00:00	1.2.3.4	alice
+2024-01-01 10:01:00	5.6.7.8	bob
+2024-01-01 10:02:00		
+
+alice
+bob
+app=web level=WARN size=200
+		
+x	42	y
+z	7	
+ip=1.2.3.4 user=alice dur=15ms
+0
+1
+2
+
+dev
+prod,eu
+
+dev
+eu
+prod
+["no","ip","here"]
+["no","ip","here"]
+3
+error
+info
+warn
+no ip there
+ip=N.N.N.N user=bob dur=Nms
+{"level":"error","app":"api"}
+level=error app=api
+2
+3
+3
+0
+3
+3
+1
+2
+ip=1.2.3.4 user=alice dur=15ms
+ip=5.6.7.8 user=bob dur=25ms
+1200	100
+api
+{"level":"error","app":"api"}
+['{"level":"info"}','{"level":"warn"}','{"level":"error"}']
+3
+1	2	1
+0.00003472222222222222
+50	1
+150	1
+250	1
+1	100
+2	200
+3	300
+api	300
+web	200
+1	100
+2024-01-01 10:00:00	100
+2024-01-01 10:01:00	300
+2024-01-01 10:02:00	600
+2024-01-01 10:00:00	web	2
+2024-01-01 10:01:00	web	2
+2024-01-01 10:02:00	api	1
+ip=5.6.7.8 user=bob dur=25ms
+no ip here
+2024-01-01 10:00:00	web	2
+2024-01-01 10:01:00	web	2
+2024-01-01 10:02:00	api	0
+1
+1

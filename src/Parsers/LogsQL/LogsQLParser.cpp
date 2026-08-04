@@ -194,6 +194,12 @@ LogsQLParser::Layer LogsQLParser::parseQuery(bool is_subquery)
     Layer layer;
     layer.where = parseFilterOr("");
 
+    /// options(global_filter=(...)) is ANDed into the query and all its subqueries.
+    if (options_global_filter && layer.where)
+        layer.where = makeASTFunction("and", options_global_filter->clone(), layer.where);
+    else if (options_global_filter)
+        layer.where = options_global_filter->clone();
+
     if (lex.isKeyword("|"))
     {
         lex.nextToken();
@@ -235,14 +241,30 @@ void LogsQLParser::parseQueryOptions()
             throwSyntaxError(fmt::format("missing '=' after {} in options(...)", option_name));
         lex.nextToken();
 
-        if (option_name == "concurrency" || option_name == "parallel_readers" || option_name == "allow_partial_response")
+        if (option_name == "concurrency" || option_name == "parallel_readers" || option_name == "allow_partial_response"
+            || option_name == "ignore_global_time_filter")
         {
-            /// These are execution hints in VictoriaLogs. Parse and ignore them.
+            /// Execution hints in VictoriaLogs, and `ignore_global_time_filter` refers to the global
+            /// time filter of its HTTP API which does not exist here. Parse and ignore them.
             lex.nextCompoundToken();
         }
-        else if (option_name == "time_offset" || option_name == "global_filter" || option_name == "ignore_global_time_filter")
+        else if (option_name == "time_offset")
         {
-            throwNotImplemented(fmt::format("The query option '{}'", option_name));
+            String text = lex.nextCompoundToken();
+            auto duration = tryParseDuration(text);
+            if (!duration)
+                throwSyntaxError(fmt::format("cannot parse the time_offset option {} as a duration", text));
+            options_time_offset_ns = *duration;
+        }
+        else if (option_name == "global_filter")
+        {
+            if (!lex.isKeyword("("))
+                throwSyntaxError("the global_filter option must have the following format: global_filter=(<filter>)");
+            lex.nextToken();
+            options_global_filter = parseFilterOr("");
+            if (!lex.isKeyword(")"))
+                throwSyntaxError(fmt::format("missing ')' after the global_filter option; got {}", lex.getToken()));
+            lex.nextToken();
         }
         else
         {
@@ -338,6 +360,17 @@ ASTPtr LogsQLParser::parseFilterGeneric(const String & field_name)
         return parseFilterIn(field_name);
     if (lex.isKeyword("ipv4_range"))
         return parseFilterIPv4Range(field_name);
+    if (lex.isKeyword("ipv6_range"))
+        return parseFilterIPv6Range(field_name);
+    if (lex.isKeyword("pattern_match") || lex.isKeyword("pattern_match_full")
+        || lex.isKeyword("pattern_match_prefix") || lex.isKeyword("pattern_match_suffix"))
+        return parseFilterPatternMatch(field_name, Poco::toLower(lex.getToken()));
+    if (lex.isKeyword("contains_common_case"))
+        return parseFilterCommonCase(field_name, /*equals=*/ false);
+    if (lex.isKeyword("equals_common_case"))
+        return parseFilterCommonCase(field_name, /*equals=*/ true);
+    if (lex.isKeyword("json_array_contains_any"))
+        return parseFilterJSONArrayContainsAny(field_name);
     if (lex.isKeyword("eq_field"))
         return parseFilterFieldComparison(field_name, "equals");
     if (lex.isKeyword("le_field"))
@@ -381,18 +414,28 @@ ASTPtr LogsQLParser::parseFilterGeneric(const String & field_name)
         return parseFilterGeneric("_stream");
     }
 
-    if (!lex.isQuoted()
-        && (lex.isKeyword("_stream_id") || lex.isKeyword("value_type") || lex.isKeyword("ipv6_range")
-            || lex.isKeyword("json_array_contains_any") || lex.isKeyword("contains_common_case") || lex.isKeyword("equals_common_case")
-            || lex.isKeyword("pattern_match") || lex.isKeyword("pattern_match_full") || lex.isKeyword("pattern_match_prefix")
-            || lex.isKeyword("pattern_match_suffix")))
+    if (lex.isKeyword("_stream_id") && field_name.empty())
     {
-        /// These may still be plain word filters when not followed by '(' or ':'.
+        auto state = lex.backupState();
+        lex.nextToken();
+        if (!lex.isKeyword(":"))
+        {
+            /// The word filter `_stream_id`.
+            lex.restoreState(state);
+            return parseFilterPhrase(field_name);
+        }
+        lex.nextToken();
+        return parseFilterStreamId();
+    }
+
+    if (!lex.isQuoted() && lex.isKeyword("value_type"))
+    {
+        /// This may still be a plain word filter when not followed by '('.
         auto state = lex.backupState();
         String name = lex.getToken();
         lex.nextToken();
-        if (!lex.skippedSpace() && (lex.isKeyword("(") || (name == "_stream_id" && lex.isKeyword(":"))))
-            throwNotImplemented(fmt::format("The filter '{}'", name));
+        if (!lex.skippedSpace() && lex.isKeyword("("))
+            throwNotImplemented(fmt::format("The filter '{}' (it inspects the internal storage format of VictoriaLogs)", name));
         lex.restoreState(state);
     }
 
@@ -422,7 +465,7 @@ ASTPtr LogsQLParser::parseFilterPhrase(const String & field_name)
         if (phrase == "_stream" && !was_quoted)
             return parseFilterGeneric("_stream");
         if (phrase == "_stream_id" && !was_quoted)
-            throwNotImplemented("The filter '_stream_id'");
+            return parseFilterStreamId();
 
         return parseFilterGeneric(phrase);
     }
@@ -754,21 +797,53 @@ ASTPtr LogsQLParser::parseFilterContains(const String & field_name, bool need_al
     {
         /// The argument may also be a subquery: `contains_any(<query> | fields <field>)`.
         /// Unlike in(<subquery>), it cannot be translated into an IN clause, because it means
-        /// word matching rather than equality.
+        /// containment rather than equality: the returned values are matched as substrings
+        /// (VictoriaLogs additionally checks word boundaries).
         auto failure_state = lex.backupState();
         lex.restoreState(state);
         lex.nextToken();
         lex.nextToken();
+        Layer subquery_layer;
         try
         {
-            parseQuery(/*is_subquery=*/ true);
+            subquery_layer = parseQuery(/*is_subquery=*/ true);
         }
         catch (const Exception &)
         {
             lex.restoreState(failure_state);
             throw;
         }
-        throwNotImplemented("A subquery inside contains_any() and contains_all()");
+        lex.nextToken();  /// Skip ')'.
+
+        if (subquery_layer.select.size() != 1)
+            throwSyntaxError("a subquery inside contains_any() and contains_all() must return exactly one field: "
+                "it must end with '| fields <field>' or '| uniq by (<field>)'");
+
+        String output_name = subquery_layer.select[0]->tryGetAlias();
+        if (output_name.empty())
+        {
+            const auto * identifier = subquery_layer.select[0]->as<ASTIdentifier>();
+            if (identifier == nullptr)
+                throwSyntaxError("cannot determine the output field of the subquery inside contains_any()/contains_all()");
+            output_name = identifier->shortName();
+        }
+
+        /// (SELECT groupUniqArray(<field>) FROM (<subquery>))
+        Layer values_layer;
+        values_layer.source_subquery = buildSelectWithUnion(subquery_layer);
+        auto values_aggregate = makeASTFunction("groupUniqArray", make_intrusive<ASTIdentifier>(output_name));
+        values_layer.select = {values_aggregate};
+        values_layer.has_aggregation = true;
+        values_layer.has_projection = true;
+        auto values_subquery = make_intrusive<ASTSubquery>(buildSelectWithUnion(values_layer));
+
+        /// arrayExists(v -> position(col, v) > 0, <values>) / arrayAll(...) for contains_all.
+        auto lambda_argument = make_intrusive<ASTIdentifier>("__logsql_value");
+        auto lambda_body = makeASTFunction("greater",
+            makeASTFunction("position", columnExpr(field_name), lambda_argument),
+            make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0))));
+        auto lambda = makeASTFunction("lambda", makeASTFunction("tuple", lambda_argument->clone()), lambda_body);
+        return makeASTFunction(need_all ? "arrayAll" : "arrayExists", lambda, values_subquery);
     }
     if (wildcard)
         return nullptr;  /// contains_any(*) and contains_all(*) match all logs.
@@ -1038,6 +1113,153 @@ ASTPtr LogsQLParser::parseFilterIPv4Range(const String & field_name)
             makeASTFunction("toIPv4", make_intrusive<ASTLiteral>(Field(format_address(range_end)))))});
 }
 
+ASTPtr LogsQLParser::parseFilterIPv6Range(const String & field_name)
+{
+    auto state = lex.backupState();
+    lex.nextToken();
+
+    if (!lex.isKeyword("(") || lex.skippedSpace())
+    {
+        lex.restoreState(state);
+        return parseFilterPhrase(field_name);
+    }
+
+    std::vector<String> args = parseArgsInParens();
+
+    ASTPtr parsed = makeASTFunction("toIPv6OrNull", columnExpr(field_name));
+    if (args.size() == 1)
+    {
+        if (auto slash = args[0].find('/'); slash != String::npos)
+        {
+            UInt32 bits = 0;
+            auto [end, ec] = std::from_chars(args[0].data() + slash + 1, args[0].data() + args[0].size(), bits);
+            if (ec != std::errc() || end != args[0].data() + args[0].size() || bits > 128)
+                throwSyntaxError(fmt::format("cannot parse {} as an IPv6 subnet in ipv6_range()", args[0]));
+
+            /// IPv6CIDRToRange returns a (min, max) tuple of the subnet.
+            ASTPtr range = makeASTFunction("IPv6CIDRToRange",
+                makeASTFunction("toIPv6", make_intrusive<ASTLiteral>(Field(args[0].substr(0, slash)))),
+                make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(bits))));
+            return makeAnd({
+                makeASTFunction("greaterOrEquals", parsed, makeASTFunction("tupleElement", range, make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))))),
+                makeASTFunction("lessOrEquals", parsed->clone(), makeASTFunction("tupleElement", range->clone(), make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(2)))))});
+        }
+        return makeASTFunction("equals", parsed, makeASTFunction("toIPv6", make_intrusive<ASTLiteral>(Field(args[0]))));
+    }
+    if (args.size() == 2)
+    {
+        return makeAnd({
+            makeASTFunction("greaterOrEquals", parsed, makeASTFunction("toIPv6", make_intrusive<ASTLiteral>(Field(args[0])))),
+            makeASTFunction("lessOrEquals", parsed->clone(), makeASTFunction("toIPv6", make_intrusive<ASTLiteral>(Field(args[1]))))});
+    }
+    throwSyntaxError(fmt::format("unexpected number of args for ipv6_range(); got {}; want 1 or 2", args.size()));
+}
+
+ASTPtr LogsQLParser::parseFilterStreamId()
+{
+    /// `_stream_id` is treated as an ordinary column with exact-match semantics:
+    /// `_stream_id:<id>`, `_stream_id:in(...)` and other filters work on it as on any other field.
+    if (lex.isKeyword("in"))
+        return parseFilterIn("_stream_id");
+
+    if (lex.isQueryPartTrailer())
+        throwSyntaxError("missing the value of the _stream_id filter");
+
+    bool quoted = lex.isQuoted();
+    String value = lex.nextCompoundToken();
+    return makeASTFunction("equals", columnExpr("_stream_id"), makeValueLiteral(value, quoted));
+}
+
+ASTPtr LogsQLParser::parseFilterCommonCase(const String & field_name, bool equals)
+{
+    auto state = lex.backupState();
+    lex.nextToken();
+
+    if (!lex.isKeyword("(") || lex.skippedSpace())
+    {
+        lex.restoreState(state);
+        return parseFilterPhrase(field_name);
+    }
+
+    std::vector<String> args = parseArgsInParens();
+
+    /// The "common case" variants of a phrase: the phrase itself, its all-uppercase form,
+    /// and every variant where each originally-uppercase ASCII letter is independently lowercased.
+    std::set<String> variants;
+    for (const auto & phrase : args)
+    {
+        std::vector<size_t> upper_positions;
+        for (size_t i = 0; i < phrase.size(); ++i)
+            if (phrase[i] >= 'A' && phrase[i] <= 'Z')
+                upper_positions.push_back(i);
+        if (upper_positions.size() > 10)
+            throwSyntaxError(fmt::format("too many common_case combinations for {}; reduce the number of uppercase letters", phrase));
+
+        String upper = phrase;
+        for (auto & c : upper)
+            if (c >= 'a' && c <= 'z')
+                c = static_cast<char>(c - 'a' + 'A');
+        variants.insert(upper);
+
+        for (size_t mask = 0; mask < (1ULL << upper_positions.size()); ++mask)
+        {
+            String variant = phrase;
+            for (size_t bit = 0; bit < upper_positions.size(); ++bit)
+                if (mask & (1ULL << bit))
+                    variant[upper_positions[bit]] = static_cast<char>(variant[upper_positions[bit]] - 'A' + 'a');
+            variants.insert(variant);
+        }
+    }
+
+    if (equals)
+    {
+        ASTs elements;
+        for (const auto & variant : variants)
+            elements.push_back(make_intrusive<ASTLiteral>(Field(variant)));
+        auto tuple = makeASTFunction("tuple");
+        tuple->arguments->children = std::move(elements);
+        return makeASTFunction("in", columnExpr(field_name), tuple);
+    }
+
+    ASTs conditions;
+    for (const auto & variant : variants)
+        conditions.push_back(makePhraseFilter(field_name, variant));
+    return makeOr(std::move(conditions));
+}
+
+ASTPtr LogsQLParser::parseFilterJSONArrayContainsAny(const String & field_name)
+{
+    auto state = lex.backupState();
+    lex.nextToken();
+
+    if (!lex.isKeyword("(") || lex.skippedSpace())
+    {
+        lex.restoreState(state);
+        return parseFilterPhrase(field_name);
+    }
+
+    std::vector<String> args = parseArgsInParens();
+
+    /// The field holds a JSON array; the filter matches if any of the listed values is its element.
+    /// String elements are compared decoded, other scalar elements by their JSON text.
+    ASTs elements;
+    for (const auto & arg : args)
+        elements.push_back(make_intrusive<ASTLiteral>(Field(arg)));
+    auto values = makeASTFunction("tuple");
+    values->arguments->children = std::move(elements);
+
+    auto element_argument = make_intrusive<ASTIdentifier>("__logsql_element");
+    ASTPtr decoded = makeASTFunction("if",
+        makeASTFunction("startsWith", element_argument, make_intrusive<ASTLiteral>(Field(String("\"")))),
+        makeASTFunction("JSONExtractString", element_argument->clone()),
+        element_argument->clone());
+    auto lambda = makeASTFunction("lambda",
+        makeASTFunction("tuple", element_argument->clone()),
+        makeASTFunction("in", decoded, values));
+
+    return makeASTFunction("arrayExists", lambda, makeASTFunction("JSONExtractArrayRaw", columnExpr(field_name)));
+}
+
 ASTPtr LogsQLParser::parseFilterFieldComparison(const String & field_name, const String & func)
 {
     auto state = lex.backupState();
@@ -1292,7 +1514,10 @@ LogsQLParser::TimeBound LogsQLParser::parseTimeBound()
             else
                 instant = makeASTFunction("plus", instant, makeIntervalAST(*duration));
         }
-        return {instant, instant};
+        TimeBound bound;
+        bound.start = instant;
+        bound.end = instant;
+        return bound;
     }
 
     /// A bare duration means an offset from the current time: `_time:[-5m, now)`.
@@ -1303,7 +1528,10 @@ LogsQLParser::TimeBound LogsQLParser::parseTimeBound()
             instant = makeASTFunction("minus", makeASTFunction("now"), makeIntervalAST(-*duration));
         else
             instant = makeASTFunction("plus", makeASTFunction("now"), makeIntervalAST(*duration));
-        return {instant, instant};
+        TimeBound bound;
+        bound.start = instant;
+        bound.end = instant;
+        return bound;
     }
 
     auto timestamp = tryParseTimestamp(text);
@@ -1322,11 +1550,20 @@ LogsQLParser::TimeBound LogsQLParser::parseTimeBound()
             make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(9))));
     };
 
-    return {make_instant(timestamp->start_ns, timestamp->start_civil), make_instant(timestamp->end_ns, timestamp->end_civil)};
+    TimeBound result;
+    result.start = make_instant(timestamp->start_ns, timestamp->start_civil);
+    result.end = make_instant(timestamp->end_ns, timestamp->end_civil);
+    if (timestamp->has_timezone)
+    {
+        result.start_ns = timestamp->start_ns;
+        result.end_ns = timestamp->end_ns;
+    }
+    return result;
 }
 
 ASTPtr LogsQLParser::makeTimeCondition(ASTPtr lower, bool lower_inclusive, ASTPtr upper, bool upper_inclusive, Int64 offset_ns)
 {
+    offset_ns += options_time_offset_ns;
     ASTs conditions;
     if (lower)
         conditions.push_back(makeASTFunction(lower_inclusive ? "greaterOrEquals" : "greater",
@@ -1410,6 +1647,13 @@ ASTPtr LogsQLParser::parseFilterTime()
         /// An inclusive end includes the whole period.
         ASTPtr lower = include_start ? start_bound.start : start_bound.end;
         ASTPtr upper = include_end ? end_bound.end : end_bound.start;
+
+        /// Remember the range length for the rate() and rate_sum() stats functions.
+        auto lower_ns = include_start ? start_bound.start_ns : start_bound.end_ns;
+        auto upper_ns = include_end ? end_bound.end_ns : end_bound.start_ns;
+        if (lower_ns && upper_ns && *upper_ns > *lower_ns)
+            query_time_range_ns = *upper_ns - *lower_ns;
+
         return makeTimeCondition(lower, true, upper, false, offset.value_or(0));
     }
 
@@ -1422,6 +1666,7 @@ ASTPtr LogsQLParser::parseFilterTime()
     String text = lex.nextCompoundToken();
     if (auto duration = tryParseDuration(text))
     {
+        query_time_range_ns = *duration;
         auto offset = parseOptionalTimeOffset();
         ASTPtr lower = makeASTFunction("minus", makeASTFunction("now"), makeIntervalAST(*duration));
         return makeTimeCondition(lower, true, makeASTFunction("now"), false, offset.value_or(0));
@@ -1430,6 +1675,8 @@ ASTPtr LogsQLParser::parseFilterTime()
 
     TimeBound bound = parseTimeBound();
     auto offset = parseOptionalTimeOffset();
+    if (bound.start_ns && bound.end_ns && *bound.end_ns > *bound.start_ns)
+        query_time_range_ns = *bound.end_ns - *bound.start_ns;
     return makeTimeCondition(bound.start, true, bound.end, false, offset.value_or(0));
 }
 

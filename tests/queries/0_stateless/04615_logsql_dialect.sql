@@ -160,3 +160,118 @@ level:error       # count errors
     | sort by (level);
 SET dialect = 'clickhouse';
 DROP TABLE logs_04615_multiline;
+
+-- New features: text pipes, join, union, window pipes, extended stats.
+SET allow_experimental_logsql_dialect = 1;
+SET session_timezone = 'UTC';
+DROP TABLE IF EXISTS logs_04615_b;
+CREATE TABLE logs_04615_b
+(
+    `_time` DateTime,
+    `_msg` String,
+    `level` String,
+    `app` String,
+    `size` UInt64,
+    `payload` String,
+    `tags` String,
+    `_stream_id` String
+) ENGINE = MergeTree ORDER BY _time;
+
+INSERT INTO logs_04615_b VALUES
+    ('2024-01-01 10:00:00', 'ip=1.2.3.4 user=alice dur=15ms', 'info', 'web', 100, '{"a":"x","n":42,"nested":{"b":"y"}}', '["prod","eu"]', 's1'),
+    ('2024-01-01 10:01:00', 'ip=5.6.7.8 user=bob dur=25ms', 'warn', 'web', 200, '{"a":"z","n":7}', '["dev"]', 's2'),
+    ('2024-01-01 10:02:00', 'no ip here', 'error', 'api', 300, 'not json', '[]', 's1');
+
+SET logsql_table = 'logs_04615_b';
+SET dialect = 'logsql';
+
+-- extract
+* | extract "ip=<ip> user=<user> " | fields _time, ip, user | sort by (_time);
+
+-- extract_regexp
+* | extract_regexp "user=(?P<username>[a-z]+)" | fields username | sort by (username);
+
+-- format
+level:=warn | format "app=<app> level=<uc:level> size=<size>" as summary | fields summary;
+
+-- unpack_json
+* | unpack_json from payload fields (a, n, nested.b) | fields a, n, nested.b | sort by (a);
+
+-- json_array filters and pipes
+tags:json_array_contains_any("prod", "staging") | fields _msg;
+* | json_array_len(tags) as n_tags | fields n_tags | sort by (n_tags);
+* | json_array_concat "," from tags as tag_list | fields tag_list | sort by (tag_list);
+
+-- unroll
+* | unroll (tags) | fields tags | sort by (tags);
+
+-- split and unpack_words
+level:=error | split " " as words | fields words;
+level:=error | unpack_words as words drop_duplicates | fields words;
+
+-- len, hash
+level:=warn | len(app) as app_len | fields app_len;
+
+-- coalesce
+* | coalesce(level, app) as lvl | fields lvl | sort by (lvl);
+
+-- replace and replace_regexp
+level:=error | replace ("here", "there") | fields _msg;
+level:=warn | replace_regexp ("[0-9]+", "N") at _msg | fields _msg;
+
+-- pack_json / pack_logfmt
+level:=error | pack_json fields (level, app) as packed | fields packed;
+level:=error | pack_logfmt fields (level, app) as packed | fields packed;
+
+-- _stream_id filter
+_stream_id:s1 | count();
+_stream_id:in(s1, s2) | count();
+
+-- ipv6_range
+* | count() ; # separator
+"::1" ipv6_range("::1") | count();
+
+-- common case filters
+i(IP) | count();
+_msg:contains_common_case("Ip") | count();
+level:equals_common_case("Error") | count();
+
+-- pattern_match
+pattern_match("ip=<IP4>") | count();
+_msg:pattern_match_prefix("ip=<IP4> user=<W>") | fields _msg | sort by (_msg);
+
+-- multi-field and row stats
+* | stats sum(size, size) as double_size, min(size, size) as min_size;
+* | stats field_max(size, app) as biggest_app;
+* | stats row_max(size, level, app) as top_row;
+* | stats json_values(level) limit 5 as all_levels;
+* | stats count(level, app) as with_any;
+
+-- switch
+* | stats count() switch(case (level:=info) as infos, case (app:=web) as webs, default as others);
+
+-- rate with a time range
+_time:[2024-01-01Z, 2024-01-02Z) | stats rate() as per_second;
+
+-- stats by bucket offset and subnet
+* | stats by (size:100 offset 50) count() as c | sort by (size);
+
+-- sort with rank and partition
+* | sort by (size) rank as position | fields position, size;
+* | sort by (size desc) partition by (app) limit 1 | fields app, size | sort by (app);
+* | first 1 by (size) rank | fields rank, size;
+
+-- running_stats and total_stats
+* | running_stats sum(size) as running_size | fields _time, running_size | sort by (_time);
+* | total_stats by (app) count() as app_total | fields _time, app, app_total | sort by (_time);
+
+-- union and join
+level:=error | fields _msg | union (level:=warn | fields _msg) | sort by (_msg);
+* | join by (app) (app:=web | stats by (app) count() as app_hits) | fields _time, app, app_hits | sort by (_time);
+
+-- options
+options(time_offset=0s) level:=error | count();
+options(global_filter=(level:=error)) * | count();
+
+SET dialect = 'clickhouse';
+DROP TABLE logs_04615_b;

@@ -15,11 +15,16 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/SelectUnionMode.h>
+
+#include <Common/re2.h>
 
 #include <Common/Exception.h>
 #include <Poco/String.h>
 
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <unordered_map>
 #include <unordered_set>
@@ -37,14 +42,15 @@ const std::unordered_set<String> stats_func_names = {
     "histogram", "json_values", "max", "median", "min", "quantile", "rate", "rate_sum",
     "row_any", "row_max", "row_min", "stddev", "sum", "sum_len", "uniq_values", "values"};
 
-/// Pipes which exist in LogsQL but are not translated yet.
+/// Pipes which exist in LogsQL but are not translated: they either introspect the internal
+/// storage of VictoriaLogs or require the dynamic set of fields, which does not exist
+/// for a ClickHouse table with a fixed schema.
 const std::unordered_set<String> unsupported_pipes = {
-    "block_stats", "blocks_count", "coalesce", "collapse_nums", "decolorize", "drop_empty_fields",
-    "extract", "extract_regexp", "facets", "field_names", "field_values", "format", "generate_sequence",
-    "hash", "join", "json_array_concat", "json_array_len", "len", "pack_json", "pack_logfmt",
-    "query_stats", "replace", "replace_regexp", "running_stats", "sample", "set_stream_fields",
-    "split", "stream_context", "time_add", "top_stats", "total_stats", "union",
-    "unpack_json", "unpack_logfmt", "unpack_syslog", "unpack_words", "unroll"};
+    "block_stats", "blocks_count", "collapse_nums",
+    "facets", "field_names",
+    "query_stats", "set_stream_fields",
+    "stream_context", "top_stats",
+    "unpack_syslog"};
 
 const std::vector<std::string_view> field_name_stop_tokens = {":"};
 
@@ -187,6 +193,161 @@ void LogsQLParser::parsePipe(Layer & layer)
         if (name == "math" || name == "eval")
         {
             parsePipeMath(layer);
+            return;
+        }
+        if (name == "len")
+        {
+            parsePipeLen(layer);
+            return;
+        }
+        if (name == "coalesce")
+        {
+            parsePipeCoalesce(layer);
+            return;
+        }
+        if (name == "decolorize")
+        {
+            parsePipeDecolorize(layer);
+            return;
+        }
+        if (name == "split")
+        {
+            parsePipeSplit(layer);
+            return;
+        }
+        if (name == "unpack_words")
+        {
+            parsePipeUnpackWords(layer);
+            return;
+        }
+        if (name == "time_add")
+        {
+            parsePipeTimeAdd(layer);
+            return;
+        }
+        if (name == "sample")
+        {
+            parsePipeSample(layer);
+            return;
+        }
+        if (name == "generate_sequence")
+        {
+            parsePipeGenerateSequence(layer);
+            return;
+        }
+        if (name == "field_values")
+        {
+            parsePipeFieldValues(layer);
+            return;
+        }
+        if (name == "json_array_len")
+        {
+            parsePipeJSONArrayLen(layer);
+            return;
+        }
+        if (name == "replace" || name == "replace_regexp")
+        {
+            parsePipeReplace(layer, /*is_regexp=*/ name == "replace_regexp");
+            return;
+        }
+        if (name == "union")
+        {
+            parsePipeUnion(layer);
+            return;
+        }
+        if (name == "hash")
+        {
+            parsePipeHash(layer);
+            return;
+        }
+        if (name == "unroll")
+        {
+            parsePipeUnroll(layer);
+            return;
+        }
+        if (name == "pack_json" || name == "pack_logfmt")
+        {
+            parsePipePack(layer, /*is_logfmt=*/ name == "pack_logfmt");
+            return;
+        }
+        if (name == "extract" || name == "extract_regexp")
+        {
+            parsePipeExtract(layer, /*is_regexp=*/ name == "extract_regexp");
+            return;
+        }
+        if (name == "format")
+        {
+            parsePipeFormat(layer);
+            return;
+        }
+        if (name == "unpack_json" || name == "unpack_logfmt")
+        {
+            parsePipeUnpack(layer, /*is_logfmt=*/ name == "unpack_logfmt");
+            return;
+        }
+        if (name == "join")
+        {
+            parsePipeJoin(layer);
+            return;
+        }
+        if (name == "running_stats" || name == "total_stats")
+        {
+            parsePipeRunningStats(layer, /*is_total=*/ name == "total_stats");
+            return;
+        }
+        if (name == "json_array_concat")
+        {
+            /// Joins the elements of a JSON array into a string with the given delimiter.
+            lex.nextToken();
+            String delimiter;
+            if (!lex.isQueryPartTrailer() && !lex.isKeyword("from") && !lex.isKeyword("as"))
+            {
+                delimiter = lex.getToken();
+                if (!lex.isQuoted())
+                    delimiter = lex.nextCompoundToken();
+                else
+                    lex.nextToken();
+            }
+            String source = "_msg";
+            if (lex.isKeyword("from"))
+            {
+                lex.nextToken();
+                source = parseFieldName();
+            }
+            else if (!lex.isQueryPartTrailer() && !lex.isKeyword("as"))
+            {
+                source = parseFieldName();
+            }
+            String target = source;
+            if (lex.isKeyword("as"))
+            {
+                lex.nextToken();
+                target = parseFieldName();
+            }
+            else if (!lex.isQueryPartTrailer())
+            {
+                target = parseFieldName();
+            }
+            auto element = make_intrusive<ASTIdentifier>("__logsql_element");
+            auto decode = makeASTFunction("if",
+                makeASTFunction("startsWith", element, makeStringLiteral("\"")),
+                makeASTFunction("JSONExtractString", element->clone()),
+                element->clone());
+            auto lambda = makeASTFunction("lambda", makeASTFunction("tuple", element->clone()), decode);
+            ASTPtr expression = makeASTFunction("arrayStringConcat",
+                makeASTFunction("arrayMap", lambda, makeASTFunction("JSONExtractArrayRaw", columnExpr(source))),
+                makeStringLiteral(delimiter));
+            if (columnName(target) == columnName(source))
+                applyColumnReplacement(layer, columnName(target), expression);
+            else
+                appendComputedColumn(layer, expression, columnName(target));
+            return;
+        }
+        if (name == "drop_empty_fields")
+        {
+            /// Drops the fields with empty values from each row. With a fixed table schema
+            /// there is nothing to drop, so this is a no-op (rows are never dropped by this pipe).
+            lex.nextToken();
             return;
         }
 
@@ -492,6 +653,8 @@ void LogsQLParser::parsePipeSort(Layer & layer)
 
     std::optional<UInt64> sort_limit;
     std::optional<UInt64> sort_offset;
+    String rank_name;
+    std::vector<String> partition_fields;
     while (true)
     {
         if (lex.isKeyword("offset"))
@@ -510,11 +673,32 @@ void LogsQLParser::parsePipeSort(Layer & layer)
         }
         else if (lex.isKeyword("rank"))
         {
-            throwNotImplemented("The 'rank' clause of the sort pipe");
+            lex.nextToken();
+            if (lex.isKeyword("as"))
+                lex.nextToken();
+            rank_name = "rank";
+            if (!lex.isQueryPartTrailer() && !lex.isKeyword("offset") && !lex.isKeyword("limit") && !lex.isKeyword("partition"))
+                rank_name = parseFieldName();
         }
         else if (lex.isKeyword("partition"))
         {
-            throwNotImplemented("The 'partition by' clause of the sort pipe");
+            lex.nextToken();
+            if (lex.isKeyword("by"))
+                lex.nextToken();
+            if (!lex.isKeyword("("))
+                throwSyntaxError("missing '(' after 'partition by'");
+            lex.nextToken();
+            while (!lex.isKeyword(")"))
+            {
+                partition_fields.push_back(parseFieldName());
+                if (lex.isKeyword(","))
+                    lex.nextToken();
+                else if (!lex.isKeyword(")"))
+                    throwSyntaxError(fmt::format("unexpected token {}; expecting ',' or ')'", lex.getToken()));
+            }
+            lex.nextToken();
+            if (partition_fields.empty())
+                throwSyntaxError("missing fields in 'partition by' of the sort pipe");
         }
         else
         {
@@ -522,6 +706,23 @@ void LogsQLParser::parsePipeSort(Layer & layer)
         }
     }
 
+    if (!partition_fields.empty() && !sort_limit)
+        throwSyntaxError("missing 'limit' for 'partition by' in the sort pipe");
+    if ((!rank_name.empty() || !partition_fields.empty()) && (!has_fields || fields.empty()))
+        throwNotImplemented("The 'rank' and 'partition by' clauses of a sort pipe without explicit 'by' fields");
+
+    applySortWithExtras(layer, fields, global_desc, partition_fields, rank_name, sort_limit, sort_offset);
+}
+
+void LogsQLParser::applySortWithExtras(
+    Layer & layer,
+    const std::vector<SortField> & fields,
+    bool global_desc,
+    const std::vector<String> & partition_fields,
+    const String & rank_name,
+    std::optional<UInt64> sort_limit,
+    std::optional<UInt64> sort_offset)
+{
     /// Aggregation and projection layers are wrapped into a subquery: sorting by an output field
     /// which shadows a source column (e.g. the bucketed `_time` of `stats by (_time:1d)`)
     /// is unambiguous only across a subquery boundary.
@@ -529,11 +730,99 @@ void LogsQLParser::parsePipeSort(Layer & layer)
         !layer.order_by.empty() || layer.order_by_all || layer.limit.has_value() || layer.offset.has_value()
         || layer.has_aggregation || layer.has_projection);
 
-    if (has_fields && !fields.empty())
+    auto make_order_elements = [&]
     {
+        ASTs elements;
         for (const auto & field : fields)
-            layer.order_by.push_back(makeOrderByElement(sortKeyExpr(layer, field.name), field.is_desc != global_desc));
+            elements.push_back(makeOrderByElement(sortKeyExpr(layer, field.name), field.is_desc != global_desc));
+        return elements;
+    };
+
+    if (!partition_fields.empty())
+    {
+        /// Top-N per partition: an inner layer computes the per-partition row number,
+        /// the outer layer filters by it and restores the ordering.
+        auto window = make_intrusive<ASTWindowDefinition>();
+        auto partition_list = make_intrusive<ASTExpressionList>();
+        for (const auto & field : partition_fields)
+            partition_list->children.push_back(columnExpr(field));
+        window->partition_by = partition_list;
+        window->children.push_back(window->partition_by);
+        auto order_list = make_intrusive<ASTExpressionList>();
+        order_list->children = make_order_elements();
+        window->order_by = order_list;
+        window->children.push_back(window->order_by);
+
+        auto row_number = makeASTFunction("row_number");
+        row_number->setIsWindowFunction(true);
+        row_number->window_definition = window;
+        row_number->children.push_back(window);
+
+        layer.select.push_back(make_intrusive<ASTAsterisk>());
+        row_number->setAlias("__logsql_rank");
+        layer.select.push_back(row_number);
+        layer.has_projection = true;
+        wrapLayer(layer);
+
+        auto rank_column = make_intrusive<ASTIdentifier>("__logsql_rank");
+        ASTs conditions;
+        UInt64 offset = sort_offset.value_or(0);
+        if (offset > 0)
+            conditions.push_back(makeASTFunction("greater", rank_column, makeUInt64Literal(offset)));
+        conditions.push_back(makeASTFunction("lessOrEquals", rank_column->clone(), makeUInt64Literal(offset + *sort_limit)));
+        layer.where = conditions.size() == 1 ? conditions[0] : [&]
+        {
+            auto conjunction = makeASTFunction("and");
+            conjunction->arguments->children = std::move(conditions);
+            return ASTPtr(conjunction);
+        }();
+
+        auto except = make_intrusive<ASTColumnsExceptTransformer>();
+        except->children.push_back(make_intrusive<ASTIdentifier>("__logsql_rank"));
+        auto transformers = make_intrusive<ASTColumnsTransformerList>();
+        transformers->children.push_back(except);
+        auto asterisk = make_intrusive<ASTAsterisk>();
+        asterisk->transformers = transformers;
+        asterisk->children.push_back(transformers);
+        layer.select = {asterisk};
+        if (!rank_name.empty())
+        {
+            auto rank_alias = make_intrusive<ASTIdentifier>("__logsql_rank");
+            rank_alias->setAlias(columnName(rank_name));
+            layer.select.push_back(rank_alias);
+        }
+        layer.has_projection = true;
+
+        /// Partitions in the order of their keys, sorted rows inside each partition.
+        for (const auto & field : partition_fields)
+            layer.order_by.push_back(makeOrderByElement(columnExpr(field), false));
+        for (auto & element : make_order_elements())
+            layer.order_by.push_back(element);
+        return;
     }
+
+    if (!rank_name.empty())
+    {
+        /// The 1-based position in the sort order, computed before offset and limit are applied.
+        auto window = make_intrusive<ASTWindowDefinition>();
+        auto order_list = make_intrusive<ASTExpressionList>();
+        order_list->children = make_order_elements();
+        window->order_by = order_list;
+        window->children.push_back(window->order_by);
+
+        auto row_number = makeASTFunction("row_number");
+        row_number->setIsWindowFunction(true);
+        row_number->window_definition = window;
+        row_number->children.push_back(window);
+
+        layer.select.push_back(make_intrusive<ASTAsterisk>());
+        row_number->setAlias(columnName(rank_name));
+        layer.select.push_back(row_number);
+        layer.has_projection = true;
+    }
+
+    if (!fields.empty())
+        layer.order_by = make_order_elements();
     else
     {
         layer.order_by_all = true;
@@ -753,7 +1042,7 @@ void LogsQLParser::parsePipeFirstLast(Layer & layer, bool is_last)
 {
     lex.nextToken();
 
-    UInt64 limit = 10;
+    UInt64 limit = 1;
     if (!lex.isQuoted() && isNumberPrefix(lex.getToken()))
         limit = parseLimitValue();
 
@@ -764,26 +1053,705 @@ void LogsQLParser::parsePipeFirstLast(Layer & layer, bool is_last)
     if (lex.isKeyword("("))
         fields = parseSortFields();
 
-    if (lex.isKeyword("partition"))
-        throwNotImplemented("The 'partition by' clause of the first/last pipes");
-    if (lex.isKeyword("rank"))
-        throwNotImplemented("The 'rank' clause of the first/last pipes");
+    std::vector<String> partition_fields;
+    String rank_name;
+    while (true)
+    {
+        if (lex.isKeyword("partition"))
+        {
+            lex.nextToken();
+            if (lex.isKeyword("by"))
+                lex.nextToken();
+            if (!lex.isKeyword("("))
+                throwSyntaxError("missing '(' after 'partition by'");
+            lex.nextToken();
+            while (!lex.isKeyword(")"))
+            {
+                partition_fields.push_back(parseFieldName());
+                if (lex.isKeyword(","))
+                    lex.nextToken();
+                else if (!lex.isKeyword(")"))
+                    throwSyntaxError(fmt::format("unexpected token {}; expecting ',' or ')'", lex.getToken()));
+            }
+            lex.nextToken();
+        }
+        else if (lex.isKeyword("rank"))
+        {
+            lex.nextToken();
+            if (lex.isKeyword("as"))
+                lex.nextToken();
+            rank_name = "rank";
+            if (!lex.isQueryPartTrailer() && !lex.isKeyword("partition"))
+                rank_name = parseFieldName();
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    if ((!rank_name.empty() || !partition_fields.empty()) && fields.empty())
+        throwNotImplemented("The 'rank' and 'partition by' clauses of a first/last pipe without explicit 'by' fields");
+
+    std::vector<SortField> effective = fields;
+    if (is_last)
+        for (auto & field : effective)
+            field.is_desc = !field.is_desc;
+
+    if (fields.empty())
+    {
+        wrapLayerIf(layer,
+            !layer.order_by.empty() || layer.order_by_all || layer.limit.has_value() || layer.offset.has_value()
+            || layer.has_aggregation || layer.has_projection);
+        layer.order_by_all = true;
+        layer.order_by.push_back(makeOrderByElement(make_intrusive<ASTIdentifier>("all"), is_last));
+        layer.limit = limit;
+        return;
+    }
+
+    applySortWithExtras(layer, effective, /*global_desc=*/ false, partition_fields, rank_name, limit, /*sort_offset=*/ {});
+}
+
+/// ---- Helpers for the expression pipes ----
+
+ASTPtr LogsQLParser::parseParenthesizedFilter()
+{
+    if (!lex.isKeyword("("))
+        throwSyntaxError("missing '(' with the filter");
+    lex.nextToken();
+
+    ASTPtr condition;
+    if (!lex.isKeyword(")"))
+    {
+        condition = parseFilterOr("");
+        if (lex.isKeyword(";"))
+            lex.nextToken();
+    }
+    if (!lex.isKeyword(")"))
+        throwSyntaxError(fmt::format("missing ')' after the filter; got {}", lex.getToken()));
+    lex.nextToken();
+    return condition;
+}
+
+ASTPtr LogsQLParser::parseOptionalIfCondition()
+{
+    if (!lex.isKeyword("if"))
+        return nullptr;
+    lex.nextToken();
+    return parseParenthesizedFilter();
+}
+
+void LogsQLParser::applyColumnReplacement(Layer & layer, const String & column, ASTPtr expression)
+{
+    wrapLayerIf(layer, !layer.select.empty());
+
+    auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
+    replacement->name = column;
+    replacement->children.push_back(std::move(expression));
+
+    auto replace = make_intrusive<ASTColumnsReplaceTransformer>();
+    replace->is_strict = false;
+    replace->children.push_back(replacement);
+
+    auto transformers = make_intrusive<ASTColumnsTransformerList>();
+    transformers->children.push_back(replace);
+
+    auto asterisk = make_intrusive<ASTAsterisk>();
+    asterisk->transformers = transformers;
+    asterisk->children.push_back(transformers);
+
+    layer.select = {asterisk};
+    layer.has_projection = true;
+}
+
+void LogsQLParser::appendComputedColumn(Layer & layer, ASTPtr expression, const String & alias)
+{
+    if (layer.select.empty())
+        layer.select.push_back(make_intrusive<ASTAsterisk>());
+    expression->setAlias(alias);
+    layer.select.push_back(expression);
+    layer.has_projection = true;
+}
+
+/// ---- Expression pipes ----
+
+void LogsQLParser::parsePipeLen(Layer & layer)
+{
+    lex.nextToken();
+
+    bool with_parens = lex.isKeyword("(");
+    if (with_parens)
+        lex.nextToken();
+    String field = parseFieldName();
+    if (with_parens)
+    {
+        if (!lex.isKeyword(")"))
+            throwSyntaxError(fmt::format("missing ')' in the len pipe; got {}", lex.getToken()));
+        lex.nextToken();
+    }
+
+    String result_name = "_msg";
+    if (!lex.isQueryPartTrailer())
+    {
+        if (lex.isKeyword("as"))
+            lex.nextToken();
+        result_name = parseFieldName();
+    }
+
+    appendComputedColumn(layer, makeASTFunction("length", columnExpr(field)), columnName(result_name));
+}
+
+void LogsQLParser::parsePipeCoalesce(Layer & layer)
+{
+    lex.nextToken();
+    if (!lex.isKeyword("("))
+        throwSyntaxError("missing '(' after 'coalesce'");
+    lex.nextToken();
+
+    std::vector<String> fields;
+    while (!lex.isKeyword(")"))
+    {
+        fields.push_back(parseFieldName());
+        if (!lex.skippedSpace() && lex.isKeyword("*"))
+            throwNotImplemented("Field name prefixes in the coalesce pipe");
+        if (lex.isKeyword(","))
+            lex.nextToken();
+        else if (!lex.isKeyword(")"))
+            throwSyntaxError(fmt::format("unexpected token {} in the coalesce pipe; expecting ',' or ')'", lex.getToken()));
+    }
+    lex.nextToken();
+    if (fields.empty())
+        throwSyntaxError("missing fields in the coalesce pipe");
+
+    ASTPtr default_value = makeStringLiteral("");
+    if (lex.isKeyword("default"))
+    {
+        lex.nextToken();
+        bool quoted = lex.isQuoted();
+        default_value = makeValueLiteral(lex.nextCompoundToken(), quoted);
+    }
+
+    String result_name = "_msg";
+    if (!lex.isQueryPartTrailer())
+    {
+        if (lex.isKeyword("as"))
+            lex.nextToken();
+        result_name = parseFieldName();
+    }
+
+    /// The first non-empty value: if(f1 != '', f1, if(f2 != '', f2, ..., default)).
+    ASTPtr expression = default_value;
+    for (auto it = fields.rbegin(); it != fields.rend(); ++it)
+    {
+        expression = makeASTFunction("if",
+            makeASTFunction("notEquals", columnExpr(*it), makeStringLiteral("")),
+            columnExpr(*it),
+            expression);
+    }
+
+    appendComputedColumn(layer, expression, columnName(result_name));
+}
+
+void LogsQLParser::parsePipeDecolorize(Layer & layer)
+{
+    lex.nextToken();
+
+    String field = "_msg";
+    if (!lex.isQueryPartTrailer())
+        field = parseFieldName();
+
+    /// Strips ANSI CSI escape sequences, like VictoriaLogs does.
+    ASTPtr expression = makeASTFunction("replaceRegexpAll",
+        columnExpr(field), makeStringLiteral("\x1b\\[[\x30-\x3f]*[\x20-\x2f]*[\x30-\x7e]?"), makeStringLiteral(""));
+    applyColumnReplacement(layer, columnName(field), expression);
+}
+
+void LogsQLParser::parsePipeSplit(Layer & layer)
+{
+    lex.nextToken();
+
+    String separator = lex.getToken();
+    if (!lex.isQuoted())
+        separator = lex.nextCompoundToken();
+    else
+        lex.nextToken();
+
+    String source = "_msg";
+    if (lex.isKeyword("from"))
+    {
+        lex.nextToken();
+        source = parseFieldName();
+    }
+    else if (!lex.isQueryPartTrailer() && !lex.isKeyword("as"))
+    {
+        source = parseFieldName();
+    }
+    String target = source;
+    if (lex.isKeyword("as"))
+    {
+        lex.nextToken();
+        target = parseFieldName();
+    }
+    else if (!lex.isQueryPartTrailer())
+    {
+        target = parseFieldName();
+    }
+
+    /// The result is a JSON array of strings, as in VictoriaLogs.
+    ASTPtr expression = makeASTFunction("toJSONString",
+        makeASTFunction("splitByString", makeStringLiteral(separator), columnExpr(source)));
+
+    if (columnName(target) == columnName(source))
+        applyColumnReplacement(layer, columnName(target), expression);
+    else
+        appendComputedColumn(layer, expression, columnName(target));
+}
+
+void LogsQLParser::parsePipeUnpackWords(Layer & layer)
+{
+    lex.nextToken();
+
+    String source = "_msg";
+    if (lex.isKeyword("from"))
+    {
+        lex.nextToken();
+        source = parseFieldName();
+    }
+    else if (!lex.isQueryPartTrailer() && !lex.isKeyword("as") && !lex.isKeyword("drop_duplicates"))
+    {
+        source = parseFieldName();
+    }
+    String target = source;
+    if (lex.isKeyword("as"))
+    {
+        lex.nextToken();
+        target = parseFieldName();
+    }
+    else if (!lex.isQueryPartTrailer() && !lex.isKeyword("drop_duplicates"))
+    {
+        target = parseFieldName();
+    }
+    bool drop_duplicates = false;
+    if (lex.isKeyword("drop_duplicates"))
+    {
+        drop_duplicates = true;
+        lex.nextToken();
+    }
+
+    ASTPtr words = makeASTFunction("extractAll", columnExpr(source), makeStringLiteral("[0-9A-Za-z_]+"));
+    if (drop_duplicates)
+        words = makeASTFunction("arrayDistinct", words);
+    ASTPtr expression = makeASTFunction("toJSONString", words);
+
+    if (columnName(target) == columnName(source))
+        applyColumnReplacement(layer, columnName(target), expression);
+    else
+        appendComputedColumn(layer, expression, columnName(target));
+}
+
+void LogsQLParser::parsePipeTimeAdd(Layer & layer)
+{
+    lex.nextToken();
+
+    String text = lex.nextCompoundToken();
+    auto duration = tryParseDuration(text);
+    if (!duration)
+        throwSyntaxError(fmt::format("cannot parse {} as a duration in the time_add pipe", text));
+
+    String field = "_time";
+    if (lex.isKeyword("at"))
+    {
+        lex.nextToken();
+        field = parseFieldName();
+    }
+
+    ASTPtr expression = shiftTime(columnExpr(field), -*duration);
+    applyColumnReplacement(layer, columnName(field), expression);
+}
+
+void LogsQLParser::parsePipeSample(Layer & layer)
+{
+    lex.nextToken();
+    UInt64 step = parseLimitValue();
+    if (step == 0)
+        throwSyntaxError("the sample step must be a positive integer");
+
+    /// Returns roughly 1/N of the input rows.
+    ASTPtr condition = makeASTFunction("equals",
+        makeASTFunction("modulo", makeASTFunction("rand"), makeUInt64Literal(step)),
+        makeUInt64Literal(0));
+
+    if (layer.has_projection || layer.has_aggregation || layer.limit || layer.offset)
+    {
+        wrapLayer(layer);
+        layer.where = condition;
+    }
+    else if (!layer.where)
+        layer.where = condition;
+    else
+        layer.where = makeASTFunction("and", layer.where, condition);
+}
+
+void LogsQLParser::parsePipeGenerateSequence(Layer & layer)
+{
+    lex.nextToken();
+    UInt64 count = parseLimitValue();
+
+    /// Replaces the input with `count` rows whose message field is 0 .. count-1.
+    auto select = make_intrusive<ASTSelectQuery>();
+    auto select_list = make_intrusive<ASTExpressionList>();
+    ASTPtr value = makeASTFunction("toString", make_intrusive<ASTIdentifier>("number"));
+    value->setAlias(context.msg_column);
+    select_list->children.push_back(value);
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    auto table_function = makeASTFunction("numbers", makeUInt64Literal(count));
+    table_expression->table_function = table_function;
+    table_expression->children.push_back(table_function);
+
+    auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    table_element->table_expression = table_expression;
+    table_element->children.push_back(table_expression);
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(table_element);
+    select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(select);
+    auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union->list_of_selects = list_of_selects;
+    select_with_union->children.push_back(list_of_selects);
+
+    layer = Layer{};
+    layer.source_subquery = select_with_union;
+}
+
+void LogsQLParser::parsePipeFieldValues(Layer & layer)
+{
+    lex.nextToken();
+
+    bool with_parens = lex.isKeyword("(");
+    if (with_parens)
+        lex.nextToken();
+    String field = parseFieldName();
+    if (!lex.skippedSpace() && lex.isKeyword("*"))
+        throwNotImplemented("Field name prefixes in the field_values pipe");
+    if (with_parens)
+    {
+        if (!lex.isKeyword(")"))
+            throwSyntaxError(fmt::format("missing ')' in the field_values pipe; got {}", lex.getToken()));
+        lex.nextToken();
+    }
+
+    if (lex.isKeyword("filter"))
+        throwNotImplemented("The 'filter' clause of the field_values pipe");
+
+    std::optional<UInt64> limit;
+    if (lex.isKeyword("limit"))
+    {
+        lex.nextToken();
+        limit = parseLimitValue();
+    }
 
     wrapLayerIf(layer,
-        !layer.order_by.empty() || layer.order_by_all || layer.limit.has_value() || layer.offset.has_value()
-        || layer.has_aggregation || layer.has_projection);
+        layer.has_projection || layer.has_aggregation || layer.limit.has_value() || layer.offset.has_value()
+        || !layer.order_by.empty() || layer.order_by_all);
 
-    if (!fields.empty())
+    layer.select.push_back(columnExpr(field));
+    layer.group_by.push_back(columnExpr(field));
+    auto hits = makeAggregate("count", {}, nullptr);
+    hits->setAlias("hits");
+    layer.select.push_back(hits);
+    layer.order_by.push_back(makeOrderByElement(columnExpr(field), /*is_desc=*/ false));
+    if (limit)
+        layer.limit = limit;
+    layer.has_aggregation = true;
+    layer.has_projection = true;
+}
+
+void LogsQLParser::parsePipeJSONArrayLen(Layer & layer)
+{
+    lex.nextToken();
+
+    bool with_parens = lex.isKeyword("(");
+    if (with_parens)
+        lex.nextToken();
+    String field = parseFieldName();
+    if (with_parens)
     {
-        for (const auto & field : fields)
-            layer.order_by.push_back(makeOrderByElement(sortKeyExpr(layer, field.name), field.is_desc != is_last));
+        if (!lex.isKeyword(")"))
+            throwSyntaxError(fmt::format("missing ')' in the json_array_len pipe; got {}", lex.getToken()));
+        lex.nextToken();
+    }
+
+    String result_name = "_msg";
+    if (!lex.isQueryPartTrailer())
+    {
+        if (lex.isKeyword("as"))
+            lex.nextToken();
+        result_name = parseFieldName();
+    }
+
+    appendComputedColumn(layer,
+        makeASTFunction("length", makeASTFunction("JSONExtractArrayRaw", columnExpr(field))),
+        columnName(result_name));
+}
+
+void LogsQLParser::parsePipeReplace(Layer & layer, bool is_regexp)
+{
+    lex.nextToken();
+
+    ASTPtr condition = parseOptionalIfCondition();
+
+    if (!lex.isKeyword("("))
+        throwSyntaxError("missing '(' with the ('old', 'new') arguments of the replace pipe");
+    std::vector<String> args = parseArgsInParens();
+    if (args.size() != 2)
+        throwSyntaxError(fmt::format("unexpected number of arguments of the replace pipe; got {}; want 2", args.size()));
+
+    String field = "_msg";
+    if (lex.isKeyword("at"))
+    {
+        lex.nextToken();
+        field = parseFieldName();
+    }
+
+    std::optional<UInt64> limit;
+    if (lex.isKeyword("limit"))
+    {
+        lex.nextToken();
+        limit = parseLimitValue();
+    }
+    if (limit && *limit > 1)
+        throwNotImplemented("A replacement limit greater than 1 in the replace pipe");
+
+    if (is_regexp)
+    {
+        re2::RE2 checked_regexp(args[0], re2::RE2::Quiet);
+        if (!checked_regexp.ok())
+            throwSyntaxError(fmt::format("invalid regexp {} in the replace_regexp pipe: {}", args[0], checked_regexp.error()));
+    }
+
+    String function = is_regexp
+        ? (limit == 1 ? "replaceRegexpOne" : "replaceRegexpAll")
+        : (limit == 1 ? "replaceOne" : "replaceAll");
+
+    ASTPtr expression = makeASTFunction(function, columnExpr(field), makeStringLiteral(args[0]), makeStringLiteral(args[1]));
+    if (condition)
+        expression = makeASTFunction("if", condition, expression, columnExpr(field));
+
+    applyColumnReplacement(layer, columnName(field), expression);
+}
+
+void LogsQLParser::parsePipeUnion(Layer & layer)
+{
+    lex.nextToken();
+    if (lex.isKeyword("rows"))
+        throwNotImplemented("The static rows(...) form of the union pipe");
+    if (!lex.isKeyword("("))
+        throwSyntaxError("missing '(' with the subquery of the union pipe");
+    lex.nextToken();
+
+    Layer other = parseQuery(/*is_subquery=*/ true);
+    lex.nextToken();  /// Skip ')'.
+
+    wrapLayer(layer);
+
+    /// layer.source_subquery is a fresh ASTSelectWithUnionQuery with a single select - append the other one.
+    auto * select_with_union = layer.source_subquery->as<ASTSelectWithUnionQuery>();
+    select_with_union->list_of_selects->children.push_back(buildSelect(other));
+    select_with_union->union_mode = SelectUnionMode::UNION_ALL;
+    select_with_union->list_of_modes = {SelectUnionMode::UNION_ALL};
+}
+
+void LogsQLParser::parsePipeHash(Layer & layer)
+{
+    lex.nextToken();
+
+    bool with_parens = lex.isKeyword("(");
+    if (with_parens)
+        lex.nextToken();
+    String field = parseFieldName();
+    if (with_parens)
+    {
+        if (!lex.isKeyword(")"))
+            throwSyntaxError(fmt::format("missing ')' in the hash pipe; got {}", lex.getToken()));
+        lex.nextToken();
+    }
+
+    String result_name = "_msg";
+    if (!lex.isQueryPartTrailer())
+    {
+        if (lex.isKeyword("as"))
+            lex.nextToken();
+        result_name = parseFieldName();
+    }
+
+    /// VictoriaLogs computes xxHash64 of the value, truncated to 53 bits.
+    ASTPtr expression = makeASTFunction("bitAnd",
+        makeASTFunction("xxHash64", columnExpr(field)),
+        makeUInt64Literal((1ULL << 53) - 1));
+    appendComputedColumn(layer, expression, columnName(result_name));
+}
+
+void LogsQLParser::parsePipeUnroll(Layer & layer)
+{
+    lex.nextToken();
+
+    if (lex.isKeyword("if"))
+        throwNotImplemented("The 'if' clause of the unroll pipe");
+
+    if (lex.isKeyword("by"))
+        lex.nextToken();
+
+    std::vector<String> fields;
+    if (lex.isKeyword("("))
+    {
+        lex.nextToken();
+        while (!lex.isKeyword(")"))
+        {
+            fields.push_back(parseFieldName());
+            if (lex.isKeyword(","))
+                lex.nextToken();
+            else if (!lex.isKeyword(")"))
+                throwSyntaxError(fmt::format("unexpected token {} in the unroll pipe; expecting ',' or ')'", lex.getToken()));
+        }
+        lex.nextToken();
     }
     else
     {
-        layer.order_by_all = true;
-        layer.order_by.push_back(makeOrderByElement(make_intrusive<ASTIdentifier>("all"), is_last));
+        while (true)
+        {
+            fields.push_back(parseFieldName());
+            if (!lex.isKeyword(","))
+                break;
+            lex.nextToken();
+        }
     }
-    layer.limit = limit;
+    if (fields.empty())
+        throwSyntaxError("missing fields in the unroll pipe");
+
+    /// Each listed field holds a JSON array; a row is unrolled into max(array lengths) rows
+    /// (shorter arrays are padded with ""), or into a single row with empty fields
+    /// when no field holds a non-empty array.
+    auto array_of = [&](const String & field)
+    {
+        return makeASTFunction("JSONExtractArrayRaw", columnExpr(field));
+    };
+
+    ASTPtr rows_count = makeASTFunction("length", array_of(fields[0]));
+    for (size_t i = 1; i < fields.size(); ++i)
+        rows_count = makeASTFunction("greatest", rows_count, makeASTFunction("length", array_of(fields[i])));
+
+    /// The inner layer adds the unrolling index; arrayJoin must appear exactly once.
+    wrapLayerIf(layer, !layer.select.empty());
+    ASTPtr index = makeASTFunction("arrayJoin",
+        makeASTFunction("range", makeASTFunction("greatest", makeUInt64Literal(1), rows_count)));
+    layer.select.push_back(make_intrusive<ASTAsterisk>());
+    index->setAlias("__logsql_unroll_index");
+    layer.select.push_back(index);
+    layer.has_projection = true;
+    wrapLayer(layer);
+
+    /// The outer layer replaces the fields with the decoded array elements and drops the index.
+    auto except = make_intrusive<ASTColumnsExceptTransformer>();
+    except->children.push_back(make_intrusive<ASTIdentifier>("__logsql_unroll_index"));
+
+    auto transformers = make_intrusive<ASTColumnsTransformerList>();
+    transformers->children.push_back(except);
+
+    auto replace = make_intrusive<ASTColumnsReplaceTransformer>();
+    replace->is_strict = false;
+    for (const auto & field : fields)
+    {
+        /// String elements are decoded; other elements keep their JSON form.
+        ASTPtr element = makeASTFunction("arrayElement", array_of(field),
+            makeASTFunction("plus", make_intrusive<ASTIdentifier>("__logsql_unroll_index"), makeUInt64Literal(1)));
+        ASTPtr decoded = makeASTFunction("if",
+            makeASTFunction("startsWith", element, makeStringLiteral("\"")),
+            makeASTFunction("JSONExtractString", element->clone()),
+            element->clone());
+
+        auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
+        replacement->name = columnName(field);
+        replacement->children.push_back(decoded);
+        replace->children.push_back(replacement);
+    }
+    transformers->children.push_back(replace);
+
+    auto asterisk = make_intrusive<ASTAsterisk>();
+    asterisk->transformers = transformers;
+    asterisk->children.push_back(transformers);
+    layer.select = {asterisk};
+    layer.has_projection = true;
+}
+
+void LogsQLParser::parsePipePack(Layer & layer, bool is_logfmt)
+{
+    lex.nextToken();
+
+    if (!lex.isKeyword("fields"))
+        throwNotImplemented(fmt::format("The {} pipe without an explicit 'fields' list", is_logfmt ? "pack_logfmt" : "pack_json"));
+    lex.nextToken();
+
+    if (!lex.isKeyword("("))
+        throwSyntaxError("missing '(' after 'fields'");
+    lex.nextToken();
+    std::vector<String> fields;
+    while (!lex.isKeyword(")"))
+    {
+        fields.push_back(parseFieldName());
+        if (!lex.skippedSpace() && lex.isKeyword("*"))
+            throwNotImplemented("Field name prefixes in the pack pipes");
+        if (lex.isKeyword(","))
+            lex.nextToken();
+        else if (!lex.isKeyword(")"))
+            throwSyntaxError(fmt::format("unexpected token {}; expecting ',' or ')'", lex.getToken()));
+    }
+    lex.nextToken();
+    if (fields.empty())
+        throwSyntaxError("missing fields in the pack pipe");
+
+    String result_name = "_msg";
+    if (!lex.isQueryPartTrailer())
+    {
+        if (lex.isKeyword("as"))
+            lex.nextToken();
+        result_name = parseFieldName();
+    }
+
+    ASTPtr expression;
+    if (is_logfmt)
+    {
+        /// Space-separated name=value pairs.
+        auto concat = makeASTFunction("concat");
+        for (size_t i = 0; i < fields.size(); ++i)
+        {
+            concat->arguments->children.push_back(makeStringLiteral((i == 0 ? "" : " ") + fields[i] + "="));
+            concat->arguments->children.push_back(makeASTFunction("toString", columnExpr(fields[i])));
+        }
+        expression = concat;
+    }
+    else
+    {
+        /// A JSON object; fields with empty values are omitted, as in VictoriaLogs.
+        auto entries = makeASTFunction("map");
+        for (const auto & field : fields)
+        {
+            entries->arguments->children.push_back(makeStringLiteral(field));
+            entries->arguments->children.push_back(makeASTFunction("toString", columnExpr(field)));
+        }
+        auto key_argument = make_intrusive<ASTIdentifier>("__logsql_key");
+        auto value_argument = make_intrusive<ASTIdentifier>("__logsql_value");
+        auto lambda = makeASTFunction("lambda",
+            makeASTFunction("tuple", key_argument, value_argument),
+            makeASTFunction("notEquals", value_argument->clone(), makeStringLiteral("")));
+        expression = makeASTFunction("toJSONString", makeASTFunction("mapFilter", lambda, entries));
+    }
+
+    appendComputedColumn(layer, expression, columnName(result_name));
 }
 
 /// ---- The stats pipe ----
@@ -792,6 +1760,8 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
 {
     if (need_keyword)
         lex.nextToken();
+
+    current_stats_time_bucket_ns.reset();
 
     ASTs by_select;
     ASTs by_keys;
@@ -816,8 +1786,6 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                 /// A bucket specification: by (_time:1h), by (request_size:10KB).
                 lex.nextToken();
                 String bucket = lex.nextCompoundToken();
-                if (bucket.starts_with('/'))
-                    throwNotImplemented("IPv4 subnet buckets in the 'by' clause");
 
                 std::optional<String> bucket_offset;
                 if (lex.isKeyword("offset"))
@@ -828,24 +1796,61 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
 
                 if (name == "_time")
                 {
-                    if (bucket_offset)
-                        throwNotImplemented("A bucket offset for the _time field");
-
                     static const std::unordered_map<String, String> named_steps = {
                         {"nanosecond", "toIntervalNanosecond"}, {"microsecond", "toIntervalMicrosecond"},
                         {"millisecond", "toIntervalMillisecond"}, {"second", "toIntervalSecond"},
                         {"minute", "toIntervalMinute"}, {"hour", "toIntervalHour"}, {"day", "toIntervalDay"},
                         {"week", "toIntervalWeek"}, {"month", "toIntervalMonth"}, {"year", "toIntervalYear"}};
 
+                    static const std::unordered_map<String, Int64> named_step_ns = {
+                        {"nanosecond", 1LL}, {"microsecond", 1000LL}, {"millisecond", 1000000LL},
+                        {"second", 1000000000LL}, {"minute", 60000000000LL}, {"hour", 3600000000000LL},
+                        {"day", 86400000000000LL}, {"week", 604800000000000LL}};
+
                     ASTPtr interval;
                     if (auto it = named_steps.find(Poco::toLower(bucket)); it != named_steps.end())
+                    {
                         interval = makeASTFunction(it->second, makeUInt64Literal(1));
+                        if (auto it_ns = named_step_ns.find(Poco::toLower(bucket)); it_ns != named_step_ns.end())
+                            current_stats_time_bucket_ns = it_ns->second;
+                    }
                     else if (auto duration = tryParseDuration(bucket))
+                    {
                         interval = makeIntervalAST(*duration);
+                        current_stats_time_bucket_ns = *duration;
+                    }
                     else
                         throwSyntaxError(fmt::format("cannot parse the time bucket step {}", bucket));
 
-                    key = makeASTFunction("toStartOfInterval", columnExpr(name), interval);
+                    if (bucket_offset)
+                    {
+                        /// A timezone-like shift of the bucket boundaries.
+                        auto offset_duration = tryParseDuration(*bucket_offset);
+                        if (!offset_duration)
+                            throwSyntaxError(fmt::format("cannot parse the bucket offset {} for the _time field", *bucket_offset));
+                        key = shiftTime(
+                            makeASTFunction("toStartOfInterval", shiftTime(columnExpr(name), *offset_duration), interval),
+                            -*offset_duration);
+                    }
+                    else
+                    {
+                        key = makeASTFunction("toStartOfInterval", columnExpr(name), interval);
+                    }
+                }
+                else if (bucket.starts_with('/'))
+                {
+                    /// An IPv4 subnet bucket: by (ip:/24).
+                    UInt32 bits = 0;
+                    auto [end, ec] = std::from_chars(bucket.data() + 1, bucket.data() + bucket.size(), bits);
+                    if (ec != std::errc() || end != bucket.data() + bucket.size() || bits > 32)
+                        throwSyntaxError(fmt::format("cannot parse the IPv4 subnet bucket {} for the field {}", bucket, name));
+                    if (bucket_offset)
+                        throwSyntaxError("bucket offsets are not applicable to IPv4 subnet buckets");
+                    UInt32 mask = bits == 0 ? 0 : (~UInt32(0) << (32 - bits));
+                    key = makeASTFunction("IPv4NumToString",
+                        makeASTFunction("bitAnd",
+                            makeASTFunction("IPv4StringToNumOrDefault", columnExpr(name)),
+                            makeUInt64Literal(mask)));
                 }
                 else
                 {
@@ -899,7 +1904,90 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
         StatsFunc stats_func = parseStatsFunc();
 
         if (lex.isKeyword("switch"))
-            throwNotImplemented("The 'switch' clause of the stats pipe");
+        {
+            /// func() switch(case (<filter>) as name1, ..., default as nameN):
+            /// each row is counted into the first matching case.
+            lex.nextToken();
+            if (!lex.isKeyword("("))
+                throwSyntaxError("missing '(' after 'switch'");
+            lex.nextToken();
+
+            /// Each case is an independent conditional aggregate (a row may be counted into several
+            /// matching cases), and `default` matches the rows matching none of the `case` filters.
+            struct SwitchCase
+            {
+                ASTPtr condition;
+                bool is_default = false;
+                String result_name;
+            };
+            std::vector<SwitchCase> switch_cases;
+            bool seen_default = false;
+            while (!lex.isKeyword(")"))
+            {
+                SwitchCase entry;
+                if (lex.isKeyword("case") || lex.isKeyword("if"))
+                {
+                    lex.nextToken();
+                    entry.condition = parseParenthesizedFilter();
+                }
+                else if (lex.isKeyword("default"))
+                {
+                    if (seen_default)
+                        throwSyntaxError("switch(...) cannot contain more than one 'default'");
+                    seen_default = true;
+                    entry.is_default = true;
+                    lex.nextToken();
+                }
+                else
+                {
+                    throwSyntaxError(fmt::format("unexpected token {} inside switch(...); expecting 'case' or 'default'", lex.getToken()));
+                }
+
+                if (lex.isKeyword("as"))
+                    lex.nextToken();
+                entry.result_name = parseFieldName();
+                switch_cases.push_back(std::move(entry));
+
+                if (lex.isKeyword(","))
+                    lex.nextToken();
+                else if (!lex.isKeyword(")"))
+                    throwSyntaxError(fmt::format("unexpected token {} inside switch(...); expecting ',' or ')'", lex.getToken()));
+            }
+            lex.nextToken();
+            if (switch_cases.empty())
+                throwSyntaxError("switch(...) must contain at least a single 'case' or 'default'");
+
+            for (const auto & entry : switch_cases)
+            {
+                ASTPtr combined = entry.condition;
+                if (entry.is_default)
+                {
+                    /// The rows matching none of the case filters (all rows if there are no cases).
+                    ASTs case_conditions;
+                    for (const auto & other : switch_cases)
+                        if (other.condition)
+                            case_conditions.push_back(other.condition->clone());
+                    if (case_conditions.size() == 1)
+                        combined = makeASTFunction("not", case_conditions[0]);
+                    else if (!case_conditions.empty())
+                    {
+                        auto disjunction = makeASTFunction("or");
+                        disjunction->arguments->children = std::move(case_conditions);
+                        combined = makeASTFunction("not", disjunction);
+                    }
+                }
+                ASTPtr case_aggregate = stats_func.build(combined ? combined->clone() : nullptr);
+                case_aggregate->setAlias(entry.result_name);
+                aggregates.push_back(case_aggregate);
+            }
+
+            if (lex.isQueryPartTrailer())
+                break;
+            if (!lex.isKeyword(","))
+                throwSyntaxError(fmt::format("unexpected token {} after a stats function; expecting ',', '|', ';' or ')'", lex.getToken()));
+            lex.nextToken();
+            continue;
+        }
 
         ASTPtr condition;
         String condition_text;
@@ -971,15 +2059,16 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         throwSyntaxError(fmt::format("unknown stats function {}", lex.getToken()));
     lex.nextToken();
 
-    if (name == "rate" || name == "rate_sum" || name == "histogram" || name == "json_values"
-        || name == "row_any" || name == "row_max" || name == "row_min" || name == "field_max" || name == "field_min")
-        throwNotImplemented(fmt::format("The stats function '{}'", name));
+    if (name == "histogram")
+        throwNotImplemented("The stats function 'histogram' (its VictoriaMetrics bucket format has no ClickHouse equivalent)");
 
     bool wildcard = false;
     std::vector<String> args = parseArgsInParens(&wildcard);
 
     std::optional<UInt64> limit;
-    if ((name == "count_uniq" || name == "uniq_values" || name == "values") && lex.isKeyword("limit"))
+    if ((name == "json_values") && (lex.isKeyword("sort") || lex.isKeyword("order")))
+        throwNotImplemented("The 'sort' clause of the json_values stats function");
+    if ((name == "count_uniq" || name == "uniq_values" || name == "values" || name == "json_values") && lex.isKeyword("limit"))
     {
         lex.nextToken();
         limit = parseLimitValue();
@@ -1012,10 +2101,50 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
     {
         if (args.empty() || wildcard)
             return {canonical, [](ASTPtr condition) { return makeAggregate("count", {}, condition); }};
-        if (args.size() > 1)
-            throwNotImplemented("count() over multiple fields");
-        ASTPtr column = columnExpr(args[0]);
-        return {canonical, [column](ASTPtr condition) { return makeAggregate("count", {column}, condition); }};
+        if (args.size() == 1)
+        {
+            ASTPtr column = columnExpr(args[0]);
+            return {canonical, [column](ASTPtr condition) { return makeAggregate("count", {column->clone()}, condition); }};
+        }
+
+        /// count(f1, ..., fN): rows where at least one of the fields has a value.
+        auto any_present = makeASTFunction("or");
+        for (const auto & arg : args)
+            any_present->arguments->children.push_back(makeASTFunction("isNotNull", columnExpr(arg)));
+        ASTPtr present = any_present;
+        return {canonical, [present](ASTPtr condition)
+        {
+            ASTPtr full_condition = condition ? makeASTFunction("and", present->clone(), condition) : present->clone();
+            return makeAggregate("count", {}, full_condition);
+        }};
+    }
+
+    if (name == "rate" || name == "rate_sum")
+    {
+        /// The number of matching logs (or the sum of the field) per second of the query time range.
+        /// The range is taken from the query's `_time` filter; without a known range,
+        /// `rate()` is the same as `count()` and `rate_sum(x)` the same as `sum(x)`.
+        if (name == "rate" && !args.empty())
+            throwSyntaxError("rate() does not accept arguments");
+        if (name == "rate_sum" && (wildcard || args.size() != 1))
+            throwNotImplemented("rate_sum() over all fields or over multiple fields");
+
+        ASTPtr column = args.empty() ? nullptr : columnExpr(args[0]);
+        std::optional<Float64> range_seconds;
+        /// A `_time` bucket of the same stats pipe takes precedence over the whole query range.
+        if (current_stats_time_bucket_ns && *current_stats_time_bucket_ns > 0)
+            range_seconds = static_cast<Float64>(*current_stats_time_bucket_ns) / 1e9;
+        else if (query_time_range_ns && *query_time_range_ns > 0)
+            range_seconds = static_cast<Float64>(*query_time_range_ns) / 1e9;
+        return {canonical, [column, range_seconds](ASTPtr condition)
+        {
+            ASTPtr result = column
+                ? makeAggregate("sum", {column->clone()}, condition)
+                : makeAggregate("count", {}, condition);
+            if (range_seconds)
+                result = makeASTFunction("divide", result, make_intrusive<ASTLiteral>(Field(*range_seconds)));
+            return result;
+        }};
     }
 
     if (wildcard || args.empty())
@@ -1024,6 +2153,68 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
     for (const auto & arg : args)
         if (arg.ends_with('*'))
             throwNotImplemented("Field name prefixes in stats functions");
+
+    if (name == "row_any" || name == "row_min" || name == "row_max" || name == "json_values")
+    {
+        /// These return rows as JSON objects. The set of fields must be explicit,
+        /// because the schema is not known at parse time; empty values are omitted.
+        std::vector<String> row_fields = args;
+        String tracked;
+        if (name == "row_min" || name == "row_max")
+        {
+            tracked = args[0];
+            row_fields.erase(row_fields.begin());
+        }
+        if (row_fields.empty())
+            throwNotImplemented(fmt::format("The stats function {}() without an explicit list of returned fields", name));
+
+        auto entries = makeASTFunction("map");
+        for (const auto & field : row_fields)
+        {
+            entries->arguments->children.push_back(makeStringLiteral(field));
+            entries->arguments->children.push_back(makeASTFunction("toString", columnExpr(field)));
+        }
+        auto key_argument = make_intrusive<ASTIdentifier>("__logsql_key");
+        auto value_argument = make_intrusive<ASTIdentifier>("__logsql_value");
+        auto filter_lambda = makeASTFunction("lambda",
+            makeASTFunction("tuple", key_argument, value_argument),
+            makeASTFunction("notEquals", value_argument->clone(), makeStringLiteral("")));
+        ASTPtr row_json = makeASTFunction("toJSONString", makeASTFunction("mapFilter", filter_lambda, entries));
+
+        if (name == "row_any")
+            return {canonical, [row_json](ASTPtr condition) { return makeAggregate("any", {row_json->clone()}, condition); }};
+        if (name == "json_values")
+        {
+            return {canonical, [row_json, limit](ASTPtr condition)
+            {
+                ASTs parameters;
+                if (limit)
+                    parameters.push_back(makeUInt64Literal(*limit));
+                return makeAggregate("groupArray", {row_json->clone()}, condition, parameters);
+            }};
+        }
+
+        ASTPtr tracked_column = columnExpr(tracked);
+        String aggregate_name = name == "row_min" ? "argMin" : "argMax";
+        return {canonical, [aggregate_name, row_json, tracked_column](ASTPtr condition)
+        {
+            return makeAggregate(aggregate_name, {row_json->clone(), tracked_column->clone()}, condition);
+        }};
+    }
+
+    if (name == "field_min" || name == "field_max")
+    {
+        /// field_max(maxField, field) returns the value of `field` from the row with the maximum `maxField`.
+        if (args.size() != 2)
+            throwSyntaxError(fmt::format("{}() requires two arguments: ({}Field, field)", name, name == "field_min" ? "min" : "max"));
+        ASTPtr tracked = columnExpr(args[0]);
+        ASTPtr returned = columnExpr(args[1]);
+        String aggregate_name = name == "field_min" ? "argMin" : "argMax";
+        return {canonical, [aggregate_name, returned, tracked](ASTPtr condition)
+        {
+            return makeAggregate(aggregate_name, {returned->clone(), tracked->clone()}, condition);
+        }};
+    }
 
     if (name == "count_empty")
     {
@@ -1038,7 +2229,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         }();
         return {canonical, [all_empty](ASTPtr condition)
         {
-            ASTPtr full_condition = condition ? makeASTFunction("and", all_empty, condition) : all_empty;
+            ASTPtr full_condition = condition ? makeASTFunction("and", all_empty->clone(), condition) : all_empty->clone();
             return makeAggregate("count", {}, full_condition);
         }};
     }
@@ -1049,7 +2240,11 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         String aggregate_name = name == "count_uniq" ? "uniqExact" : "uniq";
         return {canonical, [aggregate_name, columns, limit](ASTPtr condition)
         {
-            ASTPtr result = makeAggregate(aggregate_name, columns, condition);
+            ASTs cloned;
+            cloned.reserve(columns.size());
+            for (const auto & column : columns)
+                cloned.push_back(column->clone());
+            ASTPtr result = makeAggregate(aggregate_name, std::move(cloned), condition);
             if (limit)
                 result = makeASTFunction("least", result, makeUInt64Literal(*limit));
             return result;
@@ -1067,7 +2262,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         Float64 phi_value = *phi;
         return {canonical, [column, phi_value](ASTPtr condition)
         {
-            return makeAggregate("quantile", {column}, condition, {make_intrusive<ASTLiteral>(Field(phi_value))});
+            return makeAggregate("quantile", {column->clone()}, condition, {make_intrusive<ASTLiteral>(Field(phi_value))});
         }};
     }
 
@@ -1083,7 +2278,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
             ASTs parameters;
             if (limit)
                 parameters.push_back(makeUInt64Literal(*limit));
-            ASTPtr result = makeAggregate(aggregate_name, {column}, condition, parameters);
+            ASTPtr result = makeAggregate(aggregate_name, {column->clone()}, condition, parameters);
             if (sorted)
                 result = makeASTFunction("arraySort", result);
             return result;
@@ -1092,15 +2287,55 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
 
     if (name == "sum_len")
     {
+        /// The total length of the values across all listed fields.
+        ASTPtr total = makeASTFunction("length", columnExpr(args[0]));
+        for (size_t i = 1; i < args.size(); ++i)
+            total = makeASTFunction("plus", total, makeASTFunction("length", columnExpr(args[i])));
+        return {canonical, [total](ASTPtr condition) { return makeAggregate("sum", {total->clone()}, condition); }};
+    }
+
+    if (name == "min" || name == "max")
+    {
+        /// Over multiple fields, the extremum is taken across all their values.
+        ASTPtr value = columnExpr(args[0]);
         if (args.size() > 1)
-            throwNotImplemented("sum_len() over multiple fields");
-        ASTPtr length = makeASTFunction("length", columnExpr(args[0]));
-        return {canonical, [length](ASTPtr condition) { return makeAggregate("sum", {length}, condition); }};
+        {
+            auto pooled = makeASTFunction(name == "min" ? "least" : "greatest");
+            for (const auto & arg : args)
+                pooled->arguments->children.push_back(columnExpr(arg));
+            value = pooled;
+        }
+        String aggregate_name = name;
+        return {canonical, [aggregate_name, value](ASTPtr condition) { return makeAggregate(aggregate_name, {value->clone()}, condition); }};
+    }
+
+    if (name == "sum" || name == "avg")
+    {
+        std::vector<ASTPtr> columns;
+        columns.reserve(args.size());
+        for (const auto & arg : args)
+            columns.push_back(columnExpr(arg));
+        bool is_avg = name == "avg";
+        return {canonical, [columns, is_avg](ASTPtr condition) -> ASTPtr
+        {
+            if (columns.size() == 1 && !is_avg)
+                return makeAggregate("sum", {columns[0]->clone()}, condition);
+            if (columns.size() == 1)
+                return makeAggregate("avg", {columns[0]->clone()}, condition);
+
+            /// The values of all listed fields are pooled together.
+            ASTPtr total = makeAggregate("sum", {columns[0]->clone()}, condition);
+            for (size_t i = 1; i < columns.size(); ++i)
+                total = makeASTFunction("plus", total, makeAggregate("sum", {columns[i]->clone()}, condition ? condition->clone() : ASTPtr{}));
+            if (!is_avg)
+                return total;
+            ASTPtr rows = makeAggregate("count", {}, condition ? condition->clone() : nullptr);
+            return makeASTFunction("divide", total, makeASTFunction("multiply", rows, makeUInt64Literal(columns.size())));
+        }};
     }
 
     static const std::unordered_map<String, String> simple_aggregates = {
-        {"any", "any"}, {"avg", "avg"}, {"max", "max"}, {"median", "median"},
-        {"min", "min"}, {"stddev", "stddevPop"}, {"sum", "sum"}};
+        {"any", "any"}, {"median", "median"}, {"stddev", "stddevPop"}};
 
     if (auto it = simple_aggregates.find(name); it != simple_aggregates.end())
     {
@@ -1108,7 +2343,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
             throwNotImplemented(fmt::format("{}() over multiple fields", name));
         ASTPtr column = columnExpr(args[0]);
         String aggregate_name = it->second;
-        return {canonical, [aggregate_name, column](ASTPtr condition) { return makeAggregate(aggregate_name, {column}, condition); }};
+        return {canonical, [aggregate_name, column](ASTPtr condition) { return makeAggregate(aggregate_name, {column->clone()}, condition); }};
     }
 
     throwNotImplemented(fmt::format("The stats function '{}'", name));
@@ -1313,6 +2548,8 @@ ASTPtr LogsQLParser::buildSelect(Layer & layer) const
     if (layer.source_subquery)
     {
         auto subquery = make_intrusive<ASTSubquery>(layer.source_subquery);
+        if (layer.join_subquery)
+            subquery->setAlias("__logsql_left");
         table_expression->subquery = subquery;
         table_expression->children.push_back(subquery);
     }
@@ -1333,6 +2570,33 @@ ASTPtr LogsQLParser::buildSelect(Layer & layer) const
 
     auto tables = make_intrusive<ASTTablesInSelectQuery>();
     tables->children.push_back(table_element);
+
+    if (layer.join_subquery)
+    {
+        auto join = make_intrusive<ASTTableJoin>();
+        join->kind = layer.join_inner ? JoinKind::Inner : JoinKind::Left;
+        join->strictness = JoinStrictness::All;
+        auto using_list = make_intrusive<ASTExpressionList>();
+        for (const auto & name : layer.join_using)
+            using_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        join->using_expression_list = using_list;
+        join->children.push_back(using_list);
+
+        auto right_expression = make_intrusive<ASTTableExpression>();
+        auto right_subquery = make_intrusive<ASTSubquery>(layer.join_subquery);
+        right_subquery->setAlias("__logsql_right");
+        right_expression->subquery = right_subquery;
+        right_expression->children.push_back(right_subquery);
+
+        auto right_element = make_intrusive<ASTTablesInSelectQueryElement>();
+        right_element->table_join = join;
+        right_element->children.push_back(join);
+        right_element->table_expression = right_expression;
+        right_element->children.push_back(right_expression);
+
+        tables->children.push_back(right_element);
+    }
+
     select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
     if (layer.where)

@@ -220,6 +220,10 @@ foo: *"bar*:baz"*
 ;
 "" or foo:"" and not bar:""
 ;
+_stream_id:in()
+;
+_stream_id:in(*)
+;
 '_stream_id':in(*)
 ;
 _stream:{}
@@ -341,6 +345,8 @@ _time:1h _time:2025Z
 _time:<10h _time:2025Z
 ;
 _time:2025Z _time:[2024-10Z, 2025-03Z]
+;
+options(time_offset=1h) _time:2025Z _time:[2024-10Z, 2025-03Z]
 ;
 _time:2025Z _time:2024Z _time:10y
 ;
@@ -506,6 +512,18 @@ _time
 ;
 x:_time
 ;
+contains_common_case(foo)
+;
+contains_common_case(foo, 'bar,baz')
+;
+foo:contains_common_case(foo, 'bar,baz')
+;
+equals_common_case(foo)
+;
+equals_common_case(foo, 'bar,baz')
+;
+foo:equals_common_case(foo, 'bar,baz')
+;
 eq_field(foo)
 ;
 "a":eq_field('b')
@@ -576,6 +594,14 @@ i('foo bar'*)
 ;
 foo:i(foo:bar-baz/aa+bb)
 ;
+json_array_contains_any()
+;
+abc:json_array_contains_any(foo, bar)
+;
+json_array_contains_any("foo")
+;
+json_array_contains_any('foo"')
+;
 in()
 ;
 in(foo)
@@ -612,6 +638,14 @@ contains_any(*)
 ;
 foo:contains_any(*)
 ;
+contains_any(err|fields x)
+;
+ip:contains_any(foo and user:contains_any(admin, moderator)|fields ip)
+;
+contains_any(bar:contains_any(1,2,3) | uniq (x)) | stats count() rows
+;
+contains_any((1) | fields z) | stats count() rows
+;
 contains_all()
 ;
 contains_all(foo)
@@ -626,6 +660,14 @@ contains_all(*)
 ;
 foo:contains_all(*)
 ;
+contains_all(err|fields x)
+;
+ip:contains_all(foo and user:contains_all(admin, moderator)|fields ip)
+;
+contains_all(bar:contains_all(1,2,3) | uniq (x)) | stats count() rows
+;
+contains_all((1) | fields z) | stats count() rows
+;
 ipv4_range(1.2.3.4, "5.6.7.8")
 ;
 foo:ipv4_range(1.2.3.4, "5.6.7.8" , )
@@ -635,6 +677,8 @@ ipv4_range(1.2.3.4)
 ipv4_range(1.2.3.4/20)
 ;
 ipv4_range(1.2.3.4,)
+;
+ipv6_range(::1, "::2")
 ;
 len_range(10, 20)
 ;
@@ -649,6 +693,14 @@ len_range(10, 1_000_000)
 len_range(0x10,0b100101)
 ;
 len_range(1.5KB, 22MB100KB)
+;
+pattern_match("<N> foo <DATE>, bar")
+;
+pattern_match_full("<N> foo <DATE>, bar")
+;
+pattern_match_prefix("<N> foo <DATE>, bar")
+;
+pattern_match_suffix("<N> foo <DATE>, bar")
 ;
 range(-INF,+inF)
 ;
@@ -752,6 +804,12 @@ foo | fields bar
 ;
 foo | fields "", a
 ;
+* | field_values x
+;
+* | field_values (x)
+;
+foo | generate_sequence 123
+;
 * | copy foo as bar
 ;
 * | cp foo bar
@@ -771,6 +829,18 @@ foo | fields "", a
 * | rm foo
 ;
 * | DELETE foo, bar
+;
+* | len(x)
+;
+* | len(x) as _msg
+;
+* | len(x) y
+;
+* | len  ( x ) as y
+;
+* | len x y
+;
+* | len x as y
 ;
 foo | limit
 ;
@@ -794,6 +864,20 @@ foo | skip 12_345M
 ;
 foo | offset 10 | offset 100
 ;
+* | sample 10
+;
+* | running_stats count() x
+;
+* | total_stats count() x
+;
+* | split ","
+;
+* | split "," from x
+;
+* | split "," from x as y
+;
+* | split "," as y
+;
 * | stats count() x
 ;
 * | stats_remote count() x
@@ -812,7 +896,25 @@ foo | offset 10 | offset 100
 ;
 * | stats Max(foo) bar
 ;
+* | stats BY(x, y, ) MAX(foo,bar,) bar
+;
 * | stats Min(foo) bar
+;
+* | stats BY(x, y, ) MIN(foo,bar,) bar
+;
+* | stats BY(x, y, ) row_MIN(foo,bar,) bar
+;
+* | stats field_Max(foo,x) bar
+;
+* | field_Max(foo,x)
+;
+* | stats BY(x, y, ) field_MAX(foo,bar) bar
+;
+* | stats field_Min(foo,x) bar
+;
+* | field_Min(foo,x)
+;
+* | stats BY(x, y, ) field_MIN(foo,bar) bar
 ;
 * | stats Any(foo) bar
 ;
@@ -842,9 +944,21 @@ foo | offset 10 | offset 100
 ;
 * | stats Sum_len(foo) bar
 ;
+* | stats BY(x, y, ) SUM_Len(foo,bar,) bar
+;
+* | json_values(a) x
+;
+* | json_values(a, b) limit 5 x
+;
 * | stats count() "foo.bar:baz", count_uniq(a) bar
 ;
 * | stats by (x, y) count(*) foo, count_uniq(a,b) bar
+;
+*|stats by(client_ip:/24, server_ip:/16) count() foo
+;
+* | stats by(_time: 1d offset 2h) count() as foo
+;
+* | stats by(_time:1d offset -2.5h5m) count() as foo
 ;
 * | stats by (_time:nanosecond) count() foo
 ;
@@ -863,6 +977,10 @@ foo | offset 10 | offset 100
 * | stats by (_time:week) count() foo
 ;
 * | stats by (_time:month) count() foo
+;
+* | stats by (_time:year offset 6.5h) count() foo
+;
+* | stats (_time:year offset 6.5h) count() foo
 ;
 * | stats count() if (foo bar) rows
 ;
@@ -910,11 +1028,15 @@ foo | offset 10 | offset 100
 ;
 * | first 10 by (foo)
 ;
+* | first 10 by (foo) rank bar
+;
 * | last
 ;
 * | last by (x,y)
 ;
 * | last 10 by (foo)
+;
+* | last 10 by (foo) rank bar
 ;
 * | uniq foo
 ;
@@ -972,6 +1094,52 @@ foo | stats by (host) count() logs | filter logs:>50 | sort by (logs desc) | lim
 ;
 * | "not"
 ;
+* | extract "foo<bar>baz"
+;
+* | extract "foo<bar>baz" from _msg
+;
+* | extract 'foo<bar>baz' from ''
+;
+* | extract `foo<bar>baz` from x
+;
+* | extract if (a:b) 'foo<bar>baz' from x
+;
+* | union(foo)
+;
+* | join by (x) (foo:bar)
+;
+* | join on (x, y) (foo:bar)
+;
+* | join (x, y) (foo:bar)
+;
+* | json_array_concat
+;
+* | json_array_concat "," x
+;
+* | json_array_concat "," from x
+;
+* | json_array_concat "," as y
+;
+* | json_array_concat "," from x as y
+;
+* | json_array_len x
+;
+* | json_array_len x y
+;
+* | json_array_len (x) as y
+;
+* | unpack_words
+;
+* | unpack_words x
+;
+* | unpack_words x y
+;
+* | hash(x)
+;
+* | hash(x) y
+;
+* | hash(x) as y
+;
 * | skip 100 | head 20 | skip 10
 ;
 * | by (host) count() rows | rows:>10
@@ -990,7 +1158,41 @@ options (concurrency=1) *
 ;
 options (parallel_readers=10) *
 ;
+options(ignore_global_time_filter=true) *
+;
+options(time_offset=1h) *
+;
+options(time_offset=1h) _time:1d
+;
+options(global_filter=(*)) *
+;
+options(global_filter=(_time:5m)) foo:bar
+;
+options(global_filter=(_time:5m {host="abc"})) _time:1h foo:in(_time:3m | keep foo)
+;
+options (concurrency=2) foo bar:in(a:b | uniq(bar)) | union (abc) | join on (x) (y)
+;
+options (concurrency=2) foo bar:in(options (concurrency=10, ignore_global_time_filter=true) a:b | uniq(bar)) | union (abc) | join on(x) (y)
+;
+options (concurrency=2) foo bar:contains_any(a:b | uniq(bar)) | union (abc) | join on (x) (y)
+;
+options (concurrency=2) foo bar:contains_any(options (concurrency=10, ignore_global_time_filter=true) a:b | uniq(bar)) | union (abc) | join on(x) (y)
+;
+options (concurrency=2) foo bar:contains_all(a:b | uniq(bar)) | union (abc) | join on (x) (y)
+;
+options (concurrency=2) foo bar:contains_all(options (concurrency=10, ignore_global_time_filter=true) a:b | uniq(bar)) | union (abc) | join on(x) (y)
+;
 foo x:in(bar | filter baz | sort (a) | offset 10 | limit 20 | keep x)
+;
+foo x:contains_any(bar | filter baz | sort (a) | offset 10 | limit 20 | keep x)
+;
+foo x:contains_all(bar | filter baz | sort (a) | offset 10 | limit 20 | keep x)
+;
+* | join (x) ({foo=bar} {baz=x}) | count() if (a:in((a b) c (d e) | keep a)) z
+;
+* | join (x) ({foo=bar} {baz=x}) | count() if (a:contains_any((a b) c (d e) | keep a)) z
+;
+* | join (x) ({foo=bar} {baz=x}) | count() if (a:contains_all((a b) c (d e) | keep a)) z
 ;
 (a)or(b)
 ;
