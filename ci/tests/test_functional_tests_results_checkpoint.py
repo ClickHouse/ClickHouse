@@ -42,6 +42,8 @@ import subprocess
 import sys
 import time
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.functional_tests import checkpoint_collected_results
@@ -538,6 +540,10 @@ from pathlib import Path
 sys.path.insert(0, {repo!r})
 from ci.praktika.settings import Settings
 Settings.TEMP_DIR = {tmp!r}
+# Built from the DEFAULT TEMP_DIR at class-definition time, so the override above does
+# not move it. Left as it is, `_Environment.get` reads the workflow context of the job
+# running this test rather than the one seeded below.
+Settings.WORKFLOW_STATUS_FILE = {tmp!r} + "/workflow_status.json"
 import ci.praktika._environment as _env
 import ci.jobs.functional_tests as ft
 from ci.praktika.result import Result
@@ -664,6 +670,12 @@ except SystemExit as e:
 _FATAL_ROW_NAME = "FATAL_MARKER_ROW"
 
 
+def _tail(path, limit=4000):
+    """The probe child's own output, for a failure that must name why it exited."""
+    with open(path, "rb") as f:
+        return f.read().decode(errors="replace")[-limit:] or "(no output)"
+
+
 def _kill_main_in_teardown(
     tmp_path, build_types=None, rows=6174, block_call=None, failure_mode=""
 ):
@@ -702,12 +714,17 @@ def _kill_main_in_teardown(
         deadline = time.monotonic() + 300
         while time.monotonic() < deadline and not os.path.exists(blocked):
             if proc.poll() is not None:
+                # The child's output is redirected to `log`, so `proc.stdout` is None:
+                # read the file, or this branch raises instead of reporting the exit.
                 raise AssertionError(
                     "main() exited before reaching the teardown step this arm blocks "
-                    f"in:\n{proc.stdout.read().decode()[-4000:]}"
+                    f"in:\n{_tail(log)}"
                 )
             time.sleep(0.02)
-        assert os.path.exists(blocked), "main() never reached the blocking teardown step"
+        assert os.path.exists(blocked), (
+            "main() never reached the blocking teardown step, output:\n"
+            f"{_tail(log)}"
+        )
         # praktika's watchdog kills the whole process group (`TeePopen`).
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         proc.wait(timeout=60)
@@ -903,6 +920,52 @@ def test_the_bugfix_validation_block_checkpoints_after_the_build_type_loop():
             f"{last_loop_end}): the build-type labels, the reconciled fatal rows and the "
             "startup/setup ERROR rows are all produced after the last checkpoint inside it"
         )
+
+
+def test_a_probe_that_exits_early_reports_why(tmp_path):
+    """The diagnostic path itself, driven rather than inspected.
+
+    When the child exits before blocking, this arm's whole value is naming the cause. The
+    child's output goes to a file, so `proc.stdout` is None and reading it raises
+    `AttributeError`, hiding the real reason behind a failure in the error handler - which
+    is how a broken stub set reached CI unexplained. Force an early exit and require the
+    child's own traceback in the message.
+    """
+    with open(_JOB_SCRIPT, encoding="utf-8") as f:
+        marker = "SENTINEL_EXIT_" + str(len(f.read()))
+
+    original = _MAIN_PROBE
+    try:
+        # Exit before the blocking teardown step, the way an unusable stub set does.
+        globals()["_MAIN_PROBE"] = original.replace(
+            "try:\n    ft.main()",
+            f'raise RuntimeError("{marker}")\ntry:\n    ft.main()',
+        )
+        with pytest.raises(AssertionError) as excinfo:
+            _kill_main_in_teardown(tmp_path, rows=1)
+    finally:
+        globals()["_MAIN_PROBE"] = original
+
+    assert marker in str(excinfo.value), (
+        "the early-exit failure does not carry the child's own output, so a probe that "
+        f"cannot run reports nothing about why: {excinfo.value}"
+    )
+
+
+def test_the_probe_reads_no_ambient_workflow_context():
+    """The probe must resolve its environment only from what it seeds itself.
+
+    `Settings.WORKFLOW_STATUS_FILE` is built from the default `TEMP_DIR` when the class is
+    defined, so the probe's `TEMP_DIR` override does not move it and `_Environment.get`
+    reads the context of the job running this test. That context carries real
+    `changed_files`, which sends `main` into the batch-skip branch these arms do not
+    measure and the stub `Targeting` cannot serve: green on a developer box, `AttributeError`
+    only in CI. `TEMP_DIR` alone is not enough.
+    """
+    assert 'Settings.WORKFLOW_STATUS_FILE = {tmp!r}' in _MAIN_PROBE, (
+        "the probe no longer redirects Settings.WORKFLOW_STATUS_FILE into its own temp "
+        "dir: it reads the workflow context of the job running this test"
+    )
 
 
 # --- kill-based: atomicity, against a real process death -----------------------------
