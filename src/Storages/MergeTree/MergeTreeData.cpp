@@ -1167,7 +1167,8 @@ void MergeTreeData::checkProperties(
             if (projections_names.size() >= (*settings)[MergeTreeSetting::max_projections])
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections].value);
 
-            /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
+            /// A projection body cannot be altered (`MODIFY PROJECTION` replaces settings only and is
+            /// re-validated here as part of the new metadata), so we do not look it up in the old metadata.
             bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
             checkProperties(
                 *projection.metadata,
@@ -4830,6 +4831,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             AlterCommand::RENAME_COLUMN,
             AlterCommand::ADD_PROJECTION,
             AlterCommand::DROP_PROJECTION,
+            AlterCommand::MODIFY_PROJECTION,
             AlterCommand::MODIFY_ORDER_BY,
             AlterCommand::MODIFY_SAMPLE_BY,
         };
@@ -5306,6 +5308,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             if (!is_custom_partitioned)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ADD PROJECTION is not supported for tables with the old syntax");
+        }
+        if (command.type == AlterCommand::MODIFY_PROJECTION)
+        {
+            if (!is_custom_partitioned)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER MODIFY PROJECTION is not supported for tables with the old syntax");
         }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {

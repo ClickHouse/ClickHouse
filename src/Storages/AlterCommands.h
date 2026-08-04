@@ -38,6 +38,7 @@ struct AlterCommand
         MODIFY_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
+        MODIFY_PROJECTION,
         ADD_STATISTICS,
         DROP_STATISTICS,
         MODIFY_STATISTICS,

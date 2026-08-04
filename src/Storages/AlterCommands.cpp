@@ -420,6 +420,20 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::MODIFY_PROJECTION)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.projection_decl = command_ast->projection_decl->clone();
+        command.type = AlterCommand::MODIFY_PROJECTION;
+
+        const auto & ast_projection_decl = command_ast->projection_decl->as<ASTProjectionDeclaration &>();
+
+        command.projection_name = ast_projection_decl.name;
+        command.if_exists = command_ast->if_exists;
+
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT)
     {
         AlterCommand command;
@@ -977,6 +991,37 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         auto projection = ProjectionDescription::getProjectionFromAST(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
+    }
+    else if (type == MODIFY_PROJECTION)
+    {   /// create a new projection with the modifed settings
+        auto new_projection = ProjectionDescription::getProjectionFromAST(
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+
+        if (metadata.projections.has(projection_name))
+        {
+            /// Existing parts store projection data built from the query body, so only the
+            /// `WITH SETTINGS` clause may change; a body change would desynchronize them.
+            auto definition_without_settings = [](const IAST & definition_ast)
+            {
+                auto cloned = definition_ast.clone();
+                auto & decl = cloned->as<ASTProjectionDeclaration &>();
+                cloned->reset(decl.with_settings);
+                return cloned->formatWithSecretsOneLine();
+            };
+
+            const auto & old_projection = metadata.projections.get(projection_name);
+            if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
+                    "but the projection query differs from the existing one. "
+                    "Use DROP PROJECTION and ADD PROJECTION to change the query",
+                    projection_name);
+        }
+
+        /// Intentionally not a mutation because the new settings apply lazily
+        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
+        metadata.projections.replace(std::move(new_projection), if_exists);
     }
     else if (type == DROP_PROJECTION)
     {
