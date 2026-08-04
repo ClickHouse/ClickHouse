@@ -79,12 +79,6 @@ like:
 
 Let's explore the lifecycle of a Postgres service.
 
-<Warning>
-**Credential redaction**
-
-The API does not return the `password` and `connectionString` properties in its responses. They appear only in the [create](#create) response and [password reset] response when the request contained no password. We recommend that you capture credentials from the [create](#create) response. If you manage services with Terraform, use provider **v3.21.0 or later** (see the [Terraform reference](/products/managed-postgres/terraform)).
-</Warning>
-
 ### Create {#create}
 
 First, create a new one
@@ -111,7 +105,9 @@ create_data='{
 ```
 
 Now use this data to create a new instance; note that it requires the content
-type header. Save the response in order to have access to the credentials it returns:
+type header. Save the response: it is the only one that includes the service
+credentials (the [password reset] response also returns them when the request
+does not supply a password):
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -158,7 +154,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-The output will be similar to the JSON returned for creation (but without the `password` and `connectionString` properties), but keep an eye
+The output will be similar to the JSON returned for creation, minus the
+credentials, but keep an eye
 on the `state`; when it changes to `running`, the server is ready:
 
 ```bash

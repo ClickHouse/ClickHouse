@@ -14,15 +14,13 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 ClickHouse Managed Postgres services can be created and managed using the `clickhouse_postgres_service` resource in the [ClickHouse Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service). This page covers provider setup and configuration examples for the resource and its companion data sources.
 
 <Note>
-This resource is in alpha and its behavior may change in future provider versions. It ships in the regular provider build. This page documents provider version **v3.21.0** and later, which changed how credentials are managed; earlier versions no longer work correctly. See the [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) for details.
+This resource is in alpha and its behavior may change in future provider versions. It ships in the regular provider build. This page documents provider version **v3.21.0** and later. See the [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) for details.
 </Note>
 
 <Warning>
-**Provider v3.21.0 or later is required**
+**Upgrading from a provider earlier than v3.21.0**
 
-The ClickHouse Managed Postgres API does not return the superuser password or connection string in its responses; credentials are returned only when a service is created or its password is reset. Provider versions **v3.21.0 and later** handle this. Older provider versions rely on the API echoing credentials: they do not populate `connection_string`, and a service created without a declared `password` succeeds while the generated password is never captured anywhere.
-
-Your state migrates automatically on the first plan or apply with v3.21.0. If any of your services rely on a server-generated password (no `password` in configuration), recover it first with `terraform state pull` and declare it, since v3.21.0 requires `password` or `password_wo` for a standard service.
+Earlier provider versions expect the API to echo credentials back and no longer work: they leave `connection_string` empty, and a service created without a declared `password` comes up with a generated password that is never captured anywhere. Upgrade to **v3.21.0** or later; your state migrates automatically on the first plan or apply. If any of your services rely on a server-generated password (no `password` in configuration), recover it first with `terraform state pull` and declare it, since v3.21.0 requires `password` or `password_wo` for a standard service.
 </Warning>
 
 ## Provider setup {#provider-setup}
@@ -69,7 +67,7 @@ The `clickhouse_postgres_service` resource has the following arguments:
 | `read_replica_of` | No | ID of a primary service to replicate. See [Read replicas](#read-replicas). Mutually exclusive with `restore_to_point_in_time`. |
 | `restore_to_point_in_time` | No | Create the service by restoring another service to a point in time. See [Point-in-time restore](#point-in-time-restore). Mutually exclusive with `read_replica_of`. |
 
-The following attributes are read-only and populated by ClickHouse Cloud after creation: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, and `username`. There is no `connection_string` attribute (removed in v3.21.0): build connection URIs from `hostname`, `port`, `username`, and the password you declare, for example `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
+The following attributes are read-only and populated by ClickHouse Cloud after creation: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, and `username`. There is no `connection_string` attribute: build connection URIs from `hostname`, `port`, `username`, and the password you declare, for example `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
 
 <Warning>
 The `password` is stored in plain text in your Terraform state. Protect your state file accordingly, for example with a remote backend using encryption at rest, or use `password_wo` to keep the password out of state entirely.
