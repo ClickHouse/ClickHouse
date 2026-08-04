@@ -1289,7 +1289,7 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     if (read_sample_block.has("_part_granule_offset"))
         add_offset_column("_part_granule_offset");
 
-    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    const auto & read_hints = merge_tree_reader->getReadHints();
     /// Rescoring row filtering belongs only to the final reader. Earlier readers may
     /// share the same read hints but must not shrink the block before later stages.
     const bool apply_rescoring_row_filter = main_reader && read_hints.use_vector_search_result_filter;
@@ -1360,7 +1360,7 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
     auto filter_data = ColumnUInt8::create(part_offsets_auto_column->size(), UInt8(0));
     IColumn::Filter & filter = filter_data->getData();
 
-    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    const auto & read_hints = merge_tree_reader->getReadHints();
     const auto & offsets_and_distances = read_hints.vector_search_results.value();
     auto row_offsets_from_index = offsets_and_distances.rows;
 
@@ -1723,7 +1723,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     /// The vector index has returned the exact row offsets of the nearest neighbours. We use the saved Filter
     /// to only output those rows from this reader to the next Sorting step.
-    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    const auto & read_hints = merge_tree_reader->getReadHints();
     /// Rescoring row filtering belongs only to the final reader. Earlier readers may
     /// share the same read hints but must not shrink the block before later stages.
     const bool apply_rescoring_row_filter = main_reader && read_hints.use_vector_search_result_filter;
