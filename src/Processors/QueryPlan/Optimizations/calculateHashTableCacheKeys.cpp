@@ -4,6 +4,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Block.h>
 #include <Core/Joins.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/SetSerialization.h>
@@ -97,7 +98,13 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     WriteBufferFromOwnString wbuf;
     SerializedSetsRegistry registry;
     registry.for_cache_key = true;
-    IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .for_cache_key = true};
+    /// The bytes are hashed in-process by the same binary that wrote them and never reach another
+    /// node, so the version to write with is simply the one this binary speaks. Leaving it at the
+    /// default 0 would make every step that gates on a minimum version (e.g. `WindowStep`) either
+    /// throw or silently write an older encoding. The key then varies across server versions, which
+    /// only invalidates in-memory cache entries.
+    IQueryPlanStep::Serialization ctx{
+        .out = wbuf, .registry = registry, .for_cache_key = true, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
 
     writeStringBinary(transform.getSerializationName(), wbuf);
     if (transform.isSerializable())
