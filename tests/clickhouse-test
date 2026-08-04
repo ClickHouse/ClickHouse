@@ -76,6 +76,21 @@ def write_text_atomic(path: Path, text: str) -> None:
     except Exception as e:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
+
+def test_process_group_record() -> Path:
+    """Path of this worker's PGID record."""
+    return _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
+
+
+def forget_test_process_group() -> None:
+    """Drop this worker's PGID record, once its process group is known to be dead.
+
+    Sole remover on the normal paths: leaving a record behind would let a later
+    `--cleanup` signal an unrelated, PID-recycled group.
+    """
+    test_process_group_record().unlink(missing_ok=True)
+
+
 # Exit code returned by `clickhouse-test` when the run was aborted early via
 # `stop_testing` (typically: server died / health check failed). Distinct from
 # the generic failure code 1 so the job side can populate the synthetic
@@ -682,9 +697,11 @@ def clickhouse_execute_json(
 CAPTURE_CLIENT_STACKTRACE = False
 
 
-def kill_process_group(pgid, fatal_log):
+def kill_process_group(pgid, fatal_log, diagnostics=True):
+    # `diagnostics=False` skips both evidence-gathering delays below (60 s + 10 s), which
+    # `cleanup_test_groups` would otherwise pay serially per group.
     try:
-        if SANITIZED:
+        if SANITIZED and diagnostics:
             print(f"Processes left in process group {pgid}:")
             print(
                 '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
@@ -698,7 +715,7 @@ def kill_process_group(pgid, fatal_log):
             '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
         )
 
-        if CAPTURE_CLIENT_STACKTRACE:
+        if CAPTURE_CLIENT_STACKTRACE and diagnostics:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
             stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
@@ -3129,6 +3146,10 @@ class TestCase:
                         os.getpgid(proc.pid), self.fatal_sanitizer_prefix
                     )
                 kill_output = f.getvalue()
+            # The group is dead now (it either exited on its own or was just killed),
+            # so this is the point where the record stops being needed. `run_single_test`
+            # deliberately keeps it alive until here.
+            forget_test_process_group()
 
         description = ""
 
@@ -3617,8 +3638,7 @@ class TestCase:
         proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
         # proc.pid == PGID after start_new_session=True; write it atomically so
         # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
-        _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
-        write_text_atomic(_gpid_file, f"{proc.pid}\n")
+        write_text_atomic(test_process_group_record(), f"{proc.pid}\n")
 
         try:
             proc.wait(args.timeout)
@@ -3628,7 +3648,9 @@ class TestCase:
         finally:
             if cgroup_name:
                 cleanup_cgroup(cgroup_name)
-            _gpid_file.unlink(missing_ok=True)
+            # NOT the place to drop the PGID record: on a timeout the group is still
+            # running, and only that record can lead a reaper to it.
+            # `forget_test_process_group` drops it once the group is known to be dead.
 
         total_time = (datetime.now() - start_time).total_seconds()
 
@@ -5348,6 +5370,13 @@ def do_run_tests(
                             p.kill()
                     for p in processes:
                         p.join(timeout=5)
+                    # Reap the groups the killed workers left behind. Safe only here: every
+                    # worker is joined, and the parent is the last process still alive.
+                    # Must not raise - that would replace the `StopTesting` below.
+                    try:
+                        cleanup_test_groups(diagnostics=False)
+                    except Exception as e:
+                        print(f"Warning: could not reap test process groups: {e}")
                 finally:
                     signal.signal(signal.SIGTERM, old_sigterm_handler)
                 if global_time_limit_reached:
@@ -6771,15 +6800,18 @@ def parse_args():
     return parser.parse_args()
 
 
-def cleanup_test_groups():
+def cleanup_test_groups(diagnostics=True):
     """Kill all process groups recorded in per-worker PGID files.
+
+    Records are walked serially, so `diagnostics=False` (see `kill_process_group`) is
+    what keeps the total bounded when this runs on the abort path.
     """
     for _pgid_file in _GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"):
         if _pgid_file.name.endswith(".tmp"):
             continue
         try:
             pgid = int(_pgid_file.read_text())
-            kill_process_group(pgid, None)
+            kill_process_group(pgid, None, diagnostics=diagnostics)
         except Exception as e:
             print(f"Warning: could not read {_pgid_file}: {e}", file=sys.stderr)
             continue
