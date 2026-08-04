@@ -5,7 +5,6 @@ import argparse
 import logging
 import os
 import random
-import shlex
 import signal
 import subprocess
 import time
@@ -67,13 +66,20 @@ class RandomQueryKiller:
             query_id = result.decode("utf-8").strip()
             if query_id:
                 logging.info("Killing random query: %s", query_id)
-                # query_id comes from the client (tests pass --query_id), so it is arbitrary
-                # text. TSV escaping is the same escaping a ClickHouse SQL string literal
-                # uses, so it goes between quotes as-is; only the shell needs quoting.
-                query = f"KILL QUERY WHERE query_id = '{query_id}' ASYNC"
+                # A query_id is arbitrary text (tests pass --query_id), so pass it as a query
+                # parameter instead of interpolating it: parameters are read with
+                # deserializeTextEscaped, the exact inverse of the TSV escaping above.
                 call(
-                    f"clickhouse client --receive_timeout=5 -q {shlex.quote(query)} 2>/dev/null",
-                    shell=True,
+                    [
+                        "clickhouse",
+                        "client",
+                        "--receive_timeout=5",
+                        "--param_query_id",
+                        query_id,
+                        "-q",
+                        "KILL QUERY WHERE query_id = {query_id:String} ASYNC",
+                    ],
+                    stderr=subprocess.DEVNULL,
                     timeout=5,
                 )
         except Exception as e:
@@ -119,21 +125,29 @@ class RandomQueryKiller:
             if line:
                 mutation_id, db, table = line.split("\t")
                 logging.info("Killing random mutation: %s on %s.%s", mutation_id, db, table)
-                # The fields arrive TSV-escaped, which is the same escaping a ClickHouse SQL
-                # string literal uses, so they go between quotes as-is. The shell is what
-                # needs care: a table name may hold a double quote or a $(...), which would
-                # otherwise break the command or run inside it.
-                query = (
-                    f"KILL MUTATION WHERE database = '{db}' "
-                    f"AND table = '{table}' AND mutation_id = '{mutation_id}'"
-                )
+                # Names are arbitrary text, so pass them as query parameters instead of
+                # interpolating: parameters are read with deserializeTextEscaped, the exact
+                # inverse of the TSV escaping above.
                 # KILL MUTATION is ASYNC by default (ASTKillQueryQuery::sync = false), so it
                 # returns a kill_status row without waiting for the mutation to finalize. The
                 # subprocess cap stays above --receive_timeout so the client's own timeout is
                 # the one that governs.
                 call(
-                    f"clickhouse client --receive_timeout=10 -q {shlex.quote(query)} 2>/dev/null",
-                    shell=True,
+                    [
+                        "clickhouse",
+                        "client",
+                        "--receive_timeout=10",
+                        "--param_database",
+                        db,
+                        "--param_table",
+                        table,
+                        "--param_mutation_id",
+                        mutation_id,
+                        "-q",
+                        "KILL MUTATION WHERE database = {database:String} "
+                        "AND table = {table:String} AND mutation_id = {mutation_id:String}",
+                    ],
+                    stderr=subprocess.DEVNULL,
                     timeout=15,
                 )
         except Exception as e:
