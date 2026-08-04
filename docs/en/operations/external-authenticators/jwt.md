@@ -193,11 +193,34 @@ Always send JWTs over HTTPS. A Bearer token sent over plain HTTP is exposed to a
 
 ### OAuth2 device code login {#oauth2-device-code-login}
 
-The `clickhouse-client` supports an interactive OAuth2 device code flow via the `--login` flag. For ClickHouse Cloud endpoints, the client automatically performs token exchange to obtain a ClickHouse-specific JWT. Tokens are refreshed transparently during the session. When a new token is obtained, the client reconnects automatically.
+The `clickhouse-client` supports an interactive OAuth 2.0 device authorization grant ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)) via the `--login` flag.
+
+For ClickHouse Cloud endpoints, the client automatically performs token exchange to obtain a ClickHouse-specific JWT. Tokens are refreshed transparently during the session. When a new token is obtained, the client reconnects automatically.
 
 ```bash
 clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
+
+For a custom IdP, pass the OIDC issuer as `--oauth-url`. The client discovers `device_authorization_endpoint` and `token_endpoint` from the issuer's `/.well-known/openid-configuration` (and related OAuth metadata URLs). If `grant_types_supported` is present, it must include `urn:ietf:params:oauth:grant-type:device_code`. If discovery fails, the client reports an error; set both `--oauth-device-uri` and `--oauth-token-uri` explicitly when metadata is unavailable.
+
+During login the client always prints the short `verification_uri` and `user_code` (RFC 8628). When the IdP also returns `verification_uri_complete`, that shortcut URL is printed, opened in a browser, and rendered as a terminal QR code when the `qrencode` tool is available. Confidential clients may pass `--oauth-client-secret` with `--oauth-client-auth basic|post`.
+
+```bash
+# Microsoft Entra ID (issuer URL, not the device endpoint itself)
+clickhouse-client --host your-clickhouse-host --secure --login \
+  --oauth-client-id <app-client-id> \
+  --oauth-url https://login.microsoftonline.com/<TENANT_ID>/v2.0 \
+  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
+
+# Explicit endpoints when discovery is unavailable
+clickhouse-client --host your-clickhouse-host --secure --login \
+  --oauth-client-id <app-client-id> \
+  --oauth-device-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/devicecode \
+  --oauth-token-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token \
+  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
+```
+
+The resulting access token is presented to ClickHouse as a JWT. Role and grant mapping still depend on the server-side JWT authenticator configuration (for example `clickhouse:roles` claims).
 
 ## ClickHouse Cloud built-in JWT authenticator {#clickhouse-cloud-built-in}
 

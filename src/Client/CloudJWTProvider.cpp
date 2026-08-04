@@ -75,10 +75,12 @@ const CloudJWTProvider::AuthEndpoints * CloudJWTProvider::getAuthEndpoints(const
 }
 
 CloudJWTProvider::CloudJWTProvider(
-    std::string auth_url, std::string client_id, std::string audience, std::string host,
-    std::ostream & out, std::ostream & err)
-    : JWTProvider(std::move(auth_url), std::move(client_id), std::move(audience), out, err),
-      host_str(std::move(host))
+    JWTProviderOptions options,
+    std::string host,
+    std::ostream & out,
+    std::ostream & err)
+    : JWTProvider(std::move(options), out, err)
+    , host_str(std::move(host))
 {
     if (oauth_url.empty() || oauth_client_id.empty())
     {
