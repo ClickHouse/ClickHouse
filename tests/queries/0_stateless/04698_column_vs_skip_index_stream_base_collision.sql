@@ -220,6 +220,23 @@ OPTIMIZE TABLE t_ttl_vert_ok FINAL SETTINGS optimize_throw_if_noop = 0;
 SELECT 'ttl-merge-vertical-legal', count() FROM t_ttl_vert_ok;
 DROP TABLE t_ttl_vert_ok;
 
+-- A mutation of an already-empty part claims through sites that run before any block is written:
+-- the carried-column helper in prepare and the recalculated index in initSkipIndices. Neither can
+-- share marks in a part that has none, so both must stay quiet.
+CREATE TABLE t_empty_mut_ok (k UInt64, d DateTime, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k TTL d + INTERVAL 1 SECOND
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, merge_with_ttl_timeout = 0;
+SYSTEM STOP MERGES t_empty_mut_ok;
+INSERT INTO t_empty_mut_ok SELECT number, toDateTime('2000-01-01'), toString(number) FROM numbers(10);
+ALTER TABLE t_empty_mut_ok ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
+SYSTEM START MERGES t_empty_mut_ok;
+OPTIMIZE TABLE t_empty_mut_ok FINAL SETTINGS optimize_throw_if_noop = 0;
+ALTER TABLE t_empty_mut_ok MATERIALIZE INDEX a SETTINGS mutations_sync = 2;
+SELECT 'empty-mutation-legal', (SELECT count() FROM t_empty_mut_ok),
+    countIf(latest_fail_reason != '') FROM system.mutations
+    WHERE database = currentDatabase() AND table = 't_empty_mut_ok';
+DROP TABLE t_empty_mut_ok;
+
 -- The carry helper runs before any bytes move, so copying behaves like hardlinking.
 CREATE TABLE t_carry_copy (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k

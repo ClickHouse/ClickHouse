@@ -10,6 +10,7 @@ t_carry	1
 empty-part-legal	5
 ttl-merge-legal	0
 ttl-merge-vertical-legal	0
+empty-mutation-legal	0	0
 t_carry_copy	1
 t_carry_full	1
 t_rename	1

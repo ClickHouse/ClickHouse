@@ -3716,6 +3716,12 @@ bool MutateTask::prepare()
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
 
+    /// A mutation never adds rows, so an empty source part yields an empty one with no marks to
+    /// share. A null manifest disables every claim site of this mutation at once, including the
+    /// ones that run before the writer.
+    if (ctx->source_part->isEmpty())
+        ctx->stream_base_manifest = nullptr;
+
     auto max_partition_blocks = std::make_shared<PartitionIdToMaxBlock>();
     max_partition_blocks->emplace(ctx->future_part->part_info.getPartitionId(), ctx->future_part->part_info.getMutationVersion());
 
