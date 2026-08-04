@@ -1709,20 +1709,15 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
 
         node2.restart_clickhouse()
 
-        # `restart_clickhouse` only waits until the server answers a query, while the
-        # digest is rewritten later, from replica recovery on a background thread, so
-        # poll instead of reading it once. Compare against the digest from before the
-        # overwrite: any other value ("42" to force recovery, an empty result from a
-        # missing znode) means the digest was not restored.
-        digest = None
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            digest = node2.query(
-                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
-            ).strip()
-            if digest == expected_digest:
-                break
-            time.sleep(1)
+        # Replica recovery rewrites the digest from a background thread, and the first
+        # read can still hit a not-yet-connected Keeper session, so retry on both. Only
+        # the original value counts as restored ("42" forces recovery, empty = no znode).
+        digest = node2.query_with_retry(
+            f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'",
+            retry_count=60,
+            sleep_time=1,
+            check_callback=lambda x: x.strip() == expected_digest,
+        ).strip()
 
         assert digest == expected_digest
 
