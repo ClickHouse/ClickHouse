@@ -32,7 +32,7 @@ done
 
 query="SELECT count() FROM t_or_like_many WHERE ${predicate}"
 
-# Reference (rewrite disabled), then the rewrite enabled for both the old and the new analyzer.
+# Reference (rewrite disabled), then the rewrite enabled for both the old analyzer and the analyzer.
 ${CLICKHOUSE_CLIENT} -q "${query} SETTINGS optimize_or_like_chain = 0"
 ${CLICKHOUSE_CLIENT} -q "${query} SETTINGS optimize_or_like_chain = 1, optimize_or_like_chain_min_patterns = 1, enable_analyzer = 0"
 ${CLICKHOUSE_CLIENT} -q "${query} SETTINGS optimize_or_like_chain = 1, optimize_or_like_chain_min_patterns = 1, enable_analyzer = 1"
