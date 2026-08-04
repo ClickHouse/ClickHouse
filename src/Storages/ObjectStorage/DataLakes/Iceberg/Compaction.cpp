@@ -136,6 +136,9 @@ struct Plan
     /// Manifests and manifest lists written by the rewrite, so they can be removed again if the
     /// metadata commit is lost. Never the commit target itself: that name is the winner's.
     std::vector<Iceberg::IcebergPathFromMetadata> generated_metadata_paths;
+    /// Set once the compacted metadata is committed. After that the rewritten files are reachable
+    /// from it, so they must not be removed even if a later step throws.
+    bool metadata_published = false;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
 
@@ -1608,13 +1611,19 @@ static CommitResult writeMetadataFiles(
                 write_version_hint))
             return CommitResult::Lost;
 
+        plan.metadata_published = true;
+
+        /// The metadata is published from here on, so nothing below may report `Lost`.
+        ///
         /// The helper reports success even when it exhausted its retries writing
-        /// `version-hint.text`, so the hint can be missing or still name the previous version.
-        /// Compaction is the only caller that then deletes the metadata the hint names, which would
-        /// leave `iceberg_use_version_hint = 1` readers with nothing to discover.
-        if (write_version_hint)
+        /// `version-hint.text`, so the hint can be missing or still name the previous version, and
+        /// it updates an EXISTING hint whatever `write_version_hint` says (that flag only gates
+        /// creating an absent one). Compaction is the only caller that then deletes the metadata the
+        /// hint names, so check whenever a hint could be in play, and treat a failed check the same
+        /// as a stale hint rather than assuming the best.
+        String hint_data;
+        try
         {
-            String hint_data;
             StoredObject hint_object(path_resolver.resolve(version_hint_path));
             if (object_storage->exists(hint_object))
             {
@@ -1624,16 +1633,28 @@ static CommitResult writeMetadataFiles(
                                 .data;
                 boost::algorithm::trim(hint_data);
             }
-            if (hint_data != std::to_string(generated_metadata_info.version))
+            else if (!write_version_hint)
             {
-                LOG_WARNING(
-                    log,
-                    "Iceberg compaction published metadata version {} but version-hint.text names '{}'; keeping both "
-                    "the pre-compaction and the rewritten files so the table stays readable either way",
-                    generated_metadata_info.version,
-                    hint_data);
-                return CommitResult::PublishedWithoutHint;
+                /// No hint exists and this writer was not asked to create one, so nothing resolves
+                /// through a hint and the previous generation can go.
+                return CommitResult::Published;
             }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to verify version-hint.text after Iceberg compaction");
+            return CommitResult::PublishedWithoutHint;
+        }
+
+        if (hint_data != std::to_string(generated_metadata_info.version))
+        {
+            LOG_WARNING(
+                log,
+                "Iceberg compaction published metadata version {} but version-hint.text names '{}'; keeping both "
+                "the pre-compaction and the rewritten files so the table stays readable either way",
+                generated_metadata_info.version,
+                hint_data);
+            return CommitResult::PublishedWithoutHint;
         }
         return CommitResult::Published;
     }
@@ -1839,7 +1860,11 @@ void compactIcebergTable(
         }
         catch (...)
         {
-            cleanup_generated();
+            /// Only safe because nothing was published: `plan.metadata_published` is set the moment
+            /// the commit succeeds, and removing the rewritten files after that would strand the
+            /// published metadata pointing at them.
+            if (!plan.metadata_published)
+                cleanup_generated();
             throw;
         }
 
