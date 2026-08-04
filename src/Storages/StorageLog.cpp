@@ -1443,10 +1443,8 @@ void registerStorageLog(StorageFactory & factory)
         String disk_name = getDiskName(*args.storage_def, args.getContext());
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
-        /// A full-definition `ATTACH TABLE t (...) ENGINE = Log [FROM '...']` is CREATE-like user input
-        /// that runs under `ATTACH`; definitions read back from stored metadata carry
-        /// `attach_short_syntax` (see `createTableFromAST`). Same predicate as
-        /// `registerStorageMergeTree`.
+        /// A full-definition `ATTACH TABLE t (...) ENGINE = Log` is user input running under `ATTACH`;
+        /// only definitions read back from stored metadata carry `attach_short_syntax`.
         const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
             || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
 

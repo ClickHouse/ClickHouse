@@ -199,7 +199,7 @@ static void expectNamesFileAndLimit(const DB::Exception & e, const DB::DiskPtr &
     using namespace DB;
     EXPECT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    const String message = e.message();
+    const String & message = e.message();
     const String column = overlongColumnName();
     EXPECT_NE(message.find(column + ".bin"), String::npos) << message;
     EXPECT_NE(message.find("current length is " + std::to_string(column.length())), String::npos) << message;
