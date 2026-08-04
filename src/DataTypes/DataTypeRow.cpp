@@ -134,7 +134,7 @@ SerializationPtr DataTypeRow::doGetSerialization(const SerializationInfoSettings
     field_serializations.reserve(elems.size());
     for (const auto & e : elems)
         field_serializations.push_back(e->getSerialization(settings));
-    return std::make_shared<SerializationRow>(std::move(field_serializations), names);
+    return SerializationRow::create(std::move(field_serializations), names);
 }
 
 DataTypePtr DataTypeRow::getNormalizedType() const

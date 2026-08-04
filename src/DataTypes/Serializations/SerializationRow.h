@@ -11,8 +11,15 @@ namespace DB
 /// one per row, instead of the per-element streams that Tuple emits.
 class SerializationRow final : public SimpleTextSerialization
 {
-public:
+private:
     SerializationRow(Serializations field_serializations_, Strings field_names_);
+
+public:
+    static UInt128 getHash(const Serializations & field_serializations_, const Strings & field_names_);
+    static SerializationPtr create(Serializations field_serializations_, Strings field_names_);
+
+    size_t allocatedBytes() const override;
+    bool supportsPooling() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

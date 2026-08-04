@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationRow.h>
 #include <base/scope_guard.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
@@ -25,6 +26,52 @@ SerializationRow::SerializationRow(Serializations field_serializations_, Strings
 {
     if (field_serializations.size() != field_names.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Row serialization: field count mismatch");
+}
+
+UInt128 SerializationRow::getHash(const Serializations & field_serializations_, const Strings & field_names_)
+{
+    SipHash hash;
+    hash.update("Row");
+    for (size_t i = 0; i < field_serializations_.size(); ++i)
+    {
+        hash.update(field_names_[i].size());
+        hash.update(field_names_[i]);
+        hash.update(field_serializations_[i]->getHash());
+    }
+    return hash.get128();
+}
+
+SerializationPtr SerializationRow::create(Serializations field_serializations_, Strings field_names_)
+{
+    for (const auto & field_serialization : field_serializations_)
+    {
+        if (!field_serialization->supportsPooling())
+            return std::shared_ptr<ISerialization>(new SerializationRow(std::move(field_serializations_), std::move(field_names_)));
+    }
+
+    auto hash = getHash(field_serializations_, field_names_);
+    return ISerialization::pooled(
+        hash,
+        [s = std::move(field_serializations_), n = std::move(field_names_)]() mutable
+        { return new SerializationRow(std::move(s), std::move(n)); });
+}
+
+size_t SerializationRow::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    bytes += field_serializations.capacity() * sizeof(SerializationPtr);
+    bytes += field_names.capacity() * sizeof(String);
+    for (const auto & field_name : field_names)
+        bytes += field_name.capacity();
+    return bytes;
+}
+
+bool SerializationRow::supportsPooling() const
+{
+    for (const auto & field_serialization : field_serializations)
+        if (!field_serialization->supportsPooling())
+            return false;
+    return true;
 }
 
 void SerializationRow::enumerateStreams(
