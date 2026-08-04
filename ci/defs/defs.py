@@ -6,6 +6,8 @@ TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_P
 
 SYNC = "CH Inc sync"
 
+GH_AUTH_TRUSTED_LAMBDA_NAME = "mint-token-trusted-lambda-terraform"
+
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
@@ -48,12 +50,6 @@ azure_secret = Secret.Config(
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
-chcache_secret = Secret.Config(
-    name="chcache_password",
-    type=Secret.Type.AWS_SSM_PARAMETER,
-    region="us-east-1",
-)
-
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
@@ -75,7 +71,6 @@ SECRETS = [
         region="us-east-1",
     ),
     azure_secret,
-    chcache_secret,
     Secret.Config(
         name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -385,6 +380,7 @@ class JobNames:
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
+    BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
@@ -411,6 +407,12 @@ class JobNames:
     BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
     BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
+    # Unit-test (gtest) bugfix validation. Unlike the functional/integration
+    # validators above, this is a single AMD-only job: it builds a merge-base
+    # "before" `unit_tests_dbms` (AMD ASan+UBSan) in-job and reports
+    # `OK`/`XFAIL`/`FAIL` directly, so it is not part of the per-arch
+    # aggregation in `new_tests_check.py`.
+    BUGFIX_VALIDATE_UT = "Bugfix validation (unit tests)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
@@ -489,6 +491,7 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
+    CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
@@ -687,6 +690,11 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
+    )
+    clickhouse_examples = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_EXAMPLES,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/src/Examples/clickhouse-examples",
     )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,

@@ -30,21 +30,15 @@ La aplicación que instrumentaremos es [HackerNews Analyzer](https://github.com/
 * **Docker**, si todavía no tienes un collector y quieres seguir la opción new-collector que se describe a continuación.
 
 <Steps>
-  <Step>
-    ## Reúne tus credenciales
-
+  <Step title="Reúne tus credenciales" id="gather-credentials">
     <GatherCredentials />
   </Step>
 
-  <Step>
-    ## Crear un usuario de ingestión
-
+  <Step title="Crear un usuario de ingestión" id="create-ingestion-user">
     <CreateIngestionUser />
   </Step>
 
-  <Step>
-    ## Desplegar el collector
-
+  <Step title="Desplegar el collector" id="deploy-collector">
     Seleccione la opción que corresponda a su situación.
 
     <Info>
@@ -199,9 +193,7 @@ La aplicación que instrumentaremos es [HackerNews Analyzer](https://github.com/
     </Tabs>
   </Step>
 
-  <Step>
-    ## Clona y ejecuta la aplicación
-
+  <Step title="Clona y ejecuta la aplicación" id="clone-and-run-the-application">
     Clona el repositorio, instala las dependencias y crea el archivo `.env`:
 
     ```bash
@@ -224,9 +216,7 @@ La aplicación que instrumentaremos es [HackerNews Analyzer](https://github.com/
     En este punto, la aplicación está en ejecución, pero aún no está instrumentada. ClickStack no muestra datos: está esperando telemetría. Este es el estado &quot;antes&quot;.
   </Step>
 
-  <Step>
-    ## Conecta la aplicación a tu collector
-
+  <Step title="Conecta la aplicación a tu collector" id="connect-the-application">
     La aplicación necesita dos valores para conectarse al collector que desplegaste antes:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: el endpoint de OTLP que expone tu collector (normalmente el puerto `4318` para OTLP sobre HTTPS).
@@ -243,9 +233,7 @@ La aplicación que instrumentaremos es [HackerNews Analyzer](https://github.com/
     El SDK usa `OTEL_EXPORTER_OTLP_HEADERS` para establecer el header de autorización para las tres señales: trazas, métricas y logs. Si tu collector se ejecuta localmente y no requiere autenticación, puedes dejar el valor vacío (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), pero la variable debe estar presente; el SDK omite por completo la inicialización si no está definida o está totalmente vacía. Por último, al ejecutar el collector sin TLS, asegúrate de usar el protocolo HTTP correcto (p. ej., `http://localhost:4318`).
   </Step>
 
-  <Step>
-    ## Instrumentar la aplicación
-
+  <Step title="Instrumentar la aplicación" id="instrument-the-application">
     La instrumentación tiene tres partes: instalar los SDKs, cambiar el comando de inicio y habilitar el SDK para navegador. Nada de esto modifica la lógica de negocio de la aplicación.
 
     ### Instalar los SDKs
@@ -298,9 +286,7 @@ La aplicación que instrumentaremos es [HackerNews Analyzer](https://github.com/
     </Warning>
   </Step>
 
-  <Step>
-    ## Generar tráfico
-
+  <Step title="Generar tráfico" id="generate-traffic">
     Reinicia la aplicación para que surtan efecto el nuevo comando de inicio y el bundle del navegador recién compilado:
 
     ```bash
@@ -311,9 +297,7 @@ La aplicación que instrumentaremos es [HackerNews Analyzer](https://github.com/
     Recarga la pestaña del navegador para que Vite sirva el paquete actualizado; después, actualiza la aplicación varias veces, cambia de año y abre algunas historias para generar tráfico. Cada interacción envía logs, métricas, trazas y eventos de session replay a través de tu collector a ClickStack.
   </Step>
 
-  <Step>
-    ## Inicia ClickStack y explora tu telemetría
-
+  <Step title="Inicia ClickStack y explora tu telemetría" id="launch-clickstack">
     Abre tu servicio en la [ClickHouse Cloud console](https://console.clickhouse.cloud) y selecciona **ClickStack** en el menú de la izquierda; luego, **Start Ingestion**.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Iniciar ClickStack" border />
@@ -357,7 +341,7 @@ La aplicación que instrumentaremos es [HackerNews Analyzer](https://github.com/
 </div>
 
 * [Monitorización de Kubernetes](/es/clickstack/managed-onboarding/monitoring-kubernetes): recopila logs, métricas de infraestructura y eventos de Kubernetes desde un clúster.
-* [Monitorización de logs de AWS CloudWatch](/es/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): reenvía logs de CloudWatch mediante el receiver de CloudWatch de OpenTelemetry.
-* [Ajuste de Managed ClickStack](/es/clickstack/managed-onboarding/tuning-clickstack-schema): perfecciona tu esquema para mejorar el rendimiento de las consultas y la eficiencia de almacenamiento.
-* [Protección del collector](/es/clickstack/ingesting-data/collector#securing-the-collector) con TLS en el endpoint OTLP y usuarios de ingestión con privilegios mínimos.
-* [Paso a producción](/es/clickstack/managing/production) para obtener recomendaciones al pasar a producción.
+* [Monitorización de logs de AWS CloudWatch](/es/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): reenvía logs de CloudWatch mediante el CloudWatch receiver de OpenTelemetry.
+* [Ajuste de Managed ClickStack](/es/clickstack/managed-onboarding/tuning-clickstack-schema): perfecciona tu esquema para mejorar el rendimiento de las consultas y la eficiencia del almacenamiento.
+* [Protección del collector](/es/clickstack/ingesting-data/collector#securing-the-collector) con TLS en el endpoint de OTLP y usuarios de ingestión con el mínimo privilegio necesario.
+* [Paso a producción](/es/clickstack/managing/production) para obtener recomendaciones antes de pasar a producción.
