@@ -19,6 +19,7 @@ void addPlansForMaterializingCTEs(
         return;
 
     auto plans = DelayedMaterializingCTEsStep::makePlansForCTEs(std::move(*delayed));
+    auto ctes = delayed->detachCTEs();
 
     SharedHeaders input_headers;
     input_headers.reserve(1 + plans.size());
@@ -33,7 +34,9 @@ void addPlansForMaterializingCTEs(
         root_plan.addResources(std::move(add_resources));
     }
 
-    auto materializing_ctes = std::make_unique<MaterializingCTEsStep>(std::move(input_headers));
+    /// The claimed plans below this node reference their CTEs only weakly, so this step must
+    /// take over the strong handles from the step it replaces.
+    auto materializing_ctes = std::make_unique<MaterializingCTEsStep>(std::move(input_headers), std::move(ctes));
     materializing_ctes->setStepDescription("Materialize CTEs before main query execution");
     node.step = std::move(materializing_ctes);
 }

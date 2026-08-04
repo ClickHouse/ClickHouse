@@ -14,7 +14,7 @@ class MaterializingCTEStep : public ITransformingStep
 public:
     explicit MaterializingCTEStep(
         SharedHeader input_header_,
-        MaterializedCTEPtr materialized_cte_
+        const MaterializedCTEPtr & materialized_cte_
     );
 
     String getName() const override { return "MaterializingCTE"; }
@@ -28,14 +28,19 @@ private:
 
     void updateOutputHeader() override {} // Output header should stay empty.
 
-    MaterializedCTEPtr materialized_cte;
+    /// Weak on purpose: this step is appended to `materialized_cte->plan`, so a strong handle
+    /// would make the CTE keep itself alive with no external holder - and a query dying before
+    /// `resolveMaterializingCTEs` claims the plan would leak the graph, and the table references
+    /// it carries, for the life of the process. `StorageMemory::materialized_cte` is weak for
+    /// the same reason.
+    MaterializedCTEWeakPtr materialized_cte;
 };
 
 
 class MaterializingCTEsStep : public IQueryPlanStep
 {
 public:
-    explicit MaterializingCTEsStep(SharedHeaders input_headers_);
+    MaterializingCTEsStep(SharedHeaders input_headers_, std::vector<MaterializedCTEPtr> ctes_);
 
     String getName() const override { return "MaterializingCTEs"; }
 
@@ -43,6 +48,11 @@ public:
 
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
+
+    /// This step replaces `DelayedMaterializingCTEsStep` once the CTE plans have been claimed
+    /// and hung below it, so it takes over that step's role as the owner keeping the CTEs alive
+    /// until the pipeline is built.
+    std::vector<MaterializedCTEPtr> ctes;
 };
 
 
@@ -80,6 +90,10 @@ public:
     /// for CTEs whose plan has already been claimed (which happens when a
     /// recursive `buildSetInplace` claims the same CTE first).
     void optimizePlans(const QueryPlanOptimizationSettings & optimization_settings);
+
+    /// Hands the CTE handles over to the `MaterializingCTEsStep` that replaces this step, so
+    /// ownership is never interrupted.
+    std::vector<MaterializedCTEPtr> detachCTEs() { return std::move(ctes); }
 
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }

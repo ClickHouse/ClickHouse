@@ -41,16 +41,21 @@ constexpr ITransformingStep::Traits getMaterializingCTETraits()
 
 MaterializingCTEStep::MaterializingCTEStep(
     SharedHeader input_header_,
-    MaterializedCTEPtr materialized_cte_
+    const MaterializedCTEPtr & materialized_cte_
 )
     : ITransformingStep(std::move(input_header_), std::make_shared<const Block>(Block{}), getMaterializingCTETraits())
-    , materialized_cte(std::move(materialized_cte_))
+    , materialized_cte(materialized_cte_)
 {
 }
 
 void MaterializingCTEStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addMaterializingCTETransform(getOutputHeader(), materialized_cte);
+    auto cte = materialized_cte.lock();
+    if (!cte)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Materialized CTE was destroyed before a pipeline was built for its plan");
+
+    pipeline.addMaterializingCTETransform(getOutputHeader(), std::move(cte));
 }
 
 void MaterializingCTEStep::describeActions([[maybe_unused]] JSONBuilder::JSONMap & map) const
@@ -61,8 +66,8 @@ void MaterializingCTEStep::describeActions([[maybe_unused]] FormatSettings & set
 {
 }
 
-MaterializingCTEsStep::MaterializingCTEsStep(SharedHeaders input_headers_)
-    : IQueryPlanStep()
+MaterializingCTEsStep::MaterializingCTEsStep(SharedHeaders input_headers_, std::vector<MaterializedCTEPtr> ctes_)
+    : ctes(std::move(ctes_))
 {
     input_headers = std::move(input_headers_);
     output_header = input_headers.front();
