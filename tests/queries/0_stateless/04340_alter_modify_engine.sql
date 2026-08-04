@@ -336,6 +336,39 @@ OPTIMIZE TABLE t_graphite_rollup FINAL;
 SELECT 'graphite rollup', Path, toString(Time), Value, Version FROM t_graphite_rollup ORDER BY Time;
 DROP TABLE t_graphite_rollup;
 
+-- (z) the Graphite time column must be a type the rollup can read: it uses `IColumn::getUInt`, which
+-- only the integer-backed columns implement, so `String`, `Float64`, `DateTime64` and `Decimal` are
+-- rejected up front instead of aborting the first merge with NOT_IMPLEMENTED or BAD_GET.
+CREATE TABLE t_graphite_time (key UInt32, Path String, Time String, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_graphite_time;
+
+CREATE TABLE t_graphite_time (key UInt32, Path String, Time DateTime64(3), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_graphite_time;
+
+-- The accepted types must not be rejected by that check: Date, an integer, and a Nullable wrapper.
+CREATE TABLE t_graphite_time (key UInt32, Path String, Time Date, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_time;
+ATTACH TABLE t_graphite_time;
+SELECT 'graphite time Date', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite_time';
+DROP TABLE t_graphite_time;
+
+CREATE TABLE t_graphite_time (key UInt32, Path String, Time UInt32, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_time;
+ATTACH TABLE t_graphite_time;
+SELECT 'graphite time UInt32', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite_time';
+DROP TABLE t_graphite_time;
+
+CREATE TABLE t_graphite_time (key UInt32, Path String, Time Nullable(DateTime), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_time;
+ATTACH TABLE t_graphite_time;
+SELECT 'graphite time Nullable', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite_time';
+DROP TABLE t_graphite_time;
+
 -- (s) the engine clause survives a round trip through the `clickhouse_json` AST dialect.
 SET allow_experimental_json_ast_dialect = 1;
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = ReplacingMergeTree'));

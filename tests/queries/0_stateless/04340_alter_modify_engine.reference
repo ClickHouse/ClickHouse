@@ -26,6 +26,9 @@ replacing is_deleted	1	200	2	0
 summing explicit	1	30	7
 coalescing explicit	1	10	7
 graphite rollup	max_a	2020-01-01 00:00:00	5	2
+graphite time Date	GraphiteMergeTree
+graphite time UInt32	GraphiteMergeTree
+graphite time Nullable	GraphiteMergeTree
 ALTER TABLE t (MODIFY ENGINE ReplacingMergeTree)
 ALTER TABLE t (MODIFY ENGINE ReplacingMergeTree(v))
 ALTER TABLE t (MODIFY ENGINE SummingMergeTree((x, y)))

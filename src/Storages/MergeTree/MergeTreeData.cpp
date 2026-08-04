@@ -1815,9 +1815,19 @@ static void checkGraphiteSchema(const Graphite::Params & params, const StorageIn
     };
 
     require_column(params.path_column_name, "path");
-    require_column(params.time_column_name, "time");
+    auto time_type = require_column(params.time_column_name, "time");
     auto value_type = require_column(params.value_column_name, "value");
     require_column(params.version_column_name, "version");
+
+    /// The rollup reads the time column with `IColumn::getUInt`, which only the integer-backed columns
+    /// implement. Strip Nullable/LowCardinality first: the check is about the underlying column.
+    WhichDataType which_time(recursiveRemoveLowCardinality(removeNullable(time_type)));
+    if (!which_time.isNativeInteger() && !which_time.isEnum() && !which_time.isDateOrDate32() && !which_time.isDateTime())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The time column '{}' of GraphiteMergeTree must be an integer, `Enum`, `Date`, `Date32` or "
+            "`DateTime` column, got {}.",
+            params.time_column_name, time_type->getName());
 
     if (!WhichDataType(value_type).isFloat64())
         throw Exception(
