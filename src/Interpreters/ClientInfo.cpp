@@ -251,7 +251,11 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             writeBinary(http_referer, out);
 
-        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
+        /// Suppressed when `with_trailing_fields = false`: the embedded `ClientInfo` of the persisted async
+        /// `Distributed` insert header must keep the pre-existing layout, or older binaries draining newer
+        /// queue files would misinterpret the rest of the header. There these are stored as trailing header
+        /// fields instead (see `DistributedSink`).
+        if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
         {
             writeBinary(http_handler_name, out);
             writeBinary(http_request_url, out);
@@ -399,7 +403,9 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             readBinary(http_referer, in);
 
-        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
+        /// See the note in `write`: absent from the embedded `ClientInfo` of the persisted async
+        /// `Distributed` insert header, where they are stored as trailing header fields instead.
+        if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
         {
             readBinary(http_handler_name, in);
             readBinary(http_request_url, in);

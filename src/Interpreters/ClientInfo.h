@@ -185,8 +185,9 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    /// `with_trailing_fields` controls whether the `client_agent`, `is_internal` and `current_roles` fields are
-    /// (de)serialized as trailing members of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the
+    /// `with_trailing_fields` controls whether the fields added after the async `Distributed` insert header layout
+    /// was frozen — `client_agent`, `is_internal`, `current_roles`, `http_handler_name` and `http_request_url` —
+    /// are (de)serialized as part of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the
     /// persisted async `Distributed` insert header, where these are stored as trailing header fields instead, so
     /// that older binaries draining newer queue files can read the header without misinterpreting it.
     void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields = true) const;
