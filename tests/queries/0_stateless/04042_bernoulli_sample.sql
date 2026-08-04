@@ -2,6 +2,12 @@
 
 -- Bernoulli sampling for MergeTree tables without SAMPLE BY key
 
+-- The golden sample counts below are positional: they depend on the exact distribution of rows
+-- across parts and granules. Parallel INSERT SELECT (max_insert_threads = auto since 26.8) splits
+-- inserts by the number of CPU cores, which varies across runners, so pin it to keep the layout
+-- (and therefore every count in this test) deterministic.
+SET max_insert_threads = 1;
+
 DROP TABLE IF EXISTS t_bernoulli;
 DROP TABLE IF EXISTS t_bernoulli_empty;
 DROP TABLE IF EXISTS t_bernoulli_memory;
