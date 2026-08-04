@@ -761,6 +761,82 @@ class GH:
         return res
 
     @classmethod
+    def _change_team_review_requests(cls, method, team_slugs, pr, repo):
+        assert method in ("POST", "DELETE")
+        assert team_slugs
+
+        payload = {"reviewers": [], "team_reviewers": team_slugs}
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as temp_file:
+            json.dump(payload, temp_file)
+            temp_file_path = temp_file.name
+
+        try:
+            cmd = (
+                f"gh api -X {method} "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+                f"--input {shlex.quote(temp_file_path)}"
+            )
+            if not cls.do_command_with_retries(cmd):
+                raise RuntimeError(
+                    f"Failed to update team review requests for pull request [{pr}]"
+                )
+        finally:
+            os.unlink(temp_file_path)
+
+    @classmethod
+    def sync_team_review_requests(
+        cls, desired_teams, managed_teams, pr=None, repo=None
+    ):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        desired = set(desired_teams)
+        managed = set(managed_teams)
+        unmanaged = desired - managed
+        if unmanaged:
+            raise ValueError(f"Cannot request unmanaged teams [{sorted(unmanaged)}]")
+
+        cmd = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+            "--jq '[.teams[].slug]'"
+        )
+        output = cls.get_output_with_retries(cmd)
+        if not output:
+            raise RuntimeError(
+                f"Failed to retrieve team review requests for pull request [{pr}]"
+            )
+
+        try:
+            requested_teams = json.loads(output)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"Failed to parse team review requests for pull request [{pr}]: {e}"
+            ) from e
+        if not isinstance(requested_teams, list) or not all(
+            isinstance(team, str) for team in requested_teams
+        ):
+            raise RuntimeError(
+                f"Unexpected team review request response for pull request [{pr}]"
+            )
+
+        current = set(requested_teams)
+        teams_to_request = sorted(desired - current)
+        teams_to_remove = sorted((current & managed) - desired)
+
+        if teams_to_request:
+            cls._change_team_review_requests("POST", teams_to_request, pr, repo)
+        if teams_to_remove:
+            cls._change_team_review_requests("DELETE", teams_to_remove, pr, repo)
+
+        return True
+
+    @classmethod
     def get_pr_contributors(cls, pr=None, repo=None):
         if not repo:
             repo = _Environment.get().REPOSITORY

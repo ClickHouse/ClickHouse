@@ -328,3 +328,50 @@ def test_get_pr_state_by_branch_fails_closed(monkeypatch):
         assert False, "should have raised on a failed lookup"
     except RuntimeError as e:
         assert "refusing to treat a failed lookup as 'no PR'" in str(e)
+
+
+def test_sync_team_review_requests_reconciles_managed_teams(monkeypatch):
+    changes = []
+
+    def fake_get(command, verbose=False):
+        assert "pulls/42/requested_reviewers" in command
+        return '["clickpipes", "unmanaged-team"]'
+
+    def fake_change(method, team_slugs, pr, repo):
+        changes.append((method, team_slugs, pr, repo))
+
+    monkeypatch.setattr(GH, "get_output_with_retries", staticmethod(fake_get))
+    monkeypatch.setattr(GH, "_change_team_review_requests", staticmethod(fake_change))
+
+    assert GH.sync_team_review_requests(
+        desired_teams=["docs", "integrations-ecosystem"],
+        managed_teams=["docs", "clickpipes", "integrations-ecosystem"],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+    assert changes == [
+        (
+            "POST",
+            ["docs", "integrations-ecosystem"],
+            42,
+            "ClickHouse/ClickHouse",
+        ),
+        ("DELETE", ["clickpipes"], 42, "ClickHouse/ClickHouse"),
+    ]
+
+
+def test_sync_team_review_requests_fails_when_lookup_fails(monkeypatch):
+    monkeypatch.setattr(
+        GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: "")
+    )
+
+    try:
+        GH.sync_team_review_requests(
+            desired_teams=["docs"],
+            managed_teams=["docs"],
+            pr=42,
+            repo="ClickHouse/ClickHouse",
+        )
+        assert False, "Should have raised when requested reviewers are unavailable"
+    except RuntimeError as e:
+        assert "Failed to retrieve team review requests" in str(e)
