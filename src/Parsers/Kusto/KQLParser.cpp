@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/hex.h>
 
 #include <Poco/String.h>
@@ -389,6 +390,60 @@ void KQLParser::parseFunctionDefinition(const String & name)
     if (definition.body_end == definition.body_begin)
         fail("a function body cannot be empty");
 
+    /// Classify the body while it is at hand. A tabular parameter can only feed a pipeline,
+    /// and otherwise the body is a pipeline when - past its own leading `let` statements -
+    /// it starts with a source keyword or contains a top-level `|`.
+    for (const auto & parameter : definition.parameters)
+        if (parameter.is_tabular)
+            definition.body_looks_tabular = true;
+
+    if (!definition.body_looks_tabular)
+    {
+        const auto is_bare_keyword = [&](size_t position, std::string_view keyword)
+        {
+            return tokens[position].type == KQLTokenType::BareWord
+                && Poco::icompare(String(tokens[position].text()), String(keyword)) == 0;
+        };
+
+        size_t probe = definition.body_begin;
+        while (probe < definition.body_end && is_bare_keyword(probe, "let"))
+        {
+            while (probe < definition.body_end && tokens[probe].type != KQLTokenType::Semicolon)
+                ++probe;
+            if (probe < definition.body_end)
+                ++probe;
+        }
+
+        if (probe < definition.body_end
+            && (is_bare_keyword(probe, "print") || is_bare_keyword(probe, "datatable") || is_bare_keyword(probe, "range")
+                || is_bare_keyword(probe, "union")))
+            definition.body_looks_tabular = true;
+
+        int body_nesting = 0;
+        for (size_t position = probe; position < definition.body_end && !definition.body_looks_tabular; ++position)
+        {
+            switch (tokens[position].type)
+            {
+                case KQLTokenType::OpeningRoundBracket:
+                case KQLTokenType::OpeningSquareBracket:
+                case KQLTokenType::OpeningCurlyBrace:
+                    ++body_nesting;
+                    break;
+                case KQLTokenType::ClosingRoundBracket:
+                case KQLTokenType::ClosingSquareBracket:
+                case KQLTokenType::ClosingCurlyBrace:
+                    --body_nesting;
+                    break;
+                case KQLTokenType::Pipe:
+                    if (body_nesting == 0)
+                        definition.body_looks_tabular = true;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
     scope.functions[name] = std::move(definition);
 }
 
@@ -559,11 +614,20 @@ void KQLParser::parseLetStatement()
         return;
     }
 
-    /// A `let` may bind either a scalar or a whole tabular expression. Only a parenthesized
-    /// form or something that starts a pipeline can be tabular; everything else is scalar.
+    /// A `let` may bind either a scalar or a whole tabular expression. A parenthesized form,
+    /// something that starts a pipeline, a rebinding of a tabular name, or a call to a
+    /// function whose body is a pipeline can be tabular; everything else is scalar.
+    const bool rebinds_tabular = at(KQLTokenType::BareWord) && scope.tabulars.contains(String(current().text()));
+    const bool calls_tabular_function = at(KQLTokenType::BareWord) && lookahead().type == KQLTokenType::OpeningRoundBracket
+        && [&]
+        {
+            const auto function = scope.functions.find(String(current().text()));
+            return function != scope.functions.end() && function->second.body_looks_tabular;
+        }();
     const bool looks_tabular = at(KQLTokenType::OpeningRoundBracket) || atKeyword("datatable") || atKeyword("range")
         || atKeyword("print")
-        || (at(KQLTokenType::BareWord) && lookahead().type == KQLTokenType::Pipe);
+        || (at(KQLTokenType::BareWord) && lookahead().type == KQLTokenType::Pipe)
+        || rebinds_tabular || calls_tabular_function;
 
     if (looks_tabular)
     {
@@ -1652,8 +1716,16 @@ std::optional<Int64> parseTimespanText(std::string_view text)
             return {};
     }
 
-    const Int64 total = ((days * 24 + hours) * 60 + minutes) * 60 + seconds;
-    const Int64 result = total * 10'000'000 + ticks;
+    /// Every component is a field of up to 18 digits of untrusted text, so each step is
+    /// checked: an oversized literal must fail cleanly instead of overflowing.
+    Int64 total = 0;
+    Int64 result = 0;
+    if (common::mulOverflow<Int64>(days, 24, total) || common::addOverflow<Int64>(total, hours, total)
+        || common::mulOverflow<Int64>(total, 60, total) || common::addOverflow<Int64>(total, minutes, total)
+        || common::mulOverflow<Int64>(total, 60, total) || common::addOverflow<Int64>(total, seconds, total)
+        || common::mulOverflow<Int64>(total, 10'000'000, result) || common::addOverflow<Int64>(result, ticks, result))
+        return {};
+    /// All components are non-negative here, so `result` is too and the negation cannot overflow.
     return negative ? -result : result;
 }
 }
@@ -1764,7 +1836,10 @@ ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
             if (!ticks)
                 return bad("could not read the timespan");
             ++index;
-            value = makeASTFunction("toIntervalNanosecond", makeLiteral(*ticks * 100));
+            Int64 nanoseconds = 0;
+            if (common::mulOverflow<Int64>(*ticks, 100, nanoseconds))
+                return bad("does not fit a timespan");
+            value = makeASTFunction("toIntervalNanosecond", makeLiteral(nanoseconds));
         }
         else
         {

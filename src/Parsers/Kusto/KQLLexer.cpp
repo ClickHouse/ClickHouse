@@ -222,6 +222,13 @@ KQLToken KQLLexer::nextToken()
     if (isIdentifierStart(c))
         return lexBareWord(token_begin);
 
+    /// `$left` / `$right` in a join condition - the only `$`-prefixed names KQL has.
+    if (c == '$' && pos + 1 < end && isIdentifierStart(pos[1]))
+    {
+        ++pos;
+        return lexBareWord(token_begin);
+    }
+
     /// `!in`, `!contains`, `!startswith`, ... - one token, because `!` is not a general
     /// prefix operator in KQL (that spelling is `not`).
     if (c == '!' && pos + 1 < end && isIdentifierStart(pos[1]))

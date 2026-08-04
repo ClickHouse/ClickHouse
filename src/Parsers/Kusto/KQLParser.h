@@ -61,6 +61,9 @@ private:
         /// Token indices: the first token of the body, and the closing '}'.
         size_t body_begin = 0;
         size_t body_end = 0;
+        /// Whether the body reads as a pipeline rather than a scalar expression. Decides how
+        /// `let name = call(...);` binds, since nothing at that call site says which one it is.
+        bool body_looks_tabular = false;
     };
 
     struct Scope
