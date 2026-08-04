@@ -739,6 +739,61 @@ TEST(BufferedShardByHashTransform, AggregateFunctionArenaChargedOncePerBlock)
     EXPECT_LT(buffered, 2 * arena_bytes);
 }
 
+/// A foreign arena attached from outside any column (`addArena` - e.g. an aggregator pool arena) may still be
+/// grown concurrently by whoever created it, and `ColumnAggregateFunction` documents even reading such arenas
+/// as unsafe. The budget walk therefore must not measure it: only the owned arena - grown exclusively through
+/// the column being walked, which the transform holds immutably - is charged. This deliberately leaves an
+/// externally attached arena uncharged (it cannot be sized without a data race), which this test pins down.
+TEST(BufferedShardByHashTransform, ExternallyAttachedForeignArenaIsNotCharged)
+{
+    tryRegisterAggregateFunctions();
+
+    const size_t num_rows = 2000;
+    const size_t num_shards = 8;
+    const size_t values_per_state = 64;
+
+    AggregateFunctionProperties properties;
+    auto aggregate_function = AggregateFunctionFactory::instance().get(
+        "groupArray", NullsAction::EMPTY, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}, properties);
+
+    auto states = ColumnAggregateFunction::create(aggregate_function);
+    auto argument = ColumnUInt64::create();
+    for (size_t i = 0; i < values_per_state; ++i)
+        argument->insertValue(i);
+    const IColumn * argument_columns[1] = {argument.get()};
+
+    Arena & arena = states->createOrGetArena();
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        states->insertDefault();
+        for (size_t i = 0; i < values_per_state; ++i)
+            aggregate_function->add(states->getData()[row], argument_columns, i, &arena);
+    }
+
+    const Int64 arena_bytes = static_cast<Int64>(arena.allocatedBytes());
+
+    /// An external arena much larger than everything else in the block. If the walk read (and billed) foreign
+    /// arenas, the counter would jump by this amount.
+    auto external_arena = std::make_shared<Arena>();
+    external_arena->alloc(64 * 1024 * 1024);
+    const Int64 external_bytes = static_cast<Int64>(external_arena->allocatedBytes());
+    states->addArena(external_arena);
+    ASSERT_GT(external_bytes, 8 * arena_bytes);
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeAggregateFunction>(aggregate_function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}), "s"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    Columns columns{makeDistinctKeyColumn(num_rows), std::move(states)};
+    const Int64 buffered = bufferedBytesAfterSplit(header, std::move(columns), num_shards, ColumnNumbers{0});
+
+    /// The owned arena (the states) is still charged once, but the external arena is not measured at all.
+    EXPECT_GE(buffered, arena_bytes);
+    EXPECT_LT(buffered, external_bytes);
+}
+
 /// The same invariant for a shared `ColumnConst` payload: `ColumnConst::scatter` wraps the same backing `data`
 /// column for every shard chunk while each wrapper's `allocatedBytes()` reports the full payload, so the budget
 /// must charge a shared const payload exactly once per block - charging it per shard would inflate the counter

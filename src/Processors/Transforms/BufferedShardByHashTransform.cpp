@@ -165,21 +165,26 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
         /// The states themselves live in arenas, and an arena is shared rather than owned: `scatter` hands every
         /// shard a *view* of this column - the view's `getData` holds the very same state pointers, the source's
         /// arena becomes one of the view's foreign arenas, and the view keeps the source column alive.
-        /// `allocatedBytes` gets both halves of that wrong. It counts an owned arena in full, so two columns that
-        /// reach the same arena would each charge it whole; and it ignores the foreign arenas entirely, so the
-        /// shard views of a block would charge the states nothing at all even though the arena stays resident for
-        /// as long as any of them is buffered. Registering each arena as a shared object in its own right, keyed
-        /// by the `Arena` address, gives both: billed exactly once, and for exactly as long as some buffered chunk
-        /// still reaches it. The view's source is followed for the same reason - its own bytes (the state pointer
-        /// array) stay resident because this column holds it.
-        aggregate->forEachArena([&](const Arena & arena, bool is_owned)
+        /// `allocatedBytes` counts an owned arena in full, so two columns that reach the same arena would each
+        /// charge it whole. Registering the arena as a shared object in its own right, keyed by the `Arena`
+        /// address, bills it exactly once, for exactly as long as some buffered chunk still reaches it.
+        ///
+        /// Only the *owned* arena is measured. Reading a foreign arena is a data race by this column's own
+        /// contract - it may still be grown concurrently by whoever created it - so its size must never be
+        /// touched here. That loses nothing for view chains: a view's foreign arenas are exactly the owned
+        /// arenas along its source chain, and the source is walked below (its bytes - the state pointer array -
+        /// stay resident because this column holds it), so each of those arenas is still charged exactly once,
+        /// through the column that owns it and for which the read is safe. An arena attached from outside any
+        /// column (`addArena`, e.g. an aggregator pool) stays uncharged: it cannot be measured safely, and it
+        /// does not occur on this pre-aggregation path.
+        if (const Arena * owned_arena = aggregate->getOwnedArena())
         {
-            /// Only an owned arena is inside `allocatedBytes` and has to come out of this column's own bytes; a
-            /// foreign one was never in there to begin with.
-            if (is_new && is_owned)
-                self_bytes -= static_cast<Int64>(arena.allocatedBytes());
-            chargeSharedObject(&arena, static_cast<Int64>(arena.allocatedBytes()), touched, total_bytes);
-        });
+            const Int64 arena_bytes = static_cast<Int64>(owned_arena->allocatedBytes());
+            /// An owned arena is inside `allocatedBytes` and has to come out of this column's own bytes.
+            if (is_new)
+                self_bytes -= arena_bytes;
+            chargeSharedObject(owned_arena, arena_bytes, touched, total_bytes);
+        }
 
         if (const ColumnPtr & source = aggregate->getSourceColumn())
             charge_subobject(*source, false);

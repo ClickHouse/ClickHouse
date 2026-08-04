@@ -115,13 +115,14 @@ public:
     /// Take shared ownership of Arena, that holds memory for states of aggregate functions.
     void addArena(ConstArenaPtr arena_);
 
-    /// Every arena this column keeps alive: the one it allocates its own states into, if any, and the ones it
-    /// only extends the lifetime of. An arena is shared - a view produced by `scatter`, `filter` or `permute`
-    /// holds its source's arena as a foreign one - so the same `Arena` object is typically reachable from many
-    /// columns at once. `is_owned` tells the two apart, which is what `allocatedBytes` counts and what it does
-    /// not. Exposed for memory accounting that must charge every physical buffer exactly once, which
-    /// `allocatedBytes` cannot express: it counts `my_arena` in full and ignores the foreign arenas entirely.
-    void forEachArena(const std::function<void(const Arena & arena, bool is_owned)> & callback) const;
+    /// The arena this column allocates its own states into, if any. This is the only arena whose size is safe
+    /// to read through this column: it is created and grown exclusively by this column's own methods, so a
+    /// reader holding the column (immutably) races with no one. The foreign arenas are deliberately not
+    /// exposed - per the contract above, they may be shared with other blocks and grown by other threads
+    /// concurrently, so even reading them is unsafe. A view produced by `scatter`, `filter` or `permute` holds
+    /// its source's arena as a foreign one but also keeps the source column itself alive (`getSourceColumn`),
+    /// so accounting that follows the source chain still reaches every arena that some reachable column owns.
+    const Arena * getOwnedArena() const { return my_arena.get(); }
 
     /// The column this one is a view of, or null if it owns its states. A view holds its source alive (that is
     /// where the state pointers in `getData` point), so accounting that walks what a column keeps resident has to
