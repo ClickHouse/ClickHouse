@@ -802,9 +802,19 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                         nodes_to_resolve.push_back(it->second);
                 }
 
-                if (group_by_keys_valid
-                    && (nodes_to_resolve.empty()
-                        || resolveMatchedInputs(part_level_matches, part_level_nodes, nodes_to_resolve)))
+                /// Rewrite the filter into part-level terms (partition key columns and virtual
+                /// columns), so it can be evaluated exactly on each part's constant values.
+                std::optional<ActionsDAG> part_level_filter_dag;
+                if (group_by_keys_valid && !nodes_to_resolve.empty())
+                {
+                    auto resolved_inputs = resolveMatchedInputs(part_level_matches, part_level_nodes, nodes_to_resolve);
+                    if (!resolved_inputs)
+                        group_by_keys_valid = false;
+                    else if (dag.filter_node)
+                        part_level_filter_dag = ActionsDAG::foldActionsByProjection(*resolved_inputs, {dag.filter_node});
+                }
+
+                if (group_by_keys_valid)
                 {
                     /// Aggregate argument names from the analyzer may be qualified (e.g. `__table1.value`).
                     /// Use matchTrees against an identity DAG of the physical inputs to resolve them.
@@ -848,7 +858,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                             aggregates,
                             agg_col_to_physical_name,
                             group_by_key_to_partition_idx,
-                            dag.filter_node ? &*dag.dag : nullptr,
+                            part_level_filter_dag ? &*part_level_filter_dag : nullptr,
                             reading.getParts(),
                             max_added_blocks.get(),
                             context);

@@ -10371,7 +10371,7 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
     const AggregateDescriptions & aggregate_descriptions,
     const AggColumnToPhysicalName & agg_col_to_physical_name,
     const GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
-    const ActionsDAG * filter_dag,
+    const ActionsDAG * part_level_filter_dag,
     const RangesInDataParts & parts,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context) const
@@ -10423,16 +10423,55 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
         /// each part must have estimated_min / estimated_max covering all physical rows.
     }
 
-    /// Build required_columns: GROUP BY keys + aggregate column names
-    Names required_columns;
-    for (const auto & [query_key_name, _] : group_by_key_to_partition_idx)
-        required_columns.push_back(query_key_name);
-    for (const auto & agg : aggregate_descriptions)
-        required_columns.push_back(agg.column_name);
+    /// Select parts by evaluating the filter exactly on part-level constant values
+    /// (partition key values and virtual columns). This shortcut replaces the read
+    /// with a prepared source, so there is no residual FilterStep: the filter must be
+    /// enforced here. PartitionPruner / minmax KeyCondition cannot be relied on, since
+    /// they are disabled by settings like `use_partition_pruning` and may decline the
+    /// predicate altogether.
+    ColumnPtr surviving_part_names;
+    size_t surviving_rows = parts.size();
+    if (part_level_filter_dag)
+    {
+        /// A physical column named `_part` shadows the virtual one used below for
+        /// row→part alignment, so fall back in that case.
+        if (metadata_snapshot->getColumns().getAllPhysical().contains("_part"))
+            return {};
 
-    auto pruning_result = preparePartsPruning(*this, metadata_snapshot, required_columns, filter_dag, parts, query_context);
-    if (!pruning_result.valid)
-        return {};
+        /// One row per non-empty part.
+        Block parts_const_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
+
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            for (size_t i = 0; i < partition_key.column_names.size(); ++i)
+            {
+                auto column = partition_key.data_types[i]->createColumn();
+                for (const auto & part : parts)
+                {
+                    if (part.data_part->isEmpty())
+                        continue;
+                    column->insert(part.data_part->partition.value[i]);
+                }
+                parts_const_block.insert({std::move(column), partition_key.data_types[i], partition_key.column_names[i]});
+            }
+        }
+
+        /// Fail-closed: every filter input must be a part-level constant.
+        for (const auto * input : part_level_filter_dag->getInputs())
+        {
+            if (!parts_const_block.has(input->result_name))
+            {
+                LOG_TRACE(log, "Column statistics aggregation: filter input '{}' is not a part-level constant, falling back", input->result_name);
+                return {};
+            }
+        }
+
+        VirtualColumnUtils::filterBlockWithExpression(
+            VirtualColumnUtils::buildFilterExpression(part_level_filter_dag->clone(), query_context), parts_const_block);
+
+        surviving_part_names = parts_const_block.getByName("_part").column;
+        surviving_rows = parts_const_block.rows();
+    }
 
     /// For each aggregate column, build an AggResultColumnInfo
     std::vector<AggResultColumnInfo> agg_columns;
@@ -10458,18 +10497,25 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
         return f.getType() == Field::Types::Float64 && std::isnan(f.safeGet<Float64>());
     };
 
-    for (size_t row = 0, part_idx = 0; row < pruning_result.rows; ++row, ++part_idx)
+    for (size_t row = 0, part_idx = 0; row < surviving_rows; ++row, ++part_idx)
     {
-        if (pruning_result.part_name_column)
+        if (surviving_part_names)
         {
-            while (parts[part_idx].data_part->name != pruning_result.part_name_column->getDataAt(row))
+            while (parts[part_idx].data_part->name != surviving_part_names->getDataAt(row))
                 ++part_idx;
         }
 
         const auto & part = parts[part_idx].data_part;
 
-        if (pruning_result.shouldSkipPart(part, max_block_numbers_to_read))
+        if (part->isEmpty())
             continue;
+
+        if (max_block_numbers_to_read)
+        {
+            auto it = max_block_numbers_to_read->find(part->info.getPartitionId());
+            if (it == max_block_numbers_to_read->end() || part->info.max_block > it->second)
+                continue;
+        }
 
         const Estimates estimates = [&]()
         {

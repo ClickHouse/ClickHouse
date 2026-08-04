@@ -564,14 +564,17 @@ public:
     using GroupByKeyToPartitionIdx = std::vector<std::pair<String, size_t>>;
 
     /// Build a block of min/max aggregated values using per-column statistics.
-    /// This is used when `StatisticsMinMax` statistics have been collected
+    /// This is used when `basic` column statistics have been collected
     /// for the relevant columns.
+    /// `part_level_filter_dag` is the query filter rewritten in terms of part-level
+    /// constants (partition key columns and virtual columns); it is evaluated exactly
+    /// on each part's constant values to select the parts to use.
     Block getColumnStatisticsAggregationBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const AggregateDescriptions & aggregate_descriptions,
         const AggColumnToPhysicalName & agg_col_to_physical_name,
         const GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
-        const ActionsDAG * filter_dag,
+        const ActionsDAG * part_level_filter_dag,
         const RangesInDataParts & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
