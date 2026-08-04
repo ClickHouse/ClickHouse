@@ -88,11 +88,13 @@ for storage in "full 0" "packed 1000000000"; do
         echo "${name} proj: projection subtree synced FAILED (DirectorySync=$on_proj_ds, expected $exp_proj)"
     fi
 
-    # With fsync_part_directory = 0 (the default) behavior is unchanged: no directory fsync.
-    if [[ "$off_ds" -eq 0 ]]; then
+    # With fsync_part_directory = 0 (the default) behavior is unchanged: no directory fsync. Both
+    # layouts are checked, so gating the part dir while syncing projection subdirs unconditionally
+    # cannot pass.
+    if [[ "$off_ds" -eq 0 && "$off_proj_ds" -eq 0 ]]; then
         echo "${name} off: DirectorySync = 0"
     else
-        echo "${name} off: DirectorySync = $off_ds (expected 0)"
+        echo "${name} off: DirectorySync = $off_ds (expected 0), with projection = $off_proj_ds (expected 0)"
     fi
 
     # Content durability: Packed freeze rewrites data.packed, so enabling the setting must fsync one
