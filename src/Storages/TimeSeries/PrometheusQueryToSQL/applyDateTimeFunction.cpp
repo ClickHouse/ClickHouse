@@ -23,7 +23,8 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for a date/time function.
-    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
 
@@ -136,11 +137,11 @@ namespace
     /// defensive forward-compatibility (e.g. if the grammar is ever relaxed) and is a verified no-op for every
     /// currently-reachable AST, since it only recurses into cases the pre-existing checks already reject.
     /// Returns nullptr if `node` isn't (possibly wrapped) exactly a bare `time()` call.
-    const PQT::Function * findTimeCallThroughScalarVectorWrappers(const Node * node)
+    const PrometheusQueryTree::Function * findTimeCallThroughScalarVectorWrappers(const Node * node)
     {
         if (node->node_type == NodeType::UnaryOperator)
         {
-            const auto * unary_operator = static_cast<const PQT::UnaryOperator *>(node);
+            const auto * unary_operator = static_cast<const PrometheusQueryTree::UnaryOperator *>(node);
             if (unary_operator->operator_name != "+")
                 return nullptr;
 
@@ -149,14 +150,14 @@ namespace
 
         if (node->node_type == NodeType::Offset)
         {
-            const auto * offset = static_cast<const PQT::Offset *>(node);
+            const auto * offset = static_cast<const PrometheusQueryTree::Offset *>(node);
             return findTimeCallThroughScalarVectorWrappers(offset->getExpression());
         }
 
         if (node->node_type != NodeType::Function)
             return nullptr;
 
-        const auto * function = static_cast<const PQT::Function *>(node);
+        const auto * function = static_cast<const PrometheusQueryTree::Function *>(node);
 
         if (isFunctionTime(function->function_name))
             return function->getArguments().empty() ? function : nullptr;
@@ -177,7 +178,7 @@ bool isDateTimeFunction(std::string_view function_name)
 
 
 SQLQueryPiece applyDateTimeFunction(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & function_name = function_node->function_name;
     const auto * impl_info = getImplInfo(function_name);

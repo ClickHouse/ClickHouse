@@ -2712,6 +2712,9 @@ void Planner::buildPlanForQueryNode()
         && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
         && client_info.distributed_depth <= 1 // Makes sense for higher depths too, just not supported
         && !client_info.is_replicated_database_internal
+        // A local shard/replica plan is united into the parent pipeline in this process, where
+        // nothing unmarshalls the blocks.
+        && !select_query_options.is_local_plan_for_distributed_query
     )
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
