@@ -149,7 +149,7 @@ void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory
     FunctionDocumentation::Description description_rankCorr = R"(
 Computes a rank correlation coefficient.
 
-Returns a rank correlation coefficient of the ranks of x and y. The value of the correlation coefficient ranges from -1 to +1. If less than two arguments are passed, the function will return an exception. The value close to +1 denotes a high linear relationship, and with an increase of one random variable, the second random variable also increases. The value close to -1 denotes a high linear relationship, and with an increase of one random variable, the second random variable decreases. The value close or equal to 0 denotes no relationship between the two random variables.
+Returns a rank correlation coefficient of the ranks of x and y. The value of the correlation coefficient ranges from -1 to +1. If less than two arguments are passed, the function will return an exception. The value close to +1 denotes a high linear relationship, and with an increase of one random variable, the second random variable also increases. The value close to -1 denotes a high linear relationship, and with an increase of one random variable, the second random variable decreases. The value close or equal to 0 denotes no relationship between the two random variables. Returns `nan` when the correlation is undefined: fewer than two rows, or all values in either argument equal.
 
 **See Also**
 
@@ -163,7 +163,7 @@ rankCorr(x, y)
         {"x", "Arbitrary value.", {"Float*"}},
         {"y", "Arbitrary value.", {"Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_rankCorr = {"Returns a rank correlation coefficient of the ranks of x and y. The value ranges from -1 to +1.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_rankCorr = {"Returns a rank correlation coefficient of the ranks of x and y. The value ranges from -1 to +1, or `nan` when the correlation is undefined.", {"Float64"}};
     FunctionDocumentation::Examples examples_rankCorr = {
     {
         "Perfect correlation",

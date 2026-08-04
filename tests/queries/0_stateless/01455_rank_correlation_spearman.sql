@@ -41,6 +41,10 @@ SELECT roundBankers(rankCorr(x, y), 3) FROM values('x Float64, y Float64', (1, 1
 SELECT 'nan';
 SELECT rankCorr(x, y) FROM values('x Float64, y Float64', (5, 1), (5, 2), (5, 3));
 
+-- Skipped NaNs can leave the columns unequal in length; only the first min(size) ranks pair up.
+SELECT '-1';
+SELECT rankCorr(-number, CAST(if(number < 5, number, nan) AS Float64)) FROM numbers(10);
+
 DROP TABLE IF EXISTS moons;
 DROP TABLE IF EXISTS circles;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
