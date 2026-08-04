@@ -52,6 +52,12 @@ SETTINGS use_query_condition_cache = true;
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
 
+### `ORDER BY ... LIMIT n` (TopK) queries {#top-k-queries}
+
+Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) do not use the query condition cache by default: such reads neither consult nor populate it.
+TopK reads can skip granules based on a threshold that changes while the query runs, so their cache entries require additional care; they are gated behind the separate setting [`use_query_condition_cache_for_top_k`](/reference/settings/session-settings/use-query) (default: disabled) until the soundness of these entries is fully established.
+The setting only takes effect if `use_query_condition_cache` is also enabled.
+
 ## Administration {#administration}
 
 The query condition cache is not retained between restarts of ClickHouse.
