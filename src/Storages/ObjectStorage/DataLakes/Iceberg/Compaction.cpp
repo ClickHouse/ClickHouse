@@ -1636,12 +1636,24 @@ static CommitResult writeMetadataFiles(
                 return CommitResult::Lost;
 
             /// Otherwise the helper also folds in an exception while writing, which can happen after
-            /// the storage accepted the object. Removing the rewritten files would then strand
-            /// metadata that references them, so only report a loss once the target is known absent.
+            /// the storage accepted the object, and a jointly racing writer may have taken the name
+            /// since the probe above. Removing the rewritten files is safe only when the object is
+            /// absent, or present holding somebody else's bytes rather than the ones written here.
             try
             {
                 if (!object_storage->exists(commit_target))
                     return CommitResult::Lost;
+                /// Only comparable when the metadata is stored verbatim; a compressed object holds
+                /// different bytes, so there the ambiguity has to stand.
+                if (generated_metadata_info.compression_method == CompressionMethod::None)
+                {
+                    auto published = object_storage
+                                         ->readSmallObjectAndGetObjectMetadata(
+                                             commit_target, context->getReadSettings(), json_representation.size() + 1)
+                                         .data;
+                    if (published != json_representation)
+                        return CommitResult::Lost;
+                }
             }
             catch (...)
             {
