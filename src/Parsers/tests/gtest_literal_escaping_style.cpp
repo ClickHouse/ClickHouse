@@ -4,6 +4,7 @@
 #include <Parsers/LiteralEscapingStyle.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <optional>
 #include <string>
 
 /** Regression coverage for `LiteralEscapingStyle` applied to nested literals.
@@ -38,6 +39,27 @@ std::string format(const Field & value, LiteralEscapingStyle style)
     return buf.str();
 }
 
+/** The bugfix validation CI job compiles this test against the merge-base sources, where
+  * `LiteralEscapingStyle::SQLite` does not exist yet. Keep every reference to that enumerator
+  * dependent on a template parameter, so the test compiles there (the SQLite expectations
+  * evaporate) while the PostgreSQL expectations still reproduce the nested-literal bug.
+  */
+template <typename Style = LiteralEscapingStyle>
+std::optional<std::string> formatSQLite(const Field & value)
+{
+    if constexpr (requires { Style::SQLite; })
+        return format(value, Style::SQLite);
+    else
+        return std::nullopt;
+}
+
+#define EXPECT_SQLITE_EQ(value, expected) \
+    do \
+    { \
+        if (auto formatted = formatSQLite((value))) \
+            EXPECT_EQ(*formatted, (expected)); \
+    } while (false)
+
 }
 
 TEST(LiteralEscapingStyle, TopLevelString)
@@ -49,7 +71,7 @@ TEST(LiteralEscapingStyle, TopLevelString)
 
     EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "'a\\\\b\\'c'");
     EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "'a\\b''c'");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::SQLite), "'a\\b''c'");
+    EXPECT_SQLITE_EQ(value, "'a\\b''c'");
 }
 
 TEST(LiteralEscapingStyle, StringInsideTuple)
@@ -63,7 +85,7 @@ TEST(LiteralEscapingStyle, StringInsideTuple)
     /// tab literally. What matters here is that neither of them falls back to `\'` for the quote.
     EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "('it\\'s', 'a\\tb')");
     EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "('it''s', 'a\\tb')");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::SQLite), "('it''s', 'a\tb')");
+    EXPECT_SQLITE_EQ(value, "('it''s', 'a\tb')");
 }
 
 TEST(LiteralEscapingStyle, StringInsideSingleElementTuple)
@@ -73,7 +95,7 @@ TEST(LiteralEscapingStyle, StringInsideSingleElementTuple)
     Field value = tuple;
 
     EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "tuple('it''s')");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::SQLite), "tuple('it''s')");
+    EXPECT_SQLITE_EQ(value, "tuple('it''s')");
 }
 
 TEST(LiteralEscapingStyle, StringInsideNestedContainers)
@@ -89,7 +111,7 @@ TEST(LiteralEscapingStyle, StringInsideNestedContainers)
 
     EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "[('it\\'s', 'b'), 'c\\'d']");
     EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "[('it''s', 'b'), 'c''d']");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::SQLite), "[('it''s', 'b'), 'c''d']");
+    EXPECT_SQLITE_EQ(value, "[('it''s', 'b'), 'c''d']");
 }
 
 TEST(LiteralEscapingStyle, NonStringElementsAreUnchanged)
@@ -100,7 +122,7 @@ TEST(LiteralEscapingStyle, NonStringElementsAreUnchanged)
     Field value = tuple;
 
     EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "(1, 'it''s')");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::SQLite), "(1, 'it''s')");
+    EXPECT_SQLITE_EQ(value, "(1, 'it''s')");
 }
 
 TEST(LiteralEscapingStyle, NulByteInsideContainerIsRejectedForSQLite)
@@ -110,6 +132,7 @@ TEST(LiteralEscapingStyle, NulByteInsideContainerIsRejectedForSQLite)
     Field value = tuple;
 
     /// A NUL byte cannot be represented in a SQLite string literal, and it must not be silently
-    /// emitted as the two characters `\` and `0` either.
-    EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::SQLite));
+    /// emitted as the two characters `\` and `0` either. Without the fix `formatSQLite` returns
+    /// an empty optional instead of throwing, so this expectation also fails on the merge-base.
+    EXPECT_ANY_THROW(formatSQLite(value));
 }
