@@ -88,12 +88,9 @@ struct DataFilePlan
     UInt64 new_records_count = 0;
     UInt64 new_bytes_count = 0;
 
-    /// Statistics and partition value are kept per DATA FILE, not per manifest: a single
-    /// original manifest can pack data files from different partitions (Spark/Flink/Trino),
-    /// and after compaction each rewritten file needs its own bounds/null counts/column
-    /// sizes and its own partition tuple. Aggregating them per manifest would union bounds
-    /// across unrelated files (breaking predicate pruning) and stamp one partition on all of
-    /// them (breaking partition pruning). Mirrors MultipleFileWriter::getPerFileStatistics.
+    /// Statistics and partition value are per DATA FILE, not per manifest: one manifest can pack
+    /// files from different partitions, so aggregating here would union bounds across unrelated
+    /// files and stamp a single partition on all of them, breaking both kinds of pruning.
     DataFileStatisticsPtr statistics;
     size_t partition_index = 0;
 };
@@ -395,12 +392,9 @@ static Plan getPlan(
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
                     data_file, persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key), 0);
-                /// Key the plan by the DATA FILE's own path, not by the manifest path.
-                /// A single manifest routinely packs many data files (Spark/Flink/Trino
-                /// output, and our own MultipleFileWriter partition splits). Keying by
-                /// manifest path collapses them onto the first file's plan, so compaction
-                /// would rewrite only the first data file and silently drop every other
-                /// live data file in the manifest.
+                /// Key by the DATA FILE's own path: one manifest can pack many data files, and
+                /// keying by manifest path would collapse them onto the first file's plan, so
+                /// every other live data file in that manifest would be dropped.
                 const auto & data_file_key = data_file->parsed_entry->file_path_key;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (auto it = plan.path_to_data_file.find(data_file_key); it == plan.path_to_data_file.end())
@@ -439,11 +433,8 @@ static Plan getPlan(
     plan.history = std::move(snapshots_info);
     plan.need_optimize = !all_positional_delete_files.empty();
 
-    /// Only reject lossy schema evolution when compaction will actually rewrite files.
-    /// The guard rejects OPTIMIZE because rewriting historical files into the current schema
-    /// would break time travel; but if there are no live positional deletes there is nothing
-    /// to rewrite, so a no-op OPTIMIZE on an evolved table must stay a no-op, not throw
-    /// NOT_IMPLEMENTED. `need_optimize` is known only after the manifest scan above.
+    /// Check only when files will actually be rewritten, so a no-op OPTIMIZE on an evolved table
+    /// stays a no-op. `need_optimize` is known only after the manifest scan above.
     if (plan.need_optimize)
         checkCompactionSupportsSchemaEvolution(initial_metadata_object);
 
@@ -481,13 +472,9 @@ static void writeDataFiles(
 
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
-        /// Data files written under an older schema (e.g. before `ALTER ... RENAME COLUMN`)
-        /// store columns by their old names/ids. Read such a file by its own schema and then
-        /// remap it to the current schema before writing the compacted file. This mirrors the
-        /// normal read path (`StorageObjectStorageSource`): `getInitialSchemaByPath` picks the
-        /// file's schema for the reader header and `getSchemaTransformer` remaps old -> current.
-        /// Without this, the old file would be read by current-schema names and produce
-        /// DEFAULT/NULL values (data corruption) or a read failure after schema evolution.
+        /// A file written under an older schema must be read by its OWN schema and then remapped
+        /// to the current one, as the normal read path does; reading it by current-schema names
+        /// would yield DEFAULT/NULL values or fail outright.
         const Int32 file_schema_id = data_file->data_object_info->info.underlying_format_read_schema_id;
         const bool schema_changed = file_schema_id != current_schema_id;
 
@@ -561,11 +548,9 @@ static void writeDataFiles(
             if (chunk.empty())
                 break;
 
-            /// Position deletes reference row positions in the original data file, so drop
-            /// deleted rows first (against the old-schema header the delete transform was
-            /// built with), then remap the surviving rows to the current schema. The transform
-            /// is null for a data file with no attached position deletes (e.g. a non-Parquet
-            /// file newer than all deletes).
+            /// Position deletes index the original file, so deletes must be applied against the
+            /// old-schema header they were built with BEFORE the rows are remapped. Null when the
+            /// data file has no attached position deletes.
             if (delete_file_transform)
                 delete_file_transform->transform(chunk);
 
@@ -1204,16 +1189,9 @@ static bool writeMetadataFiles(
 {
     auto log = getLogger("IcebergCompaction");
 
-    /// Start the compacted metadata from a deep copy of the source table metadata rather than a
-    /// synthetic `createEmptyMetadataFile` object. The synthetic object invents a fresh
-    /// `table-uuid` and leaves `partition-specs`/`default-spec-id`/`sort-orders`/`properties`
-    /// empty, so after OPTIMIZE a partitioned table would lose its partition spec (the next
-    /// INSERT reads an empty spec, `partitioner == nullopt`, and writes unpartitioned data into a
-    /// partitioned table) and `iceberg_metadata_table_uuid` / `iceberg_use_version_hint` readers
-    /// could stop finding the table after the new uuid replaced the old one. Deep-copying
-    /// preserves every table-level field (uuid, location, partition specs, sort orders,
-    /// properties, refs, schemas + current-schema-id) while we regenerate only the snapshot
-    /// history below.
+    /// Deep-copy the source metadata so every table-level field (uuid, location, partition specs,
+    /// sort orders, properties, refs, schemas) is carried over; only the snapshot history below is
+    /// regenerated.
     auto metadata_object = deepCopyMetadata(plan.initial_metadata_object);
 
     /// The snapshot history is rebuilt from scratch by the loop below (it reuses the original
@@ -1249,11 +1227,9 @@ static bool writeMetadataFiles(
         }
     }
 
-    /// The schema id each original snapshot was committed under. `generateNextMetadata` stamps
-    /// every regenerated snapshot with the current schema id, but compaction reuses the original
-    /// snapshot ids, and a snapshot id is bound to its committed schema id on read. After schema
-    /// evolution the original snapshots were committed under older schema ids, so preserve them
-    /// to avoid a "snapshot already registered with schema id" conflict on the next read.
+    /// A snapshot id is bound to its committed schema id on read, and the replay reuses the
+    /// original ids, so each snapshot's original schema id must be preserved rather than restamped
+    /// with the current one.
     std::unordered_map<Int64, Int32> snapshot_id_to_committed_schema_id;
     {
         auto source_snapshots = plan.initial_metadata_object->getArray(Iceberg::f_snapshots);
@@ -1310,13 +1286,9 @@ static bool writeMetadataFiles(
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
 
-    /// Refs were preserved verbatim from the deep-copied source metadata, but the replay above
-    /// regenerates only append / append-like snapshots (`tryGetAppendUpdate` returns nullopt for
-    /// DELETE and position-delete-only OVERWRITE, which are skipped). A tag or branch pinned to a
-    /// skipped snapshot id would survive in `refs` while its target is absent from the rebuilt
-    /// `snapshots` list, leaving metadata that readers resolving refs cannot follow. Drop any ref
-    /// whose snapshot id was not regenerated. (`main` is re-pointed to the last replayed snapshot
-    /// by `generateNextMetadata`, so it stays valid.)
+    /// The replay regenerates only append-like snapshots, so a ref pinned to a skipped one would
+    /// outlive its target and leave refs unresolvable. Drop any ref whose snapshot id was not
+    /// regenerated; `main` is re-pointed by `generateNextMetadata` and stays valid.
     if (metadata_object->has(Iceberg::f_refs))
     {
         auto refs = metadata_object->getObject(Iceberg::f_refs);
@@ -1443,15 +1415,9 @@ static bool writeMetadataFiles(
             /// snapshot referencing the manifest) would wrongly re-attribute it.
             const auto manifest_lineage = plan.manifest_file_lineage[manifest_entry->path];
 
-            /// The rewritten history is renumbered by generateNextMetadata (sequence numbers
-            /// restart from 1), so the source sequence number must be remapped onto the new
-            /// numbering rather than copied verbatim: a stale higher value would make the
-            /// compacted files sort as *newer* than deletes committed after OPTIMIZE, and
-            /// those deletes would silently stop applying. Snapshot ids are preserved by the
-            /// rewrite, so the adding snapshot's new sequence number is used when that
-            /// snapshot is retained; when it has been expired, fall back to the first
-            /// retained snapshot referencing the manifest -- the earliest point in the
-            /// rewritten history where the manifest exists.
+            /// Sequence numbers restart from 1 in the rewritten history, so the source value must
+            /// be remapped, never copied. Prefer the adding snapshot's new number; if it was
+            /// expired, use the first retained snapshot referencing the manifest.
             Int64 remapped_sequence_number = 0;
             {
                 Poco::JSON::Object::Ptr sequence_source = snapshot;
@@ -1551,14 +1517,9 @@ static bool writeMetadataFiles(
         {
             per_manifest_sizes.push_back(manifest_file_sizes[entry]);
         }
-        /// Pass the actual per-manifest counts: without them generateManifestList stamps the
-        /// snapshot summary's `added-records` into EVERY entry, so any consumer summing the
-        /// manifest-list row counts (including our own trivial count) would multiply the
-        /// table's row count by the number of manifests. Each manifest's entries are emitted
-        /// as ADDED in the snapshot that first added it, so its counts are reported as
-        /// added_* only in that snapshot's manifest list; manifest lists of later snapshots
-        /// carry the manifest forward and report the counts as existing_*, preserving the
-        /// original added_snapshot_id / sequence_number.
+        /// Per-manifest counts are required: otherwise every entry gets the snapshot summary's
+        /// `added-records` and any consumer summing them multiplies the table's row count. A
+        /// manifest reports added_* only in the snapshot that added it, existing_* thereafter.
         const Int64 list_snapshot_id = new_snapshots[i].snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         std::vector<ManifestListEntryCounts> entry_counts;
         entry_counts.reserve(renamed_manifest_entries.size());
@@ -1595,13 +1556,9 @@ static bool writeMetadataFiles(
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
 
-        /// Write the metadata file and keep `version-hint.text` in sync (via the same helper the
-        /// INSERT/mutation paths use), so `iceberg_use_version_hint = 1` readers still find the
-        /// compacted metadata after `clearOldFiles` removes the previous version. A false return
-        /// means the target metadata version already exists (a concurrent writer won the commit):
-        /// the compacted metadata was NOT published, so the caller must skip `clearOldFiles`
-        /// (otherwise we would delete the pre-compaction data/metadata while the table still points
-        /// at the other writer's snapshot). Every other Iceberg write path aborts/retries on false.
+        /// A false return means the target metadata version already exists, so the compacted
+        /// metadata was NOT published and the caller must skip `clearOldFiles`; deleting the
+        /// pre-compaction files while the table points at another writer's snapshot loses data.
         return Iceberg::writeMetadataFileAndVersionHint(
             path_resolver,
             generated_metadata_info,
