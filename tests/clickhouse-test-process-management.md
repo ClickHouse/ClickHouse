@@ -33,7 +33,9 @@ reaches an orphan as long as we know its PGID — no parent-chain walk needed.
 ```
 _GROUP_PID_PATH = {repo}/ci/tmp/
 _GROUP_PID_NAME = "clickhouse_test_group_pid"
-_RUN_TOKEN      = "<parent_pid>-<random hex>"   # minted once per invocation
+_RUN_TOKEN      = "<parent_pid>-<random hex>"   # seeded through the environment, so
+                                               # `fork` and `spawn` workers alike share
+                                               # the invocation's token
 ```
 
 A worker process (`os.getpid()`) writes one file per group it launches:
@@ -45,8 +47,10 @@ A worker process (`os.getpid()`) writes one file per group it launches:
 One PGID per file, and no two files ever share a name, so no cross-process
 locking is needed and a record that is kept because its group may still be live
 is not overwritten by that worker's next test.  The run token is what scopes a
-reap to this invocation's own records (see `worker_pids` below); a worker pid
-alone cannot, being recyclable into a concurrent invocation's worker.  Files are
+reap to this invocation's own records (see `worker_pids` below), and it is passed
+to workers through the environment because a `spawn` worker re-executes the
+runner and would otherwise mint its own; a worker pid alone cannot scope a reap,
+being recyclable into a concurrent invocation's worker.  Files are
 written atomically via `write_text_atomic` (write to a `.tmp` sibling, then
 `rename`), so `--cleanup` never sees a partial write.
 

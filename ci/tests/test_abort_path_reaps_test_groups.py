@@ -38,6 +38,7 @@ import os
 import runpy
 import signal
 import subprocess
+import sys
 import time
 from argparse import Namespace
 from datetime import datetime
@@ -1142,4 +1143,166 @@ def test_a_signal_to_the_parent_still_reaps_the_group():
     finally:
         for pgid in pgids:
             _kill_group(pgid)
+        _clear_records()
+
+
+def _spawn_worker_records_a_group(queue):
+    """A worker's body, run in a ``spawn`` child: record a live group, the real way.
+
+    Reached only through ``multiprocessing``, so it must be importable by name from a
+    re-executed copy of this module - which is exactly the property under test.  The
+    token is obtained the way a real worker obtains it (from the runner's module body,
+    re-executed here), never passed in: handing it over would make the arm match by
+    construction and assert nothing.
+    """
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    group = subprocess.Popen(
+        "sleep 600 & sleep 600 & wait",
+        shell=True,
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    ct["write_text_atomic"](
+        ct["test_process_group_record"](group.pid), f"{group.pid}\n"
+    )
+    queue.put((os.getpid(), group.pid, ct["_RUN_TOKEN"]))
+    # Outlive the reap, as a SIGKILLed worker's group does. The parent kills this.
+    time.sleep(3600)
+
+
+def test_a_spawned_workers_group_is_in_the_parents_reap_scope():
+    """The scope key must survive ``spawn``, not only ``fork``.
+
+    ``__main__`` selects ``spawn`` whenever ``CHECK_NAME`` contains ``aarch``, and a spawned
+    worker re-executes the runner top level - so a token minted in the module body is a
+    DIFFERENT string there, every record the worker writes falls outside
+    ``cleanup_test_groups``'s ``token != _RUN_TOKEN`` test, and the parent-side reap becomes
+    a silent no-op on that whole configuration (live carrier: ``Bugfix validation
+    (functional tests, aarch64)``, which runs ``--jobs <nproc>``).
+
+    Neither existing scoping arm can see that: both build their foreign record from a
+    hand-written f-string, which pins the MATCHING RULE while never asserting that a real
+    worker's record can satisfy it.  Here the record is written by a real child through the
+    real helpers, and the verdict is group liveness, so the arm fails if the token stops
+    being invocation-wide.
+
+    ``get_context`` rather than ``set_start_method``: the latter is process-global and
+    one-shot, so it would silently change every other arm in this file.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    _patch(ct, pgrep=lambda **kw: [])
+    ctx = multiprocessing.get_context("spawn")
+    queue = ctx.Queue()
+    worker = ctx.Process(target=_spawn_worker_records_a_group, args=(queue,))
+    pgid = None
+    try:
+        worker.start()
+        worker_pid, pgid, worker_token = queue.get(timeout=180)
+        # SIGKILL, so no Python `finally` in the worker can clean up - the CI shape.
+        worker.kill()
+        worker.join(timeout=30)
+        assert len(_alive(pgid)) >= 3, (
+            f"fixture: the spawned worker's group must still be live before the reap; "
+            f"alive={_alive(pgid)}"
+        )
+
+        ct["reap_recorded_test_groups"]({worker_pid})
+
+        assert not _wait_dead(pgid, timeout=20), (
+            f"a group recorded by a SPAWNED worker must be in the parent's reap scope; "
+            f"parent token {ct['_RUN_TOKEN']!r} vs worker token {worker_token!r} - a "
+            f"per-process token makes the reap a no-op on every aarch check"
+        )
+    finally:
+        if pgid:
+            _kill_group(pgid)
+        if worker.is_alive():
+            worker.kill()
+            worker.join(timeout=10)
+        queue.close()
+        queue.join_thread()
+        _clear_records()
+
+
+def test_a_nested_invocation_does_not_adopt_the_outer_runs_token():
+    """Passing the token through the environment must not widen a NESTED run's sweep.
+
+    A ``clickhouse-test`` started under another one (or under a wrapper that already
+    exported the variable) inherits it, and would then match - and SIGKILL - the outer
+    run's in-flight records: the same signal-a-stranger the scoping was adopted to
+    prevent, reintroduced by the mechanism that fixes ``spawn``.  Only a top-level
+    invocation may re-mint, which is why the guard keys on ``__main__`` and not on the pid
+    prefix alone: a spawned worker also sees a foreign prefix and must keep what it
+    inherited.
+
+    Driven as a real subprocess with the variable pre-set, because inheritance is the
+    thing being asserted; ``run_name="__main__"`` puts the guard on the path.  The runner
+    exits early for want of a server, which is after the module body has run.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    _patch(ct, pgrep=lambda **kw: [])
+    foreign_token = "999999-feed1234"
+    reader = (
+        "import os, runpy;"
+        f" ns = runpy.run_path({_CLICKHOUSE_TEST!r});"
+        # The `__main__` rebind lands in the live namespace; run_path's returned dict
+        # keeps the pre-rebind value, so read through `__globals__`.
+        " g = ns['test_process_group_record'].__globals__;"
+        " print('TOKEN', g['_RUN_TOKEN'], os.getpid())"
+    )
+    theirs = None
+    try:
+        # 1) A top-level invocation with the variable inherited must RE-MINT.
+        run = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                f"import runpy, sys\n"
+                f"sys.argv = ['clickhouse-test']\n"
+                f"try:\n"
+                f"    runpy.run_path({_CLICKHOUSE_TEST!r}, run_name='__main__')\n"
+                f"except SystemExit:\n"
+                f"    pass\n"
+                f"{reader}\n",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env={**os.environ, "_CLICKHOUSE_TEST_RUN_TOKEN": foreign_token},
+        )
+        line = [l for l in run.stdout.split("\n") if l.startswith("TOKEN ")]
+        assert line, (
+            f"the nested invocation reported no token; stdout={run.stdout[-400:]!r} "
+            f"stderr={run.stderr[-400:]!r}"
+        )
+        _, token, pid = line[-1].split()
+        assert token != foreign_token and token.startswith(f"{pid}-"), (
+            f"a top-level invocation must re-mint rather than adopt an inherited token; "
+            f"got {token!r} with pid {pid} (inherited {foreign_token!r})"
+        )
+
+        # 2) And its sweep must not consume a record written under the outer token. The
+        #    worker pid IS in scope, so only the token comparison can save the group.
+        theirs = _spawn_group()
+        outer_record = (
+            _GROUP_PID_PATH
+            / f"{_GROUP_PID_NAME}.{foreign_token}.{os.getpid()}.{theirs.pid}"
+        )
+        ct["write_text_atomic"](outer_record, f"{theirs.pid}\n")
+        # This process stands in for the re-minted inner run: its own token is self-pid
+        # prefixed, exactly as the assertion above just showed a real one to be.
+        assert ct["_RUN_TOKEN"] != foreign_token, "fixture: tokens must differ"
+
+        ct["reap_recorded_test_groups"]({os.getpid()})
+
+        assert _alive(theirs.pid), (
+            "an outer invocation's live test group must survive a nested run's reap"
+        )
+        assert outer_record.exists(), "and the outer run's record must not be consumed"
+    finally:
+        if theirs:
+            _kill_group(theirs.pid)
         _clear_records()

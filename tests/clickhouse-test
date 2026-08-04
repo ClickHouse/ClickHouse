@@ -66,9 +66,21 @@ except ImportError:
 # `{repo}/ci/tmp/clickhouse_test_group_pid`.
 _GROUP_PID_PATH = Path(__file__).resolve().parent.parent / "ci" / "tmp"
 _GROUP_PID_NAME = "clickhouse_test_group_pid"
-# Identifies this INVOCATION, not this process: workers are forked, so they inherit it.
+# Identifies this INVOCATION, not this process.  Seeded through the environment, which
+# both start methods propagate: a `spawn` worker (selected for `aarch` checks, see
+# `__main__`) re-executes this module and would otherwise mint its own token, putting its
+# records outside the parent's reap scope.
 # A pid alone cannot scope a reap, being recyclable into a concurrent run's worker.
-_RUN_TOKEN = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+_RUN_TOKEN = os.environ.setdefault(
+    "_CLICKHOUSE_TEST_RUN_TOKEN", f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+)
+if __name__ == "__main__" and not _RUN_TOKEN.startswith(f"{os.getpid()}-"):
+    # A nested invocation must not adopt the outer run's token, or its sweep would match
+    # the outer run's records.  Only a top-level invocation may re-mint: a `spawn` worker
+    # also sees a foreign pid prefix here and must keep what it inherited.
+    _RUN_TOKEN = os.environ["_CLICKHOUSE_TEST_RUN_TOKEN"] = (
+        f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    )
 
 
 def write_text_atomic(path: Path, text: str) -> None:
