@@ -67,7 +67,7 @@ public:
         /// the inner `GROUP BY` is completed independently per shard, so the outer `count()` would count duplicate
         /// per-shard groups instead of the global distinct keys. A remote storage can be reached both directly
         /// (`TableNode`) and through a table function such as `remote(...)` (`TableFunctionNode`), so check both.
-        const auto & join_tree_node = query_node->getJoinTree();
+        const auto & join_tree_node = query_node->getJoinTreeNode();
         if (const auto * table_node = join_tree_node->as<TableNode>())
         {
             if (table_node->getStorage()->isRemote())
