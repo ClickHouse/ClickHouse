@@ -113,12 +113,13 @@ public:
             Temp,
         };
 
-        /// On-disk layout of a projection sub-part: LEGACY_NESTED = <root>/<part_dir>/<name>.proj (the only layout today;
-        /// kept as an explicit parameter so alternative layouts can be added without reworking the API). NONE = not configured yet.
+        /// On-disk layout: LEGACY_NESTED = <root>/<part_dir>/<name>.proj, FLAT = <root>/<part_dir>.<name>.proj. Distinct from the
+        /// user-facing setting enum DB::ProjectionStorageFormat; NONE = not configured yet.
         enum class StorageFormat : uint8_t
         {
             NONE,
             LEGACY_NESTED,
+            FLAT,
         };
 
         const IDataPartStorage * parent = nullptr;
@@ -128,9 +129,9 @@ public:
 
         /// "p.proj" / "p_1.tmp_proj" -- the logical key used across the codebase.
         String dirName() const { return dirName(name, is_temp); }
-        /// Root the dir lives in, relative to the disk (layout-dependent).
+        /// Root the dir lives in, relative to the disk (differs between NESTED and FLAT).
         String rootPath() const;
-        /// rootPath()/physical dir name.
+        /// rootPath()/physical dir name (FLAT physical name is "<parent_dir>.<dirName()>").
         String relativePath() const;
         /// Live disk probe via the parent.
         bool exists() const;
@@ -142,6 +143,9 @@ public:
         /// Classifies a directory basename: "*.proj" -> Live, "*.tmp_proj" -> Temp, else None.
         static Status dirNameType(std::string_view dir_name);
 
+        /// Owner part dir of a projection dir ("" if not one). Call as ("<root>", "<owner>.<name>.proj") for FLAT or ("<root>/<owner>",
+        /// "<name>.proj") for NESTED; told apart by dots, a dotted NESTED name reads as FLAT.
+        static String owner(const std::string & root, std::string_view dir_name);
     };
 
     /// Key: dirName() -- the same string stored in checksums and passed to getProjectionStorage.
@@ -165,11 +169,12 @@ public:
     /// Atomically replace the owned set (entries are re-parented to this storage); {} is a valid set.
     virtual void setProjections(Projections projections) = 0;
 
-    /// Disk scan of on-disk projection dirs (residue included); does not touch the owned set. Disk-truth paths only.
-    /// candidates: stat just these dirName()s; else a full listing of the part dir.
+    /// Disk scan of on-disk projection dirs across both layouts (residue included); does not touch the owned set. Disk-truth paths only.
+    /// candidates: stat just these dirName()s; else root_listing reuses a caller's parts-root listing for full discovery.
     struct ProjectionScan
     {
         std::optional<Strings> candidates = std::nullopt;
+        std::optional<Strings> root_listing = std::nullopt;
     };
     virtual Projections detectProjections(const ProjectionScan & scan) const = 0;
     /// Full-scan convenience (default args are disallowed on virtuals).
@@ -193,6 +198,11 @@ public:
     /// Whether the table runs zero-copy replication (blobs may be shared cross-replica, invisible to the local refcount).
     /// Default true is fail-safe: residue sweeps keep remote blobs.
     virtual void setZeroCopyReplicationEnabled(bool value) = 0;
+
+    /// Whether this table writes projections in the FLAT layout (sibling dirs at the part root). Only then can a `<part>.<name>.proj`
+    /// sibling -- owned or stale residue -- exist, so the flat-sibling parts-root scans are skipped when this is false (the default
+    /// legacy_nested table). Default true is fail-safe: an unset storage keeps scanning.
+    virtual void setFlatProjectionStorageInUse(bool value) = 0;
 
     /// Sub-part storage bound to the projection's directory.
     virtual std::shared_ptr<IDataPartStorage> getProjectionStorage(const std::string & dir_name, bool use_parent_transaction = true) = 0; // NOLINT
@@ -478,6 +488,7 @@ public:
     /// Ideally, new_root_path should be the same as current root (but it is not true).
     /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
     ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
+    /// FLAT projection siblings move with the part dir.
     virtual void rename(
         std::string new_root_path,
         std::string new_part_dir,

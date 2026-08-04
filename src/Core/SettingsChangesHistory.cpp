@@ -1343,6 +1343,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
+            {"projection_storage_format", "legacy_nested", "legacy_nested", "New setting to control the on-disk storage format of projection sub-parts."},
             {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
