@@ -15,15 +15,19 @@ $CLICKHOUSE_CLIENT -q "
         select k from src where k in (select number from numbers(30) where sleepEachRow(1) = 0)
         settings max_block_size = 1;"
 
-# Wait until the refresh is inside that nested pipeline.
-for _ in {1..300}; do
-    started=$($CLICKHOUSE_CLIENT -q "
+# Wait until the refresh is inside that nested pipeline. Fail hard on timeout: a drop that never
+# meets a blocked refresh returns quickly for the wrong reason, and the test would then match the
+# reference without exercising the cancellation path it covers.
+i=0
+while [ "$($CLICKHOUSE_CLIENT -q "
         select count() from system.processes
-        where current_database = currentDatabase() and query like 'INSERT INTO%sleepEachRow%' and elapsed > 2")
-    if [ "$started" = "1" ]; then
-        break
+        where current_database = currentDatabase() and query like 'INSERT INTO%sleepEachRow%' and elapsed > 2")" -ne 1 ]; do
+    sleep 0.3
+    i=$((i + 1))
+    if [ "$i" -gt 200 ]; then
+        echo "Refresh did not reach the planning stage in time" >&2
+        exit 1
     fi
-    sleep 0.2
 done
 
 # The drop must cancel the refresh, not wait for the blocked planning to finish.
