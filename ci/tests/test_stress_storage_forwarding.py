@@ -17,10 +17,15 @@ check and the stress command exactly when the corresponding argument is true, an
 on neither otherwise. Nothing here starts a server or runs a test: the three
 side-effecting callables are patched out, and the command list is fully built
 before the first of them is reached.
+
+The two production seams that reach those arguments are pinned as well, because
+each can drop the fix on its own: `main` forwarding the parsed arguments into
+`run_func_test`, and the `stress.py` invocation in `stress_runner.sh`.
 """
 
 import inspect
 import os
+import re
 import sys
 
 import pytest
@@ -155,3 +160,87 @@ def test_query_killer_stays_last_parameter():
     warning, and the flags would follow the killer's truthiness."""
     parameters = list(inspect.signature(run_func_test).parameters)
     assert parameters[-3:] == ["s3_storage", "azure_blob_storage", "query_killer"]
+
+
+@pytest.mark.parametrize(
+    "argv_flags,expected",
+    [
+        pytest.param(
+            ["--s3-storage", "1", "--azure-blob-storage", "0"], (True, False), id="s3"
+        ),
+        pytest.param(
+            ["--s3-storage", "0", "--azure-blob-storage", "1"],
+            (False, True),
+            id="azure",
+        ),
+        pytest.param([], (False, False), id="absent"),
+    ],
+)
+def test_cli_arguments_reach_run_func_test(monkeypatch, tmp_path, argv_flags, expected):
+    """First production seam: `main` forwards the parsed arguments positionally.
+    Dropping either one from that call leaves every command-construction test
+    above green, because they call `run_func_test` directly."""
+    captured = []
+
+    monkeypatch.setattr(
+        stress, "run_func_test", lambda *args: captured.append(args) or []
+    )
+    monkeypatch.setattr(stress, "call_with_retry", lambda *a, **k: None)
+    monkeypatch.setattr(stress, "compress_stress_logs", lambda *a, **k: None)
+
+    class _Killer:
+        def __init__(self, *a, **k):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(stress, "RandomQueryKiller", _Killer)
+    monkeypatch.setattr(
+        sys, "argv", ["stress.py", "--output-folder", str(tmp_path)] + argv_flags
+    )
+
+    stress.main()
+
+    assert len(captured) == 1, f"expected one run_func_test call, got {captured}"
+    # Resolve by parameter name: hardcoded offsets would silently pass if a
+    # parameter were inserted ahead of them.
+    parameters = list(inspect.signature(run_func_test).parameters)
+    args = captured[0]
+    indexes = [parameters.index(name) for name in ("s3_storage", "azure_blob_storage")]
+    assert len(args) > max(indexes), (
+        f"main passed only {len(args)} positional arguments, so it never reaches "
+        f"{parameters[max(indexes)]}: {args}"
+    )
+    actual = tuple(args[index] for index in indexes)
+    assert actual == expected, f"main forwarded {actual}, expected {expected}"
+
+
+def test_stress_runner_forwards_both_backends():
+    """Second production seam: the shell invocation. `stress.py` defaults both
+    arguments to false, so a flag missing here disables the fix silently."""
+    runner = os.path.join(
+        os.path.dirname(__file__), "../..", "tests/docker_scripts/stress_runner.sh"
+    )
+    with open(runner, "r", encoding="utf-8") as file:
+        text = file.read()
+
+    match = re.search(r"^python3 [^\n]*stress\.py[^\n]*", text, re.M)
+    assert match, f"no stress.py invocation found in {runner}"
+    line = match.group(0)
+    # Whole tokens, never substrings: "--s3-storage" is also a substring of
+    # "--no-s3-storage".
+    tokens = line.split()
+
+    # The `:-0` default is load-bearing, not style: neither variable is exported
+    # on the local branch, and a bare "$VAR" hands argparse an empty string,
+    # whose `type=lambda x: bool(int(x))` exits rc=2 before the first test runs.
+    for flag, variable in (
+        ("--s3-storage", "USE_S3_STORAGE_FOR_MERGE_TREE"),
+        ("--azure-blob-storage", "USE_AZURE_STORAGE_FOR_MERGE_TREE"),
+    ):
+        assert flag in tokens, f"stress_runner.sh does not pass {flag}: {line}"
+        value = tokens[tokens.index(flag) + 1].strip('"')
+        assert (
+            value == f"${{{variable}:-0}}"
+        ), f"{flag} takes {value}, not a guarded default"
