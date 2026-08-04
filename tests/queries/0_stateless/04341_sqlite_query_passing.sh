@@ -51,6 +51,18 @@ SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) WHERE id =
 SELECT '-- external_table_strict_query: no outer filter is allowed';
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) SETTINGS external_table_strict_query = 1;
 
+SELECT '-- external_table_strict_query: a predicate on the joined local side is not a filter on the source';
+CREATE TABLE local_r (id Int64) ENGINE = Memory;
+INSERT INTO local_r VALUES (1), (2);
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE r.id SETTINGS external_table_strict_query = 1;
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE r.id = 1 SETTINGS external_table_strict_query = 1;
+
+SELECT '-- external_table_strict_query: a predicate on the source is rejected in every shape';
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 AND r.id SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
+DROP TABLE local_r;
+
 SELECT '-- INSERT into a query-backed table function is rejected before schema inference';
 INSERT INTO TABLE FUNCTION sqlite('${DB}', query('SELECT id FROM nonexistent_table')) VALUES (1); -- { serverError INCORRECT_QUERY }
 
