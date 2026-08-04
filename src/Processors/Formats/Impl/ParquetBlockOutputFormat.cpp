@@ -383,7 +383,6 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
             /// otherwise it may deadlock.
             if (!pool->trySchedule(job))
                 break;
-            ++threads_running;
         }
     }
 }
