@@ -4,7 +4,10 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Formats/SchemaInferenceUtils.h>
+
+#include <unordered_set>
 
 
 namespace DB
@@ -246,6 +249,35 @@ DataTypePtr replaceNestedSimpleTypes(const DataTypePtr & type, const std::functi
         if (new_key || new_value)
             replacement = std::make_shared<DataTypeMap>(
                 new_key ? new_key : type_map->getKeyType(), new_value ? new_value : type_map->getValueType());
+    }
+    else if (const auto * type_variant = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        DataTypes new_variants = type_variant->getVariants();
+        bool any_replaced = false;
+        for (auto & variant : new_variants)
+        {
+            if (auto new_variant = replaceNestedSimpleTypes(variant, callback))
+            {
+                variant = new_variant;
+                any_replaced = true;
+            }
+        }
+
+        if (any_replaced)
+        {
+            /// A replacement changes a name (e.g. the alternative gains a version prefix), so two
+            /// alternatives that differed only in that name can collapse into one. Refuse the
+            /// replacement rather than lose an alternative.
+            std::unordered_set<String> names;
+            for (const auto & variant : new_variants)
+                if (!names.insert(variant->getName()).second)
+                    return nullptr;
+
+            /// The default DataTypeVariant constructor re-sorts the alternatives by name, which after a
+            /// rename would silently permute the discriminators of an existing column. Keep the original
+            /// order.
+            replacement = std::make_shared<DataTypeVariant>(new_variants, DataTypeVariant::FixedDiscriminatorOrder{});
+        }
     }
     else
     {
