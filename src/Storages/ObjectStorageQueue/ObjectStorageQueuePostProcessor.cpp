@@ -78,7 +78,7 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
 
-void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) const
+void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects, StoredObjects & successful_objects) const
 {
     const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
@@ -93,7 +93,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
                 fiu_do_on(FailPoints::object_storage_queue_fail_delete, {
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to remove objects");
                 });
-                object_storage->removeObjectsIfExist(objects);
+                object_storage->removeObjectsIfExist(objects, &successful_objects);
             });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
@@ -112,10 +112,10 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         switch (type)
         {
             case ObjectStorageType::Azure:
-                moveAzureBlobs(objects);
+                moveAzureBlobs(objects, successful_objects);
                 break;
             case ObjectStorageType::S3:
-                moveS3Objects(objects);
+                moveS3Objects(objects, successful_objects);
                 break;
             default:
                 throw Exception(
@@ -133,7 +133,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         try
         {
             doWithRetries([&]{
-                object_storage->tagObjects(objects, tag_key, tag_value);
+                object_storage->tagObjects(objects, tag_key, tag_value, &successful_objects);
             });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
         }
@@ -229,7 +229,11 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
 #endif
 
-void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const
+void ObjectStorageQueuePostProcessor::moveWithinBucket(
+    const StoredObjects & objects,
+    const String & move_prefix,
+    bool preserve_path,
+    StoredObjects & successful_objects) const
 {
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
@@ -261,6 +265,9 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
+
+                    successful_objects.emplace_back(object_from);
+
                     ++moved_objects;
                 }
                 catch (...)
@@ -292,7 +299,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
 }
 
-void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects) const
+void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const
 {
 #if USE_AWS_S3
     const String & move_uri = settings.after_processing_move_uri;
@@ -384,6 +391,9 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
+
+                    successful_objects.emplace_back(object_from);
+
                     moved_objects += 1;
                 }
                 catch (...)
@@ -405,7 +415,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
     }
     else
     {
@@ -416,7 +426,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
 #endif
 }
 
-void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects) const
+void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const
 {
 #if USE_AZURE_BLOB_STORAGE
     const String & move_connection_string = settings.after_processing_move_connection_string;
@@ -478,6 +488,9 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
+
+                    successful_objects.emplace_back(object_from);
+
                     moved_objects += 1;
                 }
                 catch (...)
@@ -499,7 +512,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
     }
     else
     {

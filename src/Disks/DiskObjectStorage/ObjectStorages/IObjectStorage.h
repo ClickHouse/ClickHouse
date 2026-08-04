@@ -422,7 +422,7 @@ public:
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
-    virtual void tagObjects(const StoredObjects &, const std::string &, const std::string &)
+    virtual void tagObjects(const StoredObjects &, const std::string &, const std::string &, [[ maybe_unused ]] StoredObjects * successful_objects = nullptr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
     }

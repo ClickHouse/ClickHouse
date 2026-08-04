@@ -87,7 +87,11 @@ public:
 
     void removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects = nullptr) override;
 
-    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
+    void tagObjects(
+        const StoredObjects & objects,
+        const std::string & tag_key,
+        const std::string & tag_value,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 

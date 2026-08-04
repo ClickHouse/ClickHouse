@@ -1788,7 +1788,8 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
             getName(),
             files_metadata->getTableMetadata(),
             after_processing_settings);
-        postProcessor.process(successful_objects);
+        StoredObjects processed_objects;
+        postProcessor.process(successful_objects, processed_objects);
     }
 
     auto zk_client = files_metadata->getZooKeeper();

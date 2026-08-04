@@ -465,15 +465,18 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects, Stored
 static void putObjectsTagOnS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
-    const Strings & object_keys,
+    const StoredObjects & objects,
     const String & tag_key,
-    const String & tag_value
+    const String & tag_value,
+    StoredObjects * successful_objects
 )
 {
     auto log = getLogger("putObjectsTagOnS3");
 
-    for (const String & object_key : object_keys)
+    for (const StoredObject & object : objects)
     {
+        const String & object_key = object.remote_path;
+
         S3::GetObjectTaggingRequest get_request;
         get_request.SetBucket(bucket);
         get_request.SetKey(object_key);
@@ -498,6 +501,9 @@ static void putObjectsTagOnS3(
             != existing_tag_set.end());
         if (present)
         {
+            if (successful_objects)
+                successful_objects->emplace_back(object);
+
             LOG_TRACE(log, "S3 object path {} skipped as it already had the tag {}={}", object_key, tag_key, tag_value);
             continue;
         }
@@ -516,6 +522,9 @@ static void putObjectsTagOnS3(
         if (put_outcome.IsSuccess())
         {
             LOG_TRACE(log, "Tags of S3 object {} updated", object_key);
+
+            if (successful_objects)
+                successful_objects->emplace_back(object);
         }
         else
         {
@@ -527,10 +536,13 @@ static void putObjectsTagOnS3(
 
 }
 
-void S3ObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
+void S3ObjectStorage::tagObjects(
+    const StoredObjects & objects,
+    const std::string & tag_key,
+    const std::string & tag_value,
+    StoredObjects * successful_objects)
 {
-    Strings keys = collectRemotePaths(objects);
-    putObjectsTagOnS3(client.get(), uri.bucket, keys, tag_key, tag_value);
+    putObjectsTagOnS3(client.get(), uri.bucket, objects, tag_key, tag_value, successful_objects);
 }
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const

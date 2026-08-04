@@ -213,7 +213,7 @@ private:
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
-    void postProcess(const StoredObjects & successful_objects) const;
+    void postProcess(const StoredObjects & successful_objects, StoredObjects & processed_objects) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
@@ -225,6 +225,7 @@ private:
     /// Commit processed files for EXCLUSIVE mode
     void commitExclusive(
         const StoredObjects& successful_objects,
+        const StoredObjects& processed_objects,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
         time_t transaction_start_time) const;
 

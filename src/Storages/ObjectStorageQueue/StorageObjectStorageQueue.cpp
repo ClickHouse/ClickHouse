@@ -1132,7 +1132,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
     return total_rows > 0;
 }
 
-void StorageObjectStorageQueue::postProcess(const StoredObjects & successful_objects) const
+void StorageObjectStorageQueue::postProcess(const StoredObjects & successful_objects, StoredObjects & processed_objects) const
 {
     std::optional<ObjectStorageQueuePostProcessor> post_processor;
 
@@ -1150,7 +1150,7 @@ void StorageObjectStorageQueue::postProcess(const StoredObjects & successful_obj
 
     if (post_processor)
     {
-        post_processor->process(successful_objects);
+        post_processor->process(successful_objects, processed_objects);
     }
 }
 
@@ -1166,6 +1166,7 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
+    StoredObjects processed_objects;
 
     PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
     auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
@@ -1197,12 +1198,12 @@ void StorageObjectStorageQueue::commit(
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        postProcess(successful_objects);
+        postProcess(successful_objects, processed_objects);
     }
 
     if (mode == ObjectStorageQueueMode::EXCLUSIVE)
     {
-        commitExclusive(successful_objects, sources, transaction_start_time);
+        commitExclusive(successful_objects, processed_objects, sources, transaction_start_time);
 
     }
     else
@@ -1307,25 +1308,22 @@ void StorageObjectStorageQueue::commit(
 
 void StorageObjectStorageQueue::commitExclusive(
     const StoredObjects& successful_objects,
+    const StoredObjects& processed_objects,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
     time_t transaction_start_time) const
 {
     std::vector<String> failed_to_delete_paths;
-    String delete_exception_message;
+
+    UnorderedSetWithMemoryTracking<std::string_view> processed_keys_set;
+
+    for (const auto & object : processed_objects)
+        processed_keys_set.insert(object.remote_path);
+
     for (const auto & object : successful_objects)
-    {
-        try
+        if (!processed_keys_set.contains(object.remote_path))
         {
-            if (object_storage->exists(object))
-                failed_to_delete_paths.push_back(object.remote_path);
-        }
-        catch (...)
-        {
-            if (delete_exception_message.empty())
-                delete_exception_message = getCurrentExceptionMessage(true);
             failed_to_delete_paths.push_back(object.remote_path);
         }
-    }
 
     if (!failed_to_delete_paths.empty())
     {
@@ -1339,7 +1337,7 @@ void StorageObjectStorageQueue::commitExclusive(
                 commit_id,
                 commit_time,
                 transaction_start_time,
-                delete_exception_message.empty() ? "Some objects still exist after delete" : delete_exception_message);
+                "Some objects still exist after delete");
 
         for (const auto & object : successful_objects)
         {

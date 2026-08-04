@@ -204,6 +204,8 @@ void deleteFilesFromS3(
 
                     for (const auto & err : errors)
                     {
+                        removed_keys.erase(err.GetKey());
+
                         auto error_type = static_cast<Aws::S3::S3Errors>(Aws::S3::S3ErrorMapper::GetErrorForName(err.GetCode().c_str()).GetErrorType());
                         if (if_exists && S3::isNotFoundError(error_type))
                         {
@@ -213,8 +215,6 @@ void deleteFilesFromS3(
                         }
                         else
                         {
-                            removed_keys.erase(err.GetKey());
-
                             if (!other_error)
                                 other_error = std::make_exception_ptr(
                                     S3Exception{error_type, "{} (Code: {}) while removing object with path {} from S3",

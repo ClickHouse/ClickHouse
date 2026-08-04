@@ -527,34 +527,45 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects, Sto
 
 static void setAzureBlobTag(
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    const Strings & blob_names,
+    const StoredObjects & objects,
     const String & tag_key,
-    const String & tag_value)
+    const String & tag_value,
+    StoredObjects * successful_objects)
 {
     auto log = getLogger("setAzureBlobTag");
-    for (const auto & blob_name : blob_names)
+    for (const StoredObject & object : objects)
     {
+        const String & blob_name = object.remote_path;
+
         auto blob_client = client_ptr->GetBlobClient(blob_name);
         auto get_response = blob_client.GetTags();
         auto & tags = get_response.Value;
         const auto tag_iter = tags.find(tag_key);
+
         if (tag_iter != tags.end() && tag_iter->second == tag_value)
         {
             LOG_TRACE(log, "Azure blob {} skipped as it already had the tag {}={}", blob_name, tag_key, tag_value);
-            continue;
+        }
+        else
+        {
+            tags[tag_key] = tag_value;
+            blob_client.SetTags(tags);
+            LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
         }
 
-        tags[tag_key] = tag_value;
-        blob_client.SetTags(tags);
-        LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
+        if (successful_objects)
+            successful_objects->emplace_back(object);
     }
 }
 
-void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
+void AzureObjectStorage::tagObjects(
+    const StoredObjects & objects,
+    const std::string & tag_key,
+    const std::string & tag_value,
+    StoredObjects * successful_objects)
 {
     auto client_ptr = client.get();
-    Strings blob_names = collectRemotePaths(objects);
-    setAzureBlobTag(client_ptr, blob_names, tag_key, tag_value);
+    setAzureBlobTag(client_ptr, objects, tag_key, tag_value, successful_objects);
 }
 
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const

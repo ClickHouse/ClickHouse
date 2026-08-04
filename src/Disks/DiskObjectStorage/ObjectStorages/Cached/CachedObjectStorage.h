@@ -151,9 +151,13 @@ public:
     }
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
-    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
+    void tagObjects(
+        const StoredObjects & objects,
+        const std::string & tag_key,
+        const std::string & tag_value,
+        StoredObjects * successful_objects = nullptr) override
     {
-        object_storage->tagObjects(objects, tag_key, tag_value);
+        object_storage->tagObjects(objects, tag_key, tag_value, successful_objects);
     }
 #endif
 
