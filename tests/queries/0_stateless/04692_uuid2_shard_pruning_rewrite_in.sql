@@ -18,6 +18,9 @@ INSERT INTO data_uuid1_04692 SELECT id::UUID FROM data_uuid2_04692;
 SET optimize_skip_unused_shards = 1;
 SET optimize_skip_unused_shards_rewrite_in = 1;
 SET prefer_localhost_replica = 0;
+-- The typed `IN` rewrite exists only in the analyzer plan; with the old analyzer the `toUUID(...)`
+-- constants stay unresolved function calls, nothing is pruned, and every value matches on both shards.
+SET enable_analyzer = 1;
 
 -- Both shards hold every row, so a value from the `IN` list survives on exactly one shard - the one the
 -- pruning decided owns it. That shard must be the one the sharding expression maps the stored row to.
