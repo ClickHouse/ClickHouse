@@ -35,9 +35,7 @@ Si vous souhaitez tester l’intégration des logs PostgreSQL avant de configure
 * Suffisamment d’espace disque pour les fichiers journaux
 
 <Steps>
-  <Step>
-    #### Configurer la journalisation de PostgreSQL
-
+  <Step title="Configurer la journalisation de PostgreSQL" id="configure-postgres">
     PostgreSQL prend en charge plusieurs formats de journalisation. Pour une analyse structurée avec OpenTelemetry, nous recommandons le format CSV, qui fournit une sortie cohérente et facile à analyser.
 
     Le fichier `postgresql.conf` se trouve généralement à l’emplacement suivant :
@@ -89,9 +87,7 @@ Si vous souhaitez tester l’intégration des logs PostgreSQL avant de configure
     ```
   </Step>
 
-  <Step>
-    #### Créer une configuration personnalisée de l’OTel collector
-
+  <Step title="Créer une configuration personnalisée de l’OTel collector" id="custom-otel">
     ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. Cette configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
 
     Créez un fichier nommé `postgres-logs-monitoring.yaml` avec la configuration suivante :
@@ -153,9 +149,7 @@ Si vous souhaitez tester l’intégration des logs PostgreSQL avant de configure
     </Note>
   </Step>
 
-  <Step>
-    #### Configurer ClickStack pour charger une configuration personnalisée
-
+  <Step title="Configurer ClickStack pour charger une configuration personnalisée" id="load-custom">
     Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, vous devez :
 
     1. Monter le fichier de configuration personnalisé à l’emplacement `/etc/otelcol-contrib/custom.config.yaml`
@@ -197,9 +191,7 @@ Si vous souhaitez tester l’intégration des logs PostgreSQL avant de configure
     </Note>
   </Step>
 
-  <Step>
-    #### Vérification des logs dans HyperDX
-
+  <Step title="Vérification des logs dans HyperDX" id="verifying-logs">
     Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les logs sont bien ingérés :
 
     1. Accédez à la vue Search
@@ -220,9 +212,7 @@ Si vous souhaitez tester l’intégration des logs PostgreSQL avant de configure
 Pour les utilisateurs qui souhaitent tester l’intégration des logs PostgreSQL avant de configurer leurs systèmes de production, nous fournissons un jeu de données d’exemple composé de logs PostgreSQL pré-générés avec des motifs réalistes.
 
 <Steps>
-  <Step>
-    #### Télécharger le jeu de données d’exemple
-
+  <Step title="Télécharger le jeu de données d’exemple" id="download-sample">
     Téléchargez le fichier de logs d’exemple :
 
     ```bash
@@ -230,9 +220,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs PostgreSQL
     ```
   </Step>
 
-  <Step>
-    #### Créer une configuration de collecteur de test
-
+  <Step title="Créer une configuration de collecteur de test" id="test-config">
     Créez un fichier nommé `postgres-logs-demo.yaml` avec la configuration suivante :
 
     ```yaml
@@ -277,9 +265,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs PostgreSQL
     ```
   </Step>
 
-  <Step>
-    #### Exécuter ClickStack avec la configuration de démonstration
-
+  <Step title="Exécuter ClickStack avec la configuration de démonstration" id="run-demo">
     Exécutez ClickStack avec les logs et la configuration de démonstration :
 
     ```bash
@@ -292,9 +278,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs PostgreSQL
     ```
   </Step>
 
-  <Step>
-    #### Vérifier les logs dans HyperDX
-
+  <Step title="Vérifier les logs dans HyperDX" id="verify-demo-logs">
     Une fois ClickStack en cours d’exécution :
 
     1. Ouvrez [HyperDX](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
@@ -320,13 +304,11 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs PostgreSQL
 Pour vous aider à commencer à surveiller PostgreSQL avec ClickStack, nous fournissons les visualisations essentielles pour les logs PostgreSQL.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  <Step title="Télécharger la configuration du tableau de bord" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Télécharger le fichier de configuration du tableau de bord</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importer le tableau de bord préconfiguré
-
+  <Step title="Importer le tableau de bord préconfiguré" id="import-dashboard">
     1. Ouvrez HyperDX et accédez à la section Tableaux de bord
     2. Cliquez sur **Importer un tableau de bord** dans le coin supérieur droit, dans le menu à points de suspension
 
@@ -337,9 +319,7 @@ Pour vous aider à commencer à surveiller PostgreSQL avec ClickStack, nous four
     <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="Terminer l’importation" />
   </Step>
 
-  <Step>
-    #### Afficher le tableau de bord
-
+  <Step title="Afficher le tableau de bord" id="created-dashboard">
     Le tableau de bord sera créé avec toutes les visualisations déjà configurées :
 
     <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="Tableau de bord des logs" />
@@ -402,7 +382,7 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
 * Configurez `log_min_duration_statement` pour identifier les requêtes lentes en fonction de vos exigences de performance
 
 <div id="going-to-production">
-  ## Passage en production
+  ## Passer en production
 </div>
 
-Ce guide s’appuie sur l’OTel Collecteur intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous recommandons d’exécuter votre propre OTel Collecteur et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Sending OpenTelemetry data](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.
+Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers le point de terminaison OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.

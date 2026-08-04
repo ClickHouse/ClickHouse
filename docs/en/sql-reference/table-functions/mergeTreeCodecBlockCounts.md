@@ -7,7 +7,7 @@ title: 'mergeTreeCodecBlockCounts'
 doc_type: 'reference'
 ---
 
-Reports, per (part, column, substream) of a MergeTree table, how many compressed blocks use each codec.
+Reports, per (part, column, substream) of a MergeTree table, how many compressed blocks use each codec. This is how you observe adaptive codec selection (enabled by `allow_experimental_adaptive_codec_selection` setting), which can pick a codec per block for default-codec columns.
 
 Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The other columns are metadata-only.
 

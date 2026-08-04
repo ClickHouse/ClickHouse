@@ -1,7 +1,7 @@
 ---
 title: 'Téléverser des fichiers dans Cloud'
 slug: /cloud/migrate/upload-a-csv-file
-description: 'Découvrez comment téléverser des fichiers dans Cloud'
+description: 'Apprenez à téléverser des fichiers dans Cloud'
 doc_type: 'guide'
 ---
 
@@ -21,20 +21,18 @@ formats suivants :
 | `TabSeparatedWithNamesAndTypes` |
 
 <Steps>
-  <Step>
-    ## Téléverser un fichier
-
-    Depuis la page d’accueil de ClickHouse Cloud, sélectionnez votre service comme indiqué ci-dessous :
+  <Step title="Téléverser un fichier" id="upload-file">
+    Depuis la page d’accueil de Cloud, sélectionnez votre service comme indiqué ci-dessous :
 
     <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
 
-    Si votre service est inactif, vous devrez le sortir de veille.
+    Si votre service est inactif, vous devrez le réactiver.
 
-    Sélectionnez `Data sources` dans l’onglet de gauche, comme indiqué ci-dessous :
+    Sélectionnez `Data sources` dans l’onglet de gauche comme indiqué ci-dessous :
 
     <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
 
-    Sélectionnez ensuite `Upload a file` sur la partie droite de la page des sources de données :
+    Sélectionnez ensuite `Upload a file` sur le côté droit de la page des sources de données :
 
     <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
 
@@ -44,9 +42,7 @@ formats suivants :
     <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
   </Step>
 
-  <Step>
-    ## Configurer la table
-
+  <Step title="Configurer la table" id="configure-table">
     Une fois le fichier téléversé, vous pourrez configurer la table dans laquelle vous souhaitez
     insérer les données. Un aperçu de la table avec les trois premières lignes s’affiche.
 
@@ -59,12 +55,12 @@ formats suivants :
 
     <br />
 
-    Vous pouvez indiquer dans quelle base de données vous souhaitez téléverser les données et, dans le cas d’une
-    nouvelle table, le nom de la table qui sera créée. Vous pourrez également sélectionner la clé de tri :
+    Vous pouvez indiquer dans quelle base de données vous souhaitez téléverser les données et, dans le cas
+    d’une nouvelle table, le nom de la table qui sera créée. Vous pourrez également sélectionner la clé de tri :
 
     <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
 
-    Les colonnes lues à partir du fichier sont affichées en tant que `Source field`s et, pour chaque champ, vous
+    Les colonnes lues depuis le fichier sont affichées comme des `Source field` et, pour chaque champ, vous
     pouvez modifier :
 
     * le type inféré
@@ -79,7 +75,7 @@ formats suivants :
       Vous pouvez également supprimer un champ si vous ne souhaitez pas l’inclure dans l’importation.
     </Info>
 
-    Vous pouvez indiquer le type de moteur de table que vous souhaitez utiliser :
+    Vous pouvez spécifier le type de moteur de table que vous souhaitez utiliser :
 
     * `MergeTree`
     * `ReplacingMergeTree`
@@ -93,17 +89,17 @@ formats suivants :
 
     <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
 
-    Cliquez sur `Import to ClickHouse` (illustré ci-dessus) pour importer les données. L’importation des données sera placée en file d’attente, comme
+    Cliquez sur `Import to ClickHouse` (illustré ci-dessus) pour importer les données. L’importation des données sera mise en file d’attente, comme
     l’indique le badge d’état `queued` dans la colonne `Status`, comme illustré ci-dessous. Vous pouvez également cliquer sur
-    `Open as query` (illustré ci-dessus) pour ouvrir la requête d’insertion dans la console SQL. La requête insérera
-    le fichier qui a été téléversé dans un bucket S3 à l’aide de la fonction de table `URL`.
+    `Open as query` (illustré ci-dessus) pour ouvrir la requête d’insertion dans la SQL Console. La requête insérera
+    le fichier téléversé dans un bucket S3 à l’aide de la fonction de table `URL`.
 
     <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
 
     Si la tâche échoue, vous verrez un badge d’état `failed` dans la colonne `Status` de
     l’onglet `Data upload history`. Vous pouvez cliquer sur `View Details` pour obtenir plus d’informations
-    sur la raison de l’échec du téléversement. Il se peut que vous deviez modifier la configuration de la table ou nettoyer
-    les données en fonction du message d’erreur lié à l’insertion échouée.
+    sur la raison de l’échec du téléversement. Vous devrez peut-être modifier la configuration de la table ou nettoyer
+    les données en fonction du message d’erreur lié à l’échec de l’insertion.
 
     <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
   </Step>
