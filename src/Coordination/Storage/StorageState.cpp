@@ -311,6 +311,9 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
             if (!combined)
             {
                 /// Create + Remove: `node_cache` doesn't keep removed nodes.
+                /// `HashTable::erase` clears the cell without running the value's destructor,
+                /// so release the weak block ref explicitly - otherwise the control block leaks.
+                lookup->getMapped().block.store(nullptr);
                 node_cache.map.erase(hash);
             }
             else

@@ -229,6 +229,79 @@ TEST(KeeperStorage, NodeSerializationRoundTrip)
     EXPECT_EQ(out.digest, 0);
 }
 
+/// After appendNode, the input node's data pointer must point at the serialized copy inside the
+/// block, not at the caller's buffer. The caller's buffer may be short-lived (e.g. request data
+/// that doesn't survive from prepare until commit), while a FullNode kept alongside its NodeRef
+/// (e.g. in LSMTDelta) must stay valid as long as the block is pinned.
+TEST(KeeperStorage, AppendRepointsDataIntoBlock)
+{
+    const std::string path = "/test/data_repoint";
+    const std::string data_copy = "columns format version: 1";
+
+    FullNode node;
+    NodeRef ref;
+    {
+        std::string transient_data = data_copy;
+        node = makeNode(
+            NodeAction::Create, 2, path, transient_data, /*acl_id*/ 0, /*version*/ 0, /*num_children*/ 0,
+            /*is_ephemeral*/ false, DB::KeeperNodeStats{.czxid = 1, .mzxid = 1, .pzxid = 1});
+
+        BlockPtr block = BlockData::create(16);
+        block->compatible_digest = true;
+        ref = BlockData::appendNode(block, node);
+
+        /// The data view now points into the (possibly reallocated) block that `ref` pins.
+        const char * block_begin = ref.block->data();
+        const char * block_end = block_begin + ref.block->size;
+        EXPECT_GE(node.getData().data(), block_begin);
+        EXPECT_LE(node.getData().data() + node.getData().size(), block_end);
+
+        /// Clobber and destroy the original buffer; the node must be unaffected.
+        std::fill(transient_data.begin(), transient_data.end(), '*');
+    }
+    EXPECT_EQ(node.getData(), data_copy);
+}
+
+/// A node that is created and then removed is dropped from `node_cache`. The map is a `HashMap`,
+/// whose `erase` zeroes the cell without running the value's destructor, so the entry's weak
+/// reference to the node's block has to be released by hand - otherwise the block's control block
+/// is leaked (LeakSanitizer catches this in every Keeper run).
+TEST(KeeperStorage, NodeCacheEraseReleasesBlockRef)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
+    DB::SharedMutex storage_mutex;
+    StorageState storage(keeper_context, &storage_mutex);
+    storage.memory_only = true;
+    storage.startup();
+
+    auto append = [&](NodeAction action, const std::string & path, std::string_view data)
+    {
+        FullNode node;
+        node.action = action;
+        node.path = NodePath(path);
+        node.data_ptr = data.data();
+        node.stats.data_size = static_cast<uint32_t>(data.size());
+        return storage.appendCommittedNode(node);
+    };
+
+    /// The lock has to be released before `shutdown`: the flush and merge threads take
+    /// `storage_mutex` in shared mode at the top of their loops, and `shutdown` joins them.
+    {
+        std::lock_guard lock(storage_mutex);
+        const NodeRef created = append(NodeAction::Create, "/erase_ref", "X");
+        BlockPtrControlBlock * control = created.block.control;
+        ASSERT_TRUE(control != nullptr);
+        const uint32_t weak_after_create = control->weak.load();
+
+        /// Create + Remove cancel out, so the `node_cache` entry (and its weak ref) goes away.
+        append(NodeAction::Remove, "/erase_ref", "");
+        EXPECT_EQ(control->weak.load(), weak_after_create - 1);
+    }
+
+    storage.shutdown();
+}
+
 /// End-to-end stress of the background flush/merge pipeline: insert a large committed dataset (with
 /// removals and a nested subtree) with tiny memtable/file thresholds, so it goes through many flushes
 /// and merges that incrementally publish their output and trim their (fully consumed) inputs. Then
