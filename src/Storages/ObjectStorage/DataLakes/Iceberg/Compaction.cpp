@@ -207,9 +207,10 @@ static std::unordered_map<Int64, String> schemaFieldTypes(const Poco::JSON::Arra
     return id_to_type;
 }
 
-/// Reject compaction when a schema still reachable from a snapshot has a field id that is absent
-/// from the current schema (DROP COLUMN) or whose signature differs from it (any type change,
-/// treated as non-reversible). Renames, reorders and additions are remappable and stay allowed.
+/// Reject compaction unless every schema still reachable from a snapshot has exactly the same field
+/// ids and signatures as the current one. The rewrite materializes the current schema into files
+/// that older snapshots resolve against their own, so a dropped id, a changed type and an added id
+/// are all unsafe. Renames and reorders keep ids and signatures and stay allowed.
 static void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr & initial_metadata_object)
 {
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -248,7 +249,8 @@ static void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr
         auto fields_it = schema_fields_by_id.find(reachable_id);
         if (fields_it == schema_fields_by_id.end())
             continue;
-        for (const auto & [field_id, old_type] : schemaFieldTypes(fields_it->second))
+        auto old_types = schemaFieldTypes(fields_it->second);
+        for (const auto & [field_id, old_type] : old_types)
         {
             auto cur_it = current_types.find(field_id);
             if (cur_it == current_types.end())
@@ -269,6 +271,24 @@ static void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr
                     field_id,
                     reachable_id,
                     current_schema_id);
+        }
+
+        /// Additions have to be rejected too. The rewrite materializes the current schema into the
+        /// file, so the added field's id is written into a data file that an older snapshot resolves
+        /// against its own schema, where that id does not exist; the reader then refuses the file
+        /// outright ("column ... with field_id N that is not in datalake metadata") and the data
+        /// becomes unreadable, through the current snapshot as well as through time travel.
+        for (const auto & [field_id, current_type] : current_types)
+        {
+            if (!old_types.contains(field_id))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg compaction (OPTIMIZE) is not supported after schema evolution that added field id {} to the "
+                    "current schema-id {}: it is absent from schema-id {}, which is still reachable via time travel, and "
+                    "rewriting historical files into the current schema would make them unreadable under that schema.",
+                    field_id,
+                    current_schema_id,
+                    reachable_id);
         }
     }
 }
@@ -1250,10 +1270,11 @@ static bool writeMetadataFiles(
 
     MetadataGenerator metadata_generator(metadata_object);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
+    /// Deliberately NOT tracked in `generated_metadata_paths`: on a lost commit this name belongs to
+    /// the winning writer. `writeMetadataFileAndVersionHint` returns before writing when the object
+    /// exists and otherwise writes with `if-none-match`, so a failed commit never leaves a file of
+    /// ours here, while tracking it would let cleanup delete the winner's metadata.
     auto generated_metadata_info = plan.generator.generateMetadataPathWithInfo();
-    /// Tracked even though the commit only creates it after winning the CAS: a partial write must
-    /// still be cleaned up. `version-hint.text` is deliberately excluded, being shared state.
-    plan.generated_metadata_paths.push_back(generated_metadata_info.path);
     std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
 
     std::unordered_map<Int64, UInt64> snapshot_id_to_records_count;
@@ -1594,9 +1615,10 @@ static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const St
     return metadata_files;
 }
 
-/// Remove the files this compaction wrote, given the listing captured before it started.
-/// `plan_paths` is the set the rewrite itself generated; a path that is neither pre-existing nor
-/// ours belongs to whichever writer won the commit and is left alone.
+/// Remove the files this compaction wrote. `plan_paths` must contain only paths the rewrite itself
+/// created under freshly generated, unique names; the commit target is NOT one of them, since a
+/// lost commit means another writer owns that name. `pre_existing` is a second guard for names that
+/// were already there when the rewrite started.
 static void removeGeneratedFiles(
     ObjectStoragePtr object_storage,
     const std::vector<String> & pre_existing,

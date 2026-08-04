@@ -1,4 +1,5 @@
 import json
+import pathlib
 
 import pytest
 
@@ -681,15 +682,17 @@ def test_optimize_aborts_on_metadata_commit_conflict(
         )
 
     before = data_file_count()
+    # Snapshot BEFORE the winner exists, which is what compaction's own pre-rewrite listing sees.
+    # The winner must therefore be preserved because cleanup only touches names the rewrite itself
+    # generated, not merely because it happened to be in that listing.
+    objects_before = object_set()
     # Concurrent winner: a valid vN+1 already committed. Keep the version hint on vN so compaction
     # plans from vN but its commit target vN+1 already exists.
     instance.exec_in_container(["bash", "-c", f"cp {latest_path} {next_path}"])
     instance.exec_in_container(
         ["bash", "-c", f"echo -n {n} > {metadata_dir}/version-hint.text"]
     )
-    # Snapshot AFTER planting the winner, so it is part of the expected set rather than showing up
-    # as a leak.
-    objects_before = object_set()
+    expected_after = objects_before | {next_path.rsplit("/", 1)[-1]}
 
     err = instance.query_and_get_error(
         f"OPTIMIZE TABLE {TABLE_NAME};",
@@ -705,10 +708,11 @@ def test_optimize_aborts_on_metadata_commit_conflict(
     # be there (clearOldFiles skipped) and nothing new may remain, since nothing references the
     # rewritten files once the commit is lost.
     objects_after = object_set()
-    assert objects_after == objects_before, (
+    assert objects_after == expected_after, (
         f"objects changed after a lost commit;\n"
-        f"  leaked (orphaned rewrite output): {sorted(objects_after - objects_before)}\n"
-        f"  missing (pre-compaction files deleted): {sorted(objects_before - objects_after)}"
+        f"  leaked (orphaned rewrite output): {sorted(objects_after - expected_after)}\n"
+        f"  missing (deleted pre-compaction file or the concurrent winner): "
+        f"{sorted(expected_after - objects_after)}"
     )
     assert data_file_count() == before
     # The winning writer's metadata must survive the cleanup (deleting it would be worse than the
@@ -780,4 +784,78 @@ def test_optimize_keeps_version_hint(started_cluster_iceberg_no_spark, storage_t
     # The table is still discoverable and returns the compacted contents.
     assert (
         instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_rejected_after_added_column(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    An ADD COLUMN must also block compaction. The rewrite materializes the current schema into the
+    data file, so the added field id lands in a file that an older, still-reachable snapshot
+    resolves against its own schema, where that id does not exist. The reader then refuses the file
+    ("field_id N that is not in datalake metadata") and the rows become unreadable through the
+    current snapshot too, not only through time travel.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_added_column_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String))",
+        2,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Positional delete so compaction would otherwise have work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    instance.query(f"ALTER TABLE {TABLE_NAME} ADD COLUMN extra Nullable(String);")
+
+    err = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+    assert "NOT_IMPLEMENTED" in err, err
+    assert "added field id" in err, err
+
+    # The table must still be readable: the rejection has to happen before anything is rewritten.
+    assert (
+        instance.query(f"SELECT id, value, extra FROM {TABLE_NAME} ORDER BY id")
+        == "1\ta\t\\N\n3\tc\t\\N\n"
+    )
+
+
+def test_compaction_never_cleans_up_the_commit_target():
+    """
+    The metadata name compaction commits to must never join the cleanup set. On a lost commit that
+    name belongs to the winning writer, so removing it would leave the table pointing at missing
+    metadata: strictly worse than the leak the cleanup exists to prevent.
+
+    This is asserted statically because a single-process test cannot reach the window. The winner
+    has to appear AFTER compaction's own initial listing, and any in-process test plants it before
+    OPTIMIZE is called, which puts it in that listing and masks the defect.
+    """
+    source = pathlib.Path(__file__).resolve().parents[3] / (
+        "src/Storages/ObjectStorage/DataLakes/Iceberg/Compaction.cpp"
+    )
+    text = source.read_text()
+    assert "generated_metadata_paths" in text, (
+        f"{source} no longer tracks generated paths; this guard needs updating"
+    )
+    assert "generated_metadata_paths.push_back(generated_metadata_info.path)" not in text, (
+        "the metadata commit target was added to the compaction cleanup set: on a lost commit "
+        "this deletes the concurrent winner's metadata"
     )
