@@ -1,7 +1,5 @@
 #include <Storages/StorageAlias.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -19,9 +17,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
-
-#include <unordered_set>
 
 
 namespace DB
@@ -37,11 +32,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace FailPoints
-{
-    extern const char alias_truncate_pause_holding_target_lock[];
 }
 
 StorageAlias::StorageAlias(
@@ -281,58 +271,8 @@ void StorageAlias::truncate(
     TableExclusiveLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
-
-    /// Resolve the storage the exemption below is decided on, following BOTH link kinds: a database
-    /// with `lazy_load_tables = 1` hands out a StorageProxy, and while that proxy is unloaded its
-    /// getName() is "TableProxy", so the constructor's "cannot refer to another Alias" guard lets an
-    /// alias chain through it. That guard inspects only an already-existing target and `RENAME` does not
-    /// re-validate, so a chain also forms by renaming an alias onto a then-free target name.
-    /// `visited` bounds the walk: no cycle is reachable today, because the
-    /// catalog's dependency graph rejects one, but that check lives far from here and a walk trusting
-    /// it would hang rather than fail. A cycle falls through to the non-exempt branch, which is safe.
-    /// Only the DECISION uses this pointer. The lock below is deliberately taken on target_storage,
-    /// the catalog entry readers lock (see read() above), and truncate also goes through it so the
-    /// proxy materializes and forwards.
-    StoragePtr unwrapped = target_storage;
-    std::unordered_set<const IStorage *> visited{unwrapped.get()};
-    while (true)
-    {
-        StoragePtr next;
-        if (const auto * proxy = dynamic_cast<const StorageProxy *>(unwrapped.get()))
-            next = proxy->getNested();
-        else if (const auto * alias = dynamic_cast<const StorageAlias *>(unwrapped.get()))
-            next = alias->tryGetTargetTable();
-
-        if (!next || !visited.insert(next.get()).second)
-            break;
-        unwrapped = next;
-    }
-
-    /// The interpreter locked the alias, but the data belongs to the target and readers lock the
-    /// target (see read() above), so without this the target's data can be destroyed under them.
-    /// MergeTree is exempt, as InterpreterDropQuery puts it: "We don't need any lock for
-    /// ReplicatedMergeTree and for simple MergeTree" -- they synchronize truncation themselves and
-    /// this lock is extremely heavyweight. On that path forward the alias's own holder, because
-    /// StorageReplicatedMergeTree::truncate releases it to keep the truncate asynchronous.
-    if (std::dynamic_pointer_cast<MergeTreeData>(unwrapped))
-    {
-        auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-        target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
-        return;
-    }
-
-    /// NO_QUERY, not the current query id: TRUNCATE TABLES ... LIKE runs one shared context over a
-    /// thread pool, so two tasks reaching the same target would hit RWLockImpl::getLock's
-    /// same-query fast path and get a LOGICAL_ERROR instead of waiting.
-    TableExclusiveLockHolder target_lock = target_storage->lockExclusively(
-        RWLockImpl::NO_QUERY, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-
-    /// Lets a test hold this lock while another task asks for it, which is the only interleaving
-    /// where the query id above matters. PAUSEABLE_ONCE, so only the first task parks.
-    FailPointInjection::pauseFailPoint(FailPoints::alias_truncate_pause_holding_target_lock);
-
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    target_storage->truncate(query, target_metadata, local_context, target_lock);
+    target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
 }
 
 bool StorageAlias::optimize(
