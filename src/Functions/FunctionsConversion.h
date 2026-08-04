@@ -718,6 +718,12 @@ struct ToDateTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
+        /// A non-finite value compares false against every bound, so it would bypass the throw guard and the
+        /// clamps below and surface `DECIMAL_OVERFLOW` from `convertToDecimal` instead. Reject it up front,
+        /// like the `Date` / `DateTime` / `Time` transforms do.
+        if (!isFinite(from)) [[unlikely]]
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+
         /// The bounds are scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
         /// Clamping to the calendar-wide [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP] window would still let
         /// precision 8/9 inputs overflow the Int64 in convertToDecimal and surface DECIMAL_OVERFLOW instead of
@@ -851,6 +857,12 @@ struct ToTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
+        /// A non-finite value compares false against every bound, so it would bypass the throw guard and the
+        /// clamps below and surface `DECIMAL_OVERFLOW` from `convertToDecimal` instead. Reject it up front,
+        /// like the `Date` / `DateTime` / `Time` transforms do.
+        if (!isFinite(from)) [[unlikely]]
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             /// `Time64` is bounded by `MAX_TIME_TIMESTAMP` (999:59:59), not by the DateTime64 calendar range —
