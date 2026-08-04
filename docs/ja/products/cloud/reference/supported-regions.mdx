@@ -7,7 +7,7 @@ slug: /cloud/reference/supported-regions
 doc_type: 'reference'
 ---
 
-import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="aws-regions">
   ## AWS リージョン
@@ -25,10 +25,10 @@ import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFe
 * us-east-2 (オハイオ)
 * us-west-2 (オレゴン)
 * il-central-1 (イスラエル・テルアビブ)
+* ca-central-1 (カナダ)
 
 **プライベートリージョン:**
 
-* ca-central-1 (カナダ)
 * af-south-1 (南アフリカ)
 * eu-north-1 (ストックホルム)
 * sa-east-1 (南アメリカ)
@@ -85,7 +85,6 @@ Enterprise tier のサービスでは、プライベートリージョンを提�
 
 * サービスは自動スケーリングされませんが、手動での垂直スケーリングおよび水平スケーリングには対応しています。
 * サービスをアイドル状態にすることはできません。
-* プライベートリージョンではステータスページを利用できません。
 
 HIPAA コンプライアンスには、追加要件が適用される場合があります (BAA の締結を含む) 。なお、HIPAA は現在 Enterprise tier のサービスでのみ利用可能です
 
@@ -98,17 +97,17 @@ HIPAA コンプライアンスには、追加要件が適用される場合が�
 HIPAA 準拠リージョンでサービスをセットアップするには、Business Associate Agreement (BAA) に署名し、営業またはサポートを通じてオンボーディングを依頼する必要があります。HIPAA 準拠に対応しているリージョンは次のとおりです。
 
 * AWS af-south-1 (南アフリカ)  **プライベートリージョン**
-* AWS ca-central-1 (カナダ)  **プライベートリージョン**
-* AWS eu-central-1 (フランクフルト) 
+* AWS ca-central-1 (カナダ)
+* AWS eu-central-1 (フランクフルト)
 * AWS eu-north-1 (ストックホルム)  **プライベートリージョン**
-* AWS eu-west-1 (アイルランド) 
-* AWS eu-west-2 (ロンドン) 
+* AWS eu-west-1 (アイルランド)
+* AWS eu-west-2 (ロンドン)
 * AWS sa-east-1 (南アメリカ)  **プライベートリージョン**
-* AWS us-east-1 (北バージニア) 
-* AWS us-east-2 (オハイオ) 
-* AWS us-west-2 (オレゴン) 
-* GCP europe-west4 (オランダ) 
-* GCP us-central1 (アイオワ) 
+* AWS us-east-1 (北バージニア)
+* AWS us-east-2 (オハイオ)
+* AWS us-west-2 (オレゴン)
+* GCP europe-west4 (オランダ)
+* GCP us-central1 (アイオワ)
 * GCP us-east1 (サウスカロライナ)
 
 <div id="pci-compliant-regions">
@@ -119,17 +118,17 @@ HIPAA 準拠リージョンでサービスをセットアップするには、Bu
 
 PCI 準拠リージョンでサービスをセットアップするには、Sales または Support を通じてオンボーディングを依頼する必要があります。以下のリージョンが PCI コンプライアンスに対応しています。
 
-* AWS af-south-1 (南アフリカ)  **プライベートリージョン**
-* AWS ca-central-1 (カナダ)  **プライベートリージョン**
-* AWS eu-central-1 (フランクフルト) 
-* AWS eu-north-1 (ストックホルム)  **プライベートリージョン**
-* AWS eu-west-1 (アイルランド) 
-* AWS eu-west-2 (ロンドン) 
-* AWS mx-central-1 (メキシコ)  **プライベートリージョン**
-* AWS sa-east-1 (南アメリカ)  **プライベートリージョン**
-* AWS us-east-1 (北バージニア) 
-* AWS us-east-2 (オハイオ) 
-* AWS us-west-2 (オレゴン) 
-* GCP europe-west4 (オランダ) 
-* GCP us-central1 (アイオワ) 
+* AWS af-south-1 (南アフリカ) **プライベートリージョン**
+* AWS ca-central-1 (カナダ)
+* AWS eu-central-1 (フランクフルト)
+* AWS eu-north-1 (ストックホルム) **プライベートリージョン**
+* AWS eu-west-1 (アイルランド)
+* AWS eu-west-2 (ロンドン)
+* AWS mx-central-1 (メキシコ) **プライベートリージョン**
+* AWS sa-east-1 (南アメリカ) **プライベートリージョン**
+* AWS us-east-1 (北バージニア)
+* AWS us-east-2 (オハイオ)
+* AWS us-west-2 (オレゴン)
+* GCP europe-west4 (オランダ)
+* GCP us-central1 (アイオワ)
 * GCP us-east1 (サウスカロライナ)
