@@ -223,3 +223,35 @@ if grep -qE '<(Debug|Trace)>' "${CLICKHOUSE_TMP}/server9.log"; then
 else
     echo "OK: logger.level is applied"
 fi
+
+# Test 10: A setting backed by a dotted config path can also be spelled as the dotted key itself after
+# the `--` separator (`argsToConfig` stores any `--key value` argument verbatim). The "last occurrence
+# wins" contract must hold across the two spellings: here the dotted spelling comes last and must
+# override the direct option given under the flat name, and the flat spelling of the second setting
+# comes last and must override the earlier dotted spelling.
+srv_dir10="${CLICKHOUSE_TMP}/srv10"
+mkdir -p "$srv_dir10"
+$CLICKHOUSE_BINARY server \
+    --distributed_ddl_pool_size 7 \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir10/" \
+    --distributed_ddl.pool_size 9 \
+    --distributed_ddl.max_tasks_in_queue 1500 --distributed_ddl_max_tasks_in_queue 2500 > "${CLICKHOUSE_TMP}/server10.log" 2>&1 &
+PID=$!
+
+trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
+
+for i in {1..30}; do
+    sleep 1
+    $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && break
+    if [[ $i == 30 ]]; then
+        cat "${CLICKHOUSE_TMP}/server10.log"
+        exit 1
+    fi
+done
+
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'distributed_ddl.pool_size'"
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'distributed_ddl.max_tasks_in_queue'"
+
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+trap '' EXIT

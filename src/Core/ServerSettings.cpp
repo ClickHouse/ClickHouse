@@ -45,7 +45,9 @@
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/Util/MapConfiguration.h>
 #include <Poco/Util/Option.h>
 #include <Poco/Util/OptionSet.h>
 
@@ -55,6 +57,8 @@
 
 #include <algorithm>
 #include <string_view>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 
@@ -2041,42 +2045,65 @@ void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
 
 void ServerSettings::mirrorCommandLineToConfigPaths(const std::vector<std::string> & argv, Poco::Util::LayeredConfiguration & config)
 {
-    /// A setting backed by a nested config key can be given on the command line in two ways: as a direct
-    /// option, which binds the nested key (`openSSL.server.requireTLSv1_2`), or after the `--` separator,
-    /// which `argsToConfig` stores under the flat setting name (`openssl_server_required_tls_v1_2`).
-    /// `loadSettingsFromConfig` gives the flat name precedence, but the components that read the raw
-    /// configuration instead of `ServerSettings` (e.g. `TLSHandler` reading `openSSL.server.*`) only look at
-    /// the nested key, so without the mirroring below `system.server_settings` and the actual behaviour of
-    /// the server would disagree for a mixed invocation such as
-    /// `clickhouse-server --openssl_server_required_tls_v1_2 0 -- --openssl_server_required_tls_v1_2 1`.
+    /// A setting backed by a nested config key can be given on the command line under two spellings: the
+    /// flat setting name (`openssl_server_required_tls_v1_2`, as a direct option or after the `--`
+    /// separator) and, after the `--` separator, the nested key itself (`openSSL.server.requireTLSv1_2`),
+    /// because `argsToConfig` stores any `--key value` argument verbatim. The two spellings land in
+    /// different config keys, `loadSettingsFromConfig` reads the flat name with precedence, and the
+    /// components that read the raw configuration instead of `ServerSettings` (e.g. `TLSHandler` reading
+    /// `openSSL.server.*`) only look at the nested key - so without the normalization below the "last
+    /// occurrence wins" contract would not hold across spellings, and `system.server_settings` and the
+    /// actual behaviour of the server would disagree for a mixed invocation such as
+    /// `clickhouse-server --openssl_server_required_tls_v1_2 0 -- --openSSL.server.requireTLSv1_2 1`.
     ///
-    /// Only the command line is inspected here - the configuration file is deliberately not consulted,
-    /// because a value that comes from the file must keep being read from its own (nested) key. Therefore
-    /// this function has to be called before the configuration file is loaded, and it parses the command
-    /// line into a throwaway configuration instead of looking at `config`, which by then already contains
-    /// the bindings of the direct options.
+    /// For every such setting, find the last occurrence of either spelling on the command line and publish
+    /// the winning value under both keys. Only the command line is inspected here - the configuration file
+    /// is deliberately not consulted, because a value that comes from the file must keep being read from
+    /// its own (nested) key. Therefore this function has to be called before the configuration file is
+    /// loaded, and it parses the command line into a throwaway configuration instead of looking at
+    /// `config`, which by then already contains the bindings of the direct options.
     Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line(new Poco::Util::LayeredConfiguration);
-    argsToConfig(argv, *command_line, 0);
+    std::vector<std::pair<std::string, std::string>> ordered_args;
+    argsToConfig(argv, *command_line, 0, nullptr, &ordered_args);
 
+    /// Both spellings of every affected setting, mapped to the setting's index. Only the settings whose
+    /// config key is a nested one are affected. This also excludes `config_file`, whose key (`config-file`)
+    /// belongs to the built-in option of the same name and is consumed while the configuration is being
+    /// loaded.
     const auto & accessor = ServerSettingsTraits::Accessor::instance();
+    std::unordered_map<std::string_view, size_t> spellings;
     for (size_t i = 0; i < accessor.size(); ++i)
     {
         std::string_view path = accessor.getPath(i);
-
-        /// Only the settings whose config key is a nested one are affected. This also excludes `config_file`,
-        /// whose key (`config-file`) belongs to the built-in option of the same name and is consumed while the
-        /// configuration is being loaded.
         if (path.find('.') == std::string_view::npos)
             continue;
-
-        const String & name = accessor.getName(i);
-        if (!command_line->has(name))
-            continue;
-
-        /// This writes into the writeable configuration layer, the same one the option bindings use, so the
-        /// command line keeps taking precedence over the configuration file, also after a configuration reload.
-        config.setString(std::string(path), command_line->getString(name));
+        spellings[accessor.getName(i)] = i;
+        spellings[path] = i;
     }
+
+    /// The last occurrence on the command line wins, whichever spelling it uses.
+    std::unordered_map<size_t, std::string> winning_values;
+    for (const auto & [arg_key, arg_value] : ordered_args)
+    {
+        auto it = spellings.find(arg_key);
+        if (it != spellings.end())
+            winning_values[it->second] = arg_value;
+    }
+
+    if (winning_values.empty())
+        return;
+
+    /// The values are published in a configuration layer with a higher priority than the one `argsToConfig`
+    /// adds for the whole command line in `BaseDaemon::initialize` (`PRIO_APPLICATION - 100`), so that they
+    /// override a losing spelling stored there, and than the configuration file (`PRIO_DEFAULT`), so that
+    /// the command line keeps taking precedence over it, also after a configuration reload.
+    Poco::AutoPtr<Poco::Util::MapConfiguration> mirrored(new Poco::Util::MapConfiguration);
+    for (const auto & [i, value] : winning_values)
+    {
+        mirrored->setString(accessor.getName(i), value);
+        mirrored->setString(std::string(accessor.getPath(i)), value);
+    }
+    config.add(mirrored, Poco::Util::Application::PRIO_APPLICATION - 200);
 }
 
 namespace
