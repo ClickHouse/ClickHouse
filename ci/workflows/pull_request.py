@@ -54,11 +54,19 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
     j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
 ][0]
 
-# NOTE: temporarily trimmed down to just the arm_darwin build plus its fast test,
-# to debug the intermittent 04319_skip_unavailable_shards_mode_table_missing hang
-# without paying for a full CI run. Not intended to be merged as-is.
+# NOTE: temporarily trimmed down to just the arm_darwin build plus several parallel
+# copies of its fast test, to debug the intermittent
+# 04319_skip_unavailable_shards_mode_table_missing hang without paying for a full CI
+# run. Each copy gets a unique name so the job digest (which includes the name)
+# differs and all copies actually run instead of collapsing to a single cache hit.
+# Not intended to be merged as-is.
 DARWIN_BUILD = [
     job for job in JobConfigs.special_build_jobs if job.name == "Build (arm_darwin)"
+]
+
+DARWIN_FAST_TESTS_PARALLEL = [
+    JobConfigs.darwin_fast_test_jobs[0].set_name(f"Fast test (arm_darwin) [{i}]")
+    for i in range(1, 6)
 ]
 
 workflow = Workflow.Config(
@@ -67,7 +75,7 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         *DARWIN_BUILD,
-        *JobConfigs.darwin_fast_test_jobs,
+        *DARWIN_FAST_TESTS_PARALLEL,
     ],
     artifacts=[
         *[
