@@ -70,3 +70,15 @@ SELECT ['a']::Array(String) < [1]::Array(Int64); -- { serverError ILLEGAL_TYPE_O
 -- A String subfield aligned with a number (at any position) is still rejected: here both positions
 -- are crossed String-vs-number, so there is no genuine element comparison.
 SELECT [tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)) < [tuple(1::Int64, 'a')]::Array(Tuple(Int64, String)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT}
+
+-- Array pairs whose element types have no plain least supertype are compared lexicographically,
+-- but `Variant` elements are not supported by the element-wise comparison and must be rejected
+-- during analysis instead of failing later at execution.
+SELECT [CAST(1::Int64, 'Variant(Int64, String)')] = CAST([1], 'Array(UInt64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT [CAST(1::Int64, 'Variant(Int64, String)')] != CAST([1], 'Array(UInt64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT [CAST(1::Int64, 'Variant(Int64, String)')] < CAST([1], 'Array(UInt64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT [CAST(1::Int64, 'Variant(Int64, String)')] <= CAST([1], 'Array(UInt64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT [CAST(1::Int64, 'Variant(Int64, String)')] > CAST([1], 'Array(UInt64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT [CAST(1::Int64, 'Variant(Int64, String)')] >= CAST([1], 'Array(UInt64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT isDistinctFrom([CAST(1::Int64, 'Variant(Int64, String)')], CAST([1], 'Array(UInt64)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT isNotDistinctFrom([CAST(1::Int64, 'Variant(Int64, String)')], CAST([1], 'Array(UInt64)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
