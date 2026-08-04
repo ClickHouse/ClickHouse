@@ -70,6 +70,19 @@ static constexpr size_t MAX_COMPACTION_RETRIES = 100;
 /// `version-hint.text` holds a decimal metadata version; this only needs to bound a stray read.
 static constexpr size_t MAX_VERSION_HINT_SIZE = 4096;
 
+/// Outcome of publishing the compacted metadata, which decides what may be deleted afterwards.
+enum class CommitResult
+{
+    /// Published and discoverable: the pre-compaction generation can go.
+    Published,
+    /// Another writer took the target version; nothing of ours was published, so the rewritten
+    /// files are removed and the pre-compaction generation stays.
+    Lost,
+    /// Published, but `version-hint.text` does not name it. Either generation can still be the one
+    /// a reader resolves, so BOTH are kept and nothing is deleted.
+    PublishedWithoutHint,
+};
+
 using namespace DB;
 
 struct ManifestFilePlan
@@ -120,8 +133,8 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
-    /// Manifests, manifest lists and metadata files written by the rewrite, so they can be removed
-    /// again if the metadata commit is lost to a concurrent writer.
+    /// Manifests and manifest lists written by the rewrite, so they can be removed again if the
+    /// metadata commit is lost. Never the commit target itself: that name is the winner's.
     std::vector<Iceberg::IcebergPathFromMetadata> generated_metadata_paths;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
@@ -1207,7 +1220,7 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
 /// Returns false if the metadata commit lost the race to a concurrent writer (the target
 /// `vN.metadata.json` already existed): in that case the compacted metadata was NOT published and
 /// the caller must not delete the pre-compaction files.
-static bool writeMetadataFiles(
+static CommitResult writeMetadataFiles(
     Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, bool write_version_hint)
 {
     auto log = getLogger("IcebergCompaction");
@@ -1584,9 +1597,6 @@ static bool writeMetadataFiles(
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
 
-        /// A false return means the target metadata version already exists, so the compacted
-        /// metadata was NOT published and the caller must skip `clearOldFiles`; deleting the
-        /// pre-compaction files while the table points at another writer's snapshot loses data.
         auto version_hint_path = plan.generator.generateVersionHint();
         if (!Iceberg::writeMetadataFileAndVersionHint(
                 path_resolver,
@@ -1596,34 +1606,36 @@ static bool writeMetadataFiles(
                 object_storage,
                 context,
                 write_version_hint))
-            return false;
+            return CommitResult::Lost;
 
-        /// The helper reports success even when it exhausted its retries updating an existing
-        /// `version-hint.text`. Unlike the other write paths, compaction then deletes the metadata
-        /// the hint still names, which would leave `iceberg_use_version_hint = 1` readers unable to
-        /// discover any metadata, so require the hint to actually name the published version.
+        /// The helper reports success even when it exhausted its retries writing
+        /// `version-hint.text`, so the hint can be missing or still name the previous version.
+        /// Compaction is the only caller that then deletes the metadata the hint names, which would
+        /// leave `iceberg_use_version_hint = 1` readers with nothing to discover.
         if (write_version_hint)
         {
-            auto storage_hint_path = path_resolver.resolve(version_hint_path);
-            StoredObject hint_object(storage_hint_path);
+            String hint_data;
+            StoredObject hint_object(path_resolver.resolve(version_hint_path));
             if (object_storage->exists(hint_object))
             {
-                auto [hint_data, _] = object_storage->readSmallObjectAndGetObjectMetadata(
-                    hint_object, context->getReadSettings(), MAX_VERSION_HINT_SIZE);
+                hint_data = object_storage
+                                ->readSmallObjectAndGetObjectMetadata(
+                                    hint_object, context->getReadSettings(), MAX_VERSION_HINT_SIZE)
+                                .data;
                 boost::algorithm::trim(hint_data);
-                if (hint_data != std::to_string(generated_metadata_info.version))
-                {
-                    LOG_WARNING(
-                        log,
-                        "Iceberg compaction published metadata version {} but version-hint.text still names {}; "
-                        "keeping the pre-compaction files so the table stays discoverable",
-                        generated_metadata_info.version,
-                        hint_data);
-                    return false;
-                }
+            }
+            if (hint_data != std::to_string(generated_metadata_info.version))
+            {
+                LOG_WARNING(
+                    log,
+                    "Iceberg compaction published metadata version {} but version-hint.text names '{}'; keeping both "
+                    "the pre-compaction and the rewritten files so the table stays readable either way",
+                    generated_metadata_info.version,
+                    hint_data);
+                return CommitResult::PublishedWithoutHint;
             }
         }
-        return true;
+        return CommitResult::Published;
     }
 }
 
@@ -1803,7 +1815,7 @@ void compactIcebergTable(
             removeGeneratedFiles(object_storage_, old_files, generated);
         };
 
-        bool committed = false;
+        auto commit = CommitResult::Lost;
         try
         {
             writeDataFiles(
@@ -1816,7 +1828,7 @@ void compactIcebergTable(
                 context_,
                 write_format,
                 persistent_table_components.metadata_compression_method);
-            committed = writeMetadataFiles(
+            commit = writeMetadataFiles(
                 plan,
                 persistent_table_components.path_resolver,
                 object_storage_,
@@ -1831,17 +1843,22 @@ void compactIcebergTable(
             throw;
         }
 
-        /// Only delete the pre-compaction files if the compacted metadata was actually published.
-        /// If a concurrent writer won the metadata commit, `clearOldFiles` would delete the data and
-        /// metadata the table still references (now pointing at the other writer's snapshot).
-        if (!committed)
+        if (commit == CommitResult::Lost)
         {
+            /// The table still references the pre-compaction files, so only the rewritten ones go.
             cleanup_generated();
             throw Exception(
                 ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
                 "Iceberg compaction (OPTIMIZE) lost the metadata commit to a concurrent writer; "
                 "the table was modified during compaction. Retry OPTIMIZE.");
         }
+
+        /// Published but not pointed at by the hint: a reader may still resolve either generation,
+        /// so neither may be deleted. The rewritten files are reachable from the published metadata
+        /// and are left in place; a later OPTIMIZE cleans up once the hint agrees.
+        if (commit == CommitResult::PublishedWithoutHint)
+            return;
+
         clearOldFiles(object_storage_, old_files);
     }
 }
