@@ -1,13 +1,12 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStreamingStorage.h>
 #include <Storages/Pulsar/PulsarConsumer.h>
 #include <Storages/Pulsar/PulsarSettings.h>
 #include <pulsar/Client.h>
 #include <Poco/Semaphore.h>
 
-#include <atomic>
 #include <mutex>
 
 namespace DB
@@ -19,7 +18,7 @@ using ProducerPtr = std::shared_ptr<pulsar::Producer>;
 
 class ReadFromStoragePulsar;
 
-class StoragePulsar final : public IStorage, WithContext
+class StoragePulsar final : public IStreamingStorage, WithContext
 {
     friend class ReadFromStoragePulsar;
 
@@ -34,6 +33,8 @@ public:
     ~StoragePulsar() override = default;
 
     std::string getName() const override { return "Pulsar"; }
+
+    bool isMessageQueue() const override { return true; }
 
     bool noPushingToViewsOnInserts() const override { return true; }
 
@@ -79,9 +80,6 @@ private:
 
     pulsar::Client pulsar_client;
 
-    std::atomic<bool> shutdown_called{false};
-    std::atomic<bool> mv_attached{false};
-
     Names topics;
 
     std::vector<PulsarConsumerPtr> consumers;
@@ -89,14 +87,19 @@ private:
     Poco::Semaphore semaphore;
     BackgroundSchedulePool::TaskHolder streamer;
 
+    /// Owned by the single streaming task; used by `stream_control.claimCycle`.
+    UInt64 last_seen_refresh_epoch = 0;
+
     void createConsumer(pulsar::Consumer & consumer);
     ProducerPtr createProducer();
 
     Names parseTopics(String topic_list) const;
 
+    void scheduleStreamingTasksImpl() override;
+
     void streaming();
     bool checkDependencies(const StorageID & table_id);
-    bool streamToViews();
+    bool streamToViews(UInt64 cycle_epoch);
 
     ContextMutablePtr addSettings(ContextPtr local_context) const;
 

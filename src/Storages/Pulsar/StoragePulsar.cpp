@@ -100,7 +100,10 @@ private:
         if (pulsar_storage.shutdown_called.load())
             throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-        if (pulsar_storage.mv_attached)
+        /// Check the dependencies directly instead of a flag set by the background task: the flag would be
+        /// clear between the streaming cycles, letting a direct SELECT compete with (and, with
+        /// `pulsar_commit_on_select = 1`, acknowledge messages behind) the attached views.
+        if (!DatabaseCatalog::instance().getDependentViews(pulsar_storage.getStorageID()).empty())
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StoragePulsar with attached materialized views");
 
         /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
@@ -134,7 +137,7 @@ StoragePulsar::StoragePulsar(
     const ColumnsDescription & columns_,
     std::unique_ptr<PulsarSettings> pulsar_settings_,
     LoadingStrictnessLevel mode)
-    : IStorage(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_)
     , pulsar_settings(std::move(pulsar_settings_))
     , format_name((*pulsar_settings)[PulsarSetting::pulsar_format].value)
@@ -256,6 +259,8 @@ ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     if ((*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::DEFAULT)
         modified_context->setSetting("input_format_allow_errors_num", (*pulsar_settings)[PulsarSetting::pulsar_skip_broken_messages].value);
+    else if ((*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER_QUEUE is not supported by the table engine");
     else
         modified_context->setSetting("input_format_allow_errors_num", Field{0});
 
@@ -267,6 +272,13 @@ ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
 
     /// Apply all other settings from the table definition (non-pulsar-related, e.g. format settings).
     modified_context->applySettingsChanges(pulsar_settings->getFormatSettings());
+
+    /// It does not make sense to use auto detection here, since the format
+    /// will be reset for each message, plus, auto detection takes CPU
+    /// time.
+    modified_context->setSetting("input_format_csv_detect_header", false);
+    modified_context->setSetting("input_format_tsv_detect_header", false);
+    modified_context->setSetting("input_format_custom_detect_header", false);
 
     return modified_context;
 }
@@ -390,6 +402,11 @@ bool StoragePulsar::checkDependencies(const StorageID & table_id)
     return true;
 }
 
+void StoragePulsar::scheduleStreamingTasksImpl()
+{
+    streamer->schedule();
+}
+
 void StoragePulsar::streaming()
 {
     try
@@ -397,18 +414,23 @@ void StoragePulsar::streaming()
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views)
+        const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+        const bool deps_ready = num_views == 0 || checkDependencies(table_id);
+        const bool run_cycle = deps_ready && stream_control.claimCycle(last_seen_refresh_epoch);
+
+        if (num_views && run_cycle)
         {
             auto start_time = std::chrono::steady_clock::now();
-
-            mv_attached.store(true);
 
             while (!shutdown_called.load())
             {
                 if (!checkDependencies(table_id))
                     break;
 
-                if (streamToViews())
+                if (streamToViews(cycle_epoch))
+                    break;
+
+                if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
                     break;
 
                 auto ts = std::chrono::steady_clock::now();
@@ -423,14 +445,12 @@ void StoragePulsar::streaming()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    mv_attached.store(false);
-
     // Wait for attached views
     if (!shutdown_called.load())
         streamer->scheduleAfter(PULSAR_RESCHEDULE_MS);
 }
 
-bool StoragePulsar::streamToViews()
+bool StoragePulsar::streamToViews(UInt64 cycle_epoch)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -479,7 +499,9 @@ bool StoragePulsar::streamToViews()
             block_io.pipeline.getHeader().getNames(),
             block_size,
             log,
-            max_execution_time.totalMilliseconds());
+            max_execution_time.totalMilliseconds(),
+            /* commit_in_suffix */ false,
+            cycle_epoch);
         sources.emplace_back(source);
         pipes.emplace_back(source);
     }
@@ -508,6 +530,16 @@ bool StoragePulsar::streamToViews()
     }
 
     LOG_TRACE(log, "Processed messages: {}", rows.load());
+
+    if (stream_control.isCancelRequested(cycle_epoch))
+    {
+        /// The cycle was cancelled before its durable boundary: request redelivery of the polled
+        /// messages instead of acknowledging them (blocks already written to the views will be
+        /// delivered again - the usual at-least-once semantics, same as the exception path above).
+        for (auto & source : sources)
+            source->rollback();
+        return true;
+    }
 
     bool some_stream_is_stalled = false;
     for (auto & source : sources)
@@ -557,6 +589,13 @@ void registerStoragePulsar(StorageFactory & factory)
         if (!(*pulsar_settings)[PulsarSetting::pulsar_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_format` setting");
 
+        /// The mode is accepted by the generic `StreamingHandleErrorMode` parser but not implemented
+        /// by this engine, so reject it up front instead of failing on the first broken message.
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && (*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`dead_letter_queue` mode of `pulsar_handle_error_mode` is not supported by the table engine");
+
         return std::make_shared<StoragePulsar>(args.table_id, args.getContext(), args.columns, std::move(pulsar_settings), args.mode);
     };
 
@@ -566,7 +605,125 @@ void registerStoragePulsar(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = PulsarSettings::hasBuiltin,
-        });
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+This engine allows integrating ClickHouse with [Apache Pulsar](https://pulsar.apache.org/).
+
+`Pulsar` lets you:
+
+- Subscribe to and publish to Pulsar topics.
+- Process new messages as they become available.
+
+The engine is experimental. To create a table with it, the setting `allow_experimental_pulsar_storage_engine` must be enabled.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = Pulsar SETTINGS
+    pulsar_service_url = 'pulsar://host:port',
+    pulsar_topic_list = 'topic1,topic2,...',
+    pulsar_group_name = 'group_name',
+    pulsar_format = 'data_format'[,]
+    [pulsar_schema = '',]
+    [pulsar_num_consumers = N,]
+    [pulsar_max_block_size = N,]
+    [pulsar_skip_broken_messages = N,]
+    [pulsar_poll_timeout_ms = N,]
+    [pulsar_poll_max_batch_size = N,]
+    [pulsar_flush_interval_ms = N,]
+    [pulsar_handle_error_mode = 'default',]
+    [pulsar_max_rows_per_message = 1,]
+    [pulsar_commit_on_select = false]
+```
+
+Required parameters:
+
+- `pulsar_service_url` – The Pulsar broker URL, for example, `pulsar://localhost:6650`.
+- `pulsar_group_name` – The subscription name. All consumers sharing the same group name belong to the same subscription.
+- `pulsar_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
+
+Optional parameters:
+
+- `pulsar_topic_list` – A comma-separated list of Pulsar topics to consume from and produce to.
+- `pulsar_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `pulsar_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
+- `pulsar_max_block_size` – The maximum batch size (in messages) for a poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
+- `pulsar_skip_broken_messages` – Parser tolerance to schema-incompatible messages per block. Default: `0`. If `pulsar_skip_broken_messages = N` then the engine skips *N* Pulsar messages that cannot be parsed (a message equals a row of data).
+- `pulsar_poll_timeout_ms` – Timeout for a single poll from Pulsar. Default: [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+- `pulsar_poll_max_batch_size` – The maximum number of messages to be polled in a single Pulsar poll. Default: [max_block_size](/reference/settings/session-settings/max-block-size#max_block_size).
+- `pulsar_flush_interval_ms` – Timeout for flushing data read from Pulsar. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms).
+- `pulsar_handle_error_mode` – How to handle errors for the Pulsar engine. Possible values: `default` (the exception will be thrown if we fail to parse a message), `stream` (the exception message and raw message will be saved in the virtual columns `_error` and `_raw_message`).
+- `pulsar_max_rows_per_message` – The maximum number of rows written in one Pulsar message for row-based formats. Default: `1`.
+- `pulsar_commit_on_select` – Acknowledge polled messages when a direct `SELECT` query is made from the table. Default: `false`.
+
+## Description {#description}
+
+`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
+
+1. Use the engine to create a Pulsar consumer and consider it a data stream.
+2. Create a table with the desired structure.
+3. Create a materialized view that converts data from the engine and puts it into a previously created table.
+
+When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from Pulsar and convert them to the required format using `SELECT`.
+One Pulsar table can have as many materialized views as you like; they do not read data from the table directly, but receive new records (in blocks). This way you can write to several tables with different detail levels (with grouping - aggregation and without).
+
+Example:
+
+```sql
+CREATE TABLE queue
+(
+    key UInt64,
+    value UInt64
+) ENGINE = Pulsar
+  SETTINGS pulsar_service_url = 'pulsar://localhost:6650',
+           pulsar_topic_list = 'topic1',
+           pulsar_group_name = 'group1',
+           pulsar_format = 'JSONEachRow';
+
+CREATE TABLE daily
+(
+    key UInt64,
+    value UInt64
+) ENGINE = MergeTree() ORDER BY key;
+
+CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT key, value FROM queue;
+
+SELECT key, value FROM daily ORDER BY key;
+```
+
+To stop receiving streamed data or to change the conversion logic, detach the materialized view:
+
+```sql
+DETACH TABLE consumer;
+ATTACH TABLE consumer;
+```
+
+## Virtual columns {#virtual-columns}
+
+- `_topic` – Pulsar topic. Data type: `LowCardinality(String)`.
+- `_ordering_key` – The ordering key of the message. Data type: `String`.
+- `_partition_key` – The partition key of the message. Data type: `String`.
+- `_timestamp` – The event timestamp of the message. Data type: `Nullable(DateTime)`.
+- `_timestamp_ms` – The event timestamp of the message in milliseconds. Data type: `Nullable(DateTime64(3))`.
+
+Additional virtual columns when `pulsar_handle_error_mode = 'stream'`:
+
+- `_raw_message` – Raw message that could not be parsed successfully. Data type: `String`.
+- `_error` – Exception message happened during failed parsing. Data type: `String`.
+
+Note: `_raw_message` and `_error` virtual columns are filled only in case of an exception during parsing; they are always empty when the message was parsed successfully.
+)DOCS_MD",
+            .syntax
+            = "ENGINE = Pulsar() SETTINGS pulsar_service_url = 'pulsar://host:port', pulsar_topic_list = 'topic', pulsar_group_name = "
+              "'group', pulsar_format = 'format', ...",
+            .related = {"Kafka", "NATS", "RabbitMQ"}});
 }
 
 }

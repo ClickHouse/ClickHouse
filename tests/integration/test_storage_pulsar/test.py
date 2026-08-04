@@ -71,6 +71,117 @@ def test_direct_select_requires_setting(pulsar_cluster):
     assert "QUERY_NOT_ALLOWED" in error
 
 
+def test_direct_select_rejected_with_attached_mv(pulsar_cluster):
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "mv_guard_topic", "mv_guard_group"))
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    # The guard must not depend on the background streaming task being inside a
+    # cycle: a direct SELECT must be rejected at any moment while a materialized
+    # view is attached, including right after its creation and between cycles.
+    for _ in range(5):
+        error = instance.query_and_get_error("SELECT * FROM test.pulsar_reader")
+        assert "QUERY_NOT_ALLOWED" in error
+        time.sleep(0.3)
+
+    # After the view is dropped, direct SELECT is allowed again.
+    instance.query("DROP TABLE test.consumer SYNC")
+    instance.query("SELECT * FROM test.pulsar_reader")
+
+
+def test_dead_letter_queue_mode_rejected(pulsar_cluster):
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    error = instance.query_and_get_error(
+        pulsar_table(
+            "test.pulsar_reader",
+            "dlq_topic",
+            "dlq_group",
+            extra_settings=", pulsar_handle_error_mode = 'dead_letter_queue'",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+
+
+def test_csv_first_row_is_not_treated_as_header(pulsar_cluster):
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+
+    def csv_table(name, group):
+        return f"""
+            CREATE TABLE {name} (key String, value String)
+            ENGINE = Pulsar
+            SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                     pulsar_topic_list = 'csv_header_topic',
+                     pulsar_group_name = '{group}',
+                     pulsar_format = 'CSV'
+        """
+
+    instance.query(csv_table("test.pulsar_reader", "csv_header_group"))
+    instance.query(csv_table("test.pulsar_writer", "csv_header_writer_group"))
+    instance.query(
+        """
+        CREATE TABLE test.view (key String, value String)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    # The first row coincides with the column names: with CSV header
+    # autodetection left enabled it would be silently dropped as a header.
+    instance.query("INSERT INTO test.pulsar_writer VALUES ('key', 'value'), ('a', 'b')")
+
+    wait_query_result("a\tb\nkey\tvalue", "SELECT key, value FROM test.view ORDER BY key")
+
+
+def test_system_stop_start_streaming(pulsar_cluster):
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "stop_start_topic", "stop_start_group"))
+    instance.query(pulsar_table("test.pulsar_writer", "stop_start_topic", "stop_start_writer_group"))
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    instance.query("SYSTEM STOP test.pulsar_reader")
+
+    num_rows = 10
+    instance.query(
+        f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+    )
+
+    # While the streaming is stopped nothing must reach the target table.
+    time.sleep(5)
+    assert instance.query("SELECT count() FROM test.view") == "0\n"
+
+    instance.query("SYSTEM START test.pulsar_reader")
+
+    expected = "\n".join(f"{i}\t{i}" for i in range(num_rows))
+    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+
 def test_produce_consume_via_materialized_view(pulsar_cluster):
     instance.query("CREATE DATABASE IF NOT EXISTS test")
     instance.query(pulsar_table("test.pulsar_reader", "mv_topic", "mv_group"))

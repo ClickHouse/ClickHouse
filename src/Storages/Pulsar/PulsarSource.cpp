@@ -28,7 +28,8 @@ PulsarSource::PulsarSource(
     size_t max_block_size_,
     LoggerPtr log_,
     UInt64 max_execution_time_,
-    bool commit_in_suffix_)
+    bool commit_in_suffix_,
+    std::optional<UInt64> cancel_epoch_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -39,6 +40,7 @@ PulsarSource::PulsarSource(
     , max_execution_time(max_execution_time_)
     , handle_error_mode(storage.getStreamingHandleErrorMode())
     , commit_in_suffix(commit_in_suffix_)
+    , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
 {
@@ -139,12 +141,29 @@ Chunk PulsarSource::generateImpl()
     static constexpr size_t MAX_FAILED_POLL_ATTEMPTS = 10;
     size_t failed_poll_attempts = 0;
 
+    bool cancelled = false;
+
     while (true)
     {
+        if (storage.isConsumeCancelRequested(cancel_epoch))
+        {
+            cancelled = true;
+            break;
+        }
+
         size_t new_rows = 0;
         exception_message.reset();
         if (auto buf = consumer->consume())
+        {
+            /// The cancel may have arrived while `consume` was blocked polling; check again so the
+            /// just-polled message is dropped with the rest of the block rather than acknowledged.
+            if (storage.isConsumeCancelRequested(cancel_epoch))
+            {
+                cancelled = true;
+                break;
+            }
             new_rows = executor.execute(*buf);
+        }
         else
             ++failed_poll_attempts;
 
@@ -193,6 +212,14 @@ Chunk PulsarSource::generateImpl()
         if (total_rows >= max_block_size || (max_execution_time != 0 && stopwatch.elapsedMilliseconds() > max_execution_time)
             || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS)
             break;
+    }
+
+    if (cancelled)
+    {
+        /// Drop the partial block and request redelivery of its messages, so nothing polled
+        /// after the cancel can be acknowledged.
+        consumer->rollback();
+        return {};
     }
 
     if (total_rows == 0)

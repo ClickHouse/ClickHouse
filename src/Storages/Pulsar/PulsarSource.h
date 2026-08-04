@@ -3,6 +3,8 @@
 #include <Processors/ISource.h>
 #include <Storages/Pulsar/StoragePulsar.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -17,7 +19,8 @@ public:
         size_t max_block_size_,
         LoggerPtr log_,
         UInt64 max_execution_time_,
-        bool commit_in_suffix_ = false);
+        bool commit_in_suffix_ = false,
+        std::optional<UInt64> cancel_epoch_ = {});
 
     ~PulsarSource() override;
 
@@ -43,6 +46,9 @@ private:
     UInt64 max_execution_time;
     StreamingHandleErrorMode handle_error_mode;
     bool commit_in_suffix;
+    /// SYSTEM STOP/CANCEL STREAMING advances the epoch; the source snapshots it at creation
+    /// and stops polling (requesting redelivery) once it moves.
+    const UInt64 cancel_epoch;
 
     bool is_finished = false;
     PulsarConsumerPtr consumer{nullptr};
