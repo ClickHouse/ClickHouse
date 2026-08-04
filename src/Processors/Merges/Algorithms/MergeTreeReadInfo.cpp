@@ -73,8 +73,8 @@ void setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_c
 
             ordered_columns.push_back(pk_col->column);
         }
-        /// Types like Set cannot produce a column with a default value. The virtual row is never
-        /// emitted and only its sort columns are compared, so reuse the header placeholder.
+        /// Types like Set cannot produce a column with a default value. Only the sort columns of
+        /// the virtual row are compared, and it is skipped before emission, so reuse the placeholder.
         else if (col.column && isNotCreatable(col.type->getTypeId()))
             ordered_columns.push_back(col.column->cloneResized(1));
         else
