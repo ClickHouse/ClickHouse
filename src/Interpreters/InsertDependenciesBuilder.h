@@ -2,6 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
@@ -12,7 +13,6 @@
 
 #include <exception>
 #include <memory>
-#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -21,9 +21,6 @@ namespace DB
 
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
-
-/// See SinkToStorage.h
-using InsertStartGatePtr = std::shared_ptr<std::once_flag>;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
@@ -86,8 +83,6 @@ private:
         = std::unordered_map<StorageIDMaybeEmpty, SharedHeader, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdThreadGroup = std::
         unordered_map<StorageIDMaybeEmpty, ThreadGroupPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
-    using MapIdInsertStartGate = std::
-        unordered_map<StorageIDMaybeEmpty, InsertStartGatePtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdViewType = std::unordered_map<
         StorageIDMaybeEmpty,
         QueryViewsLogElement::ViewType,
@@ -223,7 +218,8 @@ protected:
         bool async_insert_,
         bool skip_destination_table_,
         size_t max_insert_threads,
-        ContextPtr context);
+        ContextPtr context,
+        InsertStartGatesPtr insert_start_gates_ = nullptr);
 
 private:
     bool isView(StorageIDMaybeEmpty id) const;
@@ -271,8 +267,10 @@ private:
     MapIdBlock input_headers;
     MapIdBlock output_headers;
     MapIdThreadGroup thread_groups;
-    /// One gate per destination table, shared by the sinks of all the parallel streams writing into it.
-    MapIdInsertStartGate insert_start_gates;
+    /// The gates of this query's destination tables, shared by the sinks of all the parallel streams
+    /// writing into them - including the sinks a forwarding destination (an `Alias`) creates inside
+    /// its nested INSERT, which receives this registry instead of creating its own.
+    InsertStartGatesPtr insert_start_gates;
 
     using SquashingProcessorsMap = std::unordered_map<
         StorageIDMaybeEmpty,

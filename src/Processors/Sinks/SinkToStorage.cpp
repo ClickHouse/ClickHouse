@@ -1,5 +1,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
+#include <mutex>
+
 namespace DB
 {
 

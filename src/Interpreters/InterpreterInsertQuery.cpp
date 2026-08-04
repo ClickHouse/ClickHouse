@@ -467,7 +467,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context);
+        context, insert_start_gates);
 
     const auto & settings = context->getSettingsRef();
     bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
@@ -909,7 +909,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         async_insert,
         /*skip_destination_table*/ no_destination,
         insert_threads,
-        context);
+        context,
+        insert_start_gates);
 
     auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
     const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();

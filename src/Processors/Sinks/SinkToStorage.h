@@ -1,19 +1,14 @@
 #pragma once
+#include <Interpreters/InsertStartGates.h>
 #include <Storages/TableLockHolder.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 
 #include <functional>
-#include <mutex>
 
 namespace DB
 {
 
 class Context;
-
-/// Shared by all the sinks that write into the same table on behalf of a single INSERT query.
-/// With `max_insert_threads` greater than one the query writes through several sinks running in
-/// parallel, and their `onStart` calls are not ordered with respect to each other's writes.
-using InsertStartGatePtr = std::shared_ptr<std::once_flag>;
 
 /// Sink which is returned from Storage::write.
 class SinkToStorage : public ExceptionKeepingTransform
@@ -32,6 +27,12 @@ public:
     virtual void setHasDependentMaterializedViews(bool /*has_dependent_views*/) {}
 
     void setInsertStartGate(InsertStartGatePtr gate) { insert_start_gate = std::move(gate); }
+
+    /// A sink that forwards the write through a nested INSERT running in this query's context
+    /// (`AliasSink`) receives the per-query registry its gate came from and threads it into that
+    /// nested INSERT, so the sinks created there share the gates of the outer query instead of
+    /// creating their own. See InsertStartGates.h.
+    virtual void setInsertStartGateRegistry(InsertStartGatesPtr /*gates*/) {}
 
 protected:
     virtual void consume(Chunk & chunk) = 0;

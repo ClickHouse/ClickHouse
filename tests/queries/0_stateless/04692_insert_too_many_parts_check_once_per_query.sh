@@ -49,3 +49,46 @@ $CLICKHOUSE_CLIENT --query "
     SELECT ProfileEvents['DelayedInserts'] FROM system.query_log
     WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish';
 "
+
+# The gate is shared per destination table, not per view: the branches of different materialized
+# views converging on the same target table also perform the check exactly once for the whole query.
+$CLICKHOUSE_CLIENT --async_insert 0 --query "
+    CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE converged (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 1, parts_to_throw_insert = 1000, min_delay_to_insert_ms = 0;
+    CREATE MATERIALIZED VIEW mv_1 TO converged AS SELECT x FROM src;
+    CREATE MATERIALIZED VIEW mv_2 TO converged AS SELECT x FROM src;
+    SYSTEM STOP MERGES converged;
+    INSERT INTO converged VALUES (0);
+"
+
+query_id="04692_mv_$CLICKHOUSE_DATABASE"
+# shellcheck disable=SC2086
+$CLICKHOUSE_CLIENT --query_id "$query_id" $PARALLEL_INSERT --parallel_view_processing 1 --query "INSERT INTO src VALUES (1)"
+
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT ProfileEvents['DelayedInserts'] FROM system.query_log
+    WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish';
+"
+
+# An Alias destination forwards the write through a nested INSERT per parallel branch, and the real
+# check runs inside those nested inserts. They share the outer query's gate, so the check still runs
+# exactly once for the whole query.
+$CLICKHOUSE_CLIENT --async_insert 0 --allow_experimental_alias_table_engine 1 --query "
+    CREATE TABLE alias_target (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 1, parts_to_throw_insert = 1000, min_delay_to_insert_ms = 0;
+    CREATE TABLE alias_front ENGINE = Alias('alias_target');
+    SYSTEM STOP MERGES alias_target;
+    INSERT INTO alias_target VALUES (0);
+"
+
+query_id="04692_alias_$CLICKHOUSE_DATABASE"
+# shellcheck disable=SC2086
+$CLICKHOUSE_CLIENT --query_id "$query_id" $PARALLEL_INSERT --query "INSERT INTO alias_front VALUES (1)"
+
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT ProfileEvents['DelayedInserts'] FROM system.query_log
+    WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish';
+"
