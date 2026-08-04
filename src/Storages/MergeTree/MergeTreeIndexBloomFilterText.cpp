@@ -212,6 +212,8 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
             case RPNElement::FUNCTION_HAS:
                 rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
 
+                /// Negating the `BoolMask` swaps its possible truth values. A Bloom-filter hit becomes unknown,
+                /// not false, so a negative predicate cannot incorrectly discard a granule.
                 if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                     rpn_stack.back() = !rpn_stack.back();
                 break;
