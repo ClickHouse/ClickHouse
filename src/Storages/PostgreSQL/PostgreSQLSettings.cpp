@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
@@ -108,6 +109,11 @@ VectorWithMemoryTracking<std::string_view> PostgreSQLSettings::getAllRegisteredN
 bool PostgreSQLSettings::hasBuiltin(std::string_view name)
 {
     return PostgreSQLSettingsImpl::hasBuiltin(name);
+}
+
+void PostgreSQLSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<PostgreSQLSettingsImpl>(columns);
 }
 
 }

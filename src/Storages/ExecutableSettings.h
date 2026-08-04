@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Columns/IColumn_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -37,6 +38,7 @@ struct ExecutableSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+    static void fillEngineSettingsColumns(MutableColumns & columns);
 
 private:
     std::unique_ptr<ExecutableSettingsImpl> impl;

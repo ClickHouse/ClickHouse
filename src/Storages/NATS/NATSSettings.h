@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Columns/IColumn_fwd.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/SettingsChanges.h>
 
@@ -59,6 +60,7 @@ struct NATSSettings
     SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
+    static void fillEngineSettingsColumns(MutableColumns & columns);
 
 private:
     std::unique_ptr<NATSSettingsImpl> impl;

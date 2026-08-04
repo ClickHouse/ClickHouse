@@ -105,6 +105,7 @@ struct MergeTreeSettings
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
+    static void fillEngineSettingsColumns(MutableColumns & columns);
 
     void addToProgramOptionsIfNotPresent(boost::program_options::options_description & main_options, bool allow_repeated_settings);
 

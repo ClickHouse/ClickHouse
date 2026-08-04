@@ -3,6 +3,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Common/Exception.h>
@@ -80,5 +81,10 @@ void FileLogSettings::loadFromQuery(ASTStorage & storage_def)
 bool FileLogSettings::hasBuiltin(std::string_view name)
 {
     return FileLogSettingsImpl::hasBuiltin(name);
+}
+
+void FileLogSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<FileLogSettingsImpl>(columns);
 }
 }

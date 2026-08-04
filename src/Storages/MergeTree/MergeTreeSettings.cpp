@@ -8,6 +8,7 @@
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsEnums.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -3080,5 +3081,10 @@ void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)
 bool MergeTreeSettings::isPartFormatSetting(const String & name)
 {
     return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
+}
+
+void MergeTreeSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<MergeTreeSettingsImpl>(columns);
 }
 }

@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingFieldASTFunction.h>
 #include <Core/SettingsFields.h>
+#include <Columns/IColumn_fwd.h>
 
 
 namespace DB
@@ -45,6 +46,7 @@ struct TimeSeriesSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+    static void fillEngineSettingsColumns(MutableColumns & columns);
 
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;

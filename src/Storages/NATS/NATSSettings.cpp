@@ -3,6 +3,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Common/Exception.h>
@@ -121,5 +122,10 @@ SettingsChanges NATSSettings::getFormatSettings() const
 bool NATSSettings::hasBuiltin(std::string_view name)
 {
     return NATSSettingsImpl::hasBuiltin(name);
+}
+
+void NATSSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<NATSSettingsImpl>(columns);
 }
 }

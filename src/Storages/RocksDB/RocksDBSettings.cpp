@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 
 namespace DB
 {
@@ -67,5 +68,10 @@ bool RocksDBSettings::hasBuiltin(std::string_view name)
 void RocksDBSettings::checkCanSet(std::string_view name, const Field & value)
 {
     RocksDBSettingsImpl::checkCanSet(name, value);
+}
+
+void RocksDBSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<RocksDBSettingsImpl>(columns);
 }
 }

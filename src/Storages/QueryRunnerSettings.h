@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Columns/IColumn_fwd.h>
 
 #include <memory>
 
@@ -33,6 +34,7 @@ struct QueryRunnerSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
+    static void fillEngineSettingsColumns(MutableColumns & columns);
 
 private:
     std::unique_ptr<QueryRunnerSettingsImpl> impl;

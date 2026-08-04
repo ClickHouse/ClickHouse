@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/QueryRunnerSettings.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Common/Exception.h>
 
 
@@ -54,6 +55,11 @@ void QueryRunnerSettings::loadFromQuery(ASTStorage & storage_def)
 bool QueryRunnerSettings::hasBuiltin(std::string_view name)
 {
     return QueryRunnerSettingsImpl::hasBuiltin(name);
+}
+
+void QueryRunnerSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<QueryRunnerSettingsImpl>(columns);
 }
 
 }
