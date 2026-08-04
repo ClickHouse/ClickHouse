@@ -20,7 +20,11 @@ before the first of them is reached.
 
 The two production seams that reach those arguments are pinned as well, because
 each can drop the fix on its own: `main` forwarding the parsed arguments into
-`run_func_test`, and the `stress.py` invocation in `stress_runner.sh`.
+`run_func_test`, and the `stress.py` invocation in `stress_runner.sh`. The
+pre-existing `--encrypted-storage` rides both seams and the same skip-tag
+mechanism, and `no-encrypted-storage` only becomes live again once a backend
+flag survives them too, so it is pinned at both seams rather than only at the
+command line.
 """
 
 import inspect
@@ -162,24 +166,45 @@ def test_query_killer_stays_last_parameter():
     assert parameters[-3:] == ["s3_storage", "azure_blob_storage", "query_killer"]
 
 
+_FORWARDED = ("s3_storage", "azure_blob_storage", "encrypted_storage")
+
+
 @pytest.mark.parametrize(
     "argv_flags,expected",
     [
         pytest.param(
-            ["--s3-storage", "1", "--azure-blob-storage", "0"], (True, False), id="s3"
+            [
+                "--s3-storage",
+                "1",
+                "--azure-blob-storage",
+                "0",
+                "--encrypted-storage",
+                "1",
+            ],
+            (True, False, True),
+            id="s3-encrypted",
         ),
         pytest.param(
-            ["--s3-storage", "0", "--azure-blob-storage", "1"],
-            (False, True),
+            [
+                "--s3-storage",
+                "0",
+                "--azure-blob-storage",
+                "1",
+                "--encrypted-storage",
+                "0",
+            ],
+            (False, True, False),
             id="azure",
         ),
-        pytest.param([], (False, False), id="absent"),
+        pytest.param([], (False, False, False), id="absent"),
     ],
 )
 def test_cli_arguments_reach_run_func_test(monkeypatch, tmp_path, argv_flags, expected):
     """First production seam: `main` forwards the parsed arguments positionally.
     Dropping either one from that call leaves every command-construction test
-    above green, because they call `run_func_test` directly."""
+    above green, because they call `run_func_test` directly. `encrypted_storage`
+    rides the same seam and the same skip-tag mechanism, so it is pinned here
+    too."""
     captured = []
 
     monkeypatch.setattr(
@@ -207,18 +232,23 @@ def test_cli_arguments_reach_run_func_test(monkeypatch, tmp_path, argv_flags, ex
     # parameter were inserted ahead of them.
     parameters = list(inspect.signature(run_func_test).parameters)
     args = captured[0]
-    indexes = [parameters.index(name) for name in ("s3_storage", "azure_blob_storage")]
+    indexes = [parameters.index(name) for name in _FORWARDED]
     assert len(args) > max(indexes), (
         f"main passed only {len(args)} positional arguments, so it never reaches "
         f"{parameters[max(indexes)]}: {args}"
     )
     actual = tuple(args[index] for index in indexes)
-    assert actual == expected, f"main forwarded {actual}, expected {expected}"
+    assert actual == expected, (
+        f"main forwarded {dict(zip(_FORWARDED, actual))}, "
+        f"expected {dict(zip(_FORWARDED, expected))}"
+    )
 
 
-def test_stress_runner_forwards_both_backends():
-    """Second production seam: the shell invocation. `stress.py` defaults both
-    arguments to false, so a flag missing here disables the fix silently."""
+def test_stress_runner_forwards_every_backend():
+    """Second production seam: the shell invocation. `stress.py` defaults the
+    backend arguments to false, so a flag missing here disables the fix
+    silently. `--encrypted-storage` is asserted alongside them because the same
+    edit drops it just as quietly."""
     runner = os.path.join(
         os.path.dirname(__file__), "../..", "tests/docker_scripts/stress_runner.sh"
     )
@@ -232,15 +262,18 @@ def test_stress_runner_forwards_both_backends():
     # "--no-s3-storage".
     tokens = line.split()
 
-    # The `:-0` default is load-bearing, not style: neither variable is exported
-    # on the local branch, and a bare "$VAR" hands argparse an empty string,
-    # whose `type=lambda x: bool(int(x))` exits rc=2 before the first test runs.
-    for flag, variable in (
-        ("--s3-storage", "USE_S3_STORAGE_FOR_MERGE_TREE"),
-        ("--azure-blob-storage", "USE_AZURE_STORAGE_FOR_MERGE_TREE"),
+    # Values are pinned exactly: an unset variable reaches argparse as "", whose
+    # `type=lambda x: bool(int(x))` exits rc=2 before the first test runs. Hence
+    # `:-0` on the two unexported backend variables, and the export check below.
+    for flag, value_token in (
+        ("--s3-storage", "${USE_S3_STORAGE_FOR_MERGE_TREE:-0}"),
+        ("--azure-blob-storage", "${USE_AZURE_STORAGE_FOR_MERGE_TREE:-0}"),
+        ("--encrypted-storage", "$USE_ENCRYPTED_STORAGE"),
     ):
         assert flag in tokens, f"stress_runner.sh does not pass {flag}: {line}"
         value = tokens[tokens.index(flag) + 1].strip('"')
-        assert (
-            value == f"${{{variable}:-0}}"
-        ), f"{flag} takes {value}, not a guarded default"
+        assert value == value_token, f"{flag} takes {value}, not {value_token}"
+
+    assert re.search(
+        r"^export USE_ENCRYPTED_STORAGE=", text, re.M
+    ), "USE_ENCRYPTED_STORAGE is no longer exported, so its unguarded use exits rc=2"
