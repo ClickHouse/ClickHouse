@@ -240,7 +240,7 @@ void SortedRunWriter::finishBlock()
             file_appender.emplace(file_writer.get());
             compressed_writer = DB::wrapWriteBufferWithCompressionMethod(
                 &*file_appender, DB::CompressionMethod::Zstd,
-                /*level=*/ 3, /*zstd_window_log=*/ 0,
+                /*level=*/ 3, /*zstd_window_log=*/ 0, DB::SnappyMode::Basic,
                 buf_size);
         }
 

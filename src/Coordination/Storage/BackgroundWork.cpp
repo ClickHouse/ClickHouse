@@ -494,27 +494,27 @@ void BackgroundWork::mergeThread()
 
                         f.reset();
                     }
+
+                    ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeConsumedFiles, removed_files.size());
+                    ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeConsumedUncompressedBytes, consumed_bytes);
+
+                    size_t written_compressed_bytes = 0;
+                    size_t written_uncompressed_bytes = 0;
+                    for (; counted_output_files < output_run->files.size(); ++counted_output_files)
+                    {
+                        const SortedFile & f = *output_run->files[counted_output_files];
+                        written_compressed_bytes += f.file_size;
+                        written_uncompressed_bytes += f.total_block_size;
+                        ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeWrittenFiles);
+                    }
+                    ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeWrittenCompressedBytes, written_compressed_bytes);
+                    ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeWrittenUncompressedBytes, written_uncompressed_bytes);
                 }
                 catch (...)
                 {
                     DB::tryLogCurrentException(storage->log, "Unexpected exception");
                     std::abort();
                 }
-
-                ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeConsumedFiles, removed_files.size());
-                ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeConsumedUncompressedBytes, consumed_bytes);
-
-                size_t written_compressed_bytes = 0;
-                size_t written_uncompressed_bytes = 0;
-                for (; counted_output_files < output_run->files.size(); ++counted_output_files)
-                {
-                    const SortedFile & f = *output_run->files[counted_output_files];
-                    written_compressed_bytes += f.file_size;
-                    written_uncompressed_bytes += f.total_block_size;
-                    ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeWrittenFiles);
-                }
-                ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeWrittenCompressedBytes, written_compressed_bytes);
-                ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeWrittenUncompressedBytes, written_uncompressed_bytes);
             };
 
             while (true)

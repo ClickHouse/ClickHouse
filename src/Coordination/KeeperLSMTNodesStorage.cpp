@@ -215,14 +215,14 @@ void KeeperLSMTNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader
     reader.finishStreams(std::move(streams));
 }
 
-struct KeeperLSMTNodesStorage::NodeStreamForSnapshot final : public KeeperNodeStreamForSnapshot
+struct KeeperLSMTNodesStorage::NodesReadView final : public KeeperNodesReadView
 {
     SnapshotWriterNodeStream stream;
 
-    NodeStreamForSnapshot(const StorageState & state_) : stream(state_)
-    {
-        node_count = stream.getNodeCount();
-    }
+    NodesReadView(const StorageState & state_) : stream(state_) {}
+    ~NodesReadView() override = default;
+
+    size_t getNodeCount() const override { return stream.getNodeCount(); }
 
     bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override
     {
@@ -236,15 +236,10 @@ struct KeeperLSMTNodesStorage::NodeStreamForSnapshot final : public KeeperNodeSt
     }
 };
 
-std::unique_ptr<KeeperNodeStreamForSnapshot> KeeperLSMTNodesStorage::beginWritingSnapshot()
+std::unique_ptr<KeeperNodesReadView> KeeperLSMTNodesStorage::issueReadView()
 {
     std::shared_lock lock(*storage_mutex);
-    return std::make_unique<NodeStreamForSnapshot>(state);
-}
-
-void KeeperLSMTNodesStorage::finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream)
-{
-    stream->node_count = 0;
+    return std::make_unique<NodesReadView>(state);
 }
 
 void KeeperLSMTNodesStorage::getNodeStorageStats(KeeperStorageStats & out)

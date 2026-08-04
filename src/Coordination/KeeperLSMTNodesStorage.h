@@ -28,8 +28,7 @@ struct KeeperLSMTNodesStorage final : public KeeperNodesStorage
 
     void loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest) override;
 
-    std::unique_ptr<KeeperNodeStreamForSnapshot> beginWritingSnapshot() override;
-    void finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream) override;
+    std::unique_ptr<KeeperNodesReadView> issueReadView() override;
 
     void getNodeStorageStats(KeeperStorageStats & out) override;
 
@@ -88,7 +87,7 @@ struct KeeperLSMTNodesStorage final : public KeeperNodesStorage
         const Node * get() const { return node.action == NodeAction::Remove ? nullptr : &node; }
     };
 
-    struct NodeStreamForSnapshot;
+    struct NodesReadView;
 
     StorageState state;
 
