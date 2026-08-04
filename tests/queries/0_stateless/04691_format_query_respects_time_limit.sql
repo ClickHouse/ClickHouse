@@ -14,7 +14,9 @@
 -- stay under case 7's threshold, silently disarming it. The pins are per query so that they cannot
 -- leak into case 7's own read. Each timed query carries a `04691_` marker that case 7 counts.
 
-SET max_execution_time = 1;
+-- The limit is what each timed query costs: they are limit-bound, not fixture-bound, so ten of them
+-- cost ten times this. It has to stay well above the poll's own overshoot, one 64 KiB stride.
+SET max_execution_time = 0.3;
 SET allow_fuzz_query_functions = 1;
 
 -- 1. formatQuery: many rows of moderate SQL text in one block.
@@ -78,7 +80,7 @@ SETTINGS max_block_size = 200000, max_threads = 1, timeout_overflow_mode = 'brea
 --    The bound is on CPU time, not on `query_duration_ms`: wall clock also absorbs scheduling delay,
 --    and this test runs concurrently with copies of itself, so a wall-clock budget wide enough for a
 --    starved host would have to exceed the pre-fix cost it exists to detect. Pre-fix these statements
---    burn tens of seconds of CPU against a 1000 ms limit; with the fix, one stride of parsing more.
+--    burn tens of seconds of CPU against a 300 ms limit; with the fix, one stride of parsing more.
 --    `count() = 10` keeps the assertion from going vacuous: countIf(...) = 0 over an empty result set is
 --    trivially true, so a marker that stopped matching would silently disarm the whole test.
 --    `type != 'QueryStart'` rather than `= 'ExceptionWhileProcessing'` because the break case above
@@ -145,8 +147,8 @@ FROM numbers(20000) SETTINGS max_execution_time = 0, max_block_size = 200000;
 DROP TABLE IF EXISTS t_04691_retained;
 CREATE TABLE t_04691_retained (q String, n UInt64)
 ENGINE = MergeTree PARTITION BY cityHash64(formatQuery(q)) ORDER BY n;
-ALTER TABLE t_04691_retained ADD COLUMN extra UInt8 DEFAULT 0 SETTINGS max_execution_time = 3;
-SELECT sleep(3), sleep(1) FORMAT Null SETTINGS max_execution_time = 0;
+ALTER TABLE t_04691_retained ADD COLUMN extra UInt8 DEFAULT 0 SETTINGS max_execution_time = 1;
+SELECT sleep(1), sleep(0.2) FORMAT Null SETTINGS max_execution_time = 0;
 INSERT INTO t_04691_retained (q, n)
 SELECT 'SELECT ' || toString(number % 4) || ' -- ' || repeat('x', 700), number FROM numbers(200)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
