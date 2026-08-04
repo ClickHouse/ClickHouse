@@ -1325,7 +1325,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             modified_context,
             processed_stage,
             max_block_size,
-            UInt32(streams_num));
+            streams_num);
 
         if (!plan.isInitialized())
             return {};
