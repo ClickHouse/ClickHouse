@@ -120,7 +120,13 @@ void populatePartAggregationCache(
                 /* filtered_rows_count = */ nullptr,
                 /* apply_deleted_mask = */ true,
                 /* read_with_direct_io = */ false,
-                /* prefetch = */ false);
+                /* prefetch = */ false,
+                /// This is a foreground read on behalf of the query, not a background merge:
+                /// pass the query context so the source reads with the query's own
+                /// `ReadSettings` (read priority, per-query bandwidth throttlers,
+                /// filesystem-cache policy, read method) instead of merge/mutation I/O
+                /// controls (forced `pread`, merges throttler, cache bypass).
+                /* read_context = */ context);
 
             QueryPipeline pipeline(std::move(pipe));
             pipeline.setProcessListElement(process_list_element);

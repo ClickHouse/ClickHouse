@@ -60,7 +60,8 @@ public:
         MergeTreeReadTaskInfoPtr read_task_info_,
         std::optional<MarkRanges> mark_ranges_,
         bool read_with_direct_io_,
-        bool prefetch);
+        bool prefetch,
+        ContextPtr read_context_);
 
     ~MergeTreeSequentialSource() override;
 
@@ -109,7 +110,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeReadTaskInfoPtr read_task_info_,
     std::optional<MarkRanges> mark_ranges_,
     bool read_with_direct_io_,
-    bool prefetch)
+    bool prefetch,
+    ContextPtr read_context_)
     : ISource(std::move(result_header))
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
@@ -119,9 +121,10 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , read_with_direct_io(read_with_direct_io_)
 {
     const auto data_part = read_task_info->data_part_info->getDataPart();
-    /// This source is only used for background merges/mutations, never the stateless-worker read
-    /// path, so the concrete part is always present. Assert it so a future misuse that routes a
-    /// borrowed part here fails loudly instead of dereferencing nullptr below.
+    /// This source is only used for background merges/mutations and the part aggregation cache
+    /// warmup, never the stateless-worker read path, so the concrete part is always present.
+    /// Assert it so a future misuse that routes a borrowed part here fails loudly instead of
+    /// dereferencing nullptr below.
     chassert(data_part);
     const auto & columns_to_read = read_task_info->task_columns.columns;
 
@@ -151,31 +154,46 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     }
 
     const auto & context = storage.getContext();
-    ReadSettings read_settings = context->getReadSettings();
-    const bool read_if_exists_otherwise_bypass
-        = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
-    read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
+    ReadSettings read_settings;
+
+    if (read_context_)
+    {
+        /// A foreground read on behalf of a query (part aggregation cache warmup). Use the query's
+        /// own read settings so its read controls apply: read priority, per-query bandwidth
+        /// throttlers, filesystem-cache policy, read method and buffer sizes. The merge/mutation
+        /// overrides below (filesystem-cache bypass, forced `pread`, merges/mutations throttlers)
+        /// are deliberately not applied — they would make the first, cache-populating run of a
+        /// query scheduled and throttled as a background merge instead of as the query itself.
+        read_settings = read_context_->getReadSettings();
+    }
+    else
+    {
+        read_settings = context->getReadSettings();
+        const bool read_if_exists_otherwise_bypass
+            = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
+        read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
 #if ENABLE_DISTRIBUTED_CACHE
-    read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
+        read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
 #endif
 
-    /// It does not make sense to use pthread_threadpool for background merges/mutations
-    /// And also to preserve backward compatibility
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-    if (read_with_direct_io)
-        read_settings.local_fs_settings.direct_io_threshold = 1;
+        /// It does not make sense to use pthread_threadpool for background merges/mutations
+        /// And also to preserve backward compatibility
+        read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+        if (read_with_direct_io)
+            read_settings.local_fs_settings.direct_io_threshold = 1;
 
-    /// Configure throttling
-    switch (type)
-    {
-        case Mutation:
-            addThrottler(read_settings.remote_throttler, context->getMutationsThrottler());
-            addThrottler(read_settings.local_throttler, context->getMutationsThrottler());
-            break;
-        case Merge:
-            addThrottler(read_settings.remote_throttler, context->getMergesThrottler());
-            addThrottler(read_settings.local_throttler, context->getMergesThrottler());
-            break;
+        /// Configure throttling
+        switch (type)
+        {
+            case Mutation:
+                addThrottler(read_settings.remote_throttler, context->getMutationsThrottler());
+                addThrottler(read_settings.local_throttler, context->getMutationsThrottler());
+                break;
+            case Merge:
+                addThrottler(read_settings.remote_throttler, context->getMergesThrottler());
+                addThrottler(read_settings.local_throttler, context->getMergesThrottler());
+                break;
+        }
     }
 
     MergeTreeReadTask::Extras extras =
@@ -324,7 +342,8 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch)
+    bool prefetch,
+    ContextPtr read_context)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
     info->alter_conversions = std::move(alter_conversions);
@@ -378,7 +397,8 @@ Pipe createMergeTreeSequentialSource(
         std::move(info),
         std::move(mark_ranges),
         read_with_direct_io,
-        prefetch);
+        prefetch,
+        std::move(read_context));
 
     Pipe pipe(std::move(column_part_source));
 
