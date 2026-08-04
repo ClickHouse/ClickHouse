@@ -3288,20 +3288,19 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
         && context->canUseParallelReplicasOnFollower();
 }
 
+bool ReadFromMergeTree::canReadInReverseOrderWithFinal() const
+{
+    return data.merging_params.mode == MergeTreeData::MergingParams::Replacing
+        && context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final];
+}
+
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
 {
     /// if direction is not set, use current one
     if (!direction)
         direction = getSortDirection();
 
-    /// Reading in reverse order with FINAL is supported only for ReplacingMergeTree: its merging algorithm
-    /// selects one row per key, and reading in reverse order symmetrically flips which row is selected
-    /// (see `ReplacingSortedAlgorithm`). The merging algorithms of the other engines rely on the direct
-    /// order of rows (e.g. the sequence of sign rows in CollapsingMergeTree or the order of rows fed
-    /// to order-dependent aggregate functions in AggregatingMergeTree).
-    if (direction != 1 && query_info.isFinal()
-        && (data.merging_params.mode != MergeTreeData::MergingParams::Replacing
-            || !context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]))
+    if (direction != 1 && query_info.isFinal() && !canReadInReverseOrderWithFinal())
         return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order

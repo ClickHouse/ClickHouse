@@ -426,17 +426,19 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
             /// `wouldReadInOrderBeUseful` is unaware of `FINAL`-time gating: even when
             /// the sort description matches the storage's sorting key, pass 2's
-            /// `ReadFromMergeTree::requestReadingInOrder` returns `false` for
-            /// `direction != 1 && query_info.isFinal()`. If we deferred here on the
-            /// strength of the column match, both optimizations would silently disable.
-            /// Guard conservatively: when reading `FINAL`, only defer if all sort columns
-            /// are ascending, since a single descending column is enough for the eventual
-            /// read direction to be -1 in the common case (storage key without reverse
-            /// flags). This may miss the rare reverse-storage-key case where pass 2 would
-            /// have succeeded, but never silently disables both passes.
+            /// `ReadFromMergeTree::requestReadingInOrder` returns `false` for a reverse
+            /// direction with `FINAL` unless the storage supports it. If we deferred here on
+            /// the strength of the column match, both optimizations would silently disable.
+            /// Guard conservatively: when reading `FINAL` from a storage that does not support
+            /// reading in reverse order, only defer if all sort columns are ascending, since a
+            /// single descending column is enough for the eventual read direction to be -1 in
+            /// the common case (storage key without reverse flags). This may miss the rare
+            /// reverse-storage-key case where pass 2 would have succeeded, but never silently
+            /// disables both passes.
             const bool any_desc = std::ranges::any_of(
                 description, [](const SortColumnDescription & c) { return c.direction != 1; });
-            const bool final_blocks_pass2 = reading->isQueryWithFinal() && any_desc;
+            const bool final_blocks_pass2
+                = reading->isQueryWithFinal() && any_desc && !reading->canReadInReverseOrderWithFinal();
 
             if (read_in_order_useful && !final_blocks_pass2)
                 return 0;
