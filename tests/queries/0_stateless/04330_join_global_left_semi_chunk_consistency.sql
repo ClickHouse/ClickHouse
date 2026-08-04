@@ -19,6 +19,6 @@ FROM
     GLOBAL LEFT JOIN generateSeries(5297, 67368) AS t1d0
       ON (t0d0.number <= t1d0.generate_series) AND (t1d0.generate_series = t0d0.number)
     SEMI LEFT JOIN numbers_mt(14075) AS t2d0 USING (number)
-    LIMIT 39 BY ALL
+    LIMIT 39 BY t1d0.generate_series, [100000000000000000000.]
     SETTINGS max_joined_block_size_rows = 1000
 );
