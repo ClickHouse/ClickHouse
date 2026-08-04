@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
+#include <Common/PODArray.h>
 
 #include <roaring/roaring.hh>
 
@@ -80,34 +81,58 @@ void PostingListCodecBitpackingImpl::insert(std::span<uint32_t> row_ids)
         flushCurrentSegment();
 }
 
-void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & postings)
+PostingListCodecBitpackingImpl::Header PostingListCodecBitpackingImpl::readSegment(ReadBuffer & in)
 {
     Header header;
     header.read(in);
 
     prev_row_id = header.first_row_id;
 
+    compressed_data.resize(header.payload_bytes);
+    in.readStrict(compressed_data.data(), header.payload_bytes);
+    return header;
+}
+
+void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & postings)
+{
+    auto header = readSegment(in);
+
     const size_t num_blocks = header.cardinality / BLOCK_SIZE;
     const size_t tail_size = header.cardinality % BLOCK_SIZE;
 
-    current_segment.reserve(BLOCK_SIZE);
-    if (header.payload_bytes > (compressed_data.capacity() - compressed_data.size()))
-        compressed_data.reserve(compressed_data.size() + header.payload_bytes);
-    compressed_data.resize(header.payload_bytes);
-
-    in.readStrict(compressed_data.data(), header.payload_bytes);
+    current_segment.resize(BLOCK_SIZE);
 
     std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte*>(compressed_data.data()), compressed_data.size());
     for (size_t i = 0; i < num_blocks; i++)
     {
-        decodeBlock(compressed_data_span, BLOCK_SIZE, prev_row_id, current_segment);
-        postings.addMany(current_segment.size(), current_segment.data());
+        decodeBlock(compressed_data_span, prev_row_id, std::span(current_segment.data(), BLOCK_SIZE));
+        postings.addMany(BLOCK_SIZE, current_segment.data());
     }
     if (tail_size)
     {
-        decodeBlock(compressed_data_span, tail_size, prev_row_id, current_segment);
-        postings.addMany(current_segment.size(), current_segment.data());
+        decodeBlock(compressed_data_span, prev_row_id, std::span(current_segment.data(), tail_size));
+        postings.addMany(tail_size, current_segment.data());
     }
+}
+
+void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids)
+{
+    auto header = readSegment(in);
+
+    const size_t num_blocks = header.cardinality / BLOCK_SIZE;
+    const size_t tail_size = header.cardinality % BLOCK_SIZE;
+
+    size_t out_pos = row_ids.size();
+    row_ids.resize(out_pos + header.cardinality);
+
+    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte*>(compressed_data.data()), compressed_data.size());
+    for (size_t i = 0; i < num_blocks; i++)
+    {
+        decodeBlock(compressed_data_span, prev_row_id, std::span(row_ids.data() + out_pos, BLOCK_SIZE));
+        out_pos += BLOCK_SIZE;
+    }
+    if (tail_size)
+        decodeBlock(compressed_data_span, prev_row_id, std::span(row_ids.data() + out_pos, tail_size));
 }
 
 void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
@@ -201,25 +226,24 @@ void PostingListCodecBitpackingImpl::encodeBlock(std::span<uint32_t> segment)
     segment_descriptor.compressed_data_size = compressed_data.size() - segment_descriptor.compressed_data_offset;
 }
 
-void PostingListCodecBitpackingImpl::decodeBlock(
-        std::span<const std::byte> & in, size_t count, uint32_t & prev_row_id, std::vector<uint32_t> & current_segment)
+void PostingListCodecBitpackingImpl::decodeBlock(std::span<const std::byte> & in, uint32_t & prev_row_id, std::span<uint32_t> out)
 {
-    chassert(count <= BLOCK_SIZE);
+    size_t count = out.size();
+    chassert(count > 0 && count <= BLOCK_SIZE);
+
     if (in.empty())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
 
     uint8_t bits = readByte(in);
     if (bits > 32)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
-    current_segment.resize(count);
 
     size_t required_size = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
     if (in.size() < required_size)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected data size {}, but got {}", required_size, in.size());
 
-    /// Decode postings to buffer named temp.
-    std::span<uint32_t> current_span(current_segment.data(), current_segment.size());
-    size_t consumed_size = BitpackingBlockCodec::decode(in, count, bits, current_span);
+    std::span<uint32_t> out_span = out;
+    size_t consumed_size = BitpackingBlockCodec::decode(in, count, bits, out_span);
     if (required_size != consumed_size)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
         "Bitpacking decode size mismatch: expected to consume {} bytes for {} integers with {} bits, but actually consumed {} bytes",
@@ -229,14 +253,20 @@ void PostingListCodecBitpackingImpl::decodeBlock(
         consumed_size);
 
     /// Restore the original array from the decompressed delta values.
-    std::inclusive_scan(current_segment.begin(), current_segment.end(), current_segment.begin(), std::plus<uint32_t>{}, prev_row_id);
-    prev_row_id = current_segment.empty() ? prev_row_id : current_segment.back();
+    std::inclusive_scan(out.begin(), out.end(), out.begin(), std::plus<uint32_t>{}, prev_row_id);
+    prev_row_id = out.back();
 }
 
 void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings) const
 {
     PostingListCodecBitpackingImpl impl;
     impl.decode(in, postings);
+}
+
+void PostingListCodecBitpacking::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids) const
+{
+    PostingListCodecBitpackingImpl impl;
+    impl.decode(in, row_ids);
 }
 
 void PostingListCodecBitpacking::encode(

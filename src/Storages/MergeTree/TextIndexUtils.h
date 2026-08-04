@@ -111,10 +111,11 @@ private:
     bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
-    /// Reads the posting lists of the token at the given row of the source's dictionary block.
-    std::vector<PostingListPtr> readPostingLists(size_t source_num, size_t row);
-    /// Adjusts row numbers in the postings list according to merged part offsets.
-    PostingListPtr adjustPartOffsets(size_t source_num, PostingListPtr posting_list);
+    /// Reads the posting lists of the token at the given row of the source's dictionary block
+    /// and merges them (adjusted according to merged part offsets) into the output postings.
+    void mergePostingLists(size_t source_num, size_t row);
+    /// Adjusts row numbers in the postings according to merged part offsets. No-op if offsets are not set.
+    void adjustPartOffsets(size_t source_num, PaddedPODArray<UInt32> & row_ids) const;
     /// Appends the embedded postings of one source (adjusted according to merged part offsets)
     /// to the plain array of the current token, without materializing a roaring bitmap.
     void appendEmbeddedPostings(size_t source_num, std::span<const UInt32> values);
@@ -153,6 +154,8 @@ private:
     std::vector<TokenPostingsInfo> output_infos;
     /// Postings accumulated for the current token from sources with non-embedded postings.
     PostingList output_postings;
+    /// Reusable buffer for row ids of one posting list block read from a source.
+    PaddedPODArray<UInt32> row_ids_buffer;
     /// Postings accumulated for the current token from sources with embedded postings.
     /// Values are adjusted to the merged part, but not sorted across sources.
     PODArray<UInt32> output_embedded_postings;

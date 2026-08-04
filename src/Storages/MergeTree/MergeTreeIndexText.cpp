@@ -261,34 +261,57 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostin
     }
 }
 
+const IPostingListCodec & PostingsSerialization::resolveCompressedCodec()
+{
+    if (!posting_list_codec)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Posting list header marks compressed data but no codec is configured");
+    }
+
+    static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
+
+    if (serialization_version < required_version)
+    {
+        /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
+        /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
+        if (posting_list_codec->getType() == IPostingListCodec::Type::None)
+            posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+    }
+
+    if (posting_list_codec->getType() == IPostingListCodec::Type::None)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Posting list header marks compressed data but configured codec is None");
+    }
+
+    return *posting_list_codec;
+}
+
+PostingList PostingsSerialization::deserializeRoaring(ReadBuffer & istr)
+{
+    size_t num_bytes = 0;
+    readVarUInt(num_bytes, istr);
+
+    /// If the posting list is completely in the buffer, avoid copying.
+    if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
+    {
+        auto result = PostingList::read(istr.position());
+        istr.position() += num_bytes;
+        return result;
+    }
+
+    deserialization_buffer.resize(num_bytes);
+    istr.readStrict(deserialization_buffer.data(), num_bytes);
+    return PostingList::read(deserialization_buffer.data());
+}
+
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
 {
     if (header & IsCompressed)
     {
-        if (!posting_list_codec)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Posting list header marks compressed data but no codec is configured");
-        }
-
-        static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
-
-        if (serialization_version < required_version)
-        {
-            /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
-            /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
-            if (posting_list_codec->getType() == IPostingListCodec::Type::None)
-                posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
-        }
-
-        if (posting_list_codec->getType() == IPostingListCodec::Type::None)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Posting list header marks compressed data but configured codec is None");
-        }
-
         auto postings = std::make_shared<PostingList>();
-        posting_list_codec->decode(istr, *postings);
+        resolveCompressedCodec().decode(istr, *postings);
         return postings;
     }
     else if (header & RawPostings)
@@ -305,20 +328,30 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
     }
     else
     {
-        size_t num_bytes = 0;
-        readVarUInt(num_bytes, istr);
+        return std::make_shared<PostingList>(deserializeRoaring(istr));
+    }
+}
 
-        /// If the posting list is completely in the buffer, avoid copying.
-        if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
-        {
-            auto result = std::make_shared<PostingList>(PostingList::read(istr.position()));
-            istr.position() += num_bytes;
-            return result;
-        }
+void PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids)
+{
+    if (header & IsCompressed)
+    {
+        resolveCompressedCodec().decode(istr, row_ids);
+    }
+    else if (header & RawPostings)
+    {
+        size_t old_size = row_ids.size();
+        row_ids.resize(old_size + cardinality);
 
-        deserialization_buffer.resize(num_bytes);
-        istr.readStrict(deserialization_buffer.data(), num_bytes);
-        return std::make_shared<PostingList>(PostingList::read(deserialization_buffer.data()));
+        for (size_t i = 0; i < cardinality; ++i)
+            readVarUInt(row_ids[old_size + i], istr);
+    }
+    else
+    {
+        auto postings = deserializeRoaring(istr);
+        size_t old_size = row_ids.size();
+        row_ids.resize(old_size + postings.cardinality());
+        postings.toUint32Array(row_ids.data() + old_size);
     }
 }
 

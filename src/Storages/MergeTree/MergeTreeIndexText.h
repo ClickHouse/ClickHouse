@@ -198,9 +198,17 @@ struct PostingsSerialization
     void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
     void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
+    /// The same, but appends the row ids to the plain array instead of materializing a posting list.
+    /// Used in merges of text indexes, where row ids may be remapped before adding to the output posting list.
+    void deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
+    /// Returns the codec for postings marked IsCompressed, resolving pre-WithCodec parts to Bitpacking.
+    const IPostingListCodec & resolveCompressedCodec();
+    /// Deserializes a posting list stored as a serialized roaring bitmap.
+    PostingList deserializeRoaring(ReadBuffer & istr);
+
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/assert_cast.h>
+#include <Common/PODArray_fwd.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
@@ -42,6 +43,10 @@ public:
 
     /// Reads an encoded posting list, decodes it, and returns a posting list.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
+
+    /// Reads an encoded posting list and appends the decoded row ids to the plain array.
+    /// Used in merges of text indexes to avoid materializing a roaring bitmap.
+    virtual void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids) const = 0;
 private:
     Type type{};
 };

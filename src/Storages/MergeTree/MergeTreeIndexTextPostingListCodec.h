@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
+#include <Common/PODArray_fwd.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -143,6 +144,10 @@ public:
     /// to reconstruct absolute row ids.
     void decode(ReadBuffer & in, PostingList & postings);
 
+    /// The same, but appends the decoded row ids to the plain array,
+    /// decoding blocks directly into the array without a roaring bitmap.
+    void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids);
+
 private:
     void reset()
     {
@@ -190,13 +195,16 @@ private:
     /// Also updates current segment metadata (count, max, payload size).
     void encodeBlock(std::span<uint32_t> segment);
 
-    /// Decode one compressed block into `current_segment` and reconstruct absolute row ids.
+    /// Decode one compressed block of `out.size()` row ids into `out` and reconstruct absolute row ids.
     ///
     /// - Reads bits-width byte
-    /// - Codec::decode fills `current_segment` with delta values
+    /// - Codec::decode fills `out` with delta values
     /// - inclusive_scan converts deltas -> row ids using `prev_row_id` as initial prefix
     /// - Updates prev_row_id to the last decoded row id
-    static void decodeBlock(std::span<const std::byte> & in, size_t count, uint32_t & prev_row_id, std::vector<uint32_t> & current_segment);
+    static void decodeBlock(std::span<const std::byte> & in, uint32_t & prev_row_id, std::span<uint32_t> out);
+
+    /// Reads a segment header and its compressed payload into `compressed_data`.
+    Header readSegment(ReadBuffer & in);
 
     /// All segments
     std::string compressed_data;
@@ -235,6 +243,7 @@ public:
 
     void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
     void decode(ReadBuffer & in, PostingList & postings) const override;
+    void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids) const override;
 };
 
 /// A posting list codec that doesn't compress (no-op).
@@ -247,6 +256,7 @@ public:
 
     void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
     void decode(ReadBuffer &, PostingList &) const override {}
+    void decode(ReadBuffer &, PaddedPODArray<UInt32> &) const override {}
 };
 
 }
