@@ -89,8 +89,9 @@ class FuzzerLogParser:
         # when the format string is empty. So it belongs to this failure only if it is
         # the next fatal message of the same thread; otherwise this failure has none
         # and "" is returned, so that an unrelated later failure never renames it.
-        # `None` means the search could not be bounded to the failure, because the
-        # thread that logged it is unknown - e.g. the input has no server log lines.
+        # When the input has no thread ids, the search is bounded by the failure
+        # block instead. `None` means the search could not be bounded to the failure
+        # - e.g. the matched line could not be located in the input.
         if self.stack_trace_str:
             lines = self.stack_trace_str.splitlines()
             match_index = next(
@@ -100,17 +101,25 @@ class FuzzerLogParser:
             if match_index == -1:
                 return None
             thread = self.thread_id(lines[match_index])
-            if not thread:
-                return None
-            next_fatal_line = next(
-                (
-                    line
-                    for line in lines[match_index + 1 :]
-                    if f"[ {thread} ] {{" in line and "<Fatal>" in line
-                ),
-                "",
-            )
-            return self.extract_format_string(next_fatal_line)
+            if thread:
+                next_fatal_line = next(
+                    (
+                        line
+                        for line in lines[match_index + 1 :]
+                        if f"[ {thread} ] {{" in line and "<Fatal>" in line
+                    ),
+                    "",
+                )
+                return self.extract_format_string(next_fatal_line)
+            # The input has no thread ids (e.g. a bare stack trace string), so bound
+            # the search by the failure block instead: the format string belongs to
+            # this failure only if it appears before the next fatal / failure line.
+            for line in lines[match_index + 1 :]:
+                if "Format string: " in line:
+                    return self.extract_format_string(line)
+                if "<Fatal>" in line or re.search(matched_pattern, line):
+                    return ""
+            return ""
 
         if not matched_log_file:
             return None
@@ -611,6 +620,9 @@ class FuzzerLogParser:
         # TODO: Fetch the failed query from fuzzer.log instead of server.log to ensure exact matching.
         # The server.log may normalize whitespace or format queries differently, making it difficult
         # to locate the corresponding query and its dependencies in fuzzer.log.
+        if not self.server_log:
+            # Without a file argument `rg` would search the working directory.
+            return None
         failure_output = Shell.get_output(
             f"rg --text -A10 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' {self.server_log}",
             verbose=True,

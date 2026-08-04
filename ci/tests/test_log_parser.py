@@ -201,3 +201,29 @@ def test_parse_failure_logical_error_without_own_format_string(tmp_path):
 
     assert result_name.startswith("Logical error: 'first error without format' (STID:")
     assert "second error normalized" not in result_name
+
+
+def test_parse_failure_logical_error_stack_trace_str_without_thread_ids():
+    # Same scenario as above, but with the `stack_trace_str` input, whose lines have
+    # no server-log `[ thread_id ] {}` prefixes. The search for the `Format string:`
+    # line cannot be bounded by the thread there, so it must be bounded by the
+    # failure block instead: a `Format string:` that appears after the next failure
+    # line belongs to that failure, not to the matched one.
+    parser = FuzzerLogParser(
+        server_log="",
+        stack_trace_str=(
+            "Logical error: 'first error without format'.\n"
+            "Stack trace (when copying this message, always include the lines "
+            "below):\n"
+            "\n"
+            "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+            "@ 0x00000000139d383c\n"
+            "Logical error: 'second error normalized A'.\n"
+            "Format string: 'second error normalized {}'.\n"
+        ),
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith("Logical error: first error without format (STID:")
+    assert "second error normalized" not in result_name
