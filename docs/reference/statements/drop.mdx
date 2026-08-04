@@ -150,3 +150,54 @@ DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
 DROP NAMED COLLECTION foobar;
 ```
+
+## DROP ENDPOINT {#drop-endpoint}
+
+Deletes a SQL cluster catalog endpoint. Requires [`cluster_metadata`](/operations/sql-clusters#configuration). The endpoint must not be referenced by any SQL shard.
+
+**Syntax**
+
+```sql
+DROP ENDPOINT [IF EXISTS] name [SYNC]
+```
+
+**Example**
+
+```sql
+DROP ENDPOINT IF EXISTS replica_01;
+```
+
+## DROP SHARD {#drop-shard}
+
+Deletes a SQL cluster catalog shard. Requires [`cluster_metadata`](/operations/sql-clusters#configuration). The shard must not be referenced by any SQL cluster.
+
+**Syntax**
+
+```sql
+DROP SHARD [IF EXISTS] name [ON CLUSTER cluster_name] [SYNC]
+```
+
+**Example**
+
+```sql
+DROP SHARD IF EXISTS shard_01;
+```
+
+## DROP CLUSTER {#drop-cluster}
+
+Deletes a SQL-managed cluster definition. Requires [`cluster_metadata`](/operations/sql-clusters#configuration).
+
+**Syntax**
+
+```sql
+DROP CLUSTER [IF EXISTS] name [ON CLUSTER cluster_name] [SYNC]
+```
+
+**Example**
+
+```sql
+DROP CLUSTER IF EXISTS analytics;
+```
+
+See also: [SQL clusters](/operations/sql-clusters).
+

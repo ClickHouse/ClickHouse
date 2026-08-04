@@ -1,0 +1,413 @@
+---
+description: 'Manage ClickHouse clusters with SQL DDL instead of remote_servers XML'
+sidebarTitle: 'SQL clusters'
+slug: /operations/sql-clusters
+title: 'SQL clusters'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+## Overview {#overview}
+
+SQL clusters let you define the same topology that traditionally lives under [`remote_servers`](/operations/server-configuration-parameters/settings#remote_servers) using DDL statements. Definitions are stored in ClickHouse Keeper (or ZooKeeper), replicated across nodes that share a replica group, and materialized into the server cluster map used by `Distributed` tables, the `cluster` table function, and `ON CLUSTER` DDL.
+
+A SQL cluster is built from three catalog objects:
+
+| Object | Role | Typical DDL |
+| --- | --- | --- |
+| **Endpoint** | Host, port, and connection settings for one replica | `CREATE ENDPOINT` |
+| **Shard** | Ordered list of endpoints (replicas) plus shard weight / internal replication | `CREATE SHARD` |
+| **Cluster** | Ordered list of shards plus optional cluster-level options | `CREATE CLUSTER` |
+
+Create objects bottom-up (`ENDPOINT` → `SHARD` → `CLUSTER`) and drop them top-down (`CLUSTER` → `SHARD` → `ENDPOINT`).
+
+SQL catalog clusters coexist with clusters from `remote_servers`, [cluster discovery](/operations/cluster-discovery), and `Replicated` databases. After materialization they appear in [`system.clusters`](/operations/system-tables/clusters) like any other cluster.
+
+## Configuration {#configuration}
+
+SQL catalog DDL requires a `<cluster_metadata>` section in the server configuration. If it is missing, `CREATE` / `ALTER` / `DROP` for `ENDPOINT`, `SHARD`, and `CLUSTER` are disabled.
+
+```xml
+<clickhouse>
+    <cluster_metadata>
+        <!-- Keeper path that stores catalog metadata (required). -->
+        <path>/clickhouse/cluster_metadata</path>
+
+        <!-- Optional: name of the zookeeper/keeper node group from config (default: default ZooKeeper). -->
+        <!-- <keeper>zookeeper</keeper> -->
+
+        <!-- Replica group name under <path>. Nodes with the same group share one catalog log. -->
+        <replica_group>default</replica_group>
+
+        <!-- Optional: encrypt values stored in Keeper. -->
+        <encrypted>false</encrypted>
+        <!-- When encrypted=true, also set: -->
+        <!-- <key_hex>...</key_hex> -->
+        <!-- <algorithm>aes_128_ctr</algorithm> -->
+
+        <!-- Optional: import clusters published by other replica groups under the same <path>. -->
+        <!-- <imports> -->
+        <!--     <replica_group>other_group</replica_group> -->
+        <!-- </imports> -->
+    </cluster_metadata>
+</clickhouse>
+```
+
+| Setting | Required | Description |
+| --- | --- | --- |
+| `path` | Yes | Root Keeper path for catalog metadata. Must be non-empty. |
+| `replica_group` | No | Local replication group under `path` (default `default`). |
+| `keeper` | No | Named Keeper/ZooKeeper configuration to use. |
+| `encrypted` | No | Store catalog payloads encrypted (default `false`). |
+| `key_hex` / `algorithm` | When `encrypted` is `true` | Encryption key and algorithm (default algorithm `aes_128_ctr`). |
+| `imports` | No | Other replica groups under the same `path` whose clusters should be imported read-only. |
+| `max_log_entries_per_batch` | No | Max catalog log entries applied per batch (default `64`, must be greater than 0). |
+
+All servers that should share the same SQL catalog must use the same `path` and `replica_group` (and encryption settings, if enabled).
+
+## Privileges {#privileges}
+
+| Privilege | Statements |
+| --- | --- |
+| `CREATE ENDPOINT` | `CREATE ENDPOINT` |
+| `ALTER ENDPOINT` | `ALTER ENDPOINT` |
+| `DROP ENDPOINT` | `DROP ENDPOINT` |
+| `CREATE SHARD` | `CREATE SHARD`, `ALTER SHARD` |
+| `DROP SHARD` | `DROP SHARD` |
+| `CREATE CLUSTER` | `CREATE CLUSTER`, `ALTER CLUSTER` |
+| `DROP CLUSTER` | `DROP CLUSTER` |
+| `SHOW CREATE SHARD` | `SHOW CREATE SHARD` |
+| `SHOW CREATE CLUSTER` | `SHOW CREATE CLUSTER` |
+
+Example:
+
+```sql
+GRANT CREATE ENDPOINT, CREATE SHARD, CREATE CLUSTER,
+      ALTER ENDPOINT, DROP ENDPOINT, DROP SHARD, DROP CLUSTER,
+      SHOW CREATE SHARD, SHOW CREATE CLUSTER
+ON *.* TO cluster_admin;
+```
+
+## Quick start {#quick-start}
+
+```sql
+-- 1. Endpoints (one per replica host)
+CREATE ENDPOINT replica_01 PROPERTIES (
+    host = 'ch1.example.com',
+    port = 9000,
+    user = 'default',
+    password = 'secret'
+);
+
+CREATE ENDPOINT replica_02 PROPERTIES (
+    host = 'ch2.example.com',
+    port = 9000,
+    user = 'default',
+    password = 'secret'
+);
+
+CREATE ENDPOINT replica_03 PROPERTIES (
+    host = 'ch3.example.com',
+    port = 9000
+);
+
+CREATE ENDPOINT replica_04 PROPERTIES (
+    host = 'ch4.example.com',
+    port = 9000
+);
+
+-- 2. Shards (groups of replica endpoints)
+CREATE SHARD shard_01 REPLICA (replica_01, replica_02)
+    PROPERTIES (weight = 1, internal_replication = true);
+
+CREATE SHARD shard_02 REPLICA (replica_03, replica_04)
+    PROPERTIES (weight = 1, internal_replication = true);
+
+-- 3. Cluster (list of shards)
+CREATE CLUSTER analytics (shard_01, shard_02)
+    PROPERTIES (secret = 'interserver-secret', allow_distributed_ddl_queries = true);
+
+-- Inspect
+SHOW CREATE CLUSTER analytics;
+SELECT cluster, shard_num, host_name, port
+FROM system.clusters
+WHERE cluster = 'analytics'
+ORDER BY shard_num, replica_num;
+```
+
+Equivalent traditional XML:
+
+```xml
+<remote_servers>
+    <analytics>
+        <secret>interserver-secret</secret>
+        <shard>
+            <weight>1</weight>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>ch1.example.com</host>
+                <port>9000</port>
+                <user>default</user>
+                <password>secret</password>
+            </replica>
+            <replica>
+                <host>ch2.example.com</host>
+                <port>9000</port>
+                <user>default</user>
+                <password>secret</password>
+            </replica>
+        </shard>
+        <shard>
+            <weight>1</weight>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>ch3.example.com</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>ch4.example.com</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </analytics>
+</remote_servers>
+```
+
+## Endpoints {#endpoints}
+
+An endpoint stores connection parameters for one remote ClickHouse server.
+
+### CREATE ENDPOINT {#create-endpoint}
+
+```sql
+CREATE ENDPOINT [IF NOT EXISTS] name
+PROPERTIES (name = value [, ...])
+[SYNC]
+```
+
+| Property | Required | Default | Description |
+| --- | --- | --- | --- |
+| `host` | Yes | — | IPv4, IPv6, or hostname |
+| `port` | Yes | — | TCP port (`1`–`65535`) |
+| `user` | No | `default` | User for the connection |
+| `password` | No | empty | Password |
+| `secure` | No | `false` | Use SSL/TLS |
+| `compression` | No | `true` | Enable compression |
+| `priority` | No | `1` | Load-balancing priority |
+| `bind_host` | No | empty | Source bind address |
+| `default_database` | No | empty | Default database on the remote host |
+
+`host` and `port` must be present. Property names cannot be repeated in one `PROPERTIES` list.
+
+```sql
+CREATE ENDPOINT ep1 PROPERTIES (host = '127.0.0.1', port = 9000, secure = 0, priority = 1);
+CREATE ENDPOINT ep_v6 PROPERTIES (host = '2001:db8::1', port = 9440, secure = 1);
+CREATE ENDPOINT ep_fqdn PROPERTIES (host = 'db.example.com', port = 9000);
+```
+
+### ALTER ENDPOINT {#alter-endpoint}
+
+```sql
+ALTER ENDPOINT name
+MODIFY PROPERTIES (name = value [, ...])
+[SYNC]
+```
+
+Merges the listed assignments into the existing endpoint. At least one assignment is required.
+
+```sql
+ALTER ENDPOINT ep1 MODIFY PROPERTIES (secure = 1, priority = 2);
+```
+
+### DROP ENDPOINT {#drop-endpoint}
+
+```sql
+DROP ENDPOINT [IF EXISTS] name [SYNC]
+```
+
+You cannot drop an endpoint that is still referenced by a shard.
+
+## Shards {#shards}
+
+A shard is an ordered list of endpoint names (replicas) with optional shard-level options.
+
+### CREATE SHARD {#create-shard}
+
+```sql
+CREATE SHARD [IF NOT EXISTS] name
+    REPLICA endpoint [, ...]
+  | REPLICA (endpoint [, ...])
+  | (endpoint [, ...])
+[PROPERTIES (name = value [, ...])]
+[ON CLUSTER cluster_name]
+[SYNC]
+```
+
+| Property | Required | Default | Description |
+| --- | --- | --- | --- |
+| `weight` | No | `1` | Relative write weight (`1`–`4294967295`) |
+| `internal_replication` | No | `false` | Same meaning as `<internal_replication>` in `remote_servers` |
+
+Every listed replica must already exist as an endpoint. Shard-level `PROPERTIES` accept only `weight` and `internal_replication` — replica keys such as `host` belong on `CREATE ENDPOINT`.
+
+```sql
+CREATE SHARD s1 REPLICA ep1, ep2;
+CREATE SHARD s1 REPLICA (ep1, ep2) PROPERTIES (weight = 2, internal_replication = true);
+CREATE SHARD s1 (ep1, ep2);
+```
+
+### ALTER SHARD {#alter-shard}
+
+Supported forms:
+
+```sql
+ALTER SHARD [IF EXISTS] name
+    MODIFY PROPERTIES (name = value [, ...])
+  | ADD REPLICA endpoint
+  | DROP REPLICA endpoint
+  | REPLACE from_list TO to_list
+      [, REPLACE from_list TO to_list ...]
+      [MODIFY PROPERTIES (name = value [, ...])]
+[ON CLUSTER cluster_name]
+[SYNC]
+```
+
+- `MODIFY PROPERTIES` updates shard-level options only.
+- `ADD REPLICA` attaches an existing endpoint; it does not create one.
+- `DROP REPLICA` removes an endpoint from the shard list without dropping the endpoint. The last replica cannot be dropped.
+- `REPLACE ... TO ...` remaps endpoints pairwise (lists must have equal length). Optional trailing `MODIFY PROPERTIES` updates shard options in the same statement.
+
+```sql
+ALTER SHARD s1 MODIFY PROPERTIES (weight = 7);
+ALTER SHARD s1 ADD REPLICA ep3;
+ALTER SHARD s1 DROP REPLICA ep2;
+ALTER SHARD s1 REPLACE ep1 TO ep3 MODIFY PROPERTIES (weight = 1);
+```
+
+### DROP SHARD {#drop-shard}
+
+```sql
+DROP SHARD [IF EXISTS] name [ON CLUSTER cluster_name] [SYNC]
+```
+
+You cannot drop a shard that is still referenced by a cluster.
+
+### SHOW CREATE SHARD {#show-create-shard}
+
+```sql
+SHOW CREATE SHARD name
+```
+
+## Clusters {#clusters}
+
+A cluster is an ordered list of shard members with optional cluster-level options.
+
+### CREATE CLUSTER {#create-cluster}
+
+```sql
+CREATE CLUSTER [IF NOT EXISTS] name (shard [, ...])
+[PROPERTIES (name = value [, ...])]
+[ON CLUSTER cluster_name]
+[SYNC]
+```
+
+| Property | Required | Default | Description |
+| --- | --- | --- | --- |
+| `secret` | No | empty | Inter-node secret for Distributed / interserver authentication |
+| `allow_distributed_ddl_queries` | No | `true` | Whether distributed DDL is allowed on this cluster |
+
+At least one shard member is required, and every member must already exist as a SQL shard.
+
+```sql
+CREATE CLUSTER analytics (s1, s2);
+CREATE CLUSTER analytics (s1, s2)
+    PROPERTIES (secret = 'shared-secret', allow_distributed_ddl_queries = true);
+```
+
+### ALTER CLUSTER {#alter-cluster}
+
+Supported forms:
+
+```sql
+ALTER CLUSTER [IF EXISTS] name
+    ADD SHARD shard [, ...]
+  | DROP SHARD shard [, ...]
+  | REPLACE from_list TO to_list
+      [, REPLACE from_list TO to_list ...]
+      [MODIFY PROPERTIES (name = value [, ...])]
+[ON CLUSTER cluster_name]
+[SYNC]
+```
+
+- `ADD SHARD` appends existing SQL shards.
+- `DROP SHARD` removes members; you cannot remove the last member.
+- `REPLACE ... TO ...` remaps members pairwise. Optional trailing `MODIFY PROPERTIES` updates cluster-level `secret` / `allow_distributed_ddl_queries`.
+
+```sql
+ALTER CLUSTER analytics ADD SHARD s3;
+ALTER CLUSTER analytics DROP SHARD s2;
+ALTER CLUSTER analytics REPLACE s1 TO s3 MODIFY PROPERTIES (secret = 'new-secret');
+```
+
+:::note
+`ALTER CLUSTER ... MODIFY SHARD` and `ALTER CLUSTER ... RENAME SHARD` are parsed but not implemented yet. Change shard options with `ALTER SHARD`.
+:::
+
+### DROP CLUSTER {#drop-cluster}
+
+```sql
+DROP CLUSTER [IF EXISTS] name [ON CLUSTER cluster_name] [SYNC]
+```
+
+### SHOW CREATE CLUSTER {#show-create-cluster}
+
+```sql
+SHOW CREATE CLUSTER name
+```
+
+## Naming rules {#naming-rules}
+
+Endpoint, shard, and cluster names share one namespace inside the SQL catalog:
+
+- You cannot create a shard or cluster with the same name as an existing endpoint (and vice versa).
+- You cannot create a cluster with the same name as an existing shard (and vice versa).
+
+## SYNC and ON CLUSTER {#sync-and-on-cluster}
+
+Most catalog statements accept an optional trailing `SYNC`:
+
+- **Without `ON CLUSTER`**: `SYNC` waits until nodes in the local replica group have applied the catalog mutation and returns per-node status rows.
+- **With `ON CLUSTER`**: the statement is executed as distributed DDL on the named cluster. If `SYNC` is set and `distributed_ddl_task_timeout` is `0`, the server uses a non-zero timeout so hosts are waited on instead of fire-and-forget.
+
+`ON CLUSTER` is supported on `CREATE` / `ALTER` / `DROP` for shards and clusters. Endpoint DDL is local to the catalog (replicated via Keeper within the replica group).
+
+## System tables {#system-tables}
+
+| Table | Contents |
+| --- | --- |
+| [`system.endpoints`](/operations/system-tables/endpoints) | SQL endpoints (`CREATE ENDPOINT`) |
+| [`system.shards`](/operations/system-tables/shards) | SQL shards (`CREATE SHARD`), including referenced clusters |
+| [`system.clusters`](/operations/system-tables/clusters) | All clusters available to the server, including materialized SQL clusters |
+
+Passwords in `system.endpoints` are masked unless secret display settings and privileges allow showing them (same rules as other `SHOW CREATE` secret handling).
+
+## Related statements {#related-statements}
+
+- [`CREATE ENDPOINT`](/sql-reference/statements/create/endpoint)
+- [`CREATE SHARD`](/sql-reference/statements/create/shard)
+- [`CREATE CLUSTER`](/sql-reference/statements/create/cluster)
+- [`ALTER ENDPOINT`](/sql-reference/statements/alter/endpoint)
+- [`ALTER SHARD`](/sql-reference/statements/alter/shard)
+- [`ALTER CLUSTER`](/sql-reference/statements/alter/cluster)
+- [`DROP`](/sql-reference/statements/drop)
+- [`SHOW`](/sql-reference/statements/show)
+
+## See also {#see-also}
+
+- [`remote_servers`](/operations/server-configuration-parameters/settings#remote_servers)
+- [Cluster discovery](/operations/cluster-discovery)
+- [Distributed table engine](/engines/table-engines/special/distributed)
+- [Distributed DDL](/sql-reference/distributed-ddl)
