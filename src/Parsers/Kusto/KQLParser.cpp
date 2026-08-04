@@ -39,6 +39,30 @@ ASTPtr makeIdentifier(const String & name)
     return make_intrusive<ASTIdentifier>(name);
 }
 
+/// Whether a parsed expression is a literal in the KQL sense: a plain literal, or one of the
+/// wrappers the typed literals (`long(-1)`, `datetime(...)`, `timespan(1d)`, `int(null)`) and
+/// negative numbers lower to. Anything else - arithmetic, identifiers, calls - is not a valid
+/// function parameter default.
+bool isLiteralExpression(const ASTPtr & node)
+{
+    if (node->as<ASTLiteral>())
+        return true;
+
+    const auto * function = node->as<ASTFunction>();
+    if (!function)
+        return false;
+
+    static const std::set<String> literal_wrappers{
+        "negate", "CAST", "accurateCastOrNull", "toIntervalNanosecond", "parseDateTime64BestEffortOrNull", "toUUIDOrNull"};
+    if (!literal_wrappers.contains(function->name))
+        return false;
+
+    for (const auto & child : function->arguments->children)
+        if (!isLiteralExpression(child))
+            return false;
+    return true;
+}
+
 /// The operators that may follow a `|`, mapped to the parse routine that handles them.
 /// Anything not in this set is rejected by name, so an unsupported operator says so
 /// instead of being silently reinterpreted (the old parser fell through to "table name",
@@ -120,8 +144,8 @@ const std::map<String, String> & kqlTypeToClickHouseType()
         {"real", "Float64"},
         {"double", "Float64"},
         {"string", "String"},
-        {"timespan", "Int64"},
-        {"time", "Int64"},
+        {"timespan", "IntervalNanosecond"},
+        {"time", "IntervalNanosecond"},
     };
     return types;
 }
@@ -345,7 +369,10 @@ void KQLParser::parseFunctionDefinition(const String & name)
                 /// A default must be a literal, and defaulted parameters come last.
                 if (consume(KQLTokenType::Equals))
                 {
+                    const KQLToken & default_token = current();
                     parameter.default_value = parseExpression();
+                    if (!isLiteralExpression(parameter.default_value))
+                        failAt(default_token, fmt::format("the default of parameter '{}' must be a literal", parameter.name));
                     seen_default = true;
                 }
                 else if (seen_default)
@@ -618,11 +645,16 @@ void KQLParser::parseLetStatement()
     /// something that starts a pipeline, a rebinding of a tabular name, or a call to a
     /// function whose body is a pipeline can be tabular; everything else is scalar.
     const bool rebinds_tabular = at(KQLTokenType::BareWord) && scope.tabulars.contains(String(current().text()));
-    const bool calls_tabular_function = at(KQLTokenType::BareWord) && lookahead().type == KQLTokenType::OpeningRoundBracket
+    const bool calls_tabular_function = at(KQLTokenType::BareWord)
         && [&]
         {
             const auto function = scope.functions.find(String(current().text()));
-            return function != scope.functions.end() && function->second.body_looks_tabular;
+            if (function == scope.functions.end() || !function->second.body_looks_tabular)
+                return false;
+            /// A parameterless function may be called with or without parentheses, so a bare
+            /// name that stands alone (`let T = Numbers;`) is a call too.
+            return lookahead().type == KQLTokenType::OpeningRoundBracket || lookahead().type == KQLTokenType::Semicolon
+                || lookahead().type == KQLTokenType::EndOfStream;
         }();
     const bool looks_tabular = at(KQLTokenType::OpeningRoundBracket) || atKeyword("datatable") || atKeyword("range")
         || atKeyword("print")
@@ -1782,7 +1814,7 @@ ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
             static const std::map<Kind, const char *> null_types{
                 {Kind::Boolean, "Nullable(Bool)"},       {Kind::Integer, "Nullable(Int64)"},
                 {Kind::Real, "Nullable(Float64)"},       {Kind::Decimal, "Nullable(Decimal128(20))"},
-                {Kind::Timespan, "Nullable(Int64)"},     {Kind::Text, "Nullable(String)"},
+                {Kind::Timespan, "Nullable(IntervalNanosecond)"}, {Kind::Text, "Nullable(String)"},
             };
             value = makeASTFunction("CAST", makeLiteral(Field()), makeLiteral(String(null_types.at(kind))));
         }
