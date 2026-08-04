@@ -14,7 +14,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/OrderedResize.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ResizeProcessor.h>
@@ -141,25 +140,6 @@ void QueryPipelineBuilder::resize(size_t num_streams, bool strict, UInt64 min_ou
 {
     checkInitializedAndNotCompleted();
     pipe.resize(num_streams, strict, min_outstreams_per_resize_after_split);
-}
-
-void QueryPipelineBuilder::scatterPreservingOrder(size_t num_streams)
-{
-    checkInitializedAndNotCompleted();
-
-    if (pipe.numOutputPorts() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline with {} streams cannot be scattered", pipe.numOutputPorts());
-
-    if (num_streams > 1)
-        pipe.addTransform(std::make_shared<OrderedScatterProcessor>(pipe.getSharedHeader(), num_streams));
-}
-
-void QueryPipelineBuilder::gatherPreservingOrder()
-{
-    checkInitializedAndNotCompleted();
-
-    if (pipe.numOutputPorts() > 1)
-        pipe.addTransform(std::make_shared<OrderedGatherProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
 }
 
 void QueryPipelineBuilder::narrow(size_t size)

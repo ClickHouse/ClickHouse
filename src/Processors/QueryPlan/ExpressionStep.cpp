@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/SortChunksBySequenceNumber.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionActions.h>
@@ -75,18 +76,24 @@ ExpressionStep::ExpressionStep(SharedHeader input_header_, ActionsDAG actions_da
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    /// `SortChunksBySequenceNumber` restores the order of the chunks, not the order in which the streams
+    /// reach a function, so a stateful or non-deterministic function would observe an arbitrary
+    /// interleaving. Deriving it here rather than trusting the flag keeps it right for every optimization
+    /// that rebuilds this step from another DAG.
+    const size_t num_parallel_streams = std::min(settings.max_threads, pipeline.getNumThreads());
+    const bool parallelize = parallelize_single_stream && pipeline.getNumStreams() == 1 && num_parallel_streams > 1
+        && !actions_dag.hasStatefulFunctions() && !actions_dag.hasNonDeterministic();
+
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
-    const size_t num_parallel_streams = std::min(settings.max_threads, pipeline.getNumThreads());
-    const bool parallelize = parallelize_single_stream && pipeline.getNumStreams() == 1 && num_parallel_streams > 1;
     if (parallelize)
-        pipeline.scatterPreservingOrder(num_parallel_streams);
+    {
+        pipeline.addTransform(std::make_shared<AddSequenceNumber>(pipeline.getSharedHeader()));
+        pipeline.resize(num_parallel_streams);
+    }
 
     pipeline.addSimpleTransform([&](const SharedHeader & header)
                                 { return std::make_shared<ExpressionTransform>(header, expression, dataflow_cache_updater); });
-
-    if (parallelize)
-        pipeline.gatherPreservingOrder();
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
@@ -104,6 +111,9 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
             return std::make_shared<ExpressionTransform>(header, convert_actions);
         });
     }
+
+    if (parallelize)
+        pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), pipeline.getNumStreams()));
 }
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
@@ -126,9 +136,8 @@ void ExpressionStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(*input_headers.front(), actions_dag));
 }
 
-/// `parallelize_single_stream` is left out of the wire format: there is no spare flags byte here, so
-/// keeping it would need a `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` bump, which in turn drops replicas
-/// of the previous version from serialized-plan parallel replicas. It only affects performance.
+/// `parallelize_single_stream` is left out of the wire format: it only affects performance, and keeping it
+/// would need a `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` bump.
 void ExpressionStep::serialize(Serialization & ctx) const
 {
     actions_dag.serialize(ctx.out, ctx.registry);

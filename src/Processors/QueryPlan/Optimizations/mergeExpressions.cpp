@@ -54,18 +54,11 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
-        /// Recompute the flag instead of propagating it: the other side may contribute stateful or
-        /// non-deterministic functions, which `liftUpFunctions` excludes from parallel evaluation.
-        const bool parallelize_single_stream
-            = (child_expr->isSingleStreamParallelized() || parent_expr->isSingleStreamParallelized())
-            && !merged.hasStatefulFunctions() && !merged.hasNonDeterministic();
-
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
         expr->setStepDescription(fmt::format("({} + {})", parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
             expr->setPreventInputRemoval();
-
-        if (parallelize_single_stream)
+        if (child_expr->isSingleStreamParallelized() || parent_expr->isSingleStreamParallelized())
             expr->setParallelizeSingleStream();
 
         parent_node->step = std::move(expr);
@@ -74,9 +67,9 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
     }
     if (parent_filter && child_expr)
     {
-        /// The merged step drops `parallelize_single_stream`, since `FilterTransform` removes a chunk that
-        /// becomes empty. Blocking the merge instead would also block pushing the filter below the
-        /// `SortingStep`, which saves more than evaluating the lifted expression in parallel.
+        /// `FilterStep` has no `parallelize_single_stream`, so merging into it loses the parallel
+        /// evaluation of a lifted expression. Blocking the merge to keep it would also block pushing the
+        /// filter below the `SortingStep`, which saves more.
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_filter->getExpression();
 
