@@ -56,6 +56,14 @@ SELECT '-- ORDER BY: projection lifted above the sort still gets the tokenizer';
 
 SELECT count() FROM (SELECT hasAnyTokens(tags, ['make-payment-check']) AS h FROM tab ORDER BY id) WHERE h;
 
+-- The walk must also traverse the negative/fractional limit-offset variants (here NegativeLimitStep).
+SELECT '-- ORDER BY ... LIMIT -10: tokenizer injected above the negative-limit step';
+
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
+    EXPLAIN actions = 1
+    SELECT hasAnyTokens(tags, ['make-payment-check']) FROM tab ORDER BY id LIMIT -10
+) WHERE explain ILIKE '%hasAnyTokens%';
+
 DROP TABLE tab;
 
 SELECT 'preprocessor is applied only on the index path';
@@ -76,6 +84,11 @@ INSERT INTO tab SELECT number, if(number < 10, 'Hello World', 'foo bar') FROM nu
 SELECT '-- SELECT-list position: preprocessor not applied';
 
 SELECT countIf(hasAnyTokens(s, 'hello')) FROM tab;
+
+-- The SELECT-list rewrite must not borrow the preprocessor from a sibling WHERE that makes the index useful.
+SELECT '-- SELECT-list preprocessor is not applied even when a sibling WHERE uses the index';
+
+SELECT countIf(hasAnyTokens(s, 'hello')) FROM tab WHERE hasAnyTokens(s, 'world') SETTINGS use_skip_indexes = 1;
 
 SELECT '-- WHERE: preprocessor applied only with use_skip_indexes = 1';
 

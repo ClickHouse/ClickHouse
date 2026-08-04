@@ -20,8 +20,12 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
+#include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -367,10 +371,11 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 class TextIndexDAGReplacer
 {
 public:
-    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_)
+    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, bool is_filter_dag_)
         : actions_dag(actions_dag_)
         , text_index_read_infos(text_index_read_infos_)
         , direct_read_from_text_index(direct_read_from_text_index_)
+        , is_filter_dag(is_filter_dag_)
     {
     }
 
@@ -464,6 +469,8 @@ private:
     ActionsDAG & actions_dag;
     TextIndexReadInfos text_index_read_infos;
     bool direct_read_from_text_index = false;
+    /// True while rewriting a WHERE/PREWHERE filter DAG; false for SELECT-list / above-scan rewrites.
+    bool is_filter_dag = false;
 
     struct SelectedCondition
     {
@@ -613,9 +620,8 @@ private:
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
-        /// Only the preprocessor is index-path-only; the tokenizer and postprocessor also apply on the row-scan path.
-        const bool index_is_used = condition.info->index != nullptr;
-        const bool apply_preprocessor = index_is_used && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        /// Preprocessor: only on the index path (this filter DAG, useful index), so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
+        const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
         const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
@@ -881,7 +887,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     const String & filter_column_name,
     bool direct_read_from_text_index)
 {
-    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index);
+    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index, /*is_filter_dag=*/ true);
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
 
     /// Even when no virtual columns are added (added_columns is empty),
@@ -915,7 +921,7 @@ static bool applyTextIndexInject(
     ActionsDAG & dag,
     const TextIndexReadInfos & text_index_infos)
 {
-    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false);
+    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false, /*is_filter_dag=*/ false);
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{});
     return result.is_dag_rewritten;
 }
@@ -947,7 +953,11 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 {
     return typeid_cast<const SortingStep *>(step)
         || typeid_cast<const LimitStep *>(step)
+        || typeid_cast<const NegativeLimitStep *>(step)
+        || typeid_cast<const FractionalLimitStep *>(step)
         || typeid_cast<const OffsetStep *>(step)
+        || typeid_cast<const NegativeOffsetStep *>(step)
+        || typeid_cast<const FractionalOffsetStep *>(step)
         || typeid_cast<const LimitByStep *>(step)
         || typeid_cast<const DistinctStep *>(step);
 }

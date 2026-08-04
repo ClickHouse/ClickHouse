@@ -12,8 +12,12 @@ Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\'), hasAllTokens(ta
 Filter column: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
 -- ORDER BY: projection lifted above the sort still gets the tokenizer
 47
+-- ORDER BY ... LIMIT -10: tokenizer injected above the negative-limit step
+Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
 preprocessor is applied only on the index path
 -- SELECT-list position: preprocessor not applied
+0
+-- SELECT-list preprocessor is not applied even when a sibling WHERE uses the index
 0
 -- WHERE: preprocessor applied only with use_skip_indexes = 1
 0
