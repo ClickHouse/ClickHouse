@@ -209,6 +209,10 @@ TEST(ParserStreamSettings, WatermarkOnlyParses)
     ASSERT_TRUE(stream_ast->watermark);
     ASSERT_EQ(stream_ast->watermark->column, "event_time");
     ASSERT_NE(stream_ast->watermark->expression, nullptr);
+
+    /// The expression must be reachable through `children` for generic AST walkers.
+    ASSERT_EQ(stream_ast->children.size(), 1u);
+    ASSERT_EQ(stream_ast->children.at(0).get(), stream_ast->watermark->expression.get());
 }
 
 TEST(ParserStreamSettings, CursorAndWatermarkParses)

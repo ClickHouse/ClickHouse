@@ -644,7 +644,8 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 
 TLS/SSL parameters can be supplied through a [named collection](/operations/named-collections.md) and are forwarded to `libpq`: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), `sslrootcert` (CA certificate path, or `system`), `sslcert` (client certificate path) and `sslkey` (client key path). When unset, `libpq` defaults apply (`sslmode=prefer`). The certificate and key files must be located inside the directory configured by the server's `user_files_path` setting; relative paths are resolved against it.
 
-## Data types support {#data_types-support}
+<a id="data_types-support"></a>
+## Data types support {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
