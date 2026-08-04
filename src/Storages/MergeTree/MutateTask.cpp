@@ -1447,8 +1447,11 @@ static void processStatisticsChanges(
 /// whole universe. Re-deriving it here heals the part on the next column-only mutation instead of carrying
 /// the lost range forward until a merge or a full rewrite happens.
 ///
-/// Only a part that still covers a single block is repaired, and it gets exactly the range `load` would have
-/// synthesized had the part not been mutated: every row of such a part was inserted by that one block.
+/// The repaired range is the block range of the part's own name, `[min_block, max_block]`: the
+/// `_block_number` of every row is the number of the block that inserted it, and merges and mutations only
+/// ever combine parts whose blocks lie within the resulting part's range (a part without a physically
+/// stored `_block_number` column even reads the column back as the constant `min_block`). For a part that
+/// still covers a single block the range degenerates to the exact value `load` would have synthesized.
 /// The `_block_offset` range cannot be repaired the same way - a mutation may have dropped rows, and the row
 /// count of the original block is not recoverable from the mutated part - so it is left as the whole
 /// universe, which does not prune but is not wrong either.
@@ -1456,8 +1459,7 @@ static void repairInheritedBlockNumberMinMax(
     IMergeTreeDataPart::MinMaxIndex & minmax_index, const IMergeTreeDataPart & new_data_part, const StorageMetadataPtr & metadata_snapshot)
 {
     const auto & part_info = new_data_part.info;
-    if (part_info.isPatch() || part_info.level != 0 || part_info.getBlocksCount() != 1
-        || !metadata_snapshot->isVirtualColumn(BlockNumberColumn::name))
+    if (part_info.isPatch() || !metadata_snapshot->isVirtualColumn(BlockNumberColumn::name))
         return;
 
     const auto columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), new_data_part.storage.getSettings());
@@ -1469,10 +1471,7 @@ static void repairInheritedBlockNumberMinMax(
             break;
 
         if (column_name == BlockNumberColumn::name && minmax_index.hyperrectangle[i].left.isNegativeInfinity())
-        {
-            const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, new_data_part);
-            minmax_index.hyperrectangle[i] = Range(block_number, true, block_number, true);
-        }
+            minmax_index.hyperrectangle[i] = Range(part_info.min_block, true, part_info.max_block, true);
 
         ++i;
     }
