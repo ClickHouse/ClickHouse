@@ -19,6 +19,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
 
+#include <algorithm>
+#include <limits>
 #include <unordered_set>
 
 
@@ -29,6 +31,24 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int ABORTED;
+}
+
+namespace
+{
+
+/// Delays are stored and waited on in microseconds, but `condition_variable::wait_for` widens its
+/// argument to nanoseconds internally, so only microsecond counts below this bound are usable
+/// (~292 years). Deadlines are bounded by the same value even though `Poco::Timestamp` could hold
+/// ~1000x more, so that a stored deadline always stays waitable.
+constexpr Poco::Timestamp::TimeDiff max_delay_microseconds = std::numeric_limits<Poco::Timestamp::TimeDiff>::max() / 1000;
+
+Poco::Timestamp::TimeDiff delayToMicroseconds(size_t milliseconds)
+{
+    if (milliseconds > static_cast<size_t>(max_delay_microseconds / 1000))
+        return max_delay_microseconds;
+    return static_cast<Poco::Timestamp::TimeDiff>(milliseconds) * 1000;
+}
+
 }
 
 ///
@@ -538,7 +558,7 @@ void BackgroundSchedulePool::scheduleDelayedTask(TaskInfo & task, size_t ms, std
         if (task.delayed)
             delayed_tasks.erase(task.iterator);
 
-        task.iterator = delayed_tasks.emplace(current_time + (ms * 1000), task.shared_from_this());
+        task.iterator = delayed_tasks.emplace(current_time + delayToMicroseconds(ms), task.shared_from_this());
         task.delayed = true;
     }
 
@@ -669,7 +689,10 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
                 if (min_time > current_time)
                 {
-                    delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(min_time - current_time));
+                    /// Deadlines are wall-clock, so the remaining time can exceed the bound even for a
+                    /// bounded delay. An early wake is harmless: both times are recomputed below.
+                    const auto wait_us = std::min(min_time - current_time, max_delay_microseconds);
+                    delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(wait_us));
                     if (shutdown)
                         break;
                     continue;
