@@ -44,6 +44,22 @@ SELECT count() FROM (SELECT number % 11 AS k FROM numbers(2000000)) AS l
 ANY INNER JOIN (SELECT arrayJoin(range(11)) AS k) AS r ON l.k = r.k
 SETTINGS join_algorithm = 'full_sorting_merge';
 
+-- join_algorithm = 'auto' used to spill INNER ANY from HashJoin to MergeJoin once the right side
+-- crossed max_rows_in_join, which silently changed the answer as the right table grew. It now
+-- reports the limit instead, the same way every other strictness MergeJoin declines already does.
+SELECT 'auto over max_rows_in_join';
+SELECT count() FROM (SELECT arrayJoin(range(11)) AS k) AS l
+ANY INNER JOIN (SELECT arrayJoin(range(11)) AS k) AS r ON l.k = r.k
+SETTINGS join_algorithm = 'auto', max_rows_in_join = 1,
+         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+
+-- The pre-existing class this now belongs to: RIGHT ANY was already declined by partial_merge and
+-- already reported the same limit, so the arm above is not a new failure mode.
+SELECT count() FROM (SELECT arrayJoin(range(11)) AS k) AS l
+ANY RIGHT JOIN (SELECT arrayJoin(range(11)) AS k) AS r ON l.k = r.k
+SETTINGS join_algorithm = 'auto', max_rows_in_join = 1,
+         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+
 -- Related merge-family strictness/kinds must be unaffected by the INNER ANY capability change.
 SELECT 'left any (keep all left)';
 SELECT l.k, r.k FROM (SELECT arrayJoin([1, 1, 2]) AS k) AS l
