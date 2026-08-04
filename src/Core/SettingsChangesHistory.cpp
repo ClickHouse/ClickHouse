@@ -68,6 +68,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_arrow_use_native_writer", true, true, "Obsolete setting, the native ClickHouse writer is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based writer has been removed)."},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
+            {"allow_experimental_bernoulli_sample", false, false, "New setting to enable experimental Bernoulli sampling for tables without a SAMPLE BY key."},
+            {"bernoulli_sample_seed", 1, 1, "New setting for the seed of the experimental Bernoulli sampling path. 0 re-seeds randomly per query; any nonzero value is deterministic per part."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -126,8 +128,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
-            {"allow_experimental_bernoulli_sample", false, false, "New setting to enable experimental Bernoulli sampling for tables without a SAMPLE BY key."},
-            {"bernoulli_sample_seed", 1, 1, "New setting for the seed of the experimental Bernoulli sampling path. 0 re-seeds randomly per query; any nonzero value is deterministic per part."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
