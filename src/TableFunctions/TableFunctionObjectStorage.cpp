@@ -381,7 +381,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `no_sign_request`             | disabled by default.                                                                                                                                                              |
 | `expiration_window_seconds`   | default value is 120.                                                                                                                                                             |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -703,11 +703,25 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
+## Resolving relative URLs {#resolving-relative-urls}
+
+The [s3_base](/reference/settings/session-settings/s3#s3_base) setting allows passing a relative URL to the `s3` function. When `s3_base` is set and the function argument has no scheme, it is resolved against the base URL per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), using the same rules as the [url_base](/reference/settings/session-settings/url#url_base) setting of the [url](/reference/functions/table-functions/url#resolving-relative-urls) function. Absolute URLs are passed through unchanged.
+
+The setting also applies to the [S3](/reference/engines/table-engines/integrations/s3) table engine and to the table functions sharing the `s3` configuration (`s3Cluster`, `gcs`, `oss`). For the `S3` table engine, the resolved URL is materialized into the stored table definition, so the table does not depend on the value of `s3_base` after creation.
+
+**Example**
+
+```sql
+SET s3_base = 's3://clickhouse-public-datasets/';
+SELECT count() FROM s3('hits_compatible/hits.csv');
+```
+
 ## Storage Settings {#storage-settings}
 
 - [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
+- [s3_base](/reference/settings/session-settings/s3#s3_base) - base URL for resolving relative URLs passed to the `s3` function. Empty (disabled) by default.
 
 ## Nested Avro Schemas {#nested-avro-schemas}
 
@@ -736,6 +750,7 @@ SELECT
     data
 FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
+```
 
 ## Related {#related}
 
@@ -802,7 +817,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `no_sign_request`             | Disabled by default.                                                                                                                                                                                                              |
 | `expiration_window_seconds`   | Default value is 120.                                                                                                                                                                                                             |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -1085,7 +1100,7 @@ FROM azureBlobStorage(azure_my_data, blob_path = 'other_data/*.csv', format = 'C
 LIMIT 5;
 ```
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -1277,7 +1292,7 @@ hdfs(URI, format, structure)
 | `format`  | The [format](/reference/formats/index) of the file.                                                                                                                          |
 | `structure`| Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                           |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -1298,7 +1313,7 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-## Globs in path {#globs_in_path}
+## Globs in path {#globs-in-path}
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
@@ -2373,7 +2388,7 @@ The `format` argument stands for the format of data files in the Delta lake tabl
 
 An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 Returns a table with the specified structure for reading or writing data from/to the specified Delta Lake table.
 
@@ -2503,7 +2518,7 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.                                                                                                                                                                                                                    |
 | `extra_credentials`                          | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.                                                                                                                                                                                                                    |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading data in the specified Hudi table in S3.
 
