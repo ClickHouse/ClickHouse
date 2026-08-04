@@ -354,6 +354,19 @@ def main() -> None:
             )
         )
 
+    if not results:
+        # No open release branches at all — a harmless empty set, not a
+        # failure. `Result.create_from` defaults an empty result list to ERROR,
+        # which would raise a daily false alarm, so report SKIPPED explicitly.
+        print("No open release branches - nothing to release")
+        Result.create_from(
+            results=[],
+            status=Result.Status.SKIPPED,
+            info="no open release branches",
+            stopwatch=stopwatch,
+        ).complete_job()
+        return
+
     Result.create_from(results=results, stopwatch=stopwatch).complete_job()
 
 

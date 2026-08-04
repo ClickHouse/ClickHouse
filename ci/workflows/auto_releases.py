@@ -24,15 +24,25 @@ robot_token_secret = Secret.Config(
     type=Secret.Type.GH_SECRET,
 )
 
+# This one job awaits every ready branch's CreateRelease run serially (they
+# cannot overlap: CreateRelease's concurrency group keeps only the most recent
+# pending run and would drop the rest). So its timeout must cover the whole
+# batch, not a single release. Size it as `max branches` * `CreateRelease's own
+# per-branch cap` (2h, see ci/workflows/create_release.py) plus an hour of
+# driver overhead (fetch, per-branch CI/artifact scans, dispatch discovery).
+# The supported set (last 3 majors + latest LTS, per SECURITY.md) tops out
+# around six open release branches; if it grows past MAX_RELEASE_BRANCHES this
+# must grow with it, otherwise the last branches time out mid-batch.
+CREATE_RELEASE_TIMEOUT_H = 2
+MAX_RELEASE_BRANCHES = 6
+
 auto_release_job = Job.Config(
     name="AutoReleaseInfo",
     # Same runner CreateRelease uses: the artifact-readiness gate needs S3
     # access (boto3 via S3Helper), unavailable on the style-check runner.
     runs_on=["self-hosted", "amd-release-maker"],
     command="PYTHONPATH=. python3 ./ci/jobs/auto_release_job.py",
-    # Sequential per-branch CreateRelease runs (up to ~2h each) are awaited in
-    # this job, so allow for several release branches back to back.
-    timeout=8 * 3600,
+    timeout=(CREATE_RELEASE_TIMEOUT_H * MAX_RELEASE_BRANCHES + 1) * 3600,
     enable_gh_auth=True,
     secrets=[robot_token_secret],
 )

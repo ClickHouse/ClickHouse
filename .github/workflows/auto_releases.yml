@@ -63,7 +63,7 @@ jobs:
     runs-on: [self-hosted, amd-release-maker]
     needs: [config_workflow]
     name: "AutoReleaseInfo"
-    timeout-minutes: 485
+    timeout-minutes: 785
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}

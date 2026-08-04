@@ -98,21 +98,19 @@ the pipeline is unblocked, automation will release it, so it is not "missing" ye
 **`GUARD`** — `AutoReleaseInfo` died in the version-bump-PR guard
 `_assert_no_open_version_bump_prs` (`raise RuntimeError`). This is the guard "check all
 previous version bump PRs were merged": it runs
-`gh pr list --state open --search "Update version_date.tsv"` and aborts if the result
-is non-empty. The guard runs before any per-branch dispatch, so a guard failure
+`gh pr list --state open --search "Update version_date.tsv in:title"` and aborts if the
+result is non-empty. The guard runs before any per-branch dispatch, so a guard failure
 **skips every branch** — nothing releases.
 
-> Note: the log strings below (`in _prepare`, `Posting slack message`) match the
-> legacy GH-Actions workflow. Runs of the praktika `AutoReleases` workflow raise the
-> same guard from `_assert_no_open_version_bump_prs` in `ci/jobs/auto_release_job.py`
-> instead; update the classifier once the new workflow has produced failing logs.
-
-> The script classifies `GUARD` only when the failed-step log shows **both** the
-> `in _prepare` traceback frame **and** the `raise RuntimeError` source line — not a
-> line number (which drifts) and not bare `RuntimeError`. Other `_prepare` failures
-> (e.g. the `assert refs` release-candidate check, which raises `AssertionError`)
-> classify as `OTHER`, not `GUARD`, so the operator is not sent to hunt version-bump
-> PRs when the guard is actually clear.
+> The script classifies `GUARD` only when the failed-step log shows **both** a guard
+> traceback frame **and** the `raise RuntimeError` source line — not a line number
+> (which drifts) and not bare `RuntimeError`. It matches either frame the guard can
+> come from: `in _assert_no_open_version_bump_prs` (the praktika `AutoReleases`
+> workflow, `ci/jobs/auto_release_job.py`) or `in _prepare` (the legacy GH-Actions
+> workflow, kept so historical failed logs still classify). Other failures (e.g. the
+> `assert refs` release-candidate check, which raises `AssertionError`) classify as
+> `OTHER`, not `GUARD`, so the operator is not sent to hunt version-bump PRs when the
+> guard is actually clear.
 
 > The GitHub Actions log does **not** name the offending PR — the list is sent to a
 > Slack alert, not stdout. Find it two ways:
@@ -273,7 +271,7 @@ itself hit this). If you still see a false positive, tighten further with
   branch does not stop the others — but the guard failing (open version-bump PR)
   aborts the whole run before any dispatch.
 - `AutoReleases` runs daily on cron `45 11 * * *`; it dispatches `CreateRelease`
-  (`gh workflow run CreateRelease.yml ... -f type=patch`) once per ready branch and
+  (`gh workflow run create_release.yml ... -f type=patch`) once per ready branch and
   waits for each run to finish before starting the next.
 - **`EXCLUDE_VERSIONS`** currently defaults to a hardcoded skip (`25.8`) so it is left
   out of the analysis. This is intentional but goes stale — revisit it each cycle, or
