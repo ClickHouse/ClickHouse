@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <Client/ClientBaseHelpers.h>
+#include <Client/Connection.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 
 using namespace DB;
@@ -80,4 +82,32 @@ TEST(NetworkCompressionSettings, KeepsAnExplicitOverrideOfACompatibilityDerivedV
     EXPECT_EQ(result.get("network_compression_method").safeGet<String>(), "NONE");
     EXPECT_FALSE(result.isChanged("network_zstd_compression_level"));
     EXPECT_TRUE(result.isChanged("compatibility"));
+}
+
+/// The other half of the contract: `Connection::sendQuery` picks the codec for the compressed packets
+/// the client originates (`INSERT` data, external tables) from the setting *values*, regardless of the
+/// `changed` flags — so the values that `compatibility` derived apply to the wire even though they are
+/// not serialized to the server.
+
+TEST(ChooseNetworkCompressionCodec, CompatibilityRollsBackTheClientSideCodec)
+{
+    Settings settings;
+    settings.set("compatibility", "26.6");
+    /// What ordinary queries pass to `Connection::sendQuery` (`ClientBase::settingsWithoutCompatibilityDerived`).
+    Settings for_ordinary_query = settings;
+    for_ordinary_query.markSettingsChangedByCompatibilityAsUnchanged();
+    /// What helper queries (autocomplete, `help`, the AI metadata query) pass.
+    const Settings for_helper_query = networkCompressionSettings(settings);
+
+    const auto old_default = CompressionCodecFactory::instance().get("LZ4", {});
+    EXPECT_EQ(chooseNetworkCompressionCodec(&for_ordinary_query)->getMethodByte(), old_default->getMethodByte());
+    EXPECT_EQ(chooseNetworkCompressionCodec(&for_helper_query)->getMethodByte(), old_default->getMethodByte());
+}
+
+TEST(ChooseNetworkCompressionCodec, DefaultIsZSTD)
+{
+    const Settings settings;
+    const auto zstd = CompressionCodecFactory::instance().get("ZSTD", 3);
+    EXPECT_EQ(chooseNetworkCompressionCodec(&settings)->getMethodByte(), zstd->getMethodByte());
+    EXPECT_EQ(chooseNetworkCompressionCodec(nullptr)->getMethodByte(), zstd->getMethodByte());
 }
