@@ -11,6 +11,8 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
+#include <base/sleep.h>
 
 template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
 template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
@@ -69,6 +71,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char keeper_shutdown_delay_before_queue_check[];
 }
 
 static size_t getSubrequestCount(const Coordination::ZooKeeperRequest & request)
@@ -228,7 +235,24 @@ void KeeperRequestDispatcher::startupDispatchThread()
     dispatch_thread = ThreadFromGlobalPool([this] { dispatchThread(); });
 }
 
-void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
+size_t KeeperRequestDispatcher::drainQueues()
+{
+    /// Don't bother sending replies because client connections should already be closed by now
+    /// (or stuck and timed out).
+    /// Don't need to do anything with in_flight_batches.
+    KeeperRequestForSession request_for_session;
+    while (tryPopRequest(request_for_session)) {}
+    size_t drained_response_bytes = 0;
+    KeeperResponseForSession response_for_session;
+    while (responses_queue.tryPop(response_for_session))
+    {
+        drained_response_bytes += getResponseBytesCost(*response_for_session.response);
+        onResponseDeallocated(*response_for_session.response);
+    }
+    return drained_response_bytes;
+}
+
+void KeeperRequestDispatcher::shutdownRequests()
 {
     shutting_down.store(true);
     if (dispatch_thread.joinable())
@@ -238,20 +262,9 @@ void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
 
     stream.reset();
 
-    /// Drain queues just to check for counter leaks.
-    /// Don't bother sending replies because client connections should already be closed by now
-    /// (or stuck and timed out, if closed_all_connections is false).
-    /// Don't need to do anything with in_flight_batches.
-    KeeperRequestForSession request_for_session;
-    while (tryPopRequest(request_for_session)) {}
-    KeeperResponseForSession response_for_session;
-    while (responses_queue.tryPop(response_for_session))
-        onResponseDeallocated(*response_for_session.response);
-    if (closed_all_connections) // otherwise there might be concurrent putRequest calls or missing onResponseDeallocated calls
-    {
-        chassert(requests_queue_bytes.load() == 0);
-        chassert(response_bytes_in_all_queues.load() == 0);
-    }
+    /// Free up response queue space before submitting the Close requests below, so that a commit
+    /// landing meanwhile doesn't block nuraft's commit thread in onResponse flow control.
+    drainQueues();
 
     /// Send to leader Close requests for active sessions.
     /// Maybe we should go further and do this when client connection is closed for any reason
@@ -328,6 +341,25 @@ void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
                 log,
                 "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count());
+    }
+
+    fiu_do_on(FailPoints::keeper_shutdown_delay_before_queue_check, { sleepForMilliseconds(3000); });
+}
+
+void KeeperRequestDispatcher::drainAndCheckQueues(bool closed_all_connections)
+{
+    /// Drain again after all request/response producers were stopped (if closed_all_connections).
+    size_t drained_response_bytes = drainQueues();
+
+    fiu_do_on(FailPoints::keeper_shutdown_delay_before_queue_check, { sleepForMilliseconds(3000); });
+
+    if (closed_all_connections) // otherwise there might be concurrent putRequest calls or missing onResponseDeallocated calls
+    {
+        /// (test_no_logical_error_on_shutdown_with_late_commit relies on this message, update the
+        ///  test if changing wording or logic.)
+        LOG_DEBUG(log, "Checking dispatcher queue byte accounting, drained {} response bytes", drained_response_bytes);
+        chassert(requests_queue_bytes.load() == 0);
+        chassert(response_bytes_in_all_queues.load() == 0);
     }
 }
 
