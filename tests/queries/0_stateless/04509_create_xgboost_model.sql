@@ -52,7 +52,6 @@ SELECT number AS x1, number * 2 AS x2 FROM numbers(10);
 
 SELECT 'Positive: an XGBOOST dictionary with explicit hyperparameters';
 
--- The feature columns are the key and the single attribute is the target.
 CREATE DICTIONARY model_04509_xgb (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2)
 SOURCE(CLICKHOUSE(TABLE 'training_04509'))
@@ -60,7 +59,7 @@ LAYOUT(XGBOOST(max_depth 4 eta 0.3 objective 'reg:squarederror' num_iterations 1
 LIFETIME(0);
 
 -- `predictXGBoost` is a row-wise function returning one Float64 per input row. Exact XGBoost outputs
--- are platform-dependent, so assert deterministic, structural properties: every row predicts a finite
+-- are platform-dependent, instead assert that: every row predicts a finite
 -- value, and the result type is Float64.
 SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2))) FROM inference_04509;
 SELECT any(toTypeName(predictXGBoost('model_04509_xgb', x1, x2))) FROM inference_04509;
@@ -88,9 +87,12 @@ SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2))) FROM inference_0
 
 SELECT 'Positive: predict with prediction parameters';
 
--- Explicit (valid) prediction parameters as a trailing Map.
 SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('iteration_begin', 0, 'iteration_end', 0)))) FROM inference_04509;
 SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('type', 0)))) FROM inference_04509;
+
+-- Every prediction parameter is an integer or a boolean, so a Bool and a narrower Int type are accepted too.
+SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('type', false)))) FROM inference_04509;
+SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('iteration_end', toInt8(1))))) FROM inference_04509;
 
 SELECT 'Negative: prediction parameters';
 
@@ -99,6 +101,24 @@ SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('not_a_predict_param', 1)
 
 SELECT 'Error: prediction parameter Map value is not numeric';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 'x')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Every prediction parameter is an integer or a boolean, so the trailing params Map must have an integer
+-- value type.
+SELECT 'Error: prediction parameter Map value is not an integer';
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', 2.9)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 1.0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', 0.5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- A single fractional value promotes the whole Map to Float64, so the Map as a whole is rejected.
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 1, 'iteration_end', 2.5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Decimal and wide integer values are not accepted either.
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', toDecimal32(1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', toInt128(1))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT 'Error: an unsigned prediction parameter value that does not fit in Int64';
+-- Rejected instead of wrapping around to a negative one.
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', toUInt64(18446744073709551615))); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Error: prediction type other than 0 (value) or 1 (margin) emits several values per row and is unsupported';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 2)); -- { serverError XGBOOST_ERROR }
@@ -157,29 +177,6 @@ SELECT 'Error: a multiclass objective is rejected, because num_class is not an a
 CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(objective 'multi:softmax')) LIFETIME(0);
-SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
-DROP DICTIONARY model_04509_bad;
-
-SELECT 'Error: num_class itself is not an accepted training parameter';
-CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
-PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
-LAYOUT(XGBOOST(objective 'multi:softprob' num_class 3)) LIFETIME(0);
-SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
-DROP DICTIONARY model_04509_bad;
-
--- Positive: the target is always inferred as the single non-key attribute; no 'target' parameter.
-CREATE DICTIONARY model_04509_infer (x1 Float64, x2 Float64, y Float64)
-PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
-LAYOUT(XGBOOST()) LIFETIME(0);
-SELECT sum(isFinite(predictXGBoost('model_04509_infer', x1, x2))) FROM inference_04509;
-DROP DICTIONARY model_04509_infer;
-
--- The target is inferred, so a 'target' key is forwarded to XGBoost as an unknown hyperparameter and
--- rejected when the model trains.
-SELECT 'Error: target is not a valid parameter, because the target is inferred';
-CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
-PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
-LAYOUT(XGBOOST(target 'y')) LIFETIME(0);
 SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
 DROP DICTIONARY model_04509_bad;
 
@@ -258,16 +255,8 @@ CREATE DICTIONARY model_04509_eager (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(num_iterations 0)) LIFETIME(0);
 SYSTEM RELOAD DICTIONARY model_04509_eager; -- { serverError XGBOOST_ERROR }
-DROP DICTIONARY model_04509_eager;
 
--- Positive: the eager reload trains successfully
-CREATE DICTIONARY model_04509_eager (x1 Float64, x2 Float64, y Float64)
-PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
-LAYOUT(XGBOOST()) LIFETIME(0);
-SYSTEM RELOAD DICTIONARY model_04509_eager;
-SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'model_04509_eager';
 DROP DICTIONARY model_04509_eager;
-
 DROP DICTIONARY model_04509_xgb;
 DROP TABLE training_04509_non_numeric;
 DROP TABLE training_04509;

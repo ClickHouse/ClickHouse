@@ -137,11 +137,6 @@ void XGBoostModel::finalizeTraining()
     // Validate the parameters provided by the user
     const auto params = sanitizeTrainingParams(hps);
 
-    for (const auto & [key, value] : params)
-    {
-        throwOnError(XGBoosterSetParam(booster, key.c_str(), value.c_str()));
-    }
-
     chassert(labels.size() == ingested_rows);
     chassert(flattened_features.size() == ingested_rows * n_features);
 
@@ -150,6 +145,12 @@ void XGBoostModel::finalizeTraining()
 
     // Create the model
     throwOnError(XGBoosterCreate(&dmatrix, 1, &booster));
+
+    // Apply already sanitized params into the model
+    for (const auto & [key, value] : params)
+    {
+        throwOnError(XGBoosterSetParam(booster, key.c_str(), value.c_str()));
+    }
 
     // Set the label for each row
     throwOnError(XGDMatrixSetFloatInfo(dmatrix, "label", labels.data(), ingested_rows));

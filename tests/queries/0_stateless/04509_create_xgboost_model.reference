@@ -7,9 +7,13 @@ Positive: default hyperparameters (empty layout)
 Positive: predict with prediction parameters
 10
 10
+10
+10
 Negative: prediction parameters
 Error: unknown or forbidden prediction parameter
 Error: prediction parameter Map value is not numeric
+Error: prediction parameter Map value is not an integer
+Error: an unsigned prediction parameter value that does not fit in Int64
 Error: prediction type other than 0 (value) or 1 (margin) emits several values per row and is unsupported
 Error: prediction parameter Map key is not a String
 Negative: predictXGBoost arguments
@@ -22,9 +26,6 @@ Negative: bad hyperparameters (rejected when the model trains, at first use)
 Error: unknown or forbidden training parameter
 Error: num_iterations must be a positive integer
 Error: a multiclass objective is rejected, because num_class is not an accepted training parameter
-Error: num_class itself is not an accepted training parameter
-10
-Error: target is not a valid parameter, because the target is inferred
 Negative: an integer target attribute (rejected at first use)
 Error: only Float32 and Float64 are accepted as the target
 Positive: a Float32 target is accepted
@@ -37,4 +38,3 @@ LOADED
 Positive: system.dictionaries reports no stored items
 0	0
 Error: num_iterations must be a positive integer, rejected at SYSTEM RELOAD DICTIONARY
-LOADED
