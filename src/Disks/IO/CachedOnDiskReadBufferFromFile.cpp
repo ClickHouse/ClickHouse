@@ -672,7 +672,7 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
 
                 if (download_state == FileSegment::State::DOWNLOADING && !canStartFromCache(offset, file_segment))
                 {
-                    LOG_TRACE(
+                    LOG_TEST(
                         log, "Bypassing cache because waiting for a concurrent download did not succeed within the timeout. "
                         "File segment info: {}", file_segment.getInfoForLog());
 
