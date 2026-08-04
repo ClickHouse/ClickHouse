@@ -54,3 +54,10 @@ virtuals visible
 --- named-collection dependency stays tracked across first-read materialization ---
 NAMED_COLLECTION_IS_USED
 dependency tracked after materialization
+--- a user-supplied full definition still fails its own DDL, only stored metadata defers ---
+NAMED_COLLECTION_DOESNT_EXIST
+0
+NAMED_COLLECTION_DOESNT_EXIST
+0
+NAMED_COLLECTION_DOESNT_EXIST
+user definition rejected

@@ -382,6 +382,33 @@ DROP NAMED COLLECTION IF EXISTS ${U}_nc_virt;
 "
 
 # ---------------------------------------------------------------------------------------------
+echo "--- a user-supplied full definition still fails its own DDL, only stored metadata defers ---"
+# Deferral is for replaying a definition stored on this server. A definition the user supplies now
+# must still be rejected outright, otherwise an ATTACH carrying a full definition persists a table
+# that is unusable until the collection reappears, where a CREATE of the same definition is refused.
+# On Atomic a full definition needs an explicit UUID (a plain one is INCORRECT_QUERY); on Ordinary
+# it is accepted as written, so both engines are covered.
+$CLICKHOUSE_CLIENT -m -q "
+SET check_named_collection_dependencies = false;
+DROP NAMED COLLECTION IF EXISTS ${U}_nc_user;
+DROP TABLE IF EXISTS ${U}_user;
+"
+UUID_USER=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${U}_user UUID '${UUID_USER}' (x UInt32) ENGINE = URL(${U}_nc_user)" 2>&1 | grep -oE "NAMED_COLLECTION_DOESNT_EXIST" | head -1
+$CLICKHOUSE_CLIENT -q "EXISTS TABLE ${U}_user"
+UODB="${U}_uodb"
+$CLICKHOUSE_CLIENT --send_logs_level=none --allow_deprecated_database_ordinary=1 -m -q "
+DROP DATABASE IF EXISTS ${UODB};
+CREATE DATABASE ${UODB} ENGINE = Ordinary;
+"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${UODB}.u (x UInt32) ENGINE = URL(${U}_nc_user)" 2>&1 | grep -oE "NAMED_COLLECTION_DOESNT_EXIST" | head -1
+$CLICKHOUSE_CLIENT -q "EXISTS TABLE ${UODB}.u"
+# The CREATE control: the same definition, the same error, which is what the ATTACH is aligned with.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${U}_user (x UInt32) ENGINE = URL(${U}_nc_user)" 2>&1 | grep -oE "NAMED_COLLECTION_DOESNT_EXIST" | head -1
+echo "user definition rejected"
+$CLICKHOUSE_CLIENT --send_logs_level=none -m -q "DROP DATABASE IF EXISTS ${UODB};"
+
+# ---------------------------------------------------------------------------------------------
 $CLICKHOUSE_CLIENT -m -q "
 SET check_named_collection_dependencies = false;
 DROP TABLE IF EXISTS ${U}_http;

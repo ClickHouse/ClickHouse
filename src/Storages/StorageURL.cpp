@@ -2873,11 +2873,13 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
-            /// Outside `CREATE`, a missing named collection defers to a lazy proxy instead of aborting
-            /// synchronous server startup. The WHOLE construction is deferred, not just the `uri`, so the
-            /// retry rebuilds through the eager path; `in_progress` stops it from deferring again.
+            /// Only a definition replayed from metadata stored on this server may defer a missing named
+            /// collection to a lazy proxy; one the user supplies now must fail its own DDL. The WHOLE
+            /// construction is deferred, so the retry rebuilds through the eager path.
+            const bool loading_from_existing_metadata
+                = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
             const bool can_defer_missing_named_collection
-                = args.mode != LoadingStrictnessLevel::CREATE
+                = loading_from_existing_metadata
                 && !args.columns.empty()
                 && !url_named_collection_resolution_in_progress;
 
