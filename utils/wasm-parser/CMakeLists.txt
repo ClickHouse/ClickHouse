@@ -106,6 +106,7 @@ set (SUPPORT_SOURCES
     "${CH}/base/base/demangle.cpp"
     "${CH}/base/base/errnoToString.cpp"
     "${CH}/base/base/getPageSize.cpp"
+    "${CH}/base/base/IPv4andIPv6.cpp"
     "${CH}/base/base/itoa.cpp"
     "${CH}/contrib/fmtlib/src/format.cc"
     "${CH}/contrib/zmij/zmij.cc"
