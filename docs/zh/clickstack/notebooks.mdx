@@ -8,11 +8,11 @@ keywords: ['clickstack', 'AI notebooks', 'investigation', 'observability', 'Hype
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
-import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-AI Notebooks 是 ClickStack 中的一种交互式调查工具，结合了 AI agent 和手动分析。你可以用自然语言描述问题，AI agent 会代你查询日志、链路追踪和指标，并以一系列卡片的形式呈现相关数据、图表和摘要。你也可以在 AI 生成的结果旁添加自己的卡片 (图表、表、搜索和 Markdown 注释) ，从而形成完整的调查记录。
+AI Notebooks 是 ClickStack 中的一种交互式调查工具，结合了 AI 智能体 和手动分析。你可以用自然语言描述问题，AI 智能体 会代你查询日志、链路追踪和指标，并以一系列卡片的形式呈现相关数据、图表和摘要。你也可以在 AI 生成的结果旁添加自己的卡片 (图表、表、搜索和 Markdown 注释) ，从而形成完整的调查记录。
 
 <Image img="/images/use-cases/observability/hyperdx-notebook-hero.webp" alt="AI Notebook 正在调查一次由 Visa 缓存已满引发的故障" size="lg" />
 
@@ -68,13 +68,13 @@ AI Notebooks 目前在 ClickHouse Cloud 中处于 Beta 阶段。AI 模型和提�
 
 在笔记本底部，输入提示词来描述你想调查的内容——例如，*&quot;为什么在过去一小时里，checkout 服务的错误率突然飙升？&quot;*
 
-按下 **Send** (或按 Enter 键) 。AI agent 会：
+按下 **Send** (或按 Enter 键) 。AI 智能体会：
 
 1. 检查你可用的数据源。
 2. 对你的日志、链路追踪和指标运行搜索查询与聚合查询。
 3. 生成一系列卡片，展示其思考过程、运行的查询、中间图表，以及包含结论的最终摘要。
 
-每一步都会在笔记本中显示为一张卡片。**Thought process** 卡片会展示每个查询背后的推理，**Output** 卡片则包含 agent 的结论和可选图表。与普通的 AI 聊天不同，笔记本会让你清楚看到 AI 在每一步使用了哪些数据——这样你就能验证它的推理、发现它可能忽略的有价值线索，并将调查[分叉](#branching)到不同方向。
+每一步都会在笔记本中显示为一张卡片。**Thought process** 卡片会展示每个查询背后的推理，**Output** 卡片则包含智能体的结论和可选图表。与普通的 AI 聊天不同，笔记本会让你清楚看到 AI 在每一步使用了哪些数据——这样你就能验证它的推理、发现它可能忽略的有价值线索，并将调查[分支](#branching)到不同方向。
 
 调查运行期间，你可以点击 **Stop** 取消它。
 
@@ -104,12 +104,12 @@ AI Notebooks 目前在 ClickHouse Cloud 中处于 Beta 阶段。AI 模型和提�
 
 除了 AI 生成的卡片外，你还可以使用笔记本底部的按钮添加自己的分析卡片：
 
-| 按钮           | 快捷键 | 说明                                                                            |
-| ------------ | --- | ----------------------------------------------------------------------------- |
-| **Search**   | `S` | 日志/trace 搜索视图，等同于搜索页面。                                                        |
+| 按钮           | 快捷键 | 说明                                                                               |
+| ------------ | --- | -------------------------------------------------------------------------------- |
+| **Search**   | `S` | 日志/trace 搜索视图，等同于搜索页面。                                                           |
 | **Chart**    | `L` | 时间序列折线图，使用与 [Dashboards](/zh/clickstack/features/dashboards/overview) 相同的可视化构建器。 |
-| **Table**    | `T` | 表格形式的聚合视图。                                                                    |
-| **Markdown** | `M` | 可自由输入文本，用于记录备注、假设或结论。                                                         |
+| **Table**    | `T` | 表格形式的聚合视图。                                                                       |
+| **Markdown** | `M` | 可自由输入文本，用于记录备注、假设或结论。                                                            |
 
 添加卡片后，它会以行内编辑模式打开，你可以在其中配置数据源、过滤器和聚合——所用界面与创建 [dashboard visualizations](/zh/clickstack/features/dashboards/overview#creating-visualizations) 时相同。点击 **Save** 完成卡片创建。
 

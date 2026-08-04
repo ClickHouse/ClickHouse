@@ -7,7 +7,7 @@ title: 'The Lightweight UPDATE Statement'
 doc_type: 'reference'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge/>
 
@@ -50,11 +50,11 @@ The updated values are:
 
 Lightweight updates are supported for [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) engines and their [`Replicated`](/reference/engines/table-engines/mergetree-family/replication) and [`Shared`](/products/cloud/features/infrastructure/shared-merge-tree) versions.
 
-To use lightweight updates, materialization of `_block_number` and `_block_offset` columns must be enabled using table settings [`enable_block_number_column`](/reference/settings/merge-tree-settings#enable_block_number_column) and [`enable_block_offset_column`](/reference/settings/merge-tree-settings#enable_block_offset_column).
+To use lightweight updates, materialization of `_block_number` and `_block_offset` columns must be enabled using table settings [`enable_block_number_column`](/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) and [`enable_block_offset_column`](/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
 
 ## Lightweight deletes {#lightweight-delete}
 
-A [lightweight `DELETE`](/reference/statements/delete) query can be run as a lightweight `UPDATE` instead of a `ALTER UPDATE` mutation. The implementation of lightweight `DELETE` is controlled by setting [`lightweight_delete_mode`](/reference/settings/session-settings#lightweight_delete_mode).
+A [lightweight `DELETE`](/reference/statements/delete) query can be run as a lightweight `UPDATE` instead of a `ALTER UPDATE` mutation. The implementation of lightweight `DELETE` is controlled by setting [`lightweight_delete_mode`](/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 ## Performance considerations {#performance-considerations}
 
@@ -73,7 +73,7 @@ A [lightweight `DELETE`](/reference/statements/delete) query can be run as a lig
 ## Concurrent operations {#concurrent-operations}
 
 Lightweight updates don't wait for currently running merges/mutations to complete unlike heavy mutations.
-The consistency of concurrent lightweight updates is controlled by settings [`update_sequential_consistency`](/reference/settings/session-settings#update_sequential_consistency) and [`update_parallel_mode`](/reference/settings/session-settings#update_parallel_mode).
+The consistency of concurrent lightweight updates is controlled by settings [`update_sequential_consistency`](/reference/settings/session-settings/update#update_sequential_consistency) and [`update_parallel_mode`](/reference/settings/session-settings/update#update_parallel_mode).
 
 ## Update permissions {#update-permissions}
 
