@@ -1,0 +1,12 @@
+--- test 1: unsupported Accept-Encoding (identity) -> no Content-Encoding ---
+no Content-Encoding (expected)
+--- test 2: unsupported Accept-Encoding still advertises Vary ---
+Vary: Accept-Encoding
+--- test 3: unknown coding (compress) -> HTTP 200 ---
+200
+--- test 4: unknown coding (compress) -> no Content-Encoding ---
+no Content-Encoding (expected)
+--- test 5: unknown coding (compress) body is valid uncompressed HTML ---
+clickhouse.com
+--- test 6: body is valid uncompressed HTML (identity) ---
+clickhouse.com
