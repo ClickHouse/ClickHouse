@@ -309,6 +309,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_concurrent_queries;
     extern const MergeTreeSettingsInt64 max_partitions_to_read;
     extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_parts_to_activate;
     extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_indexes_bytes_to_activate;
 }
@@ -1319,34 +1320,47 @@ static std::optional<size_t> estimateReadBytes(
             continue;
 
         AlterConversionsPtr alter_conversions;
-        if (resolve_renames)
+        /// A projection part carries a fake data version, which makes every mutation look pending,
+        /// so the conversions computed for it would not describe its data. `injectRequiredColumns`
+        /// skips them for the same reason.
+        if (resolve_renames && !data_part.isProjectionPart())
             alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
                 , context->getAccess()->getEnabledMaskingPolicies()
 #endif
             );
 
+        const bool share_nested = (*data_part.storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+
         /// The name of a requested column as it is stored in this particular part.
         auto try_get_column_in_part = [&](const String & col_name) -> std::optional<NameAndTypePair>
         {
-            if (auto col = data_part.tryGetColumn(col_name))
-                return col;
+            auto col = data_part.tryGetColumn(col_name);
 
             if (!alter_conversions)
-                return {};
+                return col;
 
             const auto col_in_storage = storage_snapshot->tryGetColumn(storage_options, col_name);
             if (!col_in_storage)
+                return col;
+
+            auto name_in_part = col_in_storage->getNameInStorage();
+            if (!col && alter_conversions->isColumnRenamed(name_in_part))
+            {
+                name_in_part = alter_conversions->getColumnOldName(name_in_part);
+                col = data_part.tryGetColumn(col_in_storage->isSubcolumn()
+                    ? Nested::concatenateName(name_in_part, col_in_storage->getSubcolumnName())
+                    : name_in_part);
+            }
+
+            /// A pending `DROP COLUMN` leaves the data in the part, but it is stale: the reader treats
+            /// such a column as missing and fills it from the default expression, which may read wide
+            /// physical columns this estimate knows nothing about. That happens when a column is
+            /// dropped and re-added under the same name, so the name alone does not tell them apart.
+            if (col && alter_conversions->isColumnDropped(name_in_part, share_nested))
                 return {};
 
-            const auto name_in_storage = col_in_storage->getNameInStorage();
-            if (!alter_conversions->isColumnRenamed(name_in_storage))
-                return {};
-
-            const auto old_name = alter_conversions->getColumnOldName(name_in_storage);
-            return data_part.tryGetColumn(col_in_storage->isSubcolumn()
-                ? Nested::concatenateName(old_name, col_in_storage->getSubcolumnName())
-                : old_name);
+            return col;
         };
 
         /// Only a fraction of the part may survive primary key / partition pruning. Scaling by it
