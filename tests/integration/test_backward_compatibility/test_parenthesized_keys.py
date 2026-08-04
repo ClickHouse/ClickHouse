@@ -166,9 +166,8 @@ def test_mixed_case_apply_projection_old_replica_joins_new_table(start_cluster):
     field byte-for-byte. The current version must therefore publish `APPLY SUM` as written (the
     normalization that makes `APPLY SUM` and `APPLY sum` compare equal is comparison-only), or
     the old replica would fail to join with METADATA_MISMATCH. The parenthesized `GROUP BY (a)`
-    inside the same
-    projection additionally requires the canonical (paren-free) serialization, which makes this
-    fail on versions that only fixed the key clauses."""
+    inside the same projection additionally requires the canonical (paren-free) serialization,
+    which makes this fail on versions that only fixed the key clauses."""
     create = """
         CREATE TABLE t_apply_case (a UInt32, b UInt32, c UInt32, d DateTime,
             PROJECTION p (SELECT a, COLUMNS('b|c') APPLY SUM GROUP BY (a)))
