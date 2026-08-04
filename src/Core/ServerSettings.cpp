@@ -47,8 +47,10 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
+#include <Poco/AutoPtr.h>
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/DOM/Document.h>
+#include <Poco/XML/NamePool.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Node.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -2507,7 +2509,13 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// (or any `*.d/*` fragment merged into them), so scan all standard config files to collect
     /// the source paths, then exempt every top-level tag of each parsed source.
     {
-        Poco::XML::DOMParser dom_parser;
+        /// Use the same enlarged name pool as `ConfigProcessor`: a default-sized pool overflows on
+        /// files with many unique element names (e.g. a users config with thousands of users),
+        /// aborting the scan of a file `ConfigProcessor` itself parses fine. The size is prime
+        /// because `Poco::XML::NamePool` uses a bad hash function internally, and its size was
+        /// prime by default.
+        Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool(65521));
+        Poco::XML::DOMParser dom_parser(name_pool);
         std::unordered_set<std::string> include_from_paths;
 
         /// The server-side `<include_from>` substitution source(s): the single merged value that

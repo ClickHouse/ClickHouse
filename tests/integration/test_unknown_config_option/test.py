@@ -209,6 +209,17 @@ node_non_regular_users_config = cluster_non_regular_users_config.add_instance(
     stay_alive=True,
 )
 
+# Regression case: the validator's scan parses every active users config with its own DOM parser,
+# and a users config may contain thousands of users - far more unique element names than the
+# default Poco XML name pool holds. The scan must use the same enlarged name pool as
+# `ConfigProcessor` (see `test_config_hide_in_preprocessed`, which pins the processor side), so a
+# users config that the server itself loads fine does not abort the scan mid-parse.
+cluster_many_user_names = ClickHouseCluster(__file__, name="many_user_names")
+node_many_user_names = cluster_many_user_names.add_instance(
+    "node_many_user_names",
+    user_configs=["configs/users_many_unique_names.xml"],
+)
+
 # Negative case: a non-static handler (e.g. `redirect`) ignores `response_content`. Only a
 # `static` handler consumes a `config://` reference, so the validator must NOT exempt a top-level
 # key referenced from `response_content` on a non-static handler — doing so would let a genuinely
@@ -555,6 +566,13 @@ def start_include_from_in_configd_cluster():
     cluster_include_from_in_configd.start()
     yield
     cluster_include_from_in_configd.shutdown()
+
+
+@pytest.fixture
+def start_many_user_names_cluster():
+    cluster_many_user_names.start()
+    yield
+    cluster_many_user_names.shutdown()
 
 
 @pytest.fixture
@@ -1019,6 +1037,21 @@ def test_existing_keys_outside_server_settings_accepted(start_existing_keys_clus
     # `existing_keys.xml` (all of which are read by C++ code outside
     # `ServerSettings`), the node would have failed to start.
     assert node_existing_keys.query("SELECT 1").strip() == "1"
+
+
+def test_users_config_with_many_unique_names_accepted(start_many_user_names_cluster):
+    # The users config has 600+ users with distinct names - more unique element
+    # names than the default Poco XML name pool holds. If the validator's scan
+    # used a default-sized name pool, parsing this file would abort mid-parse
+    # (and, with the vendored expat 2.8.2, leak the whole parser), even though
+    # `ConfigProcessor` itself loads the file fine with its enlarged pool.
+    assert node_many_user_names.query("SELECT 1").strip() == "1"
+    assert (
+        node_many_user_names.query(
+            "SELECT count() FROM system.users WHERE name LIKE 'scan_pool_user_%'"
+        ).strip()
+        == "600"
+    )
 
 
 def test_reload_rejects_unknown_then_accepts_config_ref(start_reload_cluster):
