@@ -255,8 +255,20 @@ if __name__ == "__main__":
                     f"no patch returned for changed file {settings_history_file} "
                     "(GitHub omits the patch for very large diffs)"
                 )
-            with open(settings_history_file, "r", encoding="utf-8", errors="ignore") as f:
-                file_lines = f.read().splitlines()
+            # The patch's new-file line numbers refer to the PR head commit, but the working
+            # tree is the `refs/pull/N/merge` checkout - head merged with the CURRENT base tip.
+            # Whenever the base advanced with its own edits to this file, the two numberings
+            # differ and an added entry resolves to the wrong `addSettingsChanges` block (a
+            # MergeTree entry can land in the Session map, which then demands it in a block it
+            # can never be in). Read the file at the head commit so both come from the same
+            # revision.
+            file_lines = Shell.get_output(
+                f"git show {info.sha}:{settings_history_file}", verbose=True
+            ).splitlines()
+            if not file_lines:
+                raise RuntimeError(
+                    f"could not read {settings_history_file} at {info.sha}"
+                )
             changed_settings = parse_settings_history_changes(patch, file_lines)
             info.store_kv_data("settings_history_changed_settings", changed_settings)
             print(f"Stored settings-history changed settings: {changed_settings}")
