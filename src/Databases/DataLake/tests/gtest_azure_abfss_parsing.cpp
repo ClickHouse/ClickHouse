@@ -159,9 +159,11 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationMissingPath)
     TableMetadata metadata;
     metadata.withLocation();
 
-    metadata.setLocation("abfss://container@account.dfs.core.windows.net");
-    EXPECT_EQ(metadata.getStorageType(), StorageType::Azure);
-    EXPECT_EQ(metadata.getLocation(), "abfss://container@account.dfs.core.windows.net");
+    /// A location without a path (no '/' after the authority) is only supported for the s3
+    /// scheme (AWS S3 Tables). For any other scheme, such as Azure ABFSS, it is rejected.
+    EXPECT_THROW({
+        metadata.setLocation("abfss://container@account.dfs.core.windows.net");
+    }, DB::Exception);
 }
 
 TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationS3BucketOnly)
