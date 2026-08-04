@@ -19,6 +19,11 @@ ones exit 1, so these tests assert on the messages rather than on the status:
   - a token is missing -> the "tokens present ..." message naming the token,
   - the comparison itself broke -> the "failed to compare" message.
 
+The two sorts must also run as plain commands rather than inside process
+substitutions: `set -e` does not observe a process substitution's exit status,
+so an unreadable all.dict made the check pass silently with an empty diff, and
+an unreadable source.dict made it report every token as missing.
+
 The check text is extracted verbatim between the BEGIN/END markers in
 update_dict.sh and run against synthetic dictionaries under a UTF-8 collating
 locale, which is what makes the pre-change control (test_unpinned_comm_aborts)
@@ -90,20 +95,31 @@ def _utf8_collating_locale():
 def _revert_to_pre_change(check: str) -> str:
     """The check as it shipped before this fix, rebuilt from the current text.
 
-    Both hardenings have to go, or the arm tests a hybrid that never existed:
-    the unpinned `comm` in a bare assignment is what let `set -e` abort the
-    script silently, whereas the `if !` wrapper would have caught that same
-    non-zero status and reported it. Reverting only the pin therefore produces
-    the "failed to compare" message that the real pre-change script could not
-    print. Every substitution is asserted, so this stops matching loudly if the
-    check is reworded rather than silently degenerating into a no-op.
+    All three hardenings have to go, or the arm tests a hybrid that never
+    existed: the unpinned `comm` in a bare assignment is what let `set -e`
+    abort the script silently, the `if !` wrapper would have caught that same
+    non-zero status and reported it, and the process substitutions are what hid
+    a failing sort. Every substitution is asserted, so this stops matching
+    loudly if the check is reworded rather than silently degenerating into a
+    no-op.
     """
-    guard = "if ! MISSING_TOKENS=$(LC_ALL=C comm -23"
+    sorts = (
+        'LC_ALL=C sort -u "$OUTPUT_DIR/all.dict" > "$TMP_DIR/all.sorted"\n'
+        'LC_ALL=C sort -u "$TMP_DIR/source.dict" > "$TMP_DIR/source.sorted"\n'
+    )
+    assert sorts in check, "expected the two materializing sorts in the extracted check"
+    check = check.replace(sorts, "")
+    guard = (
+        "if ! MISSING_TOKENS=$(LC_ALL=C comm -23"
+        ' "$TMP_DIR/all.sorted" "$TMP_DIR/source.sorted"); then\n'
+    )
     assert guard in check, f"expected {guard!r} in the extracted check"
-    check = check.replace(guard, "MISSING_TOKENS=$(comm -23")
-    tail = '"$TMP_DIR/source.dict")); then\n'
-    assert tail in check, f"expected {tail!r} in the extracted check"
-    check = check.replace(tail, '"$TMP_DIR/source.dict"))\n')
+    check = check.replace(
+        guard,
+        "MISSING_TOKENS=$(comm -23"
+        ' <(LC_ALL=C sort -u "$OUTPUT_DIR/all.dict")'
+        ' <(LC_ALL=C sort -u "$TMP_DIR/source.dict"))\n',
+    )
     failed = '    echo "error: failed to compare the binary-derived and source-derived dictionaries."\n    exit 1\nfi\n'
     assert failed in check, "expected the compare-failure branch in the extracted check"
     return check.replace(failed, "")
@@ -122,13 +138,23 @@ def utf8_locale():
     return loc
 
 
-def _run_check(tmp_path, all_tokens, source_tokens, locale, *, unpin=False, shim=None):
+def _run_check(
+    tmp_path,
+    all_tokens,
+    source_tokens,
+    locale,
+    *,
+    unpin=False,
+    shim=None,
+    remove=(),
+):
     """Run the extracted check over synthetic dictionaries. Returns the result.
 
     all_tokens/source_tokens are written in C-sorted order, exactly as
-    update_dict.sh writes them. `unpin` reverts the LC_ALL=C prefix on `comm`
-    to reproduce the pre-change command. `shim`, when given, is the body of a
-    fake `comm` placed first on PATH, to make the comparison itself fail.
+    update_dict.sh writes them. `unpin` reverts to the pre-change command.
+    `shim`, when given, is the body of a fake `comm` placed first on PATH, to
+    make the comparison itself fail. `remove` names input dictionaries to delete
+    after writing, to make a sort fail.
     """
     out_dir = tmp_path / "out"
     tmp_dir = tmp_path / "tmp"
@@ -138,6 +164,10 @@ def _run_check(tmp_path, all_tokens, source_tokens, locale, *, unpin=False, shim
     (tmp_dir / "source.dict").write_text(
         "\n".join(source_tokens) + "\n", encoding="utf-8"
     )
+    for name in remove:
+        {"all.dict": out_dir / "all.dict", "source.dict": tmp_dir / "source.dict"}[
+            name
+        ].unlink()
 
     check = _extract_check()
     if unpin:
@@ -224,3 +254,34 @@ def test_unpinned_comm_aborts(tmp_path, utf8_locale):
     assert "not in sorted order" in res.stderr
     assert _MISSING_MSG not in res.stdout
     assert _COMPARE_FAILED_MSG not in res.stdout
+
+
+def test_unreadable_all_dict_does_not_pass_silently(tmp_path, utf8_locale):
+    # The worst outcome: with the sort in a process substitution `set -e` never
+    # saw it fail, so an unreadable all.dict yielded an empty diff and the check
+    # reported success, disarming the gate entirely.
+    res = _run_check(
+        tmp_path,
+        [_MULTIWORD, _SINGLE],
+        [_MULTIWORD, '"ADD JOIN"', _SINGLE],
+        utf8_locale,
+        remove=("all.dict",),
+    )
+    assert res.returncode != 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
+    assert "all.dict" in res.stderr
+    assert _MISSING_MSG not in res.stdout
+
+
+def test_unreadable_source_dict_is_not_reported_as_a_gap(tmp_path, utf8_locale):
+    # An unreadable source.dict sorted to nothing, so every token looked
+    # missing: a broken comparison masquerading as a coverage gap.
+    res = _run_check(
+        tmp_path,
+        [_MULTIWORD, _SINGLE],
+        [_MULTIWORD, '"ADD JOIN"', _SINGLE],
+        utf8_locale,
+        remove=("source.dict",),
+    )
+    assert res.returncode != 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
+    assert "source.dict" in res.stderr
+    assert _MISSING_MSG not in res.stdout
