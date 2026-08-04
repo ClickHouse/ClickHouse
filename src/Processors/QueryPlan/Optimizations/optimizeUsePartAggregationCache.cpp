@@ -174,6 +174,18 @@ void optimizeUsePartAggregationCache(
     if (reading->getRowLevelFilter())
         return;
 
+    /// Masking policies are another user-specific read-time transformation (always disabled in
+    /// non-Cloud builds). The normal reader applies them as synthetic `AlterConversions` (see
+    /// `MergeTreeData::getAlterConversionsForPart`), while the populator reads each part with an
+    /// empty `AlterConversions`, and the cache key is not partitioned by the effective
+    /// masking-policy set. Without this guard the first masked query would cache aggregate states
+    /// over raw, unmasked values, and queries run under different masking rules would alias to the
+    /// same global entries — either way leaking unmasked data through aggregates. Reject such
+    /// reads (fail-closed), same as the row-policy guard above and the sparsity optimization in
+    /// `MergeTreeDataSelectExecutor`.
+    if (reading->getMergeTreeData().hasEnabledMaskingPolicies(context))
+        return;
+
     /// `canUseProjectionForReadingStep` rejects data mutations and patch parts, but not lightweight
     /// deletes or pending `ALTER` (data/metadata) mutations. The cache key is only `{table_id,
     /// part_name}`, and neither the lightweight delete mask version nor pending `ALTER` conversions
