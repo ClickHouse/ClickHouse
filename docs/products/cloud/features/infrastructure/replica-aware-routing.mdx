@@ -51,15 +51,9 @@ Every request carrying `session_id=my-workload-1` lands on the same replica. A d
 
 ### Read-after-write consistency {#read-after-write-consistency}
 
-On a multi-replica service, a write on one replica may not be visible on the others until replication catches up. Send your write with a `session_id`, then reuse that same value on follow-up reads. The proxy routes both to the same replica, so you read your own write even while other replicas are still behind.
+On a multi-replica service, a write on one replica may not be visible on the others until replication catches up. Send your write with a `session_id`, then reuse that same value on follow-up reads. The proxy routes both to the same replica, so you read your own write even while other replicas are still behind. This pattern works for workloads that write and then immediately read back the same data, such as interactive applications or ETL jobs that validate inserts before moving on.  
 
-This pattern works for workloads that write and then immediately read back the same data, such as interactive applications or ETL jobs that validate inserts before moving on. For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/operations/settings/settings#select_sequential_consistency) to `1` on ClickHouse Cloud.
-
-Any HTTP client that can add a query parameter works, including `curl`, [clickhouse-connect](/integrations/python), JDBC/ODBC, and others. For `clickhouse-go` (v2), use HTTP mode as noted above.
-
-### Read-after-write consistency {#read-after-write-consistency}
-
-Use the same `session_id` for a write and its subsequent read queries. Replica-aware routing sends those requests to the same replica, so the reads see the latest write even if the other replicas haven't received it yet. This provides read-after-write consistency for as long as the `session_id` continues to map to the same replica.
+For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/operations/settings/settings#select_sequential_consistency) to `1` on ClickHouse Cloud.
 
 ### Check which replica you hit {#check-which-replica}
 

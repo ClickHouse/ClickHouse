@@ -1,7 +1,9 @@
 #include <Interpreters/TreeRewriter.h>
+
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -2332,14 +2334,16 @@ private:
         /// (which is locked in shared mode when input streams are created) and when inserting new data
         /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
         /// deadlock is impossible.
-        ctx->compression_codec
-            = ctx->data->getCompressionCodecForPart(ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
+        auto part_compression_codec = ctx->data->getCompressionCodecForPart(
+            ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
+        ctx->compression_codec = std::move(part_compression_codec.codec);
+        const bool is_explicit_recompression = part_compression_codec.is_explicit_recompression;
 
         NameSet entries_to_hardlink;
         NameSet removed_indices;
         NameSet removed_projections;
 
-        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
+        bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
 
         for (const auto & command : ctx->for_file_renames)
         {
@@ -2353,7 +2357,7 @@ private:
             }
         }
 
-        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
+        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->source_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
         /// Source skp_idx.packed bundles several indices into one file: hardlinking it would
@@ -2600,7 +2604,8 @@ private:
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
-            static_cast<WrittenOffsetSubstreams *>(nullptr));
+            static_cast<WrittenOffsetSubstreams *>(nullptr),
+            /*try_adaptive_codec=*/ !is_explicit_recompression);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -2905,7 +2910,10 @@ private:
                 new_disk_storage->seedSkipIndicesPackedReaderFrom(ctx->source_part->getDataPartStorage());
         }
 
+        /// Column-only mutations keep the source part's codec, only the explicitness of a due `RECOMPRESS` is consulted.
         ctx->compression_codec = ctx->source_part->default_codec;
+        const bool is_explicit_recompression = isExplicitRecompression(
+            ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
 
         if (ctx->mutating_pipeline_builder.initialized())
         {
@@ -2962,7 +2970,8 @@ private:
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
-                static_cast<WrittenOffsetSubstreams *>(nullptr));
+                static_cast<WrittenOffsetSubstreams *>(nullptr),
+                /*try_adaptive_codec=*/ !is_explicit_recompression);
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would
@@ -2992,6 +3001,10 @@ private:
 
     void finalize()
     {
+        /// Files the writer produced for the mutated columns (populated below); kept out of the
+        /// stale-file removal loop even if flagged for removal.
+        NameSet written_files;
+
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
@@ -3000,6 +3013,11 @@ private:
             auto out_mut = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
             out_mut->finalizeIndexGranularity();
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
+
+            /// Record every stream the writer just produced for the mutated columns.
+            for (const auto & [file_name, _] : changed_checksums.files)
+                written_files.insert(file_name);
+
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             /// Add checksums of projection parts that were rebuilt during this mutation.
@@ -3046,6 +3064,13 @@ private:
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
+            /// A stream the writer rewrote for the new column type must survive: stale-file
+            /// accounting (`collectFilesForRenames`) can flag it for removal because its state-less
+            /// stream enumeration does not see data-dependent substreams (e.g. `variant_discr` of a
+            /// column that became Dynamic/JSON in this mutation).
+            if (written_files.contains(rename_from))
+                continue;
+
             if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
             {
                 ctx->new_data_part->checksums.files.erase(rename_from);
