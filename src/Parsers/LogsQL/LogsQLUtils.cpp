@@ -1,6 +1,7 @@
 #include <Parsers/LogsQL/LogsQLUtils.h>
 
 #include <base/arithmeticOverflow.h>
+#include <Common/StringUtils.h>
 
 #include <fmt/format.h>
 
@@ -254,7 +255,7 @@ std::optional<Float64> tryParseNumber(const String & text)
         }
         String lower;
         for (char c : rest)
-            lower += static_cast<char>(tolower(c));
+            lower += toLowerASCII(c);
         if (lower == "inf" || lower == "infinity")
             return negative ? -INFINITY : INFINITY;
         if (lower == "nan")

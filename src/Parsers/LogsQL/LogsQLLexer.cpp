@@ -1,9 +1,9 @@
 #include <Parsers/LogsQL/LogsQLLexer.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Poco/String.h>
 
-#include <cctype>
 #include <cstring>
 
 namespace DB
@@ -112,7 +112,7 @@ bool LogsQLLexer::isKeyword(std::string_view keyword) const
     if (token.size() != keyword.size())
         return false;
     for (size_t i = 0; i < token.size(); ++i)
-        if (static_cast<char>(tolower(token[i])) != keyword[i])
+        if (toLowerASCII(token[i]) != keyword[i])
             return false;
     return true;
 }
