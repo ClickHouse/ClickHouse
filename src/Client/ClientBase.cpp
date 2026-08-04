@@ -69,6 +69,9 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Parsers/LogsQL/LogsQLLexer.h>
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+#include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 #include <IO/Ask.h>
 #include <IO/CompressionMethod.h>
@@ -154,6 +157,11 @@ namespace Setting
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsString polyglot_dialect;
+    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsString logsql_database;
+    extern const SettingsString logsql_table;
+    extern const SettingsString logsql_time_column;
+    extern const SettingsString logsql_message_column;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
@@ -656,6 +664,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
         else if (dialect == Dialect::polyglot)
             parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+        else if (dialect == Dialect::logsql)
+            parser = std::make_unique<ParserLogsQLQuery>(
+                settings[Setting::logsql_database], settings[Setting::logsql_table],
+                settings[Setting::logsql_time_column], settings[Setting::logsql_message_column],
+                end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -666,6 +679,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             {
                 if (dialect == Dialect::kusto)
                     res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                else if (dialect == Dialect::logsql)
+                    res = tryParseLogsQLQuery(*parser, pos, end, message, nullptr, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
                 else
                     res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             }
@@ -686,6 +701,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         {
             if (dialect == Dialect::kusto)
                 res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            else if (dialect == Dialect::logsql)
+                res = parseLogsQLQueryAndMovePosition(*parser, pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             else
                 res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
@@ -3010,7 +3027,23 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         Tokens tokens(this_query_begin, all_queries_end);
         IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-        if (!token_iterator.isValid())
+        bool only_comments_left = !token_iterator.isValid();
+        if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
+        {
+            /// LogsQL queries may start with tokens which the ClickHouse lexer considers erroneous,
+            /// e.g. `~"regexp"` or `!error`, so additionally check the end of the input
+            /// with the lexer of the dialect itself (it also knows about `# ...` comments).
+            only_comments_left = token_iterator->isEnd();
+            try
+            {
+                only_comments_left = only_comments_left || LogsQLLexer(this_query_begin, all_queries_end).isEnd();
+            }
+            catch (const Exception &)
+            {
+                /// Malformed input (e.g. an unterminated string): let the parser report it properly.
+            }
+        }
+        if (only_comments_left)
             return MultiQueryProcessingStage::QUERIES_END;
     }
 

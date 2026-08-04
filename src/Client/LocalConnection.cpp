@@ -31,6 +31,8 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+#include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 namespace ProfileEvents
 {
@@ -61,6 +63,11 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsString logsql_database;
+    extern const SettingsString logsql_table;
+    extern const SettingsString logsql_time_column;
+    extern const SettingsString logsql_message_column;
 }
 
 namespace ErrorCodes
@@ -308,6 +315,11 @@ void LocalConnection::sendQuery(
                 parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             else if (dialect == Dialect::promql)
                 parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+            else if (dialect == Dialect::logsql)
+                parser = std::make_unique<ParserLogsQLQuery>(
+                    settings[Setting::logsql_database], settings[Setting::logsql_table],
+                    settings[Setting::logsql_time_column], settings[Setting::logsql_message_column],
+                    end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth]);
             else
                 parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -317,6 +329,15 @@ void LocalConnection::sendQuery(
                     begin,
                     end,
                     "",
+                    /*allow_multi_statements*/ false,
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+            else if (dialect == Dialect::logsql)
+                parsed_query = parseLogsQLQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
                     /*allow_multi_statements*/ false,
                     settings[Setting::max_query_size],
                     settings[Setting::max_parser_depth],

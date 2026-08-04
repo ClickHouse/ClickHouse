@@ -8523,6 +8523,21 @@ SET dialect = 'clickhouse_json';
     DECLARE(String, polyglot_dialect, "", R"(
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_logsql_dialect, false, R"(
+Enable LogsQL - the log query language of VictoriaLogs. Queries in this dialect are translated into SELECT queries over the table specified by the `logsql_table` setting.
+)", EXPERIMENTAL) \
+    DECLARE(String, logsql_database, "", R"(
+Specifies the database with the logs table used by the 'logsql' dialect. Empty string means the current database.
+)", EXPERIMENTAL) \
+    DECLARE(String, logsql_table, "", R"(
+Specifies the name of the logs table used by the 'logsql' dialect.
+)", EXPERIMENTAL) \
+    DECLARE(String, logsql_time_column, "_time", R"(
+Specifies the name of the column referred to by the `_time` field in the 'logsql' dialect.
+)", EXPERIMENTAL) \
+    DECLARE(String, logsql_message_column, "_msg", R"(
+Specifies the name of the column referred to by the `_msg` field (the default field of LogsQL filters) in the 'logsql' dialect.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
