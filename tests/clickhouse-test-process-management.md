@@ -22,7 +22,7 @@ across test runs.
 
 ---
 
-## Solution: PGID tracking via per-worker group pid files
+## Solution: PGID tracking via per-group pid files
 
 The kernel stores the PGID directly in the process descriptor.  It is **never
 reset** when a process is re-parented.  Therefore `kill_process_group(pgid)`
@@ -35,16 +35,18 @@ _GROUP_PID_PATH = {repo}/ci/tmp/
 _GROUP_PID_NAME = "clickhouse_test_group_pid"
 ```
 
-Each worker process (`os.getpid()`) writes its own file:
+A worker process (`os.getpid()`) writes one file per group it launches:
 
 ```
-{repo}/ci/tmp/clickhouse_test_group_pid.<worker_pid>
+{repo}/ci/tmp/clickhouse_test_group_pid.<worker_pid>.<pgid>
 ```
 
-One PGID per file.  Because every worker owns a separate file no cross-process
-locking is needed.  Files are written atomically via `write_text_atomic`
-(write to a `.tmp` sibling, then `rename`), so `--cleanup` never sees a
-partial write.
+One PGID per file, and no two files ever share a name, so no cross-process
+locking is needed and a record that is kept because its group may still be live
+is not overwritten by that worker's next test.  The worker pid is what scopes a
+reap to one invocation's own records (see `worker_pids` below).  Files are
+written atomically via `write_text_atomic` (write to a `.tmp` sibling, then
+`rename`), so `--cleanup` never sees a partial write.
 
 ### Per-test bookkeeping
 
@@ -121,7 +123,7 @@ The hook contains no kill logic of its own — it just calls
 |---|---|---|
 | `cleanup_child_processes` | SIGTERM/SIGINT/SIGHUP to `clickhouse-test` | `killpg` on each direct child's PGID (so it cannot reach a group whose leader already exited) |
 | `process_result_impl` | The test finished | `kill_process_group`, then `forget_test_process_group` if the group is gone |
-| `reap_recorded_test_groups` | A run aborts (hung check, server death, time limit, `--max-failures`) | `kill_process_group` per record written by this run's own workers |
+| `reap_recorded_test_groups` | Any exit of the parallel or sequential runner: an abort (hung check, server death, time limit, `--max-failures`), a signal to the parent, or a normal finish | `kill_process_group` per record written by this run's own workers |
 | `run_test` `finally` | Any exit of `clickhouse-test` (incl. SIGKILL) | `clickhouse-test --cleanup` → `kill_process_group` per PGID file |
 | Post-hook | Any exit of `fast_test.py` (incl. SIGKILL) | same — `clickhouse-test --cleanup` |
 

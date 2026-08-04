@@ -55,9 +55,9 @@ except ImportError:
     termcolor = None
 
 
-# Base path for per-process PGID files used by `--cleanup` to locate orphaned
-# test process groups.  Each worker process writes its own file named
-# ``_GROUP_PID_NAME.<pid>`` so no cross-process locking is needed.
+# Base path for the PGID files used by `--cleanup` to locate orphaned test process
+# groups.  One file per group, ``_GROUP_PID_NAME.<worker>.<pgid>``: the worker pid
+# scopes a reap to one invocation, the pgid keeps a kept record from being overwritten.
 # The CI hook can invoke `clickhouse-test --cleanup` even if the parent was
 # killed with SIGKILL before its cleanup code ran.
 # `__file__` is `{repo}/tests/clickhouse-test`, so this resolves to
@@ -77,9 +77,9 @@ def write_text_atomic(path: Path, text: str) -> None:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
 
-def test_process_group_record() -> Path:
-    """Path of this worker's PGID record."""
-    return _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
+def test_process_group_record(pgid: int) -> Path:
+    """Path of the record for one test process group."""
+    return _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}.{pgid}"
 
 
 def test_process_group_is_gone(pgid: int) -> bool:
@@ -98,15 +98,15 @@ def test_process_group_is_gone(pgid: int) -> bool:
         return False
 
 
-def forget_test_process_group() -> None:
-    """Drop this worker's PGID record.
+def forget_test_process_group(pgid: int) -> None:
+    """Drop the record for `pgid`.
 
     Only call this once the group is gone: the record is the only thing that can
     lead a reaper to a live group, and a stale one would let a later `--cleanup`
     signal an unrelated, PID-recycled group. Whenever the group may still be live
     the record is kept, and the parent's abort-path reap is what consumes it.
     """
-    test_process_group_record().unlink(missing_ok=True)
+    test_process_group_record(pgid).unlink(missing_ok=True)
 
 
 # Exit code returned by `clickhouse-test` when the run was aborted early via
@@ -3168,8 +3168,8 @@ class TestCase:
                             os.getpgid(proc.pid), self.fatal_sanitizer_prefix
                         )
                 except Exception as e:
-                    # This worker's next test overwrites the record, so an escaping
-                    # exception here would strand the group with nothing pointing at it.
+                    # An escaping exception returns UNKNOWN without stopping the run, so
+                    # the group would stay live and keep the stdout it inherited.
                     print(f"Warning: could not kill the test group: {e}", file=sys.stderr)
                     try:
                         os.killpg(pgid, signal.SIGKILL)
@@ -3188,10 +3188,10 @@ class TestCase:
                     # a `BaseException` unwinds through here too (the runner's own
                     # `Terminated`), so removal is gated on the group being gone.
                     if test_process_group_is_gone(pgid):
-                        forget_test_process_group()
+                        forget_test_process_group(pgid)
             elif test_process_group_is_gone(pgid):
                 # The leader exited, but a backgrounded member can outlive it.
-                forget_test_process_group()
+                forget_test_process_group(pgid)
 
         description = ""
 
@@ -3680,7 +3680,7 @@ class TestCase:
         proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
         # proc.pid == PGID after start_new_session=True; write it atomically so
         # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
-        write_text_atomic(test_process_group_record(), f"{proc.pid}\n")
+        write_text_atomic(test_process_group_record(proc.pid), f"{proc.pid}\n")
 
         try:
             proc.wait(args.timeout)
@@ -5249,207 +5249,213 @@ def do_run_tests(
     worker_pids = set()
 
     if test_suite.parallel_tests:
-        tests_n = len(test_suite.parallel_tests)
-        jobs = min(jobs, tests_n)
+        # In a `finally`, so every exit reaps and not just the `stop_testing` branch: a
+        # signal to the parent raises `Terminated` here, and a worker that finishes holding
+        # a retained record has no other reaper. Idempotent, and it never raises.
+        try:
+            tests_n = len(test_suite.parallel_tests)
+            jobs = min(jobs, tests_n)
 
-        # If we don't do random shuffling then there will be always
-        # nearly the same groups of test suites running concurrently.
-        # Thus, if there is a test within group which appears to be broken
-        # then it will affect all other tests in a non-random form.
-        # So each time a bad test fails - other tests from the group will also fail
-        # and this process will be more or less stable.
-        # It makes it more difficult to detect real flaky tests,
-        # because the distribution and the amount
-        # of failures will be nearly the same for all tests from the group.
-        # TODO: add shuffle for sequential tests
-        if jobs > 1:
-            random.shuffle(test_suite.parallel_tests)
+            # If we don't do random shuffling then there will be always
+            # nearly the same groups of test suites running concurrently.
+            # Thus, if there is a test within group which appears to be broken
+            # then it will affect all other tests in a non-random form.
+            # So each time a bad test fails - other tests from the group will also fail
+            # and this process will be more or less stable.
+            # It makes it more difficult to detect real flaky tests,
+            # because the distribution and the amount
+            # of failures will be nearly the same for all tests from the group.
+            # TODO: add shuffle for sequential tests
+            if jobs > 1:
+                random.shuffle(test_suite.parallel_tests)
 
-        workers_to_shed = multiprocessing.Value('i', 0)
-        total_failures_shared = multiprocessing.Value('i', 0)
+            workers_to_shed = multiprocessing.Value('i', 0)
+            total_failures_shared = multiprocessing.Value('i', 0)
 
-        if args.no_self_parallel:
-            # Partition tests so that all copies of the same test go to the
-            # same worker.  This prevents the same test from running
-            # concurrently on multiple workers, avoiding conflicts when tests
-            # use shared resources (tables with fixed names, files, etc.).
-            worker_queues: List[List[str]] = [[] for _ in range(jobs)]
-            for test in test_suite.parallel_tests:
-                worker_queues[stringhash(test) % jobs].append(test)
-        else:
-            manager = multiprocessing.Manager()
-            shared_queue = manager.list()
-            shared_queue.extend(test_suite.parallel_tests)
-
-        batch_size = len(test_suite.parallel_tests) // jobs
-
-        processes = []
-        for i in range(jobs):
             if args.no_self_parallel:
-                queue = worker_queues[i]
-                queue_size = len(queue)
+                # Partition tests so that all copies of the same test go to the
+                # same worker.  This prevents the same test from running
+                # concurrently on multiple workers, avoiding conflicts when tests
+                # use shared resources (tables with fixed names, files, etc.).
+                worker_queues: List[List[str]] = [[] for _ in range(jobs)]
+                for test in test_suite.parallel_tests:
+                    worker_queues[stringhash(test) % jobs].append(test)
             else:
-                queue = shared_queue
-                queue_size = batch_size
-            process = multiprocessing.Process(
-                target=run_tests_process,
-                args=(
-                    (
-                        queue,
-                        queue_size,
-                        test_suite,
-                        True,
-                        args,
-                        exit_code,
-                        stop_testing,
-                        workers_to_shed,
-                        restarted_tests,
-                        i,  # process index
-                        total_failures_shared,
-                        progress_counter,
-                        total_tests,
-                        stop_exit_code,
+                manager = multiprocessing.Manager()
+                shared_queue = manager.list()
+                shared_queue.extend(test_suite.parallel_tests)
+
+            batch_size = len(test_suite.parallel_tests) // jobs
+
+            processes = []
+            for i in range(jobs):
+                if args.no_self_parallel:
+                    queue = worker_queues[i]
+                    queue_size = len(queue)
+                else:
+                    queue = shared_queue
+                    queue_size = batch_size
+                process = multiprocessing.Process(
+                    target=run_tests_process,
+                    args=(
+                        (
+                            queue,
+                            queue_size,
+                            test_suite,
+                            True,
+                            args,
+                            exit_code,
+                            stop_testing,
+                            workers_to_shed,
+                            restarted_tests,
+                            i,  # process index
+                            total_failures_shared,
+                            progress_counter,
+                            total_tests,
+                            stop_exit_code,
+                        ),
                     ),
-                ),
-            )
-            processes.append(process)
-            process.start()
-            worker_pids.add(process.pid)
+                )
+                processes.append(process)
+                process.start()
+                worker_pids.add(process.pid)
 
-        # How often (seconds) to query server memory usage.
-        MEMORY_CHECK_INTERVAL = 5.0
-        # After shedding a worker, wait this long before the next check to give
-        # memory time to drop before potentially shedding another worker.
-        MEMORY_SHED_COOLDOWN = 30.0
-        # Fraction of max_server_memory_usage at which we start shedding workers.
-        MEMORY_PRESSURE_THRESHOLD = 0.8
-        last_memory_check = time()
+            # How often (seconds) to query server memory usage.
+            MEMORY_CHECK_INTERVAL = 5.0
+            # After shedding a worker, wait this long before the next check to give
+            # memory time to drop before potentially shedding another worker.
+            MEMORY_SHED_COOLDOWN = 30.0
+            # Fraction of max_server_memory_usage at which we start shedding workers.
+            MEMORY_PRESSURE_THRESHOLD = 0.8
+            last_memory_check = time()
 
-        # Set when the parent stops the run because the global time limit was
-        # reached, so the final `StopTesting` is raised with the benign
-        # `GLOBAL_TIME_LIMIT_EXIT_CODE` rather than the "Server died" code.
-        global_time_limit_reached = False
+            # Set when the parent stops the run because the global time limit was
+            # reached, so the final `StopTesting` is raised with the benign
+            # `GLOBAL_TIME_LIMIT_EXIT_CODE` rather than the "Server died" code.
+            global_time_limit_reached = False
 
-        while processes:
-            sleep(0.1)
-            sys.stdout.flush()
+            while processes:
+                sleep(0.1)
+                sys.stdout.flush()
 
-            # Periodically check memory pressure and reduce concurrency if needed.
-            # In normal mode workers share a single queue, so shedding one
-            # does not lose work.  In --flaky-check mode each worker has its
-            # own queue, so its remaining tests will not run — acceptable under
-            # memory pressure.
-            now = time()
-            if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
-                last_memory_check = now
-                memory_fraction = get_server_memory_fraction(args)
-                if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
-                    # Cap outstanding shed requests so we never drain the pool
-                    # to zero: only increment if the number of workers that will
-                    # still be running after all pending sheds is greater than 1.
-                    with workers_to_shed.get_lock():
-                        if len(processes) - workers_to_shed.value > 1:
-                            workers_to_shed.value += 1
-                            print(
-                                f"Server memory at {memory_fraction:.0%} of limit — "
-                                f"signalling one worker to stop after its current test "
-                                f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
-                            )
-                    # Use a longer cooldown so memory has time to drop before
-                    # we consider shedding another worker.
-                    last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
+                # Periodically check memory pressure and reduce concurrency if needed.
+                # In normal mode workers share a single queue, so shedding one
+                # does not lose work.  In --flaky-check mode each worker has its
+                # own queue, so its remaining tests will not run — acceptable under
+                # memory pressure.
+                now = time()
+                if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
+                    last_memory_check = now
+                    memory_fraction = get_server_memory_fraction(args)
+                    if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
+                        # Cap outstanding shed requests so we never drain the pool
+                        # to zero: only increment if the number of workers that will
+                        # still be running after all pending sheds is greater than 1.
+                        with workers_to_shed.get_lock():
+                            if len(processes) - workers_to_shed.value > 1:
+                                workers_to_shed.value += 1
+                                print(
+                                    f"Server memory at {memory_fraction:.0%} of limit — "
+                                    f"signalling one worker to stop after its current test "
+                                    f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
+                                )
+                        # Use a longer cooldown so memory has time to drop before
+                        # we consider shedding another worker.
+                        last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
 
-            # Stop the whole run once the global time limit is reached. This is
-            # the *expected* stop condition for the flaky and targeted checks,
-            # which rerun the selected tests until the time budget is exhausted -
-            # distinct from a server death or a hung check below. Only claim the
-            # time limit if nothing else has already requested a stop, so a real
-            # server death or `--max-failures` abort keeps precedence.
-            if (
-                args.stop_time
-                and time() > args.stop_time
-                and not stop_testing.is_set()
-            ):
-                print("Global time limit reached - stopping all tests gracefully.")
-                # Ignore SIGTERM in the parent for the rest of the run: when we
-                # terminate the workers below, each worker's KeyboardInterrupt
-                # handler re-broadcasts SIGTERM to the whole process group via
-                # `stop_tests()` -> `killpg`. Without this guard that signal
-                # would hit the parent and exit it with 143 instead of the
-                # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
-                # timeout back into a "Server died" report).
-                signal.signal(signal.SIGTERM, signal.SIG_IGN)
-                global_time_limit_reached = True
-                stop_testing.set()
-
-            # Periodically check the server for hangs
-            # and stop all processes in this case
-            if args.hung_check:
-                if not check_server_liveness(args):
-                    print("Hung check failed: server is not responding")
-                    print_c_stacktraces(args)
+                # Stop the whole run once the global time limit is reached. This is
+                # the *expected* stop condition for the flaky and targeted checks,
+                # which rerun the selected tests until the time budget is exhausted -
+                # distinct from a server death or a hung check below. Only claim the
+                # time limit if nothing else has already requested a stop, so a real
+                # server death or `--max-failures` abort keeps precedence.
+                if (
+                    args.stop_time
+                    and time() > args.stop_time
+                    and not stop_testing.is_set()
+                ):
+                    print("Global time limit reached - stopping all tests gracefully.")
+                    # Ignore SIGTERM in the parent for the rest of the run: when we
+                    # terminate the workers below, each worker's KeyboardInterrupt
+                    # handler re-broadcasts SIGTERM to the whole process group via
+                    # `stop_tests()` -> `killpg`. Without this guard that signal
+                    # would hit the parent and exit it with 143 instead of the
+                    # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
+                    # timeout back into a "Server died" report).
+                    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                    global_time_limit_reached = True
                     stop_testing.set()
 
-            if stop_testing.is_set():
-                # Mask SIGTERM during the cleanup: when we terminate a worker,
-                # its `except KeyboardInterrupt` handler in `run_tests_array`
-                # calls `stop_tests()`, which broadcasts SIGTERM to the whole
-                # process group via `cleanup_child_processes`. Without this
-                # mask the signal would reach us mid-join, `signal_handler`
-                # would raise `Terminated`, and we would exit with 128+15=143
-                # instead of `STOP_TESTING_EXIT_CODE` - causing the job-side
-                # parser to misclassify the run as "terminated unexpectedly"
-                # (`Result.Status.ERROR`) rather than synthesizing the
-                # `Server died` FAIL leaf that bugfix validation needs.
-                old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
-                try:
-                    print("Stopping tests, terminating all processes...")
-                    # Wait briefly for test results to be written
-                    sleep(5)
-                    for p in processes:
-                        if p.is_alive():
-                            p.terminate()
-                    # Wait for processes to exit, then force-kill stragglers
-                    for p in processes:
-                        p.join(timeout=10)
-                        if p.is_alive():
-                            print(f"Force killing process {p.name} (pid {p.pid})")
-                            p.kill()
-                    for p in processes:
-                        p.join(timeout=5)
-                    # Reap the groups the killed workers left behind. Safe only here: every
-                    # worker is joined, and the parent is the last process still alive.
-                    reap_recorded_test_groups(worker_pids)
-                finally:
-                    signal.signal(signal.SIGTERM, old_sigterm_handler)
-                if global_time_limit_reached:
-                    raise StopTesting(
-                        "global time limit reached",
-                        exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
-                    )
-                # A worker that hit `--max-failures` or `--max-failures-chain`
-                # recorded its exit code in `stop_exit_code` before setting
-                # `stop_testing`. The server is alive and the failing tests are
-                # real (and already attributed), so report this with the worker's
-                # code, not "Server died".
-                if stop_exit_code.value != 0:
-                    raise StopTesting(
-                        "reached the --max-failures / --max-failures-chain limit",
-                        exit_code=stop_exit_code.value,
-                    )
-                raise StopTesting(
-                    "test run was stopped (see earlier output for the cause)"
-                )
+                # Periodically check the server for hangs
+                # and stop all processes in this case
+                if args.hung_check:
+                    if not check_server_liveness(args):
+                        print("Hung check failed: server is not responding")
+                        print_c_stacktraces(args)
+                        stop_testing.set()
 
-            for p in processes[:]:
-                if not p.is_alive():
-                    # Check if process was killed with exception
-                    if p.exitcode is not None and p.exitcode != 0:
-                        print(
-                            f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
+                if stop_testing.is_set():
+                    # Mask SIGTERM during the cleanup: when we terminate a worker,
+                    # its `except KeyboardInterrupt` handler in `run_tests_array`
+                    # calls `stop_tests()`, which broadcasts SIGTERM to the whole
+                    # process group via `cleanup_child_processes`. Without this
+                    # mask the signal would reach us mid-join, `signal_handler`
+                    # would raise `Terminated`, and we would exit with 128+15=143
+                    # instead of `STOP_TESTING_EXIT_CODE` - causing the job-side
+                    # parser to misclassify the run as "terminated unexpectedly"
+                    # (`Result.Status.ERROR`) rather than synthesizing the
+                    # `Server died` FAIL leaf that bugfix validation needs.
+                    old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                    try:
+                        print("Stopping tests, terminating all processes...")
+                        # Wait briefly for test results to be written
+                        sleep(5)
+                        for p in processes:
+                            if p.is_alive():
+                                p.terminate()
+                        # Wait for processes to exit, then force-kill stragglers
+                        for p in processes:
+                            p.join(timeout=10)
+                            if p.is_alive():
+                                print(f"Force killing process {p.name} (pid {p.pid})")
+                                p.kill()
+                        for p in processes:
+                            p.join(timeout=5)
+                        # Reap the groups the killed workers left behind. Safe only here: every
+                        # worker is joined, and the parent is the last process still alive.
+                        reap_recorded_test_groups(worker_pids)
+                    finally:
+                        signal.signal(signal.SIGTERM, old_sigterm_handler)
+                    if global_time_limit_reached:
+                        raise StopTesting(
+                            "global time limit reached",
+                            exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
                         )
-                        runner_process_killed.set()
-                    processes.remove(p)
+                    # A worker that hit `--max-failures` or `--max-failures-chain`
+                    # recorded its exit code in `stop_exit_code` before setting
+                    # `stop_testing`. The server is alive and the failing tests are
+                    # real (and already attributed), so report this with the worker's
+                    # code, not "Server died".
+                    if stop_exit_code.value != 0:
+                        raise StopTesting(
+                            "reached the --max-failures / --max-failures-chain limit",
+                            exit_code=stop_exit_code.value,
+                        )
+                    raise StopTesting(
+                        "test run was stopped (see earlier output for the cause)"
+                    )
+
+                for p in processes[:]:
+                    if not p.is_alive():
+                        # Check if process was killed with exception
+                        if p.exitcode is not None and p.exitcode != 0:
+                            print(
+                                f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
+                            )
+                            runner_process_killed.set()
+                        processes.remove(p)
+        finally:
+            reap_recorded_test_groups(worker_pids)
 
     if test_suite.sequential_tests:
         # Sequential runner shares the total_failures_shared counter with parallel workers
@@ -6849,7 +6855,7 @@ def parse_args():
 
 
 def cleanup_test_groups(diagnostics=True, worker_pids=None):
-    """Kill all process groups recorded in per-worker PGID files.
+    """Kill all process groups recorded in the PGID files.
 
     Records are walked serially, so `diagnostics=False` (see `kill_process_group`) is
     what keeps the total bounded when this runs on the abort path.
@@ -6863,7 +6869,10 @@ def cleanup_test_groups(diagnostics=True, worker_pids=None):
             continue
         if worker_pids is not None:
             try:
-                if int(_pgid_file.name.rsplit(".", 1)[1]) not in worker_pids:
+                # The worker pid is the field right after the prefix; the pgid follows it,
+                # so this must not read the LAST field.
+                suffix = _pgid_file.name[len(_GROUP_PID_NAME) + 1 :]
+                if int(suffix.split(".", 1)[0]) not in worker_pids:
                     continue
             except ValueError:
                 continue

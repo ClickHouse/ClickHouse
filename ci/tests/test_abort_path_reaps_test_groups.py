@@ -571,11 +571,14 @@ def test_record_is_kept_when_the_kill_is_interrupted(tmp_path, monkeypatch):
 def test_reap_leaves_another_invocations_groups_alone():
     """The reap must be scoped to this run's own workers.
 
-    Records live in the repo-wide ``ci/tmp`` and carry only a worker pid, no run identity.
-    That was safe while the only caller was ``--cleanup`` at job teardown; called from a
-    LIVE parent it can otherwise SIGKILL a concurrent invocation's in-flight tests, and
-    concurrent invocations over one tree are a documented condition here (see
+    Records live in the repo-wide ``ci/tmp`` and carry a worker pid and a pgid, no run
+    identity.  That was safe while the only caller was ``--cleanup`` at job teardown;
+    called from a LIVE parent it can otherwise SIGKILL a concurrent invocation's in-flight
+    tests, and concurrent invocations over one tree are a documented condition here (see
     ``test_shared_engine_replacer_discovery.py``).
+
+    The owned record is named by the real helper, so the scoping is asserted against the
+    name shape the code under test actually writes.
     """
     _clear_records()
     ct = runpy.run_path(_CLICKHOUSE_TEST)
@@ -584,10 +587,10 @@ def test_reap_leaves_another_invocations_groups_alone():
     try:
         mine = _spawn_group()
         theirs = _spawn_group()
-        # A foreign worker's record: same directory, a pid this run never started.
-        foreign = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{theirs.pid}"
+        # A foreign worker's record: same directory, a worker pid this run never started.
+        foreign = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{theirs.pid}.{theirs.pid}"
         ct["write_text_atomic"](
-            _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}", f"{mine.pid}\n"
+            ct["test_process_group_record"](mine.pid), f"{mine.pid}\n"
         )
         ct["write_text_atomic"](foreign, f"{theirs.pid}\n")
 
@@ -605,16 +608,26 @@ def test_reap_leaves_another_invocations_groups_alone():
         _clear_records()
 
 
-def _abort_run(ct, sequential, jobs=2):
+def _abort_run(ct, sequential, jobs=2, signal_parent=False):
     """Drive the REAL ``do_run_tests`` through an abort, server-free.
 
     The worker stub creates a live group and records it through the real
     ``write_text_atomic``/``test_process_group_record`` pair, then blocks forever, so the
     parent must ``terminate`` and then ``kill`` it - the exact CI shape, in which no
     Python ``finally`` in the worker can clean up.  Returns the group's pgid.
+
+    ``signal_parent`` drives the other abort shape instead: the worker never sets
+    ``stop_testing`` and signals the PARENT, so the run leaves the parallel loop through
+    ``Terminated`` rather than through the ``stop_testing`` branch.  The caller then
+    expects ``Terminated``, not ``StopTesting``.
     """
     started = multiprocessing.Queue()
     stop_testing = multiprocessing.Event()
+    # Set by the parent's own poll loop, so the signalling worker can wait until the
+    # parent is really inside it. Without that the SIGTERM can land before
+    # `worker_pids.add(process.pid)` runs, and the reap would then have nothing in scope
+    # - a spurious failure that has nothing to do with what is being asserted.
+    parent_in_loop = multiprocessing.Event()
 
     def spawn_and_record():
         group = subprocess.Popen(
@@ -625,15 +638,25 @@ def _abort_run(ct, sequential, jobs=2):
             stderr=subprocess.DEVNULL,
         )
         # Through the real pair, so the record's NAME is produced by the code under test.
-        ct["write_text_atomic"](ct["test_process_group_record"](), f"{group.pid}\n")
+        ct["write_text_atomic"](
+            ct["test_process_group_record"](group.pid), f"{group.pid}\n"
+        )
         started.put(group.pid)
         return group
 
     def parallel_worker(_payload):
         spawn_and_record()
-        stop_testing.set()
+        if signal_parent:
+            # No `stop_testing`: the parent must leave the parallel loop through the
+            # signal, which is the path with no reap site on it.
+            parent_in_loop.wait(30)
+            os.kill(os.getppid(), signal.SIGTERM)
+        else:
+            stop_testing.set()
         # Ignore SIGTERM so the parent must reach its `p.kill`: SIGKILL runs no Python
-        # `finally`, which is exactly why the group is orphaned in CI.
+        # `finally`, which is exactly why the group is orphaned in CI.  In the signalling
+        # shape it also keeps this worker from being what ends the loop, so `Terminated`
+        # is the only way out.
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         while True:
             time.sleep(3600)
@@ -651,6 +674,11 @@ def _abort_run(ct, sequential, jobs=2):
 
     def sleep_spy(seconds):
         slept.append(seconds)
+        # The parent's poll loop is the only 0.1 s sleeper, so this is also where the
+        # signalling worker learns the parent has reached the loop (and therefore has
+        # already added its pid to `worker_pids`).
+        if seconds == 0.1:
+            parent_in_loop.set()
         # Still yield, so the parent's own 0.1 s poll loop does not busy-spin, but never
         # actually pay a diagnostic delay: a real 60 s here would defeat the point.
         time.sleep(min(seconds, 0.05))
@@ -679,6 +707,12 @@ def _abort_run(ct, sequential, jobs=2):
         hung_check=False,
     )
     raised = None
+    # `__main__` installs the runner's SIGTERM handler, and `runpy.run_path` does not run
+    # that block, so the signalling shape has to install the REAL handler here - otherwise
+    # the default disposition kills this process and nothing is asserted.
+    old_handler = None
+    if signal_parent:
+        old_handler = signal.signal(signal.SIGTERM, ct["signal_handler"])
     try:
         ct["do_run_tests"](
             jobs,
@@ -691,9 +725,25 @@ def _abort_run(ct, sequential, jobs=2):
         )
     except BaseException as e:
         raised = e
-    assert isinstance(raised, ct["StopTesting"]), (
-        f"the abort must surface as StopTesting; got {raised!r}"
+    finally:
+        if old_handler is not None:
+            signal.signal(signal.SIGTERM, old_handler)
+        # SIGKILL any worker still up.  In the signalling shape the parent never reaches
+        # its own `terminate`/`kill`, and the workers ignore SIGTERM, so multiprocessing's
+        # atexit would block forever joining them (observed).  This runs after the reap
+        # under test, so it cannot stand in for it.
+        for child in multiprocessing.active_children():
+            child.kill()
+            child.join(timeout=10)
+    expected = ct["Terminated"] if signal_parent else ct["StopTesting"]
+    assert isinstance(raised, expected), (
+        f"the abort must surface as {expected.__name__}; got {raised!r}"
     )
+    if signal_parent:
+        assert raised.signal == signal.SIGTERM, (
+            f"the parent must carry the delivered signal (128+15 semantics at the top "
+            f"level); got {raised.signal!r}"
+        )
 
     pgids = []
     deadline = time.monotonic() + 15
@@ -704,6 +754,12 @@ def _abort_run(ct, sequential, jobs=2):
             if pgids:
                 break
     assert pgids, "the stub worker never reported its group"
+    # Retire the queue's feeder thread before returning.  The sequential shape runs the
+    # worker stub IN THIS PROCESS, so its `put` starts a `QueueFeederThread` here that
+    # otherwise outlives the call - and a later test in the same session then forks with a
+    # second thread alive, which Python warns about as a deadlock risk.
+    started.close()
+    started.join_thread()
     return pgids, slept
 
 
@@ -756,6 +812,95 @@ def test_sequential_abort_reaps_the_orphaned_group():
         )
         assert not {60, 10} & set(slept), (
             f"the sequential reap must not pay the diagnostic delays either; slept {slept}"
+        )
+    finally:
+        for pgid in pgids:
+            _kill_group(pgid)
+        _clear_records()
+
+
+def test_a_retained_record_survives_the_workers_next_launch(tmp_path, monkeypatch):
+    """A record that is correctly KEPT must still be there after the worker's next test.
+
+    The record used to be named for the WORKER, one path for every test it runs, and it is
+    written with ``os.replace``.  So retaining it for a live leaderless group bought only
+    seconds: the next ``run_single_test`` in the same worker overwrote it, the pgid was gone
+    from disk, and the group was unreachable again while still holding the runner's
+    inherited stdout - the wedge carrier this file exists to close.  Keying the record on
+    the pgid as well as the worker is what makes the retention mean anything.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    _patch(ct, pgrep=lambda **kw: [])
+    first = second = None
+    try:
+        # Group A: leader exited, member alive, so `process_result_impl` takes the RETAIN
+        # branch rather than dropping the record.
+        first = _spawn_leaderless_group()
+        assert _alive(first.pid), (
+            "precondition: the fixture's background member must outlive its leader"
+        )
+        pgid_a, case_a, proc_a = _launch_real_test(
+            ct, tmp_path, monkeypatch, returncode=0, group=first
+        )
+        ct["TestCase"].process_result_impl(case_a, proc_a, 1.0)
+        assert _alive(pgid_a), "precondition: group A must still be alive after its result"
+        assert _records(), "precondition: the retain branch must have kept A's record"
+
+        # The same worker's next test, through the real launch, so the overwrite is the
+        # real code's.
+        second = _spawn_group()
+        pgid_b, _case_b, _proc_b = _launch_real_test(
+            ct, tmp_path, monkeypatch, group=second
+        )
+        assert pgid_a != pgid_b, "precondition: the two launches must be distinct groups"
+
+        assert _alive(pgid_a), (
+            "precondition: group A must still be alive here, otherwise this proves nothing "
+            "about whether its record survived"
+        )
+        recorded = {int(f.read_text()) for f in _records()}
+        assert pgid_a in recorded, (
+            f"the live group's record must survive the worker's next launch, or nothing "
+            f"can find it; on disk: {sorted(recorded)}, wanted {pgid_a}"
+        )
+
+        # And it is still usable, which is the only property that matters.
+        ct["cleanup_test_groups"]()
+        assert not _wait_dead(pgid_a), (
+            "the surviving record must still lead a reaper to the live group"
+        )
+    finally:
+        for group in (first, second):
+            if group:
+                _kill_group(group.pid)
+        _clear_records()
+
+
+def test_a_signal_to_the_parent_still_reaps_the_group():
+    """A signal delivered to the PARENT must not bypass the reap.
+
+    ``reap_recorded_test_groups`` used to run only inside the ``stop_testing`` branch, and
+    the parallel block had no enclosing ``try``.  ``signal_handler`` raises ``Terminated``
+    from wherever the parent happens to be, so a SIGTERM anywhere else in the parallel loop
+    unwound straight past the reap to the top-level handler - leaving the group alive with
+    the job's stdout.  Same path as a worker that simply finishes while holding a retained
+    record: no reap site is on it either.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    pgids = []
+    try:
+        # One worker: a signalled parent cannot join its workers first (that is the point of
+        # the path), so with several of them a second worker can record its group AFTER the
+        # reap has walked the directory - a race in the fixture, not in the runner.  One
+        # group is enough: it is recorded before the signal is sent, so the reap either runs
+        # on this path or it does not.
+        pgids, _slept = _abort_run(ct, sequential=False, jobs=1, signal_parent=True)
+        survivors = {pgid: _wait_dead(pgid, timeout=20) for pgid in pgids}
+        assert not any(survivors.values()), (
+            f"a parent signalled outside the stop_testing branch must still reap the "
+            f"groups its workers recorded; alive: {survivors}"
         )
     finally:
         for pgid in pgids:
