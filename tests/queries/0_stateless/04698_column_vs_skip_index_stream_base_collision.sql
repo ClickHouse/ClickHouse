@@ -238,10 +238,12 @@ SELECT 'empty-mutation-legal', (SELECT count() FROM t_empty_mut_ok),
 DROP TABLE t_empty_mut_ok;
 
 -- The carry helper runs before any bytes move, so copying behaves like hardlinking.
+-- storage_policy: `always_use_copy_instead_of_hardlinks` reaches copyFileFrom, which only supports
+-- a local disk, so an object-storage default policy fails the mutation before this arm is reached.
 CREATE TABLE t_carry_copy (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         always_use_copy_instead_of_hardlinks = 1;
+         always_use_copy_instead_of_hardlinks = 1, storage_policy = 'default';
 INSERT INTO t_carry_copy SELECT number, toString(number) FROM numbers(10);
 ALTER TABLE t_carry_copy ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
 ALTER TABLE t_carry_copy UPDATE `skp_idx_a` = 5 WHERE 1; -- { serverError UNFINISHED }
@@ -298,10 +300,11 @@ SELECT 'mutation-legal', count(), sum(v) FROM t_mut_ok;
 CHECK TABLE t_mut_ok SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_mut_ok;
 
+-- storage_policy: see t_carry_copy above.
 CREATE TABLE t_mut_ok_copy (k UInt64, s String, v UInt64, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         always_use_copy_instead_of_hardlinks = 1;
+         always_use_copy_instead_of_hardlinks = 1, storage_policy = 'default';
 INSERT INTO t_mut_ok_copy SELECT number, toString(number), number FROM numbers(10);
 ALTER TABLE t_mut_ok_copy UPDATE v = 5 WHERE 1;
 SELECT 'mutation-legal-copy', count(), sum(v) FROM t_mut_ok_copy;
