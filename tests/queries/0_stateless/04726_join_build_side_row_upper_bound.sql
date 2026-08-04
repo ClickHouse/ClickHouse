@@ -7,6 +7,9 @@ SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_merge_expression_into_join = 1;
 SET enable_join_runtime_filters = 0;
+-- The hash-table cache is process-global and carries counts from earlier runs, so leaving this
+-- randomized would let a previous run of this test supply the estimate the arms below withhold.
+SET use_hash_table_stats_for_join_reordering = 0;
 
 DROP TABLE IF EXISTS fact_04726;
 DROP TABLE IF EXISTS dim_04726;
@@ -106,8 +109,10 @@ SETTINGS log_comment = '04726_build_side_profile_events' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'build side rows', if(ProfileEvents['JoinBuildTableRowCount'] < 1000, 'small',
-        format('fail: {}', ProfileEvents['JoinBuildTableRowCount']))
+-- The filter matches nothing, so the build side is empty and the empty-build short circuit must
+-- keep the fact table unread. Asserting `SelectedRows` too means a plan that keeps the asserted
+-- shape while still scanning the fact table cannot pass.
+SELECT 'build side rows', ProfileEvents['JoinBuildTableRowCount'], ProfileEvents['SelectedRows']
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
     AND current_database = currentDatabase() AND log_comment = '04726_build_side_profile_events'
