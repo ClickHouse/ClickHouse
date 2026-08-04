@@ -109,7 +109,7 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
                 return combined.values[0];
 
             /// Copy and sort for quantile computation.
-            std::vector<ValueType> sorted_values(combined.values.begin(), combined.values.end());
+            VectorWithMemoryTracking<ValueType> sorted_values(combined.values.begin(), combined.values.end());
             std::sort(sorted_values.begin(), sorted_values.end());
 
             /// R-7 quantile (quantileExactInclusive): rank = phi * (n - 1), linear interpolation.
