@@ -5475,14 +5475,7 @@ def do_run_tests(
                             runner_process_killed.set()
                         processes.remove(p)
         finally:
-            # Masked like the abort block above: a SIGTERM landing in here raises
-            # `Terminated`, which is a `KeyboardInterrupt` and so escapes the reap's
-            # `except Exception`, replacing the exception the job side keys on.
-            old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            try:
-                reap_recorded_test_groups(worker_pids)
-            finally:
-                signal.signal(signal.SIGTERM, old_sigterm_handler)
+            reap_recorded_test_groups(worker_pids)
 
     if test_suite.sequential_tests:
         # Sequential runner shares the total_failures_shared counter with parallel workers
@@ -5510,12 +5503,7 @@ def do_run_tests(
                 )
             )
         finally:
-            # Same mask as the parallel reap above, for the same reason.
-            old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            try:
-                reap_recorded_test_groups(seq_worker_pids)
-            finally:
-                signal.signal(signal.SIGTERM, old_sigterm_handler)
+            reap_recorded_test_groups(seq_worker_pids)
 
     return total_tests
 
@@ -6922,13 +6910,21 @@ def cleanup_test_groups(diagnostics=True, worker_pids=None):
 def reap_recorded_test_groups(worker_pids):
     """Kill the test groups recorded by `worker_pids`, from a live run.
 
-    Never raises: on the abort path an exception here would replace the `StopTesting`
-    the job side keys on.
+    Never raises, including on a signal: `Terminated` is a `KeyboardInterrupt`, so it
+    escapes the `except` below and would replace the exception the job side keys on.
+    Every signal the runner handles is therefore ignored for the duration - here, so
+    that a new call site cannot miss the guard.  Main thread only, like the rest of the
+    runner's signal handling.
     """
+    handled = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+    previous = [(s, signal.signal(s, signal.SIG_IGN)) for s in handled]
     try:
         cleanup_test_groups(diagnostics=False, worker_pids=worker_pids)
     except Exception as e:
         print(f"Warning: could not reap test process groups: {e}")
+    finally:
+        for s, handler in previous:
+            signal.signal(s, handler)
 
 
 class Terminated(KeyboardInterrupt):

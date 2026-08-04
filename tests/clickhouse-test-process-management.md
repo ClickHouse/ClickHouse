@@ -33,7 +33,8 @@ reaches an orphan as long as we know its PGID — no parent-chain walk needed.
 ```
 _GROUP_PID_PATH = {repo}/ci/tmp/
 _GROUP_PID_NAME = "clickhouse_test_group_pid"
-_RUN_TOKEN      = "<parent_pid>-<random hex>"   # seeded through the environment, so
+_RUN_TOKEN      = "<parent_pid>-<random hex>"   # seeded through the environment
+                                               # (`_CLICKHOUSE_TEST_RUN_TOKEN`), so
                                                # `fork` and `spawn` workers alike share
                                                # the invocation's token
 ```

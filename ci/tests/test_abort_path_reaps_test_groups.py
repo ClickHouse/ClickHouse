@@ -1064,8 +1064,15 @@ def test_a_retained_record_survives_the_workers_next_launch(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize("sequential", [False, True], ids=["parallel", "sequential"])
-def test_a_signal_inside_the_reap_does_not_replace_the_abort(monkeypatch, sequential):
-    """A SIGTERM landing inside an outer reap must not mask the in-flight abort.
+@pytest.mark.parametrize(
+    "handled",
+    [signal.SIGTERM, signal.SIGINT, signal.SIGHUP],
+    ids=["sigterm", "sigint", "sighup"],
+)
+def test_a_signal_inside_the_reap_does_not_replace_the_abort(
+    monkeypatch, sequential, handled
+):
+    """A signal landing inside an outer reap must not mask the in-flight abort.
 
     The reap catches ``except Exception``, and the runner's own ``Terminated`` is a
     ``KeyboardInterrupt``, so it is not caught (measured).  Raised from a ``finally`` it
@@ -1073,11 +1080,13 @@ def test_a_signal_inside_the_reap_does_not_replace_the_abort(monkeypatch, sequen
     ``143`` / "terminated unexpectedly" instead of the exit code it parses - the exact
     misclassification the abort block's own SIGTERM mask exists to prevent.
 
-    Both new reap sites get an arm: they are separate ``finally`` blocks with separate
-    masks, so one arm can only ever pin one of them.
+    Every signal ``__main__`` routes to ``signal_handler`` gets an arm, not SIGTERM alone:
+    each becomes the same ``Terminated``, so a guard covering a subset of them leaves the
+    rest able to replace the abort.  Both reap sites get an arm too - they are separate
+    ``finally`` blocks, so one arm can only ever pin one of them.
 
     The signal is delivered from inside the reap rather than raced against it: the window is
-    a few syscalls wide, so a real SIGTERM cannot be aimed at it otherwise.  It IS a real
+    a few syscalls wide, so a real signal cannot be aimed at it otherwise.  It IS a real
     signal though - injecting a ready-made ``Terminated`` instead would assert nothing, since
     a mask can only stop a signal from becoming an exception, not an exception already raised.
     """
@@ -1088,12 +1097,13 @@ def test_a_signal_inside_the_reap_does_not_replace_the_abort(monkeypatch, sequen
     def signal_from_inside_the_reap(*args, **kwargs):
         # Unmasked, `signal_handler` turns this into `Terminated` right here, and that
         # replaces the `StopTesting` unwinding through the enclosing `finally`.
-        os.kill(os.getpid(), signal.SIGTERM)
+        os.kill(os.getpid(), handled)
         return real_cleanup(*args, **kwargs)
 
     # `__main__` installs the runner's handler and `runpy.run_path` does not run that block,
-    # so without this the default disposition would kill the test session outright.
-    before = signal.signal(signal.SIGTERM, ct["signal_handler"])
+    # so without this the default disposition would kill the test session outright (SIGHUP
+    # and SIGTERM terminate it, SIGINT raises `KeyboardInterrupt` somewhere unrelated).
+    before = signal.signal(handled, ct["signal_handler"])
     pgids = []
     try:
         monkeypatch.setitem(
@@ -1104,12 +1114,12 @@ def test_a_signal_inside_the_reap_does_not_replace_the_abort(monkeypatch, sequen
         # `_abort_run` asserts the surfaced exception is `StopTesting`, so an unmasked reap
         # fails inside it with `Terminated`.
         pgids, _slept = _abort_run(ct, sequential=sequential)
-        assert signal.getsignal(signal.SIGTERM) is ct["signal_handler"], (
-            "the SIGTERM disposition must be restored after the reap, or every later "
-            "signal in the run is silently ignored"
+        assert signal.getsignal(handled) is ct["signal_handler"], (
+            f"the {handled.name} disposition must be restored after the reap, or every "
+            f"later one in the run is silently ignored"
         )
     finally:
-        signal.signal(signal.SIGTERM, before)
+        signal.signal(handled, before)
         for pgid in pgids:
             _kill_group(pgid)
         _clear_records()
@@ -1239,7 +1249,8 @@ def test_a_nested_invocation_does_not_adopt_the_outer_runs_token():
 
     Driven as a real subprocess with the variable pre-set, because inheritance is the
     thing being asserted; ``run_name="__main__"`` puts the guard on the path.  The runner
-    exits early for want of a server, which is after the module body has run.
+    exits early (no binary, or no server), which is after the module body has run - which
+    is all this arm needs.
     """
     _clear_records()
     ct = runpy.run_path(_CLICKHOUSE_TEST)
