@@ -1311,6 +1311,12 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
                 // is not initialized.
                 def.setOrReplace(def.session_window_threshold, make_intrusive<ASTLiteral>(getRandomField(0)));
             }
+            else
+            {
+                // Only a SESSION frame formats the threshold, so one left over from a previous
+                // mutation would not survive a reparse.
+                def.reset(def.session_window_threshold);
+            }
             break;
         }
         case 1: {
