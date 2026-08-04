@@ -69,15 +69,26 @@ TEST(ThreadPoolCallbackRunnerFast, RollbackOnScheduleFailure)
 
         CannotAllocateThreadFaultInjector::setFaultProbability(0.0);
 
-        /// ...and the callback is dequeued, so a later successful schedule must not resurrect it.
-        std::promise<void> second_done;
-        runner([&second_done] { second_done.set_value(); });
-        second_done.get_future().wait();
+        if (runner.isIdle())
+        {
+            /// ...and the callback is dequeued, so a later successful schedule must not resurrect it.
+            std::promise<void> second_done;
+            runner([&second_done] { second_done.set_value(); });
+            second_done.get_future().wait();
 
-        runner.shutdown();
+            runner.shutdown();
 
-        EXPECT_FALSE(failed_callback_ran->load())
-            << "a callback whose scheduling failed must never run";
+            EXPECT_FALSE(failed_callback_ran->load())
+                << "a callback whose scheduling failed must never run";
+        }
+        else
+        {
+            /// Without the rollback the internal state is inconsistent (`queue` holds the leaked
+            /// callback while `queue_size` was never incremented), and another schedule would
+            /// strand its callback forever. The failure is already recorded above - bail out
+            /// without touching the broken runner, so the test fails instead of hanging.
+            runner.shutdown();
+        }
     });
     t.join();
 }
