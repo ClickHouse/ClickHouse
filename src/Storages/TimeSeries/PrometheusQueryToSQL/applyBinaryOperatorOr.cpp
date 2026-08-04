@@ -200,9 +200,14 @@ SQLQueryPiece applyBinaryOperatorOr(
                 = makeASTFunction("arrayConcat", makeASTFunction("array", make_intrusive<ASTLiteral>(1.0)), std::move(right_sort_key));
 
             auto left_has_value = makeASTFunction(
-                "isNotNull",
+                "and",
+                makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values})),
                 makeASTFunction(
-                    "arrayElement", make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}), make_intrusive<ASTLiteral>(1u)));
+                    "isNotNull",
+                    makeASTFunction(
+                        "arrayElement",
+                        make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+                        make_intrusive<ASTLiteral>(1u))));
 
             builder.select_list.push_back(
                 makeASTFunction("if", std::move(left_has_value), std::move(left_sort_key), std::move(right_sort_key)));

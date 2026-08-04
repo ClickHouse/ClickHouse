@@ -14,6 +14,14 @@
 [('instance','host2')]	2023-11-14 22:13:20.000	20
 [('instance','host3')]	2023-11-14 22:13:20.000	40
 [('instance','host1')]	2023-11-14 22:13:20.000	60
+-- sort puts NaN after numeric values
+[('instance','host3')]	2023-11-14 22:13:20.000	20
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	nan
+-- sort_desc puts NaN after numeric values
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host3')]	2023-11-14 22:13:20.000	20
+[('instance','host2')]	2023-11-14 22:13:20.000	nan
 -- sort_desc is applied before unary negation
 [('instance','host1')]	2023-11-14 22:13:20.000	-30
 [('instance','host3')]	2023-11-14 22:13:20.000	-20

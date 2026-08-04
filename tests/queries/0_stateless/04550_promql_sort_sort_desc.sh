@@ -48,6 +48,12 @@ promql_client -q "sort(sort_desc(up))"
 echo "-- sort on expression: sort(up * 2) ascending (20, 40, 60)"
 promql_client -q "sort(up * 2)"
 
+echo "-- sort puts NaN after numeric values"
+promql_client -q "sort(up * ((up - 10) / (up - 10)))"
+
+echo "-- sort_desc puts NaN after numeric values"
+promql_client -q "sort_desc(up * ((up - 10) / (up - 10)))"
+
 echo "-- sort_desc is applied before unary negation"
 promql_client -q "-sort_desc(up)"
 

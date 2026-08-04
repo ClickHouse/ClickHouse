@@ -61,6 +61,7 @@ SQLQueryPiece applySortFunction(
     ASTPtr value = makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u));
     ASTPtr normalized_value = (function_name == "sort") ? value->clone() : makeASTFunction("negate", value->clone());
 
+    /// Prometheus places `NaN` after all numeric samples for both `sort` and `sort_desc`.
     builder.select_list.push_back(makeASTFunction(
         "array",
         makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value))),
