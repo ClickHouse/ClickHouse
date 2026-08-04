@@ -10,12 +10,15 @@ on:
         required: false
         type: boolean
         default: false
+  push:
+    tags: ['*']
 
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
   GH_TOKEN: ${{ github.token }}
   CHECKOUT_REF: ""
+  DISABLE_CI_CACHE: ${{ github.ref_type == 'tag' && '1' || github.event.inputs.no_cache || '0' }}
   DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
   CLICKHOUSE_TEST_STAT_URL: ${{ secrets.CLICKHOUSE_TEST_STAT_URL }}
   CLICKHOUSE_TEST_STAT_LOGIN: ${{ secrets.CLICKHOUSE_TEST_STAT_LOGIN }}

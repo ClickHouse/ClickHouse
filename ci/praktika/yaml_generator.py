@@ -105,7 +105,7 @@ name: {NAME}
 
 on:
   workflow_dispatch:
-    inputs:{DISPATCH_INPUTS}
+    inputs:{DISPATCH_INPUTS}{TAG_PUSH_TRIGGER}
 
 env:
   # Force the stdout and stderr streams to be unbuffered
@@ -519,6 +519,11 @@ class PullRequestPushYamlGen:
             base_template = YamlGenerator.Templates.TEMPLATE_DISPATCH_WORKFLOW
             format_kwargs = {
                 "DISPATCH_INPUTS": dispatch_inputs,
+                "TAG_PUSH_TRIGGER": (
+                    f"\n  push:\n    tags: {self.workflow_config.tags}"
+                    if self.workflow_config.tags
+                    else ""
+                ),
                 "GH_TOKEN_PERMISSIONS": (
                     YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
                 ),
@@ -526,6 +531,11 @@ class PullRequestPushYamlGen:
             ENV_CHECKOUT_REFERENCE = (
                 YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
             )
+            if self.workflow_config.tags:
+                ENV_CHECKOUT_REFERENCE += (
+                    "\n  DISABLE_CI_CACHE: "
+                    "${{{{ github.ref_type == 'tag' && '1' || github.event.inputs.no_cache || '0' }}}}"
+                )
         elif self.workflow_config.event in (Workflow.Event.MERGE_QUEUE,):
             base_template = YamlGenerator.Templates.TEMPLATE_MERGE_QUEUE_0
             format_kwargs = {}

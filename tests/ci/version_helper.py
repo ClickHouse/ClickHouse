@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+import os
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, ArgumentTypeError
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Literal, Optional, Set, Tuple, Union
@@ -297,6 +298,19 @@ def read_versions(versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH) -> V
     return versions
 
 
+def check_tag_version(
+    tag: str, versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH
+) -> None:
+    expected_tag = read_versions(versions_path)["describe"]
+    if tag != expected_tag:
+        raise ValueError(
+            f"Tag [{tag}] does not match VERSION_DESCRIBE [{expected_tag}] "
+            f"in {versions_path}"
+        )
+
+    print(f"Tag [{tag}] matches {versions_path}")
+
+
 def get_version_from_repo(
     versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH,
     git: Optional[Git] = None,
@@ -524,10 +538,22 @@ def main():
         help=f"update {GENERATED_CONTRIBUTORS} file and exit, "
         "doesn't work on shallow repo",
     )
+    parser.add_argument(
+        "--check-tag",
+        action="store_true",
+        help="check that GITHUB_REF_NAME matches VERSION_DESCRIBE and exit",
+    )
     args = parser.parse_args()
 
     if args.update_contributors:
         update_contributors()
+        return
+
+    if args.check_tag:
+        tag = os.getenv("GITHUB_REF_NAME", "")
+        if not tag:
+            raise ValueError("GITHUB_REF_NAME is empty")
+        check_tag_version(tag, args.version_path)
         return
 
     version = get_version_from_repo(args.version_path, Git(True))
