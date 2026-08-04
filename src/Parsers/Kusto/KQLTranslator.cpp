@@ -213,6 +213,15 @@ public:
         stage = Stage::Limit;
     }
 
+    void setLimitBy(ASTPtr length, ASTs keys)
+    {
+        if (stage >= Stage::Limit)
+            nest();
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(length));
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_BY, expressionList(std::move(keys)));
+        stage = Stage::Limit;
+    }
+
     /// Current select becomes the FROM of a fresh one.
     void nest()
     {
@@ -702,6 +711,16 @@ private:
 
     void applyJoin(SelectBuilder & builder, const KQLOperator & op)
     {
+        /// `innerunique` - Kusto's default - keeps one left row per value of the join keys
+        /// before matching, which is exactly `LIMIT 1 BY` on the left operand.
+        if (op.join_kind == KQLJoinKind::InnerUnique)
+        {
+            ASTs keys;
+            for (const auto & [left, right] : op.join_keys)
+                keys.push_back(ident(left));
+            builder.setLimitBy(lit(1u), std::move(keys));
+        }
+
         /// Everything accumulated so far becomes the left operand, so the join sits at the
         /// top of a fresh select. Both operands are subqueries, and a joined subquery has to
         /// be named.
@@ -761,10 +780,14 @@ private:
         }
         else
         {
+            /// Qualify both sides with the subquery aliases: `on $left.a == $right.b` must
+            /// stay unambiguous when both inputs expose both names.
             ASTPtr condition;
             for (const auto & [left, right] : op.join_keys)
             {
-                ASTPtr equality = makeASTFunction("equals", ident(left), ident(right));
+                ASTPtr left_key = make_intrusive<ASTIdentifier>(std::vector<String>{fmt::format("kql_left_{}", join_ordinal), left});
+                ASTPtr right_key = make_intrusive<ASTIdentifier>(std::vector<String>{fmt::format("kql_right_{}", join_ordinal), right});
+                ASTPtr equality = makeASTFunction("equals", std::move(left_key), std::move(right_key));
                 condition = condition ? ASTPtr(makeASTFunction("and", condition, equality)) : equality;
             }
             table_join->on_expression = condition;
