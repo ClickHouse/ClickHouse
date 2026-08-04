@@ -37,6 +37,8 @@ Contains metadata of each table that the server knows about.
 - `sorting_key` ([String](/sql-reference/data-types/string)) — The sorting key expression specified in the table.
 - `primary_key` ([String](/sql-reference/data-types/string)) — The primary key expression specified in the table.
 - `sampling_key` ([String](/sql-reference/data-types/string)) — The sampling key expression specified in the table.
+- `unique_key` ([String](/sql-reference/data-types/string)) — The unique key expression specified in the table (UNIQUE KEY clause).
+- `skipping_indices_types` ([Array(String)](/sql-reference/data-types/array)) — An array of the distinct types of data skipping indices defined on the table (for example minmax, set, bloom_filter, ngrambf_v1, tokenbf_v1, text, vector_similarity). Empty for tables without skip indices.
 - `storage_policy` ([String](/sql-reference/data-types/string)) — The storage policy. Relevant for tables using MergeTree and Distributed engines.
 - `total_rows` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table).
 - `total_bytes` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise NULL (does not includes any underlying storage). If the table stores data on disk, returns used space on disk (i.e. compressed). If the table stores data in memory, returns approximated number of used bytes in memory.
@@ -91,6 +93,7 @@ partition_key:
 sorting_key:                n
 primary_key:                n
 sampling_key:
+skipping_indices_types:     []
 storage_policy:             default
 total_rows:                 1
 total_bytes:                99
@@ -122,6 +125,7 @@ partition_key:
 sorting_key:                id
 primary_key:                id
 sampling_key:
+skipping_indices_types:     []
 storage_policy:             default
 total_rows:                 2
 total_bytes:                155
