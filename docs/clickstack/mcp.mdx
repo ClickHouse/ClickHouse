@@ -171,6 +171,17 @@ claude mcp add --transport http hyperdx <YOUR_CLICKSTACK_URL>/api/mcp \
 ```
 
 </Tab>
+<Tab title="Codex CLI">
+
+Codex CLI reads the bearer token from an environment variable rather than a `--header` flag:
+
+```shell
+export CLICKSTACK_ACCESS_KEY="<YOUR_API_KEY>"
+codex mcp add clickstack --url <YOUR_CLICKSTACK_URL>/api/mcp \
+  --bearer-token-env-var CLICKSTACK_ACCESS_KEY
+```
+
+</Tab>
 <Tab title="Cursor">
 
 Add the following to `.cursor/mcp.json`:
@@ -254,17 +265,83 @@ Any MCP client that supports **Streamable HTTP** can connect. Configure it with:
 
 ## What can you do with MCP? {#capabilities}
 
-Once connected, your AI assistant has access to a range of tools spanning the core areas of ClickStack. These include:
+Once connected, your AI assistant discovers ClickStack tools through MCP. The set can grow over time; the table below lists the tools registered today under the `clickstack_*` prefix (verified against the HyperDX/ClickStack MCP server).
 
-- **Querying data** — Search and aggregate logs, traces, and metrics using ClickStack's query builder, search syntax, or raw SQL.
-- **Data sources** — List available data sources, database connections, column schemas, and attribute keys.
-- **Dashboards** — Create, update, delete, and inspect dashboards along with their tiles.
-- **Alerts** — Create, update, and inspect alerts along with their evaluation history.
-- **Saved searches** — Create, update, and inspect reusable saved search definitions.
-- **Webhooks** — List available webhook destinations for alert notifications.
-- **Teams** — List teams the current user belongs to and identify the active team.
+### Available tools {#available-tools}
 
-The specific set of tools may expand over time. Your MCP client will automatically discover the available tools when it connects.
+| Tool | Description |
+|---|---|
+| `clickstack_list_sources` | List data sources and connections as a lightweight catalog (IDs, names, kinds) |
+| `clickstack_describe_source` | Full column schema, attribute keys, and sampled low-cardinality values for one source |
+| `clickstack_list_metrics` | Paginated catalog of metric names on a metric source |
+| `clickstack_describe_metric` | Per-metric kind, unit, description, attribute keys, and sampled values |
+| `clickstack_timeseries` | Plot metrics over time as a line or stacked bar chart |
+| `clickstack_table` | Aggregated metrics as a table, single number, or pie chart |
+| `clickstack_search` | Browse individual log, event, or trace rows |
+| `clickstack_event_patterns` | Discover common log messages and event patterns |
+| `clickstack_event_deltas` | Compare two row groups and rank properties by distribution differences |
+| `clickstack_sql` | Execute raw ClickHouse SQL (JOINs, CTEs, subqueries) |
+| `clickstack_search_dashboards` | Search dashboards by name or tags |
+| `clickstack_get_dashboard` | List dashboards or get full detail for one dashboard |
+| `clickstack_get_dashboard_tile` | Inspect a single tile on a dashboard |
+| `clickstack_save_dashboard` | Create or update a dashboard with tiles, containers, and filters |
+| `clickstack_patch_dashboard` | Patch one tile without resubmitting the full dashboard |
+| `clickstack_delete_dashboard` | Permanently delete a dashboard and its attached alerts |
+| `clickstack_query_tile` | Execute a dashboard tile's query to validate results |
+| `clickstack_get_saved_search` | List saved searches or get full detail for one |
+| `clickstack_save_saved_search` | Create or update a saved search |
+| `clickstack_get_alert` | List alerts or get detail with evaluation history |
+| `clickstack_save_alert` | Create or update an alert |
+| `clickstack_get_webhook` | List webhook destinations for alert notifications |
+| `clickstack_trace_waterfall` | Fetch spans in a trace as a parent/child waterfall, with optional correlated logs |
+| `clickstack_trace_top_time_consuming_operations` | Aggregate child operations by cumulative time across matching parent traces |
+
+Typical investigation flow:
+
+1. `clickstack_list_sources` → pick source IDs.
+2. `clickstack_describe_source` → learn columns and sample values (do not guess status codes or attribute names).
+3. `clickstack_timeseries` / `clickstack_table` / `clickstack_search` / `clickstack_sql` → query data.
+4. `clickstack_save_dashboard` → persist tiles, then `clickstack_query_tile` on every tile to confirm queries return data.
+
+For multi-team OSS/BYOC context, pass the `x-hdx-team` header (see [Multi-team usage](#multi-team)). There is no separate team-listing MCP tool.
+
+### Authoring example: dashboard with row-click drilldowns {#authoring-example}
+
+You can author the same table [row-click drilldowns](/clickstack/features/dashboards/row-click-drilldowns) pattern through MCP that you configure in the chart editor.
+
+Example prompt for your MCP client:
+
+```text
+Create a Service Inventory dashboard with a table tile grouped by ServiceName
+(request count, error count, P95 duration). Wire the table's onClick so a row
+opens a Service Detail dashboard with a ServiceName dashboard-level filter set
+from {{ServiceName}}. Validate every tile with clickstack_query_tile after save.
+```
+
+Expected tool sequence:
+
+1. `clickstack_list_sources` and `clickstack_describe_source` for your traces source.
+2. `clickstack_save_dashboard` for **Service Detail** first (dashboard-level filter on `ServiceName`, plus per-service RED tiles).
+3. `clickstack_save_dashboard` for **Service Inventory** with a table tile whose `onClick` targets the detail dashboard, for example:
+
+```json
+{
+  "type": "dashboard",
+  "target": { "mode": "id", "id": "<SERVICE_DETAIL_DASHBOARD_ID>" },
+  "whereLanguage": "lucene",
+  "filters": [
+    {
+      "kind": "expressionTemplate",
+      "expression": "ServiceName",
+      "template": "{{ServiceName}}"
+    }
+  ]
+}
+```
+
+4. `clickstack_query_tile` on each tile of both dashboards.
+
+Prefer `target.mode: "id"` so the link survives renames. Use `mode: "template"` only when the destination dashboard name depends on a row value. For the UI walkthrough of the same pattern, see [Table row-click drilldowns](/clickstack/features/dashboards/row-click-drilldowns).
 
 ## Multi-team usage (OSS/BYOC) {#multi-team}
 
@@ -272,7 +349,7 @@ This applies to Open Source and BYOC deployments only. For ClickStack on ClickHo
 
 By default, MCP requests operate in the context of your primary team. If you belong to multiple teams, pass the `x-hdx-team` header set to the team's ID alongside your `Authorization` header. If the header is omitted, your primary team is used. If you specify a team you don't belong to, the request is rejected with a `401` error.
 
-Use the team listing tool from your MCP client to discover which teams you have access to and which one is active.
+Find team IDs in the ClickStack UI under team settings, or from your deployment's team admin view. There is no MCP tool that lists teams.
 
 ## Troubleshooting {#troubleshooting}
 
