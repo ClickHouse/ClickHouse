@@ -350,6 +350,8 @@ String MonitorCommand::run()
 
         print(ret, "sum_leader_unavailable_time", keeper_info.sum_leader_unavailable_time_ms);
         print(ret, "cnt_leader_unavailable_time", keeper_info.cnt_leader_unavailable_time);
+        print(ret, "sum_election_time", keeper_info.sum_election_time_ms);
+        print(ret, "cnt_election_time", keeper_info.cnt_election_time);
 
         print(ret, "learners", keeper_info.learner_count);
         print(ret, "followers", keeper_info.follower_count);

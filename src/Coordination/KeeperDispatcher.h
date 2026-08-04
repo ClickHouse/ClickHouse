@@ -247,7 +247,7 @@ public:
     void resetServerStats()
     {
         keeper_stats.reset();
-        server->resetLeaderUnavailableMetrics();
+        server->resetLeaderMetrics();
     }
 
     /// Create snapshot manually, return the last committed log index in the snapshot

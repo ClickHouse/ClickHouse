@@ -198,11 +198,13 @@ zk_max_file_descriptor_count    10240
 zk_leader_uptime        1234
 zk_sum_leader_unavailable_time 1234
 zk_cnt_leader_unavailable_time 1
+zk_sum_election_time 1234
+zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
 
-`zk_sum_leader_unavailable_time` and `zk_cnt_leader_unavailable_time` are cumulative leader-only metrics. Keeper samples NuRaft leader availability once per `heart_beat_interval_ms`, so each boundary can differ from the actual transition by up to one heartbeat interval and windows shorter than that interval can be missed. `srst` resets both values.
+`zk_sum_leader_unavailable_time`, `zk_cnt_leader_unavailable_time`, `zk_sum_election_time`, and `zk_cnt_election_time` are cumulative leader-only metrics. Keeper samples NuRaft leader availability once per `heart_beat_interval_ms`, so each election start and leader-unavailability boundary can differ from the actual transition by up to one heartbeat interval and windows shorter than that interval can be missed. Keeper records election completion at NuRaft `BecomeLeader`. `srst` resets all four values.
 
 - `srvr`: Lists full details for the server.
 

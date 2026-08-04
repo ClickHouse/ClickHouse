@@ -108,8 +108,11 @@ private:
 
     mutable std::mutex leader_unavailable_metrics_mutex;
     UInt64 leader_unavailable_since_ms = 0;
+    UInt64 election_since_ms = 0;
     UInt64 sum_leader_unavailable_time_ms = 0;
     UInt64 cnt_leader_unavailable_time = 0;
+    UInt64 sum_election_time_ms = 0;
+    UInt64 cnt_election_time = 0;
     int32_t leader_unavailable_poll_interval_ms = 0;
     std::optional<nuraft::ptr<nuraft::delayed_task>> leader_unavailable_polling_task;
 
@@ -133,13 +136,14 @@ private:
 
     void enterRecoveryMode(nuraft::raft_params & params);
 
-    void startLeaderUptime();
-    void stopLeaderUptime();
-    std::optional<uint64_t> getLeaderUptime() const;
+    void startLeaderUptimeMetrics();
+    void stopLeaderUptimeMetrics();
+    std::optional<uint64_t> getLeaderUptimeMetrics() const;
 
-    void startLeaderUnavailablePolling(int32_t poll_interval_ms);
-    void stopLeaderUnavailablePolling();
-    void pollLeaderAvailability();
+    void startLeaderMetricsPolling(int32_t poll_interval_ms);
+    void stopLeaderMetricsPolling();
+    void collectLeaderMetrics();
+    void finishLeaderElectionMetrics();
 
     std::atomic_bool is_recovering = false;
 
@@ -191,7 +195,7 @@ public:
 
     int64_t getLeaderID() const;
 
-    void resetLeaderUnavailableMetrics();
+    void resetLeaderMetrics();
 
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 

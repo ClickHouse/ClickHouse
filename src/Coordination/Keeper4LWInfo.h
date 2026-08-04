@@ -35,6 +35,8 @@ struct Keeper4LWInfo
     std::optional<uint64_t> leader_uptime_ms;
     uint64_t sum_leader_unavailable_time_ms;
     uint64_t cnt_leader_unavailable_time;
+    uint64_t sum_election_time_ms;
+    uint64_t cnt_election_time;
 
     String getRole() const
     {

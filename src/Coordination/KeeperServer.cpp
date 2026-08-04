@@ -693,7 +693,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     KeeperRaftServer::set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
-    startLeaderUnavailablePolling(params.heart_beat_interval_);
+    startLeaderMetricsPolling(params.heart_beat_interval_);
 
     nuraft::ptr<nuraft::raft_server> cast_raft_server = raft_instance;
 
@@ -737,7 +737,7 @@ void KeeperServer::shutdownRaftServer()
 {
     size_t timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::shutdown_timeout].totalSeconds();
 
-    stopLeaderUnavailablePolling();
+    stopLeaderMetricsPolling();
 
     if (!raft_instance)
     {
@@ -846,17 +846,17 @@ KeeperServer::RespondingCounts KeeperServer::getRespondingCounts() const
     return raft_instance->getRespondingCounts();
 }
 
-void KeeperServer::startLeaderUptime()
+void KeeperServer::startLeaderUptimeMetrics()
 {
     leader_since_ms = getNowMonotonicMs();
 }
 
-void KeeperServer::stopLeaderUptime()
+void KeeperServer::stopLeaderUptimeMetrics()
 {
     leader_since_ms = 0;
 }
 
-std::optional<uint64_t> KeeperServer::getLeaderUptime() const
+std::optional<uint64_t> KeeperServer::getLeaderUptimeMetrics() const
 {
     const UInt64 leader_since = leader_since_ms.load();
     if (leader_since == 0)
@@ -865,11 +865,11 @@ std::optional<uint64_t> KeeperServer::getLeaderUptime() const
     return getNowMonotonicMs() - leader_since;
 }
 
-void KeeperServer::startLeaderUnavailablePolling(int32_t poll_interval_ms)
+void KeeperServer::startLeaderMetricsPolling(int32_t poll_interval_ms)
 {
     nuraft::timer_task<void>::executor task_function = [this]
     {
-        pollLeaderAvailability();
+        collectLeaderMetrics();
     };
 
     {
@@ -878,10 +878,10 @@ void KeeperServer::startLeaderUnavailablePolling(int32_t poll_interval_ms)
         leader_unavailable_polling_task.emplace(nuraft::cs_new<nuraft::timer_task<void>>(task_function));
     }
 
-    pollLeaderAvailability();
+    collectLeaderMetrics();
 }
 
-void KeeperServer::stopLeaderUnavailablePolling()
+void KeeperServer::stopLeaderMetricsPolling()
 {
     nuraft::ptr<nuraft::delayed_task> polling_task;
     {
@@ -897,7 +897,7 @@ void KeeperServer::stopLeaderUnavailablePolling()
         asio_service->cancel(polling_task);
 }
 
-void KeeperServer::pollLeaderAvailability()
+void KeeperServer::collectLeaderMetrics()
 {
     std::lock_guard lock(leader_unavailable_metrics_mutex);
     if (!leader_unavailable_polling_task)
@@ -908,34 +908,54 @@ void KeeperServer::pollLeaderAvailability()
     {
         if (leader_unavailable_since_ms == 0)
             leader_unavailable_since_ms = now_ms;
+        if (election_since_ms == 0)
+            election_since_ms = now_ms;
     }
-    else if (leader_unavailable_since_ms != 0)
+    else
     {
-        if (raft_instance->is_leader())
+        if (leader_unavailable_since_ms != 0 && raft_instance->is_leader())
         {
             sum_leader_unavailable_time_ms += now_ms - leader_unavailable_since_ms;
             ++cnt_leader_unavailable_time;
         }
         leader_unavailable_since_ms = 0;
+        election_since_ms = 0;
     }
 
     asio_service->schedule(*leader_unavailable_polling_task, leader_unavailable_poll_interval_ms);
 }
 
-void KeeperServer::resetLeaderUnavailableMetrics()
+void KeeperServer::finishLeaderElectionMetrics()
+{
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    if (election_since_ms == 0)
+        return;
+
+    sum_election_time_ms += getNowMonotonicMs() - election_since_ms;
+    ++cnt_election_time;
+    election_since_ms = 0;
+}
+
+void KeeperServer::resetLeaderMetrics()
 {
     std::lock_guard lock(leader_unavailable_metrics_mutex);
     leader_unavailable_since_ms = 0;
+    election_since_ms = 0;
     sum_leader_unavailable_time_ms = 0;
     cnt_leader_unavailable_time = 0;
+    sum_election_time_ms = 0;
+    cnt_election_time = 0;
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
     if (type == nuraft::cb_func::BecomeLeader)
-        startLeaderUptime();
+    {
+        startLeaderUptimeMetrics();
+        finishLeaderElectionMetrics();
+    }
     else if (type == nuraft::cb_func::BecomeFollower)
-        stopLeaderUptime();
+        stopLeaderUptimeMetrics();
 
     if (is_recovering)
     {
@@ -1535,11 +1555,13 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     result.synced_non_voting_follower_count = 0;
     if (result.is_leader)
     {
-        result.leader_uptime_ms = getLeaderUptime();
+        result.leader_uptime_ms = getLeaderUptimeMetrics();
         {
             std::lock_guard lock(leader_unavailable_metrics_mutex);
             result.sum_leader_unavailable_time_ms = sum_leader_unavailable_time_ms;
             result.cnt_leader_unavailable_time = cnt_leader_unavailable_time;
+            result.sum_election_time_ms = sum_election_time_ms;
+            result.cnt_election_time = cnt_election_time;
         }
 
         auto counts = getRespondingCounts();
