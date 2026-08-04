@@ -56,6 +56,7 @@ RUN apt-get update \
         libclang-${LLVM_VERSION}-dev \
         libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
+        lldb-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
         libmpfr6 \
         lsof \
@@ -115,17 +116,14 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 RUN chmod u+s /opt/gdb/bin/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-# Native debugger used by clickhouse-test's `print_c_stacktraces` to dump
-# server backtraces. lldb ships in the LLVM apt repo already configured
-# above; symlink the versioned binary into /usr/bin so callers can run
-# `lldb` directly, and grant suid so non-root tests can still attach.
-# gdb is kept above for the fuzzer, perf comparison, stress, upgrade, and
+# lldb (installed with clang above) is the native debugger used by
+# clickhouse-test's `print_c_stacktraces` to dump server backtraces.
+# Symlink the versioned binary into /usr/bin so callers can run `lldb`
+# directly, and grant suid so non-root tests can still attach. gdb is kept
+# above for the fuzzer, perf comparison, stress, upgrade, and
 # integration-test harnesses that still drive it directly.
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends lldb-${LLVM_VERSION} \
-    && ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/lldb /usr/bin/lldb \
-    && chmod u+s /usr/lib/llvm-${LLVM_VERSION}/bin/lldb \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/lldb /usr/bin/lldb \
+    && chmod u+s /usr/lib/llvm-${LLVM_VERSION}/bin/lldb
 
 # This symlink is required by gcc to find the lld linker
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
