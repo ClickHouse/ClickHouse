@@ -719,15 +719,31 @@ std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view messa
     /// parsed completely, so the parser has reached one row more than that.
     auto values_marker = parseRowNumberAfter(message, " at row ", "");
 
-    /// Both forms can be present when the data itself contains something that looks like the other
-    /// marker - prefer the one that the parser appended, which is the rightmost of the two.
-    if (row_input_format_marker && (!values_marker || values_marker->pos < row_input_format_marker->pos))
-        return std::max<size_t>(row_input_format_marker->rows, 1); /// Be defensive about a zero.
+    /// `ValuesBlockInputFormat` also appends " in one of the first N rows" when the batched evaluation
+    /// of templated expressions fails: the failing row is unknown there, but all N rows were read.
+    auto values_batch_marker = parseRowNumberAfter(message, " in one of the first ", " rows");
 
+    /// Several forms can be present when the data itself contains something that looks like another
+    /// marker - prefer the one that the parser appended, which is the rightmost one.
+    std::optional<size_t> rows_reached;
+    size_t rightmost_pos = 0;
+    auto consider = [&](const std::optional<RowNumberMarker> & marker, size_t bound)
+    {
+        if (marker && (!rows_reached || marker->pos > rightmost_pos))
+        {
+            rightmost_pos = marker->pos;
+            rows_reached = bound;
+        }
+    };
+
+    if (row_input_format_marker)
+        consider(row_input_format_marker, std::max<size_t>(row_input_format_marker->rows, 1)); /// Be defensive about a zero.
     if (values_marker)
-        return values_marker->rows + 1;
+        consider(values_marker, values_marker->rows + 1);
+    if (values_batch_marker)
+        consider(values_batch_marker, values_batch_marker->rows);
 
-    return {};
+    return rows_reached;
 }
 
 String getInsertDataSchemaMismatchDescriptionFromFile(

@@ -160,19 +160,32 @@ Chunk ValuesBlockInputFormat::read()
     }
 
     /// Evaluate expressions, which were parsed using templates, if any
-    for (size_t i = 0; i < columns.size(); ++i)
+    try
     {
-        if (!templates[i] || !templates[i]->rowsCount())
-            continue;
-
-        const auto & expected_type = header.getByPosition(i).type;
-        if (columns[i]->empty())
-            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
-        else
+        for (size_t i = 0; i < columns.size(); ++i)
         {
-            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
-            columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
+            if (!templates[i] || !templates[i]->rowsCount())
+                continue;
+
+            const auto & expected_type = header.getByPosition(i).type;
+            if (columns[i]->empty())
+                columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
+            else
+            {
+                ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
+                columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
+            }
         }
+    }
+    catch (Exception & e)
+    {
+        /// The batched evaluation covers rows that were already read completely, so the failing row is
+        /// unknown here, but it is one of the `total_rows` rows read so far. Report that bound: it tells
+        /// the user where to look, and it lets the parse-error diagnostics limit schema inference to the
+        /// rows the parser has actually read (see `getRowsReachedFromParseErrorMessage`).
+        if (isParseError(e.code()))
+            e.addMessage(" in one of the first " + std::to_string(total_rows) + " rows");
+        throw;
     }
 
     if (columns.empty() || columns[0]->empty())
