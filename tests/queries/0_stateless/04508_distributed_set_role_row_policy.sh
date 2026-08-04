@@ -25,6 +25,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # test_cluster_interserver_secret has two shards over loopback pointing at the
 # same node, so a Distributed read returns each row twice; use DISTINCT.
+#
+# The distributed reads pin serialize_query_plan=0 so the test always exercises
+# the RemoteQueryExecutor path this change fixes. With serialize_query_plan=1
+# (the "distributed plan" test variant) the shard subquery applies no row policy
+# at all -- a separate, pre-existing bypass of row policies through Distributed
+# tables that is unrelated to role propagation and that adding a policy on the
+# Distributed table does not fix.
+# See https://github.com/ClickHouse/ClickHouse/issues/112891
 
 USER="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ROLE_A="role_a_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -66,13 +74,13 @@ echo "--- SET ROLE role_b on local table: expect workspace_id=2 only ---"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "SET ROLE ${ROLE_B}; SELECT workspace_id, data FROM ${LOCAL_TABLE} ORDER BY workspace_id, data"
 
 echo "--- SET ROLE role_a on distributed table: expect workspace_id=1 only ---"
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "SET ROLE ${ROLE_A}; SELECT DISTINCT workspace_id, data FROM ${DIST_TABLE} ORDER BY workspace_id, data SETTINGS prefer_localhost_replica = 0"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "SET ROLE ${ROLE_A}; SELECT DISTINCT workspace_id, data FROM ${DIST_TABLE} ORDER BY workspace_id, data SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0"
 
 echo "--- SET ROLE role_b on distributed table: expect workspace_id=2 only ---"
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "SET ROLE ${ROLE_B}; SELECT DISTINCT workspace_id, data FROM ${DIST_TABLE} ORDER BY workspace_id, data SETTINGS prefer_localhost_replica = 0"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "SET ROLE ${ROLE_B}; SELECT DISTINCT workspace_id, data FROM ${DIST_TABLE} ORDER BY workspace_id, data SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0"
 
 echo "--- Both roles on distributed table: expect all rows ---"
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "SET ROLE ${ROLE_A}, ${ROLE_B}; SELECT DISTINCT workspace_id, data FROM ${DIST_TABLE} ORDER BY workspace_id, data SETTINGS prefer_localhost_replica = 0"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "SET ROLE ${ROLE_A}, ${ROLE_B}; SELECT DISTINCT workspace_id, data FROM ${DIST_TABLE} ORDER BY workspace_id, data SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${DIST_TABLE}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${LOCAL_TABLE}"
