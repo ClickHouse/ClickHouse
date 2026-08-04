@@ -414,7 +414,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         {
             const auto converted = convertFieldToTypeOrThrow(
                 window_description.frame.session_window_threshold,
-                *entry.type);
+                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
 
             /*
              * Note that the value can be NaN, and we don't have a visitor

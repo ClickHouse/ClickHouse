@@ -14,6 +14,12 @@ select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n de
 -- Fractional session window thresholds are also useful, e.g. to process bursts of events occurring less than 0.5 second apart.
 select arrayJoin([1, 2.0, 2.1, 2.2, 10.0, 10.1])::float n, groupArray(n) over (order by n session 0.5);
 
+-- A Float32 key takes a fractional threshold that is not exactly representable in it, the same
+-- inexact-float conversion a RANGE offset uses.
+select n, groupArray(n) over (order by n session 0.1) from (select arrayJoin([1.0, 1.05, 9.0])::Float32 n) order by n;
+select n, count() over (order by n session 0) from (select toFloat32(1) n); -- { serverError BAD_ARGUMENTS }
+select n, count() over (order by n session -0.5) from (select toFloat32(1) n); -- { serverError BAD_ARGUMENTS }
+
 -- PARTITION BY: sessions are formed independently within each partition.
 select p, n, groupArray(n) over (partition by p order by n session 2)
 from (select arrayJoin([1, 2, 10, 11]) n, arrayJoin(['a', 'b']) p)
