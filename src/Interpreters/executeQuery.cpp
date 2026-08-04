@@ -32,6 +32,8 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTDictionary.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
@@ -1174,12 +1176,22 @@ using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactio
 /// the raw JSON text, which is also why it is not checked at deserialization.
 static void checkValuelessSettingChanges(const IAST & ast)
 {
-    if (const auto * set_query = ast.as<ASTSetQuery>())
+    const auto check = [](const SettingsChanges & changes)
     {
-        for (const auto & change : set_query->changes)
+        for (const auto & change : changes)
             if (change.shorthand && change.value != Field(true))
                 BaseSettingsHelpers::throwValuelessSettingHasValue(change.name);
-    }
+    };
+
+    /// Most settings ride in an `ASTSetQuery`, but dictionary and WASM function settings
+    /// store `SettingsChanges` directly in their own nodes, and their `readJSON` restores
+    /// the `shorthand` flag just like `ASTSetQuery::readJSON` does.
+    if (const auto * set_query = ast.as<ASTSetQuery>())
+        check(set_query->changes);
+    else if (const auto * dictionary_settings = ast.as<ASTDictionarySettings>())
+        check(dictionary_settings->changes);
+    else if (const auto * create_wasm_function = ast.as<ASTCreateWasmFunctionQuery>())
+        check(create_wasm_function->getSettings());
 
     for (const auto & child : ast.children)
         checkValuelessSettingChanges(*child);

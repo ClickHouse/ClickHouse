@@ -22,6 +22,19 @@ CRAFTED_EXPLAIN="replaceAll(parseQueryToJSON(\$\$EXPLAIN header = 1 SELECT 1\$\$
 CRAFTED_EXPLAIN_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_EXPLAIN FORMAT TSVRaw")
 $CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_EXPLAIN_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 
+# Dictionary settings are stored in `ASTDictionarySettings` rather than in an `ASTSetQuery`,
+# and `getDictionaryConfigurationFromAST` reads them raw.
+CRAFTED_DICT="replaceAll(parseQueryToJSON(\$\$CREATE DICTIONARY test_04699_dict (k UInt64, v UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 'test_04699')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(check_dictionary_primary_key = 0)\$\$), '{\"name\":\"check_dictionary_primary_key\"', '{\"name\":\"check_dictionary_primary_key\",\"shorthand\":true')"
+CRAFTED_DICT_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_DICT FORMAT TSVRaw")
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_DICT_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+
+# WASM function settings are stored in `ASTCreateWasmFunctionQuery` rather than in an
+# `ASTSetQuery`, `validateAndGetDefinition` reads them raw, and `formatImpl` would render the
+# crafted change in the valueless form, hiding the carried value.
+CRAFTED_WASM="replaceAll(parseQueryToJSON(\$\$CREATE FUNCTION test_04699_wasm LANGUAGE WASM FROM 'mod' ARGUMENTS (UInt32) RETURNS UInt32 SETTINGS max_instances = 0\$\$), '{\"name\":\"max_instances\"', '{\"name\":\"max_instances\",\"shorthand\":true')"
+CRAFTED_WASM_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_WASM FORMAT TSVRaw")
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_WASM_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+
 # The genuine valueless form for a Bool engine setting is untouched: it round-trips through the
 # JSON dialect and still executes.
 GENUINE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON(\$\$CREATE TABLE test_04699 (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k) SETTINGS persistent\$\$) FORMAT TSVRaw")

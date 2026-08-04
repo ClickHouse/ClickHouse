@@ -56,6 +56,7 @@ public:
     void setSourceFunctionName(ASTPtr ast) { source_function_name_ast = children.emplace_back(std::move(ast)); }
     void setAbi(ASTPtr ast) { abi_ast = children.emplace_back(std::move(ast)); }
     void setSettings(SettingsChanges settings_) { function_settings = std::move(settings_); }
+    const SettingsChanges & getSettings() const { return function_settings; }
 
     /// Rebuild children in the canonical order that formatImpl uses.
     /// Must be called after parsing to ensure consistent tree hashing.

@@ -193,6 +193,11 @@ void ASTDictionarySettings::writeJSON(WriteBuffer & out) const
                 o << ',';
             o << "{\"name\":";
             writeJSONString(changes[i].name, o, fs);
+            /// The dictionary settings parser never produces the valueless form, but a change
+            /// deserialized from JSON may carry the flag (with the mandatory Bool `true` value),
+            /// and it has to survive re-serialization.
+            if (changes[i].shorthand)
+                o << ",\"shorthand\":true";
             w.writeFieldValue("value", changes[i].value);
             o << '}';
         }
@@ -216,11 +221,18 @@ void ASTDictionarySettings::readJSON(const Poco::JSON::Object & json)
             /// Read the name strictly so a non-string value is rejected with `BAD_ARGUMENTS`
             /// instead of being coerced into a setting name.
             JSONObjectReader setting_reader(*obj);
-            String setting_name = setting_reader.getString("name");
+            SettingChange change;
+            change.name = setting_reader.getString("name");
+            /// Restore the valueless form instead of dropping the flag, so `executeQueryImpl`
+            /// can reject a change that claims to be valueless but carries a value; silently
+            /// reinterpreting it as an explicit `name = value` would execute the carried value.
+            /// It is not rejected here for the logging reason described in `ASTSetQuery::readJSON`.
+            change.shorthand = setting_reader.getBool("shorthand");
             auto value_obj = obj->getObject("value");
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
-            changes.emplace_back(setting_name, JSONObjectReader::readFieldFromObject(*value_obj));
+            change.value = JSONObjectReader::readFieldFromObject(*value_obj);
+            changes.push_back(std::move(change));
         }
     }
 }

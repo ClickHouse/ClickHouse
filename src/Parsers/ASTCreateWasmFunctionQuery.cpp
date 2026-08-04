@@ -167,6 +167,11 @@ void ASTCreateWasmFunctionQuery::writeJSON(WriteBuffer & out) const
             if (i > 0) o << ',';
             o << "{\"name\":";
             writeJSONString(function_settings[i].name, o, fs);
+            /// The function settings parser never produces the valueless form, but a change
+            /// deserialized from JSON may carry the flag (with the mandatory Bool `true` value),
+            /// and it has to survive re-serialization.
+            if (function_settings[i].shorthand)
+                o << ",\"shorthand\":true";
             w.writeFieldValue("value", function_settings[i].value);
             o << '}';
         }
@@ -277,6 +282,12 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
             /// instead of being coerced into a setting name.
             JSONObjectReader change_reader(*change_obj);
             change.name = change_reader.getString("name");
+            /// Restore the valueless form instead of dropping the flag, so `executeQueryImpl`
+            /// can reject a change that claims to be valueless but carries a value; silently
+            /// reinterpreting it as an explicit `name = value` would execute the carried value,
+            /// while `formatImpl` (via `ASTSetQuery`) would render the valueless form and hide it.
+            /// It is not rejected here for the logging reason described in `ASTSetQuery::readJSON`.
+            change.shorthand = change_reader.getBool("shorthand");
             auto value_obj = change_obj->getObject("value");
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' at index {} in 'function_settings' array during AST JSON deserialization", i);
