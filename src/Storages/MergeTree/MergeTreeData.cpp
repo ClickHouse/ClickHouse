@@ -67,6 +67,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
@@ -921,18 +922,11 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
-        try
-        {
-            auto parts_lock = readLockParts();
-            auto stats = part.data_part->loadStatistics(required_columns);
-            estimator_builder.markDataPart(part.data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
-        }
+        auto parts_lock = readLockParts();
+        auto stats = part.data_part->loadStatistics(required_columns);
+        estimator_builder.markDataPart(part.data_part);
+        for (const auto & [column_name, stat] : stats)
+            estimator_builder.addStatistics(column_name, stat);
     }
 
     return estimator_builder.getEstimator();
@@ -3322,18 +3316,11 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
-        try
-        {
-            auto parts_lock = readLockParts();
-            auto stats = data_part->loadStatistics();
-            estimator_builder.markDataPart(data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", data_part->info.getPartNameV1()));
-        }
+        auto parts_lock = readLockParts();
+        auto stats = data_part->loadStatistics();
+        estimator_builder.markDataPart(data_part);
+        for (const auto & [column_name, stat] : stats)
+            estimator_builder.addStatistics(column_name, stat);
     }
     std::lock_guard<std::mutex> lock(stats_mutex);
     cached_estimator = estimator_builder.getEstimator();

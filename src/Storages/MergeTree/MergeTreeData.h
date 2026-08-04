@@ -564,6 +564,10 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
+    /// The contract is std::nullopt here, so this only matters when a wrapper (`Merge`,
+    /// `MaterializedView`, `Buffer`) delegating the read to this table forwards the question.
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return true; }
+
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
 
     bool supportsFinal() const override;
