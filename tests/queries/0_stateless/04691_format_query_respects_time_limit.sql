@@ -1,7 +1,5 @@
--- Tags: no-fasttest, long
+-- Tags: no-fasttest
 -- no-fasttest: needs enough rows of moderate SQL text that an unpatched parse loop overshoots the limit.
--- long: ten statements each run until they hit the limit set below, so the test costs about ten times
--- that limit, and the limit has to clear a sanitizer build's query-planning cost (see below).
 
 -- The query-parsing functions parse one row at a time inside a single pipeline task. Cancellation is
 -- only polled between tasks, so before the fix a whole block ran to completion and the query outlived
