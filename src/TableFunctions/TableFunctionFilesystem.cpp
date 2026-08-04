@@ -35,7 +35,7 @@ import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/
 
 Recursively iterates a directory and returns a table with file metadata (paths, sizes, types, permissions, modification times) and, optionally, file contents.
 
-In `clickhouse-server` mode, the path must be within the [user_files_path](/reference/settings/server-settings/settings#user_files_path) directory. Symlinks inside `user_files_path` that point outside of it are followed, but only entries whose path (through the symlink) starts with `user_files_path` are returned.
+In `clickhouse-server` mode, the path must be within the [user_files_path](/reference/settings/server-settings/settings/user#user_files_path) directory. Symlinks inside `user_files_path` that point outside of it are followed, but only entries whose path (through the symlink) starts with `user_files_path` are returned.
 
 In `clickhouse-local` mode, there are no path restrictions.
 
@@ -51,7 +51,7 @@ filesystem([path])
 |-----------|-------------|
 | `path`    | The directory to list. Can be an absolute path (must be inside `user_files_path` in server mode) or a path relative to `user_files_path`. If empty or omitted, defaults to `user_files_path`. |
 
-## Returned columns {#returned_columns}
+## Returned columns {#returned-columns}
 
 | Column              | Type                       | Description |
 |---------------------|----------------------------|-------------|
