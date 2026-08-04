@@ -48,6 +48,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -1012,6 +1013,14 @@ try
     /// We want the remote part to decide if the insert will be async or not.
     key.settings->setDefaultValue("async_insert");
 
+    /// Declared before `insert_context` so that it is destroyed last: everything the flush accumulates
+    /// in the context (per-column query access info, the insertion table, the process list element) is
+    /// allocated while this thread is attached to the flush thread group and charged to the inserting
+    /// user, so the context has to be released before the thread detaches. Otherwise those frees are
+    /// credited to `total_memory_tracker` and the charge stays on the per-user tracker for good; see
+    /// `ThreadStatus::detachFromGroup`.
+    DB::QueryScope query_scope;
+
     auto insert_context = Context::createCopy(global_context);
     insert_context->makeQueryContext();
 
@@ -1044,7 +1053,6 @@ try
     insert_context->setCurrentQueryId(insert_query_id);
     insert_context->setInitialQueryId(insert_query_id);
 
-    DB::QueryScope query_scope;
     if (current_query_thread_group)
     {
         /// that means that flush async insert is called from some SYSTEM FLUSH ASYNC QUEUE,
@@ -1057,6 +1065,11 @@ try
     }
     else
         query_scope = QueryScope::create(insert_context);
+
+    /// `system.query_thread_log` is written when the thread detaches, and it needs the query context,
+    /// which is released just above that point now (see the `query_scope` declaration). Write it here
+    /// instead, while the context is still alive; the detach below sees it as already finalized.
+    SCOPE_EXIT_SAFE(CurrentThread::finalizePerformanceCounters());
 
     LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
     LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
