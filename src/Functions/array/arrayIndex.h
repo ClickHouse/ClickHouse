@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <type_traits>
 
@@ -24,7 +25,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/checkStackSize.h>
 #include <base/memcmpSmall.h>
@@ -891,12 +892,14 @@ private:
     }
 
     /// A row's alternatives on both sides of the comparison, packed so rows agreeing on both share a
-    /// group. Both halves are ColumnVariant::Discriminator, so the pair fits a UInt16.
-    using GroupKey = UInt16;
+    /// group. Both halves are ColumnVariant::Discriminator, so the pair fits a UInt16; the wider type
+    /// leaves a sentinel for a row that belongs to no group.
+    using GroupKey = UInt32;
+    static constexpr GroupKey no_group = std::numeric_limits<GroupKey>::max();
 
     static GroupKey makeGroupKey(ColumnVariant::Discriminator elements, ColumnVariant::Discriminator needle)
     {
-        return static_cast<GroupKey>(static_cast<GroupKey>(elements) << 8 | needle);
+        return static_cast<GroupKey>(elements) << 8 | needle;
     }
 
     /// The one global discriminator every element of `row` carries, NULL_DISCRIMINATOR when it holds
@@ -926,8 +929,10 @@ private:
 
     /// Group the rows by the alternatives they carry, on the element side and on the needle side both:
     /// a group is only answerable as a whole if every member peels the same way on both sides. A row
-    /// whose own elements disagree gets no group, and nothing means no group formed at all.
-    static std::optional<UnorderedMapWithMemoryTracking<GroupKey, IColumn::Filter>> groupRowsByAlternative(
+    /// whose own elements disagree is labelled no_group, and nothing means no group formed at all.
+    /// One label per row rather than a filter per group: the pair key admits far more groups than a
+    /// block has distinct ones, and every filter would otherwise span the whole block.
+    static std::optional<VectorWithMemoryTracking<GroupKey>> groupRowsByAlternative(
         const ColumnArray & array, const DataTypePtr & element_type,
         const IColumn & needle, const DataTypePtr & needle_type)
     {
@@ -952,7 +957,8 @@ private:
                 return {};
         }
 
-        UnorderedMapWithMemoryTracking<GroupKey, IColumn::Filter> groups;
+        VectorWithMemoryTracking<GroupKey> labels(offsets.size(), no_group);
+        bool any_grouped = false;
         ColumnArray::Offset current_offset = 0;
 
         for (size_t row = 0; row < offsets.size(); ++row)
@@ -970,15 +976,14 @@ private:
             if (!needle_alternative)
                 continue;
 
-            auto & filter = groups.try_emplace(
-                makeGroupKey(*elements_alternative, *needle_alternative), IColumn::Filter(offsets.size(), 0)).first->second;
-            filter[row] = 1;
+            labels[row] = makeGroupKey(*elements_alternative, *needle_alternative);
+            any_grouped = true;
         }
 
-        if (groups.empty())
+        if (!any_grouped)
             return {};
 
-        return groups;
+        return labels;
     }
 
     /// True when `type` is an Array or Map, at the top level or inside any chain of Tuple wrappers.
@@ -1296,8 +1301,8 @@ private:
         const DataTypePtr & element_type,
         const DataTypePtr & needle_type) const
     {
-        auto groups = groupRowsByAlternative(array, element_type, *full_needle, needle_type);
-        if (!groups)
+        auto labels = groupRowsByAlternative(array, element_type, *full_needle, needle_type);
+        if (!labels)
             return nullptr;
 
         const size_t rows = array.size();
@@ -1306,10 +1311,17 @@ private:
         IColumn::Filter undecided(rows, 1);
         bool any_group_decided = false;
 
-        /// At most one group per alternative pair, and only a heterogeneous column reaches here: a
-        /// block homogeneous on both sides was answered above.
-        for (const auto & [group_key, filter] : *groups)
+        /// The distinct keys present, so only groups a block really holds are built. Only a block
+        /// heterogeneous on one of the two sides reaches here: a homogeneous one was answered above.
+        UnorderedSetWithMemoryTracking<GroupKey> keys((*labels).begin(), (*labels).end());
+        keys.erase(no_group);
+
+        for (auto group_key : keys)
         {
+            IColumn::Filter filter(rows, 0);
+            for (size_t row = 0; row < rows; ++row)
+                filter[row] = (*labels)[row] == group_key;
+
             auto group_array = array.filter(filter, -1);
             const auto & group = assert_cast<const ColumnArray &>(*group_array);
 
