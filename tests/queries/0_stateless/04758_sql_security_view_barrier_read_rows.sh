@@ -47,12 +47,15 @@ for analyzer in 1 0; do
     absent_id=$(probe "$analyzer" 500000)
 
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    # `count() = 2` guards against the comparison passing vacuously on an empty match.
     ${CLICKHOUSE_CLIENT} --query "
-        SELECT if(
+        SELECT multiIf(
+            count() != 2, 'MISSING',
             anyIf(read_rows, query_id = '$hidden_id') = anyIf(read_rows, query_id = '$absent_id'),
             'same', 'DISCLOSED')
         FROM system.query_log
-        WHERE query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
+        WHERE current_database = currentDatabase()
+          AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
 done
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"
