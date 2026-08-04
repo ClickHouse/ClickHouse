@@ -4364,9 +4364,6 @@ struct ToDateTimeMonotonicity
     }
 };
 
-/** The monotonicity for the `toString` function is mainly determined for test purposes.
-  * It is doubtful that anyone is looking to optimize queries with conditions `toString(CounterID) = 34`.
-  */
 struct ToStringMonotonicity
 {
     static bool has() { return true; }
@@ -4393,8 +4390,12 @@ struct ToStringMonotonicity
             return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
         }
 
-        /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
-        if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))
+        if (checkDataTypes<DataTypeString>(type_ptr))
+            return {.is_monotonic = true, .is_strict = true};
+
+        /// `toString` function is monotonous if the argument is Date or Date32 or DateTime, or non-negative numbers with the same number of symbols.
+        if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime>(type_ptr))
+        // if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))
             return positive;
 
         if (left.isNull() || right.isNull())
