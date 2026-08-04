@@ -11,6 +11,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The trap is installed before any server state is changed, so the setup (stopped merges, the table,
+# the failpoint) is unwound even when one of the guard assertions below fails and exits early.
+trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause" 2>/dev/null; ${CLICKHOUSE_CLIENT} -q "SYSTEM START MERGES t_final_layers" 2>/dev/null; ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_final_layers" 2>/dev/null' EXIT
+
 # The layered plan exists only while the two overlapping parts are separate: a background merge would
 # collapse them and silently turn the test into a no-op (or make the failpoint wait hang), so merges are
 # stopped for the table before the parts are created and only restarted at the end.
@@ -31,8 +35,6 @@ ${CLICKHOUSE_CLIENT} -q "
 
 query_id="kill_query_final_layers_pause_${CLICKHOUSE_DATABASE}_$RANDOM"
 output_file="${CLICKHOUSE_TMP}/kill_query_final_layers_pause_${CLICKHOUSE_DATABASE}.out"
-
-trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause" 2>/dev/null; ${CLICKHOUSE_CLIENT} -q "SYSTEM START MERGES t_final_layers" 2>/dev/null' EXIT
 
 # Enable the failpoint before starting the query
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT filter_transform_pause"
