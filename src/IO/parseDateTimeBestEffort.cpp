@@ -905,6 +905,25 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!has_year && !month && !day_of_month && !has_time)
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: neither Date nor Time was parsed successfully");
 
+    /// Match basic DateTime / DateTime64 year-0 placeholder handling before defaulting missing month/day to 1.
+    /// Avoids invalid DateTime64 values like 0000-00-00 from being parsed as 0000-01-01 and diverging from the
+    /// fixed-format reader. DateTime64 with a real calendar date in year 0 is validated after this conditional.
+    if (has_year && year == 0)
+    {
+        if constexpr (!is_64)
+        {
+            /// DateTime cannot represent year 0; map any year-0 input to the Unix epoch.
+            res = 0;
+            return ReturnType(true);
+        }
+        else if (month == 0 || day_of_month == 0)
+        {
+            /// DateTime64: zero month/day placeholders map to the Unix epoch, matching fixed-format reader.
+            res = 0;
+            return ReturnType(true);
+        }
+    }
+
     if (!day_of_month)
     {
         if constexpr (strict)
@@ -933,16 +952,6 @@ ReturnType parseDateTimeBestEffortImpl(
         auto today = local_time_zone.toDayNum(now);
         UInt16 curr_year = local_time_zone.toYear(today);
         year = local_time_zone.makeDayNum(curr_year, month, day_of_month) <= today ? curr_year : curr_year - 1;
-    }
-    else if (year == 0)
-    {
-        /// Calendar year 0 is only representable in DateTime64. For DateTime, this input is accepted and clamped
-        /// to the Unix epoch to allow for the usage of 0000-0x-0x dates as placeholder values for unknown dates.
-        if constexpr (!is_64)
-        {
-            res = 0;
-            return ReturnType(true);
-        }
     }
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
