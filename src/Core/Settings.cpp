@@ -2269,6 +2269,8 @@ That setting has four possible values:
     DECLARE(Bool, insert_deduplicate, true, R"(
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
+This setting only takes effect when [`deduplicate_insert`](#deduplicate_insert) is set to `backward_compatible_choice`.
+
 Possible values:
 
 - 0 — Disabled.
@@ -2279,7 +2281,9 @@ For the replicated tables by default the only 100 of the most recent blocks for 
 For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 )", 0) \
     DECLARE(Bool, async_insert_deduplicate, false, R"(
-For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed
+For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed.
+
+This setting only takes effect when [`deduplicate_insert`](#deduplicate_insert) is set to `backward_compatible_choice`.
 )", 0) \
     \
     DECLARE(UInt64Auto, insert_quorum, 0, R"(
