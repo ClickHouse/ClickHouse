@@ -1080,15 +1080,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->skip_indexes_by_column.clear();
         global_ctx->text_indexes_to_merge.clear();
 
-        auto all_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
-        for (const auto & index : all_skip_indexes)
+        /// Repopulate only when the setting asks for it: the clear above this branch already
+        /// honoured `materialize_skip_indexes_on_merge = 0`, and putting the indexes back would
+        /// override the user's choice on a TTLDrop merge only.
+        if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
         {
-            if (!exclude_index_names.contains(index.name))
+            auto all_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
+            for (const auto & index : all_skip_indexes)
             {
-                if (index.type == "text")
-                    global_ctx->text_indexes_to_merge.push_back(index);
-                else
-                    global_ctx->merging_skip_indexes.push_back(index);
+                if (!exclude_index_names.contains(index.name))
+                {
+                    /// Inert indices (a removed index type kept only for attach compatibility) hold
+                    /// no data and cannot be recomputed. Skip them so the merge does not wedge
+                    /// trying to aggregate them.
+                    if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
+                        continue;
+
+                    if (index.type == "text")
+                        global_ctx->text_indexes_to_merge.push_back(index);
+                    else
+                        global_ctx->merging_skip_indexes.push_back(index);
+                }
             }
         }
     }
@@ -2469,7 +2481,12 @@ bool MergeTask::MergeTextIndexStage::prepare() const
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
         std::vector<TextIndexSegment> segments;
 
-        if (global_ctx->merge_may_reduce_rows)
+        if (global_ctx->ttl_drop_short_circuit)
+        {
+            /// No read pipeline ran, so no transform built segments. The resulting part has no
+            /// rows, which is exactly what a 0-row pipeline would have produced anyway.
+        }
+        else if (global_ctx->merge_may_reduce_rows)
         {
             /// Text index was built for the resulting part.
             segments = getTextIndexSegments(global_ctx->new_data_part->name, index.name, 0);
