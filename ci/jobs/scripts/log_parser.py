@@ -22,6 +22,38 @@ class FuzzerLogParser:
         r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
     )
     RUNTIME_ERROR_PATTERN = r".*runtime error: .*|.*is located.*"
+    # (name, flag_name, pattern) triples checked in this order by `parse_failure`;
+    # also used to bound the thread-less `Format string:` search by the next failure
+    # of any kind, so keep every failure-carrying pattern listed here.
+    ERROR_PATTERNS = [
+        (
+            "Sanitizer",
+            "is_sanitizer_error",
+            SANITIZER_ERROR_PATTERN,
+        ),
+        ("Logical error", "is_logical_error", r"Logical error.*"),
+        (
+            "Assertion",
+            "is_logical_error",
+            r"Assertion.*failed|Failed assertion.*|.*_LIBCPP_ASSERT.*",
+        ),
+        (
+            "Runtime error",
+            "is_sanitizer_error",
+            RUNTIME_ERROR_PATTERN,
+        ),
+        ("SegFault", "is_segfault", r"Segmentation fault.*"),
+        (
+            "Signal",
+            "is_killed_by_signal",
+            r"Received signal.*|.*Child process was terminated by signal 9.*",
+        ),
+        (
+            "Memory limit exceeded",
+            "is_memory_limit_exceeded",
+            r".*\(total\) memory limit exceeded.*",
+        ),
+    ]
     SQL_COMMANDS = [
         "SELECT",
         "INSERT",
@@ -114,10 +146,15 @@ class FuzzerLogParser:
             # The input has no thread ids (e.g. a bare stack trace string), so bound
             # the search by the failure block instead: the format string belongs to
             # this failure only if it appears before the next fatal / failure line.
+            # The next failure may be carried by any pattern (e.g. an assertion
+            # following a logical error), so check all of them, not just the matched
+            # one.
             for line in lines[match_index + 1 :]:
                 if "Format string: " in line:
                     return self.extract_format_string(line)
-                if "<Fatal>" in line or re.search(matched_pattern, line):
+                if "<Fatal>" in line or any(
+                    re.search(pattern, line) for _, _, pattern in self.ERROR_PATTERNS
+                ):
                     return ""
             return ""
 
@@ -142,40 +179,11 @@ class FuzzerLogParser:
         is_killed_by_signal = False
         is_segfault = False
         is_memory_limit_exceeded = False
-        error_patterns = [
-            (
-                "Sanitizer",
-                "is_sanitizer_error",
-                self.SANITIZER_ERROR_PATTERN,
-            ),
-            ("Logical error", "is_logical_error", r"Logical error.*"),
-            (
-                "Assertion",
-                "is_logical_error",
-                r"Assertion.*failed|Failed assertion.*|.*_LIBCPP_ASSERT.*",
-            ),
-            (
-                "Runtime error",
-                "is_sanitizer_error",
-                self.RUNTIME_ERROR_PATTERN,
-            ),
-            ("SegFault", "is_segfault", r"Segmentation fault.*"),
-            (
-                "Signal",
-                "is_killed_by_signal",
-                r"Received signal.*|.*Child process was terminated by signal 9.*",
-            ),
-            (
-                "Memory limit exceeded",
-                "is_memory_limit_exceeded",
-                r".*\(total\) memory limit exceeded.*",
-            ),
-        ]
 
         error_output = None
         matched_pattern = None
         matched_log_file = None
-        for name, flag_name, pattern in error_patterns:
+        for name, flag_name, pattern in self.ERROR_PATTERNS:
             output = ""
             file = None
             if self.stack_trace_str:

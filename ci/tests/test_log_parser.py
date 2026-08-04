@@ -227,3 +227,28 @@ def test_parse_failure_logical_error_stack_trace_str_without_thread_ids():
 
     assert result_name.startswith("Logical error: first error without format (STID:")
     assert "second error normalized" not in result_name
+
+
+def test_parse_failure_logical_error_stack_trace_str_next_failure_other_pattern():
+    # Same as above, but the later failure is carried by a different pattern variant
+    # (an assertion instead of another `Logical error:`). The thread-less search must
+    # stop at the next failure line of any kind, so the assertion's `Format string:`
+    # must not rename the first failure.
+    parser = FuzzerLogParser(
+        server_log="",
+        stack_trace_str=(
+            "Logical error: 'first error without format'.\n"
+            "Stack trace (when copying this message, always include the lines "
+            "below):\n"
+            "\n"
+            "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+            "@ 0x00000000139d383c\n"
+            "Assertion `count == 0` failed.\n"
+            "Format string: 'second assertion normalized {}'.\n"
+        ),
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith("Logical error: first error without format (STID:")
+    assert "second assertion normalized" not in result_name
