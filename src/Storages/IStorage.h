@@ -148,6 +148,15 @@ public:
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
     virtual std::optional<NameSet> supportedPrewhereColumns() const { return std::nullopt; }
 
+    /// Whether a subcolumn is admitted into PREWHERE whenever `supportedPrewhereColumns` admits
+    /// its origin column. Subcolumn sets are open-ended (JSON paths), so the contract enumerates
+    /// top-level names only; this tells whether the storage's PREWHERE machinery resolves a
+    /// subcolumn of an admitted column. Wrappers delegating the read (`Merge`, `Buffer`,
+    /// `MaterializedView`) re-derive the filter by name and forward the question to the
+    /// underlying tables; storages evaluating PREWHERE in a format reader (e.g. data lakes over
+    /// Parquet with column mapping) cannot resolve subcolumns there, hence the fail-safe default.
+    virtual bool supportedPrewhereColumnsIncludeSubcolumns() const { return false; }
+
     /// Returns true if the storage supports optimization of moving conditions to PREWHERE section.
     virtual bool canMoveConditionsToPrewhere() const { return supportsPrewhere(); }
 
