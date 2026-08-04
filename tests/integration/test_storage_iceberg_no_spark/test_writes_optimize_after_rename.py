@@ -974,14 +974,17 @@ def test_compaction_never_cleans_up_the_commit_target():
     assert "generated_metadata_paths" in text, (
         f"{source} no longer tracks generated paths; this guard needs updating"
     )
-    # Match any push_back of the commit target rather than one exact spelling, so routing it
-    # through a local alias or a second call site is caught too.
+    # Scan whitespace-collapsed statements rather than single lines, so an alias, a second call
+    # site or a wrapped statement cannot slip past. This is a proxy for a race a single-process
+    # test cannot stage, so it is deliberately broad: any insertion of the commit target into the
+    # cleanup list trips it.
+    statements = " ".join(text.split()).split(";")
     offenders = [
-        line.strip()
-        for line in text.splitlines()
-        if "generated_metadata_paths" in line
-        and "push_back" in line
-        and "generated_metadata_info" in line
+        st.strip()
+        for st in statements
+        if "generated_metadata_paths" in st
+        and "generated_metadata_info" in st
+        and any(op in st for op in ("push_back", "emplace_back", "insert", "assign", "="))
     ]
     assert not offenders, (
         "the metadata commit target was added to the compaction cleanup set, which deletes the "
