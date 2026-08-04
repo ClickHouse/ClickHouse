@@ -208,7 +208,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
         {
             auto & cache = caches[columns_to_read[pos].getNameInStorage()];
             prefetchForColumn(
-                priority, columns_to_read[pos], serializations[pos], from_mark, continue_reading,
+                priority, pos, columns_to_read[pos], serializations[pos], from_mark, continue_reading,
                 current_task_last_mark, cache);
         }
         catch (Exception & e)
@@ -553,6 +553,7 @@ size_t MergeTreeReaderWide::readRows(
                     auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
 
                     readData(
+                        pos,
                         column_to_read,
                         serializations[pos],
                         column,
@@ -1004,7 +1005,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
                     deserialize_state_map,
                     cache,
                     deserialize_states_cache,
-                    prefixes_prefetch_callback_getter ? prefixes_prefetch_callback_getter(columns_to_read[pos]) : ISerialization::StreamCallback{});
+                    prefixes_prefetch_callback_getter ? prefixes_prefetch_callback_getter(pos, columns_to_read[pos]) : ISerialization::StreamCallback{});
             }
             catch (Exception & e)
             {
@@ -1031,9 +1032,9 @@ void MergeTreeReaderWide::deserializePrefixForAllColumns(size_t num_columns, siz
 
 void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, size_t current_task_last_mark, Priority priority)
 {
-    auto prefixes_prefetch_callback_getter = [&](const NameAndTypePair & name_and_type)
+    auto prefixes_prefetch_callback_getter = [&](size_t pos, const NameAndTypePair & name_and_type)
     {
-        return [&](const ISerialization::SubstreamPath & substream_path)
+        return [&, pos](const ISerialization::SubstreamPath & substream_path)
         {
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name && !prefetched_streams.contains(*stream_name))
@@ -1041,7 +1042,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
                 if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, caches[name_and_type.getNameInStorage()]))
                 {
                     buf->prefetch(priority);
-                    prefetched_streams.insert(*stream_name);
+                    prefetched_streams.emplace(*stream_name, pos);
                 }
             }
         };
@@ -1052,6 +1053,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
 
 void MergeTreeReaderWide::prefetchForColumn(
     Priority priority,
+    size_t pos,
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
     size_t from_mark,
@@ -1073,7 +1075,7 @@ void MergeTreeReaderWide::prefetchForColumn(
             if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
             {
                 buf->prefetch(priority);
-                prefetched_streams.insert(*stream_name);
+                prefetched_streams.emplace(*stream_name, pos);
             }
         }
     };
@@ -1093,6 +1095,7 @@ void MergeTreeReaderWide::prefetchForColumn(
 
 
 void MergeTreeReaderWide::readData(
+    size_t pos,
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
     ColumnPtr & column,
@@ -1112,7 +1115,10 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-        bool was_prefetched = stream_name && prefetched_streams.contains(*stream_name);
+        /// A prefetch leaves the stream positioned for the column that issued it. Another column
+        /// sharing this stream must still seek, or it reads from where the first one stopped.
+        auto prefetched_it = stream_name ? prefetched_streams.find(*stream_name) : prefetched_streams.end();
+        bool was_prefetched = prefetched_it != prefetched_streams.end() && prefetched_it->second == pos;
         bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
 
         return getStream(
