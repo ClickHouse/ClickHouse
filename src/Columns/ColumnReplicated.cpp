@@ -128,6 +128,10 @@ std::string_view ColumnReplicated::getDataAt(size_t n) const
 namespace
 {
 
+/// Used on ColumnReplicated::convertToFullColumnIfReplicated to check whether the fast path is worth
+/// Break-even is around 8 elements per row
+constexpr uint8_t ELEMENTS_PER_ROW_THRESHOLD = 8;
+
 /// Materializes Replicated(Array) into a full ColumnArray: Each array row is appended as one contiguous element range
 /// via a single insertRangeFrom, instead of gathering the nested data element by element as the generic path
 template <typename T>
@@ -140,7 +144,7 @@ ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODA
     auto res_offsets_column = ColumnArray::ColumnOffsets::create(num_rows);
     auto & res_offsets = res_offsets_column->getData();
 
-    size_t total_elements = 0;
+     size_t total_elements = 0;
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
@@ -176,7 +180,7 @@ ColumnPtr convertToFullColumnArray(const ColumnArray & src, const IColumn & row_
 
 }
 
-/// The generic index path (nested_column->index())) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
+/// The generic index path (nested_column->index()) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
 /// For ColumnArray, the convertToFullColumnArray is called instead, so each array is copied once per row instead of per-element
 /// Range copying pays one virtual call to insertRangeFrom per row; the generic path pays 8 bytes of scratch memory and one write element
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
@@ -389,9 +393,11 @@ void ColumnReplicated::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnReplicated::permute(const Permutation & perm, size_t limit) const
 {
-    if (size() != perm.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), size());
-
+    /// Do not require perm.size() == size(): the general IColumn::permute contract
+    /// (see getLimitForPermutation) allows a shorter permutation when limit is set.
+    /// The indexes column has the same size as this column, so its permute below
+    /// performs the correct contract check and throws SIZES_OF_COLUMNS_DOESNT_MATCH
+    /// when the permutation is actually too short.
     auto permuted_indexes = ColumnIndex(indexes.getIndexes()->permute(perm, limit));
     return create(nested_column, std::move(permuted_indexes));
 }

@@ -10,6 +10,14 @@ SELECT arrayMap(x -> concat(s, toString(x)), [1, 2, 3]) FROM (SELECT materialize
 SELECT '-- captured Array column (canonical shape)';
 WITH materialize(range(10)) AS large_array SELECT sum(length(arrayMap(idx -> arraySlice(large_array, idx, 2), arrayEnumerate(large_array)))) FROM numbers(5) SETTINGS enable_lazy_columns_replication = {{ i }};
 
+-- The arrays are distinct per row, so materializing the wrong row ranges (even with correct offsets)
+-- in the Replicated(Array) fast path would change the output values, not only the lengths.
+SELECT '-- captured Array column, value-sensitive (fast path of Replicated(Array) materialization)';
+SELECT arrayMap(idx -> arraySlice(big, idx, 2), arrayEnumerate(big)) FROM (SELECT materialize(range(number, number + 10)) AS big FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- captured Array column, value-sensitive hash over many rows (UInt16 indexes)';
+SELECT sum(cityHash64(toString(arrayMap(idx -> arraySlice(big, idx, 2), arrayEnumerate(big))))) FROM (SELECT materialize(range(number, number + 10)) AS big FROM numbers(300)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
 SELECT '-- capture used without the lambda argument';
 SELECT arrayMap(x -> s, [1, 2]) FROM (SELECT materialize(toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
 

@@ -45,6 +45,11 @@ build_digest_config = Job.CacheDigestConfig(
         "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        "./ci/jobs/scripts/log_cluster.py",
+        "./utils/prepare-time-trace/prepare-time-trace.sh",
+        # The build job also assembles the deb, rpm and tgz packages, so changes to
+        # their definitions and to the packaging script have to schedule a rebuild.
+        "./packages",
         "./utils/list-licenses",
         "./utils/self-extracting-executable",
     ],
@@ -201,7 +206,15 @@ class JobConfigs:
         command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-        digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci",
+                # The ci/tests/ guards for the expect-trace / bash-xtrace separation read these
+                # two files, so a change to either must run this job.
+                "./tests/clickhouse-test",
+                "./tests/queries/shell_config.sh",
+            ]
+        ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     )
     fast_test = Job.Config(
@@ -236,7 +249,7 @@ class JobConfigs:
             # cannot fail the job, and a timed-out job already fails).
             'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
-            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
+            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data /System/Volumes/Data/private/var/db/diagnostics/*",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -416,13 +429,21 @@ class JobConfigs:
     # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
     # in build_clickhouse.py) while keeping the shared sccache read-write. This
     # populates the cache so that read-only PR release builds get cache hits.
-    # They provide no artifacts and run no profile/master-head post hooks - the
-    # only purpose is to warm sccache.
+    # They provide no artifacts. The build profile hook runs so that the
+    # "Build profile diff" check gets a master baseline built with the PR
+    # flags - the arm warmup's object sizes and compile traces are the only
+    # master data directly comparable to a PR build (official master builds
+    # keep debug symbols, PR builds strip them). The hook uploads only for the
+    # arm variant (see _PROFILED_BUILDS in build_profile_hook.py).
     sccache_warmup_build_jobs = [
         job.set_command(f"{job.command} --build-examples")
         if f"({BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP})" in job.name
         else job
-        for job in common_build_job_config.parametrize(
+        for job in common_build_job_config.set_post_hooks(
+            post_hooks=[
+                "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+            ],
+        ).parametrize(
             Job.ParamSet(
                 parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
                 runs_on=RunnerLabels.ARM_LARGE,
@@ -510,6 +531,28 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
+    # stages the .options files, a source-derived fallback all.dict, and seed
+    # corpora repacked from tests/queries/0_stateless/*.sql into the build
+    # output (see ArtifactConfigs.fuzzers), so the produced artifact also
+    # depends on the inputs under tests/fuzz and on the stateless test queries,
+    # which the shared build digest does not cover. Extend the digest of the
+    # fuzzers build only, so that a dictionary generation or corpus change
+    # cannot cache-hit a stale artifact while the other builds are unaffected.
+    special_build_jobs = [
+        (
+            job.set_digest_config(
+                Job.CacheDigestConfig(
+                    include_paths=build_digest_config.include_paths
+                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
+                    with_git_submodules=True,
+                )
+            )
+            if job.parameter == BuildTypes.ARM_FUZZERS
+            else job
+        )
+        for job in special_build_jobs
+    ]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
@@ -1631,9 +1674,19 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        # The release binary is used to generate the fuzzer dictionary (all.dict)
+        # from the actual set of functions, data types and keywords.
+        requires=[
+            ArtifactNames.ARM_FUZZERS,
+            ArtifactNames.FUZZERS_CORPUS,
+            ArtifactNames.CH_ARM_RELEASE,
+        ],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/update_dict.sh",
+                "./tests/fuzz/dictionaries/old.dict",
+            ],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
@@ -1701,6 +1754,42 @@ class JobConfigs:
         run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
         timeout=6 * 3600,
+    )
+    # Compares the PR's arm_release build profile (binary and per-object sizes,
+    # per-symbol sizes, compile and link time down to individual functions and
+    # template instantiations) against the latest master build, and posts a PR
+    # comment when the change is significant. The data comes from the CI logs
+    # cluster: the PR side is uploaded by the arm_release build post-hook
+    # (build_profile_hook.py), the master side by master workflow builds.
+    # No digest_config, i.e. not cacheable: the job's output is a PR comment
+    # about one concrete commit (it embeds the head sha and links this run's
+    # report). Reusing a cached result would leave that comment describing an
+    # older commit of the PR - including a change that the head has already
+    # reverted - so the comparison is redone for every head. The job is cheap:
+    # it only queries the CI logs cluster.
+    build_profile_diff_job = Job.Config(
+        name=JobNames.BUILD_PROFILE_DIFF,
+        runs_on=RunnerLabels.ARM_SMALL,
+        # stateless-test rather than test-base: the job reads the CI logs
+        # cluster credentials from AWS SSM, and stateless-test is the test
+        # image that ships the aws CLI.
+        run_in_docker="clickhouse/stateless-test",
+        requires=["Build (arm_release)"],
+        command="python3 ./ci/jobs/build_profile_diff_job.py",
+        timeout=1800,
+        enable_gh_auth=True,
+        # Run on a red head too. This job is the only writer of the
+        # `build-profile-diff` PR comment, so skipping it leaves the comment
+        # posted for an older commit pinned to the PR, reading as if it
+        # described the head. `Build (arm_release)` runs after every regular
+        # build (`set_run_after(REGULAR_BUILD_NAMES)` in ci/workflows/pull_request.py)
+        # and inherits the default "no upstream failure" gate, so an unrelated
+        # build failure skips it and would skip this job with it. With no
+        # profile data for the head the job posts the "no data" text over the
+        # stale comparison (see main()) instead of leaving it. Not
+        # `run_unless_cancelled`: that would also ignore the job filter and run
+        # this on a `release` or `do not test` PR.
+        run_on_upstream_failure=True,
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
