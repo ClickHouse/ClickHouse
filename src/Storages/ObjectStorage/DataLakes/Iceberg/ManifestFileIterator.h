@@ -62,7 +62,9 @@ public:
         /// deletes force reading all physical columns, see IcebergMetadata::getInitialSchemaByPath).
         bool areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const;
 
-        std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+        /// Sum of the file-level `record_count` over the live files of the given content type.
+        /// Returns std::nullopt if any file carries a malformed (negative) record count.
+        std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
         std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
