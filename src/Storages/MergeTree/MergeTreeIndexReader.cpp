@@ -25,6 +25,11 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     auto context = part->storage.getContext();
     auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
+    /// The cancellation exception is reported as a broken part by readers that validate or load
+    /// parts, so the opt-in stays on this copy and never reaches the index data stream below.
+    auto marks_read_settings = settings.read_settings;
+    marks_read_settings.remote_fs_settings.interruptible_reads = true;
+
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
         std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>()),
         mark_cache,
@@ -32,7 +37,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         marks_count,
         part->index_granularity_info,
         settings.save_marks_in_cache,
-        settings.read_settings,
+        marks_read_settings,
         load_marks_threadpool,
         /*num_columns_in_mark=*/ 1,
         settings.use_streaming_marks_compression);

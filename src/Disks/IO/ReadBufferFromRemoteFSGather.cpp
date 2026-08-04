@@ -8,6 +8,8 @@
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <cstdint>
@@ -21,6 +23,11 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
 
+}
+
+namespace FailPoints
+{
+    extern const char remote_fs_gather_pause_in_read[];
 }
 
 namespace
@@ -51,12 +58,14 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     const StoredObjects & blobs_to_read_,
     size_t min_bytes_for_seek_,
     bool use_external_buffer_,
-    size_t buffer_size)
+    size_t buffer_size,
+    QueryStatusPtr query_status_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
     , query_id(CurrentThread::getQueryId())
+    , query_status(std::move(query_status_))
     , use_external_buffer(use_external_buffer_)
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
@@ -153,6 +162,14 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 
 bool ReadBufferFromRemoteFSGather::readImpl()
 {
+    /// Nothing below this frame is interruptible, and one fill can take minutes on object
+    /// storage under fault injection. Throw before the fill, while the buffer is untouched.
+    if (query_status)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::remote_fs_gather_pause_in_read);
+        query_status->throwIfKilled();
+    }
+
     SwapHelper swap(*this, *current_buf);
 
     bool result = current_buf->next();

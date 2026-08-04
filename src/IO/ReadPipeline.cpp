@@ -17,6 +17,7 @@
 #include <IO/LocalSourceReader.h>
 #include <IO/ObjectStorageSourceReader.h>
 #include <IO/FileEncryptionCommon.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
@@ -176,6 +177,15 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (source->objects.empty())
         return std::make_unique<ReadBufferFromEmptyFile>();
 
+    /// Resolved here for the same reason as `query_id` below, and above the executor
+    /// return so it stays correct if the executor is instrumented later.
+    QueryStatusPtr query_status;
+    if (source->read_settings.remote_fs_settings.interruptible_reads)
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+    }
+
     /// The executor owns the whole read, so it returns before the `wrap*` stages.
     if (auto pipeline_buf = tryBuildReaderExecutor())
         return pipeline_buf;
@@ -187,8 +197,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     const std::string query_id(CurrentThread::getQueryId());
 
     auto impl = gather
-        ? buildGatherStage(query_id)        // Stages 1+2+3 (+3.5 DC)
-        : buildSingleObjectStage(query_id); // Stages 1+2 (+2.5 DC)
+        ? buildGatherStage(query_id, query_status) // Stages 1+2+3 (+3.5 DC)
+        : buildSingleObjectStage(query_id);        // Stages 1+2 (+2.5 DC)
 
     impl = wrapMemoryCache(std::move(impl));   // Stage 4
     impl = wrapAsyncPrefetch(std::move(impl)); // Stage 5
@@ -272,7 +282,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std::string & query_id) const
+std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
+    const std::string & query_id, const QueryStatusPtr & query_status) const
 {
     /// -- Stages 1+2+3: Source + FilesystemCache + Gather --
     /// Object storage path: wrap per-object buffers with optional filesystem cache,
@@ -394,7 +405,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         /// Copy, not move: fallback may be called multiple times (e.g. after
         /// connection pool exhaustion on different read ranges).
         auto fallback_creator = [gather_creator, objects = source->objects,
-                                 captured_settings = settings]() mutable
+                                 captured_settings = settings, query_status]() mutable
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
             auto creator_copy = gather_creator;
@@ -403,7 +414,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 objects,
                 captured_settings.remote_fs_settings.min_bytes_for_seek,
                 /* use_external_buffer */ true,
-                /* buffer_size */ 0);
+                /* buffer_size */ 0,
+                query_status);
         };
 
         auto impl = DistributedCache::readWithDistributedCache(
@@ -424,7 +436,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         source->objects,
         settings.remote_fs_settings.min_bytes_for_seek,
         use_external_buffer,
-        buffer_size);
+        buffer_size,
+        query_status);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(const std::string & query_id) const
