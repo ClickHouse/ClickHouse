@@ -31,7 +31,7 @@ INSERT INTO ${DB}.jr SELECT number, number FROM numbers(150);
 SET enable_analyzer = 1;
 SET distributed_product_mode = 'global';
 
--- Bare-column predicate over the joined-away table: the crash from the issue.
+-- Bare-column predicate over the joined-away table: the exception from the issue.
 SELECT 'bare_where_r_k', l.lc, countDistinct(l.k) FROM ${DB}.jm_m AS l LEFT JOIN ${DB}.jr AS r USING (k) WHERE r.k GROUP BY l.lc ORDER BY l.lc;
 
 -- Another bare column of the joined-away table.
@@ -45,6 +45,17 @@ SELECT 'and_where', l.lc, countDistinct(l.k) FROM ${DB}.jm_m AS l LEFT JOIN ${DB
 
 -- Bare-column predicate over the surviving (Merge) side must be preserved, not dropped.
 SELECT 'bare_where_l_k', l.lc, countDistinct(l.k) FROM ${DB}.jm_m AS l LEFT JOIN ${DB}.jr AS r USING (k) WHERE l.k GROUP BY l.lc ORDER BY l.lc;
+
+-- The planner folds QUALIFY into HAVING and HAVING into WHERE, so both reach the same
+-- stripping helper and both used to raise the logical error.
+SELECT 'qualify_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l LEFT JOIN ${DB}.jr AS r USING (k) QUALIFY r.k);
+SELECT 'having_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l LEFT JOIN ${DB}.jr AS r USING (k) HAVING r.k);
+SELECT 'qualify_l', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l LEFT JOIN ${DB}.jr AS r USING (k) QUALIFY l.k);
+
+-- Self-join of the Merge table, with ON and with USING: one table is enough to reach it.
+SELECT 'self_join_on_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l JOIN ${DB}.jm_m AS r ON l.k = r.k WHERE r.k);
+SELECT 'self_join_using_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l JOIN ${DB}.jm_m AS r USING (k) WHERE r.k);
+SELECT 'self_join_on_l', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l JOIN ${DB}.jm_m AS r ON l.k = r.k WHERE l.k);
 
 DROP DATABASE ${DB};
 "
