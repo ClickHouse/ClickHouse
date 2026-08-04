@@ -92,12 +92,30 @@ SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '257';
 SELECT count() FROM numbers(100) WHERE materialize('online'::String) = materialize('online'::String);
 SELECT count() FROM numbers(100) WHERE materialize(1) = materialize(2);
 
--- `and` / `or` fold is short-circuit: once an argument is decisive the rest are left alone, so a
--- non-foldable (or throwing) unreachable argument neither blocks the fold nor raises at plan time
-SELECT 'short circuit and', countIf(explain LIKE '%Filter column: 0%')
-FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE and(0, number = 1));
-SELECT count() FROM numbers(100) WHERE and(0, number = 1);
-SELECT count() FROM numbers(100) WHERE or(1, number = 1);
+-- `and` / `or` fold only when every argument folds to a constant: whether runtime evaluates the
+-- arguments after a decisive one depends on `short_circuit_function_evaluation` (the `disable` mode
+-- promises eager evaluation, including exceptions), which the fold cannot see. A decisive constant
+-- with a non-foldable sibling therefore stays in the plan (a literal `0` would be folded earlier,
+-- by the analyzer, so the decisive argument is wrapped in `materialize`)
+SELECT 'decisive and with non-const sibling not folded', countIf(explain LIKE '%Filter column: 0%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE and(materialize(0), number = 1));
+SELECT count() FROM numbers(100) WHERE and(materialize(0), number = 1);
+SELECT count() FROM numbers(100) WHERE or(materialize(1), number = 1);
+
+-- all-constant `and` / `or` still fold, through `materialize` wrappers
+SELECT 'all-const and folded', countIf(explain LIKE '%Filter column: 0%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE and(materialize(0), materialize(1)));
+SELECT count() FROM numbers(100) WHERE and(materialize(0), materialize(1));
+SELECT count() FROM numbers(100) WHERE or(materialize(1), materialize(0));
+
+-- an unreachable throwing argument must not raise under short-circuit evaluation, and must still
+-- raise under `disable`, which evaluates it eagerly. `system.one` (no range analysis of the
+-- predicate on the read) and `query_plan_merge_filters = 0` (no and-chain splitting into separate
+-- FilterTransforms) keep the conjunction evaluated as a single expression
+SELECT count() FROM system.one WHERE and(materialize(0), throwIf(dummy >= 0))
+    SETTINGS short_circuit_function_evaluation = 'enable', query_plan_merge_filters = 0;
+SELECT count() FROM system.one WHERE and(materialize(0), throwIf(dummy >= 0))
+    SETTINGS short_circuit_function_evaluation = 'disable', query_plan_merge_filters = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 -- a NULL argument is not decisive for `and`, and the result stays Nullable
 SELECT count() FROM numbers(100) WHERE and(materialize(1), CAST(NULL AS Nullable(UInt8)));

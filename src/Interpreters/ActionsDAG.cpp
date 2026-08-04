@@ -957,19 +957,19 @@ struct FoldResult
     bool deterministic;
 };
 
-/// The boolean value of a folded constant, or nullopt when it is `NULL` or not a number at all
-std::optional<bool> tryGetConstBool(const ColumnConstPtr & col, const DataTypePtr & type)
-{
-    if (!isNativeNumber(removeLowCardinalityAndNullable(type)))
-        return std::nullopt;
-    const IColumn & data = col->getDataColumn();
-    if (data.empty() || data.isNullAt(0))
-        return std::nullopt;
-    return data.getBool(0);
-}
-
 /// Fold a predicate: const COLUMN leaves, walk past alias/materialize, recurse into
-/// `isInvariantToConstness` functions
+/// `isInvariantToConstness` functions.
+///
+/// Why `isInvariantToConstness` is needed at all: the fold evaluates `f(c)` on the plain constant
+/// and presents the result as what the query would observably do when executing `f(materialize(c))`.
+/// That substitution is only sound when the function's behavior - the produced values AND whether it
+/// throws - does not depend on the const-ness of its arguments. Most functions qualify, but not all:
+/// comparisons special-case a constant String operand (`executeWithConstString` casts it to the other
+/// operand's type), so `'1' = toUInt8(1)` succeeds while `materialize('1') = toUInt8(1)` throws
+/// `NO_COMMON_TYPE`; `like` requires a constant ESCAPE argument and throws `ILLEGAL_COLUMN` for a
+/// materialized one; `isConstant` exists to inspect the representation itself. Folding through such
+/// functions would silently replace the query's real outcome (often an exception) with the
+/// constant-path result, so only functions that declare invariance participate
 std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
 {
     while (node)
@@ -1002,53 +1002,53 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         || !node->function_base->isInvariantToConstness())
         return std::nullopt;
 
-    /// `and` and `or` are short-circuit at runtime: once an argument is decisive (`0` for `and`,
-    /// `1` for `or`) the remaining ones are never evaluated. Folding them here anyway would run
-    /// code that the query never runs, so a throwing unreachable argument would turn a working
-    /// query into an exception during optimization
-    const bool is_and = node->function_base->getName() == "and";
-    const bool is_or = node->function_base->getName() == "or";
+    /// Whether the arguments of `and` / `or` after a decisive one (`0` for `and`, `1` for `or`)
+    /// are evaluated at runtime depends on `short_circuit_function_evaluation`: short-circuit modes
+    /// skip them, but `disable` promises eager evaluation, including any exception they raise.
+    /// That setting is not visible here, so fold `and` / `or` only when every argument folds to a
+    /// constant without an exception - then both modes agree with the folded result. An exception
+    /// while folding an argument means the runtime behavior is mode-dependent, so leave the
+    /// predicate alone: the unfolded filter raises (or not) exactly as the chosen mode dictates
+    const bool is_and_or = node->function_base->getName() == "and" || node->function_base->getName() == "or";
 
-    ColumnsWithTypeAndName args;
-    args.reserve(node->children.size());
-    bool all_det = true;
-    for (const auto * child : node->children)
+    try
     {
-        auto folded = tryFoldPredicate(child);
-        if (!folded)
-            return std::nullopt;
-        all_det = all_det && folded->deterministic;
-
-        if (is_and || is_or)
+        ColumnsWithTypeAndName args;
+        args.reserve(node->children.size());
+        bool all_det = true;
+        for (const auto * child : node->children)
         {
-            auto value = tryGetConstBool(folded->column, child->result_type);
-            if (value && *value == is_or)
-            {
-                auto decisive = node->result_type->createColumn();
-                decisive->insert(Field(static_cast<UInt64>(is_or)));
-                return FoldResult{ColumnConst::create(ColumnPtr(std::move(decisive)), 0), all_det};
-            }
+            auto folded = tryFoldPredicate(child);
+            if (!folded)
+                return std::nullopt;
+            all_det = all_det && folded->deterministic;
+
+            ColumnConstPtr col = folded->column;
+            /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
+            if (col->empty())
+                col = ColumnConst::create(col->getDataColumnPtr(), 1);
+            args.push_back({col, child->result_type, child->result_name});
         }
 
-        ColumnConstPtr col = folded->column;
-        /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
-        if (col->empty())
-            col = ColumnConst::create(col->getDataColumnPtr(), 1);
-        args.push_back({col, child->result_type, child->result_name});
+        ColumnPtr result = node->function->execute(args, node->result_type, 1, true);
+        const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr;
+        if (!column_const)
+            return std::nullopt;
+
+        /// keep the DAG convention of size-0 consts
+        ColumnConstPtr canonical;
+        if (column_const->empty())
+            canonical = column_const->getPtr();
+        else
+            canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+        return FoldResult{std::move(canonical), all_det};
     }
-
-    ColumnPtr result = node->function->execute(args, node->result_type, 1, true);
-    const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr;
-    if (!column_const)
-        return std::nullopt;
-
-    /// keep the DAG convention of size-0 consts
-    ColumnConstPtr canonical;
-    if (column_const->empty())
-        canonical = column_const->getPtr();
-    else
-        canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
-    return FoldResult{std::move(canonical), all_det};
+    catch (...)
+    {
+        if (is_and_or)
+            return std::nullopt;
+        throw;
+    }
 }
 
 /// same scalar can show up as different ColumnConst objects after merge

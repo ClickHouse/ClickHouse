@@ -17,9 +17,13 @@ mixed string comparison not folded	1
 0
 100
 0
-short circuit and	1
+decisive and with non-const sibling not folded	0
 0
 100
+all-const and folded	1
+0
+100
+0
 0
 0
 100
