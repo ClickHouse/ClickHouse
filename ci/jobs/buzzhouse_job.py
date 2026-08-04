@@ -99,6 +99,7 @@ def main():
             "paimonlocal",
             "merge",
             "distributed",
+            "remote",
             "dictionary",
             "generaterandom",
             "azureblobstorage",
