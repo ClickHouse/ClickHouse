@@ -1195,6 +1195,23 @@
     -->
 
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
+    <!-- Per-event audit log of the content-addressed (CAS) storage layer. Enabled by default while
+         the feature is experimental (events are emitted only by content-addressed disks; it costs
+         nothing otherwise). Remove the section to disable. -->
+    <cas_log>
+        <database>system</database>
+        <table>cas_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- example of a retention policy; disabled by default like every other log's TTL
+        <ttl>event_date + INTERVAL 7 DAY DELETE</ttl>
+        -->
+    </cas_log>
+
     <query_log>
         <!-- What table to insert data. If table is not exist, it will be created.
              When query log structure is changed after system update,
@@ -1299,6 +1316,18 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
     </part_log>
+
+    <!-- Per-round records of the content-addressed (CA) MergeTree garbage collector. -->
+    <cas_gc_log>
+        <database>system</database>
+        <table>cas_gc_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </cas_gc_log>
 
     <!-- Contains information about all background tasks that are executed via various background pools.
          See also:

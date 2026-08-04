@@ -32,6 +32,12 @@ namespace DB
     M(BACKUP_COORDINATION_INTERNAL, "BackupCoordInt") \
     M(BACKUP_WORKER, "BackupWorker") \
     M(CACHE_DICTIONARY_UPDATE_QUEUE, "UpdQueue") \
+    M(CAS_ANOMALY_DIAG, "CasAnomalyDiag") \
+    M(CAS_GC_HEARTBEAT, "CasGcHeartbeat") \
+    M(CAS_GC_SCHEDULER, "CasGcSched") \
+    M(CAS_LEASE_KEEPER, "CasLeaseKeeper") \
+    M(CAS_REF_SNAPSHOT_PUBLISH, "CasRefSnapPub") \
+    M(CAS_REMOUNT, "CasRemount") \
     M(CGROUP_MEMORY_OBSERVER, "CgrpMemUsgObsr") \
     M(CLICKHOUSE_WATCH, "ClickHouseWatch") \
     M(CLUSTER_DISCOVERY, "ClusterDiscover") \
