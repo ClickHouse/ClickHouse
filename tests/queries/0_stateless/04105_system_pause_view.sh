@@ -220,17 +220,13 @@ $CLICKHOUSE_CLIENT -q "
 # ---------------------------------------------------------------------------
 # Test 5: SYSTEM CANCEL VIEW records the cancellation as an exception.
 #
-# The cancel must reach a live `PipelineExecutor`, so the refresh is parked at the
-# `infinite_sleep` failpoint (hit from `sleepEachRow` inside `executor.execute()`)
-# instead of being timed. `infinite_sleep` is server-global and fires on every
-# `sleep`/`sleepEachRow` call, so this block must stay LAST in the file: the views
-# above use `sleepEachRow(1)` and would park too.
+# The cancel must reach a live `PipelineExecutor`, so the refresh is parked at `infinite_sleep`,
+# which `sleepEachRow` hits inside `executor.execute()`. That failpoint is server-global, so this
+# block must stay LAST: the views above use `sleepEachRow(1)` and would park too.
 # ---------------------------------------------------------------------------
 
-# `SYSTEM DISABLE FAILPOINT` is also the resume mechanism below; this trap only covers an
-# early exit between the enable and that disable, which would otherwise leave the global
-# failpoint active and park every later `sleep`/`sleepEachRow` call in the run. Disabling an
-# already-disabled failpoint is a no-op.
+# The disable below is the resume mechanism and only runs on the happy path; this trap covers an
+# early exit, which would otherwise leave the failpoint parking every later sleep in the run.
 trap '
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT infinite_sleep" 2>/dev/null || true
 ' EXIT
@@ -248,8 +244,7 @@ then
     echo "FAIL: refresh did not reach the infinite_sleep failpoint"
 fi
 
-# The refresh is parked inside `executor.execute()`, so the cancel cannot be outrun. Disabling
-# the failpoint resumes it.
+# The refresh is parked, so the cancel cannot be outrun; disabling the failpoint resumes it.
 $CLICKHOUSE_CLIENT -q "
     system cancel view c;
     system disable failpoint infinite_sleep;"
@@ -257,9 +252,8 @@ $CLICKHOUSE_CLIENT -q "
 wait_status c Scheduled
 
 # `Cancelling refresh in ...` is logged only when the interrupt finds a non-null
-# `execution.executor`, so it proves the cancel hit the running pipeline rather than an
-# already-finished attempt. Matching 'cancelled' distinguishes a cancellation from any
-# other refresh failure.
+# `execution.executor`, so it proves the cancel hit the running pipeline, not a finished attempt.
+# Matching 'cancelled' distinguishes a cancellation from any other refresh failure.
 $CLICKHOUSE_CLIENT -q "
     system flush logs text_log;
     select '<7: cancel during refresh records an exception>',
