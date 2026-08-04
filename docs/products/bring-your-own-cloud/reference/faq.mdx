@@ -45,7 +45,7 @@ No. The Kubernetes cluster (EKS, GKE, or AKS) is created and fully managed by Cl
 </Accordion>
 
 <Accordion title="Can we run our own workloads in the BYOC cluster or cloud account?">
-In the cloud account: yes, as long as your resources do not touch ClickHouse-provisioned ones (on AWS these all carry the tag `clickhouse-byoc=true`). Keep in mind that on GCP and Azure the onboarding identities hold project- or subscription-scoped permissions, so anything you co-locate there falls within ClickHouse's permission scope — a dedicated account, project, or subscription remains the strong recommendation.
+In the cloud account: possible, but co-located resources always sit within ClickHouse's permission surface to some degree — on AWS most write permissions are tag- and prefix-scoped (ClickHouse-provisioned resources carry `clickhouse-byoc=true`) but a small set of EC2 actions cannot be tag-scoped, and on GCP and Azure the onboarding identities hold project- or subscription-scoped permissions. Keep your resources away from ClickHouse-provisioned ones, and prefer a dedicated account, project, or subscription on every cloud — that remains the strong recommendation.
 
 In the Kubernetes cluster: it is possible with constraints — use your own node groups with taints and tolerations, stay out of ClickHouse-managed namespaces, and do not install cluster-wide admission controllers or policy engines, which can block reconciliation of ClickHouse components. Describe your plan to support first so we can confirm there are no collisions.
 </Accordion>
