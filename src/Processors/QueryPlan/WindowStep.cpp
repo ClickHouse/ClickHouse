@@ -3,6 +3,8 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -19,6 +21,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_session_window_frame;
+}
 
 namespace ErrorCodes
 {
@@ -378,6 +385,13 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
     deserializeSortDescription(window_description.order_by, ctx.in);
 
     window_description.frame = deserializeWindowFrame(ctx.in);
+
+    /// The plan may be client-supplied (TCPHandler::receiveQueryPlan), which skips the analysis
+    /// that gates the frame, so the setting is re-checked on this path too.
+    if (window_description.frame.type == WindowFrame::FrameType::SESSION
+        && !ctx.context->getSettingsRef()[Setting::allow_experimental_session_window_frame])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The SESSION window frame is experimental. Set allow_experimental_session_window_frame = 1 to enable it");
 
     /// `full_sort_description` is not serialized: it is the concatenation of PARTITION BY and
     /// ORDER BY, reconstructed here exactly as the planner builds it (see PlannerWindowFunctions).
