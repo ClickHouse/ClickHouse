@@ -35,12 +35,15 @@ process death, which no in-process stub can produce.
 """
 
 import ast
+import dataclasses
 import json
 import os
 import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -48,7 +51,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.functional_tests import checkpoint_collected_results
 from ci.praktika.cidb import CIDB
+from ci.praktika._environment import _Environment
 from ci.praktika.result import Result, ResultInfo
+from ci.praktika.runner import Runner
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Utils
 
@@ -479,29 +484,40 @@ def test_an_unparseable_result_file_degrades_to_a_no_op(tmp_path):
 def test_runner_kill_patch_keeps_the_checkpointed_results(tmp_path):
     """The measured statement of the fix: the empty ERROR becomes a populated ERROR.
 
-    Applies `Runner._get_result_object`'s patch sequence for an incomplete result. Pins
-    the praktika behaviour the fix rests on, so a future change there cannot silently
-    un-fix this - and asserts the honesty half too: the status is NOT kept green.
+    Calls the real `Runner._get_result_object` on the checkpointed file, so what is pinned
+    is praktika's own killed-job patch rather than a local re-enactment of it: a change
+    there that dropped the children, or stopped marking a killed job ERROR, has to fail
+    here. It needs only `name` and `force_success` off the job. Asserts the honesty half
+    too - the status is NOT kept green.
     """
     reread = _checkpointed(tmp_path, _children(5))
     assert not reread.is_completed(), "precondition: the checkpoint must be incomplete"
 
+    original = Settings.TEMP_DIR
     Settings.TEMP_DIR = str(tmp_path)
     try:
-        reread.add_error(ResultInfo.TIMEOUT).set_status(Result.Status.ERROR)
-        reread.update_duration()
+        patched = Runner()._get_result_object(
+            SimpleNamespace(name=_JOB_NAME, force_success=False),
+            setup_env_exit_code=0,
+            prerun_exit_code=0,
+            run_exit_code=1,
+        )
     finally:
-        Settings.TEMP_DIR = "./ci/tmp"
+        Settings.TEMP_DIR = original
 
-    assert reread.status == Result.Status.ERROR, (
-        f"the killed job reports [{reread.status}] instead of ERROR: the checkpoint must "
+    assert patched.status == Result.Status.ERROR, (
+        f"the killed job reports [{patched.status}] instead of ERROR: the checkpoint must "
         "not let a killed job look green"
     )
-    assert len(reread.results[0].results) == 5, (
-        f"the runner's patch dropped rows ({len(reread.results[0].results)} of 5 left): "
+    errors = [entry["message"] for entry in patched.ext.get("errors", [])]
+    assert ResultInfo.KILLED in errors, (
+        f"the runner did not record the killed-job error: {errors}"
+    )
+    assert len(patched.results[0].results) == 5, (
+        f"the runner's patch dropped rows ({len(patched.results[0].results)} of 5 left): "
         "the report would still be empty"
     )
-    assert reread.duration is not None, "the runner did not fill in the duration"
+    assert patched.duration is not None, "the runner did not fill in the duration"
 
 
 def test_cidb_ingests_the_children_of_a_killed_checkpointed_result(tmp_path):
@@ -676,8 +692,24 @@ def _tail(path, limit=4000):
         return f.read().decode(errors="replace")[-limit:] or "(no output)"
 
 
+def _probe_children(tmp_path):
+    """Live probe children spawned from this arm's own temp dir, and only those."""
+    script = os.path.join(str(tmp_path), "main_probe.py")
+    alive = []
+    for pid_dir in Path("/proc").iterdir():
+        if not pid_dir.name.isdigit():
+            continue
+        try:
+            cmdline = (pid_dir / "cmdline").read_bytes().split(b"\0")
+        except OSError:  # the process exited while we were reading it
+            continue
+        if script.encode() in cmdline:
+            alive.append(int(pid_dir.name))
+    return alive
+
+
 def _kill_main_in_teardown(
-    tmp_path, build_types=None, rows=6174, block_call=None, failure_mode=""
+    tmp_path, build_types=None, rows=6174, block_call=None, failure_mode="", deadline=300
 ):
     """Run `main()` and SIGKILL its process group inside teardown.
 
@@ -714,8 +746,8 @@ def _kill_main_in_teardown(
                 start_new_session=True,
             )
             try:
-                deadline = time.monotonic() + 300
-                while time.monotonic() < deadline and not os.path.exists(blocked):
+                limit = time.monotonic() + deadline
+                while time.monotonic() < limit and not os.path.exists(blocked):
                     if proc.poll() is not None:
                         # Output is redirected to `log`, so `proc.stdout` is None: read
                         # the file, or this branch raises instead of reporting the exit.
@@ -956,20 +988,101 @@ def test_a_probe_that_exits_early_reports_why(tmp_path):
     )
 
 
-def test_the_probe_reads_no_ambient_workflow_context():
-    """The probe must resolve its environment only from what it seeds itself.
+def test_a_failing_arm_leaves_no_probe_child_running(tmp_path):
+    """A failure must not leak the child, which sleeps 600s once blocked.
+
+    The arms run it detached in its own process group, so nothing else reaps it: without a
+    `finally` it outlives the test and sleeps on the runner. Driven through the timeout
+    path, since that is the exit where a live child is guaranteed.
+    """
+    seen = []
+    original = _MAIN_PROBE
+    try:
+        # Never create the marker, so the wait loop runs to its deadline with the child
+        # alive - the one exit where the reap is the only thing that can kill it.
+        globals()["_MAIN_PROBE"] = original.replace(
+            "BLOCKED_MARKER = {blocked!r}",
+            "BLOCKED_MARKER = {blocked!r} + '.never'",
+        )
+        real_tail = globals()["_tail"]
+
+        def _spy(path, limit=4000):
+            # Runs while the child is still alive, so it witnesses the detector working.
+            seen.extend(_probe_children(tmp_path))
+            return real_tail(path, limit)
+
+        globals()["_tail"] = _spy
+        try:
+            with pytest.raises(AssertionError):
+                _kill_main_in_teardown(tmp_path, rows=1, deadline=2)
+        finally:
+            globals()["_tail"] = real_tail
+    finally:
+        globals()["_MAIN_PROBE"] = original
+
+    # Without this the assertion below is satisfied by a detector that sees nothing.
+    assert seen, "the child was never observed alive: _probe_children cannot detect it"
+    assert _probe_children(tmp_path) == [], (
+        f"the failing arm left {len(_probe_children(tmp_path))} probe child(ren) running: "
+        "each sleeps 600s on the runner and holds the log handle open"
+    )
+
+
+def test_the_probe_ignores_the_ambient_workflow_context(tmp_path, monkeypatch):
+    """The condition under which every kill-based arm above ran only in CI.
 
     `Settings.WORKFLOW_STATUS_FILE` is built from the default `TEMP_DIR` when the class is
-    defined, so the probe's `TEMP_DIR` override does not move it and `_Environment.get`
-    reads the context of the job running this test. That context carries real
-    `changed_files`, which sends `main` into the batch-skip branch these arms do not
-    measure and the stub `Targeting` cannot serve: green on a developer box, `AttributeError`
-    only in CI. `TEMP_DIR` alone is not enough.
+    defined, so the probe's `TEMP_DIR` override does not move it. On a runner that file
+    exists and holds the context of the job executing this test, whose real
+    `changed_files` send `main` into the batch-skip branch - which calls
+    `Targeting.is_functional_test_file`, absent from the stub, so `main` dies before the
+    teardown step the arms block in. Reproduced by planting that file where the default
+    `TEMP_DIR` points, which is what makes this behavioural rather than a text search.
     """
-    assert 'Settings.WORKFLOW_STATUS_FILE = {tmp!r}' in _MAIN_PROBE, (
-        "the probe no longer redirects Settings.WORKFLOW_STATUS_FILE into its own temp "
-        "dir: it reads the workflow context of the job running this test"
+    status_file = Path(Settings.WORKFLOW_STATUS_FILE)
+    if status_file.exists():  # a real CI run of this suite: already the condition
+        planted = None
+    else:
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        env = {
+            field.name: ""
+            for field in dataclasses.fields(_Environment)
+            if field.default is dataclasses.MISSING
+            and field.default_factory is dataclasses.MISSING
+        }
+        env.update(
+            SHA="0" * 40,
+            PR_NUMBER=113200,
+            EVENT_TYPE="pull_request",
+            JOB_KV_DATA=Utils.to_base64(
+                json.dumps({"changed_files": ["tests/queries/0_stateless/00001_select_1.sql"]})
+            ),
+        )
+        status_file.write_text(
+            json.dumps(
+                {
+                    Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
+                        "outputs": {"data": json.dumps(env)}
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        planted = status_file
+    try:
+        # Without the condition in place this arm is a duplicate of the plain kill arm.
+        assert status_file.exists(), "the ambient workflow-status file was not created"
+        status, rows = _kill_main_in_teardown(tmp_path, rows=3)
+    finally:
+        if planted is not None:
+            planted.unlink()
+
+    assert len(rows) == 3, (
+        f"the probe published {len(rows)} rows instead of 3 with a workflow-status file "
+        "present: it read that ambient context instead of its own, so every kill-based "
+        "arm measured a path main never reached"
     )
+    assert status == Result.Status.RUNNING, f"unexpected status [{status}]"
 
 
 # --- kill-based: atomicity, against a real process death -----------------------------
