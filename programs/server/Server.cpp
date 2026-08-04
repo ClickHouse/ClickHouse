@@ -849,7 +849,9 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 "This system cannot check whether data is in the page cache without waiting for the disk, because {}. "
                 "The 'pread_threadpool' value of the `local_filesystem_read_method` setting relies on that check to read "
                 "the data that is already in the page cache without handing the read off to a thread pool, "
-                "so reads from local disks are performed as if the setting was 'pread'.",
+                "so queries that use that value read from local disks as if the setting was 'pread'. "
+                "Reads with O_DIRECT (see the `min_bytes_to_use_direct_io` setting) never check the page cache "
+                "and keep using the thread pool. Other values of the setting are not affected.",
                 pread_no_wait_support.unsupported_reason));
 
 #if defined(OS_LINUX)
