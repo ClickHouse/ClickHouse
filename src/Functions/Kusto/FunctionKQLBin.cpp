@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
@@ -57,6 +58,11 @@ private:
         String getName() const override { return "kqlBin"; }
 
     protected:
+        /// The delegated functions were built over the original argument types, `Nullable` and
+        /// all, and each handles its own nulls. Stripping `Nullable` here would hand them columns
+        /// that no longer match what they were built for.
+        bool useDefaultImplementationForNulls() const override { return false; }
+
         ColumnPtr
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
@@ -116,6 +122,7 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
@@ -135,6 +142,19 @@ private:
 
         const DataTypePtr value_type = removeNullable(arguments[0].type);
         const DataTypePtr bin_type = removeNullable(arguments[1].type);
+
+        /// A NULL literal argument makes the whole result a NULL literal. `divide` short-circuits
+        /// that itself, so delegating to it wholesale beats teaching the chain below about Nothing.
+        /// The short circuit fires on a *column* of nulls, which a synthetic argument built from a
+        /// type alone does not have - so materialize one.
+        if (isNothing(value_type) || isNothing(bin_type))
+        {
+            ColumnsWithTypeAndName null_arguments = arguments;
+            for (auto & argument : null_arguments)
+                if (!argument.column && isNothing(removeNullable(argument.type)))
+                    argument.column = argument.type->createColumnConstWithDefaultValue(1);
+            return FunctionFactory::instance().get("divide", getContext())->build(null_arguments);
+        }
 
         /// A datetime rounded by an interval is exactly `toStartOfInterval`.
         if (isDateOrDate32OrDateTimeOrDateTime64(value_type))
