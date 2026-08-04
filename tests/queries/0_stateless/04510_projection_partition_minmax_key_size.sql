@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- Regression test for LOGICAL_ERROR 'Invalid partition key size' (STID 2677-496b).
 -- A normal projection has an empty partition key, but when the parent table uses
 -- part_minmax_index_columns='with_block_number_offset' the projection still gets a
