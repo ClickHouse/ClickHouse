@@ -21,7 +21,7 @@ void KeeperLSMTNodesStorage::shutdown()
     state.shutdown();
 }
 
-KeeperLSMTNodesStorage::NodeHolder KeeperLSMTNodesStorage::getCommittedNode(std::string_view path)
+KeeperLSMTNodesStorage::NodeHolder KeeperLSMTNodesStorage::getCommittedNode(std::string_view path) const
 {
     /// TODO: Change all paths in KeeperNodesStorage interface from string_view to
     /// NodePath/NodePathWithHash, ideally precalculating hashes during request parsing or batching.
@@ -219,7 +219,7 @@ struct KeeperLSMTNodesStorage::NodesReadView final : public KeeperNodesReadView
 {
     SnapshotWriterNodeStream stream;
 
-    NodesReadView(const StorageState & state_) : stream(state_) {}
+    explicit NodesReadView(const StorageState & state_) : stream(state_) {}
     ~NodesReadView() override = default;
 
     size_t getNodeCount() const override { return stream.getNodeCount(); }
@@ -269,7 +269,7 @@ void KeeperLSMTNodesStorage::cleanupUncommittedState(int64_t commit_zxid)
 
 void KeeperLSMTNodesStorage::rollbackUncommittedDelta(const Delta & delta)
 {
-    auto & op = std::get<LSMTDelta>(delta.operation);
+    const auto & op = std::get<LSMTDelta>(delta.operation);
 
     /// Instead of un-appending the entry, append another entry that has the opposite effect.
     /// (Alternatively we could add support for truncating a memtable, but that seems more complex and error-prone.)
