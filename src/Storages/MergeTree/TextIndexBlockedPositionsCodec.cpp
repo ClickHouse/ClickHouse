@@ -42,12 +42,13 @@ UInt64 readVarUIntFrom(const uint8_t *& pos, const uint8_t * end)
         if (pos >= end)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: truncated varint in block payload");
         const uint8_t byte = *pos++;
+        /// Only bit 63 fits at the last shift, so a larger payload or a continuation would truncate silently.
+        if (shift == 63 && byte > 1)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: overlong varint in block payload");
         value |= static_cast<UInt64>(byte & 0x7f) << shift;
         if (!(byte & 0x80))
             return value;
         shift += 7;
-        if (shift >= 64)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: overlong varint in block payload");
     }
 }
 
@@ -139,7 +140,12 @@ void emitRanks(
         *out++ = position;
         for (UInt32 k = doc_offsets[rank] + 1; k < lane_end; ++k)
         {
-            position += values[k];
+            /// The writer emits strictly increasing positions, so a zero delta or a wrap means corruption.
+            const UInt32 delta = values[k];
+            if ((delta == 0) || (position > std::numeric_limits<UInt32>::max() - delta))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions: positions do not increase within a document");
+            position += delta;
             *out++ = position;
         }
 
