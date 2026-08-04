@@ -594,6 +594,48 @@ def test_schema_snapshot_is_re_established_after_reload():
     node.query("DROP TABLE bq_reload")
 
 
+def test_table_function_snapshot_is_re_established_after_reload():
+    # A table created with `CREATE TABLE ... AS bigquery(...)` persists only the mapped ClickHouse
+    # columns, exactly like a `BigQuery` engine table. After `DETACH`/`ATTACH` (or a server restart)
+    # the nested storage is rebuilt from the cached columns with no schema snapshot, and the first
+    # read re-establishes it from the live schema, validating the cached columns against it - the
+    # same reload contract as the engine form (see the previous test).
+    settings = {
+        "enable_nullable_tuple_type": 1
+    }  # `test_types` has a NULLABLE RECORD column.
+
+    mock_reset()
+    node.query("DROP TABLE IF EXISTS bq_tf_reload")
+    node.query(
+        f"CREATE TABLE bq_tf_reload AS bigquery('{PROJECT}', '{DATASET}', 'test_types', "
+        f"base_url = '{BASE_URL}', access_token = '{ACCESS_TOKEN}')",
+        settings=settings,
+    )
+    assert (
+        node.query("SELECT bin FROM bq_tf_reload LIMIT 1 FORMAT TSV") == "binary-data\n"
+    )
+
+    node.query("DETACH TABLE bq_tf_reload")
+    mock_reset()
+    mock_ctl("/__retype_schema__?table=test_types&column=bin&type=STRING")
+    node.query("ATTACH TABLE bq_tf_reload")
+
+    # The first read after the reload takes its snapshot from the live schema, so it decodes with the
+    # live `STRING` rules (the raw base64 text instead of the decoded bytes), and issues exactly one
+    # `tables.get` - the snapshot fetch doubles as the live schema for the drift check.
+    assert (
+        node.query("SELECT bin FROM bq_tf_reload LIMIT 1 FORMAT TSV")
+        == "YmluYXJ5LWRhdGE=\n"
+    )
+    assert len(mock_stats()["schema_requests"]) == 1
+
+    # Once the snapshot is established, a further drift is rejected again.
+    mock_ctl("/__retype_schema__?table=test_types&column=bin&type=BYTES")
+    error = node.query_and_get_error("SELECT bin FROM bq_tf_reload LIMIT 1")
+    assert "changed between query analysis and execution" in error
+    node.query("DROP TABLE bq_tf_reload")
+
+
 def test_write_schema_drift_rejected():
     # The write path re-fetches the live schema before streaming any row, and rejects the INSERT if the
     # touched columns no longer match the analyzed snapshot. Without that check the rows would be sent
