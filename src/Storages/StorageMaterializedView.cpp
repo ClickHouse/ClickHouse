@@ -1,6 +1,7 @@
 #include <thread>
 #include <Storages/StorageMaterializedView.h>
 
+#include <Storages/ColumnDefault.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -12,7 +13,7 @@
 #include <Parsers/queryNormalization.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Access/ViewDefinerDependencies.h>
+#include <Access/DefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -22,6 +23,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/TemporaryReplaceTableName.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/executeQuery.h>
@@ -34,6 +36,8 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/config_version.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -133,7 +137,7 @@ StorageMaterializedView::StorageMaterializedView(
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
     if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
+        DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -191,6 +195,11 @@ StorageMaterializedView::StorageMaterializedView(
     {
         fixed_uuid = query.refresh_strategy->append;
 
+        /// The temporary view of a CREATE OR REPLACE shares the target with the view being replaced.
+        /// Start its refresh paused so it cannot touch the target before the rename commits.
+        const bool is_create_or_replace_temp = (query.create_or_replace || query.replace_view)
+            && TemporaryReplaceTableName::fromString(table_id_.table_name).has_value();
+
         /// Decide whether to enable coordination.
         if (is_replicated_db)
         {
@@ -221,8 +230,11 @@ StorageMaterializedView::StorageMaterializedView(
             }
             else
             {
-                if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(to_table_id))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is already a target of another refreshable materialized view: {}", to_table_id.getFullTableName(), task->getInfo().view_id.getFullTableName());
+                /// The replacement temp's target ownership is checked in doCreateOrReplaceTable, so
+                /// skip the guard here for it (a plain CREATE still goes through this check).
+                if (!is_create_or_replace_temp)
+                    if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(to_table_id))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is already a target of another refreshable materialized view: {}", to_table_id.getFullTableName(), task->getInfo().view_id.getFullTableName());
 
                 StoragePtr inner_table = DatabaseCatalog::instance().tryGetTable(to_table_id, getContext());
                 if (inner_table)
@@ -255,7 +267,7 @@ StorageMaterializedView::StorageMaterializedView(
             }
         }
 
-        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_restore_from_backup);
+        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_create_or_replace_temp, is_restore_from_backup);
     }
 
     if (!fixed_uuid)
@@ -501,7 +513,7 @@ void StorageMaterializedView::drop()
 
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
     if (view_metadata->sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
+        DefinerDependencies::instance().removeDependencies(table_id);
 
     bool is_shared_catalog = false;
 
@@ -559,6 +571,32 @@ void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr 
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, getTargetTableId(), true);
 }
 
+void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_context) const
+{
+    /// `MATERIALIZED VIEW ... TO <existing_table>` keeps no on-disk data of its own;
+    /// the implicit drop will not touch the user-owned target.
+    if (!has_inner_table)
+        return;
+
+    /// Mirror `dropInnerTableIfAny`: it builds `to_drop` from `getTargetTableId()` and,
+    /// when `!fixed_uuid` (refreshable / non-append), additionally from the `.tmp` inner
+    /// table name. We must size-check every table that the implicit drop could delete,
+    /// otherwise the zeroed `max_table_size_to_drop` context would silently bypass the
+    /// guard for a non-empty `.tmp.inner...` produced by a previous refresh.
+    auto target_id = getTargetTableId();
+    std::vector<StorageID> to_check = {target_id};
+    if (!fixed_uuid)
+        to_check.push_back(StorageID(target_id.getDatabaseName(), ".tmp" + target_id.getTableName()));
+
+    for (const StorageID & inner_id : to_check)
+    {
+        /// On a race (e.g. `SYSTEM RESTART REPLICA` detached the inner table),
+        /// `dropInnerTableIfAny` is a no-op too, so we mirror its tolerance.
+        if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_id, getContext()))
+            inner->checkTableSizeBelowDropLimit(query_context);
+    }
+}
+
 void StorageMaterializedView::checkStatementCanBeForwarded() const
 {
     if (!has_inner_table)
@@ -594,6 +632,16 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
     refresh_context->setSetting("log_comment", log_comment);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+    /// The client info is inherited from the table's (global) context and has no client version.
+    /// This server is the real initiator of the refresh query and of any distributed sub-query it
+    /// spawns (e.g. the refresh `SELECT` reads from a `Distributed` table), so fill the version with
+    /// this server's version. Otherwise remote shards treat the initiator as a pre-23.3 server and
+    /// apply legacy compatibility downgrades, and `RemoteQueryExecutor` rejects the zero version
+    /// outright.
+    if (client_info.client_version_major == 0
+        && client_info.client_version_minor == 0
+        && client_info.client_version_patch == 0)
+        refresh_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
     /// Use the database where the materialized view is created to run the select query in the refresh task
@@ -633,6 +681,15 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         create_query->has_uuid = true;
         if (create_query->targets)
             create_query->targets->resetInnerUUIDs();
+
+        /// Bypass the dropped-table size limits so CREATE OR REPLACE can drop a large leftover temp
+        /// table from a previous failed refresh instead of leaking it as `_tmp_replace_*` (issue #104900).
+        /// Set the settings on refresh_context itself rather than on a copy: createCopy does not preserve
+        /// the refresh DDL metadata (parent table UUID, DDL cancellation, enqueue checks) that
+        /// RefreshTask set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table
+        /// entries. doCreateOrReplaceTable's internal drop inherits these settings via the create context.
+        refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+        refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
@@ -692,6 +749,13 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
+    /// Don't apply dropped table size limits to tables produced by refreshable materialized views.
+    /// Set the settings on refresh_context itself rather than on a copy: createCopy does not preserve
+    /// the refresh DDL metadata (parent table UUID, DDL cancellation, enqueue checks) that RefreshTask
+    /// set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table entries.
+    refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+    refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+
     auto query_scope = QueryScope::create(refresh_context);
 
     auto drop_query = make_intrusive<ASTDropQuery>();
@@ -710,7 +774,7 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     {
         auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
         UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true, /*log_as_internal*/ true);
         LOG_ERROR(getLogger("StorageMaterializedView"),
             "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
             getStorageID().getFullTableName(), table_id.getFullTableName());
@@ -755,12 +819,12 @@ void StorageMaterializedView::alter(
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
-    auto & instance = ViewDefinerDependencies::instance();
+    auto & instance = DefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeViewDependencies(table_id);
+        instance.removeDependencies(table_id);
 
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addViewDependency(*new_metadata.definer, table_id);
+        instance.addDependency(*new_metadata.definer, table_id);
 
     setInMemoryMetadata(new_metadata);
 
@@ -1031,18 +1095,40 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
         return std::nullopt;
 
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
-    auto view_columns = view_metadata->getColumns().getAll();
+    const auto & view_columns_description = view_metadata->getColumns();
     auto target_table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
     auto target_table_columns = target_table_metadata->getColumns();
     NameSet supported_columns;
-    for (const auto & [name, type] : view_columns)
+    for (const auto & [name, type] : view_columns_description.getAll())
     {
         auto target_column = target_table_columns.tryGetColumn(GetColumnsOptions::All, name);
-        if (target_column && target_column->type->equals(*type))
+        if (!target_column || !target_column->type->equals(*type))
+            continue;
+        /// The filter is forwarded into the raw target read, so the column must be physical there
+        /// just like here (same rule as StorageMerge): an ALIAS twin has no input it binds to.
+        const auto view_kind = view_columns_description.getDefault(name).value_or(ColumnDefault{}).kind;
+        const auto target_kind = target_table_columns.getDefault(name).value_or(ColumnDefault{}).kind;
+        if (columnDefaultKindHasSameType(view_kind, target_kind))
             supported_columns.insert(name);
     }
 
+    /// The loop above only compares against the target's *declared* columns. When the target
+    /// aggregates other tables itself (a `Merge`, another `MaterializedView`, ...), its declared
+    /// type can match while a leaf's differs, and the read delegated down to that leaf would then
+    /// re-derive PREWHERE against a type the plan did not expect. Intersect with what the target
+    /// itself allows so the constraint holds transitively. Target chains cannot cycle: a
+    /// self-target is rejected with BAD_ARGUMENTS and a loop with INFINITE_LOOP, both at DDL time.
+    if (const auto target_supported_columns = table->supportedPrewhereColumns())
+        std::erase_if(supported_columns, [&](const auto & name) { return !target_supported_columns->contains(name); });
+
     return supported_columns;
+}
+
+bool StorageMaterializedView::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->supportedPrewhereColumnsIncludeSubcolumns();
+    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory);
