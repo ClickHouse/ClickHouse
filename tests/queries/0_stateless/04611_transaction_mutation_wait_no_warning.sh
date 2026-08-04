@@ -64,8 +64,14 @@ fi
 # "Cannot find transaction ... probably it finished" warning. The mutation is
 # already done, so the wait returns immediately.
 stderr_file="${CLICKHOUSE_TMP}/04611_rename_stderr.txt"
-timeout 60 $CLICKHOUSE_CLIENT --send_logs_level=warning --max_execution_time 60 \
-    -q "ALTER TABLE t_txn_mut_wait RENAME COLUMN value TO value2" 2> "$stderr_file"
+if ! timeout 60 $CLICKHOUSE_CLIENT --send_logs_level=warning --max_execution_time 60 \
+    -q "ALTER TABLE t_txn_mut_wait RENAME COLUMN value TO value2" 2> "$stderr_file"; then
+    echo "FAILED: the barrier ALTER did not succeed:"
+    cat "$stderr_file"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE t_txn_mut_wait"
+    rm -f "$stderr_file"
+    exit 1
+fi
 
 if grep -q "Cannot find transaction" "$stderr_file"; then
     echo "FAILED: client received the spurious warning:"
