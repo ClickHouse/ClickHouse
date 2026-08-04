@@ -399,11 +399,19 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
+    const bool security_barrier = isSecurityBarrier(*storage_snapshot->metadata, context);
+
+    /// The outer filter is handed to the inner query so that a view over `Distributed` can still
+    /// skip unused shards. For a security barrier view it must stay outside: the analysis it feeds
+    /// reaches the inner tables' index analysis, which then skips parts and granules by the values
+    /// of the rows the view hides, and the `read_rows` of the query tells the invoker about them.
+    const ActionsDAG * post_filter = security_barrier ? nullptr : query_info.filter_actions_dag.get();
+
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectQueryAnalyzer interpreter(
-            current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
+            current_inner_query, view_context, options, column_names, post_filter);
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }
@@ -456,7 +464,7 @@ void StorageView::readImpl(
     ///
     /// `INVOKER` views need no barrier: their inner query runs with the invoker's own rights, so
     /// there is nothing the invoker could learn that they are not already entitled to.
-    if (isSecurityBarrier(*storage_snapshot->metadata, context))
+    if (security_barrier)
     {
         auto * root = query_plan.getRootNode();
         /// Marking the individual filtering steps lets an outer predicate still sink through the

@@ -1,0 +1,5 @@
+===== the view exposes no row =====
+0
+===== reading the view costs the same whether or not the hidden row matches =====
+same
+same
