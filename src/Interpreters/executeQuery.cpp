@@ -2884,6 +2884,7 @@ void executeQuery(
                     result_details.content_type = framing
                         ? framing->getContentType()
                         : FormatFactory::instance().getContentType(format_name, output_format_settings);
+                    result_details.framed = framing != nullptr;
                     result_details.format = format_name;
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
@@ -3017,6 +3018,7 @@ void executeQuery(
         });
 
         result_details.content_type = framing->getContentType();
+        result_details.framed = true;
         return true;
     };
 
@@ -3094,6 +3096,7 @@ void executeQuery(
             result_details.content_type = output_format->getFraming()
                 ? output_format->getFraming()->getContentType()
                 : FormatFactory::instance().getContentType(format_name, output_format_settings);
+            result_details.framed = output_format->getFraming() != nullptr;
             result_details.format = format_name;
 
             pipeline.complete(output_format);
@@ -3275,7 +3278,9 @@ void executeQuery(
         /// append a second framed response (a fresh `exception` packet stream) after a partial success
         /// response, which is worse than a truncated one. This is the same fail-close rule as for a
         /// half-written packet (see `IFramingFormat`): the client observes a truncated response and an
-        /// aborted connection instead of a well-formed terminal packet.
+        /// aborted connection instead of a well-formed terminal packet. The generic HTTP error path
+        /// enforces this too: `HTTPHandler::trySendExceptionToClient` appends nothing to a framed
+        /// response once its finalization has started (see `QueryResultDetails::framed`).
         if (query_finish_callback)
             query_finish_callback();
     }

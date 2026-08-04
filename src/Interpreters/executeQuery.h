@@ -33,6 +33,10 @@ struct QueryResultDetails
     std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_created_at = {};
     std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_expires_at = {};
     std::unordered_map<String, String> additional_headers = {};
+    /// Whether the response is a stream of packets produced by a framing format (see
+    /// `framing_output_format`). The HTTP handler uses it to fail closed: once such a response
+    /// has started closing, nothing may be appended to it (see `HTTPHandler::trySendExceptionToClient`).
+    bool framed = false;
 };
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;

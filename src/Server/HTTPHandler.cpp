@@ -25,6 +25,7 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
@@ -88,6 +89,12 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int SESSION_ID_EMPTY;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char http_output_finalize_throw[];
 }
 
 namespace
@@ -524,9 +531,12 @@ void HTTPHandler::processQuery(
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
-    auto set_query_result = [&response, this] (const QueryResultDetails & details)
+    auto set_query_result = [&response, &used_output, this] (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
+
+        if (details.framed)
+            used_output.framed = true;
 
         if (!(http_response_headers_override && http_response_headers_override->contains(Poco::Net::HTTPMessage::CONTENT_TYPE))
             && details.content_type)
@@ -716,6 +726,20 @@ try
         /// If nothing was sent yet and we don't even know if we must compress the response.
         auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
         return wb.cancelWithException(request, exception_code, message, nullptr);
+    }
+
+    /// A framed response fails closed once its finalization has started. `Output::finalize` pushes
+    /// the delayed results, finalizes the compression and closes the response stream, so a failure
+    /// in the middle of it has already put some (or all) of the framed success stream on the wire.
+    /// Appending anything at that point - whether a fresh framed `exception` stream or the generic
+    /// `__exception__` block that `cancelWithException` writes into an already-sent response -
+    /// would follow a partial success response, breaking the "always a stream of packets" contract.
+    /// The client observes a truncated response and an aborted connection instead - the same
+    /// fail-close rule as for a half-written packet (see `IFramingFormat`).
+    if (used_output.framed && used_output.isFinalized() && !used_output.exception_is_written)
+    {
+        used_output.cancel();
+        return false;
     }
 
     chassert(used_output.out_maybe_compressed);
@@ -1171,6 +1195,14 @@ void HTTPHandler::Output::finalize()
 
     if (hasDelayed())
         pushDelayedResults();
+
+    /// Test-only: emulate a failure in the middle of finalizing the response - after the delayed
+    /// results were pushed towards the client, but before the response stream is closed. A framed
+    /// response must fail closed here (see `trySendExceptionToClient`).
+    fiu_do_on(FailPoints::http_output_finalize_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the HTTP response");
+    });
 
     if (out_delayed_and_compressed_holder)
         out_delayed_and_compressed_holder->finalize();
