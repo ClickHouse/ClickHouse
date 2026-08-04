@@ -414,7 +414,7 @@ void registerAggregateFunctionGroupBloomFilter(AggregateFunctionFactory & factor
 {
     FunctionDocumentation::Description description = R"(
 Builds a probabilistic Bloom filter from column values and returns it as an aggregate state.
-The Bloom filter can be used with [`bloomFilterContains`](/sql-reference/functions/bloom-filter-functions#bloomfiltercontains)
+The Bloom filter can be used with [`bloomFilterContains`](/reference/functions/regular-functions/other-functions#bloomFilterContains)
 to efficiently check whether a value was present in the aggregated dataset.
 
 This is useful for finding new values that appeared in one time interval but were absent in another,
@@ -508,7 +508,7 @@ WHERE number >= 100
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 

@@ -9,7 +9,7 @@ REGISTER_FUNCTION(BloomFilter)
 {
     /// Documentation for bloomFilterContains
     FunctionDocumentation::Description description_bloomFilterContains = R"(
-Checks whether a value is probably present in a Bloom filter built by [`groupBloomFilter`](/sql-reference/aggregate-functions/reference/groupbloomfilter).
+Checks whether a value is probably present in a Bloom filter built by [`groupBloomFilter`](/reference/functions/aggregate-functions/groupBloomFilter).
 
 Returns `1` if the value is probably in the filter (may have false positives),
 or `0` if the value is definitely not in the filter (no false negatives).
@@ -70,7 +70,7 @@ WHERE number >= 100
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_bloomFilterContains = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_bloomFilterContains = {26, 8};
     FunctionDocumentation::Category category_bloomFilterContains = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_bloomFilterContains = {
         description_bloomFilterContains,
