@@ -57,6 +57,12 @@ SELECT x, big[if(x % 2 = 0, NULL, x)::Nullable(Int64)], arrayElementOrNull(big, 
 FROM (SELECT arrayMap(i -> 's' || toString(i + number), range(5)) AS big, [1, 2, 5, -1] AS r FROM numbers(2)) ARRAY JOIN r AS x
 SETTINGS enable_lazy_columns_replication = {{ i }};
 {% endfor %}
+SELECT '-- arrayElement with a lazily replicated Nullable index (AST fuzzer)';
+{% for i in range(2) -%}
+SELECT DISTINCT sum(big[2 + x]), quantileTDigestDistinct(notEmpty(arraySlice(big, positiveModuloOrNull(x, 65535), 3))), sum(arraySlice(big, NULL + x, 3)[materialize(toNullable(100))])
+FROM (SELECT DISTINCT range(number, number + 2) AS big, range(2) AS r FROM numbers(300)) LEFT ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1;
+{% endfor %}
 SELECT '-- large array is not materialized per joined row';
 {% for i in range(2) -%}
 SELECT sum(length(arraySlice(big, x, 2))) + sum(length(big[x]))

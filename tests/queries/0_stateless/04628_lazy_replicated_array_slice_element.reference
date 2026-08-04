@@ -133,5 +133,8 @@
 2	\N	\N
 5	s5	s5
 -1	s5	s5
+-- arrayElement with a lazily replicated Nullable index (AST fuzzer)
+45150	0	0
+45150	0	0
 -- large array is not materialized per joined row
 1
