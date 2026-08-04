@@ -255,7 +255,8 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
 
 /// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
 /// This is important when columns have not yet been converted, i.e. their types with differ those contained in `getReadSampleBlock`.
-static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, const NamesAndTypes & on_disk_columns)
+static ColumnsWithTypeAndName toColumnsWithTypeAndName(
+    const Columns & columns, const NamesAndTypes & on_disk_columns, const NameSet & partially_read_columns)
 {
     if (columns.size() != on_disk_columns.size())
         throw Exception(
@@ -268,8 +269,11 @@ static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, 
     res.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`
-        if (columns[i])
+        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`.
+        /// Partially read columns (e.g. only the offsets of an array whose data is missing from
+        /// the part) are internally inconsistent until `fillMissingColumns` completes them,
+        /// so they cannot be serialized for the dataflow statistics sample.
+        if (columns[i] && !partially_read_columns.contains(on_disk_columns[i].name))
             res.emplace_back(columns[i], on_disk_columns[i].type, on_disk_columns[i].name);
     }
     return res;
@@ -310,7 +314,10 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
         if (dataflow_cache_update_cb)
             dataflow_cache_update_cb(
-                toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
+                toColumnsWithTypeAndName(
+                    read_result.columns,
+                    first_reader.getReader()->getColumnsToRead(),
+                    first_reader.getReader()->getPartiallyReadColumns()),
                 read_result.num_bytes_read,
                 should_continue_sampling);
 
@@ -347,7 +354,10 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 // It is important that we call `recordInputColumns` here even if `should_continue_sampling`
                 // is already set to false, because we still need to update the total bytes seen.
                 dataflow_cache_update_cb(
-                    toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
+                    toColumnsWithTypeAndName(
+                        columns,
+                        range_readers[i].getReader()->getColumnsToRead(),
+                        range_readers[i].getReader()->getPartiallyReadColumns()),
                     read_result.num_bytes_read - num_bytes_read_so_far,
                     should_continue_sampling);
             }
