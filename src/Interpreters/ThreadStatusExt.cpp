@@ -19,6 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/SensitiveDataMasker.h>
@@ -558,6 +559,10 @@ void ThreadStatus::initPerformanceCounters()
 
     if (!taskstats)
     {
+        /// Per thread, not per query: created on the first attach and kept until the thread dies, so the
+        /// free lands on the global tracker and charging the query that happened to attach first would
+        /// leave it on that user's tracker for good.
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
         try
         {
             taskstats = TasksStatsCounters::create(thread_id);
