@@ -123,7 +123,8 @@
               {
                 "item": "Ecosystem",
                 "pages": [
-                  "integrations/home"
+                  "integrations/home",
+                  "integrations/data-catalogs"
                 ]
               },
               {
