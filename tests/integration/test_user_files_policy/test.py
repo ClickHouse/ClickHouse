@@ -1171,3 +1171,31 @@ def test_local_data_lake_rejected_before_touching_the_filesystem(node):
         "CREATE TABLE local_data_lake (x UInt64) ENGINE = IcebergLocal('lake_dir')"
     )
     assert "not a plain local filesystem disk" not in err_local, err_local
+
+
+@pytest.mark.parametrize("node", [node_local, node_s3], ids=["local", "s3"])
+def test_url_database_file_scheme(node):
+    """A `file://` table of a `URL` database delegates to the `file` engine, which reads
+    policy-backed files through `IDisk`. The existence preflight in
+    `DatabaseURL::checkFileURLExists` must therefore also be disk-aware: probing
+    `getUserFilesPath` with `std::filesystem` would reject valid objects on a disk-backed
+    `user_files_policy` (for `s3_plain` the "path" is an object-key prefix that does not
+    exist on the host filesystem) with `FILE_DOESNT_EXIST` before the delegate is built."""
+    node.query(
+        "INSERT INTO FUNCTION file('urldb.csv', 'CSV', 'x UInt64') SELECT 42 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    node.query("DROP DATABASE IF EXISTS test_url_db")
+    node.query("CREATE DATABASE test_url_db ENGINE = URL('file://')")
+
+    assert node.query("SELECT * FROM test_url_db.`urldb.csv`").strip() == "42"
+    assert node.query("EXISTS TABLE test_url_db.`urldb.csv`").strip() == "1"
+
+    # A missing file must still be reported by the disk-aware preflight: `tryGetTable`
+    # returns no table, and the analyzer reports the identifier as an unknown table
+    # (same as with a plain local `user_files_path`).
+    err = node.query_and_get_error("SELECT * FROM test_url_db.`no_such_file.csv`")
+    assert "UNKNOWN_TABLE" in err, err
+    assert node.query("EXISTS TABLE test_url_db.`no_such_file.csv`").strip() == "0"
+
+    node.query("DROP DATABASE test_url_db")
