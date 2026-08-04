@@ -10,4 +10,6 @@ idx_txt	text	0
 -- Case 3: inert index
 1
 0
+i0	hypothesis	0
+idx_txt	text	1
 1

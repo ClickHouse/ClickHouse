@@ -1035,9 +1035,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// When other TTL families are present, TTLTransform::finalize rebuilds
     /// their maps from scratch, and replicating that logic here would be
     /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
+    ///
+    /// A merge cancelled after selection has `need_remove_expired_values` cleared above and must
+    /// not drop rows, so it falls through to the normal pipeline, which builds no TTLTransform.
     const bool can_short_circuit_ttl_drop =
         global_ctx->future_part->merge_type == MergeType::TTLDrop
-        && global_ctx->metadata_snapshot->hasOnlyRowsTTL();
+        && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
+        && ctx->need_remove_expired_values;
 
     if (can_short_circuit_ttl_drop)
     {

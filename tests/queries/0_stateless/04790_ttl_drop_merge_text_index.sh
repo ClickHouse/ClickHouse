@@ -48,7 +48,9 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
-        min_bytes_for_wide_part = 1;
+        min_bytes_for_wide_part = 1,
+        -- keep the 0-row part so the index assertions below have something to read
+        remove_empty_parts = 0;
 
     SYSTEM STOP MERGES t_ttl_drop_text;
 
@@ -98,7 +100,8 @@ ${CLICKHOUSE_CLIENT} -q "
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
         min_bytes_for_wide_part = 1,
-        materialize_skip_indexes_on_merge = 0;
+        materialize_skip_indexes_on_merge = 0,
+        remove_empty_parts = 0;
 
     SYSTEM STOP MERGES t_ttl_drop_no_materialize;
 
@@ -128,16 +131,21 @@ echo "-- Case 3: inert index"
 # A legacy 'hypothesis' index is inert: it holds no data and cannot be recomputed, so
 # createIndexAggregator rejects it with ILLEGAL_INDEX. The short-circuit used to omit the
 # isInert filter the normal path applies, which wedged the merge and left the rows in place.
+# The non-inert sibling pins that the filter is per index rather than per table: it must still
+# materialize while the inert one is skipped.
 # Full-definition ATTACH is the only way to get such a table, and it needs an explicit UUID.
 uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
 ${CLICKHOUSE_CLIENT} -q "
     SET send_logs_level = 'fatal';
+    SET allow_experimental_full_text_index = 1;
 
     ATTACH TABLE t_ttl_drop_inert UUID '$uuid'
     (
         id UInt64,
+        value String,
         event_time DateTime DEFAULT now() - INTERVAL 2 DAY,
-        INDEX i0 90 % id TYPE hypothesis
+        INDEX i0 90 % id TYPE hypothesis,
+        INDEX idx_txt value TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
     )
     ENGINE = MergeTree()
     PRIMARY KEY tuple()
@@ -145,7 +153,8 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
-        min_bytes_for_wide_part = 1;
+        min_bytes_for_wide_part = 1,
+        remove_empty_parts = 0;
 "
 
 ${CLICKHOUSE_CLIENT} -q "
@@ -156,8 +165,8 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} -q "
     SYSTEM STOP MERGES t_ttl_drop_inert;
 
-    INSERT INTO t_ttl_drop_inert (id) SELECT number FROM numbers(100);
-    INSERT INTO t_ttl_drop_inert (id) SELECT number + 100 FROM numbers(100);
+    INSERT INTO t_ttl_drop_inert (id, value) SELECT number, 'w' || toString(number) FROM numbers(100);
+    INSERT INTO t_ttl_drop_inert (id, value) SELECT number + 100, 'w' || toString(number) FROM numbers(100);
 
     SYSTEM START MERGES t_ttl_drop_inert;
 "
@@ -165,5 +174,14 @@ ${CLICKHOUSE_CLIENT} -q "
 wait_for_ttl_drop "t_ttl_drop_inert"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_drop_inert;"
+
+# The inert index is skipped individually; its non-inert sibling still gets materialized.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT name, type, data_compressed_bytes > 0
+    FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 't_ttl_drop_inert'
+    ORDER BY name;
+"
+
 ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ttl_drop_inert SETTINGS check_query_single_value_result = 1;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_inert;"
