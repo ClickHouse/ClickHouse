@@ -44,8 +44,8 @@ namespace ErrorCodes
 
 namespace
 {
-    /// fsync `dir_path` and every subdirectory below it (bottom-up), so that the directory
-    /// entries created by a freeze/hardlink snapshot become durable. Used only for local disks
+    /// fsync `dir_path` and every subdirectory below it (children first), so that the directory
+    /// entries created by a freeze/hardlink clone become durable. Used only for local disks
     /// (on remote/object disks getDirectorySyncGuard() returns nullptr and this is a no-op).
     void syncDirectoryTree(IDisk & disk, const std::string & dir_path)
     {
@@ -56,6 +56,22 @@ namespace
         }
         /// Children are synced first; this guard fsyncs `dir_path` itself on destruction.
         SyncGuardPtr guard = disk.getDirectorySyncGuard(dir_path);
+    }
+}
+
+void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path)
+{
+    /// Subtree first (children before parents), then the ancestor chain up to the disk root ("").
+    syncDirectoryTree(disk, clone_dir_path);
+
+    fs::path dir = fs::path(clone_dir_path).parent_path();
+    while (true)
+    {
+        SyncGuardPtr guard = disk.getDirectorySyncGuard(dir.string());
+        guard.reset();
+        if (dir.empty())
+            break;
+        dir = dir.parent_path();
     }
 }
 
@@ -87,32 +103,6 @@ DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(
 DiskPtr DataPartStorageOnDiskBase::getDisk() const
 {
     return volume->getDisk();
-}
-
-void DataPartStorageOnDiskBase::syncFrozenPartDirectory(
-    IDisk & disk, const std::string & to, const std::string & dir_path, const ClonePartParams & params) const
-{
-    /// No-op on remote disks; skipped under an external transaction (its writes are not
-    /// materialized on disk here, so the transaction commit is responsible for the fsync).
-    if (!params.fsync_part_directory || params.external_transaction || disk.isRemote())
-        return;
-
-    /// Part dir + projection subdirs, children first.
-    syncDirectoryTree(disk, fs::path(to) / dir_path);
-
-    /// Ancestors from the part dir's parent up to and including the disk root (""). The root must
-    /// be synced too: the caller creates `shadow/` without an fsync, so a directory merely existing
-    /// is not evidence its entry is durable. `to` is the part dir's parent; strip a trailing
-    /// separator so parent_path() ascends.
-    fs::path dir = fs::path(to).has_filename() ? fs::path(to) : fs::path(to).parent_path();
-    while (true)
-    {
-        SyncGuardPtr guard = disk.getDirectorySyncGuard(dir.string());
-        guard.reset();
-        if (dir.empty())
-            break;
-        dir = dir.parent_path();
-    }
 }
 
 std::string DataPartStorageOnDiskBase::getFullPath() const
@@ -596,7 +586,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*disk, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
 
-    syncFrozenPartDirectory(*disk, to, dir_path, params);
+    /// Make the hardlink clone durable (the Backup loop above fsyncs nothing). This runs
+    /// synchronously before freeze returns, so a caller that afterwards makes a destructive change
+    /// (e.g. DETACH commits a covering empty part and drops the source) sees the clone already on
+    /// disk. See the commit message / #111382 for the full rationale.
+    if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
+        fsyncFrozenCloneTree(*disk, fs::path(to) / dir_path);
 
     /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
     /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena, like the

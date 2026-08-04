@@ -181,11 +181,6 @@ protected:
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
     virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;
 
-    /// fsync the frozen snapshot subtree and every directory up to the disk root when
-    /// params.fsync_part_directory is set. Shared by the Full and Packed freeze overrides.
-    /// `to` is the parent of the snapshot part dir, `dir_path` the part dir name.
-    void syncFrozenPartDirectory(IDisk & disk, const std::string & to, const std::string & dir_path, const ClonePartParams & params) const;
-
     /// Lazily load the per-part skp_idx.packed archive (if any), reading it as a standalone disk
     /// file. Subsequent calls return the cached reader, or nullptr when there is no such file --
     /// including on storages that don't keep skp_idx.packed standalone (e.g. packed part storage,
@@ -292,5 +287,13 @@ private:
     /// Returns the destination path for the part directory while copying a detached part.
     String getPartDirForPrefix(const String & prefix, bool detached, int try_no) const;
 };
+
+/// Make a freeze/clone hardlink directory tree durable: fsync `clone_dir_path` and every
+/// subdirectory below it (children first), then fsync every ancestor directory from its
+/// immediate parent up to and including the disk root. fsync(dir) persists the entries inside
+/// dir, not dir's own entry in its parent, so the parent chain must be synced too. Shared by
+/// both freeze overrides (Full and Packed). A no-op on remote/object disks
+/// (getDirectorySyncGuard returns nullptr there).
+void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path);
 
 }

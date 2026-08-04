@@ -480,7 +480,7 @@ hasAllTokens(input, needles)
 
 - `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array)
 - `needles` — Tokens to be searched. [`String`](/reference/data-types/string) or [`Array(String)`](/reference/data-types/array)
-- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
+- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -708,7 +708,7 @@ hasAnyTokens(input, needles)
 
 - `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable) or [`Nullable(FixedString)`](/reference/data-types/nullable) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array) or [`Array(Nullable(String))`](/reference/data-types/array) or [`Array(Nullable(FixedString))`](/reference/data-types/array)
 - `needles` — Tokens to be searched. [`String`](/reference/data-types/string) or [`Array(String)`](/reference/data-types/array)
-- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
+- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -895,7 +895,7 @@ If no text index is defined, the function performs a brute-force column scan whi
 
 Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK`.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, or `icu`.
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
