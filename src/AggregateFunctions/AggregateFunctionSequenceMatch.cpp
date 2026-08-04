@@ -398,8 +398,13 @@ protected:
     /// [events_it, events_end)). Needed by callers that scan position-by-position and require the
     /// result to be tied to a specific, known anchor rather than "the best match found anywhere in
     /// the remaining suffix".
+    /// `shared_iteration_count`: when set, callers that make several backtrackingMatch calls to
+    /// compute a single result (e.g. a position-by-position anchored scan) can pass the same
+    /// counter into every call so `sequence_match_max_iterations` bounds the *total* work for that
+    /// one result, rather than resetting - and so no longer actually bounding anything - on each
+    /// individual call.
     template <typename EventEntry, bool remember_matched_events = false, bool anchored = false>
-    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<T> * best_matched_events = nullptr) const
+    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<T> * best_matched_events = nullptr, size_t * shared_iteration_count = nullptr) const
     {
         const auto action_begin = anchored ? std::next(std::begin(actions)) : std::begin(actions);
         const auto action_end = std::end(actions);
@@ -461,7 +466,8 @@ protected:
             return false;
         };
 
-        size_t i = 0;
+        size_t local_iteration_count = 0;
+        size_t & i = shared_iteration_count ? *shared_iteration_count : local_iteration_count;
         while (action_it != action_end && events_it != events_end)
         {
             if (action_it->type == PatternActionType::SpecificEvent)
@@ -585,13 +591,19 @@ protected:
     template <typename EventEntry>
     VectorWithMemoryTracking<T> backtrackingMatchEventsFirst(EventEntry & events_it, const EventEntry events_end) const
     {
+        /// Shared across every backtrackingMatch call made below so sequence_match_max_iterations
+        /// bounds the *total* work for this one result, not just each individual call - otherwise a
+        /// position-by-position scan could do unbounded work overall despite each call on its own
+        /// staying under the limit.
+        size_t iteration_count = 0;
+
         /// A plain (unanchored) call already correctly finds the earliest-starting *complete* match
         /// if one exists anywhere: backtracking explores start positions in strict left-to-right
         /// order and returns the instant any full match completes, so it can never skip a match
         /// that starts earlier in favor of one that starts later. Try that first.
         auto probe_it = events_it;
         VectorWithMemoryTracking<T> whole_match;
-        if (backtrackingMatch<EventEntry, true>(probe_it, events_end, &whole_match))
+        if (backtrackingMatch<EventEntry, true>(probe_it, events_end, &whole_match, &iteration_count))
             return whole_match;
 
         /// No complete match exists anywhere. Fall back to the earliest partial, testing each
@@ -610,7 +622,7 @@ protected:
         {
             auto probe_anchor = anchor;
             VectorWithMemoryTracking<T> current_match;
-            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match);
+            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match, &iteration_count);
 
             if (!current_match.empty())
                 return current_match;
@@ -628,6 +640,9 @@ protected:
         VectorWithMemoryTracking<T> last_matched_events;
         auto events_it_copy = events_it;
 
+        /// Shared across every backtrackingMatch call made below (see backtrackingMatchEventsFirst).
+        size_t iteration_count = 0;
+
         /// Phase 1: collect complete matches via plain (unanchored) calls. A complete match is
         /// always unambiguous (backtracking stops the instant one completes), so this reliably
         /// finds every non-overlapping complete match in order.
@@ -635,7 +650,7 @@ protected:
         {
             auto anchor = events_it_copy;
             VectorWithMemoryTracking<T> current_match;
-            bool match_result = backtrackingMatch<EventEntry, true>(events_it_copy, events_end, &current_match);
+            bool match_result = backtrackingMatch<EventEntry, true>(events_it_copy, events_end, &current_match, &iteration_count);
 
             if (match_result)
             {
@@ -664,7 +679,7 @@ protected:
         {
             auto probe_anchor = anchor;
             VectorWithMemoryTracking<T> current_match;
-            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match);
+            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match, &iteration_count);
 
             if (!current_match.empty())
                 last_matched_events = current_match;
@@ -681,12 +696,15 @@ protected:
     {
         VectorWithMemoryTracking<VectorWithMemoryTracking<T>> all_matches;
 
+        /// Shared across every backtrackingMatch call made below (see backtrackingMatchEventsFirst).
+        size_t iteration_count = 0;
+
         /// Phase 1: collect complete matches via plain (unanchored) calls (see backtrackingMatchEventsLast).
         while (events_it != events_end)
         {
             auto anchor = events_it;
             VectorWithMemoryTracking<T> current_match;
-            bool match_result = backtrackingMatch<EventEntry, true>(events_it, events_end, &current_match);
+            bool match_result = backtrackingMatch<EventEntry, true>(events_it, events_end, &current_match, &iteration_count);
 
             if (match_result)
             {
@@ -706,7 +724,7 @@ protected:
         {
             auto probe_anchor = anchor;
             VectorWithMemoryTracking<T> current_match;
-            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match);
+            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match, &iteration_count);
 
             if (!current_match.empty())
                 trailing_partial = current_match;
