@@ -2,9 +2,11 @@
 
 #include <memory>
 
-#include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <Parsers/Mongo/ParserMongoQuery.h>
@@ -12,6 +14,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 namespace Mongo
 {
@@ -24,26 +31,61 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
     }
 
     auto result = make_intrusive<ASTExpressionList>();
+    std::vector<std::string> excluded;
     for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
     {
-        if (it->value.IsInt())
+        std::string name = it->name.GetString();
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of a projection must not be empty");
+
+        /// A number or a boolean says whether to keep the field; only a document or a `$` prefixed
+        /// expression computes one.
+        if (it->value.IsBool() || it->value.IsNumber())
         {
-            auto include_field = it->value.GetInt();
-            if (include_field)
-            {
-                result->children.push_back(make_intrusive<ASTIdentifier>(it->name.GetString()));
-            }
+            const bool included = it->value.IsBool() ? it->value.GetBool() : it->value.GetDouble() != 0;
+            if (included)
+                result->children.push_back(make_intrusive<ASTIdentifier>(name));
+            else
+                excluded.push_back(std::move(name));
             continue;
         }
         ASTPtr child_node;
-        auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, it->name.GetString(), true);
+        auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, name, true);
         if (!parser->parseImpl(child_node))
         {
             return false;
         }
-        child_node->setAlias(it->name.GetString());
+        child_node->setAlias(name);
         result->children.push_back(child_node);
     }
+
+    if (!excluded.empty())
+    {
+        /// Mongo rejects an exclusion inside an inclusion projection (`_id` being the exception,
+        /// which this dialect does not generate), so a projection either names the fields to keep
+        /// or becomes a `* EXCEPT (...)`.
+        if (!result->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A projection must not mix inclusion and exclusion of fields");
+
+        auto asterisk = make_intrusive<ASTAsterisk>();
+
+        /// The transformer is not strict on purpose: excluding a field the collection does not
+        /// have is not an error in Mongo.
+        auto except_transformer = make_intrusive<ASTColumnsExceptTransformer>();
+        for (const auto & name : excluded)
+            except_transformer->children.push_back(make_intrusive<ASTIdentifier>(name));
+
+        auto transformers = make_intrusive<ASTColumnsTransformerList>();
+        transformers->children.push_back(std::move(except_transformer));
+
+        asterisk->transformers = transformers;
+        asterisk->children.push_back(std::move(transformers));
+        result->children.push_back(std::move(asterisk));
+    }
+
+    /// An empty projection document asks for the whole document.
+    if (result->children.empty())
+        result->children.push_back(make_intrusive<ASTAsterisk>());
 
     node = result;
     return true;
