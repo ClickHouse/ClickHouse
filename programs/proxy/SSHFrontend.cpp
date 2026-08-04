@@ -11,6 +11,7 @@
 
 #include <Poco/Net/SocketAddress.h>
 
+#include <chrono>
 #include <string>
 
 #include <netinet/in.h>
@@ -211,14 +212,25 @@ bool connectBackend(Bridge * bridge)
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_TIMEOUT_USEC, &timeout_usec);
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_STRICTHOSTKEYCHECK, &no_strict);
 
+    /// Feed the same backend-health accounting as `connectToBackend`, so that a dead `ssh_port`
+    /// marks the backend down for passive health checks and its connect latency feeds the
+    /// `lowest_latency` load balancing, consistently with every other protocol.
+    const auto started = std::chrono::steady_clock::now();
     if (ssh_connect(bridge->backend_session) != SSH_OK)
     {
         LOG_WARNING(bridge->log, "Cannot connect to SSH backend {}: {}", backend.name(), ssh_get_error(bridge->backend_session));
+        if (bridge->ctx->router.passiveMarkingDown())
+            backend.reportConnectFailure(bridge->ctx->router.failuresToMarkDown());
+        else
+            backend.reportError();
         return false;
     }
+    const double latency_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+    backend.reportConnectSuccess(latency_ms);
 
     if (ssh_pki_import_privkey_file(ssh_config.backend_key_file.c_str(), nullptr, nullptr, nullptr, &bridge->backend_key) != SSH_OK)
     {
+        /// A proxy-local configuration problem: do not blame the backend for it.
         LOG_ERROR(bridge->log, "Cannot load the proxy backend key from {}", ssh_config.backend_key_file);
         return false;
     }
@@ -226,6 +238,7 @@ bool connectBackend(Bridge * bridge)
     if (ssh_userauth_publickey(bridge->backend_session, nullptr, bridge->backend_key) != SSH_AUTH_SUCCESS)
     {
         LOG_WARNING(bridge->log, "Backend {} rejected the proxy key: {}", backend.name(), ssh_get_error(bridge->backend_session));
+        backend.reportError();
         return false;
     }
 
@@ -233,6 +246,7 @@ bool connectBackend(Bridge * bridge)
     if (!bridge->backend_channel || ssh_channel_open_session(bridge->backend_channel) != SSH_OK)
     {
         LOG_WARNING(bridge->log, "Cannot open a session channel on backend {}", backend.name());
+        backend.reportError();
         return false;
     }
 
