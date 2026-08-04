@@ -1,0 +1,29 @@
+CREATE TABLE t
+(
+    `id`                       UInt64,
+    `customer_booking_number`  String,
+    `amount`                   Decimal(18, 2),
+    `has_flag`                 Bool,
+    `created_at`               DateTime
+)
+ENGINE = MergeTree
+ORDER BY id
+;
+CREATE TABLE metrics
+(
+    `ts`     DateTime,
+    `count`  UInt64,
+    `ratio`  Float64,
+    `name`   String
+)
+ENGINE = MergeTree
+ORDER BY ts
+;
+CREATE TABLE t
+(
+    `id` UInt64,
+    `customer_booking_number` String
+)
+ENGINE = MergeTree
+ORDER BY id
+;
