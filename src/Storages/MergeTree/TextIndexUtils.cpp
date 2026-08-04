@@ -86,7 +86,7 @@ PODArray<RoaringishEntry> decodeBlockedPositions(
         {
             if (rank + 1 >= doc_offsets.size())
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupt text index positions (blocked): more posting documents than position lists ({})", rank);
+                    "Corrupt text index positions: more posting documents than position lists ({})", rank);
 
             for (UInt32 i = doc_offsets[rank]; i < doc_offsets[rank + 1]; ++i)
             {
@@ -102,7 +102,7 @@ PODArray<RoaringishEntry> decodeBlockedPositions(
 
     if (rank + 1 != doc_offsets.size())
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (blocked): {} posting documents but {} position lists", rank, doc_offsets.size() - 1);
+            "Corrupt text index positions: {} posting documents but {} position lists", rank, doc_offsets.size() - 1);
 
     return entries;
 }

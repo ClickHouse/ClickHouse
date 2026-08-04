@@ -40,14 +40,14 @@ UInt64 readVarUIntFrom(const uint8_t *& pos, const uint8_t * end)
     while (true)
     {
         if (pos >= end)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions (blocked): truncated varint in block payload");
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: truncated varint in block payload");
         const uint8_t byte = *pos++;
         value |= static_cast<UInt64>(byte & 0x7f) << shift;
         if (!(byte & 0x80))
             return value;
         shift += 7;
         if (shift >= 64)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions (blocked): overlong varint in block payload");
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: overlong varint in block payload");
     }
 }
 
@@ -71,7 +71,7 @@ void parseBlock(
     const UInt64 num_exceptions = readVarUIntFrom(pos, end);
     if (num_exceptions > docs_in_block)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (blocked): {} frequency exceptions for {} documents", num_exceptions, docs_in_block);
+            "Corrupt text index positions: {} frequency exceptions for {} documents", num_exceptions, docs_in_block);
 
     /// PFor emits >= 1 byte per block, so payload size bounds the value count (reject before alloc).
     const UInt64 max_total = docs_in_block + payload_bytes * PFor::BLOCK;
@@ -84,10 +84,10 @@ void parseBlock(
         const UInt64 freq = readVarUIntFrom(pos, end);
         if (local_rank >= docs_in_block || (e > 0 && local_rank <= prev_rank))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions (blocked): exception rank {} out of order or out of range {}", local_rank, docs_in_block);
+                "Corrupt text index positions: exception rank {} out of order or out of range {}", local_rank, docs_in_block);
         if ((freq < 2) || (freq > std::numeric_limits<UInt32>::max()) || (total + (freq - 1) > max_total))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions (blocked): invalid frequency {} (total would exceed {})", freq, max_total);
+                "Corrupt text index positions: invalid frequency {} (total would exceed {})", freq, max_total);
         doc_offsets[local_rank] = static_cast<UInt32>(freq);
         total += freq - 1;
         prev_rank = local_rank;
@@ -106,7 +106,7 @@ void parseBlock(
     const size_t consumed = PFor::decodeBlocks<UInt32>(pos, total, PFor::Delta::none, values.data(), end);
     if (consumed == 0 || pos + consumed != end)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (blocked): malformed position lane ({} of {} payload bytes consumed)",
+            "Corrupt text index positions: malformed position lane ({} of {} payload bytes consumed)",
             static_cast<size_t>(pos - payload) + consumed, payload_bytes);
 }
 
@@ -177,7 +177,7 @@ void TextIndexBlockedPositionsCodec::encode(std::span<const RoaringishEntry> ent
     for (const auto & entry : entries)
     {
         if (entry.bitmap == 0)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Text index positions (blocked): empty bitmap in roaringish entry");
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Text index positions: empty bitmap in roaringish entry");
 
         if (!has_doc || entry.doc_id != current_doc)
         {
@@ -274,21 +274,21 @@ TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDi
     readVarUInt(dir.num_docs, in);
     if (dir.num_docs != expected_num_docs)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (blocked): stored document count {} does not match index header {}",
+            "Corrupt text index positions: stored document count {} does not match index header {}",
             dir.num_docs, expected_num_docs);
 
     UInt64 num_blocks = 0;
     readVarUInt(num_blocks, in);
     if (num_blocks != (dir.num_docs + BLOCK_DOCS - 1) / BLOCK_DOCS)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (blocked): {} blocks for {} documents", num_blocks, dir.num_docs);
+            "Corrupt text index positions: {} blocks for {} documents", num_blocks, dir.num_docs);
     if (dir.num_docs == 0)
         return dir;
 
     /// Every block holds >= 1 document: 1 byte exception count + >= 1 byte PFor lane.
     if (num_blocks * 2 > available_bytes)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (blocked): {} blocks cannot fit into {} available bytes", num_blocks, available_bytes);
+            "Corrupt text index positions: {} blocks cannot fit into {} available bytes", num_blocks, available_bytes);
 
     dir.block_offsets.resize(num_blocks + 1);
     UInt64 payload_total = 0;
@@ -298,7 +298,7 @@ TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDi
         readVarUInt(bytes, in);
         if (bytes < 2 || bytes > available_bytes)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions (blocked): block payload of {} bytes outside the valid range", bytes);
+                "Corrupt text index positions: block payload of {} bytes outside the valid range", bytes);
         dir.block_offsets[b] = payload_total; /// relative for now
         payload_total += bytes;
     }
@@ -307,7 +307,7 @@ TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDi
     const size_t directory_bytes = in.count() - count_before;
     if (directory_bytes + payload_total > available_bytes)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (blocked): declared size {} exceeds {} bytes available for this token",
+            "Corrupt text index positions: declared size {} exceeds {} bytes available for this token",
             directory_bytes + payload_total, available_bytes);
 
     const UInt64 payload_start = blob_offset + directory_bytes;
