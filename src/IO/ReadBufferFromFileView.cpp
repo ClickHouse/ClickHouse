@@ -19,11 +19,13 @@ ReadBufferFromFileView::ReadBufferFromFileView(
     , file_offset_of_buffer_end(left_bound_)
     , original_working_buffer(working_buffer)
 {
-    /// Seek to the begin of file.
+    /// Seek to the begin of file. The impl still owns its native buffer state here (no swap yet),
+    /// so its buffer-end offset can be read directly after the seek.
     impl->seek(left_bound, SEEK_SET);
+    const size_t impl_buffer_end = impl->getPosition() + impl->available();
     swap(*impl);
 
-    file_offset_of_buffer_end += available();
+    file_offset_of_buffer_end = impl_buffer_end;
     original_working_buffer = working_buffer;
     resizeWorkingBuffer();
 }
@@ -40,14 +42,31 @@ void ReadBufferFromFileView::setReadUntilPosition(size_t position)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Cannot read until position: {}. File size is {}", position, getFileSize());
 
-    executeWithOriginalBuffer([&]{ impl->setReadUntilPosition(*read_until_position); });
+    /// The impl is allowed to DISCARD its working buffer here (e.g. `ReadBufferFromS3` rebases its
+    /// offset to the consumer position and resets the buffer when the range changes), so the view's
+    /// buffer-end offset MUST be rebased from the impl's post-op state - keeping the stale value
+    /// over a replaced buffer silently shifts the reported position by the discarded bytes.
+    size_t impl_buffer_end = 0;
+    executeWithOriginalBuffer([&]
+    {
+        impl->setReadUntilPosition(*read_until_position);
+        impl_buffer_end = impl->getPosition() + impl->available();
+    });
+    file_offset_of_buffer_end = impl_buffer_end;
     resizeWorkingBuffer();
 }
 
 void ReadBufferFromFileView::setReadUntilEnd()
 {
     read_until_position.reset();
-    executeWithOriginalBuffer([&]{ impl->setReadUntilPosition(right_bound); });
+    /// Same rebase contract as setReadUntilPosition.
+    size_t impl_buffer_end = 0;
+    executeWithOriginalBuffer([&]
+    {
+        impl->setReadUntilPosition(right_bound);
+        impl_buffer_end = impl->getPosition() + impl->available();
+    });
+    file_offset_of_buffer_end = impl_buffer_end;
     resizeWorkingBuffer();
 }
 
@@ -63,11 +82,19 @@ bool ReadBufferFromFileView::nextImpl()
         return false;
 
     bool result = false;
-    executeWithOriginalBuffer([&] { result = impl->next(); });
+    size_t impl_buffer_end = 0;
+    executeWithOriginalBuffer([&]
+    {
+        result = impl->next();
+        impl_buffer_end = impl->getPosition() + impl->available();
+    });
 
     if (result)
     {
-        file_offset_of_buffer_end += available();
+        /// Rebase from the impl's own accounting instead of incrementing: the view's previous
+        /// buffer-end may have been clamped by resizeWorkingBuffer below the impl's real one, and
+        /// the impl continues from ITS position - incrementing would mislabel the new chunk.
+        file_offset_of_buffer_end = impl_buffer_end;
         resizeWorkingBuffer();
     }
 
@@ -87,7 +114,12 @@ off_t ReadBufferFromFileView::seek(off_t off, int whence)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ReadBufferFromFileView::seek expects SEEK_SET or SEEK_CUR as whence");
 
     off_t result = 0;
-    executeWithOriginalBuffer([&] { result = impl->seek(new_pos, SEEK_SET); });
+    size_t impl_buffer_end = 0;
+    executeWithOriginalBuffer([&]
+    {
+        result = impl->seek(new_pos, SEEK_SET);
+        impl_buffer_end = impl->getPosition() + impl->available();
+    });
 
     if (result < 0)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position ({}) underflow", result);
@@ -96,7 +128,7 @@ off_t ReadBufferFromFileView::seek(off_t off, int whence)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
             "Seek position ({}) is out of bound. Available range: [{}, {}]", result, left_bound, right_bound);
 
-    file_offset_of_buffer_end = result + available();
+    file_offset_of_buffer_end = impl_buffer_end;
     resizeWorkingBuffer();
 
     return result - left_bound;
@@ -110,7 +142,20 @@ void ReadBufferFromFileView::executeWithOriginalBuffer(Op && op)
 
     /// Set working buffer and other internal into impl.
     swap(*impl);
-    op();
+    try
+    {
+        op();
+    }
+    catch (...)
+    {
+        /// The swap MUST be undone even if `op` throws — otherwise `this` and `impl` are left holding
+        /// each other's working buffers (and a stale `original_working_buffer`), so any subsequent
+        /// read or seek over-reads / serves wrong bytes. `op` can throw (e.g. setReadUntilPosition /
+        /// seek bound checks), so restore-on-exception is required for the view to stay consistent.
+        swap(*impl);
+        original_working_buffer = working_buffer;
+        throw;
+    }
     swap(*impl);
 
     original_working_buffer = working_buffer;
