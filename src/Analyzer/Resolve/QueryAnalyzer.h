@@ -140,7 +140,8 @@ private:
         const ProjectionNames & partition_by_projection_names,
         const ProjectionNames & order_by_projection_names,
         const ProjectionName & frame_begin_offset_projection_name,
-        const ProjectionName & frame_end_offset_projection_name);
+        const ProjectionName & frame_end_offset_projection_name,
+        const ProjectionName & frame_session_window_threshold_projection_name);
 
     static ProjectionName calculateSortColumnProjectionName(const QueryTreeNodePtr & sort_column_node,
         const ProjectionName & sort_expression_projection_name,

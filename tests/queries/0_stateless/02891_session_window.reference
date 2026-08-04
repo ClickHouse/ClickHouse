@@ -71,6 +71,29 @@ order by t;
 2020-01-01 00:00:30	['2020-01-01 00:00:00','2020-01-01 00:00:30','2020-01-01 00:01:15']
 2020-01-01 00:01:15	['2020-01-01 00:00:00','2020-01-01 00:00:30','2020-01-01 00:01:15']
 2020-01-01 00:05:00	['2020-01-01 00:05:00']
+-- Sessions are formed identically no matter how the input is split into blocks: a gap that
+-- falls on a block boundary must still start a new session. Every session below holds
+-- exactly 10 rows, so a merged pair shows up as a length of 20.
+drop table if exists 02891_session_window_blocks;
+create table 02891_session_window_blocks (n UInt64) engine = MergeTree order by n;
+insert into 02891_session_window_blocks select number + 1000 * intDiv(number, 10) from numbers(3000);
+select length(s) from (select groupArray(n) over (order by n session 2) as s from 02891_session_window_blocks) group by length(s) order by length(s) settings max_block_size = 1;
+10
+select length(s) from (select groupArray(n) over (order by n desc session 2) as s from 02891_session_window_blocks) group by length(s) order by length(s) settings max_block_size = 3;
+10
+drop table 02891_session_window_blocks;
+-- Two windows that differ only in threshold must get different projection names, otherwise
+-- they collide into one output column name (and duplicate JSON keys).
+-- Colliding names make this CREATE fail outright with ILLEGAL_COLUMN.
+create view 02891_session_window_names as select arrayJoin([1, 20]) n, groupArray(n) over (order by n session 1), groupArray(n) over (order by n session 2);
+select name from system.columns where database = currentDatabase() and table = '02891_session_window_names' order by position;
+n
+groupArray(n) OVER (ORDER BY n ASC SESSION 1)
+groupArray(n) OVER (ORDER BY n ASC SESSION 2)
+drop view 02891_session_window_names;
+-- The threshold type is validated the same way on both analyzer paths.
+select 1 n, count() over (order by n session '1') settings enable_analyzer = 1; -- { serverError BAD_ARGUMENTS }
+select 1 n, count() over (order by n session '1') settings enable_analyzer = 0; -- { serverError BAD_ARGUMENTS }
 -- The threshold survives AST JSON serialization, and it is mutually exclusive with the
 -- frame boundary fields in both directions.
 select formatQueryFromJSON(parseQueryToJSON('SELECT groupArray(n) OVER (ORDER BY n SESSION 2) FROM t'));

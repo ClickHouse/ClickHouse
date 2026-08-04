@@ -1059,57 +1059,39 @@ void WindowTransform::advanceFrameEndSession()
     }
 
     const int direction = window_description.order_by[0].direction;
-    for (;;)
+
+    // Each candidate is compared against its immediate predecessor, not against a row
+    // remembered from an earlier call. `frame_end` may be resumed at a row that only
+    // arrived after the previous call stopped at the soft end of input, and then the gap
+    // that precedes it still has to be examined.
+    for (; frame_end < partition_end; advanceRowNumber(frame_end))
     {
-        RowNumber next = frame_end;
+        // The session's first row is unconditionally part of it: there is no preceding
+        // row in this session to measure a gap against.
+        if (frame_end == frame_start)
+            continue;
 
-        if (next == partition_end)
-        {
-            // This happens after the frame end advanced to the current end of input
-            // (given by partition_end pointer when partition_ended is false) on
-            // the previous invocation of the WindowTransform, and on this invocation
-            // we confirmed that it was the end of partition (partition_end unchanged,
-            // partition_ended becomes true). Otherwise the partition_end would
-            // have advanced further beyond `next`, hence the assertion. The
-            // most usual case when this sequence happens is the total end of input.
-            assert(partition_ended);
-            frame_ended = true;
-            return;
-        }
-        assert(next < partition_end);
+        const RowNumber previous = prevRowNumber(frame_end);
 
-        advanceRowNumber(next);
-
-        if (next == partition_end)
-        {
-            // Got to the current partition end.
-            frame_end = partition_end;
-            frame_ended = partition_ended;
-            return;
-        }
-        assert(next < partition_end);
-
-        const auto * reference_column = inputAt(frame_end)[order_by_indices[0]].get();
-        const auto * compared_column = inputAt(next)[order_by_indices[0]].get();
+        const auto * reference_column = inputAt(previous)[order_by_indices[0]].get();
+        const auto * compared_column = inputAt(frame_end)[order_by_indices[0]].get();
 
         // The condition to continue the frame is:
-        // current value + session window threshold <= next value.
+        // previous value + session window threshold <= current value.
         // When the direction is DESC, the comparison result changes sign,
         // and the window threshold changes sign (governed by "offset_is_preceding").
-        if (compare_values_with_offset(compared_column, next.row,
-            reference_column, frame_end.row,
+        if (compare_values_with_offset(compared_column, frame_end.row,
+            reference_column, previous.row,
             window_description.frame.session_window_threshold,
             /* offset_is_preceding = */ direction < 0) * direction > 0)
         {
-            frame_end = next;
+            // `frame_end` is a past-the-end pointer, and this row starts the next session.
             frame_ended = true;
             return;
         }
-
-        frame_end = next;
     }
 
-    assert(false);
+    frame_ended = partition_ended;
 }
 
 void WindowTransform::advanceFrameEnd()

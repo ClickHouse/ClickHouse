@@ -449,7 +449,8 @@ ProjectionName QueryAnalyzer::calculateWindowProjectionName(const QueryTreeNodeP
     const ProjectionNames & partition_by_projection_names,
     const ProjectionNames & order_by_projection_names,
     const ProjectionName & frame_begin_offset_projection_name,
-    const ProjectionName & frame_end_offset_projection_name)
+    const ProjectionName & frame_end_offset_projection_name,
+    const ProjectionName & frame_session_window_threshold_projection_name)
 {
     const auto & window_node_typed = window_node->as<WindowNode &>();
     const auto & window_frame = window_node_typed.getWindowFrame();
@@ -505,6 +506,14 @@ ProjectionName QueryAnalyzer::calculateWindowProjectionName(const QueryTreeNodeP
     {
         if (!partition_by_projection_names.empty() || !order_by_projection_names.empty() || !parent_window_name.empty())
             buffer << ' ';
+
+        /// A SESSION frame has a threshold instead of boundaries, so it must appear in the name:
+        /// otherwise two windows differing only in threshold collide on one projection name.
+        if (window_frame.type == WindowFrame::FrameType::SESSION)
+        {
+            buffer << window_frame.type << ' ' << frame_session_window_threshold_projection_name;
+            return buffer.str();
+        }
 
         buffer << window_frame.type << " BETWEEN ";
         if (window_frame.begin_type == WindowFrame::BoundaryType::Current)
@@ -2985,7 +2994,8 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             partition_by_projection_names,
             order_by_projection_names,
             frame_begin_offset_projection_names.empty() ? "" : frame_begin_offset_projection_names.front(),
-            frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front());
+            frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front(),
+            frame_session_window_threshold_projection_names.empty() ? "" : frame_session_window_threshold_projection_names.front());
     }
 
     windows_in_resolve_process.erase(parent_window_node.get());

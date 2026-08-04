@@ -771,8 +771,14 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "The SESSION window frame is experimental. Set allow_experimental_session_window_frame = 1 to enable it");
 
-        auto [value, _] = evaluateConstantExpression(definition.session_window_threshold,
+        auto [value, type] = evaluateConstantExpression(definition.session_window_threshold,
                 context_.shared_from_this());
+        /// Reject the same thresholds the analyzer path rejects: without this the value is
+        /// silently coerced to the ORDER BY type, so `SESSION '1'` would be accepted here only.
+        if (!type || !isNumber(removeNullable(type)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window frame SESSION window threshold must be constant with numeric type. Actual {}",
+                definition.session_window_threshold->formatForErrorMessage());
         desc.frame.session_window_threshold = value;
     }
 }
