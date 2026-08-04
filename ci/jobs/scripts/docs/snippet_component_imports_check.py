@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Validate imports inside default-locale Mintlify snippets.
+"""Validate Mintlify component imports.
 
 Every snippet resolves its own imports. A page-level import is not visible to
 a snippet imported by that page, and the same rule applies recursively when a
 snippet renders another snippet. This check requires every non-built-in MDX
 tag to have a local import and prevents snippets from importing the custom
 Image component, which can collide with a page-level Image import.
+
+Badge components must use named imports. Mintlify can render a default-imported
+badge while silently omitting the page content that follows it.
 """
 
 from __future__ import annotations
@@ -48,6 +51,7 @@ class Binding:
     exported: str
     local: str
     source: str
+    is_default: bool = False
 
 
 def without_fenced_code(text: str) -> str:
@@ -75,6 +79,24 @@ def parse_bindings(text: str) -> list[Binding]:
     for match in IMPORT_RE.finditer(without_fenced_code(text)):
         spec = match.group("spec").strip()
         source = match.group("src")
+        default_match = re.fullmatch(
+            r"(?P<local>[A-Za-z_$][A-Za-z0-9_$]*)"
+            r"(?:\s*,\s*(?P<rest>.+))?",
+            spec,
+        )
+        if default_match:
+            bindings.append(
+                Binding(
+                    Path(source).stem,
+                    default_match.group("local"),
+                    source,
+                    is_default=True,
+                )
+            )
+            spec = default_match.group("rest")
+            if spec is None:
+                continue
+            spec = spec.strip()
         if spec.startswith("{") and spec.endswith("}"):
             for piece in spec[1:-1].split(","):
                 piece = piece.strip()
@@ -85,8 +107,6 @@ def parse_bindings(text: str) -> list[Binding]:
         elif spec.startswith("*"):
             local = re.split(r"\s+as\s+", spec, maxsplit=1)[-1]
             bindings.append(Binding(Path(source).stem, local, source))
-        elif re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", spec):
-            bindings.append(Binding(Path(source).stem, spec, source))
     return bindings
 
 
@@ -97,6 +117,32 @@ def is_nested_snippet_source(source: str) -> bool:
 def is_translation_source(source: str) -> bool:
     parts = Path(source.lstrip("/")).parts
     return len(parts) > 1 and parts[0] == "snippets" and parts[1] in TRANSLATION_DIRS
+
+
+def find_default_badge_imports(docs_root: Path) -> list[str]:
+    """Find badge imports that can make Mintlify omit the rest of a page."""
+    errors: list[str] = []
+    for path in sorted(docs_root.rglob("*")):
+        if path.suffix not in {".md", ".mdx"}:
+            continue
+        for binding in parse_bindings(
+            path.read_text(encoding="utf-8", errors="ignore")
+        ):
+            if not binding.is_default:
+                continue
+            source_parts = Path(binding.source.lstrip("/")).parts
+            if (
+                len(source_parts) < 3
+                or source_parts[0] != "snippets"
+                or "components" not in source_parts
+                or not Path(binding.source).stem.endswith("Badge")
+            ):
+                continue
+            errors.append(
+                f"{path.relative_to(docs_root).as_posix()}: use a named import "
+                f"for badge component {Path(binding.source).stem}"
+            )
+    return errors
 
 
 def find_page_import_collisions(docs_root: Path) -> list[str]:
@@ -168,6 +214,8 @@ def main() -> int:
     errors: list[str] = []
     checked = 0
     checked_images = 0
+
+    errors.extend(find_default_badge_imports(docs_root))
 
     for path in sorted(snippets_root.rglob("*")):
         if path.suffix not in {".md", ".mdx"}:
