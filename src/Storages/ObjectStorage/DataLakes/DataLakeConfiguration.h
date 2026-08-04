@@ -104,17 +104,6 @@ public:
 #endif
     }
 
-    /// DeltaLake maps some ClickHouse types to a compatible Delta type (e.g. `UInt8` -> `short`), so a
-    /// created table adopts the persisted schema; Iceberg persists the declared types, so it keeps the default.
-    bool mayRemapColumnTypesOnCreate() const override
-    {
-#if USE_PARQUET
-        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>;
-#else
-        return false;
-#endif
-    }
-
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
@@ -149,7 +138,7 @@ public:
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
-    bool create(
+    void create(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
@@ -162,17 +151,8 @@ public:
         BaseStorageConfiguration::update(object_storage, local_context);
 
         assertLocalPathCorrect(object_storage, local_context);
-        bool created_fresh = false;
-#if USE_PARQUET
-        /// Only DeltaLake reports whether it created a brand-new table (vs attached to an existing one).
-        if constexpr (std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>)
-            created_fresh = DataLakeMetadata::createInitial(
-                object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
-        else
-#endif
-            DataLakeMetadata::createInitial(
-                object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
-        return created_fresh;
+        DataLakeMetadata::createInitial(
+            object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
     }
 
     bool supportsDelete() const override

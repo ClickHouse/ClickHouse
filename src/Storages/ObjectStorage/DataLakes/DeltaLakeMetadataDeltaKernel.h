@@ -79,6 +79,19 @@ public:
         ASTPtr partition_by,
         bool /* if_not_exists */);
 
+    /// CREATE TABLE entry point when the kernel is enabled: validate the declared columns, write commit 0
+    /// (fresh) or attach to an existing `_delta_log`, and register the table in the catalog when present.
+    static void createInitial(
+        const ObjectStoragePtr & object_storage,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ContextPtr & local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by,
+        ASTPtr order_by,
+        bool if_not_exists,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & table_id_);
+
     std::optional<size_t> totalRows(ContextPtr) const override;
 
     std::optional<size_t> totalBytes(ContextPtr) const override;

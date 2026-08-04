@@ -144,6 +144,8 @@ void registerDeltaTableInCatalog(
         fields = buildDeltaSchemaFields(columns->getAllPhysical());
     else
     {
+        /// Registration runs during CREATE, before any `DeltaLakeMetadataDeltaKernel` (and its snapshot
+        /// cache) exists for this table, so read a one-off snapshot here to get the raw Delta schema.
         auto snapshot = std::make_shared<DeltaLake::TableSnapshot>(
             /* version */ std::nullopt, kernel_helper, object_storage, getLogger("DeltaLakeCatalogRegistration"));
         fields = snapshot->getRawDeltaSchemaFields();

@@ -19,12 +19,10 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeCatalogRegistration.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DeltaMetadataLog.h>
 
@@ -68,7 +66,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int ILLEGAL_COLUMN;
 }
 
 namespace Setting
@@ -665,13 +662,13 @@ bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType
     return isDeltaKernelEnabled(context, storage_type);
 }
 
-bool DeltaLakeMetadata::createInitial(
+void DeltaLakeMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context,
     const std::optional<ColumnsDescription> & columns,
     ASTPtr partition_by,
-    ASTPtr /*order_by*/,
+    ASTPtr order_by,
     bool if_not_exists,
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id_)
@@ -703,60 +700,17 @@ bool DeltaLakeMetadata::createInitial(
         (void)local_context;
         (void)columns;
         (void)partition_by;
+        (void)order_by;
         (void)if_not_exists;
         (void)table_id_;
 #endif
-        return false;
+        return;
     }
 
 #if USE_DELTA_KERNEL_RS
-    /// Columnless CREATE is allowed only to register/attach an existing table (schema read from the
-    /// `_delta_log`); a new table needs an explicit schema.
-    const bool has_explicit_columns = columns.has_value() && !columns->empty();
-
-    if (has_explicit_columns)
-    {
-        /// Reject unsupported columns before the first commit, else `_delta_log` is written (and the catalog
-        /// entry created) before `StorageObjectStorage`'s later `validateSupportedColumns` rejects the DDL.
-        if (!columns->hasOnlyOrdinary())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for DeltaLake CREATE TABLE");
-
-        /// Reject columns with virtual-column names before the first commit for the same reason.
-        const auto reserved_virtual_columns = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
-        for (const auto & column : *columns)
-            if (reserved_virtual_columns.contains(column.name))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
-                    column.name);
-    }
-
-    /// Register with the catalog whenever one is present: an attach to an existing `_delta_log` must be registered even with writes off, and a fresh CREATE that needs writes is already rejected in `createTable`.
-    const bool register_with_catalog = catalog != nullptr;
-    if (register_with_catalog && catalog->getCatalogType() != DatabaseDataLakeCatalogType::UNITY)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "CREATE TABLE with ENGINE = DeltaLake is only supported in a Unity catalog database");
-
-    /// With explicit columns, `createTable` writes commit 0 (fresh) or attaches (existing). Without columns
-    /// we can only attach, so a fresh location (no `_delta_log`) is rejected here.
-    bool created_fresh = false;
-    if (has_explicit_columns)
-        created_fresh = DeltaLakeMetadataDeltaKernel::createTable(
-            object_storage, configuration, local_context, *columns, partition_by, if_not_exists);
-    else if (!deltaLogExists(*object_storage, configuration_ptr->getRawPath().path))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "CREATE TABLE for a new DeltaLake table requires explicit column definitions");
-
-    if (register_with_catalog)
-        registerDeltaTableInCatalog(
-            catalog, object_storage, configuration_ptr, columns, created_fresh, table_id_);
-    return created_fresh;
-#else
-    return false;
+    /// The rest is delta-kernel-specific (writes commit 0 or attaches, and registers in the catalog).
+    DeltaLakeMetadataDeltaKernel::createInitial(
+        object_storage, configuration, local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
 #endif
 }
 

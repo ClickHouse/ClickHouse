@@ -200,10 +200,6 @@ public:
 
     virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
 
-    /// Whether CREATE may persist a column as a different (but compatible) type than declared, so the created
-    /// table must adopt the schema read back from the engine's metadata instead of the declared columns.
-    virtual bool mayRemapColumnTypesOnCreate() const { return false; }
-
     virtual bool supportsPartialPathPrefix() const { return true; }
 
     virtual ObjectIterator iterate(
@@ -219,8 +215,7 @@ public:
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
 
-    /// Returns true if a brand-new table was created (only data lakes do anything here); false otherwise.
-    virtual bool create(
+    virtual void create(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,

@@ -103,7 +103,8 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const st
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
 {
     const auto & context = getContext();
-    /// Unity's server (Armeria) needs `Content-Type: application/json` to deserialize the `@RequestObject` body, else it responds with HTTP 500.
+    /// Some Unity servers reject a POST whose body has no explicit `Content-Type: application/json`
+    /// (they respond with HTTP 500), so set it explicitly.
     DB::HTTPHeaderEntries headers{auth_header, {"Content-Type", "application/json"}};
     return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, {}, headers, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
 }

@@ -65,8 +65,7 @@ public:
             && data_files == deltalake_metadata->data_files;
     }
 
-    /// Returns true if a brand-new table was created (commit 0 written), false if it attached to an existing one.
-    static bool createInitial(
+    static void createInitial(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context,

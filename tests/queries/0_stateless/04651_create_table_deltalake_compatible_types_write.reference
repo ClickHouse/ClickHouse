@@ -1,5 +1,5 @@
-n	Int16
-s	String
+n	UInt8
+s	FixedString(3)
 200	abc
 n	Int16
 s	String
