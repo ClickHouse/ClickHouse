@@ -16,6 +16,6 @@ bool isFunctionPredictLinear(std::string_view function_name);
 /// It performs simple linear regression over the samples in the range vector and predicts
 /// the value `t` seconds from the last timestamp. The metric name is dropped.
 SQLQueryPiece applyFunctionPredictLinear(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

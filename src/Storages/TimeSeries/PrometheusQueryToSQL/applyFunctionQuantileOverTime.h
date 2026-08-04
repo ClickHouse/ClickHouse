@@ -23,6 +23,6 @@ bool isFunctionQuantileOverTime(std::string_view function_name);
 ///   - phi = NaN -> the result is NaN for every grid point that has at least one sample in its window
 /// Grid points whose window contains no samples keep NULL (the series is absent at that point).
 SQLQueryPiece applyFunctionQuantileOverTime(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

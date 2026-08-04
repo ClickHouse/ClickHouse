@@ -21,6 +21,6 @@ inline bool isFunctionAbsentOverTime(std::string_view function_name)
 /// produced sample are derived from the input selector's matchers using the same "smart" label
 /// derivation logic as `absent()`. If the input is not a bare selector (e.g. a subquery like
 /// `absent_over_time(sum(nonexistent)[5m:])`), the produced sample has no labels (i.e. `{}`).
-SQLQueryPiece applyFunctionAbsentOverTime(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyFunctionAbsentOverTime(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

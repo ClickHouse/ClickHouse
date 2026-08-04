@@ -30,21 +30,21 @@ namespace
 /// subquery) if there is one, so we can derive labels from its matchers.
 /// Returns nullptr if the argument is not backed by a selector (e.g.
 /// `absent_over_time(sum(nonexistent)[5m:])`), in which case the produced sample has no labels.
-const PQT::InstantSelector * peelToInstantSelector(const Node * node)
+const PrometheusQueryTree::InstantSelector * peelToInstantSelector(const Node * node)
 {
     while (node->node_type == NodeType::Offset || node->node_type == NodeType::Subquery)
     {
         if (node->node_type == NodeType::Offset)
-            node = static_cast<const PQT::Offset *>(node)->getExpression();
+            node = static_cast<const PrometheusQueryTree::Offset *>(node)->getExpression();
         else
-            node = static_cast<const PQT::Subquery *>(node)->getExpression();
+            node = static_cast<const PrometheusQueryTree::Subquery *>(node)->getExpression();
     }
 
     if (node->node_type == NodeType::RangeSelector)
-        return static_cast<const PQT::RangeSelector *>(node)->getInstantSelector();
+        return static_cast<const PrometheusQueryTree::RangeSelector *>(node)->getInstantSelector();
 
     if (node->node_type == NodeType::InstantSelector)
-        return static_cast<const PQT::InstantSelector *>(node);
+        return static_cast<const PrometheusQueryTree::InstantSelector *>(node);
 
     return nullptr;
 }
@@ -52,7 +52,7 @@ const PQT::InstantSelector * peelToInstantSelector(const Node * node)
 /// Builds the map of labels inferred from the input selector's matchers, using the same "smart"
 /// label derivation logic as `absent()`. An empty `map` has type Map(Nothing, Nothing), so we
 /// cast every inferred map to a stable type Map(String, String).
-ASTPtr makeInferredLabelsMap(const PQT::Function * function_node)
+ASTPtr makeInferredLabelsMap(const PrometheusQueryTree::Function * function_node)
 {
     std::map<String, String> labels;
     /// This set deliberately stays monotonic, matching Prometheus's historic `has` map:
@@ -68,7 +68,7 @@ ASTPtr makeInferredLabelsMap(const PQT::Function * function_node)
             if (matcher.label_name == kMetricName)
                 continue;
 
-            if (matcher.matcher_type == PQT::MatcherType::EQ && !labels_with_equality_matcher.contains(matcher.label_name))
+            if (matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ && !labels_with_equality_matcher.contains(matcher.label_name))
             {
                 labels_with_equality_matcher.insert(matcher.label_name);
                 if (!matcher.label_value.empty())
@@ -97,7 +97,7 @@ ASTPtr makeInferredLabelsMap(const PQT::Function * function_node)
 }
 
 
-SQLQueryPiece applyFunctionAbsentOverTime(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyFunctionAbsentOverTime(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     if (arguments.size() != 1)
     {
