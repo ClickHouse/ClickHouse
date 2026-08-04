@@ -8,6 +8,7 @@ keywords: ['custom roles', 'security', 'permissions']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 This guide is intended for users with the Admin role in ClickHouse Cloud.
 
@@ -65,6 +66,57 @@ Review permissions assigned to your new role before finalizing. Click `Create ro
 <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md"/>
 </Step>
 </Steps>
+
+## Manage database roles (beta) {#manage-database-roles}
+
+<BetaBadge/>
+
+In addition to console permissions, custom roles can include data permissions that control access to the databases of selected services. This lets you manage console and database access in one place instead of maintaining separate roles in each database.
+
+<Note>
+This feature is in beta and is available for services running ClickHouse version 26.4 and above.
+</Note>
+
+When you add data permissions to a custom role, ClickHouse Cloud creates a matching role in each selected service, prefixed with `cloud:`. For example, a custom role named `readonly` appears in the database as `cloud:readonly`. Members of the custom role receive these database permissions when they connect to the service through SQL console passwordless authentication.
+
+<Info>
+Roles assigned manually in the database using the [`sql-console-role:<email>` naming convention](/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) take precedence over roles assigned through the console.
+</Info>
+
+<Steps>
+<Step title="Add data permissions to a role" id="add-data-permissions">
+
+[Create a custom role](#create-custom-role) or edit an existing one. In the role dialog, click the `Allow permissions` button and select `Data`.
+</Step>
+<Step title="Select the service" id="select-data-permissions-service">
+
+Select the service the permissions apply to. Add more services to apply permissions across multiple services.
+</Step>
+<Step title="Choose the access level" id="choose-data-access-level">
+
+Select `Read-only`, `Admin`, or `Custom` access. With `Custom` access, define specific data access permissions using ClickHouse [`GRANT` statements](/reference/statements/grant).
+
+<Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Create new role dialog with data permissions defined by custom grant statements" size="md"/>
+</Step>
+<Step title="Create the role" id="create-role-with-data-permissions">
+
+Click `Create role`. The database roles are created in the selected services.
+</Step>
+</Steps>
+
+### Verify database roles {#verify-database-roles}
+
+Roles managed through the console are created in the database with the `cloud:` prefix and the `cloud` storage type. To list them, query the `system.roles` table in the service:
+
+```sql
+SELECT * FROM system.roles;
+```
+
+```response
+┌─name───────────┬─id───────────────────────────────────┬─storage─┐
+│ cloud:readonly │ 9a4910f4-abcf-4904-466a-717c8c75ac42 │ cloud   │
+└────────────────┴──────────────────────────────────────┴─────────┘
+```
 
 ## Update custom roles {#update-custom-role}
 
