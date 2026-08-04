@@ -712,6 +712,14 @@ std::optional<RowNumberMarker> parseRowNumberAfter(std::string_view message, std
 
 std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message)
 {
+    /// `IInputFormat::generate` appends "(in file/uri <path>)" after the parser's row marker, and the
+    /// file name is chosen by the user, so a spoofed marker inside it (e.g. a file named
+    /// "data at row 50.tsv") would be the rightmost one. Nothing after that point can be trusted;
+    /// cut the search short there. The same substring inside an excerpt of the data can only make the
+    /// cut happen before the genuine marker, which degrades to unbounded sampling, not to a wrong bound.
+    if (size_t file_name_pos = message.find(": (in file/uri "); file_name_pos != std::string_view::npos)
+        message = message.substr(0, file_name_pos);
+
     /// `IRowInputFormat` appends "(at row N)" where the counter already includes the failing row.
     auto row_input_format_marker = parseRowNumberAfter(message, "(at row ", ")");
 
