@@ -24,29 +24,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## تمكين الاحتفاظ بالسجل الثنائي
 </div>
 
-السجل الثنائي عبارة عن مجموعة من ملفات السجل التي تتضمن معلومات عن تعديلات البيانات التي أُجريت على مثيل خادم MySQL. وتُعد ملفات السجل الثنائي مطلوبة للنسخ المتماثل. يجب اتباع كلتا الخطوتين أدناه:
+السجل الثنائي هو مجموعة من ملفات السجل التي تحتوي على معلومات حول تعديلات البيانات التي أُجريت على مثيل خادم MySQL. وتُعد ملفات السجل الثنائي مطلوبة للنسخ المتماثل. يجب اتباع كلتا الخطوتين أدناه:
 
-<div id="enable-binlog-logging-rds">
-  ### 1. تمكين التسجيل الثنائي عبر النسخ الاحتياطي الآلي
-</div>
+<Steps>
+  <Step title="تمكين التسجيل الثنائي عبر النسخ الاحتياطي الآلي" id="enable-binlog-logging-rds">
+    تحدد ميزة النسخ الاحتياطي الآلي ما إذا كان التسجيل الثنائي مفعّلًا أو معطّلًا في MySQL. ويمكن ضبط ذلك من خلال AWS Console:
 
-تحدّد ميزة النسخ الاحتياطية الآلية ما إذا كان التسجيل الثنائي مفعّلًا أو معطّلًا في MySQL. ويمكن ضبطها من وحدة تحكم AWS:
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="تمكين النسخ الاحتياطي الآلي في RDS" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="تمكين النسخ الاحتياطية الآلية في RDS" size="lg" border />
+    يُنصح بضبط فترة الاحتفاظ بالنسخ الاحتياطية على مدة طويلة بما يكفي، وفقًا لحالة استخدام النسخ المتماثل.
+  </Step>
 
-يُنصح بضبط مدة الاحتفاظ بالنسخ الاحتياطية على قيمة طويلة بشكل معقول، وفقًا لسيناريو النسخ المتماثل المستخدم.
+  <Step title="ساعات الاحتفاظ بـ binlog" id="binlog-retention-hours-rds">
+    تستخدم Amazon RDS for MariaDB طريقة مختلفة لتحديد مدة الاحتفاظ بـ binlog، وهي مقدار الوقت الذي يُحتفَظ فيه بملف binlog الذي يحتوي على التغييرات. وإذا لم تُقرأ بعض التغييرات قبل إزالة ملف binlog، فلن يتمكن النسخ المتماثل من الاستمرار. القيمة الافتراضية لساعات الاحتفاظ بـ binlog هي NULL، ما يعني عدم الاحتفاظ بالسجلات الثنائية.
 
-<div id="binlog-retention-hours-rds">
-  ### 2. ساعات الاحتفاظ بـ binlog
-</div>
+    لتحديد عدد الساعات للاحتفاظ بالسجلات الثنائية على مثيل قاعدة بيانات، استخدم الدالة mysql.rds&#95;set&#95;configuration مع فترة احتفاظ بـ binlog طويلة بما يكفي لحدوث النسخ المتماثل. ويُعد `24 hours` الحد الأدنى الموصى به.
 
-تستخدم Amazon RDS for MariaDB طريقة مختلفة لتحديد مدة الاحتفاظ بـ binlog، وهي مقدار الوقت الذي يُحتفَظ فيه بملف binlog الذي يحتوي على التغييرات. وإذا لم تُقرأ بعض التغييرات قبل إزالة ملف binlog، فلن يتمكن النسخ المتماثل من الاستمرار. القيمة الافتراضية لساعات الاحتفاظ بـ binlog هي NULL، ما يعني عدم الاحتفاظ بالسجلات الثنائية.
-
-لتحديد عدد الساعات للاحتفاظ بالسجلات الثنائية على مثيل قاعدة بيانات، استخدم الدالة mysql.rds&#95;set&#95;configuration مع فترة احتفاظ بـ binlog طويلة بما يكفي لحدوث النسخ المتماثل. ويُعد `24 hours` الحد الأدنى الموصى به.
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
-```
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+    ```
+  </Step>
+</Steps>
 
 <div id="binlog-parameter-group-rds">
   ## اضبط إعدادات binlog في مجموعة المعلمات
@@ -131,4 +129,4 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
   ### الوصول الخاص عبر AWS PrivateLink
 </div>
 
-للاتصال بمثيل RDS الخاص بك عبر private network، يمكنك استخدام AWS PrivateLink. اتبع [setup guide الخاص بنا لـ AWS PrivateLink مع ClickPipes](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) لإعداد الاتصال.
+للاتصال بمثيل RDS الخاص بك عبر شبكة خاصة، يمكنك استخدام AWS PrivateLink. اتبع [دليل إعداد AWS PrivateLink لـ ClickPipes](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) لإعداد هذا الاتصال.
