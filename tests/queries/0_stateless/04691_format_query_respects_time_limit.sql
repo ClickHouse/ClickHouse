@@ -75,7 +75,10 @@ FROM numbers(200000) FORMAT Null
 SETTINGS max_block_size = 200000, max_threads = 1, timeout_overflow_mode = 'break';
 
 -- 7. The real assertion: every case above stopped near its limit rather than running its block out.
---    Pre-fix they report 21000-90000 ms against a 1000 ms limit; with the fix they report ~1000 ms.
+--    The bound is on CPU time, not on `query_duration_ms`: wall clock also absorbs scheduling delay,
+--    and this test runs concurrently with copies of itself, so a wall-clock budget wide enough for a
+--    starved host would have to exceed the pre-fix cost it exists to detect. Pre-fix these statements
+--    burn tens of seconds of CPU against a 1000 ms limit; with the fix, one stride of parsing more.
 --    `count() = 10` keeps the assertion from going vacuous: countIf(...) = 0 over an empty result set is
 --    trivially true, so a marker that stopped matching would silently disarm the whole test.
 --    `type != 'QueryStart'` rather than `= 'ExceptionWhileProcessing'` because the break case above
@@ -89,7 +92,9 @@ SETTINGS max_block_size = 200000, max_threads = 1, timeout_overflow_mode = 'brea
 SET max_execution_time = 0;
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'all bounded', count() = 10 AND countIf(query_duration_ms > 15000) = 0
+SELECT 'all bounded',
+       count() = 10
+   AND countIf(ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] > 15000000) = 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
