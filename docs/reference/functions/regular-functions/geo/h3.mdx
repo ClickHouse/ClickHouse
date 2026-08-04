@@ -1293,12 +1293,12 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 **Example**
 
 ```sql title="Query"
- SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199) AS origin;
 ```
 
 ```text title="Response"
 ┌─────────────origin─┐
-│ 599686042433355773 │
+│ 599686042433355775 │
 └────────────────────┘
 ```
 
@@ -1324,12 +1324,12 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 **Example**
 
 ```sql title="Query"
- SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707199) AS destination;
 ```
 
 ```text title="Response"
 ┌────────destination─┐
-│ 599686043507097597 │
+│ 599686043507097599 │
 └────────────────────┘
 ```
 
@@ -1380,7 +1380,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 
 **Parameter**
 
-- `index` — Hexagon index number that represents a unidirectional edge. [UInt64](/reference/data-types/int-uint).
+- `index` — Hexagon index number that represents a cell. [UInt64](/reference/data-types/int-uint).
 
 **Returned value**
 
@@ -1390,7 +1390,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 **Example**
 
 ```sql title="Query"
- SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
+ SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355775) AS edges;
 ```
 
 ```text title="Response"
