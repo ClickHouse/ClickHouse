@@ -16,6 +16,7 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -141,6 +142,7 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeChild("column", column);
     w.writeChild("order_by", order_by);
     w.writeChild("sample_by", sample_by);
+    w.writeChild("engine", engine);
     w.writeChild("index_decl", index_decl);
     w.writeChild("index", index);
     w.writeChild("constraint_decl", constraint_decl);
@@ -244,6 +246,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     readTypedChild.operator()<ASTIdentifier>("column", column);
     readRawChild("order_by", order_by);
     readRawChild("sample_by", sample_by);
+    readTypedChild.operator()<ASTFunction>("engine", engine);
     readTypedChild.operator()<ASTIndexDeclaration>("index_decl", index_decl);
     readTypedChild.operator()<ASTIdentifier>("index", index);
     readTypedChild.operator()<ASTConstraintDeclaration>("constraint_decl", constraint_decl);
@@ -394,6 +397,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             break;
         case ASTAlterCommand::MODIFY_SAMPLE_BY:
             require(sample_by, "sample_by");
+            break;
+        case ASTAlterCommand::MODIFY_ENGINE:
+            require(engine, "engine");
             break;
         case ASTAlterCommand::ADD_INDEX:
             require(index_decl, "index_decl");

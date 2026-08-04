@@ -245,3 +245,59 @@ DETACH TABLE t_graphite;
 ATTACH TABLE t_graphite;
 SELECT 'graphite valid', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite';
 DROP TABLE t_graphite;
+
+-- (v) merge semantics, not just the persisted engine name, change for the remaining supported targets.
+-- Plain MergeTree rejects FINAL outright, so a change that persisted the name without switching the
+-- merge mode would fail these instead of passing them.
+CREATE TABLE t_vcollapse (k UInt32, sign Int8, ver UInt32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_vcollapse VALUES (1, 1, 1);
+INSERT INTO t_vcollapse VALUES (1, -1, 1);
+INSERT INTO t_vcollapse VALUES (2, 1, 1);
+ALTER TABLE t_vcollapse MODIFY ENGINE = VersionedCollapsingMergeTree(sign, ver);
+DETACH TABLE t_vcollapse;
+ATTACH TABLE t_vcollapse;
+SELECT 'vcollapsing final', k FROM t_vcollapse FINAL ORDER BY k;
+DROP TABLE t_vcollapse;
+
+CREATE TABLE t_coalesce (k UInt32, a Nullable(UInt32), b Nullable(UInt32)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_coalesce VALUES (1, 10, NULL);
+INSERT INTO t_coalesce VALUES (1, NULL, 20);
+ALTER TABLE t_coalesce MODIFY ENGINE = CoalescingMergeTree;
+DETACH TABLE t_coalesce;
+ATTACH TABLE t_coalesce;
+SELECT 'coalescing final', k, a, b FROM t_coalesce FINAL ORDER BY k;
+DROP TABLE t_coalesce;
+
+CREATE TABLE t_collapse_final (k UInt32, sign Int8) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_collapse_final VALUES (1, 1);
+INSERT INTO t_collapse_final VALUES (1, -1);
+INSERT INTO t_collapse_final VALUES (2, 1);
+ALTER TABLE t_collapse_final MODIFY ENGINE = CollapsingMergeTree(sign);
+DETACH TABLE t_collapse_final;
+ATTACH TABLE t_collapse_final;
+SELECT 'collapsing final', k FROM t_collapse_final FINAL ORDER BY k;
+DROP TABLE t_collapse_final;
+
+CREATE TABLE t_agg_final (k UInt32, s AggregateFunction(sum, UInt32)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_agg_final SELECT 1, sumState(toUInt32(5));
+INSERT INTO t_agg_final SELECT 1, sumState(toUInt32(7));
+ALTER TABLE t_agg_final MODIFY ENGINE = AggregatingMergeTree;
+DETACH TABLE t_agg_final;
+ATTACH TABLE t_agg_final;
+SELECT 'aggregating final', k, sumMerge(s) FROM t_agg_final FINAL GROUP BY k ORDER BY k;
+DROP TABLE t_agg_final;
+
+-- (s) the engine clause survives a round trip through the `clickhouse_json` AST dialect.
+SET allow_experimental_json_ast_dialect = 1;
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = ReplacingMergeTree'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = ReplacingMergeTree(v)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = SummingMergeTree((x, y))'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = GraphiteMergeTree(\'graphite_rollup\')'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t ADD COLUMN sign Int8, MODIFY ENGINE = CollapsingMergeTree(sign)'));
+
+-- (t) a MODIFY_ENGINE command with no engine child fails closed, as the sibling commands do, rather
+-- than reaching `AlterCommand::parse` and crashing on the absent engine node.
+SELECT formatQueryFromJSON('{"type":"AlterQuery","table":"t","alter_object":"TABLE","command_list":{"type":"ExpressionList","children":[{"type":"AlterCommand","command_type":"MODIFY_ENGINE"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+-- (u) a non-ASTFunction engine child is rejected at the JSON boundary, not as an internal cast error.
+SELECT formatQueryFromJSON('{"type":"AlterQuery","table":"t","alter_object":"TABLE","command_list":{"type":"ExpressionList","children":[{"type":"AlterCommand","command_type":"MODIFY_ENGINE","engine":{"type":"Identifier","name":"ReplacingMergeTree"}}]}}'); -- { serverError BAD_ARGUMENTS }
