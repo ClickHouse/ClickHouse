@@ -96,11 +96,27 @@ namespace
             fields[i]->serializeBinary(tuple.getColumn(i), row_num, out, settings);
     }
 
+    /// Appends exactly one row to every child column, or none at all: a field that throws
+    /// mid-row would otherwise leave the children of `tuple` with different sizes.
     void readRowFields(
         ColumnTuple & tuple, const Serializations & fields, const FormatSettings & settings, ReadBuffer & in)
     {
-        for (size_t i = 0; i < fields.size(); ++i)
-            fields[i]->deserializeBinary(tuple.getColumn(i), in, settings);
+        const size_t old_size = tuple.size();
+        try
+        {
+            for (size_t i = 0; i < fields.size(); ++i)
+                fields[i]->deserializeBinary(tuple.getColumn(i), in, settings);
+        }
+        catch (...)
+        {
+            for (size_t i = 0; i < fields.size(); ++i)
+            {
+                auto & field_column = tuple.getColumn(i);
+                if (field_column.size() > old_size)
+                    field_column.popBack(field_column.size() - old_size);
+            }
+            throw;
+        }
     }
 }
 
