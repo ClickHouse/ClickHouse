@@ -1769,8 +1769,15 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         request_finalized = true;
     };
 
+    const int uncaught_exceptions_before = std::uncaught_exceptions();
     SCOPE_EXIT({
-        if (!request_finalized)
+        /// The most common way to leave without finalizing is an exception thrown while preprocessing.
+        /// Don't abort in that case: let the exception propagate to `KeeperStateMachine::preprocess`,
+        /// whose handler logs the message and the stack trace before aborting. (We can't log it here:
+        /// `std::current_exception` is null while unwinding towards a handler that hasn't been entered
+        /// yet, so all we could print is the useless "Finalize not called" line, and aborting here
+        /// would destroy the only clue about what actually went wrong.)
+        if (!request_finalized && std::uncaught_exceptions() == uncaught_exceptions_before)
         {
             LOG_FATAL(getLogger("KeeperStorage"), "Finalize not called before returning");
             std::abort();
