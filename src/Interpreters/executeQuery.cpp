@@ -1457,6 +1457,50 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     if (!context->getAccess()->isGranted(createQueryDestinationAccess(create, destination_database, destination_table)))
         return true;
 
+    /// A stub `ATTACH` (no engine and no column list) applies the table definition from stored metadata
+    /// and rejects any user-supplied clause it would otherwise silently drop — `AS src`, `AS SELECT`,
+    /// `TO dst`, `EMPTY`, `CLONE`, engine-level clauses, and so on: `InterpreterCreateQuery::createTable`
+    /// throws `BAD_ARGUMENTS` on such a statement before reading any source or target table. Mirror that
+    /// guard (`has_dropped_clauses` there) so `ATTACH TABLE detached_dst AS live_src` or
+    /// `ATTACH MATERIALIZED VIEW detached_mv TO dst AS SELECT * FROM src` does not reattach the tables
+    /// collected from those fields on its way to the rejection.
+    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
+    {
+        bool has_dropped_clauses = false;
+
+        if (create.storage)
+        {
+            const auto & storage = *create.storage;
+            has_dropped_clauses
+                = storage.partition_by != nullptr
+                || storage.primary_key != nullptr
+                || storage.order_by != nullptr
+                || storage.sample_by != nullptr
+                || storage.ttl_table != nullptr
+                || storage.unique_key != nullptr
+                || storage.settings != nullptr;
+        }
+
+        has_dropped_clauses = has_dropped_clauses
+            || create.comment != nullptr
+            || create.refresh_strategy != nullptr
+            || create.sql_security != nullptr
+            || create.select != nullptr
+            || create.targets != nullptr
+            || create.as_table_function != nullptr
+            || create.aliases_list != nullptr
+            || create.is_create_empty
+            || create.is_clone_as
+            || !create.as_database.empty()
+            || !create.as_table.empty()
+            || create.has_attach_from_path
+            || create.has_uuid_clause
+            || create.has_inner_uuid_clause;
+
+        if (has_dropped_clauses)
+            return true;
+    }
+
     /// The replacing forms really do replace an existing destination, so a taken name does not stop them.
     /// `CREATE DATABASE` has no destination table to collide with.
     if (!create.table || create.replace_table || create.replace_view || create.create_or_replace)

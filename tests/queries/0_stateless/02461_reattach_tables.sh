@@ -602,6 +602,28 @@ check_fails_kind_without_detach "CREATE TABLE t_reattach_dest_taken ENGINE = Mer
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_free"
 check_if_detached "CREATE TABLE t_reattach_dest_free ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
 
+# 3. Stub `ATTACH` with dropped clauses. An `ATTACH` without an engine and a column list applies the table
+# definition from stored metadata and rejects any user-supplied clause it would otherwise silently drop
+# with `BAD_ARGUMENTS` before reading any source or target table. The materialized-view form
+# `ATTACH MATERIALIZED VIEW mv TO dst AS SELECT ... FROM src` is the parseable shape of this rejection
+# that names other live tables — both its external `TO` target and its `SELECT` source must stay
+# attached on the way to it.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_attach_dst"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_attach_dst (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE t_reattach_attach_dst"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_target"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mv_target (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+check_fails_kind_without_detach "ATTACH MATERIALIZED VIEW t_reattach_attach_dst TO t_reattach_mv_target AS SELECT a FROM t_reattach_dest_src" "t_reattach_mv_target" "BAD_ARGUMENTS"
+check_fails_kind_without_detach "ATTACH MATERIALIZED VIEW t_reattach_attach_dst TO t_reattach_mv_target AS SELECT a FROM t_reattach_dest_src" "t_reattach_dest_src" "BAD_ARGUMENTS"
+
+# The rejections must have left no side effects behind: the proper stub `ATTACH` still works.
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE t_reattach_attach_dst"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_reattach_attach_dst"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_attach_dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_target"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_free"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_taken"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_src"
