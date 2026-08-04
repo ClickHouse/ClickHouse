@@ -3848,9 +3848,10 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
 
         /// This is a complete query exchange on the shared connection, so it follows the same
         /// resynchronization discipline as the regular queries: recover from a previous failed
-        /// exchange first, arm the flag for the time of the exchange (so that a failure here
-        /// does not leave the connection silently desynchronized for the next query), and clear
-        /// it when the exchange completes cleanly.
+        /// exchange first, arm the flag for the time of the exchange (so that a transport or
+        /// client failure here does not leave the connection silently desynchronized for the
+        /// next query), and clear it when the exchange terminates in a protocol-consistent way -
+        /// with `EndOfStream` or with a server exception.
         if (connection_needs_resynchronization)
             resynchronizeConnectionAfterError();
         connection_needs_resynchronization = true;
@@ -3895,8 +3896,14 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                     return result;
 
                 case Protocol::Server::Exception:
-                    /// Return empty string on exception. The flag stays armed: the server may be
-                    /// closing the connection after the exception.
+                    /// Return empty string on exception. The exchange is complete at this point:
+                    /// the query was sent with the terminating empty block (`with_pending_data`
+                    /// is false), and a server exception is the last packet of the exchange - the
+                    /// server drains the data it has not read yet and preserves the connection.
+                    /// The flag is cleared so that the next query of the session does not go
+                    /// through the round-trip resynchronization: its ping could time out on a
+                    /// slow server and silently reconnect away the session state.
+                    connection_needs_resynchronization = false;
                     return "";
 
                 case Protocol::Server::Progress:
@@ -3959,7 +3966,13 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
                 connection_needs_resynchronization = false;
                 return blocks.empty() ? Block{} : concatenateBlocks(blocks);
 
-            case Protocol::Server::Exception: packet.exception->rethrow(); break; /// unreachable: `rethrow` always throws
+            case Protocol::Server::Exception:
+                /// A server exception terminates the exchange with the protocol in sync (see the
+                /// comment in `executeQueryForSingleString`), so the next query of the session
+                /// must not pay for it with a round-trip resynchronization.
+                connection_needs_resynchronization = false;
+                packet.exception->rethrow();
+                break; /// unreachable: `rethrow` always throws
 
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
