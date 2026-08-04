@@ -9,6 +9,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -34,6 +35,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
@@ -526,6 +528,10 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"timestamp", true};
         case TypeIndex::Time:
             return {"time", true};
+        case TypeIndex::Time64:
+            if (getDecimalScale(*type) <= 6)
+                return {"time", true};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
         case TypeIndex::String:
             return {"string", true};
         case TypeIndex::UUID:
@@ -609,13 +615,21 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-        case TypeIndex::Time:
             return "int";
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
             return "long";
+        case TypeIndex::Time64:
+        {
+            auto scale = getDecimalScale(*type);
+            if (scale <= 6)
+                return "long";
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+        }
         case TypeIndex::Float32:
             return "float";
         case TypeIndex::Float64:
@@ -637,6 +651,27 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
+}
+
+Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)
+{
+    if (type->isNullable())
+    {
+        auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+        return getAvroLogicalType(type_nullable->getNestedType());
+    }
+
+    const WhichDataType which(type);
+    if (which.isTime())
+        return "time-micros";
+    if (which.isTime64())
+    {
+        auto scale = getDecimalScale(*type);
+        if (scale <= 6)
+            return "time-micros";
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported time precision for avro {}({})", type->getName(), scale);
+    }
+    return Poco::Dynamic::Var();
 }
 
 static Poco::JSON::Object::Ptr getPartitionField(
@@ -1356,6 +1391,9 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
             auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
+            /// produce a parseable ORDER BY clause.
+            auto quoted_column_name = backQuoteIfNeed(column_name);
             String full_argument;
             if (clickhouse_transform_name->transform_name != "identity")
             {
@@ -1364,11 +1402,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
                 {
                     full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
                 }
-                full_argument += column_name + ")";
+                full_argument += quoted_column_name + ")";
             }
             else
             {
-                full_argument = column_name;
+                full_argument = quoted_column_name;
             }
             if (direction == 1)
                 order_by_str += fmt::format("{} ASC,", full_argument);

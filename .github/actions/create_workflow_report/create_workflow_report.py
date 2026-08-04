@@ -382,9 +382,18 @@ def get_prs_in_release_dataframe(
 
 def _checks_latest_test_status_cte(commit_sha: str, branch_name: str) -> str:
     """
-    Shared filtering for gh-data.checks: anchor time excludes stateless teardown checks
-    (Stateless% + test_name not matching ^[0-9]{5}); keep rows with check_start_time
-    >= anchor so main + teardown phases are included.
+    Shared filtering for gh-data.checks: anchor time selects the latest result batch
+    per check_name.
+
+    Rows that must not set the anchor (but are still kept if their time is >= anchor):
+    - Stateless teardown: check_name LIKE 'Stateless%' AND test_name not matching ^[0-9]{5}
+    - Empty test_name: CIDB job-level parent rows
+    - Pre/Post Hooks: praktika phases with their own stopwatches; Post Hooks always runs
+      after tests and would otherwise become the sole surviving batch, hiding all FAILs
+
+    Keep rows with check_start_time >= anchor so the latest main batch and any later
+    teardown/hook rows are included. Earlier batches (failed attempts before a rerun
+    uploaded a newer uniform timestamp) are dropped.
     """
     return f"""WITH checks_with_anchor AS (
             SELECT
@@ -396,7 +405,12 @@ def _checks_latest_test_status_cte(commit_sha: str, branch_name: str) -> str:
                 check_start_time,
                 maxIf(
                     check_start_time,
-                    NOT (check_name LIKE 'Stateless%' AND NOT match(test_name, '^[0-9]{{5}}'))
+                    test_name != ''
+                    AND test_name NOT IN ('Pre Hooks', 'Post Hooks')
+                    AND NOT (
+                        check_name LIKE 'Stateless%'
+                        AND NOT match(test_name, '^[0-9]{{5}}')
+                    )
                 ) OVER (PARTITION BY check_name) AS latest_check_start_time
             FROM `gh-data`.checks
             WHERE commit_sha = '{commit_sha}' AND head_ref = '{branch_name}'

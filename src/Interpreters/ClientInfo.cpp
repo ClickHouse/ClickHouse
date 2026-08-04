@@ -430,9 +430,7 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
         /// relayed through `<forward_headers>` on HTTP auth servers; `Authentication` is
         /// filtered defensively to preserve prior behavior.
         String key_lowercase = Poco::toLower(header.first);
-        if (key_lowercase.starts_with("x-clickhouse")
-            || key_lowercase == "authorization"
-            || key_lowercase == "authentication")
+        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication" || key_lowercase == "authorization")
             continue;
         http_headers[header.first] = header.second;
     }

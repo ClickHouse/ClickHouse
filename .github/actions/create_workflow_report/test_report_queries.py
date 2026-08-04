@@ -12,6 +12,20 @@ Requires ``testflows`` and ``clickhouse_driver``. Run:
 
 Set ``CHECKS_DATABASE_HOST``, ``CLICKHOUSE_TEST_STAT_LOGIN``,
 ``CLICKHOUSE_TEST_STAT_PASSWORD``.
+
+To capture ``expect`` for a commit:
+
+  python3 -c "
+  import os
+  from clickhouse_driver import Client
+  from create_workflow_report import get_checks_fails
+  c = Client(host=os.environ['CHECKS_DATABASE_HOST'],
+             user=os.environ['CLICKHOUSE_TEST_STAT_LOGIN'],
+             password=os.environ['CLICKHOUSE_TEST_STAT_PASSWORD'],
+             port=9440, secure='y', verify=False, settings={'use_numpy': True})
+  df = get_checks_fails(c, 'COMMIT_SHA', 'HEAD_REF')
+  print(repr(tuple(sorted(df['test_name'].tolist()))))
+  "
 """
 
 import os
@@ -30,7 +44,7 @@ def check_result_matches_expect(df: pd.DataFrame, expect: list[str]) -> None:
     actual = set(df["test_name"].tolist()) if not df.empty else set()
     required = set(expect)
     if actual != required:
-        fail(f"test_name mismatch: got {sorted(actual)}; required {sorted(required)}")
+        fail(f"test results mismatch: got {sorted(actual)}; expected {sorted(required)}")
 
 
 @TestOutline(Scenario)
@@ -83,6 +97,25 @@ def check_result_matches_expect(df: pd.DataFrame, expect: list[str]) -> None:
             "51762a72207f3d4bcee51a0a78912a8b2cbb1bb5",
             "antalya-25.8",
             (),
+        ),
+        # Post Hooks (later stopwatch) used to set the check_start_time anchor and hide
+        # Integration FAILs, e.g. AzureQueue on https://github.com/Altinity/ClickHouse/pull/2107.
+        (
+            "integration_fail_hidden_by_post_hooks_anchor",
+            "6185add695010b15869b3dc1bcb9c417621b36bc",
+            "bump/antalya-26.6/26.6.2.81",
+            (
+                "00071_merge_tree_optimize_aio",
+                "01167_isolation_hermitage",
+                "01509_parallel_quorum_insert_no_replicas_long",
+                "03752_attach_as_replicated_transaction_metadata",
+                "04033_tpc_ds_q20",
+                "04033_tpc_ds_q39",
+                "04033_tpc_ds_q58",
+                "04033_tpc_ds_q71",
+                "Unknown error",
+                "test_storage_s3_queue/test_0.py::test_move_after_processing[another_bucket-AzureQueue]",
+            ),
         ),
     ],
 )
