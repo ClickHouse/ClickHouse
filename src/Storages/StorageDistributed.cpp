@@ -556,11 +556,6 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     query_info.cluster = cluster;
 
-    /// `StorageDistributed::read` dereferences `query_info.getCluster()` later,
-    /// so the WITH CLUSTER early return must come after the assignment above.
-    if (has_with_cluster())
-        return std::min(to_stage, QueryProcessingStage::WithMergeableState);
-
     if (!local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
     {
         if (nodes > 1 && settings[Setting::optimize_skip_unused_shards])
@@ -586,6 +581,13 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
             }
         }
     }
+
+    /// The stage cap must come after the `optimize_skip_unused_shards` block above,
+    /// so that shard pruning still populates `query_info.optimized_cluster` and
+    /// `force_optimize_skip_unused_shards` enforcement still throws
+    /// `UNABLE_TO_SKIP_UNUSED_SHARDS` for `WITH CLUSTER` queries.
+    if (has_with_cluster())
+        return std::min(to_stage, QueryProcessingStage::WithMergeableState);
 
     if (settings[Setting::distributed_group_by_no_merge])
     {
