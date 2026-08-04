@@ -310,6 +310,32 @@ ATTACH TABLE t_sum_explicit;
 SELECT 'summing explicit', k, x, y FROM t_sum_explicit FINAL ORDER BY k;
 DROP TABLE t_sum_explicit;
 
+-- (x) an explicit `CoalescingMergeTree` column list is carried through: only the listed column is
+-- coalesced, so the unlisted one keeps its first value (without the argument it would become 9).
+CREATE TABLE t_coa_explicit (k UInt32, a Nullable(UInt32), b Nullable(UInt32)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_coa_explicit VALUES (1, 10, 7);
+INSERT INTO t_coa_explicit VALUES (1, NULL, 9);
+ALTER TABLE t_coa_explicit MODIFY ENGINE = CoalescingMergeTree(a);
+DETACH TABLE t_coa_explicit;
+ATTACH TABLE t_coa_explicit;
+SELECT 'coalescing explicit', k, a, b FROM t_coa_explicit FINAL ORDER BY k;
+DROP TABLE t_coa_explicit;
+
+-- (y) the Graphite rollup itself runs after the switch, not just the engine name: two points of one
+-- path inside a single 600 second retention window (the `graphite_rollup` config's `age 0` precision)
+-- roll into one row whose Time is truncated to the window and whose value is the highest Version.
+-- Plain MergeTree keeps both rows unchanged.
+CREATE TABLE t_graphite_rollup (key UInt32, Path String, Time DateTime('UTC'), Value Float64, Version UInt32)
+    ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_rollup VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:10', 'UTC'), 1, 1);
+INSERT INTO t_graphite_rollup VALUES (1, 'max_a', toDateTime('2020-01-01 00:01:20', 'UTC'), 5, 2);
+ALTER TABLE t_graphite_rollup MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_rollup;
+ATTACH TABLE t_graphite_rollup;
+OPTIMIZE TABLE t_graphite_rollup FINAL;
+SELECT 'graphite rollup', Path, toString(Time), Value, Version FROM t_graphite_rollup ORDER BY Time;
+DROP TABLE t_graphite_rollup;
+
 -- (s) the engine clause survives a round trip through the `clickhouse_json` AST dialect.
 SET allow_experimental_json_ast_dialect = 1;
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = ReplacingMergeTree'));
