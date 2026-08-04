@@ -273,11 +273,8 @@ static void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr
                     current_schema_id);
         }
 
-        /// Additions have to be rejected too. The rewrite materializes the current schema into the
-        /// file, so the added field's id is written into a data file that an older snapshot resolves
-        /// against its own schema, where that id does not exist; the reader then refuses the file
-        /// outright ("column ... with field_id N that is not in datalake metadata") and the data
-        /// becomes unreadable, through the current snapshot as well as through time travel.
+        /// The reverse direction: an id the old schema lacks would be written into the rewritten
+        /// file and then refused by any reader resolving it against that schema.
         for (const auto & [field_id, current_type] : current_types)
         {
             if (!old_types.contains(field_id))
@@ -1270,10 +1267,8 @@ static bool writeMetadataFiles(
 
     MetadataGenerator metadata_generator(metadata_object);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
-    /// Deliberately NOT tracked in `generated_metadata_paths`: on a lost commit this name belongs to
-    /// the winning writer. `writeMetadataFileAndVersionHint` returns before writing when the object
-    /// exists and otherwise writes with `if-none-match`, so a failed commit never leaves a file of
-    /// ours here, while tracking it would let cleanup delete the winner's metadata.
+    /// Deliberately NOT tracked for cleanup: on a lost commit this name belongs to the winning
+    /// writer, and `if-none-match` means a failed commit never leaves a file of ours here.
     auto generated_metadata_info = plan.generator.generateMetadataPathWithInfo();
     std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
 
@@ -1615,10 +1610,8 @@ static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const St
     return metadata_files;
 }
 
-/// Remove the files this compaction wrote. `plan_paths` must contain only paths the rewrite itself
-/// created under freshly generated, unique names; the commit target is NOT one of them, since a
-/// lost commit means another writer owns that name. `pre_existing` is a second guard for names that
-/// were already there when the rewrite started.
+/// Remove the files this compaction wrote. `plan_paths` must hold only names the rewrite generated
+/// itself, never the commit target; `pre_existing` guards names that were already there.
 static void removeGeneratedFiles(
     ObjectStoragePtr object_storage,
     const std::vector<String> & pre_existing,
