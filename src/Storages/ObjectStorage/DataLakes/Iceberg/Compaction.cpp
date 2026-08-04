@@ -1617,6 +1617,11 @@ static CommitResult writeMetadataFiles(
         std::string json_representation = stringifyJSON(metadata_object, 4);
 
         auto version_hint_path = plan.generator.generateVersionHint();
+        /// Sampled before the write so a target that already exists can be told apart from one this
+        /// rewrite may itself have created: the helper reports the two the same way.
+        StoredObject commit_target(path_resolver.resolve(generated_metadata_info.path));
+        const bool target_existed_before = object_storage->exists(commit_target);
+
         if (!Iceberg::writeMetadataFileAndVersionHint(
                 path_resolver,
                 generated_metadata_info,
@@ -1626,13 +1631,16 @@ static CommitResult writeMetadataFiles(
                 context,
                 write_version_hint))
         {
-            /// A false return also covers an exception while writing, which can happen after the
-            /// object storage already accepted the object. Deleting the rewritten files then strands
-            /// metadata that references them, so only report a lost commit once the target is known
-            /// not to exist, and keep everything when that cannot be established.
+            /// Someone else already held the target, so nothing of ours was published.
+            if (target_existed_before)
+                return CommitResult::Lost;
+
+            /// Otherwise the helper also folds in an exception while writing, which can happen after
+            /// the storage accepted the object. Removing the rewritten files would then strand
+            /// metadata that references them, so only report a loss once the target is known absent.
             try
             {
-                if (!object_storage->exists(StoredObject(path_resolver.resolve(generated_metadata_info.path))))
+                if (!object_storage->exists(commit_target))
                     return CommitResult::Lost;
             }
             catch (...)
@@ -1641,7 +1649,7 @@ static CommitResult writeMetadataFiles(
             }
             LOG_WARNING(
                 log,
-                "Iceberg compaction could not confirm that metadata version {} was not written; keeping every file so "
+                "Iceberg compaction could not confirm whether metadata version {} was written; keeping every file so "
                 "nothing referenced by it is removed",
                 generated_metadata_info.version);
             return CommitResult::KeepEverything;
