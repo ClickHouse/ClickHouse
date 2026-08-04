@@ -4395,6 +4395,9 @@ Formatter '%e' in function 'formatDateTime' prints single-digit days with a lead
     DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
+    DECLARE(Bool, array_count_legacy_uint32_result, false, R"(
+If enabled, function `arrayCount` returns `UInt32` as before version 26.8, instead of `UInt64`. The `UInt32` result silently wraps around for arrays with more than `4294967295` matching elements.
+)", 0) \
     DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0) \

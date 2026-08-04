@@ -1,6 +1,8 @@
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 
 #include <Functions/array/FunctionArrayMapped.h>
 
@@ -12,9 +14,15 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace Setting
+{
+    extern const SettingsBool array_count_legacy_uint32_result;
+}
+
 /** arrayCount(x1,...,xn -> expression, array1,...,arrayn) - for how many elements of the array the expression is true.
   * An overload of the form f(array) is available, which works in the same way as f(x -> x, array).
   */
+template <typename ResultType>
 struct ArrayCountImpl
 {
     static bool needBoolean() { return true; }
@@ -24,8 +32,9 @@ struct ArrayCountImpl
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         /// UInt64, and not UInt32: an array can contain more than 2^32 elements, and the count of the
-        /// matching ones has to be exact for such an array as well.
-        return std::make_shared<DataTypeUInt64>();
+        /// matching ones has to be exact for such an array as well. UInt32 is kept only behind the
+        /// `array_count_legacy_uint32_result` compatibility setting.
+        return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
@@ -42,30 +51,30 @@ struct ArrayCountImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const IColumn::Offsets & offsets = array.getOffsets();
-                auto out_column = ColumnUInt64::create(offsets.size());
-                ColumnUInt64::Container & out_counts = out_column->getData();
+                auto out_column = ColumnVector<ResultType>::create(offsets.size());
+                typename ColumnVector<ResultType>::Container & out_counts = out_column->getData();
 
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
                 {
-                    out_counts[i] = offsets[i] - pos;
+                    out_counts[i] = static_cast<ResultType>(offsets[i] - pos);
                     pos = offsets[i];
                 }
 
                 return out_column;
             }
-            return DataTypeUInt64().createColumnConst(array.size(), UInt64(0));
+            return DataTypeNumber<ResultType>().createColumnConst(array.size(), ResultType(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
         const IColumn::Offsets & offsets = array.getOffsets();
-        auto out_column = ColumnUInt64::create(offsets.size());
-        ColumnUInt64::Container & out_counts = out_column->getData();
+        auto out_column = ColumnVector<ResultType>::create(offsets.size());
+        typename ColumnVector<ResultType>::Container & out_counts = out_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            size_t count = 0;
+            ResultType count = 0;
             for (; pos < offsets[i]; ++pos)
             {
                 if (filter[pos])
@@ -79,7 +88,20 @@ struct ArrayCountImpl
 };
 
 struct NameArrayCount { static constexpr auto name = "arrayCount"; };
-using FunctionArrayCount = FunctionArrayMapped<ArrayCountImpl, NameArrayCount>;
+
+/// Chooses the result type by the `array_count_legacy_uint32_result` compatibility setting:
+/// `UInt64` (exact for arrays of any size) by default, `UInt32` as before version 26.8.
+struct ArrayCountFunctionChooser
+{
+    static constexpr auto name = NameArrayCount::name;
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (context->getSettingsRef()[Setting::array_count_legacy_uint32_result])
+            return std::make_shared<FunctionArrayMapped<ArrayCountImpl<UInt32>, NameArrayCount>>();
+        return std::make_shared<FunctionArrayMapped<ArrayCountImpl<UInt64>, NameArrayCount>>();
+    }
+};
 
 REGISTER_FUNCTION(ArrayCount)
 {
@@ -88,6 +110,11 @@ Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns t
 If `func` is not specified, it returns the number of non-zero elements in the array.
 
 `arrayCount` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+
+:::note Use setting `array_count_legacy_uint32_result` to return `UInt32`
+Version 26.8 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
+To retain the previous behavior, set setting `array_count_legacy_uint32_result` (default: `false`) to `true`.
+:::
     )";
     FunctionDocumentation::Syntax syntax = "arrayCount([func, ] arr1, ...)";
     FunctionDocumentation::Arguments arguments = {
@@ -100,7 +127,7 @@ If `func` is not specified, it returns the number of non-zero elements in the ar
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayCount>(documentation);
+    factory.registerFunction<ArrayCountFunctionChooser>(documentation);
 }
 
 }
