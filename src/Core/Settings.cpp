@@ -4770,7 +4770,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
-    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, false, R"(
+    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, true, R"(
 Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
 queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
 exactly partitions rows into defaults and non-defaults of `col`. The count is then
@@ -4810,7 +4810,7 @@ Possible values:
 See also:
 
 - [optimize_trivial_count_query](#optimize_trivial_count_query)
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
