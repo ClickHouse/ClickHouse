@@ -1700,10 +1700,8 @@ public:
                     auto left_nested_type = removeLowCardinalityAndNullable(left_array->getNestedType());
                     auto right_nested_type = removeLowCardinalityAndNullable(right_array->getNestedType());
 
-                    auto element_comparison
-                        = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name, is_null_safe_cmp_mode>>(params));
-                    ColumnsWithTypeAndName element_args{{nullptr, left_nested_type, ""}, {nullptr, right_nested_type, ""}};
-                    DataTypePtr element_result_type = element_comparison->build(element_args)->getResultType();
+                    /// Recurse directly instead of going through an overload resolver.
+                    DataTypePtr element_result_type = getReturnTypeImpl(DataTypes{left_nested_type, right_nested_type});
 
                     /// Reject only aligned string-vs-non-string positions
                     bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
