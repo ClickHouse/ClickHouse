@@ -972,14 +972,15 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
         /// A subquery in the table function `view` may reference tables that don't exist on the initiator.
-        /// The same holds for a persisted `Distributed(...)` engine created over a table function: the engine
-        /// carries its own declared column list and the target is meant to run only on the shards, so build the
-        /// header from that declared structure instead of resolving the target on the initiator. Resolving it
-        /// eagerly would fail on the initiator whenever its local backing object is missing (e.g. `loop(src)`,
-        /// `dictionary('d')`, `mergeTreeProjection(...)`), even when a healthy remote shard exists or
-        /// `skip_unavailable_shards` should apply - unlike the classic named-table form, which never resolves
-        /// the remote table on the initiator. The `remote` / `cluster` table functions keep resolving their
-        /// target (they own their cluster and have no separately declared column list of their own).
+        /// The same holds for a persisted engine created over a table function - `Distributed(...)` as well
+        /// as `Remote` / `RemoteSecure`: the engine carries its own declared column list and the target is
+        /// meant to run only on the shards, so build the header from that declared structure instead of
+        /// resolving the target on the initiator. Resolving it eagerly would fail on the initiator whenever
+        /// its local backing object is missing (e.g. `loop(src)`, `dictionary('d')`,
+        /// `mergeTreeProjection(...)`), even when a healthy remote shard exists or `skip_unavailable_shards`
+        /// should apply - unlike the classic named-table form, which never resolves the remote table on the
+        /// initiator. The ad-hoc `remote` / `cluster` table functions keep resolving their target (they have
+        /// no separately declared column list of their own).
         if (table_function_node->getTableFunctionName() == "view" || table_function_target_uses_declared_structure)
         {
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
@@ -1075,10 +1076,14 @@ void StorageDistributed::read(
         /// Avoid constructing it from empty names (which throws), matching the `remote_storage` member.
         StorageID remote_storage_id = remote_table_function_ptr ? StorageID::createEmpty() : StorageID{remote_database, remote_table};
 
-        /// A persisted `Distributed(...)` engine over a table function (`owned_cluster` is empty, unlike the
-        /// `remote` / `cluster` table functions) has its own declared column list and its target runs only on
-        /// the shards, so the initiator should use that declared structure instead of resolving the target.
-        const bool table_function_target_uses_declared_structure = remote_table_function_ptr && !owned_cluster;
+        /// A persisted engine over a table function has its own declared column list and its target runs
+        /// only on the shards, so the initiator should use that declared structure instead of resolving
+        /// the target. This covers both the `Distributed(...)` engine (no owned cluster) and the
+        /// `Remote` / `RemoteSecure` engines (an owned cluster, but stored metadata and a data path).
+        /// Only the ad-hoc `remote` / `cluster` table functions (an owned cluster and no data path,
+        /// same distinction as in `write`) keep resolving their target on the initiator.
+        const bool table_function_target_uses_declared_structure
+            = remote_table_function_ptr && (!owned_cluster || !relative_data_path.empty());
 
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
@@ -2888,7 +2893,7 @@ SELECT * FROM remote_one;
 
 This is the persistent equivalent of `CREATE TABLE ... AS remote(...)`. Like the `remote` table function, these engines are convenient but do not let you set up shards and replicas declaratively the way [`Distributed`](#distributed-creating-a-table) over a configured cluster does, so for a permanent, frequently used set of servers prefer defining a cluster and using the `Distributed` engine.
 
-The target may also be a table function, for example `Remote('127.0.0.1', numbers(10))` or `Remote('127.0.0.1', merge(db, '^table_'))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` exception. This read-only limitation applies equally to the `remote` and `remoteSecure` table functions: `SELECT` and `INSERT` are both supported for an ordinary `db`/`table` target, but a table-function target (`remote('127.0.0.1', numbers(10))`) is read-only for the same reason.
+The target may also be a table function, for example `Remote('127.0.0.1', numbers(10))` or `Remote('127.0.0.1', merge(db, '^table_'))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` exception. This read-only limitation applies equally to the `remote` and `remoteSecure` table functions: `SELECT` and `INSERT` are both supported for an ordinary `db`/`table` target, but a table-function target (`remote('127.0.0.1', numbers(10))`) is read-only for the same reason. A table-function target is bound to the current database at `CREATE` time, [in the same way as for `Distributed`](#distributed-from-a-table-function), so queries read the same target regardless of the current database of the querying session.
 
 ### Distributed parameters {#distributed-parameters}
 
@@ -3185,6 +3190,29 @@ void registerStorageRemote(StorageFactory & factory)
         /// carried in the backup metadata.
         const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
 
+        /// Bind a table-function target to the current database at CREATE time, exactly as the
+        /// `Distributed(cluster, table_function())` form does in `registerStorageDistributed`: expand CTEs,
+        /// qualify unqualified table identifiers (and the table name argument of `dictGet` / `joinGet`)
+        /// with the current database, replace `currentDatabase()` with its value, and bind a database
+        /// argument the function would otherwise resolve against the current database of the querying
+        /// session (`dictionary('d')`, `loop(t)`, the single-argument `merge('^regexp$')`, ...).
+        /// Without this the persisted metadata keeps session-dependent spellings, so the same table would
+        /// read different objects depending on the current database of whatever session queries it later.
+        /// The AST is shared with the engine argument of the `CREATE` query (the visitors mutate the
+        /// function node in place and never replace it), so the normalized form is what gets persisted.
+        /// This must run before the structure inference below, so that the analysis resolves the bound
+        /// target. Loading from previously-validated stored metadata must use the persisted target as is
+        /// (it was normalized when first created, and must not be re-bound to the attaching session).
+        if (parsed.remote_table_function_ptr && !loading_from_existing_metadata)
+        {
+            ApplyWithSubqueryVisitor(args.getLocalContext()).visit(parsed.remote_table_function_ptr);
+            AddDefaultDatabaseVisitor add_default_database_visitor(
+                args.getLocalContext(), args.getLocalContext()->getCurrentDatabase());
+            add_default_database_visitor.visit(parsed.remote_table_function_ptr);
+            add_default_database_visitor.visitDDL(parsed.remote_table_function_ptr);
+            bindTableFunctionTargetsToCurrentDatabase(parsed.remote_table_function_ptr, args.getLocalContext());
+        }
+
         ColumnsDescription columns = args.columns;
 
         /// The table-function target must be analyzed under the user's context whenever the definition is
@@ -3295,6 +3323,7 @@ Note that the `remote` and `remoteSecure` table functions accept the `SETTINGS` 
 the engines do not accept that form.
 
 The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` error.
+A table-function target is bound to the current database at `CREATE` time, in the same way as for [`Distributed` over a table function](/engines/table-engines/special/distributed#distributed-from-a-table-function), so queries read the same target regardless of the current database of the querying session.
 )DOCS_MD";
 
     factory.registerStorage("Remote", [create](const StorageFactory::Arguments & args)

@@ -40,6 +40,30 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
+### From a table function {#distributed-from-a-table-function}
+
+Instead of a database and a table name, a table function can be used as the remote target, in the same way as the [`cluster`](/reference/functions/table-functions/cluster) table function accepts `cluster('cluster_name', table_function())`. The table function is executed on every shard of the cluster:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] ENGINE = Distributed(cluster, table_function()[, sharding_key]) [SETTINGS name=value, ...]
+```
+
+The columns can be omitted; in that case the structure is inferred from the table function. For example:
+
+```sql
+CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
+```
+
+The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
+
+The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`) is filled in with the current database. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
+
+<Info>
+**Read-only**
+
+A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).
+</Info>
+
 ### Remote and RemoteSecure engines {#distributed-remote-engines}
 
 `Remote` and `RemoteSecure` are persistent table engines that accept the same address expressions and credentials as the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions:
@@ -67,7 +91,7 @@ SELECT * FROM remote_one;
 
 This is the persistent equivalent of `CREATE TABLE ... AS remote(...)`. Like the `remote` table function, these engines are convenient but do not let you set up shards and replicas declaratively the way [`Distributed`](#distributed-creating-a-table) over a configured cluster does, so for a permanent, frequently used set of servers prefer defining a cluster and using the `Distributed` engine.
 
-The target may also be a table function, for example `Remote('127.0.0.1', numbers(10))` or `Remote('127.0.0.1', merge(db, '^table_'))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` exception. This read-only limitation applies equally to the `remote` and `remoteSecure` table functions: `SELECT` and `INSERT` are both supported for an ordinary `db`/`table` target, but a table-function target (`remote('127.0.0.1', numbers(10))`) is read-only for the same reason.
+The target may also be a table function, for example `Remote('127.0.0.1', numbers(10))` or `Remote('127.0.0.1', merge(db, '^table_'))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` exception. This read-only limitation applies equally to the `remote` and `remoteSecure` table functions: `SELECT` and `INSERT` are both supported for an ordinary `db`/`table` target, but a table-function target (`remote('127.0.0.1', numbers(10))`) is read-only for the same reason. A table-function target is bound to the current database at `CREATE` time, [in the same way as for `Distributed`](#distributed-from-a-table-function), so queries read the same target regardless of the current database of the querying session.
 
 ### Distributed parameters {#distributed-parameters}
 
