@@ -8,11 +8,11 @@ namespace DB::PrometheusQueryToSQL
 
 /// Makes a SQL query to read from an instant selector, for example
 /// http_requests{job="prometheus"}
-SQLQueryPiece fromSelector(const PQT::InstantSelector * instant_selector_node, ConverterContext & context);
+SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_selector_node, ConverterContext & context);
 
 /// Makes a SQL query to read from a range selector, for example
 /// http_requests{job="prometheus"}[20m]
-SQLQueryPiece fromSelector(const PQT::RangeSelector * range_selector_node, ConverterContext & context);
+SQLQueryPiece fromSelector(const PrometheusQueryTree::RangeSelector * range_selector_node, ConverterContext & context);
 
 /// Makes a SQL query reading the raw (timestamp, value) samples of an instant selector as a range vector, using
 /// `node`'s own evaluation range (in particular its window, e.g. the default 5-minute lookback for an instant
