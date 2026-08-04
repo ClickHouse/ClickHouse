@@ -6,6 +6,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
 #include <Columns/IColumn.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
@@ -536,6 +537,17 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
     auto & insert_query = query->as<ASTInsertQuery &>();
+
+    /// Everything this function installs into the queue - the `InsertQuery` key (a cloned AST and a
+    /// `Settings` copy), the `InsertData` holder, the `Entry` and the map and list nodes - outlives the
+    /// pushing query and is freed by a flush thread, which cannot uncharge the query that paid for it. The
+    /// charge would stay on the per-user tracker for good, and since that tracker is only cleared once the
+    /// user has no queries left, a user who always has one query in flight drifts up to
+    /// `max_memory_usage_for_user` on memory it does not hold. The inserted data itself is the one thing
+    /// deliberately charged to the user, and it is uncharged explicitly in `Entry::resetChunk`; it is
+    /// already allocated by the time it gets here, so this does not affect it. The transient work below is
+    /// freed on this thread, so it nets out either way.
+    MemoryTrackerBlockerInThread queue_state_not_charged_to_the_query;
 
     auto data_kind = chunk.getDataKind();
     auto entry = std::make_shared<InsertData::Entry>(
