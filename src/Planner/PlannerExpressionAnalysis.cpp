@@ -32,6 +32,8 @@
 
 #include <Core/Settings.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 namespace Setting
@@ -42,6 +44,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -276,6 +279,28 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
                 before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                 before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+            }
+        }
+    }
+
+    /// Validate that BY-columns in aggregate combinators are a subset of GROUP BY keys.
+    {
+        std::unordered_set<std::string_view> group_by_keys_set(
+            aggregation_keys.begin(), aggregation_keys.end());
+
+        for (const auto & aggregate : aggregates_descriptions)
+        {
+            if (!aggregate.by_columns.has_value())
+                continue;
+
+            for (const auto & by_name : *aggregate.by_columns)
+            {
+                if (!group_by_keys_set.contains(by_name))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "BY column '{}' in aggregate function '{}' must be one of the GROUP BY keys",
+                        by_name,
+                        aggregate.column_name);
             }
         }
     }

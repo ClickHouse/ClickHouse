@@ -114,6 +114,32 @@ public:
       */
     QueryTreeNodePtr & getWindowNode() { return children[window_child_index]; }
 
+    bool hasByCombinator() const
+    {
+        return children[by_columns_child_index]
+            != nullptr;
+    }
+
+    QueryTreeNodePtr & getByColumnsNode()
+    {
+        return children[by_columns_child_index];
+    }
+
+    const QueryTreeNodePtr & getByColumnsNode() const
+    {
+        return children[by_columns_child_index];
+    }
+
+    bool hasTotalsCombinator() const
+    {
+        return is_totals_combinator;
+    }
+
+    void setTotalsCombinator()
+    {
+        is_totals_combinator = true;
+    }
+
     /** Get ordinary function.
       * If function is not resolved or is resolved as non ordinary function nullptr is returned.
       */
@@ -222,11 +248,13 @@ private:
     bool wrap_with_nullable = false;
     /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
     bool is_operator = false;
+    bool is_totals_combinator = false;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
     static constexpr size_t window_child_index = 2;
-    static constexpr size_t children_size = window_child_index + 1;
+    static constexpr size_t by_columns_child_index = 3;
+    static constexpr size_t children_size = by_columns_child_index + 1;
 };
 
 }
