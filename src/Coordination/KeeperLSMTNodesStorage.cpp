@@ -350,6 +350,12 @@ bool KeeperLSMTNodesStorage::visitUncommittedRecursive(std::string_view root_pat
 
 void KeeperLSMTNodesStorage::prepareImpl(std::string_view path, UncommittedNodeRef && node, KeeperStagingTransaction & staging, ACLId old_acl_id, int64_t ephemeral_owner, bool has_ttl, bool is_container)
 {
+    /// Container nodes have `getEphemeralOwner() == CONTAINER_EPHEMERAL_OWNER`, but they don't
+    /// belong to any session and must not be registered in the ephemerals maps - otherwise they
+    /// get lost on restart (nothing re-registers the fake session) and break session cleanup.
+    if (ephemeral_owner == KeeperNodeStats::CONTAINER_EPHEMERAL_OWNER)
+        ephemeral_owner = 0;
+
     chassert((!node.ref) == (node.node.action == NodeAction::Create));
     chassert((!node.ref) == (node.node.digest == 0));
     /// Digest must've been calculated by getUncommittedNode, then left unchanged by our caller.
