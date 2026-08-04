@@ -4,7 +4,7 @@ import random
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, time as dtime
 
 import pyarrow as pa
 import pytest
@@ -24,7 +24,8 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
-    TimestamptzType
+    TimestamptzType,
+    TimeType,
 )
 
 from minio import Minio
@@ -1625,3 +1626,97 @@ def test_alter_sequential_add_drop_shared_location(started_cluster):
 
     schema_b = catalog.load_table(f"{root_namespace}.{table_b}").schema()
     assert [field.name for field in schema_b.fields] == ["x"] + table_b_columns
+def test_partitioning_by_time(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_partitioning_by_time_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespace = f"{root_namespace}.A"
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="key",
+            field_type=TimeType(),
+            required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="value",
+            field_type=StringType(),
+            required=False,
+        ),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=1, field_id=1000, transform=IdentityTransform(), name="partition_key"
+        )
+    )
+
+    table = create_table(catalog, namespace, table_name, schema=schema, partition_spec=partition_spec)
+    data = [{"key": dtime(12,0,0), "value": "test1"},
+            {"key": dtime(13,0,0), "value": "test2"},
+            {"key": dtime(14,0,0), "value": "test3"},
+            ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` ORDER BY key") == "12:00:00.000000\ttest1\n13:00:00.000000\ttest2\n14:00:00.000000\ttest3\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` WHERE key = '13:00:00.000000' ORDER BY key") == "13:00:00.000000\ttest2\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` WHERE key >= '13:00:00.000000' ORDER BY key") == "13:00:00.000000\ttest2\n14:00:00.000000\ttest3\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` WHERE key <= '13:00:00.000000' ORDER BY key") == "12:00:00.000000\ttest1\n13:00:00.000000\ttest2\n"
+
+
+def test_partitioning_by_string(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_partitioning_by_string_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespace = f"{root_namespace}.A"
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="key",
+            field_type=StringType(),
+            required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="value",
+            field_type=StringType(),
+            required=False,
+        ),
+        NestedField(
+            field_id=3,
+            name="time_value",
+            field_type=TimeType(),
+            required=False,
+        ),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=1, field_id=1000, transform=IdentityTransform(), name="partition_key"
+        )
+    )
+
+    table = create_table(catalog, namespace, table_name, schema=schema, partition_spec=partition_spec)
+    data = [{"key": "a:b,c[d=e/f%g?h", "value": "test", "time_value": dtime(12,0,0)}]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`") == "a:b,c[d=e/f%g?h\ttest\t12:00:00.000000\n"
