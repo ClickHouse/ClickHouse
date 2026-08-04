@@ -34,7 +34,8 @@ struct RankCorrelationData : public StatisticalSample<Float64, Float64>
         const RanksArray ranks_x = computeRanksAndTieCorrection(this->x).first;
         const RanksArray ranks_y = computeRanksAndTieCorrection(this->y).first;
 
-        /// Sizes can be non-equal due to skipped NaNs.
+        /// add() keeps the samples paired, but a state serialized by an older server can
+        /// still hold unequal sizes.
         const size_t size = std::min(this->size_x, this->size_y);
 
         if (size < 2)
@@ -95,6 +96,12 @@ public:
     {
         Float64 new_x = columns[0]->getFloat64(row_num);
         Float64 new_y = columns[1]->getFloat64(row_num);
+
+        /// Keep observations paired: StatisticalSample skips NaNs per column, which would
+        /// otherwise correlate ranks coming from different rows.
+        if (isNaN(new_x) || isNaN(new_y))
+            return;
+
         data(place).addX(new_x, arena);
         data(place).addY(new_y, arena);
     }
@@ -149,7 +156,7 @@ void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory
     FunctionDocumentation::Description description_rankCorr = R"(
 Computes a rank correlation coefficient.
 
-Returns a rank correlation coefficient of the ranks of x and y. The value of the correlation coefficient ranges from -1 to +1. If less than two arguments are passed, the function will return an exception. The value close to +1 denotes a high linear relationship, and with an increase of one random variable, the second random variable also increases. The value close to -1 denotes a high linear relationship, and with an increase of one random variable, the second random variable decreases. The value close or equal to 0 denotes no relationship between the two random variables. Returns `nan` when the correlation is undefined: fewer than two rows, or all values in either argument equal.
+Returns a rank correlation coefficient of the ranks of x and y. The value of the correlation coefficient ranges from -1 to +1. If less than two arguments are passed, the function will return an exception. The value close to +1 denotes a high linear relationship, and with an increase of one random variable, the second random variable also increases. The value close to -1 denotes a high linear relationship, and with an increase of one random variable, the second random variable decreases. The value close or equal to 0 denotes no relationship between the two random variables. Rows where either argument is `nan` are skipped. Returns `nan` when the correlation is undefined: fewer than two remaining rows, or all values in either argument equal.
 
 **See Also**
 
