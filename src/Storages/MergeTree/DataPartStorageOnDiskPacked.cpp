@@ -993,7 +993,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     /// Make the clone durable before the caller commits the covering part, same as the Full-storage
     /// override (the hardlink/copy above fsyncs nothing). Runs once for the whole subtree here.
     if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
-        fsyncFrozenCloneTree(*disk, fs::path(to) / dir_path);
+        fsyncFrozenCloneTree(*disk, pathToGenericString(fs::path(to) / dir_path));
 
     return dest_storage;
 }

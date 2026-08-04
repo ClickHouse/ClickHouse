@@ -592,7 +592,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     /// (e.g. DETACH commits a covering empty part and drops the source) sees the clone already on
     /// disk. See the commit message / #111382 for the full rationale.
     if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
-        fsyncFrozenCloneTree(*disk, fs::path(to) / dir_path);
+        fsyncFrozenCloneTree(*disk, pathToGenericString(fs::path(to) / dir_path));
 
     /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
     /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena, like the
