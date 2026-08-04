@@ -345,11 +345,14 @@ ENGINE = PostgreSQL(
         )
     finally:
         # A failed assertion must not leave the read, the proxy or the table behind for the
-        # tests that run after this one.
+        # tests that run after this one. Tear the proxy down before joining: the first cancel
+        # already consumed `is_completed`, so a second KILL QUERY can be a no-op, and dropping
+        # the connection is then what ends a read that reached the endless COPY.
         node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
-        query_thread.join(timeout=60)
         proxy.stop()
+        query_thread.join(timeout=60)
         node1.query("DROP TABLE IF EXISTS stalled_counter")
+        assert not query_thread.is_alive(), "query thread outlived the test"
 
 
 def test_kill_query_when_postgresql_cancel_connection_fails(
