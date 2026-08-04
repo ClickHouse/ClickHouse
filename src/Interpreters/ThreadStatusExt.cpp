@@ -426,6 +426,22 @@ void ThreadStatus::detachFromGroup()
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
+    /// Release the per-thread copies of query-scoped state while this thread is still charged to the
+    /// query: `local_data` holds the query text for logs, and the query id and context are strings and
+    /// reference counts allocated on attach. After the re-parenting below these frees land on
+    /// `total_memory_tracker` instead, so the charge stays on the per-user tracker for good - and that
+    /// tracker is only cleared once the user has no queries left, so for a user who always has one query
+    /// in flight it drifts up until `max_memory_usage_for_user` trips on memory nobody holds. Nothing
+    /// below reads them; `finalizePerformanceCounters` above is the last user of the query context.
+    clearQueryId();
+    query_context.reset();
+    local_data = {};
+    fatal_error_callback = {};
+
+    /// The frees above went into the per-thread untracked counter, so hand them back to the query
+    /// before the parent changes.
+    flushUntrackedMemory();
+
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
@@ -454,14 +470,6 @@ void ThreadStatus::detachFromGroup()
     }
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
-
-    clearQueryId();
-    query_context.reset();
-
-    local_data = {};
-
-    fatal_error_callback = {};
-
 }
 
 void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)
