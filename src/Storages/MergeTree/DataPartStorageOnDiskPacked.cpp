@@ -6,6 +6,8 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFileView.h>
 #include <IO/ReadPipeline.h>
+#include <IO/ReadSettings.h>
+#include <IO/SpillableMemoryWriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
@@ -14,6 +16,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -25,6 +28,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NOT_INITIALIZED;
     extern const int FILE_DOESNT_EXIST;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
 }
 
 DataPartStorageOnDiskPacked::DataPartStorageOnDiskPacked(
@@ -39,7 +47,7 @@ DataPartStorageOnDiskPacked::DataPartStorageOnDiskPacked(
     if (initialize)
         resetReader(read_settings_);
     if (transaction)
-        resetWriterFromTransaction();
+        resetWriterFromTransaction(MergeTreeSettings{});
 }
 
 DataPartStorageOnDiskPacked::DataPartStorageOnDiskPacked(
@@ -514,14 +522,14 @@ void DataPartStorageOnDiskPacked::createProjection(const std::string & name)
     executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(root_path) / part_dir / name); });
 }
 
-void DataPartStorageOnDiskPacked::beginTransaction()
+void DataPartStorageOnDiskPacked::beginTransaction(const MergeTreeSettings & settings)
 {
     if (transaction || writer)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Uncommitted{}transaction already exists", has_shared_transaction ? " shared " : " ");
 
     transaction = volume->getDisk()->createTransaction();
-    resetWriterFromTransaction();
+    resetWriterFromTransaction(settings);
 }
 
 void DataPartStorageOnDiskPacked::precommitTransaction()
@@ -708,9 +716,31 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
     return skip_indices_packed_reader;
 }
 
-void DataPartStorageOnDiskPacked::resetWriterFromTransaction()
+void DataPartStorageOnDiskPacked::resetWriterFromTransaction(const MergeTreeSettings & settings)
 {
-    writer.emplace();
+    auto disk = volume->getDisk();
+    String spill_root_path = fs::path(root_path) / part_dir / "tmp_packed";
+    auto spill_config = std::make_shared<PackedFilesWriter::SpillConfig>(
+        settings[MergeTreeSetting::max_bytes_to_buffer_for_packed_part],
+        [disk, spill_root_path](const String & file) -> std::unique_ptr<WriteBufferFromFileBase>
+        {
+            return disk->writeFile(fs::path(spill_root_path) / file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, WriteSettings{});
+        },
+        [disk, spill_root_path](const String & file) -> std::unique_ptr<ReadBuffer>
+        {
+            return disk->readFile(fs::path(spill_root_path) / file, ReadSettings{});
+        },
+        [disk, spill_root_path]()
+        {
+            if (!disk->existsDirectory(spill_root_path))
+                disk->createDirectories(spill_root_path);
+        },
+        [disk, spill_root_path]()
+        {
+            disk->removeRecursive(spill_root_path);
+        });
+
+    writer.emplace(std::move(spill_config));
     is_precommitted = false;
 }
 
@@ -864,7 +894,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const
+    const ClonePartParams & params,
+    const MergeTreeSettings & settings) const
 {
     auto disk = volume->getDisk();
     auto src_disk = volume->getDisk();
@@ -891,7 +922,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     {
         if (!dest_storage->transaction)
         {
-            dest_storage->beginTransaction();
+            dest_storage->beginTransaction(settings);
             need_commit = true;
         }
 
@@ -967,15 +998,15 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     src_disk->listFiles(getRelativePath(), all_files);
     for (const auto & file : all_files)
     {
-         if (src_disk->existsDirectory(fs::path(getRelativePath()) / file))
-         {
-             auto projection_storage = getProjection(file);
-             auto params_copy = params;
-             params_copy.external_transaction = dest_storage->transaction;
-             /// The top-level fsync below covers the whole subtree; don't let each projection re-walk it.
-             params_copy.fsync_part_directory = false;
-             projection_storage->freeze(dest_storage->getRelativePath(), file, read_settings, write_settings, save_metadata_callback, params_copy);
-         }
+        if (src_disk->existsDirectory(fs::path(getRelativePath()) / file))
+        {
+            auto projection_storage = getProjection(file);
+            auto params_copy = params;
+            params_copy.external_transaction = dest_storage->transaction;
+            /// The top-level fsync below covers the whole subtree; don't let each projection re-walk it.
+            params_copy.fsync_part_directory = false;
+            projection_storage->freeze(dest_storage->getRelativePath(), file, read_settings, write_settings, save_metadata_callback, params_copy, settings);
+        }
     }
 
     if (need_commit)
@@ -1004,7 +1035,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const
+    const ClonePartParams & params,
+    const MergeTreeSettings & settings) const
 {
     auto src_disk = volume->getDisk();
 
@@ -1029,7 +1061,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
     {
         if (!dest_storage->transaction)
         {
-            dest_storage->beginTransaction();
+            dest_storage->beginTransaction(settings);
             need_commit = true;
         }
 
@@ -1113,7 +1145,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
              auto projection_storage = getProjection(file);
              auto params_copy = params;
              params_copy.external_transaction = dest_storage->transaction;
-             projection_storage->freezeRemote(dest_storage->getRelativePath(), file, dst_disk, read_settings, write_settings, save_metadata_callback, params_copy);
+             projection_storage->freezeRemote(dest_storage->getRelativePath(), file, dst_disk, read_settings, write_settings, save_metadata_callback, params_copy, settings);
          }
     }
 

@@ -79,7 +79,7 @@ public:
     void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
     void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
 
-    void beginTransaction() override;
+    void beginTransaction(const MergeTreeSettings & settings) override;
     void commitTransaction() override;
 
     void setPreferredFileOrder(const Strings & file_names) override { preferred_file_order = file_names; }
@@ -100,7 +100,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        const ClonePartParams & params) const override;
+        const ClonePartParams & params,
+        const MergeTreeSettings & settings) const override;
 
     MutableDataPartStoragePtr freezeRemote(
         const std::string & to,
@@ -109,7 +110,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        const ClonePartParams & params) const override;
+        const ClonePartParams & params,
+        const MergeTreeSettings & settings) const override;
 
 #if CLICKHOUSE_CLOUD
     void serializeAuxiliaryInfo(WriteBuffer &) const override;
@@ -164,7 +166,7 @@ private:
     std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string &) const override { return nullptr; }
 
     void resetReader(const ReadSettings & read_settings);
-    void resetWriterFromTransaction();
+    void resetWriterFromTransaction(const MergeTreeSettings & settings);
     void finalizeWriter();
 
     /// Modifying of files is possible only with transaction.

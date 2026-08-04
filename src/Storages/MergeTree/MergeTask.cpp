@@ -613,7 +613,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (data_part_storage->exists())
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 
-    data_part_storage->beginTransaction();
+    data_part_storage->beginTransaction(*global_ctx->data_settings);
 
     /// Background temp dirs cleaner will not touch tmp projection directory because
     /// it's located inside part's directory
@@ -3075,7 +3075,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
     if (!global_ctx->temporary_text_index_storage)
     {
         auto new_part_path = global_ctx->new_data_part->getDataPartStorage().getRelativePath();
-        global_ctx->temporary_text_index_storage = createTemporaryTextIndexStorage(global_ctx->disk, new_part_path);
+        global_ctx->temporary_text_index_storage = createTemporaryTextIndexStorage(global_ctx->disk, new_part_path, *global_ctx->data_settings);
     }
 
     addSkipIndexesExpressionSteps(plan, description_to_build, global_ctx);

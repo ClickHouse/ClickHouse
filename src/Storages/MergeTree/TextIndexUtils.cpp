@@ -636,12 +636,13 @@ void MergeTextIndexesTask::addToChecksums(MergeTreeDataPartChecksums & checksums
         stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
 }
 
-MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path)
+MutableDataPartStoragePtr createTemporaryTextIndexStorage(
+    const DiskPtr & disk, const String & part_relative_path, const MergeTreeSettings & settings)
 {
     static constexpr const char * temp_part_dir = "text_index_tmp";
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_relative_path + "_" + temp_part_dir, disk, 0);
     auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, part_relative_path, temp_part_dir);
-    storage->beginTransaction();
+    storage->beginTransaction(settings);
     storage->createDirectories();
     return storage;
 }

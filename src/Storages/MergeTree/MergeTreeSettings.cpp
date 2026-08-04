@@ -1997,6 +1997,11 @@ The on-disk format is self-describing: readers detect `skp_idx.packed` and serve
 substreams from inside it transparently. Changing this setting affects newly written parts
 only; existing parts retain whatever layout they had at write time.
 )", BETA) \
+    DECLARE(UInt64, max_bytes_to_buffer_for_packed_part, 32 * 1024 * 1024, R"(
+Maximum amount of part data buffered in memory while writing a packed part. Once this
+threshold is exceeded, the buffered data is spilled to temporary files inside the part
+directory and read back during finalization, keeping the in-memory footprint bounded.
+)", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows summing columns in a SummingMergeTree table to be used in
 the partition or sorting key.

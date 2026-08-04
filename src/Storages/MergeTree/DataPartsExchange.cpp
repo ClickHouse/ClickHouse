@@ -830,7 +830,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     }();
 
     if (!to_remote_disk)
-        part_storage_for_loading->beginTransaction();
+        part_storage_for_loading->beginTransaction(*data_settings);
 
     if (part_storage_for_loading->exists())
     {
