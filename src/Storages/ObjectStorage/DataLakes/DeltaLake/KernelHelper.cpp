@@ -337,8 +337,15 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
                 if (const char * value = std::getenv(env_var); value && *value) // NOLINT(concurrency-mt-unsafe)
                     set_option(option, value);
             };
-            set_option_from_env("azure_tenant_id", "AZURE_TENANT_ID");
-            set_option_from_env("azure_client_id", "AZURE_CLIENT_ID");
+            /// Explicit IDs (extra_credentials / named collection) win over the environment.
+            if (!connection_params.workload_identity_tenant_id.empty())
+                set_option("azure_tenant_id", connection_params.workload_identity_tenant_id);
+            else
+                set_option_from_env("azure_tenant_id", "AZURE_TENANT_ID");
+            if (!connection_params.workload_identity_client_id.empty())
+                set_option("azure_client_id", connection_params.workload_identity_client_id);
+            else
+                set_option_from_env("azure_client_id", "AZURE_CLIENT_ID");
             set_option_from_env("azure_federated_token_file", "AZURE_FEDERATED_TOKEN_FILE");
             set_option_from_env("azure_authority_host", "AZURE_AUTHORITY_HOST");
             break;

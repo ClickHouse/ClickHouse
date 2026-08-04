@@ -219,4 +219,44 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsEnvironment)
     ASSERT_FALSE(findBuilderOption(options, "azure_authority_host").has_value());
 }
 
+/// Explicit client_id / tenant_id (extra_credentials, named collections) must be
+/// forwarded even when the environment variables are absent, and win over them.
+TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsExplicitIds)
+{
+    unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
+    setenv("AZURE_CLIENT_ID", "99999999-9999-9999-9999-999999999999", 1); // NOLINT(concurrency-mt-unsafe)
+    setenv("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token", 1); // NOLINT(concurrency-mt-unsafe)
+    SCOPE_EXIT({
+        unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
+        unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
+    });
+
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
+    params.endpoint.container_name = "testcontainer";
+    Azure::Identity::WorkloadIdentityCredentialOptions credential_options;
+    credential_options.ClientId = "22222222-2222-2222-2222-222222222222";
+    credential_options.TenantId = "11111111-1111-1111-1111-111111111111";
+    params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>(credential_options);
+    params.workload_identity_client_id = "22222222-2222-2222-2222-222222222222";
+    params.workload_identity_tenant_id = "11111111-1111-1111-1111-111111111111";
+    ASSERT_EQ(params.auth_method.index(), 3u);
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    /// Explicit tenant id, despite no AZURE_TENANT_ID in the environment.
+    const auto tenant = findBuilderOption(options, "azure_tenant_id");
+    ASSERT_TRUE(tenant.has_value());
+    ASSERT_EQ(*tenant, "11111111-1111-1111-1111-111111111111");
+
+    /// Explicit client id wins over the conflicting AZURE_CLIENT_ID.
+    const auto client = findBuilderOption(options, "azure_client_id");
+    ASSERT_TRUE(client.has_value());
+    ASSERT_EQ(*client, "22222222-2222-2222-2222-222222222222");
+
+    const auto token_file = findBuilderOption(options, "azure_federated_token_file");
+    ASSERT_TRUE(token_file.has_value());
+    ASSERT_EQ(*token_file, "/var/run/secrets/azure/tokens/azure-identity-token");
+}
+
 #endif

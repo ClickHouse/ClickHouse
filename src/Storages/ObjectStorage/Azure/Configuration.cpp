@@ -130,6 +130,8 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
         options.ClientId = *client_id;
         options.TenantId = *tenant_id;
         connection_params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>(options);
+        connection_params.workload_identity_client_id = *client_id;
+        connection_params.workload_identity_tenant_id = *tenant_id;
     }
 
     if (account_name || account_key)
