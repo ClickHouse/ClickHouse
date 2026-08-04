@@ -18,7 +18,7 @@ SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table
 ## Examples {#examples}
 
 ```sql title="Query"
-SELECT * EXCEPT (i) from columns_transformers;
+SELECT * EXCEPT i from columns_transformers;
 ```
 
 ```response title="Response"
