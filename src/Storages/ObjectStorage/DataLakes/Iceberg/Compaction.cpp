@@ -1616,6 +1616,10 @@ static bool writeMetadataFiles(
 static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
     auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
+    /// `version-hint.text` is a fixed path that the commit below rewrites in place rather than
+    /// versioning, so deleting the pre-compaction listing would remove the hint the commit just
+    /// wrote and leave `iceberg_use_version_hint = 1` readers unable to discover any metadata.
+    std::erase_if(metadata_files, [](const String & path) { return path.ends_with("version-hint.text"); });
     auto data_files = listFiles(*object_storage, table_path, "data", "");
 
     for (auto && data_file : data_files)

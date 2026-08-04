@@ -671,3 +671,62 @@ def test_optimize_aborts_on_metadata_commit_conflict(
     assert data_file_count() >= before, (
         f"pre-compaction data files were deleted after a lost commit: {data_file_count()} < {before}"
     )
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_keeps_version_hint(started_cluster_iceberg_no_spark, storage_type):
+    """
+    `version-hint.text` is a fixed path rewritten in place, so it must survive compaction's
+    cleanup of the previous metadata generation. If the pre-compaction listing is deleted after
+    the commit, `iceberg_use_version_hint = 1` readers lose their discovery file and the table
+    cannot be read at all.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_version_hint_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String))",
+        2,
+        use_version_hint=True,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Positional delete so compaction has work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    hint_path = f"{_metadata_dir(TABLE_NAME)}/version-hint.text"
+
+    def hint_contents():
+        return instance.exec_in_container(
+            ["bash", "-c", f"cat {hint_path} 2>/dev/null || true"]
+        ).strip()
+
+    before = hint_contents()
+    assert before, "version hint must exist before OPTIMIZE"
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+    after = hint_contents()
+    assert after, f"version hint was deleted by compaction (was {before})"
+    # It points at the compacted metadata, so it must have advanced past the pre-compaction one.
+    assert int(after) > int(before), f"version hint did not advance: {before} -> {after}"
+    # The table is still discoverable and returns the compacted contents.
+    assert (
+        instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
+    )
