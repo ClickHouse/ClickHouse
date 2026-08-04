@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT -m -q "
 # The cap was 1e6 B/s over 1e6 rows, which owed exactly 7 seconds - the same value the
 # query_duration_ms assertion below demands, leaving the sleep assertion no margin.
 # The throttler only sleeps while the arrival rate exceeds the cap, so the cap must stay far
-# below the natural read rate or the sleep assertion flaps on loaded runners.
+# below the natural read rate or the sleep assertion flaps on loaded runners (seen in #113107).
 $CLICKHOUSE_CLIENT -q "insert into data select * from numbers(2e5)"
 
 read_methods=(
