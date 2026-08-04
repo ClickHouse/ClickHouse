@@ -1,0 +1,27 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_cas_shared>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <!-- Both replicas load this same config, so they mount the SAME content-addressed pool.
+                     RustFS (not MinIO) enforces the conditional-PUT/DELETE semantics a CA pool requires
+                     to mount at all (B31). -->
+                <endpoint>http://rustfs1:11121/test/shared_pool/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <!-- Two replicas mounting one pool: the second mounter would otherwise refuse to attach. -->
+            </disk_cas_shared>
+        </disks>
+        <policies>
+            <cas_shared>
+                <volumes>
+                    <main>
+                        <disk>disk_cas_shared</disk>
+                    </main>
+                </volumes>
+            </cas_shared>
+        </policies>
+    </storage_configuration>
+</clickhouse>

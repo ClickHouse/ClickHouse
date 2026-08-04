@@ -648,6 +648,7 @@ class ClickHouseCluster:
 
         self.base_zookeeper_cmd = None
         self.base_minio_cmd = []
+        self.base_rustfs_cmd = []
         self.base_mysql57_cmd = []
         self.base_mysql8_cmd = []
         self.base_kafka_cmd = []
@@ -722,6 +723,18 @@ class ClickHouseCluster:
         # Make it cleaner
         self.minio_access_key = minio_access_key
         self.minio_secret_key = minio_secret_key
+
+        # available when with_rustfs == True. RustFS is an S3-compatible store that correctly
+        # enforces conditional-PUT semantics required by the content-addressed disk (MinIO does not).
+        self.with_rustfs = False
+        self.rustfs_dir = os.path.join(self.instances_dir, "rustfs")
+        self.rustfs_host = "rustfs1"
+        self.rustfs_ip = None
+        self.rustfs_bucket = "test"
+        self.rustfs_port = 11121
+        self.rustfs_access_key = "clickhouse"
+        self.rustfs_secret_key = "clickhouse"
+        self.rustfs_client = None  # type: Minio
 
         self.spark_session = None
         self.with_iceberg_catalog = False
@@ -1827,6 +1840,19 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
+    def setup_rustfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_rustfs = True
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_rustfs.yml")]
+        )
+        self.base_rustfs_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_rustfs.yml"),
+        )
+        return self.base_rustfs_cmd
+
     def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_glue_catalog = True
         env_variables["GLUE_CATALOG_PORT"] = str(self.glue_catalog_port)
@@ -2087,6 +2113,7 @@ class ClickHouseCluster:
         with_nginx=False,
         with_redis=False,
         with_minio=False,
+        with_rustfs=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
         # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in ASAN build (i.e. if not explicitly set to false)
@@ -2229,6 +2256,7 @@ class ClickHouseCluster:
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
+            with_rustfs=with_rustfs,
             with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
             with_jdbc_bridge=with_jdbc_bridge,
@@ -2455,6 +2483,11 @@ class ClickHouseCluster:
         if with_minio and not self.with_minio:
             cmds.append(
                 self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_rustfs and not self.with_rustfs:
+            cmds.append(
+                self.setup_rustfs_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_iceberg_catalog and not self.with_iceberg_catalog:
@@ -3348,6 +3381,41 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
+    def wait_rustfs_to_start(self, timeout=180):
+        self.rustfs_ip = self.get_instance_ip(self.rustfs_host)
+        rustfs_client = Minio(
+            f"{self.rustfs_ip}:{self.rustfs_port}",
+            access_key=self.rustfs_access_key,
+            secret_key=self.rustfs_secret_key,
+            secure=False,
+            http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+        )
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                rustfs_client.list_buckets()
+                logging.debug("Connected to RustFS.")
+
+                if not rustfs_client.bucket_exists(self.rustfs_bucket):
+                    rustfs_client.make_bucket(self.rustfs_bucket)
+                logging.debug("RustFS bucket '%s' ready", self.rustfs_bucket)
+
+                self.rustfs_client = rustfs_client
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to RustFS: %s", str(ex))
+                time.sleep(1)
+
+        try:
+            with open(os.path.join(self.rustfs_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_rustfs_cmd + ["logs"], stdout=f
+                )
+        except Exception:
+            logging.debug("Unable to get logs from docker.")
+
+        raise Exception("Can't wait RustFS to start")
+
     def create_minio_buckets(self, buckets, set_public_policy=False):
         """Create additional buckets on the standard MinIO (minio1).
 
@@ -4018,6 +4086,18 @@ class ClickHouseCluster:
                 self.up_called = True
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
+
+            if self.with_rustfs and self.base_rustfs_cmd:
+                os.makedirs(self.rustfs_dir, exist_ok=True)
+                rustfs_start_cmd = self.base_rustfs_cmd + common_opts
+                logging.info(
+                    "Trying to create RustFS instance by command %s",
+                    " ".join(map(str, rustfs_start_cmd)),
+                )
+                run_and_check(rustfs_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to RustFS...")
+                self.wait_rustfs_to_start()
 
             # Catalogs use the standard MinIO (minio1). Create their
             # buckets on it before starting the catalog services.
@@ -4780,6 +4860,7 @@ class ClickHouseInstance:
         with_mongo,
         with_redis,
         with_minio,
+        with_rustfs,
         with_remote_database_disk,
         with_azurite,
         with_jdbc_bridge,
@@ -4908,6 +4989,7 @@ class ClickHouseInstance:
         self.with_arrowflight = with_arrowflight
         self.with_redis = with_redis
         self.with_minio = with_minio
+        self.with_rustfs = with_rustfs
         self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
@@ -6336,6 +6418,9 @@ class ClickHouseInstance:
 
         if self.with_minio:
             depends_on.append("minio1")
+
+        if self.with_rustfs:
+            depends_on.append("rustfs1")
 
         if self.with_azurite:
             depends_on.append("azurite1")
