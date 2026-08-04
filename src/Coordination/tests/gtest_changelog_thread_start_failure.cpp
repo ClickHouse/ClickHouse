@@ -27,9 +27,15 @@ namespace DB::ErrorCodes
 /// with probability 3/8, so 32 iterations miss the bug with probability under 1e-6.
 TEST(ChangelogThreadStartFailure, ConstructorUnwindsCleanlyOnCannotScheduleTask)
 {
-    ChangelogDirTest dir("./logs_ctor_unwind");
+    /// Not `ChangelogDirTest`: it expects the directory to not exist, but a previous run of this
+    /// test may have aborted (that is exactly what it checks for) without running the cleanup.
+    const std::string changelog_dir = "./logs_ctor_unwind";
+    fs::remove_all(changelog_dir);
+    fs::create_directory(changelog_dir);
+    SCOPE_EXIT({ fs::remove_all(changelog_dir); });
+
     auto keeper_context = makeKeeperContext(/*use_lsmt_storage=*/ false);
-    keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", "./logs_ctor_unwind"));
+    keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", changelog_dir));
 
     CannotAllocateThreadFaultInjector::setFaultProbability(0.5);
     SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
