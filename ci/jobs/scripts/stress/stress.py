@@ -5,6 +5,7 @@ import argparse
 import logging
 import os
 import random
+import shlex
 import signal
 import subprocess
 import time
@@ -37,10 +38,11 @@ def escape_tsv_info(text: str) -> str:
 
 
 class RandomQueryKiller:
-    """Background thread that randomly kills queries and client processes during stress tests.
+    """Background thread that randomly kills queries, client processes and mutations
+    during stress tests.
 
-    This helps test that queries are cancelled correctly and handles scenarios
-    where the client unexpectedly disconnects (issue #39803).
+    This helps test that queries and mutations are cancelled correctly and handles
+    scenarios where the client unexpectedly disconnects (issue #39803).
     """
 
     def __init__(self, interval: float = 3.0):
@@ -65,8 +67,12 @@ class RandomQueryKiller:
             query_id = result.decode("utf-8").strip()
             if query_id:
                 logging.info("Killing random query: %s", query_id)
+                # query_id comes from the client (tests pass --query_id), so it is arbitrary
+                # text. TSV escaping is the same escaping a ClickHouse SQL string literal
+                # uses, so it goes between quotes as-is; only the shell needs quoting.
+                query = f"KILL QUERY WHERE query_id = '{query_id}' ASYNC"
                 call(
-                    f"clickhouse client --receive_timeout=5 -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
+                    f"clickhouse client --receive_timeout=5 -q {shlex.quote(query)} 2>/dev/null",
                     shell=True,
                     timeout=5,
                 )
@@ -95,17 +101,59 @@ class RandomQueryKiller:
         except Exception as e:
             logging.debug("Random client killer got exception (expected): %s", e)
 
+    def _kill_random_mutation(self) -> None:
+        """Select a random unfinished mutation and kill it."""
+        try:
+            # Skip mutations already killed: KILL MUTATION is not instantaneous, a mutation
+            # stays visible with is_killed=1 and is_done=0 while it finalizes.
+            result = check_output(
+                "clickhouse client --receive_timeout=5 -q \""
+                "SELECT mutation_id, database, table "
+                "FROM system.mutations "
+                "WHERE NOT is_done AND NOT is_killed "
+                "ORDER BY rand() LIMIT 1\" 2>/dev/null",
+                shell=True,
+                timeout=5,
+            )
+            line = result.decode("utf-8").strip()
+            if line:
+                mutation_id, db, table = line.split("\t")
+                logging.info("Killing random mutation: %s on %s.%s", mutation_id, db, table)
+                # The fields arrive TSV-escaped, which is the same escaping a ClickHouse SQL
+                # string literal uses, so they go between quotes as-is. The shell is what
+                # needs care: a table name may hold a double quote or a $(...), which would
+                # otherwise break the command or run inside it.
+                query = (
+                    f"KILL MUTATION WHERE database = '{db}' "
+                    f"AND table = '{table}' AND mutation_id = '{mutation_id}'"
+                )
+                # KILL MUTATION is ASYNC by default (ASTKillQueryQuery::sync = false), so it
+                # returns a kill_status row without waiting for the mutation to finalize. The
+                # subprocess cap stays above --receive_timeout so the client's own timeout is
+                # the one that governs.
+                call(
+                    f"clickhouse client --receive_timeout=10 -q {shlex.quote(query)} 2>/dev/null",
+                    shell=True,
+                    timeout=15,
+                )
+        except Exception as e:
+            # Errors are expected (server busy, no mutations, table dropped meanwhile, etc.)
+            logging.debug("Random mutation killer got exception (expected): %s", e)
+
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
-        logging.info("Random query/client killer started (interval: %.1fs)", self._interval)
+        logging.info("Random query/client/mutation killer started (interval: %.1fs)", self._interval)
         while not self._stop_event.is_set():
-            # Randomly choose to kill a query or a client process
-            if random.random() < 0.7:
+            # Randomly choose to kill a query, a client process or a mutation
+            r = random.random()
+            if r < 0.6:
                 self._kill_random_query()
-            else:
+            elif r < 0.8:
                 self._kill_random_client()
+            else:
+                self._kill_random_mutation()
             self._stop_event.wait(self._interval)
-        logging.info("Random query/client killer stopped")
+        logging.info("Random query/client/mutation killer stopped")
 
     def start(self) -> None:
         """Start the background killer thread."""
@@ -619,7 +667,7 @@ def parse_args() -> argparse.Namespace:
         "--no-random-query-killer",
         action="store_true",
         default=False,
-        help="Disable random query/client killer during stress test",
+        help="Disable random query/client/mutation killer during stress test",
     )
     return parser.parse_args()
 
