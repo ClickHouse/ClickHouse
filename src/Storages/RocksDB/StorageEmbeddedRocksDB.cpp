@@ -343,7 +343,7 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
             /// outside and no lease can be taken between the count read and the close, which needs
             /// this mutex shared. Never held across the wait below.
             std::lock_guard lock(rocksdb_ptr_mx);
-            bool leased;
+            bool leased = false;
             {
                 std::lock_guard leases_lock(full_scan_leases_mx);
                 leased = full_scan_leases != 0;
