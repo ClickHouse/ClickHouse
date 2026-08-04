@@ -838,6 +838,54 @@ def test_optimize_rejected_after_added_column(
     )
 
 
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_rejected_after_requiredness_change(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    Making a required field optional changes only `required` in the schema, not the type string, so
+    the guard has to look at requiredness as well. Without that the rewrite reaches the Parquet
+    writer, which casts the column to ColumnNullable for a now-optional field and aborts on the
+    still-required data.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_requiredness_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value String)",
+        2,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Positional delete so compaction would otherwise have work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    instance.query(f"ALTER TABLE {TABLE_NAME} MODIFY COLUMN value Nullable(String);")
+
+    err = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+    assert "NOT_IMPLEMENTED" in err, err
+
+    # Rejected before anything was rewritten, so the table still reads.
+    assert (
+        instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
+    )
+
+
 def test_compaction_never_cleans_up_the_commit_target():
     """
     The metadata name compaction commits to must never join the cleanup set. On a lost commit that

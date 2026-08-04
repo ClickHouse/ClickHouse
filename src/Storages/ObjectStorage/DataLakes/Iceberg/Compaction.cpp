@@ -221,7 +221,12 @@ static std::unordered_map<Int64, String> schemaFieldTypes(const Poco::JSON::Arra
     for (size_t i = 0; i < fields->size(); ++i)
     {
         auto field = fields->getObject(static_cast<UInt32>(i));
-        walkTypeNode(field->getValue<Int64>(Iceberg::f_id), field, Iceberg::f_type, id_to_type);
+        auto id = field->getValue<Int64>(Iceberg::f_id);
+        walkTypeNode(id, field, Iceberg::f_type, id_to_type);
+        /// Requiredness is part of the physical type: the rewrite writes each column under the
+        /// current schema's optionality, and a mismatch aborts in the Parquet writer.
+        if (field->has(Iceberg::f_required))
+            id_to_type[id] += field->getValue<bool>(Iceberg::f_required) ? "!" : "?";
     }
     return id_to_type;
 }
