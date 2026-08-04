@@ -44,7 +44,9 @@ CREATE TABLE t_04048_alias_proj
     b     UInt32,
     ab_sum UInt64 ALIAS a + b
 )
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id
+-- The INSERT below must build the projection, otherwise it never reaches the bug.
+SETTINGS materialize_projections_on_insert = 1;
 
 ALTER TABLE t_04048_alias_proj ADD PROJECTION p1 (SELECT ab_sum ORDER BY a);
 
@@ -61,7 +63,8 @@ CREATE TABLE t_04048_alias_proj
     a     UInt32,
     b     UInt32
 )
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id
+SETTINGS materialize_projections_on_insert = 1;
 
 ALTER TABLE t_04048_alias_proj ADD COLUMN ab_sum UInt64 ALIAS a + b;
 ALTER TABLE t_04048_alias_proj ADD PROJECTION p1 (SELECT ab_sum ORDER BY a);
