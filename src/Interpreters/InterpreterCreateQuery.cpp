@@ -1649,24 +1649,16 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
-/// Gates dictionaries with the `XGBOOST` layout. The layout is experimental, and it exists only in builds
-/// with XGBoost support - two conditions that ATTACH has to treat differently:
-///  - the `enable_xgboost` setting guards bringing a new dictionary into existence, so an ATTACH,
-///    which only reinstates a dictionary that was created earlier (on startup, or from a backup), bypasses it.
-///    Otherwise a session with the setting off could not attach metadata that is already on disk.
-///  - a build without XGBoost, on the other hand, makes the dictionary unusable however it got here: there is
-///    no layout to train, and `predictXGBoost` - the only way to query such a dictionary - is not even
-///    registered. ATTACH is rejected too, rather than persisting metadata for a dictionary that can never
-///    answer a query. This cannot be left to the layout factory, because with `dictionaries_lazy_load`
-///    (the default) the factory is not reached until the first load, and the ATTACH would report success.
+/// Blocks dictionary creation in case `enable_xgboost` is disabled, or when ClickHouse wasn't build
+// with XGBoost support
 void checkXGBoostLayoutIsAllowed(const ASTCreateQuery & create, [[maybe_unused]] const ContextPtr & context)
 {
-    if (!create.is_dictionary || !create.dictionary || !create.dictionary->layout
-        || Poco::toLower(create.dictionary->layout->layout_type) != "xgboost")
+    if (!(create.is_dictionary && create.dictionary && create.dictionary->layout
+          && Poco::toLower(create.dictionary->layout->layout_type) == "xgboost"))
         return;
 
 #if USE_XGBOOST
-    if (!create.attach && !context->getSettingsRef()[Setting::enable_xgboost])
+    if (!context->getSettingsRef()[Setting::enable_xgboost])
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "The XGBOOST dictionary layout is experimental. Set `enable_xgboost = 1` to enable it");
@@ -1696,8 +1688,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "Temporary objects (tables/views) cannot be created ON CLUSTER."
             "You should not specify a cluster for a temporary objects.");
 
-    /// For a full-syntax query the layout is known here. A short `ATTACH DICTIONARY name` carries no
-    /// definition yet, so it is checked again once the metadata has been read (see below).
     checkXGBoostLayoutIsAllowed(create, getContext());
 
     String current_database = getContext()->getCurrentDatabase();
@@ -1824,11 +1814,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// Compatibility setting which should be enabled by default on attach
         /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types
         getContext()->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
-
-        /// Only now is the layout of a short `ATTACH DICTIONARY name` known - the check at the top of this
-        /// function saw a query without a definition. `create.attach` is set, so this only rejects the
-        /// dictionary in a build without XGBoost support.
-        checkXGBoostLayoutIsAllowed(create, getContext());
     }
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
