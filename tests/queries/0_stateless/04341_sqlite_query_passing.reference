@@ -24,6 +24,8 @@ val	Nullable(Float64)
 -- external_table_strict_query: no outer filter is allowed
 4
 -- external_table_strict_query: a predicate on the joined local side is not a filter on the source
+1
+1
 2
 1
 -- external_table_strict_query: a predicate on the source is rejected in every shape

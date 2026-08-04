@@ -52,8 +52,11 @@ SELECT '-- external_table_strict_query: no outer filter is allowed';
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) SETTINGS external_table_strict_query = 1;
 
 SELECT '-- external_table_strict_query: a predicate on the joined local side is not a filter on the source';
-CREATE TABLE local_r (id Int64) ENGINE = Memory;
-INSERT INTO local_r VALUES (1), (2);
+-- The flag column is absent from the passed query, so it cannot be confused with a source column.
+CREATE TABLE local_r (id Int64, flag UInt8) ENGINE = Memory;
+INSERT INTO local_r VALUES (1, 1), (2, 0);
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE r.flag SETTINGS external_table_strict_query = 1;
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE r.flag = 1 SETTINGS external_table_strict_query = 1;
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE r.id SETTINGS external_table_strict_query = 1;
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE r.id = 1 SETTINGS external_table_strict_query = 1;
 
