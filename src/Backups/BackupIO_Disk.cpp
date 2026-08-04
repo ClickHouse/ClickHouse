@@ -11,6 +11,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderDisk"))
     , disk(disk_)
@@ -177,6 +182,20 @@ void BackupWriterDisk::copyFile(const String & destination, const String & sourc
     disk->copyFile(src_file_path, *disk, dest_file_path, read_settings, write_settings);
 }
 
+/// `getBlobPath` returns a disk-type-dependent representation, so a plain-local disk resolving a
+/// path to anything but a single filesystem path breaks the assumption durability relies on. Fail
+/// instead of skipping the fsync, which would report success without persisting anything.
+static String getLocalBlobPath(const IDisk & disk, const fs::path & path)
+{
+    auto blob_path = disk.getBlobPath(path);
+    if (blob_path.size() != 1)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected a single blob path for {} on local disk {}, got {}",
+            path.string(), disk.getName(), blob_path.size());
+    return blob_path[0];
+}
+
 void BackupWriterDisk::syncFileToDisk(const String & file_name)
 {
     /// A completed upload to object storage is already durable, and only a plain-local destination
@@ -186,9 +205,7 @@ void BackupWriterDisk::syncFileToDisk(const String & file_name)
         return;
 
     auto file_path = root_path / file_name;
-    auto blob_path = disk->getBlobPath(file_path);
-    if (blob_path.size() == 1)
-        fsyncBackupFileContents(blob_path[0]);
+    fsyncBackupFileContents(getLocalBlobPath(*disk, file_path));
 
     /// Remember the disk-relative ancestor directories of this file (down to the disk root ""),
     /// so `syncDirectoriesToDisk` can persist their entries.
@@ -219,11 +236,7 @@ void BackupWriterDisk::syncDirectoriesToDisk()
     /// `getBlobPath` resolves the disk-relative path (including the disk root "") to the
     /// absolute filesystem path for a local disk.
     for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
-    {
-        auto blob_path = disk->getBlobPath(*it);
-        if (blob_path.size() == 1)
-            fsyncBackupDirectory(blob_path[0]);
-    }
+        fsyncBackupDirectory(getLocalBlobPath(*disk, *it));
 }
 
 }

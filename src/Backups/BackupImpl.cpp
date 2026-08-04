@@ -1316,28 +1316,31 @@ void BackupImpl::finalizeWriting()
         writeBackupMetadata();
         closeArchive(/* finalize= */ true);
         setCompressedSize();
+    }
 
+    /// The backup is published at this point: `.backup` is readable at the destination, or the
+    /// archive has been finalized. A published backup must never be removed as a failed one, so arm
+    /// the guard read by `setIsCorrupted` before the durability steps below, which can still throw.
+    writing_finalized = true;
+
+    if (params.fsync_backup_files && writer)
+    {
         /// Sync the manifest (or, for archives, the archive file) last, after all data files were
         /// synced in writeFile, so a persisted manifest never precedes its payload. Only the
         /// initiator writes the manifest.
-        if (params.fsync_backup_files && writer)
+        if (!params.is_internal_backup)
             writer->syncFileToDisk(use_archive ? archive_params.archive_name : ".backup");
-    }
 
-    /// Every writer syncs its directory entries, including the internal writers of BACKUP ON
-    /// CLUSTER, which write their own data files. This must run before the lock file is removed:
-    /// on failure `tryRemoveAllFiles` cleans up only while `checkLockFile` still proves this
-    /// backup owns the destination.
-    if (params.fsync_backup_files && writer)
+        /// Every writer syncs its directory entries, including the internal writers of BACKUP ON
+        /// CLUSTER, which write their own data files.
         writer->syncDirectoriesToDisk();
+    }
 
     if (!params.is_internal_backup)
     {
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
     }
-
-    writing_finalized = true;
 }
 
 
