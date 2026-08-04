@@ -56,18 +56,13 @@ UInt64 PuffinFilesCacheCell::calculateMemorySize(bool is_empty_deletion_vector_,
     if (is_empty_deletion_vector_)
         return EMPTY_DELETION_VECTOR_WEIGHT;
 
-    if (!excluded_rows_)
-        return 0;
-
-    return excluded_rows_->getAllocatedBytes();
+    return (excluded_rows_ ? excluded_rows_->getAllocatedBytes() : 0) + SIZE_IN_MEMORY_OVERHEAD;
 }
 
 PuffinFilesCacheCell::PuffinFilesCacheCell(DataLakeObjectMetadata::ExcludedRowsPtr excluded_rows_)
     : excluded_rows(std::move(excluded_rows_))
     , is_empty_deletion_vector(!excluded_rows)
-    , memory_bytes(
-          calculateMemorySize(is_empty_deletion_vector, excluded_rows)
-          + (is_empty_deletion_vector ? 0 : SIZE_IN_MEMORY_OVERHEAD))
+    , memory_bytes(calculateMemorySize(is_empty_deletion_vector, excluded_rows))
 {
 }
 

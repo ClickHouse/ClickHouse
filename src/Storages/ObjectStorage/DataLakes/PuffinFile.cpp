@@ -351,6 +351,7 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
     }
     catch (const Exception &)
     {
+        /// catch `MEMORY_LIMIT_EXCEEDED` and other possible exceptions from `MemoryTracker`
         throw;
     }
     catch (const Poco::Exception & e)

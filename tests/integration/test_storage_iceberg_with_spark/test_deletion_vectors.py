@@ -13,12 +13,6 @@ def get_array(query_result: str):
     return sorted([int(x) for x in query_result.strip().split("\n") if x])
 
 
-def expected_complex_ids():
-    ids = list(range(20, 90)) + list(range(100, 150))
-    ids += [x for x in range(200, 250) if x not in {205, 210, 220}]
-    return sorted(ids)
-
-
 def upload_table(cluster, storage_type, table_name):
     default_upload_directory(
         cluster,
@@ -235,6 +229,12 @@ def test_deletion_vectors_complex(started_cluster_iceberg_with_spark, storage_ty
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     table_name = "test_deletion_vectors_complex_" + storage_type + "_" + get_uuid_str()
+
+    def expected_complex_ids():
+        ids = list(range(20, 90)) + list(range(100, 150))
+        ids += [x for x in range(200, 250) if x not in {205, 210, 220}]
+        return sorted(ids)
+
     expected_ids = expected_complex_ids()
 
     spark.sql(
