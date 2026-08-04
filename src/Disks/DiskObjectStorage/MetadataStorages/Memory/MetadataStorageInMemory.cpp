@@ -969,7 +969,14 @@ void MetadataStorageInMemoryTransaction::addBlobToMetadata(const std::string & p
             entry = &metadata_storage.files[path];
         }
         recordBlobGroupBefore(entry->blob_group);
-        entry->blob_group->objects.push_back(object);
+        /// An empty append must not record the object. `supportsEmptyFilesWithoutBlobs()` is true
+        /// for this backend, so `DiskObjectStorageTransaction` cancels the blob write when nothing
+        /// was written and the backing object is never created; appending the zero-byte
+        /// `StoredObject` here would leave the file pointing at a blob that does not exist, and a
+        /// later read of the file would fail with `FILE_DOESNT_EXIST`. The file entry itself is
+        /// still created above: the first append must materialize the file even when it is empty.
+        if (object.bytes_size > 0)
+            entry->blob_group->objects.push_back(object);
         entry->blob_group->last_modified = Poco::Timestamp();
     });
 }

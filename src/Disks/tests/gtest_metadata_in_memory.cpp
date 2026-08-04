@@ -536,3 +536,47 @@ TEST_F(MetadataInMemoryTest, TestSetReadOnlyIsNoOpButValidatesExistence)
         EXPECT_ANY_THROW(transaction->commit(DB::NoCommitOptions{}));
     }
 }
+
+/// An empty append records no phantom blob. `supportsEmptyFilesWithoutBlobs()` is true for this
+/// backend, so `DiskObjectStorageTransaction` cancels the blob write of an empty append and the
+/// backing object is never created, yet it still calls `addBlobToMetadata` with the zero-byte
+/// `StoredObject` so that a first append materializes the file. Recording that object would leave
+/// the file pointing at a blob that does not exist, and a later read (e.g. of a `StripeLog` table
+/// after `INSERT ... SELECT ... LIMIT 0`) would fail with `FILE_DOESNT_EXIST`.
+TEST_F(MetadataInMemoryTest, TestEmptyAppendCreatesFileWithoutPhantomBlob)
+{
+    auto metadata = getMetadataStorage();
+
+    /// First append of zero bytes: the file must be created, but with no objects.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->addBlobToMetadata(
+            "file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("phantom1").serialize(), "file", 0));
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_TRUE(metadata->existsFile("file"));
+    EXPECT_TRUE(metadata->getStorageObjects("file").empty());
+    EXPECT_EQ(metadata->getFileSize("file"), 0);
+
+    /// A real append is recorded as usual.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->addBlobToMetadata(
+            "file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("real").serialize(), "file", 42));
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    ASSERT_EQ(metadata->getStorageObjects("file").size(), 1);
+    EXPECT_EQ(metadata->getStorageObjects("file")[0].remote_path, "real");
+    EXPECT_EQ(metadata->getFileSize("file"), 42);
+
+    /// An empty append after real data must not append a phantom object either.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->addBlobToMetadata(
+            "file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("phantom2").serialize(), "file", 0));
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    ASSERT_EQ(metadata->getStorageObjects("file").size(), 1);
+    EXPECT_EQ(metadata->getStorageObjects("file")[0].remote_path, "real");
+    EXPECT_EQ(metadata->getFileSize("file"), 42);
+}
