@@ -7012,7 +7012,18 @@ void StorageReplicatedMergeTree::alter(
 
             /// Just change settings
             if (settings_are_changed)
+            {
                 changeSettings(metadata_copy.settings_changes, table_lock_holder);
+
+                /// changeSettings is the sole writer of the setting-derived escape fields and has
+                /// already committed them; carry them into metadata_copy so the comment commit
+                /// below does not revert the index filename policy (metadata_copy was taken from
+                /// current_metadata before changeSettings and never had them updated).
+                auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
+                metadata_copy.escape_index_filenames = committed_metadata->escape_index_filenames;
+                for (auto & index : metadata_copy.secondary_indices)
+                    index.escape_filenames = committed_metadata->escape_index_filenames;
+            }
 
             /// The comment is not replicated as of today, but we can implement it later.
             if (comment_is_changed)
