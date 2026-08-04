@@ -568,31 +568,57 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 int RemoteQueryExecutor::sendQueryAsync()
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    LockAndBlocker lock(was_cancelled_mutex);
-    if (was_cancelled)
-        return -1;
+    while (true)
+    {
+        try
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return -1;
 
-    if (!read_context)
-        read_context = std::make_unique<ReadContext>(
-            *this,
-            /*suspend_when_query_sent*/ true,
-            read_packet_type_separately);
+            if (!read_context)
+                read_context = std::make_unique<ReadContext>(
+                    *this,
+                    /*suspend_when_query_sent*/ true,
+                    read_packet_type_separately);
 
-    /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
-    /// because we can still be in process of sending scalars or external tables.
-    if (read_context->isQuerySent())
-        return -1;
+            /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
+            /// because we can still be in process of sending scalars or external tables.
+            if (read_context->isQuerySent())
+                return -1;
 
-    read_context->resume();
+            read_context->resume();
 
-    if (read_context->isQuerySent())
-        return -1;
+            if (read_context->isQuerySent())
+                return -1;
 
-    ProfileEvents::increment(ProfileEvents::SuspendSendingQueryToShard); /// Mostly for testing purposes.
-    return read_context->getFileDescriptor();
+            ProfileEvents::increment(ProfileEvents::SuspendSendingQueryToShard); /// Mostly for testing purposes.
+            return read_context->getFileDescriptor();
+        }
+        catch (const Exception & e)
+        {
+            if (!canRetryAfterNetworkError(e))
+                throw;
+
+            prepareRetryAfterNetworkError(e);
+        }
+    }
 #else
-    sendQuery();
-    return -1;
+    while (true)
+    {
+        try
+        {
+            sendQuery();
+            return -1;
+        }
+        catch (const Exception & e)
+        {
+            if (!canRetryAfterNetworkError(e))
+                throw;
+
+            prepareRetryAfterNetworkError(e);
+        }
+    }
 #endif
 }
 
