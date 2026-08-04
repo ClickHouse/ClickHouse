@@ -311,13 +311,16 @@ struct ToDateTransformFromSecondsOrDays
 
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
         {
-            if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
+            /// Compare (and format) floating-point sources in the `Float64` domain: it represents every
+            /// `BFloat16` and `Float32` value and `MAX_DATETIME_TIMESTAMP` exactly, while an implicit
+            /// conversion of the bound to the source type would be inexact, and `fmt` cannot format `BFloat16`.
+            if constexpr (is_floating_point<FromType>)
             {
-                if constexpr (is_floating_point<FromType>)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
-                else
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
+                if (static_cast<Float64>(from) > static_cast<Float64>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Float64>(from));
             }
+            else if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
         }
 
         if constexpr (is_signed_v<FromType>)
@@ -326,7 +329,7 @@ struct ToDateTransformFromSecondsOrDays
                 if constexpr (!overflow_throw)
                     return 0;
                 else if constexpr (is_floating_point<FromType>)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Float64>(from));
                 else
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
             }
@@ -383,9 +386,10 @@ struct ToDate32TransformFromSecondsOrDays
                 if constexpr (overflow_throw)
                 {
                     /// A float-to-integer cast of a NaN or of a value outside the range of `Int64` is undefined
-                    /// behavior, so format floating-point sources directly.
+                    /// behavior, so format floating-point sources in the `Float64` domain (`fmt` cannot
+                    /// format `BFloat16`).
                     if constexpr (is_floating_point<FromType>)
-                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Float64>(from));
                     else
                         throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
                 }
@@ -395,13 +399,18 @@ struct ToDate32TransformFromSecondsOrDays
 
         /// Date32 spans [1900, 2299] (unlike DateTime64, which now goes up to 9999), so it keeps its own upper bound.
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATE32_TIMESTAMP)
-            if (from > MAX_DATE32_TIMESTAMP) [[unlikely]]
+        {
+            /// Compare (and format) floating-point sources in the `Float64` domain: it represents every
+            /// `BFloat16` and `Float32` value and `MAX_DATE32_TIMESTAMP` exactly, while an implicit
+            /// conversion of the bound to the source type would be inexact, and `fmt` cannot format `BFloat16`.
+            if constexpr (is_floating_point<FromType>)
             {
-                if constexpr (is_floating_point<FromType>)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
-                else
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
+                if (static_cast<Float64>(from) > static_cast<Float64>(MAX_DATE32_TIMESTAMP)) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Float64>(from));
             }
+            else if (from > MAX_DATE32_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
+        }
 
         if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
             if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -482,7 +491,15 @@ struct ToDateTimeTransform64Signed
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < 0 || from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
+            /// Compare (and format) floating-point sources in the `Float64` domain: it represents every
+            /// `BFloat16` and `Float32` value and `MAX_DATETIME_TIMESTAMP` exactly, while an implicit
+            /// conversion of the bound to the source type would be inexact, and `fmt` cannot format `BFloat16`.
+            if constexpr (is_floating_point<FromType>)
+            {
+                if (from < 0 || static_cast<Float64>(from) > static_cast<Float64>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", static_cast<Float64>(from));
+            }
+            else if (from < 0 || from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
 
@@ -558,8 +575,9 @@ struct ToTimeTransform64
         /// This transform is used for unsigned sources only, so no lower-bound check is needed.
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
+            /// Format through `UInt64`: `fmt` cannot format `char8_t` (`UInt8`) or the wide integers directly.
             if (from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", static_cast<UInt64>(from));
         }
 
         /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
@@ -585,8 +603,18 @@ struct ToTimeTransform64Signed
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
+            /// Compare (and format) floating-point sources in the `Float64` domain: it represents every
+            /// `BFloat16` and `Float32` value and `MAX_TIME_TIMESTAMP` exactly, while an implicit
+            /// conversion of the bound to the source type would be inexact, and `fmt` cannot format `BFloat16`.
+            if constexpr (is_floating_point<FromType>)
+            {
+                if (static_cast<Float64>(from) < static_cast<Float64>(-1 * MAX_TIME_TIMESTAMP)
+                    || static_cast<Float64>(from) > static_cast<Float64>(MAX_TIME_TIMESTAMP)) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", static_cast<Float64>(from));
+            }
+            /// Format through `Int64`: `fmt` cannot format the wide integers directly, and the bounds fit `Int64`.
+            else if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", static_cast<Int64>(from));
         }
 
         if constexpr (is_floating_point<FromType>)
@@ -631,7 +659,9 @@ struct ToDateTime64TransformUnsigned
         const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from > max_whole) [[unlikely]]
+            /// `from` is unsigned and `max_whole` is always non-negative here: compare in the unsigned domain
+            /// to avoid a signed/unsigned comparison warning.
+            if (static_cast<UInt64>(from) > static_cast<UInt64>(max_whole)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
             else
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
@@ -697,7 +727,9 @@ struct ToDateTime64TransformFloat
         const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < min_whole || from > max_whole) [[unlikely]]
+            /// Compare in the source floating-point domain (the explicit casts mirror the clamps below);
+            /// an implicit conversion of the `time_t` bounds to the source type would warn about inexactness.
+            if (from < static_cast<FromType>(min_whole) || from > static_cast<FromType>(max_whole)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
@@ -821,7 +853,11 @@ struct ToTime64TransformFloat
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            /// `Time64` is bounded by `MAX_TIME_TIMESTAMP` (999:59:59), not by the DateTime64 calendar range —
+            /// the same bounds the clamp below and the integer transforms use. Compare in the `Float64` domain:
+            /// it represents every `Float32` value and `MAX_TIME_TIMESTAMP` exactly.
+            if (static_cast<Float64>(from) < static_cast<Float64>(-1 * MAX_TIME_TIMESTAMP)
+                || static_cast<Float64>(from) > static_cast<Float64>(MAX_TIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
