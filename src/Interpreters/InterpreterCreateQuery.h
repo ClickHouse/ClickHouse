@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include <Core/NamesAndAliases.h>
+#include <Core/QualifiedTableName.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/IInterpreter.h>
@@ -125,6 +126,11 @@ private:
     /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.
     bool shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const;
 
+    /// The name of the single source table an atomically populated materialized view would be subscribed
+    /// to (the table of its FROM clause), or std::nullopt when the view has no such single source. Pure
+    /// AST analysis - it does not touch the catalog, so it can be called before the view is created.
+    std::optional<QualifiedTableName> tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const;
+
     /// Resolves the single source table that an atomically populated materialized view is subscribed to,
     /// if it can provide a pinned point-in-time snapshot. Returns nullptr when atomic population does not
     /// apply: the view has no single source table, the source does not exist yet, or the source cannot be
@@ -148,10 +154,16 @@ private:
     /// `ddl_guard` is the guard of the view being created, still held by the caller. It is kept until the
     /// view is subscribed to its source and released before the (potentially long) population runs, so that
     /// concurrent DDL on the view name cannot slip in between publishing the view and subscribing it.
-    std::optional<BlockIO> fillMaterializedViewAtomically(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard);
+    ///
+    /// `source_ddl_guard` is the guard of the source table's name, held by the caller across the cut for
+    /// the same reason on the source side: without it, a concurrent RENAME or EXCHANGE of the source could
+    /// change the owner of the name between resolving the source and registering the subscription (which
+    /// is keyed by name), wiring the view to one table while backfilling it from another, or leaving the
+    /// subscription on a name nobody owns. It is likewise released before the population runs.
+    std::optional<BlockIO> fillMaterializedViewAtomically(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard);
 
     /// The body of fillMaterializedViewAtomically; the wrapper adds the drop-on-failure rollback.
-    std::optional<BlockIO> fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard);
+    std::optional<BlockIO> fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 

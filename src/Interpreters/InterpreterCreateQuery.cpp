@@ -1986,6 +1986,31 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return doCreateOrReplaceTable(create, properties, mode);
     }
 
+    /// An atomically populated materialized view also needs the DDL guard of its *source table's name*
+    /// held across the cut (see fillMaterializedViewAtomically): the subscription registered there is
+    /// keyed by name, so a concurrent RENAME or EXCHANGE of the source between resolving it and
+    /// registering the subscription would wire the view to whatever table owns the name afterwards while
+    /// the backfill reads the table that owned it before - or leave the subscription on a name nobody
+    /// owns. Queries that take several DDL guards (RENAME, EXCHANGE) acquire them in ascending
+    /// (database, table) order, and doCreateTable below takes the view's own guard, so to avoid deadlocks
+    /// the source guard is taken before the view's when the source name orders first and after it
+    /// otherwise.
+    DDLGuardPtr source_ddl_guard;
+    std::optional<QualifiedTableName> populate_source_name;
+    bool populate_atomically = shouldPopulateMaterializedViewAtomically(create);
+    if (populate_atomically && likely(need_ddl_guard))
+        populate_source_name = tryGetAtomicPopulateSourceName(create);
+
+    auto lock_populate_source_name = [&]
+    {
+        source_ddl_guard = DatabaseCatalog::instance().getDDLGuard(populate_source_name->database, populate_source_name->table, nullptr);
+    };
+
+    if (populate_source_name
+        && UniqueTableName{populate_source_name->database, populate_source_name->table}
+            < UniqueTableName{create.getDatabase(), create.getTable()})
+        lock_populate_source_name();
+
     /// Actually creates table
     bool created = doCreateTable(create, properties, ddl_guard, mode);
 
@@ -2007,13 +2032,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// the just-published view could run while we wait for the source's exclusive lock, and the subscription
     /// registered afterwards would name a view that no longer exists there - which stops
     /// `DatabaseCatalog::getReadyDependentViews` from returning any view of that source.
-    if (shouldPopulateMaterializedViewAtomically(create))
+    if (populate_atomically)
     {
-        if (auto result = fillMaterializedViewAtomically(create, ddl_guard))
+        if (populate_source_name && !source_ddl_guard)
+            lock_populate_source_name();
+
+        if (auto result = fillMaterializedViewAtomically(create, ddl_guard, source_ddl_guard))
             return std::move(*result);
     }
 
     ddl_guard.reset();
+    source_ddl_guard.reset();
 
     /// If table has dependencies - add them to the graph
     addTableDependencies(create, query_ptr, getContext());
@@ -2909,10 +2938,9 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
         && getContext()->getSettingsRef()[Setting::materialized_views_populate_atomically];
 }
 
-StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCreateQuery & create)
+std::optional<QualifiedTableName> InterpreterCreateQuery::tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const
 {
     auto context = getContext();
-
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
 
@@ -2921,7 +2949,30 @@ StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCre
     /// subquery, a table function, or a join without a clear driving table), there is nothing to race
     /// against, so atomic population does not apply.
     if (!ref_dependencies.mv_from_dependency)
+        return std::nullopt;
+
+    return ref_dependencies.mv_from_dependency->getQualifiedName();
+}
+
+StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCreateQuery & create)
+{
+    auto context = getContext();
+
+    QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+
+    if (!ref_dependencies.mv_from_dependency)
         return nullptr;
+
+    /// The caller holds the DDL guard of the source's name, so from here until the guard is released the
+    /// name cannot be renamed, exchanged or dropped. But the per-query storage cache may already hold a
+    /// mapping for the name that was resolved *before* the guard was acquired - validating the view's
+    /// SELECT resolves the source - and a RENAME or EXCHANGE may have changed the owner of the name in
+    /// between. Drop the cache entry so the resolution below sees the current owner; it re-fills the
+    /// cache, so every later read of this query (in particular the population's SELECT) resolves the name
+    /// to the same table that is locked, subscribed and snapshotted here.
+    if (context->hasQueryContext())
+        context->getQueryContext()->dropStorageCacheEntry(*ref_dependencies.mv_from_dependency);
 
     auto source = DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context);
 
@@ -2976,17 +3027,21 @@ constexpr std::array<std::string_view, 4> settings_incompatible_with_pinned_snap
 
 }
 
-std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard)
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard)
 {
     try
     {
-        return fillMaterializedViewAtomicallyImpl(create, ddl_guard);
+        return fillMaterializedViewAtomicallyImpl(create, ddl_guard, source_ddl_guard);
     }
     catch (...)
     {
         /// The rollback `DROP` below takes the DDL guard of this very view, so the guard we still hold (when
         /// the failure happened before the cut) has to be released first, otherwise the drop deadlocks on it.
+        /// The source's guard has to go too: holding it while acquiring the view's guard inside the drop
+        /// could invert the canonical (database, table) acquisition order and deadlock against a concurrent
+        /// RENAME or EXCHANGE, and the rollback does not need the source name to be stable.
         ddl_guard.reset();
+        source_ddl_guard.reset();
 
         /// doCreateTable has already created and started the view, but the atomic cut failed - most
         /// realistically `lockExclusively` timed out on a busy source, before `addDependencies` subscribed
@@ -3044,7 +3099,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
     }
 }
 
-std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard)
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard)
 {
     auto source = getValidatedAtomicPopulateSource(create);
     if (!source)
@@ -3123,7 +3178,14 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     /// silently stopping the population of *every* view of that source. The population below can take
     /// arbitrarily long, and it does not need the guard: it is an ordinary `INSERT` into the view, so a
     /// concurrent `DROP` of the view during the population is handled exactly as for any other insert.
+    ///
+    /// The source's DDL guard is released for the same reason: it kept the owner of the source's name
+    /// stable from resolving the source (in `getValidatedAtomicPopulateSource`) until the name-keyed
+    /// subscription right above, so the subscription is guaranteed to be registered on the table that was
+    /// locked and snapshotted. From now on a `RENAME` of the source carries the subscription along with
+    /// the name change, like for any other materialized view, so the population does not need the guard.
     ddl_guard.reset();
+    source_ddl_guard.reset();
 
     /// Pin the snapshot so the population's SELECT reads exactly the captured data. The population's
     /// SELECT is analyzed and executed under contexts derived from the shared query context
