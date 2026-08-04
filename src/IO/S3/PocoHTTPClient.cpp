@@ -7,6 +7,8 @@
 #if USE_AWS_S3
 
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/GCSConditionalDialect.h>
+#include <IO/S3/GOOG4Signer.h>
 #include <IO/S3/Requests.h>
 
 #include <algorithm>
@@ -24,6 +26,7 @@
 #include <IO/S3/ProviderType.h>
 #include <Interpreters/Context.h>
 
+#include <aws/core/auth/AWSCredentialsProvider.h>
 #include <aws/core/http/HttpRequest.h>
 #include <smithy/tracing/NoopTelemetryProvider.h>
 #include <aws/core/http/HttpResponse.h>
@@ -89,6 +92,7 @@ namespace DB::ErrorCodes
     extern const int DNS_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace HistogramMetrics
@@ -221,11 +225,13 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
     , s3_use_adaptive_timeouts(client_configuration.s3_use_adaptive_timeouts)
+    , expect_continue_min_bytes(client_configuration.expect_continue_min_bytes)
     , http_max_fields(client_configuration.http_max_fields)
     , http_max_field_name_size(client_configuration.http_max_field_name_size)
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
+    , gcs_conditional_dialect(client_configuration.gcs_conditional_dialect)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
@@ -617,6 +623,42 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             Stopwatch watch;
 
+            /// A conditional write (`If-None-Match` / `If-Match`) that loses its precondition can waste
+            /// a LARGE body: streaming multi-MB into a request the server has already decided to reject
+            /// makes some stores (e.g. RustFS) close mid-upload or answer a retryable 500, which the SDK
+            /// then RETRIES up to `s3_retry_attempts` (500) times — a ~40-min stall that hangs CA INSERTs
+            /// (see B118). `Expect: 100-continue` lets the server reject (e.g. 412) BEFORE the body, so we
+            /// skip the doomed upload.
+            ///
+            /// `expect_continue_min_bytes` is the negotiation gate: `0` (the default, carried by every
+            /// non-CAS S3 client) DISABLES it entirely — non-CAS conditional PUTs keep upstream wire
+            /// behaviour and this whole block, INCLUDING the body-size probe, is skipped. A positive value
+            /// negotiates Expect for a conditional PUT whose body is at least that many bytes; only a CAS
+            /// conditional-write client raises it (the single-attempt client built in `ObjectStorageBackend`),
+            /// so the scope is exactly CAS-owned conditional writes. `x-goog-if-generation-match` is the GCS
+            /// conditional dialect's rename of If-None-Match / If-Match (applied BEFORE this point).
+            bool conditional_write = false;
+            if (expect_continue_min_bytes > 0
+                && method == Poco::Net::HTTPRequest::HTTP_PUT
+                && (poco_request.has("if-none-match") || poco_request.has("if-match")
+                    || poco_request.has("x-goog-if-generation-match")))
+            {
+                size_t content_body_size = 0;
+                if (const auto & content_body = request.GetContentBody())
+                {
+                    content_body->clear();
+                    content_body->seekg(0, std::ios_base::end);
+                    const auto end_pos = content_body->tellg();
+                    content_body->clear();
+                    content_body->seekg(0, std::ios_base::beg);
+                    if (end_pos > 0)
+                        content_body_size = static_cast<size_t>(end_pos);
+                }
+                conditional_write = content_body_size >= expect_continue_min_bytes;
+            }
+            if (conditional_write)
+                poco_request.setExpectContinue(true);
+
             auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
@@ -624,7 +666,20 @@ void PocoHTTPClient::makeRequestInternalImpl(
             observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
 
-            if (request.GetContentBody())
+            /// With `Expect: 100-continue`, peek the interim response after the headers. `true` means
+            /// the server sent `100 Continue` (proceed with the body); `false` means it already sent a
+            /// FINAL response (now in `poco_response`) and the body must NOT be sent. `receiveResponse`
+            /// below is still called in both cases (Poco contract) and skips re-reading the headers.
+            bool skip_body = false;
+            if (conditional_write)
+            {
+                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ true));
+                skip_body = !session->peekResponse(poco_response);
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Expect: 100-continue peek -> {}", skip_body ? "final response, skipping body" : "100 Continue");
+            }
+
+            if (request.GetContentBody() && !skip_body)
             {
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Writing request body.");
@@ -693,6 +748,17 @@ void PocoHTTPClient::makeRequestInternalImpl(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
+            auto apply_gcs_generation_etag_override = [&]
+            {
+                if (gcs_conditional_dialect)
+                {
+                    /// The generation IS the incarnation token on GCS: surface it as the ETag so the
+                    /// entire existing ETag/token plumbing works unchanged (see GCSConditionalDialect.h).
+                    if (auto etag_override = gcsGenerationETagOverride(poco_response))
+                        response->AddHeader("ETag", *etag_override);
+                }
+            };
+
             if (enable_s3_requests_logging)
             {
                 WriteBufferFromOwnString headers_ss;
@@ -701,12 +767,14 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     response->AddHeader(header_name, header_value);
                     headers_ss << header_name << ": " << header_value << "; ";
                 }
+                apply_gcs_generation_etag_override();
                 LOG_TEST(log, "Received headers: {}", headers_ss.str());
             }
             else
             {
                 for (const auto & [header_name, header_value] : poco_response)
                     response->AddHeader(header_name, header_value);
+                apply_gcs_generation_etag_override();
             }
 
             /// Request is successful but for some special requests we can have actual error message in body
@@ -835,6 +903,9 @@ void PocoHTTPClientGCPOAuth::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
+    if (gcs_conditional_dialect)
+        applyGcsConditionalDialectToRequest(request);
+
     {
         std::lock_guard lock(mutex);
         if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
@@ -920,6 +991,26 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFr
         .token = std::move(result.access_token),
         .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10)
     };
+}
+
+PocoHTTPClientGCSHMAC::PocoHTTPClientGCSHMAC(const PocoHTTPClientConfiguration & client_configuration)
+    : PocoHTTPClient(client_configuration)
+    , credentials_provider(client_configuration.gcs_hmac_credentials_provider)
+{
+    if (!credentials_provider)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "PocoHTTPClientGCSHMAC requires a credentials provider (http_client = gcs_hmac wiring bug)");
+}
+
+void PocoHTTPClientGCSHMAC::makeRequestInternal(
+    Aws::Http::HttpRequest & request,
+    std::shared_ptr<PocoHTTPResponse> & response,
+    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
+    Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
+{
+    applyGcsConditionalDialectToRequest(request);
+    signRequestGOOG4(request, credentials_provider->GetAWSCredentials(), std::chrono::system_clock::now());
+    PocoHTTPClient::makeRequestInternal(request, response, readLimiter, writeLimiter);
 }
 
 }

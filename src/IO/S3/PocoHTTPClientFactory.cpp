@@ -23,6 +23,9 @@ PocoHTTPClientFactory::CreateHttpClient(const Aws::Client::ClientConfiguration &
         if (Poco::toLower(poco_client_configuration.http_client) == "gcp_oauth")
             return std::make_shared<PocoHTTPClientGCPOAuth>(poco_client_configuration);
 
+        if (Poco::toLower(poco_client_configuration.http_client) == "gcs_hmac")
+            return std::make_shared<PocoHTTPClientGCSHMAC>(poco_client_configuration);
+
         return std::make_shared<PocoHTTPClient>(poco_client_configuration);
     }
 
