@@ -689,9 +689,21 @@ def test_optimize_aborts_on_metadata_commit_conflict(
         },
     )
     assert "CONCURRENT_ACCESS_NOT_SUPPORTED" in err, err
-    # The pre-compaction data files must NOT have been deleted (clearOldFiles must be skipped).
-    assert data_file_count() >= before, (
-        f"pre-compaction data files were deleted after a lost commit: {data_file_count()} < {before}"
+    # The pre-compaction data files must NOT have been deleted (clearOldFiles must be skipped)
+    # and the rewritten ones must NOT be left behind: nothing references them once the commit is
+    # lost, so a leak would accumulate a full copy of the table on every retry.
+    assert data_file_count() == before, (
+        f"data files changed after a lost commit: {data_file_count()} != {before} "
+        f"(fewer means pre-compaction files were deleted, more means rewritten files were orphaned)"
+    )
+    # The winning writer's metadata must survive the cleanup.
+    assert (
+        instance.exec_in_container(["bash", "-c", f"test -f {next_path} && echo yes || echo no"]).strip()
+        == "yes"
+    ), "cleanup after a lost commit removed the concurrent winner's metadata"
+    # The table still reads its pre-compaction contents.
+    assert (
+        instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
     )
 
 

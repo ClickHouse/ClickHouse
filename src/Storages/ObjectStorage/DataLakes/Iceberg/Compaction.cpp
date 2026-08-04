@@ -117,6 +117,9 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
+    /// Manifests, manifest lists and metadata files written by the rewrite, so they can be removed
+    /// again if the metadata commit is lost to a concurrent writer.
+    std::vector<Iceberg::IcebergPathFromMetadata> generated_metadata_paths;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
 
@@ -1356,6 +1359,8 @@ static bool writeMetadataFiles(
         {
             manifest_entry->patched_path = plan.generator.generateManifestEntryName();
             manifest_file_renamings[manifest_entry->path] = manifest_entry->patched_path;
+            /// Record before the write so a partially created object is still cleaned up.
+            plan.generated_metadata_paths.push_back(manifest_entry->patched_path);
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(path_resolver.resolve(manifest_entry->patched_path)),
                 WriteMode::Rewrite,
@@ -1531,6 +1536,7 @@ static bool writeMetadataFiles(
             counts.counts_are_added = counts.added_snapshot_id.has_value() && *counts.added_snapshot_id == list_snapshot_id;
             entry_counts.push_back(counts);
         }
+        plan.generated_metadata_paths.push_back(renamed_manifest_list);
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(path_resolver.resolve(renamed_manifest_list)),
             WriteMode::Rewrite,
@@ -1583,6 +1589,31 @@ static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const St
         metadata_files.push_back(data_file);
 
     return metadata_files;
+}
+
+/// Remove the files this compaction wrote, given the listing captured before it started.
+/// `plan_paths` is the set the rewrite itself generated; a path that is neither pre-existing nor
+/// ours belongs to whichever writer won the commit and is left alone.
+static void removeGeneratedFiles(
+    ObjectStoragePtr object_storage,
+    const std::vector<String> & pre_existing,
+    const std::vector<String> & plan_paths)
+{
+    std::unordered_set<String> keep(pre_existing.begin(), pre_existing.end());
+    for (const auto & path : plan_paths)
+    {
+        if (keep.contains(path))
+            continue;
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(path));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                __PRETTY_FUNCTION__, "Failed to remove an orphaned Iceberg compaction file");
+        }
+    }
 }
 
 static void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
@@ -1729,10 +1760,22 @@ void compactIcebergTable(
         /// If a concurrent writer won the metadata commit, `clearOldFiles` would delete the data and
         /// metadata the table still references (now pointing at the other writer's snapshot).
         if (!committed)
+        {
+            /// Nothing references the rewritten files, so remove them instead of leaking a full
+            /// copy of the table on every lost commit. Only paths this rewrite generated are
+            /// considered, so files the winning writer created are never touched.
+            std::vector<String> generated;
+            for (const auto & [_, data_file] : plan.path_to_data_file)
+                if (!data_file->patched_path.empty())
+                    generated.push_back(persistent_table_components.path_resolver.resolve(data_file->patched_path));
+            for (const auto & path : plan.generated_metadata_paths)
+                generated.push_back(persistent_table_components.path_resolver.resolve(path));
+            removeGeneratedFiles(object_storage_, old_files, generated);
             throw Exception(
                 ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
                 "Iceberg compaction (OPTIMIZE) lost the metadata commit to a concurrent writer; "
                 "the table was modified during compaction. Retry OPTIMIZE.");
+        }
         clearOldFiles(object_storage_, old_files);
     }
 }
