@@ -64,6 +64,7 @@
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
+#include <Storages/System/StorageSystemEngineSettings.h>
 #include <Storages/System/StorageSystemDatabaseEngines.h>
 #include <Storages/System/StorageSystemStatements.h>
 #include <Storages/System/StorageSystemTableEngines.h>
@@ -1173,6 +1174,7 @@ tier:        Production
 .description
 Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.
 )DOCS_MD");
+    attach<StorageSystemEngineSettings>(context, system_database, "engine_settings", "Contains a list of settings for all table engines that have engine-specific settings, along with their default values and descriptions.");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", R"DOCS_MD(
 .description
 Contains information about the ClickHouse server's build options.
