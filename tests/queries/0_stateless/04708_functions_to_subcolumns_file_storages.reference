@@ -7,6 +7,10 @@
 0
 -- two distinct table function sources keep separate identities
 2
+-- a shared StorageID must not pool counts across sources
+1
+-- a repeated real table is keyed per occurrence
+1
 -- results are unchanged
 1
 1

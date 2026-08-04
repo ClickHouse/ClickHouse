@@ -34,6 +34,20 @@ SELECT count() FROM (
     WHERE a.tup.1 = 1 AND b.tup.1 = 2)
 WHERE explain ILIKE '%column_name: tup.1%';
 
+-- Only `a` reads the element, `b` reads the whole tuple: a key shared by both sources would
+-- weigh 2 uses against 1 rewrite and refuse to optimize either.
+SELECT '-- a shared StorageID must not pool counts across sources';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT a.tup.1, b.tup FROM
+        file('nonexistent_04708_a.parquet', Parquet, 'id UInt64, tup Tuple(`1` UInt64, `2` String)') AS a,
+        file('nonexistent_04708_b.parquet', Parquet, 'id UInt64, tup Tuple(`1` UInt64, `2` String)') AS b)
+WHERE explain ILIKE '%column_name: tup.1%';
+
+SELECT '-- a repeated real table is keyed per occurrence';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT x.tup.1, y.tup FROM t_file AS x, t_file AS y)
+WHERE explain ILIKE '%column_name: tup.1%';
+
 SELECT '-- results are unchanged';
 SELECT count() FROM t_file WHERE tup.1 = 555;
 SELECT count() FROM t_merge WHERE tup.1 = 555;
