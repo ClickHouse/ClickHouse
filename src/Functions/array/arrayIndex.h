@@ -51,9 +51,10 @@ namespace ErrorCodes
 
 using NullMap = PaddedPODArray<UInt8>;
 
-/// True when `type` is Dynamic or Variant, at the top level or inside any chain of Tuple wrappers.
-/// Stops at Array/Map on purpose: equality for identical Array/Map types is itself compareAt-based,
-/// so descending there could not change the answer. forEachChild cannot express that barrier.
+/// True when `type` is Dynamic or Variant, at the top level or inside any chain of Tuple wrappers,
+/// each of which may be Nullable. Stops at Array/Map on purpose: equality for identical Array/Map
+/// types is itself compareAt-based, so descending there could not change the answer. forEachChild
+/// cannot express that barrier.
 inline bool hasTypeErasingElement(const IDataType & type)
 {
     checkStackSize();
@@ -61,7 +62,7 @@ inline bool hasTypeErasingElement(const IDataType & type)
     if (isDynamic(type) || isVariant(type))
         return true;
 
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type.getPtr()).get()))
     {
         for (const auto & element : tuple_type->getElements())
             if (hasTypeErasingElement(*element))

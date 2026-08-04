@@ -521,6 +521,34 @@ SELECT
     has(CAST([tuple(tuple(NULL::Dynamic))], 'Array(Nullable(Tuple(Tuple(Dynamic))))'), CAST(tuple(tuple(NULL::Dynamic)), 'Nullable(Tuple(Tuple(Dynamic)))')) AS depth2,
     has(CAST([tuple(CAST(NULL, 'Variant(String, UInt64)'))], 'Array(Nullable(Tuple(Variant(String, UInt64))))'), CAST(tuple(CAST(NULL, 'Variant(String, UInt64)')), 'Nullable(Tuple(Variant(String, UInt64)))')) AS variant_twin;
 
+SELECT '-- a Nullable(Tuple(...)) wrapper nested inside a Tuple still reaches the erased leaf';
+
+-- The wrapper sits below the array element's top level here, so it is the per-level decay that has
+-- to see through it. Materialized on purpose: the constant folder answers these without the
+-- dispatcher. Each cell pairs the answer with scalar = on the same peeled pair, the authoritative
+-- statement of intent for these shapes.
+DROP TABLE IF EXISTS t_nested_null_tuple;
+CREATE TABLE t_nested_null_tuple (v Array(Tuple(Nullable(Tuple(Dynamic))))) ENGINE = Memory;
+INSERT INTO t_nested_null_tuple VALUES ([tuple(tuple(1::UInt64::Dynamic))]);
+
+SELECT
+    has(v, tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS got,
+    toUInt8(v[1] = tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS want,
+    indexOf(v, tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS index_of_got,
+    countEqual(v, tuple(CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS count_equal_got
+FROM t_nested_null_tuple;
+
+-- The same wrapper past a non-erased leading element, so the decay is exercised at a Tuple position
+-- the traversal only reaches after skipping one.
+DROP TABLE IF EXISTS t_nested_null_tuple_pos2;
+CREATE TABLE t_nested_null_tuple_pos2 (v Array(Tuple(UInt8, Nullable(Tuple(Dynamic))))) ENGINE = Memory;
+INSERT INTO t_nested_null_tuple_pos2 VALUES ([tuple(7, tuple(1::UInt64::Dynamic))]);
+
+SELECT
+    has(v, tuple(7::UInt8, CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS got,
+    toUInt8(v[1] = tuple(7::UInt8, CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS want
+FROM t_nested_null_tuple_pos2;
+
 SET enable_nullable_tuple_type = 0;
 
 SELECT '-- Map(LowCardinality(String), String): a NULL needle, whose dictionary has no null entry';
