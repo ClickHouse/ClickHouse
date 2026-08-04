@@ -61,9 +61,9 @@ Run the `SELECT hostName()` example again with the same `session_id`. You should
 
 ### HTTP connection reuse {#http-connection-reuse}
 
-ClickHouse uses Envoy to open one connection to a replica for each client connection and keeps using it until something breaks that link. The client connection stays open when the replica is still reachable, or when Envoy can silently retry on another replica before response headers go out.
+Envoy may reuse an upstream connection to a replica across requests on the same client connection. That reuse is best-effort: the client connection can stay open when the replica is still reachable, or when Envoy can silently retry on another replica before response headers go out. Connection reuse is **not** a substitute for `session_id` when you need sticky routing or session-scoped state.
 
-The client connection closes when Envoy can't fix things on the same connection: the replica connection fails with no successful retry, the replica dies while the client connection is idle, or a failure happens after headers are already sent. A failure on a different replica won't impact the connection. If there is a network blip, a retry can point the same client connection at a different replica on the next request.
+The client connection closes when Envoy can't recover on the same connection: the replica connection fails with no successful retry, the replica dies while the client connection is idle, or a failure happens after headers are already sent. A failure on a different replica won't impact the connection. If there is a network blip, a retry can point the same client connection at a different replica on the next request.
 
 ## Subdomain-based routing (deprecated) {#subdomain-based-routing-deprecated}
 
@@ -80,6 +80,12 @@ Previously, enabling replica-aware routing allowed a wildcard subdomain on top o
 ### Stickiness can break during service changes {#replica-aware-routing-does-not-guarantee-isolation}
 
 Any disruption to the service changes the routing hash ring. That includes server pod restarts (version upgrade, crash, vertical scaling) and scaling out or in. Requests sharing the same `session_id` may then land on a different server pod. If you rely on temporary tables or session-level settings, be ready to recreate them after a remap.
+
+### Concurrent queries sharing a `session_id` {#concurrent-queries-sharing-a-session-id}
+
+Because routing keys off `session_id`, and a ClickHouse [HTTP session](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) allows only one query at a time, concurrent requests that share the same `session_id` collide: one succeeds and the other fails with HTTP 500 and error code `373` (`SESSION_IS_LOCKED`). The one-query-per-session limit applies regardless of the `session_check` setting.
+
+This is a known limitation. If a workload needs overlapping queries while still pinning traffic, give each concurrent request (or each client/worker) its own `session_id` instead of reusing one shared value across many in-flight queries.
 
 ### Replica-aware routing isn't workload isolation {#not-workload-isolation}
 
