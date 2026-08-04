@@ -61,7 +61,9 @@ def test_prometheus_keeper_accepts_server_only_constant_label():
     # A keeper_metrics_only endpoint uses the Keeper writer surface, which only exposes keeper_* families.
     # "group" is a *server* histogram-family label that Keeper never emits, so it must be accepted as a
     # constant label and applied to every exported sample.
-    group_cluster = ClickHouseCluster(__file__)
+    # A distinct name keeps this cluster's docker compose project and instances directory separate
+    # from the module-scoped cluster; otherwise starting/stopping it destroys the shared cluster.
+    group_cluster = ClickHouseCluster(__file__, name="label_group")
     group_node = group_cluster.add_instance(
         "node_keeper_label_group",
         main_configs=["configs/config_label_group.xml"],
@@ -89,7 +91,9 @@ def test_prometheus_keeper_accepts_server_only_constant_label():
 def test_prometheus_keeper_rejects_keeper_family_constant_label():
     # "operation_type" is a per-sample label of a Keeper histogram family (keeper_response_time_ms),
     # which this endpoint exposes, so it must be rejected as a constant label.
-    optype_cluster = ClickHouseCluster(__file__)
+    # A distinct name keeps this cluster's docker compose project and instances directory separate
+    # from the module-scoped cluster; otherwise starting/stopping it destroys the shared cluster.
+    optype_cluster = ClickHouseCluster(__file__, name="label_operation_type")
     optype_cluster.add_instance(
         "node_keeper_label_optype",
         main_configs=["configs/config_label_operation_type.xml"],

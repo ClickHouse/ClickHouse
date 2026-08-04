@@ -159,7 +159,9 @@ def test_prometheus_endpoint_constant_label_allowed_when_section_disabled(start_
 
 
 def test_prometheus_endpoint_reserved_label():
-    reserved_label_cluster = ClickHouseCluster(__file__)
+    # A distinct name keeps this cluster's docker compose project and instances directory separate
+    # from the module-scoped cluster; otherwise starting/stopping it destroys the shared cluster.
+    reserved_label_cluster = ClickHouseCluster(__file__, name="reserved_label")
     reserved_label_cluster.add_instance(
         "node_reserved_label",
         main_configs=["configs/prom_conf_reserved_label.xml"],
@@ -190,7 +192,9 @@ def test_prometheus_endpoint_reserved_label():
 
 
 def test_prometheus_endpoint_reserved_family_label():
-    reserved_family_label_cluster = ClickHouseCluster(__file__)
+    # A distinct name keeps this cluster's docker compose project and instances directory separate
+    # from the module-scoped cluster; otherwise starting/stopping it destroys the shared cluster.
+    reserved_family_label_cluster = ClickHouseCluster(__file__, name="reserved_family_label")
     reserved_family_label_cluster.add_instance(
         "node_reserved_family_label",
         main_configs=["configs/prom_conf_reserved_family_label.xml"],
