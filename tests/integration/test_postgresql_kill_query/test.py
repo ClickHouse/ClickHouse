@@ -302,45 +302,54 @@ ENGINE = PostgreSQL(
     query_thread.start()
 
     try:
-        # The source is now pinned inside the transaction constructor, before `tx` is published.
-        proxy.wait_until_stalled()
+        try:
+            # The source is now pinned inside the transaction constructor, before `tx` is
+            # published.
+            proxy.wait_until_stalled()
+
+            assert_eq_with_retry(
+                node1,
+                f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+                "1",
+                retry_count=60,
+                sleep_time=0.5,
+            )
+
+            node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+            # Let the cancel be delivered to the source while it is still stalled, so that
+            # `onCancel` runs with `tx` still null and consumes the flag.
+            assert_eq_with_retry(
+                node1,
+                f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+                "1",
+                retry_count=60,
+                sleep_time=0.5,
+            )
+        finally:
+            proxy.release()
+
+        # The recheck must abandon the read. Without it the source enters the COPY and the
+        # query runs on against an endless view, so this join times out.
+        query_thread.join(timeout=60)
+        assert (
+            not query_thread.is_alive()
+        ), "cancelled query kept running after the transaction started"
+        assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
 
         assert_eq_with_retry(
             node1,
             f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
-            "1",
-            retry_count=60,
-            sleep_time=0.5,
-        )
-
-        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
-        # Let the cancel be delivered to the source while it is still stalled, so that
-        # `onCancel` runs with `tx` still null and consumes the flag.
-        assert_eq_with_retry(
-            node1,
-            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
-            "1",
+            "0",
             retry_count=60,
             sleep_time=0.5,
         )
     finally:
-        proxy.release()
-
-    # The recheck must abandon the read. Without it the source enters the COPY and the query
-    # runs on against an endless view, so this join times out.
-    query_thread.join(timeout=60)
-    assert not query_thread.is_alive(), "cancelled query kept running after the transaction started"
-    assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
-
-    assert_eq_with_retry(
-        node1,
-        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
-        "0",
-        retry_count=60,
-        sleep_time=0.5,
-    )
-    proxy.stop()
-    node1.query("DROP TABLE stalled_counter")
+        # A failed assertion must not leave the read, the proxy or the table behind for the
+        # tests that run after this one.
+        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
+        query_thread.join(timeout=60)
+        proxy.stop()
+        node1.query("DROP TABLE IF EXISTS stalled_counter")
 
 
 def test_kill_query_when_postgresql_cancel_connection_fails(
