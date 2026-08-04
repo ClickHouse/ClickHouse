@@ -1,1 +1,12 @@
 /docs/ @ClickHouse/docs
+
+# Reference documentation migrated from the legacy core repository
+/docs/reference/data-types/
+/docs/reference/engines/
+/docs/reference/formats/
+/docs/reference/functions/
+/docs/reference/interfaces/
+/docs/reference/operators/
+/docs/reference/settings/
+/docs/reference/statements/
+/docs/reference/system-tables/
