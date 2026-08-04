@@ -816,6 +816,59 @@ def test_function_over_time():
         eps=1e-9,
     )
 
+    # changes: `test` never repeats a value within a window's samples, except two
+    # consecutive equal samples at 110/120, so most windows count every transition.
+    do_query_test(
+        "changes(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "1"], [150, "2"], [165, "1"], [180, "0"], [195, "0"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # changes: `resets` also counts decreases as changes, unlike `resets()` below.
+    do_query_test(
+        "changes(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "1"], [135, "2"], [150, "4"], [165, "2"], [180, "1"], [195, "0"], [210, "2"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',2),('1970-01-01 00:02:30.000',4),('1970-01-01 00:02:45.000',2),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',2)]",
+            ]
+        ],
+    )
+
+    # resets: `test` never decreases, so every window has zero resets.
+    do_query_test(
+        "resets(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0"], [150, "0"], [165, "0"], [180, "0"], [195, "0"], [210, "0"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0),('1970-01-01 00:02:30.000',0),('1970-01-01 00:02:45.000',0),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',0)]",
+            ]
+        ],
+    )
+
+    # resets: only counts the decreases (8 -> 2 at 140, 10 -> 3 at 200) within each window.
+    do_query_test(
+        "resets(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "0"], [135, "0"], [150, "1"], [165, "1"], [180, "0"], [195, "0"], [210, "1"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
 
 def test_literals():
     timestamp = 250
@@ -2940,6 +2993,97 @@ def test_set_binary_operators():
         150,
         "no grouping allowed",
         "Binary operator 'or' doesn't allow group_right",
+    )
+
+
+def test_binary_operators_on_vectors_without_tags():
+    # Operations on instant vectors without any tags used to fail with
+    # "Argument #1 of function timeSeriesGroupToTags has wrong type UInt8, it must be UInt64"
+    # because the group #0 constant was generated as a UInt8 literal.
+    do_query_test(
+        "vector(1) + vector(2)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "3"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 3]],
+    )
+
+    do_query_test(
+        "vector(1) and vector(2)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "1"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 1]],
+    )
+
+    do_query_test(
+        "vector(1) or vector(2)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "1"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 1]],
+    )
+
+    do_query_test(
+        "vector(1) unless vector(2)",
+        180,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        "sum(vector(5)) + on() sum(vector(7))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "12"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 12]],
+    )
+
+    do_query_test(
+        "hour(vector(time())) + minute(vector(time()))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "3"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 3]],
+    )
+
+    do_query_test(
+        "topk(1, vector(1))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "1"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 1]],
+    )
+
+    do_query_test(
+        'label_replace(vector(1), "a", "b", "", "")',
+        180,
+        '{"resultType": "vector", "result": [{"metric": {"a": "b"}, "value": [180, "1"]}]}',
+        [["[('a','b')]", "1970-01-01 00:03:00.000", 1]],
+    )
+
+    # Range queries evaluate time-dependent tag-less vectors as scalar grids,
+    # exercising the StoreMethod::SCALAR_GRID conversion paths.
+    do_range_query_test(
+        "vector(time()) + vector(1)",
+        150,
+        180,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "151"], [160, "161"], [170, "171"], [180, "181"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',151),('1970-01-01 00:02:40.000',161),('1970-01-01 00:02:50.000',171),('1970-01-01 00:03:00.000',181)]",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        'label_replace(vector(time()), "a", "b", "", "")',
+        150,
+        180,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"a": "b"}, "values": [[150, "150"], [160, "160"], [170, "170"], [180, "180"]]}]}',
+        [
+            [
+                "[('a','b')]",
+                "[('1970-01-01 00:02:30.000',150),('1970-01-01 00:02:40.000',160),('1970-01-01 00:02:50.000',170),('1970-01-01 00:03:00.000',180)]",
+            ]
+        ],
     )
 
 
