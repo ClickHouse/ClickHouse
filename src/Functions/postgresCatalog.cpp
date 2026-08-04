@@ -83,7 +83,7 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 21: return "smallint";
         case 23: return "integer";
         case 25: return "text";
-        case 26: return "bigint"; /// oid
+        case 26: return "oid";
         case 700: return "real";
         case 701: return "double precision";
         case 1042: return "character";
