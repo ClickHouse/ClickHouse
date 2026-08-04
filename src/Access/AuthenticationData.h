@@ -92,8 +92,10 @@ public:
     static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now = std::nullopt);
 
     /// In attach mode the result is meant to be parsed back by a server (replicated or disk access
-    /// storage), possibly with a different default time zone, so `valid_until` is serialized with an
-    /// explicit `UTC` suffix to denote the same instant everywhere. Otherwise (`SHOW CREATE USER`)
+    /// storage), possibly with a different default time zone and possibly by an older server version,
+    /// so `valid_until` is serialized as a zero-padded Unix timestamp string, which denotes the same
+    /// instant everywhere and which older versions parse the same way (see the comment in `toAST`
+    /// for details, including the clamping of out-of-range deadlines). Otherwise (`SHOW CREATE USER`)
     /// `valid_until` is formatted in the server time zone for display.
     boost::intrusive_ptr<ASTAuthenticationData> toAST(bool attach_mode) const;
 
