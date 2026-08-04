@@ -1,4 +1,5 @@
 #include <Interpreters/TreeRewriter.h>
+
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -2343,7 +2344,7 @@ private:
         NameSet removed_indices;
         NameSet removed_projections;
 
-        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
+        bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
 
         for (const auto & command : ctx->for_file_renames)
         {
@@ -2357,7 +2358,7 @@ private:
             }
         }
 
-        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
+        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->source_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
         /// Source skp_idx.packed bundles several indices into one file: hardlinking it would

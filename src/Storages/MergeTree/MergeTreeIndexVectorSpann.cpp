@@ -815,12 +815,13 @@ MergeTreeIndexSubstreams MergeTreeIndexVectorSpann::getSubstreams() const
     };
 }
 
-MergeTreeIndexFormat MergeTreeIndexVectorSpann::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & path_prefix,
-    const IDataPartStorage * storage) const
+MergeTreeIndexFormat MergeTreeIndexVectorSpann::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx", storage))
+    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
+        if (part.isSystemColumnInvalidated(column))
+            return {0, {}};
+
+    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
         return {1, getSubstreams()};
     return {0, {}};
 }
