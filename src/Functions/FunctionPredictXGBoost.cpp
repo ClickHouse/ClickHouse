@@ -132,19 +132,24 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        if (input_rows_count == 0)
-            return result_type->createColumn();
-
         const String dictionary_name = getConstString(arguments[0], "dictionary name");
 
-        auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+        const auto & loader = context->getExternalDictionariesLoader();
 
         if (!access_checked.load(std::memory_order_relaxed))
         {
+            auto qualified = loader.qualifyDictionaryNameWithDatabase(dictionary_name, context);
             context->checkAccess(
-                AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+                AccessType::dictGet,
+                qualified.database.empty() ? IDictionary::NO_DATABASE_TAG : qualified.database,
+                qualified.table);
             access_checked.store(true, std::memory_order_relaxed);
         }
+
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        auto dictionary = loader.getDictionary(dictionary_name, context);
 
         const auto * xgb_dict = typeid_cast<const XGBoostDictionary *>(dictionary.get());
         if (!xgb_dict)
