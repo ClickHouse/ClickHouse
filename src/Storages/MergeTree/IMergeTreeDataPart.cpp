@@ -1014,7 +1014,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                                 getDataPartStorage().getPartDirectory(), name);
 
             bool is_moving_part = isMovingPart();
-            if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
+            if (!startsWith(file_name, "tmp") && IDataPartStorage::Projection::dirNameType(file_name) != IDataPartStorage::Projection::Status::Temp && !is_moving_part)
             {
                 LOG_ERROR(
                     storage.log,
@@ -1407,7 +1407,22 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         /// so keep it outside the arena scope above (each child re-enters the arena for its own
         /// persistent metadata, and its transient load scratch stays on the default per-CPU arenas).
         if (!parent_part)
+        {
+            /// Seed the owned projection set from a manifest-driven disk probe -- only a part loaded from disk
+            /// needs this. A part written by a mutation does NOT reach loadProjections through here (its finalize
+            /// calls loadProjections directly), and there createProjection/renameProjection already keep the owned
+            /// set true; a probe there could miss dirs still staged in the part's deferred object-storage transaction.
+            auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            Strings owned_projection_dirs;
+            for (const auto & [file_name, _] : checksums.files)
+                if (IDataPartStorage::Projection::dirNameType(file_name) == IDataPartStorage::Projection::Status::Live)
+                    owned_projection_dirs.push_back(file_name);
+            for (const auto & projection : metadata_snapshot->projections)
+                owned_projection_dirs.push_back(IDataPartStorage::Projection::dirName(projection.name, false));
+            getDataPartStorage().setProjections(getDataPartStorage().detectProjections({.candidates = owned_projection_dirs}));
+
             loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
+        }
 
         /// Kept out of the dedicated arena scope above on purpose: the size computation is heavy
         /// short-lived churn (a sample column per column/substream). The finished, part-lifetime maps
@@ -1458,15 +1473,28 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection)
 {
-    const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     /// The projection storage is stored on the resulting projection part for its lifetime, so create
     /// it in the dedicated arena (this is the part-lifetime projection-storage creation site).
     MutableDataPartStoragePtr projection_storage;
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+        projection_storage = getDataPartStorage().getProjectionStorage(
+            IDataPartStorage::Projection::dirName(projection_name, is_temp_projection), !is_temp_projection);
     }
     MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings());
+    return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
+}
+
+MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilderForWrite(
+    const IDataPartStorage::Projection & placement, ProjectionDescriptionRawPtr projection)
+{
+    /// Same arena rationale as getProjectionPartBuilder; the storage accessor additionally verifies ownership.
+    MutableDataPartStoragePtr projection_storage;
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        projection_storage = getDataPartStorage().getProjectionStorageForWrite(placement, !placement.is_temp);
+    }
+    MergeTreeDataPartBuilder builder(storage, placement.name, projection_storage, getReadSettings());
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
 }
 
@@ -1495,6 +1523,7 @@ void IMergeTreeDataPart::loadProjections(
     /// child's own `loadColumnsChecksumsIndexes`). The projection load's transient scratch is
     /// deliberately left on the default per-CPU arenas, so no arena scope is taken here.
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+
     for (const auto & projection : metadata_snapshot->projections)
     {
         if (projection.with_block_number && isSystemColumnInvalidated(BlockNumberColumn::name))
@@ -1503,56 +1532,58 @@ void IMergeTreeDataPart::loadProjections(
         if (projection.with_block_offset && isSystemColumnInvalidated(BlockOffsetColumn::name))
             continue;
 
-        auto path = projection.name + ".proj";
-        if (getDataPartStorage().existsDirectory(path))
+        auto projection_path = IDataPartStorage::Projection::dirName(projection.name, false);
+        if (!checksums.has(projection_path))
+            continue;
+
+        if (hasProjection(projection.name))
         {
-            if (hasProjection(projection.name))
+            if (!if_not_loaded)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Projection part {} in part {} is already loaded. This is a bug", projection.name, name);
+            continue;
+        }
+
+        auto part = getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
+
+        /// Owned per the manifest but not present on disk in either layout: broken under a consistency load, ignored otherwise.
+        if (!getDataPartStorage().hasProjection(projection_path))
+        {
+            if (check_consistency)
             {
-                if (!if_not_loaded)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Projection part {} in part {} is already loaded. This is a bug", projection.name, name);
-            }
-            else
-            {
-                auto part = getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
-
-                try
-                {
-                    if (only_metadata)
-                    {
-                        /// The metadata-only path does not go through `loadColumnsChecksumsIndexes`, so
-                        /// route the projection's part-lifetime checksums into the arena here.
-                        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-                        part->loadChecksums(require_columns_checksums);
-                    }
-                    else
-                        part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
-                }
-                catch (...)
-                {
-                    if (isRetryableException(std::current_exception()))
-                        throw;
-
-                    auto message = getCurrentExceptionMessage(true);
-                    LOG_WARNING(storage.log, "Cannot load projection {}, "
-                                "will consider it broken. Reason: {}", projection.name, message);
-
-                    has_broken_projection = true;
-                    part->setBrokenReason(message, getCurrentExceptionCode());
-                }
-
+                part->setBrokenReason(
+                    "Projection directory " + projection_path + " does not exist while loading projections",
+                    ErrorCodes::NO_FILE_IN_DATA_PART);
+                has_broken_projection = true;
                 addProjectionPart(projection.name, std::move(part));
             }
+            continue;
         }
-        else if (check_consistency && checksums.has(path))
+
+        try
         {
-            auto part = getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
-            part->setBrokenReason(
-                "Projection directory " + path + " does not exist while loading projections. Stacktrace: " + StackTrace().toString(),
-                ErrorCodes::NO_FILE_IN_DATA_PART);
-            addProjectionPart(projection.name, std::move(part));
-            has_broken_projection = true;
+            if (only_metadata)
+            {
+                /// The metadata-only path does not go through loadColumnsChecksumsIndexes, so route the
+                /// projection's part-lifetime checksums into the arena here.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                part->loadChecksums(require_columns_checksums);
+            }
+            else
+                part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
         }
+        catch (...)
+        {
+            if (isRetryableException(std::current_exception()))
+                throw;
+
+            /// Listed in checksums but will not load: a real breach (missing dir / corrupt sub-part), not a manifest divergence.
+            auto message = getCurrentExceptionMessage(true);
+            LOG_WARNING(storage.log, "Cannot load projection {}, will consider it broken. Reason: {}", projection.name, message);
+            has_broken_projection = true;
+            part->setBrokenReason(message, getCurrentExceptionCode());
+        }
+        addProjectionPart(projection.name, std::move(part));
     }
 }
 
@@ -2035,7 +2066,21 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
 
         bool noop = false;
-        checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
+        auto result = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
+        checksums = std::move(result.computed_checksums);
+
+        /// Persist checksums for projection parts whose checksums.txt was also missing (recomputed by checkDataPart).
+        if (!result.computed_projections_checksums.empty())
+        {
+            auto metadata_snapshot = getMetadataSnapshot();
+            for (const auto & [projection_name, projection_checksums] : result.computed_projections_checksums)
+            {
+                const auto & projection = metadata_snapshot->projections.get(projection_name);
+                auto part = getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
+                part->writeChecksums(projection_checksums, {});
+            }
+        }
+
         writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
@@ -2508,24 +2553,31 @@ bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & stora
 
 void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists)
 {
-    std::string relative_path = storage.relative_data_path;
-    bool fsync_dir = (*storage.getSettings())[MergeTreeSetting::fsync_part_directory];
-
     if (parent_part)
     {
-        /// For projections, move is only possible inside parent part dir.
-        relative_path = parent_part->getDataPartStorage().getRelativePath();
+        /// This part is a projection: it renames within its parent (e.g. "p_1.tmp_proj" -> "p.proj"). The parent's storage resolves both
+        /// dir names from its owned set and keeps that set true.
+        auto & parent_storage = const_cast<IMergeTreeDataPart *>(parent_part)->getDataPartStorage();
+        auto renamed = parent_storage.renameProjection(
+            parent_storage.getProjection(IDataPartStorage::Projection::dirName(name, is_temp)), new_relative_path,
+            (*storage.getSettings())[MergeTreeSetting::fsync_part_directory]);
+        parent_storage.syncProjectionStoragePath(renamed, getDataPartStorage());
+        return;
     }
 
-    auto old_projection_root_path = getDataPartStorage().getRelativePath();
-    auto to = fs::path(relative_path) / new_relative_path;
+    bool fsync_dir = (*storage.getSettings())[MergeTreeSetting::fsync_part_directory];
+    fs::path to = fs::path(storage.relative_data_path) / new_relative_path;
 
+    /// rename() moves FLAT projection siblings with the part and decides the parent/sibling move order itself from the destination (see
+    /// IDataPartStorage::rename).
     getDataPartStorage().rename(to.parent_path(), to.filename(), storage.log.load(), remove_new_dir_if_exists, fsync_dir);
 
-    auto new_projection_root_path = to.string();
-
-    for (const auto & [_, part] : projection_parts)
-        part->getDataPartStorage().changeRootPath(old_projection_root_path, new_projection_root_path);
+    /// Repoint in-memory projection storages at the moved part. A broken projection whose dir is lost has an in-memory placeholder part but
+    /// no owned dir, so there is nothing to repoint.
+    const auto owned_projections = getDataPartStorage().getProjections();
+    for (const auto & [projection_name, part] : projection_parts)
+        if (auto it = owned_projections.find(IDataPartStorage::Projection::dirName(projection_name, false)); it != owned_projections.end())
+            getDataPartStorage().syncProjectionStoragePath(it->second, part->getDataPartStorage());
 }
 
 std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
@@ -2558,16 +2610,17 @@ void IMergeTreeDataPart::remove()
     chassert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
+    /// Temporary projections are transient by-products of projections materialization and can always be removed. Go through the parent so
+    /// its owned set drops the entry together with the dir.
+    if (isProjectionPart() && is_temp)
+    {
+        auto & parent_storage = const_cast<IMergeTreeDataPart *>(parent_part)->getDataPartStorage();
+        parent_storage.removeProjection(parent_storage.getProjection(IDataPartStorage::Projection::dirName(name, true)));
+        return;
+    }
+
     auto can_remove_callback = [this] ()
     {
-        /// Temporary projections are "subparts" which are generated during projections materialization
-        /// We can always remove them without any additional checks.
-        if (isProjectionPart() && is_temp)
-        {
-            LOG_TRACE(storage.log, "Temporary projection part {} can be removed", name);
-            return CanRemoveDescription{.can_remove_anything = true, .files_not_to_remove = {} };
-        }
-
         auto [can_remove, files_not_to_remove] = canRemovePart();
         if (!can_remove)
             LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
@@ -2580,7 +2633,7 @@ void IMergeTreeDataPart::remove()
 
     /// Projections should be never removed by themselves, they will be removed
     /// with by parent part.
-    if (isProjectionPart() && !is_temp)
+    if (isProjectionPart())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}", name, parent_part_name);
 
     std::list<IDataPartStorage::ProjectionChecksums> projection_checksums;
@@ -2625,6 +2678,15 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
 String IMergeTreeDataPart::getRelativePathOfActivePart() const
 {
     return fs::path(getDataPartStorage().getFullRootPath()) / name / "";
+}
+
+void IMergeTreeDataPart::adoptOnDiskProjectionsForDetach()
+{
+    IDataPartStorage::Projections adopted;
+    for (const auto & [projection_dir, projection] : getDataPartStorage().detectProjections())
+        if (!projection.is_temp)
+            adopted.emplace(projection_dir, projection);
+    getDataPartStorage().setProjections(std::move(adopted));
 }
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_error)
@@ -2691,6 +2753,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     return getDataPartStorage().freeze(
         storage.relative_data_path,
         *maybe_path_in_detached,
+        /* dst_disk= */ nullptr,
         Context::getGlobalContextInstance()->getReadSettings(),
         Context::getGlobalContextInstance()->getWriteSettings(),
         /* save_metadata_callback= */ {},
@@ -2710,7 +2773,14 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to empty directory.", name);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log.load(), cancellation_hook);
+    return getDataPartStorage().clonePart(
+        path_to_clone,
+        getDataPartStorage().getPartDirectory(),
+        disk,
+        read_settings,
+        write_settings,
+        storage.log.load(),
+        cancellation_hook);
 }
 
 IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const
@@ -2788,7 +2858,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             catch (const Exception & ex)
             {
                 /// For projection parts check will mark them broken in loadProjections
-                if (!parent_part && filename.ends_with(".proj"))
+                if (!parent_part && IDataPartStorage::Projection::dirNameType(filename) == IDataPartStorage::Projection::Status::Live)
                 {
                     std::string projection_name = fs::path(filename).stem();
                     LOG_INFO(storage.log, "Projection {} doesn't exist on start for part {}, marking it as broken", projection_name, name);

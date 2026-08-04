@@ -592,7 +592,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         std::optional<MergeTreeDataPartBuilder> builder;
         if (global_ctx->parent_part)
         {
-            auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename,  /* use parent transaction */ false);
+            auto & parent_storage = global_ctx->parent_part->getDataPartStorage();
+            auto placement = parent_storage.createProjection(local_tmp_part_basename, global_ctx->data->getProjectionStorageFormat());
+            auto data_part_storage = parent_storage.getProjectionStorageForWrite(placement, /*use_parent_transaction=*/ false);
             builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings());
             builder->withParentPart(global_ctx->parent_part);
         }
@@ -610,7 +612,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
-    if (data_part_storage->exists())
+    /// A projection dir exists by now: createProjection above made it (sweeping any stale leftover).
+    if (!global_ctx->parent_part && data_part_storage->exists())
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
@@ -2222,7 +2225,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             projection,
             global_ctx->new_data_part.get(),
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
-            ".proj",
+            IDataPartStorage::Projection::ext(),
             NO_TRANSACTION_PTR,
             global_ctx->data,
             global_ctx->mutator,
