@@ -2376,6 +2376,11 @@ void HashJoin::tryConvertToFixedHashMap()
         reinitUsedFlags();
 }
 
+bool HashJoin::recordsRowRefsForStats() const
+{
+    return table_join->collectExactMatches() && table_join->getMixedJoinExpression() == nullptr;
+}
+
 bool HashJoin::leftMatchedStatsAvailable() const
 {
     switch (leftMatchedSource(kind, strictness))
@@ -2389,12 +2394,14 @@ bool HashJoin::leftMatchedStatsAvailable() const
             return true;
 
         case LeftMatchedSource::DefaultRowMarkers:
-            /// The markers live in `LazyOutput::row_refs`, which the probe fills only when there is
-            /// something to materialize lazily, or when `matches = 1` asks it to. The residual path
-            /// derives the same figure without them.
-            return table_join->getMixedJoinExpression() != nullptr
-                || sample_block_with_columns_to_add.columns() != 0
-                || table_join->collectExactMatches();
+        {
+            const bool residual_path_counts_matched_left = table_join->getMixedJoinExpression() != nullptr;
+            if (residual_path_counts_matched_left)
+                return true;
+
+            const bool markers_written_for_output = sample_block_with_columns_to_add.columns() != 0;
+            return markers_written_for_output || recordsRowRefsForStats();
+        }
     }
 }
 
@@ -2417,16 +2424,22 @@ void HashJoin::onBuildPhaseFinish()
     /// In case addBlockToJoin is returning early
     /// we take a peak snapshot
     size_t total_bytes = getTotalByteCount();
-    peak_build_bytes = std::max(peak_build_bytes, getTotalByteCount());
+    peak_build_bytes = std::max(peak_build_bytes, total_bytes);
 
     if (table_join->collectAnalyzeStats())
     {
-        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, getRightTableRowCount());
+        /// The promotion to `RightAny` keeps the `MapsAll` maps, so for statistics the join still
+        /// behaves as `ALL`.
+        const JoinStrictness strictness_for_stats
+            = all_join_was_promoted_to_right_any ? JoinStrictness::All : strictness;
+
+        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness_for_stats, getRightTableRowCount());
 
         if (leftMatchedStatsAvailable())
             matched_rows_stats->enableLeftMatched();
 
-        if (table_join->collectExactMatches() && rightMatchedSource(kind, strictness) == RightMatchedSource::RefsBitmap)
+        if (table_join->collectExactMatches()
+            && rightMatchedSource(kind, strictness_for_stats) == RightMatchedSource::RefsBitmap)
             matched_rows_stats->prepareRightBitmap(data->columns);
     }
 

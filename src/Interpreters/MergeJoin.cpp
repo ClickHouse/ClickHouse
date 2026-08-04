@@ -203,6 +203,42 @@ Columns extractColumnsByNames(const Block & src, const Block & names)
         columns.push_back(src.getByName(names.getByPosition(i).name).column);
     return columns;
 }
+
+void addElapsed(UInt64 & target, UInt64 elapsed_ns)
+{
+    target += elapsed_ns;
+}
+
+void addElapsed(std::atomic<UInt64> & target, UInt64 elapsed_ns)
+{
+    target.fetch_add(elapsed_ns, std::memory_order_relaxed);
+}
+
+/// Adds the time spent in the enclosing scope to `target`. Reads no clock when `enabled` is false.
+/// Like `std::lock_guard`, it holds a reference and must not outlive `target`, so it is not copyable.
+template <typename Counter>
+class ScopedSortTimer
+{
+public:
+    ScopedSortTimer(bool enabled, Counter & target_) : target(target_)
+    {
+        if (enabled)
+            watch.emplace();
+    }
+
+    ScopedSortTimer(const ScopedSortTimer &) = delete;
+    ScopedSortTimer & operator=(const ScopedSortTimer &) = delete;
+
+    ~ScopedSortTimer()
+    {
+        if (watch)
+            addElapsed(target, watch->elapsedNanoseconds());
+    }
+
+private:
+    std::optional<Stopwatch> watch;
+    Counter & target;
+};
 }
 
 
@@ -673,9 +709,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
     if (right_blocks.empty())
         return;
 
-    std::optional<Stopwatch> merge_watch;
-    if (collect_stats)
-        merge_watch.emplace();
+    ScopedSortTimer merge_timer(collect_stats, build_sort_time_ns);
 
     Pipe source(std::make_shared<BlocksListSource>(std::move(right_blocks.blocks)));
     right_blocks.clear();
@@ -712,9 +746,6 @@ void MergeJoin::mergeInMemoryRightBlocks()
         right_blocks.countBlockSize(block);
         loaded_right_blocks.emplace_back(std::make_shared<Block>(std::move(block)));
     }
-
-    if (merge_watch)
-        build_sort_time_ns += merge_watch->elapsedNanoseconds();
 }
 
 void MergeJoin::mergeFlushedRightBlocks()
@@ -728,19 +759,16 @@ void MergeJoin::mergeFlushedRightBlocks()
         right_blocks.countBlockSize(block);
     };
 
-    std::optional<Stopwatch> merge_watch;
-    if (collect_stats)
-        merge_watch.emplace();
-
-    flushed_right_blocks = disk_writer->finishMerge(callback);
-    disk_writer.reset();
-
-    if (collect_stats)
     {
-        build_sort_time_ns += merge_watch->elapsedNanoseconds();
-        if (auto tmp_data = table_join->getTempDataOnDisk())
-            right_spilled_bytes = tmp_data->currentCompressedSize();
+        ScopedSortTimer merge_timer(collect_stats, build_sort_time_ns);
+
+        flushed_right_blocks = disk_writer->finishMerge(callback);
+        disk_writer.reset();
     }
+
+    if (collect_stats)
+        for (const auto & file : flushed_right_blocks)
+            right_spilled_compressed_bytes += file.getHolder()->getStat().compressed_size;
 
     /// Get memory limit or approximate it from row limit and bytes per row factor
     UInt64 memory_limit = size_limits.max_bytes;
@@ -788,12 +816,10 @@ bool MergeJoin::addBlockToJoin(const Block & src_block, bool)
 
     addConditionJoinColumn(block, JoinTableSide::Right);
 
-    std::optional<Stopwatch> sort_watch;
-    if (collect_stats)
-        sort_watch.emplace();
-    sortBlock(block, right_sort_description);
-    if (sort_watch)
-        build_sort_time_ns += sort_watch->elapsedNanoseconds();
+    {
+        ScopedSortTimer sort_timer(collect_stats, build_sort_time_ns);
+        sortBlock(block, right_sort_description);
+    }
 
     return saveRightBlock(std::move(block));
 }
@@ -858,12 +884,8 @@ void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> 
                 lowcard_keys.push_back(column_name);
         }
 
-        std::optional<Stopwatch> sort_watch;
-        if (collect_stats)
-            sort_watch.emplace();
+        ScopedSortTimer sort_timer(collect_stats, probe_sort_time_ns);
         sortBlock(block, left_sort_description);
-        if (sort_watch)
-            probe_sort_time_ns.fetch_add(sort_watch->elapsedNanoseconds(), std::memory_order_relaxed);
     }
 
     if (!not_processed && left_blocks_buffer)
@@ -1334,7 +1356,7 @@ StepAnalysisReport MergeJoin::getAnalysisReport() const
     right_metrics.emplace_back("blocks", getRightBlocksCount(), StepMetric::Format::Quantity);
     right_metrics.emplace_back("storage", std::string(in_memory ? "in-memory" : "external"), StepMetric::Format::Raw);
     if (!in_memory)
-        right_metrics.emplace_back("spilled", right_spilled_bytes, StepMetric::Format::Bytes);
+        right_metrics.emplace_back("spilled", right_spilled_compressed_bytes, StepMetric::Format::Bytes);
     report.push_back({"right", std::move(right_metrics)});
 
     MetricList build_metrics;

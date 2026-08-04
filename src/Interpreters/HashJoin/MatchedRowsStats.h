@@ -38,6 +38,10 @@ constexpr LeftMatchedSource leftMatchedSource(JoinKind kind, JoinStrictness stri
     if (strictness == JoinStrictness::All && isLeftOrFull(kind))
         return LeftMatchedSource::DefaultRowMarkers;
 
+    /// `RightAny` emits one row per left row just like `ALL`, so the markers mean the same.
+    if (strictness == JoinStrictness::RightAny && isLeftOrFull(kind))
+        return LeftMatchedSource::DefaultRowMarkers;
+
     if (strictness == JoinStrictness::All)
         return LeftMatchedSource::ReplicationOffsets;
 

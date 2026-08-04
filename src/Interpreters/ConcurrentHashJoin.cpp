@@ -478,8 +478,11 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     return global_total_bytes.load(std::memory_order_relaxed);
 }
 
-size_t ConcurrentHashJoin::getRightRows() const
+size_t ConcurrentHashJoin::getRightTableRowCount() const
 {
+    /// We don't check for two level map, because in case of two level in
+    /// onBuildPhaseFinish we add all the right table rows to 0th hash table
+    /// and zero the rows_to_join in other hash tables
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
         res += hash_join->data->getRightTableRowCount();
@@ -488,9 +491,9 @@ size_t ConcurrentHashJoin::getRightRows() const
 
 size_t ConcurrentHashJoin::getUniqueKeys() const
 {
-    if (hash_joins.empty())
-        return 0;
-
+    /// A two-level map needs a special case: `onBuildPhaseFinish` first moves all buckets into
+    /// slot 0 and then hands that map back to every slot, so each one reports the full key count
+    /// and summing would multiply it by `slots`. One-level maps stay disjoint per slot.
     if (hash_joins[0]->data->twoLevelMapIsUsed())
         return hash_joins[0]->data->getTotalRowCount();
 
@@ -500,22 +503,37 @@ size_t ConcurrentHashJoin::getUniqueKeys() const
     return res;
 }
 
-StepAnalysisReport ConcurrentHashJoin::getAnalysisReport() const
+JoinAnalysisCounters ConcurrentHashJoin::collectMatchedRowsCounters() const
 {
     JoinAnalysisCounters counters;
-    counters.right_rows = getRightRows();
+    counters.right_rows = getRightTableRowCount();
+
+    MatchedRowsAccumulator matched_left;
+    MatchedRowsAccumulator matched_right;
     for (const auto & hash_join : hash_joins)
     {
         const auto * stats = hash_join->data->getMatchStats();
+        chassert(stats, "ConcurrentHashJoin slot has no MatchedRowsStats");
         if (!stats)
+        {
+            matched_left.add(std::nullopt);
+            matched_right.add(std::nullopt);
             continue;
-        counters.left_rows += stats->getInputLeft();
-        if (auto matched_left = stats->getMatchedLeft())
-            counters.matched_left = counters.matched_left.value_or(0) + *matched_left;
-        if (auto matched_right = stats->getMatchedRight())
-            counters.matched_right = counters.matched_right.value_or(0) + *matched_right;
-    }
+        }
 
+        counters.left_rows += stats->getInputLeft();
+        matched_left.add(stats->getMatchedLeft());
+        matched_right.add(stats->getMatchedRight());
+    }
+    counters.matched_left = matched_left.get();
+    counters.matched_right = matched_right.get();
+
+    return counters;
+}
+
+StepAnalysisReport ConcurrentHashJoin::getAnalysisReport() const
+{
+    auto counters = collectMatchedRowsCounters();
     StepAnalysisReport report = buildMatchedRowsReport(counters);
 
     MetricList hash_table_metrics;

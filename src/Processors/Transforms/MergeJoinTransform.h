@@ -240,7 +240,7 @@ public:
                        const TableJoin::JoinOnClause & on_clause_,
                        SharedHeaders & input_headers,
                        size_t max_block_size_,
-                       bool collect_exact_matches_);
+                       JoinAnalyzeMode analyze_mode_ = JoinAnalyzeMode::None);
 
     MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 

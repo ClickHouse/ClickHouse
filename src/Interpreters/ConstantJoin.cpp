@@ -336,9 +336,9 @@ StepAnalysisReport ConstantJoin::getAnalysisReport() const
     buffer_metrics.emplace_back("compressed", std::string(have_compressed ? "yes" : "no"), StepMetric::Format::Raw);
     report.push_back({"buffer", std::move(buffer_metrics)});
 
-    const size_t spilled_bytes = tmp_stream ? tmp_stream->getHolder()->getStat().compressed_size : 0;
+    const size_t right_spilled_compressed_bytes = tmp_stream ? tmp_stream->getHolder()->getStat().compressed_size : 0;
     MetricList spill_metrics;
-    spill_metrics.emplace_back("right spilled", spilled_bytes, StepMetric::Format::Bytes);
+    spill_metrics.emplace_back("right spilled", right_spilled_compressed_bytes, StepMetric::Format::Bytes);
     report.push_back({"spill", std::move(spill_metrics)});
 
     return report;

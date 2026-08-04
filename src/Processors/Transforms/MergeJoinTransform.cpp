@@ -400,11 +400,11 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     const TableJoin::JoinOnClause & on_clause_,
     SharedHeaders & input_headers_,
     size_t max_block_size_,
-    bool collect_exact_matches_)
+    JoinAnalyzeMode analyze_mode_)
     : input_headers(input_headers_)
     , kind(kind_)
     , strictness(strictness_)
-    , collect_exact_matches(collect_exact_matches_)
+    , collect_exact_matches(collectsExactMatches(analyze_mode_))
     , max_block_size(max_block_size_)
     , log(getLogger("MergeJoinAlgorithm"))
 {
@@ -443,7 +443,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         join_ptr->getTableJoin().getOnlyClause(),
         input_headers_,
         max_block_size_,
-        join_ptr->getTableJoin().collectExactMatches())
+        join_ptr->getTableJoin().analyzeMode())
 {
     for (const auto & [left_key, right_key] : join_ptr->getTableJoin().leftToRightKeyRemap())
     {
@@ -1339,7 +1339,7 @@ MergeJoinTransform::MergeJoinTransform(
         limit_hint_,
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
-        kind_, strictness_, on_clause_, input_headers, max_block_size, false)
+        kind_, strictness_, on_clause_, input_headers, max_block_size)
 {
 }
 

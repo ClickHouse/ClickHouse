@@ -202,15 +202,12 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             HashJoin::isLowCardinalityType(join.data->type));
     }
 
-
     /// Only `MapsAll` keeps every right row of a key, so only there do the recorded words resolve to
     /// exact rows. The residual path is excluded: its words count output rows rather than left rows,
     /// and both metrics come from elsewhere there.
-    constexpr bool refs_can_carry_stats = join_features.is_all_join
+    constexpr bool refs_can_carry_stats = join_features.is_maps_all
         && (join_features.inner || join_features.left || join_features.full);
-    const bool record_refs_for_stats = refs_can_carry_stats
-        && join.getTableJoin().collectExactMatches()
-        && join.table_join->getMixedJoinExpression() == nullptr;
+    const bool record_refs_for_stats = refs_can_carry_stats && join.recordsRowRefsForStats();
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;
@@ -229,13 +226,13 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         is_join_get,
         record_refs_for_stats);
 
-    if constexpr (rightMatchedSource(KIND, STRICTNESS) == RightMatchedSource::RefsBitmap)
-        if (join.matched_rows_stats && join.matched_rows_stats->hasRightBitmap())
-            added_columns.match_stats = join.matched_rows_stats.get();
+    if (join.matched_rows_stats && join.matched_rows_stats->hasRightBitmap())
+        added_columns.match_stats = join.matched_rows_stats.get();
 
     bool has_required_right_keys = (join.required_right_keys.columns() != 0);
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
     added_columns.max_joined_block_rows = join.max_joined_block_rows;
+
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
     else
@@ -250,9 +247,9 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         const size_t probed_rows = processed_rows ? processed_rows : block.rows();
         stats->collectProbeBlock(probed_rows, countMatchedLeftRows<KIND, STRICTNESS>(added_columns, probed_rows));
 
-        if constexpr (rightMatchedSource(KIND, STRICTNESS) == RightMatchedSource::RefsBitmap)
-            if (stats->hasRightBitmap() && !added_columns.additional_filter_expression)
-                markRightMatchedFromRowRefs(*stats, added_columns);
+        const bool right_matches_marked_inline = added_columns.additional_filter_expression != nullptr;
+        if (stats->hasRightBitmap() && !right_matches_marked_inline)
+            markRightMatchedFromRowRefs(*stats, added_columns);
     }
 
     std::optional<ScatteredBlock> next_scattered_block;

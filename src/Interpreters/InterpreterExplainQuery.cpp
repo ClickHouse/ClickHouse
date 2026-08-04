@@ -1258,8 +1258,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
             optimization_settings.query_plan_with_parallel_replicas_builder = parallel_replicas_builder;
-            optimization_settings.collect_analyze_stats = true;
-            optimization_settings.collect_exact_matches = analyzed.query_plan_options.matches;
+            optimization_settings.join_analyze_mode
+                = analyzed.query_plan_options.matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived;
 
             watch.restart();
             plan.optimize(optimization_settings);

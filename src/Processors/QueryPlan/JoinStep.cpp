@@ -237,23 +237,24 @@ StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) c
         return join->getAnalysisReport();
 
     JoinAnalysisCounters counters;
+    MatchedRowsAccumulator matched_left;
+    MatchedRowsAccumulator matched_right;
     for (const auto * proc : step_processors)
     {
         if (const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc))
         {
             const auto join_counters = merge_join->getJoinAnalysisCounters();
             counters.left_rows += join_counters.left_rows;
-            if (join_counters.matched_left)
-                counters.matched_left = counters.matched_left.value_or(0) + *join_counters.matched_left;
             counters.right_rows += join_counters.right_rows;
-            if (join_counters.matched_right)
-                counters.matched_right = counters.matched_right.value_or(0) + *join_counters.matched_right;
+            matched_left.add(join_counters.matched_left);
+            matched_right.add(join_counters.matched_right);
         }
     }
+    counters.matched_left = matched_left.get();
+    counters.matched_right = matched_right.get();
 
     return buildMatchedRowsReport(counters);
 }
-
 
 bool JoinStep::allowPushDownToRight() const
 {

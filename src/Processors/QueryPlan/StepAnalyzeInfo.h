@@ -51,11 +51,31 @@ struct JoinAnalysisCounters
     std::optional<UInt64> matched_right;
 };
 
+/// Sums a per-side `matched` counter over the parts a join is split into. A part that cannot
+/// report the metric makes the whole sum unavailable, since summing the rest would understate it.
+class MatchedRowsAccumulator
+{
+public:
+    void add(std::optional<UInt64> value)
+    {
+        if (available && value)
+            total += *value;
+        else
+            available = false;
+    }
+
+    std::optional<UInt64> get() const { return available ? std::optional<UInt64>(total) : std::nullopt; }
+
+private:
+    UInt64 total = 0;
+    bool available = true;
+};
+
 inline MetricList joinSideMetrics(UInt64 rows, std::optional<UInt64> matched)
 {
     MetricList metrics;
     metrics.emplace_back("rows", rows, StepMetric::Format::Quantity);
-    if (matched)
+    if (matched.has_value())
         metrics.emplace_back("matched", *matched, StepMetric::Format::Quantity);
     else
         metrics.emplace_back("matched", std::string("not collected"), StepMetric::Format::Raw);

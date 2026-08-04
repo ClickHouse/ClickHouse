@@ -520,20 +520,9 @@ void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
         left_rows_total += match_stats->getInputLeft();
 
         /// A bucket whose right keys happen to be unique promotes ALL to RightAny on its own, which
-        /// can make a metric unavailable for that bucket alone. Summing the rest would understate it.
-        auto fold_side = [](std::optional<UInt64> value, std::optional<UInt64> & total, bool & available)
-        {
-            if (available && value)
-                total = total.value_or(0) + *value;
-            else
-            {
-                available = false;
-                total.reset();
-            }
-        };
-
-        fold_side(match_stats->getMatchedLeft(), matched_left, matched_left_available);
-        fold_side(match_stats->getMatchedRight(), matched_right, matched_right_available);
+        /// can make a metric unavailable for that bucket alone.
+        matched_left.add(match_stats->getMatchedLeft());
+        matched_right.add(match_stats->getMatchedRight());
     }
 }
 
@@ -548,12 +537,8 @@ GraceHashJoin::GraceHashJoinStats GraceHashJoin::collectStats() const
     result.num_buckets = buckets_snapshot.size();
     for (const auto & bucket : buckets_snapshot)
     {
-        const auto left = bucket->leftSpillStat();
-        const auto right = bucket->rightSpillStat();
-        result.left_spill.compressed_size += left.compressed_size;
-        result.left_spill.uncompressed_size += left.uncompressed_size;
-        result.right_spill.compressed_size += right.compressed_size;
-        result.right_spill.uncompressed_size += right.uncompressed_size;
+        result.left_spilled_compressed_bytes += bucket->leftSpillStat().compressed_size;
+        result.right_spilled_compressed_bytes += bucket->rightSpillStat().compressed_size;
     }
     return result;
 }
@@ -564,9 +549,9 @@ StepAnalysisReport GraceHashJoin::getAnalysisReport() const
 
     StepAnalysisReport report = buildMatchedRowsReport({
         .left_rows = stats_snapshot.left_rows_total,
-        .matched_left = stats_snapshot.matched_left,
+        .matched_left = stats_snapshot.matched_left.get(),
         .right_rows = stats_snapshot.right_rows,
-        .matched_right = stats_snapshot.matched_right});
+        .matched_right = stats_snapshot.matched_right.get()});
 
     MetricList hash_table_metrics;
     hash_table_metrics.emplace_back("unique keys", stats_snapshot.unique_keys, StepMetric::Format::Quantity);
@@ -576,8 +561,8 @@ StepAnalysisReport GraceHashJoin::getAnalysisReport() const
     report.push_back({"hash table", std::move(hash_table_metrics)});
 
     MetricList spill_metrics;
-    spill_metrics.emplace_back("left spilled", stats_snapshot.left_spill.compressed_size, StepMetric::Format::Bytes);
-    spill_metrics.emplace_back("right spilled", stats_snapshot.right_spill.compressed_size, StepMetric::Format::Bytes);
+    spill_metrics.emplace_back("left spilled", stats_snapshot.left_spilled_compressed_bytes, StepMetric::Format::Bytes);
+    spill_metrics.emplace_back("right spilled", stats_snapshot.right_spilled_compressed_bytes, StepMetric::Format::Bytes);
     report.push_back({"spill", std::move(spill_metrics)});
 
     return report;
