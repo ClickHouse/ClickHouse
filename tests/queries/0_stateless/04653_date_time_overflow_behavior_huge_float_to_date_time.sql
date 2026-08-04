@@ -17,8 +17,14 @@ SELECT toDate(x), toDate32(x), toDateTime(x), toTime(x) FROM (SELECT materialize
 SELECT toTime(x) FROM (SELECT materialize(-1e300::Float64) AS x);
 
 SELECT '-- saturate, NaN';
-SELECT toDate(nan::Float64), toDate32(nan::Float64), toDateTime(nan::Float64), toTime(nan::Float64);
-SELECT toDate(x), toDate32(x), toDateTime(x), toTime(x) FROM (SELECT materialize(nan::Float64) AS x);
+-- `toDate`, `toDateTime` and `toTime` reject non-finite sources regardless of the overflow mode,
+-- while `toDate32` saturates NaN to the minimum representable day.
+SELECT toDate(nan::Float64); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toDate32(nan::Float64);
+SELECT toDateTime(nan::Float64); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toTime(nan::Float64); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toDate32(x) FROM (SELECT materialize(nan::Float64) AS x);
+SELECT toDateTime(x) FROM (SELECT materialize(nan::Float64) AS x); -- { serverError CANNOT_CONVERT_TYPE }
 
 SELECT '-- ignore';
 SET date_time_overflow_behavior = 'ignore';
@@ -31,12 +37,12 @@ SELECT toDate32(1e300::Float64); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_
 SELECT toDateTime(1e300::Float64); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toTime(1e300::Float64); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toTime(-1e300::Float64); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT toDate(nan::Float64); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDate(nan::Float64); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toDate32(nan::Float64); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT toDateTime(nan::Float64); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT toTime(nan::Float64); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime(nan::Float64); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toTime(nan::Float64); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toDate(x) FROM (SELECT materialize(1e300::Float64) AS x); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT toDateTime(x) FROM (SELECT materialize(nan::Float64) AS x); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime(x) FROM (SELECT materialize(nan::Float64) AS x); -- { serverError CANNOT_CONVERT_TYPE }
 
 SELECT '-- values in range are unaffected';
 SET date_time_overflow_behavior = 'saturate';
