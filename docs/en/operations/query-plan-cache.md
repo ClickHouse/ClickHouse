@@ -35,7 +35,7 @@ A `SELECT` query can use the plan cache when all of the following hold:
   such queries are not cached; set `query_plan_cache_allow_scalar_subqueries = 1` to cache them when the tables referenced by scalar
   subqueries are static or stale scalar values are acceptable.
 
-Plans whose steps do not support serialization (e.g. window functions) are executed normally and simply not cached.
+Plans whose steps do not support serialization (e.g. `ORDER BY ... WITH FILL`) are executed normally and simply not cached.
 
 ## Invalidation {#invalidation}
 

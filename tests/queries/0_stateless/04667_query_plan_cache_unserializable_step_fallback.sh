@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings, no-old-analyzer, no-parallel-replicas
 # Regression: a query that is eligible for the query plan cache but contains a step that does not
-# support serialization (a window function) must be executed by the ordinary interpreter, not by the
+# support serialization (here `ORDER BY ... WITH FILL`; window functions, the original reproducer,
+# have become serializable since) must be executed by the ordinary interpreter, not by the
 # cacheable logical-plan path. The logical plan is deliberately built with ordinary planner behaviors
 # switched off, so executing it for a query that can never produce a cache entry would make that
 # query permanently slower whenever `enable_query_plan_cache` is on, with nothing gained.
@@ -47,17 +48,17 @@ stats_of_last_run()
         LIMIT 1" | tr '\t' ' '
 }
 
-echo "-- 1. a window function makes the plan unserializable: the query runs through the ordinary interpreter"
+echo "-- 1. WITH FILL makes the plan unserializable: the query runs through the ordinary interpreter"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
-WINDOW_QUERY="SELECT sum(v) OVER () AS s FROM ${CLICKHOUSE_DATABASE}.t_left ANY LEFT JOIN ${CLICKHOUSE_DATABASE}.t_join USING (k) LIMIT 1"
-echo "-- result: $(run "$WINDOW_QUERY")"
+FILL_QUERY="SELECT k, v FROM ${CLICKHOUSE_DATABASE}.t_left ANY LEFT JOIN ${CLICKHOUSE_DATABASE}.t_join USING (k) ORDER BY k WITH FILL FROM 1 TO 6"
+echo "-- result: $(run "$FILL_QUERY" | tr '\t' ' ')"
 # Three rows of `t_left` looked up in `t_join` by key. Executing the cacheable logical plan instead
 # would read all 100000 rows of `t_join`, because a key-value lookup join is not used there.
-echo "-- hits and read_rows (must be 0 3 - not cached, and the direct lookup is used): $(stats_of_last_run 'SELECT sum(v) OVER ()')"
+echo "-- hits and read_rows (must be 0 3 - not cached, and the direct lookup is used): $(stats_of_last_run 'SELECT k, v FROM')"
 
 echo "-- 2. the same query with the plan cache disabled behaves identically"
-$CLICKHOUSE_CLIENT --query "$WINDOW_QUERY" > /dev/null
-echo "-- hits and read_rows: $(stats_of_last_run 'SELECT sum(v) OVER ()')"
+$CLICKHOUSE_CLIENT --query "$FILL_QUERY" > /dev/null
+echo "-- hits and read_rows: $(stats_of_last_run 'SELECT k, v FROM')"
 
 echo "-- 3. a serializable query over the same left table is still cached"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"

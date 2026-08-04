@@ -1,5 +1,9 @@
--- 1. a window function makes the plan unserializable: the query runs through the ordinary interpreter
--- result: 6
+-- 1. WITH FILL makes the plan unserializable: the query runs through the ordinary interpreter
+-- result: 1 1
+2 2
+3 3
+4 0
+5 0
 -- hits and read_rows (must be 0 3 - not cached, and the direct lookup is used): 0 3
 -- 2. the same query with the plan cache disabled behaves identically
 -- hits and read_rows: 0 3
