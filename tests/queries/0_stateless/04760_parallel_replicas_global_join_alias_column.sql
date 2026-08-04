@@ -1,5 +1,8 @@
 -- Tags: shard
 
+-- The shipping path under test only exists in the analyzer.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_alias;
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_arr;

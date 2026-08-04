@@ -23,9 +23,11 @@ PR_SETTINGS="--enable_parallel_replicas=1 --max_parallel_replicas=3 \
 --parallel_replicas_for_non_replicated_merge_tree=1 --automatic_parallel_replicas_mode=0"
 QUERY="SELECT r.y FROM pr_lazy_join AS l GLOBAL INNER JOIN pr_lazy AS r ON l.x = r.x FORMAT Null"
 
+# enable_analyzer is pinned on every arm, including the control: the shipping path under test only
+# exists in the analyzer, and the arms must differ in the dispatch mode alone.
 for mode in "--enable_parallel_replicas=0" "$PR_SETTINGS --parallel_replicas_local_plan=1" "$PR_SETTINGS --parallel_replicas_local_plan=0"; do
     # shellcheck disable=SC2086
-    ${CLICKHOUSE_CLIENT} --profile-events-delay-ms=-1 --print-profile-events $mode --query "$QUERY" \
+    ${CLICKHOUSE_CLIENT} --enable_analyzer=1 --profile-events-delay-ms=-1 --print-profile-events $mode --query "$QUERY" \
         |& grep -o -e "SleepFunctionCalls.*"
 done
 
