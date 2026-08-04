@@ -326,6 +326,18 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
     static constexpr auto filename = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_filename = TMP_TXN_VERSION_METADATA_FILE_NAME;
 
+    if (data_part_storage.supportsAtomicFileWrites())
+    {
+        /// Single atomic write: storages that publish file writes atomically do not need
+        /// the tmp+replace dance (which exists only for partial-local-write crash safety).
+        auto write_settings = storage.getContext()->getWriteSettings();
+        auto buf = data_part_storage.writeFile(filename, 256, write_settings);
+        new_info.writeToBuffer(*buf, /*one_line=*/false);
+        buf->finalize();
+        buf->sync();
+        return;
+    }
+
     try
     {
         {

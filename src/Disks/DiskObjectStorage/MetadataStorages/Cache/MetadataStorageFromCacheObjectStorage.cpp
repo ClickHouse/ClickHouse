@@ -169,6 +169,13 @@ bool MetadataStorageFromCacheObjectStorage::isReadOnly() const
     return underlying->isReadOnly();
 }
 
+bool MetadataStorageFromCacheObjectStorage::isContentAddressed() const
+{
+    /// Defense-in-depth: never lie about content-addressing if this wrapper is ever constructed over a
+    /// CA storage. The primary fix (DiskObjectStorage::wrapWithCache) bypasses this wrapper for CA disks.
+    return underlying->isContentAddressed();
+}
+
 bool MetadataStorageFromCacheObjectStorage::isTransactional() const
 {
     return underlying->isTransactional();

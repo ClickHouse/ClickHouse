@@ -161,6 +161,23 @@ using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 class IObjectStorageIterator;
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
 
+/// Outcome of a token-conditional single-object removal (content-addressed disks).
+enum class ConditionalRemoveOutcome : uint8_t { Removed, TokenMismatch, NotFound };
+struct ConditionalRemoveResult
+{
+    ConditionalRemoveOutcome outcome = ConditionalRemoveOutcome::NotFound;
+    bool created_delete_marker = false;   /// backend reported a versioning delete marker
+};
+
+/// Outcome of a write-once conditional server-side copy (content-addressed disks): `created == true`
+/// means this call won the race and created `object_to`; `created == false` means the destination
+/// already existed (the precondition was rejected) and `dest_etag` is left empty.
+struct ConditionalCopyResult
+{
+    bool created = false;
+    String dest_etag;
+};
+
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
 /// Examples of object storages are S3, Azure Blob Storage, HDFS.
@@ -267,6 +284,15 @@ public:
     /// Remove objects on path if exists
     virtual void removeObjectsIfExist(const StoredObjects & object) = 0;
 
+    /// Remove `object` ONLY if its current entity tag equals `etag`. Backends without enforced
+    /// conditional removal MUST NOT override this: the content-addressed capability probe relies on the
+    /// default to fail closed. Supported: S3 (DeleteObject If-Match, GA 2025-09).
+    virtual ConditionalRemoveResult removeObjectIfTokenMatches(const StoredObject & /*object*/, const std::string & /*etag*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Conditional (token-exact) object removal is not implemented for {} object storage", getName());
+    }
+
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -274,6 +300,36 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) = 0;
+
+    /// Copy `object_from` to `object_to` WRITE-ONCE: the copy is conditional on `object_to` not
+    /// already existing (`If-None-Match: *`). Returns `created=true` with the destination ETag if
+    /// this call created the object, or `created=false` (empty `dest_etag`) if the destination
+    /// already existed — that is the expected "lost the race" signal, not an error. Any other
+    /// failure propagates as an exception.
+    ///
+    /// Backends without an enforced, native (server-side) conditional copy MUST NOT override this:
+    /// the content-addressed write-once staging promote relies on the default to fail closed rather
+    /// than silently falling back to an unconditional overwrite. Supported: S3 (native `CopyObject`
+    /// / `CompleteMultipartUpload` with `If-None-Match`).
+    virtual ConditionalCopyResult copyObjectConditional(
+        const StoredObject & /*object_from*/,
+        const StoredObject & /*object_to*/,
+        const ReadSettings & /*read_settings*/,
+        const WriteSettings & /*write_settings*/,
+        std::optional<ObjectAttributes> /*object_to_attributes*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Conditional (write-once) object copy is not implemented for {} object storage", getName());
+    }
+
+    ConditionalCopyResult copyObjectConditional(
+        const StoredObject & object_from,
+        const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings)
+    {
+        return copyObjectConditional(object_from, object_to, read_settings, write_settings, {});
+    }
 
     /// Copy object to another instance of object storage
     /// by default just read the object from source object storage and write
@@ -322,6 +378,22 @@ public:
     virtual bool isReadOnly() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
+
+    /// True when the incarnation tokens this storage returns from writes/HEADs are GCS generation
+    /// numbers riding the ETag plumbing (http_client = gcs_hmac / gcp_oauth conditional dialect).
+    /// Consumers (the CAS backend) stamp TokenType::Generation and route conditional writes
+    /// through the single-PUT path (GCS enforces no preconditions on CompleteMultipartUpload).
+    virtual bool conditionalOpsUseGenerationTokens() const { return false; }
+
+    /// Whether the underlying bucket has object versioning enabled; nullopt when unknown or not
+    /// applicable. Used by the CAS capability probe to fail closed on GCS: on a versioned bucket
+    /// a token-exact DELETE archives a noncurrent generation instead of reclaiming storage.
+    virtual std::optional<bool> isBucketVersioningEnabled() const { return std::nullopt; }
+
+    /// True when this object storage can execute writes under the given retry profile.
+    /// A caller that sets a non-Default profile on WriteSettings MUST check this first and
+    /// fail closed if unsupported (the profile is advisory only to backends that opt in).
+    virtual bool supportsRetryProfile(ObjectStorageRetryProfile profile) const { return profile == ObjectStorageRetryProfile::Default; }
 
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
