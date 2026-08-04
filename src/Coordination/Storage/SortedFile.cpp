@@ -22,6 +22,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace ProfileEvents

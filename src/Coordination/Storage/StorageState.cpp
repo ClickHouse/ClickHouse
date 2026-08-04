@@ -103,7 +103,7 @@ void StorageState::startup()
     background = std::make_unique<BackgroundWork>(this);
 }
 
-void StorageState::writeInfoFile()
+void StorageState::writeInfoFile() const
 {
     DB::WriteBufferFromOwnString content_buf;
     DB::writeText("server version: ", content_buf);

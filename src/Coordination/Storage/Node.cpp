@@ -84,7 +84,7 @@ NodePath NodePath::makeChildPath(std::string_view child_name, std::span<char> ou
 
     memcpy(out.data(), ptr, len);
     if (depth > 0)
-        out.data()[len] = '/';
+        out[len] = '/';
     memcpy(out.data() + len + (depth > 0), child_name.data(), child_name.size());
     return NodePath(std::string_view(out.data(), out.size()), depth + 1);
 }

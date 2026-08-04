@@ -48,7 +48,7 @@ struct KeeperLSMTNodesStorage final : public KeeperNodesStorage
 
     KeeperLSMTNodesStorage(KeeperContextPtr keeper_context_, SharedMutex * storage_mutex_);
 
-    NodeHolder getCommittedNode(std::string_view path);
+    NodeHolder getCommittedNode(std::string_view path) const;
     UncommittedNodeRef getUncommittedNode(std::string_view path);
 
     bool visitUncommittedRecursive(std::string_view root_path, size_t limit, std::function<bool(std::string_view /*path*/, UncommittedNodeRef &&)> check_node);

@@ -177,7 +177,7 @@ struct StorageState
     /// doesn't work (e.g. no directory) or doesn't support positioned reads (readBigAt).
     /// Otherwise the problem would only be reported by background thread after filling a memtable
     /// and flushing it, potentially a long time after startup.
-    void writeInfoFile();
+    void writeInfoFile() const;
 };
 
 }

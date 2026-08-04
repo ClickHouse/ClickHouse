@@ -17,11 +17,6 @@
 
 #include <algorithm>
 
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 file_block_size;
