@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
+#include <base/EnumReflection.h>
 
 #include "config.h"
 
@@ -146,6 +147,13 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        CAS_GC_RUN,
+        CAS_GC_REBUILD,
+        CAS_DROP_POOL_MEMBER,
+        CAS_FSCK,
+        CAS_FORGET,
+        CAS_GC_STOP,
+        CAS_GC_START,
         END
     };
 
@@ -176,6 +184,9 @@ public:
     String storage_policy;
     String volume;
     String disk;
+    /// SYSTEM CAS GC REBUILD FORCE [<disk>] — the raw baseline-rebuild disaster
+    /// recovery command's optional FORCE keyword (bypass the "healthy state" refusal).
+    bool cas_gc_rebuild_force = false;
     UInt64 seconds{};
     UInt64 untracked_memory_size{};
 
@@ -265,3 +276,14 @@ protected:
 
 
 }
+
+/// Type has grown past the default magic_enum range [-128, 127] (130+ entries and counting, one per
+/// SYSTEM sub-command): both the type-detection loop in ParserSystemQuery.cpp (which iterates
+/// magic_enum::enum_values<Type>() to try every command's auto-derived keyword phrase) and
+/// ASTSystemQuery::typeToString's index table silently drop/OOB-index any value past the range without
+/// this. Matches the GeometryColumnType / Coordination::OpNum precedent for a large enum.
+template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 255;
+};
