@@ -1050,6 +1050,36 @@ Field 'b' stream (3 strings, 6 bytes):
 01 'x' 01 'y' 01 'z'         "x", "y", "z"
 ```
 
+#### Row(name1 T1, name2 T2, ...) {#row}
+
+Type string: `Row(name1 T1, name2 T2, ..., nameN TN)`, e.g. `Row(a UInt8, b String)`. Every field must be named — positional fields are rejected at type-parse time — and, unlike `Tuple`, the field names are an integral part of the type: field extraction addresses fields by name.
+
+In memory a `Row` column has the same representation as the equivalent named `Tuple`; only the wire/storage layout differs. Where `Tuple` writes one stream per element (column-major), `Row` is the one exception to the composite family's multiple-streams rule: it writes a **single stream of length-prefixed row records** (row-major):
+
+```text
+[VarUInt row_size][field 1][field 2]...[field N]     row 0
+[VarUInt row_size][field 1][field 2]...[field N]     row 1
+ ...
+```
+
+- `row_size` is the total byte size of the `N` field payloads that follow. Fields are self-delimiting, so a decoder does not need it to parse a row; it exists so that a reader can skip whole rows without decoding their fields.
+- Each field is encoded with the **single-value binary encoding** of its type (the same per-value encoding the `RowBinary` format uses), in declaration order.
+- The wrapper contributes no state prefix and keeps no cross-block state; fields are encoded value-by-value, so inner versioned types contribute no state prefix either.
+
+`Row(a UInt8, b String)` with 2 rows `(1, "x")`, `(2, "yy")` (9 bytes total):
+
+```text
+03                           row_size = 3
+01                           a = 1
+01 'x'                       b = "x"
+
+04                           row_size = 4
+02                           a = 2
+02 'y' 'y'                   b = "yy"
+```
+
+`Row` has no [binary type encoding](/sql-reference/data-types/data-types-binary-encoding): writing a block whose header carries a `Row` type with `output_format_native_encode_types_in_binary_format = 1` throws an exception (`UNSUPPORTED_METHOD`).
+
 ### Type aliases {#type-aliases}
 
 Several types are pure aliases: the server sends the alias name in the column header, but the bytes that follow are those of an underlying type. A decoder maps the alias to that type and reuses its codec — no new wire format is involved.
@@ -1059,13 +1089,13 @@ The geographic types alias to nested arrays and tuples:
 | Type string              | Underlying wire type        |
 |--------------------------|-----------------------------|
 | `Point`                  | `Tuple(Float64, Float64)`   |
-| `Ring`, `LineString`     | `Array(Point)`              |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`    |
 | `Polygon`, `MultiLineString` | `Array(Ring)`           |
 | `MultiPolygon`           | `Array(Polygon)`            |
 
 So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering as `(1,2)`), a `Ring` as `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`), and so on up the hierarchy.
 
-`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the six geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. As with any `Variant`, the discriminators follow the canonical name-sorted order of the geo aliases: `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`. Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
+`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the seven geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. Unlike a user-spelled `Variant`, the discriminators of `Geometry` do **not** follow the name-sorted order: they are fixed for compatibility, and new geo types are only ever appended. The mapping is `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint` (added in 26.7 — streams from older servers simply never contain discriminator `6`). Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
 
 `SimpleAggregateFunction(func, T)` is an alias for its value type `T`. It stores an already-finalized aggregate value, so its wire form and rendering are exactly those of `T` (`SimpleAggregateFunction(sum, UInt64)` is decoded as `UInt64`). Only the single-value-type form is an alias this way; the underlying type may itself be a composite.
 
@@ -1479,7 +1509,7 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 | `0x9e` | `Quantized`       |
 | `0x9f` | `ZXC`             |
 
-`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
+`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
 `0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when `allow_experimental_codecs` is set, and the method byte is always accepted on decompression.
 
