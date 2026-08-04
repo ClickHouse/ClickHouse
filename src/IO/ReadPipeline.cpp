@@ -622,8 +622,15 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         },
         [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
+            /// Pass the size recorded in the stored object, so the builder resolves
+            /// `estimated_size` (and with it O_DIRECT and the effective read method)
+            /// from the same basis as `DiskLocal::prepareRead`, which decided the
+            /// page cache and read method stages of this pipeline.
+            std::optional<size_t> file_size;
+            if (object.bytes_size != StoredObject::UnknownSize)
+                file_size = object.bytes_size;
             return createReadBufferFromFileBase(
-                s.path, settings, s.read_hint);
+                s.path, settings, s.read_hint, file_size);
         },
         [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
