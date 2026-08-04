@@ -29,5 +29,16 @@ SELECT count(), sum(y) FROM d
 SETTINGS enable_analyzer = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0,
     parallel_replicas_mode = 'custom_key_sampling'; -- { serverError BAD_ARGUMENTS }
 
+-- JOINs are not supported with the custom key, and the query is executed without the parallel replicas.
+-- Dropping only the custom key left the parallel replicas enabled with nothing to split the data by, so
+-- every replica read the whole table.
+SELECT count() FROM d AS a GLOBAL JOIN d AS b USING (x)
+SETTINGS enable_analyzer = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0,
+    parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x';
+
+SELECT count() FROM d AS a GLOBAL JOIN d AS b USING (x)
+SETTINGS enable_analyzer = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0,
+    parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'x';
+
 DROP TABLE d;
 DROP TABLE t;

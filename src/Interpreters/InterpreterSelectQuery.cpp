@@ -675,11 +675,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Check support for JOIN for parallel replicas with custom key
-    if (joined_tables.tablesCount() > 1 && !settings[Setting::parallel_replicas_custom_key].value.empty())
+    /// Check support for JOIN for parallel replicas with custom key.
+    /// Dropping the custom key alone would leave the parallel replicas enabled without anything to split the
+    /// data by: the initiator would still send the query to every replica of the shard, and every replica would
+    /// read the whole table. Disable the parallel replicas themselves, as the query is executed without them.
+    if (joined_tables.tablesCount() > 1 && context->canUseParallelReplicasCustomKey())
     {
         LOG_DEBUG(log, "JOINs are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
-        context->setSetting("parallel_replicas_custom_key", String{""});
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     }
 
     /// Check support for FINAL for parallel replicas
