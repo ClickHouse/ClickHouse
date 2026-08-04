@@ -7,6 +7,7 @@
 #include <Access/RowPolicy.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -59,6 +60,38 @@ namespace
             policy.to_roles = *query.roles;
     }
 
+    [[noreturn]] void rejectPolicyOnBlendingEngine(const String & subject, const String & engine)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} has the {} engine, which merges rows with the same sorting key into one row "
+            "taking the values of all of them, so a row policy on this table does not hide the values of "
+            "the rows it filters out - they end up in the row it shows. Define the row policy on the table "
+            "which stores the raw rows instead. "
+            "See https://clickhouse.com/docs/sql-reference/statements/create/row-policy, or set "
+            "allow_suspicious_row_policies_with_blending_engines = 1 to create the policy anyway",
+            subject,
+            engine);
+    }
+
+    /// A policy for the whole database is used for every table in it which has no policy of its own
+    void checkDatabaseHasNoBlendingEngines(const String & database, const ContextPtr & context)
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(database);
+        if (!db)
+            return;
+
+        for (auto it = db->getTablesIterator(context, {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+        {
+            const auto & table = it->table();
+            if (table && table->isBlendingEngine())
+                rejectPolicyOnBlendingEngine(
+                    fmt::format("Table {}.{}, which a policy on {}.* is used for,",
+                        backQuoteIfNeed(database), backQuoteIfNeed(it->name()), backQuoteIfNeed(database)),
+                    table->getName());
+        }
+    }
+
     /// A merge mixes the hidden rows into the visible one, so the policy only looks like a boundary here
     void checkTablesAreNotBlendingEngines(const ASTCreateRowPolicyQuery & query, const ContextPtr & context)
     {
@@ -67,24 +100,21 @@ namespace
 
         for (const auto & full_name : query.names->full_names)
         {
-            /// ON db.* names no particular engine
-            if (full_name.database.empty() || full_name.table_name == RowPolicyName::ANY_TABLE_MARK)
+            if (full_name.database.empty())
                 continue;
+
+            if (full_name.table_name == RowPolicyName::ANY_TABLE_MARK)
+            {
+                checkDatabaseHasNoBlendingEngines(full_name.database, context);
+                continue;
+            }
 
             auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{full_name.database, full_name.table_name}, context);
             if (!storage || !storage->isBlendingEngine())
                 continue;
 
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Table {}.{} has the {} engine, which merges rows with the same sorting key into one row "
-                "taking the values of all of them, so a row policy on this table does not hide the values of "
-                "the rows it filters out - they end up in the row it shows. Define the row policy on the table "
-                "which stores the raw rows instead. "
-                "See https://clickhouse.com/docs/sql-reference/statements/create/row-policy, or set "
-                "allow_suspicious_row_policies_with_blending_engines = 1 to create the policy anyway",
-                backQuoteIfNeed(full_name.database),
-                backQuoteIfNeed(full_name.table_name),
+            rejectPolicyOnBlendingEngine(
+                fmt::format("Table {}.{}", backQuoteIfNeed(full_name.database), backQuoteIfNeed(full_name.table_name)),
                 storage->getName());
         }
     }
