@@ -1597,6 +1597,10 @@ static BlockIO executeQueryImpl(
             else if (run_query_in_background
                 && (client_interface == ClientInfo::Interface::TCP || client_interface == ClientInfo::Interface::HTTP))
             {
+                if (flags.internal)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "run_query_in_background cannot be used for an internal query");
+
                 /// HTTP handler needs to know if run_query_in_background = 1 before calling executeQuery,
                 /// so it can make detached query context (which is copied from global context, not session context).
                 /// So this setting should not be set via query (i.e. `SETTINGS run_query_in_background = 1`).
@@ -2819,6 +2823,21 @@ void executeQuery(
         }
     }
 
+    if (streams.dispatched)
+    {
+        istr.reset();
+
+        /// query_finish_callback() below finalizes the response, so the details must be set before it.
+        /// The callback is consumed so that the SCOPE_EXIT above does not set them a second time,
+        /// including when the call throws.
+        if (auto set_result_details_copy = std::exchange(set_result_details, nullptr))
+            set_result_details_copy(result_details);
+
+        if (query_finish_callback)
+            query_finish_callback();
+        return;
+    }
+
     auto & pipeline = streams.pipeline;
     bool pulling_pipeline = pipeline.pulling();
 
@@ -2941,13 +2960,6 @@ void executeQuery(
                 handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
         throw;
-    }
-
-    if (streams.dispatched)
-    {
-        if (query_finish_callback)
-            query_finish_callback();
-        return;
     }
 
     QueryFinishCallback finish_callback;

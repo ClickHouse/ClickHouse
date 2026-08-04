@@ -42,21 +42,20 @@ function shared_native_and_http_tests()
     echo "=== $run ==="
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t"
 
-    echo '--- INSERT SELECT in background: no output, visible and attributed in system.processes, rows land'
+    echo '--- INSERT SELECT in background: no output, rows land, attributed in query_log'
     local insert_id="insert_${run}_${CLICKHOUSE_DATABASE}"
     local out
     out=$($run "INSERT INTO t SETTINGS max_block_size = 1 SELECT number FROM numbers(30) WHERE NOT ignore(sleepEachRow(0.05))" "$insert_id")
     [[ -z "$out" ]] && echo "no output"
-    wait_for "count() = 1 FROM system.processes WHERE query_id = '$insert_id' AND peak_memory_usage > 0 AND read_rows > 0"
-    echo "attributed in system.processes"
     wait_for "$(finished_in_query_log "$insert_id")"
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM t"
     $CLICKHOUSE_CLIENT -q "SELECT memory_usage > 0, length(ProfileEvents) > 0 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$insert_id' AND type = 'QueryFinish'"
 
-    echo '--- KILL QUERY in background kills a background query'
+    echo '--- a long-running background query is visible and attributed in system.processes, and KILL QUERY kills it'
     local victim_id="victim_${run}_${CLICKHOUSE_DATABASE}"
     $run "INSERT INTO t SETTINGS max_block_size = 1 SELECT number FROM numbers(600) WHERE NOT ignore(sleepEachRow(0.1))" "$victim_id"
-    wait_for "count() = 1 FROM system.processes WHERE query_id = '$victim_id'"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$victim_id' AND peak_memory_usage > 0 AND read_rows > 0"
+    echo "attributed in system.processes"
     out=$($run "KILL QUERY WHERE query_id = '$victim_id' SYNC")
     [[ -z "$out" ]] && echo "no output"
     wait_for "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$victim_id' AND type = 'ExceptionWhileProcessing' AND exception_code = 394"
