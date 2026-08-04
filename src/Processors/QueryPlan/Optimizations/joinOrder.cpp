@@ -54,10 +54,20 @@ static UInt32 toMask(const BitSet & bits)
     return mask;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+static std::optional<UInt64> estimateJoinCardinality(
+    std::optional<UInt64> left_rows,
+    std::optional<UInt64> right_rows,
+    double selectivity,
+    JoinKind join_kind);
+
+DPJoinEntry::DPJoinEntry(size_t id,
+        std::optional<UInt64> rows,
+        std::unordered_map<String, ColumnStats> column_stats_,
+        std::optional<UInt64> rows_upper)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
+    , estimated_rows_upper(rows_upper)
     , column_stats(std::move(column_stats_))
     , relation_id(static_cast<int>(id))
 {
@@ -78,6 +88,11 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
+    /// Selectivity 1.0: a join cannot emit more than the cartesian product of its children's
+    /// bounds. A missing child bound yields a missing parent bound.
+    estimated_rows_upper = estimateJoinCardinality(
+        left->estimated_rows_upper, right->estimated_rows_upper, 1.0, join_operator.kind);
+
     /// Merge column stats from both children, then update NDVs for equi-join key columns.
     column_stats = left->column_stats;
     column_stats.insert(right->column_stats.begin(), right->column_stats.end());
@@ -935,7 +950,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
+        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats, rel.estimated_rows_upper));
     }
 
     std::vector<JoinActionRef *> applied_edges;
@@ -1042,7 +1057,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 {
     auto& entry = dptable[S];
     if (!entry.left && !entry.right)
-        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
+        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats, entry.estimated_rows_upper);
 
     JoinOperator join_operator(entry.kind, JoinStrictness::All, JoinLocality::Unspecified);
     /// A filter predicate applied at an outer join step must not go to the ON clause, where it
@@ -1094,6 +1109,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         Bitvector left{0};
         Bitvector right{0};
         std::optional<UInt64> estimated_rows = {};
+        std::optional<UInt64> estimated_rows_upper = {};
         std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
         double sel{.0};
@@ -1149,7 +1165,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats, rel.estimated_rows_upper);
         components[1][entry->relations] = entry;
         dp_table[entry->relations] = entry;
     }
@@ -1681,7 +1697,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
     for (size_t i = 0; i < num_relations; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats, rel.estimated_rows_upper);
         dp_table[entry->relations] = entry;
     }
 

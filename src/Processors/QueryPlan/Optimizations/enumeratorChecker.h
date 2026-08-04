@@ -125,6 +125,9 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.sel = selectivity;
         entry.kind = kind;
         entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind);
+        /// Selectivity pinned to 1.0: a join cannot emit more than the cartesian product of the bounds.
+        entry.estimated_rows_upper = optimizer.estimateCardinality(
+            dp_table[lhs_subset].estimated_rows_upper, dp_table[rhs_subset].estimated_rows_upper, 1.0, kind);
         entry.edges.assign(edge.begin(), edge.end());
     }
 }
