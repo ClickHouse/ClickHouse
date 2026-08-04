@@ -1956,22 +1956,6 @@
     let cli_history_index = -1;
     let cli_cwd = "/";
 
-    let completion_commands = [];
-
-    async function loadCompletionCommands() {
-        try {
-            const url = new URL(window.location);
-            url.pathname = "/api/v1/commands";
-            url.search = "?list";
-            const res = await fetch(url.toString());
-            if (res.ok) {
-                const data = await res.json();
-                if (Array.isArray(data.commands))
-                    completion_commands = data.commands.slice().sort();
-            }
-        } catch (e) { /* completion will be unavailable */ }
-    }
-
     const COMPLETION_DISPLAY_LIMIT = 1000;
     let pending_completion_display = null;
     /// Signature of the last match list already printed — used to avoid stacking
@@ -1992,205 +1976,6 @@
         const prompt = document.querySelector(".command-prompt");
         if (prompt)
             prompt.classList.toggle("pending-completion", matches !== null);
-    }
-
-    function resolvePath(path) {
-        let abs = path.startsWith("/") ? path : (cli_cwd === "/" ? "/" + path : cli_cwd + "/" + path);
-        const parts = abs.split("/");
-        const resolved = [];
-        for (const part of parts) {
-            if (part === "" || part === ".") continue;
-            else if (part === "..") resolved.pop();
-            else resolved.push(part);
-        }
-        return "/" + resolved.join("/");
-    }
-
-
-    function isKeeperBarePathChar(ch) {
-        /// Same character classes parseKeeperArg consumes as bare tokens:
-        /// BareWord / Number (ASCII word chars), Slash, Dot, Minus.
-        return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z')
-            || (ch >= 'a' && ch <= 'z') || ch === '_'
-            || ch === '/' || ch === '.' || ch === '-';
-    }
-
-    function escapeKeeperNodeName(name) {
-        let needs_escaping = false;
-        let needs_quoting = false;
-        for (let i = 0; i < name.length; i++) {
-            const ch = name[i];
-            if (ch === ' ' || ch === '\\') {
-                needs_escaping = true;
-            } else if (!isKeeperBarePathChar(ch)) {
-                needs_quoting = true;
-            }
-        }
-        if (!needs_escaping && !needs_quoting)
-            return name;
-        if (!needs_quoting)
-            return name.replaceAll('\\', '\\\\').replaceAll(' ', '\\ ');
-        return "'" + name.replaceAll('\\', '\\\\').replaceAll("'", "\\'") + "'";
-    }
-
-    /// Inverse of parseKeeperArg / formatKeeperNodeName for one CLI argument.
-    /// Converts mixed bare tokens, `\ `/`\\` escapes, and quoted segments into a real znode path.
-    /// Quoted segments follow readQuotedStringWithSQLStyle / readDoubleQuotedStringWithSQLStyle
-    /// (parseComplexEscapeSequence + SQL-style doubled quotes).
-    /// An unclosed quote is accepted (content kept): tab completion may leave a partial
-    /// quoted prefix such as /'semi; and must keep refining on the next Tab, matching
-    /// keeper-client's unescapePath / open-quote completion contract.
-    function unescapeKeeperArg(arg) {
-        let result = "";
-        let i = 0;
-        const atEnd = () => i >= arg.length;
-        const hasNext = () => i + 1 < arg.length;
-        const peek = (offset = 0) => arg[i + offset];
-        const advance = () => { i += 1; };
-        /// Consume one character and return it.
-        const takeChar = () => arg[i++];
-        /// Consume a bare-mode `\` escape pair and return the escaped character.
-        const takeBareEscapedChar = () => {
-            const escaped = arg[i + 1];
-            i += 2;
-            return escaped;
-        };
-        const isHexDigit = (c) => (c >= "0" && c <= "9") || (c >= "A" && c <= "F") || (c >= "a" && c <= "f");
-        const isControlASCII = (c) => c.charCodeAt(0) <= 31;
-        /// Same mapping as DB::parseEscapeSequence.
-        const parseEscapeSequenceChar = (c) => {
-            switch (c) {
-                case "a": return "\x07";
-                case "b": return "\b";
-                case "e": return "\x1B";
-                case "f": return "\f";
-                case "n": return "\n";
-                case "r": return "\r";
-                case "t": return "\t";
-                case "v": return "\v";
-                case "0": return "\0";
-                default: return c;
-            }
-        };
-        /// Same rules as DB::parseComplexEscapeSequence (cursor on `\`).
-        /// Incomplete sequences are decoded leniently so open-quote tab completion can continue.
-        const takeQuotedEscape = () => {
-            advance(); /// consume '\'
-            if (atEnd())
-                return "\\";
-            const char_after_backslash = takeChar();
-            if (char_after_backslash === "x") {
-                if (hasNext() && isHexDigit(peek()) && isHexDigit(peek(1))) {
-                    const hex = takeChar() + takeChar();
-                    return String.fromCharCode(parseInt(hex, 16));
-                }
-                /// Incomplete \xHH — keep as literal \x (plus any following chars consumed later).
-                return "\\x";
-            }
-            if (char_after_backslash === "N") {
-                /// \N → empty string (NULL marker), same as parseComplexEscapeSequence.
-                return "";
-            }
-            const decoded_char = parseEscapeSequenceChar(char_after_backslash);
-            /// For LIKE / regexp convenience, keep the backslash for non-special chars
-            /// (e.g. '\%' → '\%'), matching parseComplexEscapeSequence.
-            if (decoded_char !== "\\"
-                && decoded_char !== "'"
-                && decoded_char !== "\""
-                && decoded_char !== "`"
-                && decoded_char !== "/"
-                && decoded_char !== "="
-                && !isControlASCII(decoded_char)) {
-                return "\\" + decoded_char;
-            }
-            return decoded_char;
-        };
-
-        while (!atEnd()) {
-            const ch = peek();
-            if (ch === " " || ch === "\t")
-                break;
-
-            if (ch === "'" || ch === '"') {
-                const quote = takeChar();
-                while (!atEnd()) {
-                    if (peek() === "\\") {
-                        if (!hasNext()) {
-                            result += takeChar();
-                            break;
-                        }
-                        result += takeQuotedEscape();
-                        continue;
-                    }
-                    if (peek() === quote) {
-                        advance();
-                        /// SQL-style quoting: '' inside '...' / "" inside "..." → one quote char.
-                        if (!atEnd() && peek() === quote) {
-                            result += takeChar();
-                            continue;
-                        }
-                        break;
-                    }
-                    result += takeChar();
-                }
-                /// Unclosed quote: keep decoded content and stop (end of arg).
-                continue;
-            }
-
-            if (ch === "\\") {
-                if (!hasNext()) {
-                    result += takeChar();
-                    break;
-                }
-                const next = peek(1);
-                if (next === " " || next === "\\") {
-                    result += takeBareEscapedChar();
-                    continue;
-                }
-                /// \<other> → keep backslash as-is (same as parseKeeperArg).
-                result += takeChar();
-                continue;
-            }
-
-            if (!isKeeperBarePathChar(ch))
-                break;
-
-            result += takeChar();
-        }
-        return result;
-    }
-
-    /// Format a multi-match common prefix for insertion into the input line.
-    /// Uses the same rules as escapeKeeperNodeName, but when quoting is required
-    /// leaves the quote open — the next Tab continues inside the quote until a
-    /// single leaf match can close it (same contract as keeper-client).
-    function escapeKeeperCompletionPrefix(name) {
-        let needs_escaping = false;
-        let needs_quoting = false;
-        for (let i = 0; i < name.length; i++) {
-            const ch = name[i];
-            if (ch === ' ' || ch === '\\') {
-                needs_escaping = true;
-            } else if (!isKeeperBarePathChar(ch)) {
-                needs_quoting = true;
-            }
-        }
-        if (!needs_escaping && !needs_quoting)
-            return name;
-        if (!needs_quoting)
-            return name.replaceAll('\\', '\\\\').replaceAll(' ', '\\ ');
-        return "'" + name.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
-    }
-
-    /// Escape each path segment for round-tripping through the CLI parser.
-    function escapeKeeperPath(path) {
-        if (!path)
-            return path;
-        return path.split("/").map((segment) => {
-            if (segment === "")
-                return "";
-            return escapeKeeperNodeName(segment);
-        }).join("/");
     }
 
     function longestCommonPrefix(strings) {
@@ -2255,105 +2040,43 @@
     async function handleTabCompletionImpl(input) {
         const requestValue = input.value;
         const requestCwd = cli_cwd;
-        const value = input.value;
-
-        if (!value.includes(" ")) {
-            const prefix = value;
-            const matches = prefix === ""
-                ? completion_commands
-                : completion_commands.filter(cmd => cmd.startsWith(prefix));
-
-            if (matches.length === 0) return;
-            if (matches.length === 1) { input.value = matches[0]; return; }
-
-            input.value = longestCommonPrefix(matches);
-            showCompletionMatches(value, matches);
-            return;
-        }
-
-        const spaceIdx = value.indexOf(" ");
-        const cmdPart = value.substring(0, spaceIdx + 1);
-        const argPart = value.substring(spaceIdx + 1).trimStart();
-        /// Completions insert CLI-escaped text (e.g. space\\ node). Unescape before
-        /// path lookup / prefix matching so a second Tab uses the real znode path.
-        /// Partial open quotes (e.g. /'semi;) are kept — not treated as malformed.
-        const unescapedArg = unescapeKeeperArg(argPart);
-
-        let parentDir, namePrefix, pathPrefix;
-
-        if (unescapedArg === "") {
-            parentDir = cli_cwd;
-            namePrefix = "";
-            pathPrefix = "";
-        } else if (unescapedArg.endsWith("/")) {
-            parentDir = resolvePath(unescapedArg);
-            namePrefix = "";
-            pathPrefix = unescapedArg;
-        } else {
-            const lastSlash = unescapedArg.lastIndexOf("/");
-            if (lastSlash === -1) {
-                parentDir = cli_cwd;
-                namePrefix = unescapedArg;
-                pathPrefix = "";
-            } else {
-                pathPrefix = unescapedArg.substring(0, lastSlash + 1);
-                namePrefix = unescapedArg.substring(lastSlash + 1);
-                parentDir = resolvePath(pathPrefix);
-            }
-        }
+        const cursor = input.selectionStart ?? input.value.length;
+        const prefix = input.value.substring(0, cursor);
+        const suffix = input.value.substring(cursor);
 
         try {
             const url = new URL(window.location);
-            url.pathname = `/api/v1/storage${parentDir}`;
-            url.search = "?children=true";
+            url.pathname = "/api/v1/commands";
+            url.search = "?" + new URLSearchParams({
+                complete: prefix,
+                cwd: cli_cwd,
+            }).toString();
             const res = await fetch(url.toString());
             if (!res.ok) return;
             const data = await res.json();
             // Discard if the user typed or changed cwd while the request was in flight.
             if (input.value !== requestValue || cli_cwd !== requestCwd)
                 return;
-            const children = (data.child_node_names || []).sort();
-            const raw_matches = namePrefix === ""
-                ? children
-                : children.filter(name => name.startsWith(namePrefix));
-            const matches = raw_matches.map(escapeKeeperNodeName);
-            const escapedPathPrefix = escapeKeeperPath(pathPrefix);
 
+            const matches = Array.isArray(data.completions) ? data.completions : [];
             if (matches.length === 0) return;
+
+            const replaceStart = Number.isFinite(data.replace_start) ? data.replace_start : 0;
+            const head = prefix.substring(0, Math.min(replaceStart, prefix.length));
+
+            const applyCompletion = (inserted) => {
+                const completedPrefix = head + inserted;
+                input.value = completedPrefix + suffix;
+                input.setSelectionRange(completedPrefix.length, completedPrefix.length);
+            };
+
             if (matches.length === 1) {
-                /// Same contract as keeper-client: when the unique match has children,
-                /// append '/' so the next Tab descends into that segment instead of
-                /// re-querying the same parent with the node name as a child prefix.
-                let completed = cmdPart + escapedPathPrefix + matches[0];
-                const matchedName = raw_matches[0];
-                const nodePath = parentDir === "/"
-                    ? `/${matchedName}`
-                    : `${parentDir}/${matchedName}`;
-                try {
-                    const childUrl = new URL(window.location);
-                    childUrl.pathname = `/api/v1/storage${nodePath}`;
-                    childUrl.search = "?children=true";
-                    const childRes = await fetch(childUrl.toString());
-                    if (input.value !== requestValue || cli_cwd !== requestCwd)
-                        return;
-                    if (childRes.ok) {
-                        const childData = await childRes.json();
-                        if (input.value !== requestValue || cli_cwd !== requestCwd)
-                            return;
-                        if ((childData.child_node_names || []).length > 0)
-                            completed += "/";
-                    }
-                } catch (e) { /* ignore probe errors — leave without trailing '/' */ }
-                input.value = completed;
+                applyCompletion(matches[0]);
                 return;
             }
 
-            /// LCP on raw znode names, then format. Quoting leaves the quote open so
-            /// the next Tab can still refine (LCP on already-escaped strings would
-            /// also open a quote, but must not be fed back as a parse error).
-            input.value = cmdPart + escapedPathPrefix + escapeKeeperCompletionPrefix(
-                longestCommonPrefix(raw_matches));
-            showCompletionMatches(value, matches);
+            applyCompletion(longestCommonPrefix(matches));
+            showCompletionMatches(prefix, matches);
         } catch (e) { /* ignore fetch errors */ }
     }
 
@@ -2550,7 +2273,6 @@
             selectTabFromUrl();
             setupCommandLine();
             loadContent();
-            loadCompletionCommands();
             setInterval(loadContent, STATS_UPDATE_INTERVAL_MS);
         } catch (e) {
             renderError(`Failed to start: ${e}`)

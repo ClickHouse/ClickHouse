@@ -355,7 +355,8 @@ try
 
     String command;
     String cwd = "/";
-    bool list_commands = false;
+    bool has_complete = false;
+    String complete_prefix;
 
     const auto params = uri.getQueryParameters();
     for (const auto & [key, value]: params)
@@ -364,22 +365,32 @@ try
             command = value;
         else if (key == "cwd")
             cwd = value;
-        else if (key == "list")
-            list_commands = true;
+        else if (key == "complete")
+        {
+            has_complete = true;
+            complete_prefix = value;
+        }
     }
 
-    if (list_commands)
+    if (has_complete)
     {
         setResponseDefaultHeaders(response);
         response.setContentType("application/json");
 
+        std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        KeeperClientBase client(stream, stream);
+        client.zookeeper = keeper_client->get();
+        client.cwd = cwd;
+        client.ask_confirmation = false;
+
+        const auto completion = client.completeQueryPrefix(complete_prefix);
+
         Poco::JSON::Object response_json;
-        Poco::JSON::Array commands_array;
-
-        for (const auto & name : KeeperClientBase::getRegisteredCommandNames())
-            commands_array.add(name);
-
-        response_json.set("commands", commands_array);
+        Poco::JSON::Array completions_array;
+        for (const auto & entry : completion.completions)
+            completions_array.add(entry);
+        response_json.set("completions", completions_array);
+        response_json.set("replace_start", static_cast<UInt64>(completion.replace_start));
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);

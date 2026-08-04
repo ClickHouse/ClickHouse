@@ -79,28 +79,29 @@ Success response (HTTP 200):
 
 - **Path**: `/api/v1/commands`
 - **Methods**: GET, POST
-- **Description**: Lists registered command names (Keeper Client CLI commands and Four-Letter Word commands), or executes Four-Letter Word commands / Keeper Client CLI commands. The command to run is taken from the `command` query parameter (path segments after `/api/v1/commands` are not used).
+- **Description**: Tab-completes a CLI line prefix (`complete`), or executes Four-Letter Word / Keeper Client CLI commands (`command`). Path segments after `/api/v1/commands` are not used.
 
 Query parameters:
-- `list` - When present (for example `?list`), returns the names of registered Keeper Client CLI commands and Four-Letter Word commands as JSON. The embedded dashboard uses this to populate command completion. No command is executed.
-- `command` - The command to execute (required unless `list` is set)
-- `cwd` - Current working directory for path-based commands (default: `/`)
+- `complete` - When present, tab-completes the CLI line prefix given as the parameter value (text up to the cursor), using the same logic as `clickhouse-keeper-client`. Returns completion candidates and a `replace_start` index. An empty value lists all registered command names. No command is executed.
+- `command` - The command to execute (required unless `complete` is set)
+- `cwd` - Current working directory for path-based commands and completion (default: `/`)
 
-#### List commands {#list-commands}
+#### Complete command line {#complete-command-line}
 
 Request:
 ```bash
-curl "http://localhost:9182/api/v1/commands?list"
+curl "http://localhost:9182/api/v1/commands?complete=ls%20/cli&cwd=/"
 ```
 
 Response:
 ```json
 {
-  "commands": ["ls", "get", "create", "cd", "ruok", "mntr", "..."]
+  "completions": ["clickhouse/", "clickhouse_keeper"],
+  "replace_start": 3
 }
 ```
 
-`commands` is an array of registered Keeper Client CLI command names and Four-Letter Word command names.
+`completions` are strings that replace the prefix from `replace_start` to the end of the `complete` value (same contract as replxx last-word completion). The embedded dashboard uses this endpoint for Tab completion so escaping and multi-argument handling stay on the server.
 
 #### Execute command {#execute-command}
 

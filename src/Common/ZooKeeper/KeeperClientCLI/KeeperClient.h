@@ -32,6 +32,15 @@ static const NameSet four_letter_word_commands
 /// Used by both `ls` output and tab completion.
 String formatKeeperNodeName(const String & name);
 
+/// Result of `KeeperClientBase::completeQueryPrefix`.
+/// `completions` are texts that replace `prefix[replace_start:]` (same contract as
+/// replxx last-word completion). `replace_start` is an index into the prefix.
+struct KeeperCompletionResult
+{
+    std::vector<String> completions;
+    size_t replace_start = 0;
+};
+
 class KeeperClientBase
 {
 public:
@@ -50,6 +59,11 @@ public:
 
     /// Sorted command names plus four-letter words, for completion.
     static const std::vector<String> & getRegisteredCommandNames();
+
+    /// Tab-complete a CLI line prefix (text up to the cursor), shared by
+    /// clickhouse-keeper-client and the Keeper HTTP dashboard.
+    /// Requires `zookeeper` for path-argument completion.
+    KeeperCompletionResult completeQueryPrefix(const String & prefix) const;
 
     zkutil::ZooKeeperPtr zookeeper;
     std::filesystem::path cwd = "/";

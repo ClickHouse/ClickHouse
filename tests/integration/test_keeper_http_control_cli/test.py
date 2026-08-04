@@ -134,35 +134,75 @@ def test_http_commands_cd_returns_cwd(started_cluster):
     ) as client:
         client.rmr(dirname)
 
-def test_http_commands_list(started_cluster):
+def test_http_commands_complete(started_cluster):
     leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
-    response = requests.get(
-        "http://{host}:{port}/api/v1/commands?list".format(
-            host=leader.ip_address, port=9182
-        )
-    )
-    assert response.status_code == 200
-    commands = response.json()["commands"]
-    assert isinstance(commands, list)
-    # CLI commands
-    for expected in ("ls", "create", "get", "rmr", "cd", "help"):
-        assert expected in commands
-    # Four-letter words
-    for expected in ("ruok", "mntr", "conf", "srvr"):
-        assert expected in commands
-    # Should be sorted (getRegisteredCommandNames sorts)
-    assert commands == sorted(commands)
-    # No duplicates
-    assert len(commands) == len(set(commands))
+    prefix = str(uuid.uuid4())
+    dirname = f"{prefix}_comp"
+    child_a = f"{prefix}_alpha"
+    child_b = f"{prefix}_beta"
 
-    # list without constructing side effects: second call still works
-    response2 = requests.get(
-        "http://{host}:{port}/api/v1/commands?list".format(
-            host=leader.ip_address, port=9182
+    for path in (dirname, f"{dirname}/{child_a}", f"{dirname}/{child_b}"):
+        response = requests.get(
+            "http://{host}:{port}/api/v1/commands".format(
+                host=leader.ip_address, port=9182
+            ),
+            params={"command": f"create '/{path}' _", "cwd": "/"},
         )
+        assert response.status_code == 200
+
+    # Empty complete prefix lists all registered command names.
+    all_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": "", "cwd": "/"},
     )
-    assert response2.status_code == 200
-    assert response2.json()["commands"] == commands
+    assert all_resp.status_code == 200
+    all_commands = all_resp.json()["completions"]
+    assert isinstance(all_commands, list)
+    for expected in ("ls", "create", "get", "rmr", "cd", "help", "ruok", "mntr", "conf", "srvr"):
+        assert expected in all_commands
+    assert all_commands == sorted(all_commands)
+    assert len(all_commands) == len(set(all_commands))
+
+    # Command-name completion
+    cmd_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": "cre", "cwd": "/"},
+    )
+    assert cmd_resp.status_code == 200
+    cmd_body = cmd_resp.json()
+    assert cmd_body["replace_start"] == 0
+    assert "create" in cmd_body["completions"]
+    assert all(c.startswith("cre") for c in cmd_body["completions"])
+
+    # Path completion for the argument at the end of the prefix (cursor position).
+    # Dashboard sends only text up to the caret, then re-appends any suffix itself.
+    multi_prefix = f"create /{dirname}/{prefix}_a"
+    multi_suffix = " myvalue"
+    multi_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": multi_prefix, "cwd": "/"},
+    )
+    assert multi_resp.status_code == 200
+    multi_body = multi_resp.json()
+    assert multi_body["replace_start"] == len("create ")
+    multi_matches = [c for c in multi_body["completions"] if child_a in c]
+    assert len(multi_matches) == 1
+    rewritten = (
+        multi_prefix[: multi_body["replace_start"]] + multi_matches[0] + multi_suffix
+    )
+    assert rewritten.endswith(" myvalue")
+    assert f"/{dirname}/{child_a}" in rewritten
+
+    with keeper_utils.KeeperClient.from_cluster(
+        cluster, keeper_ip=leader.ip_address, port=9181
+    ) as client:
+        client.rmr(dirname)
 
 
 def test_http_commands_quoted_semicolon_node(started_cluster):
