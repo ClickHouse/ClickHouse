@@ -87,11 +87,16 @@ public:
         NameSet column_names;
         NamesAndTypes columns;
         TableExpressionNodePtr source;
+        /// Resolved expressions of the ALIAS columns in `columns`, by column name. Same first-wins rule.
+        std::unordered_map<String, QueryTreeNodePtr> alias_column_expressions;
 
-        void addColumn(NameAndTypePair column)
+        void addColumn(NameAndTypePair column, QueryTreeNodePtr alias_expression)
         {
             if (column_names.contains(column.name))
                 return;
+
+            if (alias_expression)
+                alias_column_expressions.emplace(column.name, std::move(alias_expression));
 
             column_names.insert(column.name);
             columns.push_back(std::move(column));
@@ -121,10 +126,25 @@ public:
             it->second.source = column_source;
         }
 
-        it->second.addColumn(column_node->getColumn());
+        it->second.addColumn(column_node->getColumn(), getAliasColumnExpression(*column_node, *column_source));
     }
 
 private:
+    /// Mirrors `CollectTableExpressionData`'s `isAliasColumn`: a JOIN / CROSS_JOIN / ARRAY_JOIN source
+    /// puts a `ListNode` of the joined sides in the expression child, which is not an alias body.
+    static QueryTreeNodePtr getAliasColumnExpression(ColumnNode & column_node, const IQueryTreeNode & column_source)
+    {
+        if (!column_node.hasExpression())
+            return nullptr;
+
+        auto source_type = column_source.getNodeType();
+        if (source_type == QueryTreeNodeType::JOIN || source_type == QueryTreeNodeType::CROSS_JOIN
+            || source_type == QueryTreeNodeType::ARRAY_JOIN)
+            return nullptr;
+
+        return column_node.getExpression();
+    }
+
     std::unordered_map<QueryTreeNodePtr, Columns> column_source_to_columns;
 };
 
@@ -543,6 +563,26 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     return temporary_table_expression_node;
 }
 
+/// `buildSubqueryToReadColumnsFromTableExpression` rebuilds the projections from names and types only,
+/// which drops the resolved expression of an ALIAS column. Put it back, matching by column name.
+void restoreAliasColumnExpressions(
+    QueryNode & subquery_node, const std::unordered_map<String, QueryTreeNodePtr> & alias_column_expressions)
+{
+    if (alias_column_expressions.empty())
+        return;
+
+    for (auto & projection_node : subquery_node.getProjection().getNodes())
+    {
+        auto * column_node = projection_node->as<ColumnNode>();
+        if (!column_node)
+            continue;
+
+        auto expression_it = alias_column_expressions.find(column_node->getColumnName());
+        if (expression_it != alias_column_expressions.end())
+            column_node->setExpression(expression_it->second);
+    }
+}
+
 QueryTreeNodePtr getSubqueryFromTableExpression(
     const TableExpressionNodePtr & join_table_expression,
     const std::unordered_map<QueryTreeNodePtr, CollectColumnSourceToColumnsVisitor::Columns> & column_source_to_columns,
@@ -560,6 +600,8 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
         auto columns_it = column_source_to_columns.find(join_table_expression);
         const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
         subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns, join_table_expression, context);
+        if (columns_it != column_source_to_columns.end())
+            restoreAliasColumnExpressions(subquery_node->as<QueryNode &>(), columns_it->second.alias_column_expressions);
     }
     else if (join_table_expression_node_type == QueryTreeNodeType::ARRAY_JOIN)
     {
@@ -579,11 +621,16 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
             auto columns_it = column_source_to_columns.find(current);
             if (columns_it != column_source_to_columns.end())
             {
+                const auto & alias_column_expressions = columns_it->second.alias_column_expressions;
                 for (const auto & col : columns_it->second.columns)
                 {
                     if (seen_column_names.insert(col.name).second)
                     {
-                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, columns_it->second.source));
+                        auto expression_it = alias_column_expressions.find(col.name);
+                        auto alias_expression
+                            = expression_it != alias_column_expressions.end() ? expression_it->second : nullptr;
+                        subquery_projection_nodes.push_back(
+                            std::make_shared<ColumnNode>(col, std::move(alias_expression), columns_it->second.source));
                         projection_columns.push_back(col);
                     }
                 }
@@ -746,6 +793,35 @@ void rejectUnshippableJoinUsingKeys(const QueryTreeNodePtr & root)
     }
 }
 
+/// `cloneAndReplace` retargets a column's source to the materialized temporary table but keeps its
+/// children, so an ALIAS column would still look like one and be computed a second time. The
+/// temporary table holds the already-computed value, so drop the expression there.
+void demoteAliasColumnsOfMaterializedTables(
+    QueryTreeNodePtr & query_tree, const std::unordered_set<const IQueryTreeNode *> & materialized_temporary_tables)
+{
+    if (materialized_temporary_tables.empty())
+        return;
+
+    QueryTreeNodes nodes_to_process{query_tree};
+    for (size_t i = 0; i < nodes_to_process.size(); ++i)
+    {
+        auto node = nodes_to_process[i];
+        if (!node)
+            continue;
+
+        if (auto * column_node = node->as<ColumnNode>(); column_node && column_node->hasExpression())
+        {
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (column_source && materialized_temporary_tables.contains(column_source.get()))
+                column_node->setExpression(nullptr);
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child);
+    }
+}
+
 }
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
@@ -762,6 +838,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
     QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
+
+    /// The temporary tables created below, by identity. Not every temporary table in the tree is one of
+    /// ours (`CREATE TEMPORARY TABLE`, recursive and materialized CTEs also set a temporary table name).
+    std::unordered_set<const IQueryTreeNode *> materialized_temporary_tables;
 
     bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
 
@@ -790,6 +870,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);
             temporary_table_expression_node->setAlias(join_table_expression->getAlias());
+            materialized_temporary_tables.insert(temporary_table_expression_node.get());
 
             /** When a compound node like ARRAY_JOIN is replaced, its descendants (e.g., the inner TABLE)
               * are not traversed by cloneAndReplace. Column nodes that reference these descendants
@@ -851,6 +932,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 replacement_table_expression = static_pointer_cast<ITableExpressionNode>(temporary_table_expression_node->clone());
             }
 
+            materialized_temporary_tables.insert(replacement_table_expression.get());
             replacement_map.emplace(in_function_subquery_node->asTableExpression(), replacement_table_expression);
         }
         else
@@ -864,6 +946,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     if (!replacement_map.empty())
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
+
+    demoteAliasColumnsOfMaterializedTables(query_tree_to_modify, materialized_temporary_tables);
 
     createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
 
