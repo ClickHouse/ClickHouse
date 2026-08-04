@@ -830,6 +830,17 @@ For Values format: when parsing and interpreting expressions using template, che
     DECLARE(Bool, input_format_avro_allow_missing_fields, false, R"(
 For Avro/AvroConfluent format: when field is not found in schema use default value instead of error
 )", 0) \
+    DECLARE(Bool, input_format_avro_union_type_name, false, R"(
+For Avro format: for each union-typed field, expose a `$name` sub-column of type `Nullable(String)` that contains the active union branch name, or `NULL` for the null branch.
+
+Example: given a union field `payload` with branches `["null", "TypeA", "TypeB"]`, querying `payload.$name` returns `NULL`, `'TypeA'`, or `'TypeB'` per row.
+
+A union with more than one non-null branch maps to `Variant`, and each of its branches is additionally exposed as a sub-column `payload.BranchName` of type `Nullable(branchType)`, holding that branch's value on rows where it is active and `NULL` elsewhere. A union with a single non-null branch maps to `Nullable(T)` and gets no branch sub-columns, since its value is already directly accessible.
+
+If a nested union appears as a field of a branch record, its `$name` is exposed one level deeper, e.g. `payload.TypeA.inner.$name`.
+
+Requires schema inference, or the sub-columns declared explicitly in the table schema. Branch sub-columns declared explicitly must be `Nullable`.
+)", 0) \
     /** This setting is obsolete and do nothing, left for compatibility reasons. */ \
     DECLARE(Bool, input_format_avro_null_as_default, false, R"(
 For Avro/AvroConfluent format: insert default in case of null and non Nullable column

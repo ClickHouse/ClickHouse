@@ -29,10 +29,102 @@ import DataTypeMapping from './_snippets/data-types-matching.md'
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
 | `input_format_avro_allow_missing_fields`    | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
 | `input_format_avro_null_as_default`         | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
+| `input_format_avro_union_type_name`         | Expose the active union branch name as a `$name` sub-column, and each branch of a multi-branch union as a named sub-column. See [Union sub-columns](#union-sub-columns). |   `0`   |
 | `output_format_avro_codec`                  | Compression algorithm for Avro output files. Possible values: `null`, `deflate`, `snappy`, `zstd`.            |         |
 | `output_format_avro_sync_interval`          | Sync marker frequency in Avro files (in bytes). | `16384` |
 | `output_format_avro_string_column_pattern`  | Regular expression to identify `String` columns for Avro string type mapping. By default, ClickHouse `String` columns are written as Avro `bytes` type.                                 |         |
 | `output_format_avro_rows_in_file`           | Maximum number of rows per Avro output file. When this limit is reached, a new file is created (if the storage system supports file splitting).                                                         | `1`     |
+
+## Union sub-columns {#union-sub-columns}
+
+Avro unions carry no indication in the data of which branch a given record used —
+that information is in the encoded branch index, not in the value. With
+[`input_format_avro_union_type_name`](/operations/settings/settings-formats.md/#input_format_avro_union_type_name)
+enabled, each union-typed field gets extra sub-columns that make the branch
+addressable by name.
+
+Given this Avro schema:
+
+```json
+{
+  "type": "record", "name": "Event",
+  "fields": [
+    {"name": "id", "type": "int"},
+    {"name": "payload", "type": [
+      "null",
+      {"type": "record", "name": "TypeB", "fields": [{"name": "y", "type": "string"}]},
+      {"type": "record", "name": "TypeC", "fields": [{"name": "z", "type": "double"}]}
+    ]}
+  ]
+}
+```
+
+the inferred structure is:
+
+```sql
+DESCRIBE file('events.avro') SETTINGS input_format_avro_union_type_name = 1;
+```
+
+```text
+id              Int32
+payload         Variant(Tuple(y String), Tuple(z Float64))
+payload.$name   Nullable(String)
+payload.TypeB   Nullable(Tuple(y String))
+payload.TypeC   Nullable(Tuple(z Float64))
+```
+
+- `payload.$name` holds the active branch name for each row, or `NULL` for the
+  null branch.
+- `payload.TypeB` and `payload.TypeC` hold that branch's value on the rows where
+  it is active, and `NULL` on all other rows.
+
+This makes it possible to filter and project by branch:
+
+```sql
+SELECT id, `payload.TypeB`
+FROM file('events.avro')
+WHERE `payload.$name` = 'TypeB'
+SETTINGS input_format_avro_union_type_name = 1;
+```
+
+### Which unions get branch sub-columns {#which-unions-get-branch-sub-columns}
+
+Only unions with more than one non-null branch, which map to `Variant`, get
+branch sub-columns. A union such as `["null", "TypeA"]` maps to `Nullable(TypeA)`,
+whose value is already directly accessible, so only its `$name` sub-column is
+exposed.
+
+### Nested unions {#nested-unions}
+
+If a branch is a record containing a union field, that inner union's `$name` is
+exposed one level deeper:
+
+```text
+payload.TypeA.inner.$name   Nullable(String)
+```
+
+This currently covers the first qualifying nested union field per branch, and
+only the `$name` sub-column — inner branch values are not exposed as separate
+sub-columns, though they remain reachable inside `payload.TypeA`.
+
+The nested `$name` can be selected on its own, or together with the union value
+column (`payload` above). Selecting it together with the outer union's own
+`$name` sub-column but without the value column is not supported, and fails with
+`THERE_IS_NO_COLUMN`.
+
+### Declaring the sub-columns explicitly {#declaring-union-sub-columns}
+
+When the structure is given explicitly instead of inferred, the sub-columns have
+to be declared too. A branch sub-column must be `Nullable`, because it is `NULL`
+on every row where the union holds a different branch; declaring it non-nullable
+is rejected. Note that [`Nullable(Tuple(...))`](/sql-reference/data-types/tuple#nullable-tuple)
+is supported when `enable_nullable_tuple_type = 1` is enabled.
+
+```sql
+SELECT id, `payload.$name`
+FROM file('events.avro', 'Avro', 'id Int32, `payload.$name` Nullable(String)')
+SETTINGS input_format_avro_union_type_name = 1;
+```
 
 ## Examples {#examples}
 

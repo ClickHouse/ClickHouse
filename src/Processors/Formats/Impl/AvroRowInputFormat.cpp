@@ -27,6 +27,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <Formats/FormatFactory.h>
@@ -969,9 +970,438 @@ void AvroDeserializer::Action::deserializeNested(MutableColumns & columns, avro:
         offsets->push_back(offsets->back() + total);
 }
 
+void AvroDeserializer::Action::executeUnionName(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
+{
+    auto index = decoder.decodeUnionIndex();
+    if (index >= branch_names.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
+
+    /// Insert the active branch name into the $name column (if it was requested).
+    /// An empty entry in branch_names represents the null Avro branch — insert NULL.
+    if (name_column_idx >= 0)
+    {
+        auto & name_col = *columns[name_column_idx];
+        if (branch_names[index].empty())
+            name_col.insertDefault();
+        else
+            name_col.insert(Field(branch_names[index]));
+        ext.read_columns[name_column_idx] = 1;
+    }
+
+    /// Determine whether any companion branch column was actually requested (not just sized).
+    bool has_branch_cols = false;
+    for (int c : branch_column_idxs)
+        if (c >= 0) { has_branch_cols = true; break; }
+    const int active_branch_col =
+        (index < branch_column_idxs.size()) ? branch_column_idxs[index] : -1;
+
+    /// Determine whether any nested `<branch>.<field>.$name` column was requested.
+    bool has_inner_name_cols = false;
+    for (int c : inner_name_col_idxs)
+        if (c >= 0) { has_inner_name_cols = true; break; }
+
+    /// The union datum can be decoded only once. Resolve who reads it:
+    ///  - value column (payload) if requested, else
+    ///  - the active branch column (payload.BranchName) if requested, else
+    ///  - skip.
+    // if (target_column_idx >= 0)
+    // {
+    //     /// Value column reads the datum. (Branch columns with value column present = PoC-2.)
+    //     ext.read_columns[target_column_idx] = nested_deserializers[index](*columns[target_column_idx], decoder);
+    //     /// Active branch column can't also read the same datum; leave branch cols as NULL for now.
+    //     if (has_branch_cols)
+    //         for (size_t i = 0; i < branch_column_idxs.size(); ++i)
+    //         {
+    //             const int col = branch_column_idxs[i];
+    //             if (col < 0) continue;
+    //             columns[col]->insertDefault();
+    //             ext.read_columns[col] = 1;
+    //         }
+    // }
+    if (target_column_idx >= 0)
+    {
+        /// Value column reads the datum into its ColumnVariant.
+        ext.read_columns[target_column_idx] = nested_deserializers[index](*columns[target_column_idx], decoder);
+
+        /// Fill companion branch columns from the value already deserialized into the Variant,
+        /// without decoding the datum again: copy the active branch's value into its branch
+        /// column and set the inactive ones to NULL. Activeness is read from what the Variant
+        /// actually stored for this row (its local discriminator), so it can't drift from `index`.
+        if (has_branch_cols || has_inner_name_cols)
+        {
+            const auto & variant = assert_cast<const ColumnVariant &>(*columns[target_column_idx]);
+            const size_t last_row = variant.size() - 1;
+            const auto active_local_disc = variant.localDiscriminatorAt(last_row);
+
+            if (has_branch_cols)
+            {
+                for (size_t i = 0; i < branch_column_idxs.size(); ++i)
+                {
+                    const int col = branch_column_idxs[i];
+                    if (col < 0)
+                        continue;
+
+                    if (static_cast<int>(i) == static_cast<int>(index)
+                        && active_local_disc != ColumnVariant::NULL_DISCRIMINATOR)
+                    {
+                        /// Variant branch sub-columns are non-nullable; the branch column is Nullable(T).
+                        const auto & sub = variant.getVariantByLocalDiscriminator(active_local_disc);
+                        const size_t off = variant.offsetAt(last_row);
+                        assert_cast<ColumnNullable &>(*columns[col]).insertFromNotNullable(sub, off);
+                    }
+                    else
+                    {
+                        columns[col]->insertDefault();
+                    }
+                    ext.read_columns[col] = 1;
+                }
+            }
+
+            /// Fill nested `<branch>.<field>.$name` columns: for the active branch, peel the
+            /// Variant's stored Tuple to reach the inner union field (itself a Variant) and read
+            /// its local discriminator for this row, mapped back to the avro branch name. No
+            /// re-decoding: everything is read from what `nested_deserializers[index]` already
+            /// wrote into the outer Variant above.
+            if (has_inner_name_cols)
+            {
+                for (size_t i = 0; i < inner_name_col_idxs.size(); ++i)
+                {
+                    const int name_col = inner_name_col_idxs[i];
+                    if (name_col < 0)
+                        continue;
+
+                    if (static_cast<int>(i) == static_cast<int>(index)
+                        && active_local_disc != ColumnVariant::NULL_DISCRIMINATOR)
+                    {
+                        const auto & sub = variant.getVariantByLocalDiscriminator(active_local_disc);
+                        const size_t off = variant.offsetAt(last_row);
+                        const auto & tuple = assert_cast<const ColumnTuple &>(sub);
+                        const auto & inner_variant = assert_cast<const ColumnVariant &>(tuple.getColumn(inner_field_idxs[i]));
+                        const auto inner_local_disc = inner_variant.localDiscriminatorAt(off);
+
+                        if (inner_local_disc == ColumnVariant::NULL_DISCRIMINATOR)
+                        {
+                            columns[name_col]->insertDefault();
+                        }
+                        else
+                        {
+                            const auto inner_global_disc = inner_variant.globalDiscriminatorByLocal(inner_local_disc);
+                            columns[name_col]->insert(Field(inner_branch_names[i].at(inner_global_disc)));
+                        }
+                    }
+                    else
+                    {
+                        columns[name_col]->insertDefault();
+                    }
+                    ext.read_columns[name_col] = 1;
+                }
+            }
+        }
+    }
+    else if (active_branch_col >= 0)
+    {
+        /// No value column: the active branch column reads the datum directly.
+        ext.read_columns[active_branch_col] = branch_column_fns[index](*columns[active_branch_col], decoder);
+        /// Inactive branch columns get NULL.
+        for (size_t i = 0; i < branch_column_idxs.size(); ++i)
+        {
+            const int col = branch_column_idxs[i];
+            if (col < 0 || static_cast<int>(i) == static_cast<int>(index)) continue;
+            columns[col]->insertDefault();
+            ext.read_columns[col] = 1;
+        }
+    }
+    else
+    {
+        /// Nobody wants the value: skip the datum, NULL any inactive branch columns requested.
+        branch_skip_fns[index](decoder);
+        if (has_branch_cols)
+            for (size_t i = 0; i < branch_column_idxs.size(); ++i)
+            {
+                const int col = branch_column_idxs[i];
+                if (col < 0) continue;
+                columns[col]->insertDefault();
+                ext.read_columns[col] = 1;
+            }
+    }
+}
+
 static inline std::string concatPath(const std::string & a, const std::string & b)
 {
     return a.empty() ? b : a + "." + b;
+}
+
+AvroDeserializer::DeserializeFn AvroDeserializer::createBranchValueDeserializeFn(
+    const avro::NodePtr & branch_node,
+    const DataTypePtr & outer_type,
+    const avro::NodePtr & union_node)
+{
+    const bool is_null_branch = (branch_node->type() == avro::AVRO_NULL);
+    const WhichDataType outer_which(outer_type);
+
+    /// Single-leaf union: the outer type equals the branch type directly.
+    if (union_node->leaves() == 1)
+        return createDeserializeFn(branch_node, outer_type);
+
+    /// Two-leaf union with exactly one null branch → Nullable(T).
+    if (union_node->leaves() == 2
+        && (union_node->leafAt(0)->type() == avro::AVRO_NULL || union_node->leafAt(1)->type() == avro::AVRO_NULL))
+    {
+        if (outer_which.isNullable())
+        {
+            if (is_null_branch)
+            {
+                return [](IColumn & col, avro::Decoder & decoder)
+                {
+                    decoder.decodeNull();
+                    assert_cast<ColumnNullable &>(col).insertDefault();
+                    return true;
+                };
+            }
+            else
+            {
+                auto nested_fn = createDeserializeFn(branch_node, removeNullable(outer_type));
+                return [nested_fn](IColumn & col, avro::Decoder & decoder)
+                {
+                    auto & nullable = assert_cast<ColumnNullable &>(col);
+                    nested_fn(nullable.getNestedColumn(), decoder);
+                    nullable.getNullMapData().push_back(false);
+                    return true;
+                };
+            }
+        }
+        else if (null_as_default)
+        {
+            if (is_null_branch)
+            {
+                return [](IColumn & col, avro::Decoder & decoder)
+                {
+                    decoder.decodeNull();
+                    col.insertDefault();
+                    return false;
+                };
+            }
+            return createDeserializeFn(branch_node, outer_type);
+        }
+        else
+        {
+            int non_null_idx = (union_node->leafAt(0)->type() == avro::AVRO_NULL) ? 1 : 0;
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot insert Avro Union(Null, {}) into non-nullable type {}. To use default value on NULL, enable setting "
+                "input_format_null_as_default",
+                avro::toString(union_node->leafAt(non_null_idx)->type()),
+                outer_type->getName());
+        }
+    }
+
+    /// Multi-leaf union → Variant(T1, T2, ...).
+    if (outer_which.isVariant())
+    {
+        if (is_null_branch)
+        {
+            return [](IColumn & col, avro::Decoder & decoder)
+            {
+                decoder.decodeNull();
+                assert_cast<ColumnVariant &>(col).insertDefault();
+                return true;
+            };
+        }
+
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*outer_type);
+        auto branch_type = AvroSchemaReader::avroNodeToDataType(branch_node);
+        auto opt_discriminator = variant_type.tryGetVariantDiscriminator(branch_type->getName());
+        if (!opt_discriminator)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Destination {} and Avro Union containing {} are not compatible. If this is an issue, then let the Input "
+                "Format infer the schema from the Avro message instead of providing custom Variant type.",
+                variant_type.getName(),
+                branch_type->getName());
+
+        ColumnVariant::Discriminator global_disc = *opt_discriminator;
+        auto branch_fn = createDeserializeFn(branch_node, branch_type);
+        return [global_disc, branch_fn](IColumn & col, avro::Decoder & decoder)
+        {
+            auto & column_variant = assert_cast<ColumnVariant &>(col);
+            const auto local_disc = column_variant.localDiscriminatorByGlobal(global_disc);
+            auto & variant_col = column_variant.getVariantByLocalDiscriminator(local_disc);
+            branch_fn(variant_col, decoder);
+            column_variant.getLocalDiscriminators().push_back(local_disc);
+            column_variant.getOffsets().push_back(variant_col.size() - 1);
+            return true;
+        };
+    }
+
+    /// Fallback: attempt direct deserialization (covers non-standard type mappings).
+    return createDeserializeFn(branch_node, outer_type);
+}
+
+static bool unionHasCompanionColumns(const Block & header, const avro::NodePtr & node, const std::string & current_path)
+{
+    if (header.has(current_path + ".$name"))
+        return true;
+    for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
+    {
+        const auto & branch_node = node->leafAt(i);
+        if (branch_node->type() == avro::AVRO_NULL)
+            continue;
+        const std::string branch_path = current_path + "." + nodeName(branch_node);
+        if (header.has(branch_path))
+            return true;
+
+        /// Nested inner-union `$name` column, e.g. `payload.TypeA.inner.$name`.
+        auto resolved_branch = branch_node;
+        if (resolved_branch->type() == avro::AVRO_SYMBOLIC)
+            resolved_branch = avro::resolveSymbol(resolved_branch);
+        if (resolved_branch->type() == avro::AVRO_RECORD)
+        {
+            for (int f = 0; f < static_cast<int>(resolved_branch->leaves()); ++f)
+            {
+                if (header.has(branch_path + "." + resolved_branch->nameAt(f) + ".$name"))
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+AvroDeserializer::Action AvroDeserializer::createUnionWithNameAction(
+    const Block & header,
+    const avro::NodePtr & node,
+    const std::string & current_path,
+    int value_col_idx,
+    const DataTypePtr & value_type)
+{
+    const std::string name_path = current_path + ".$name";
+    const int name_col_idx = header.has(name_path) ? static_cast<int>(header.getPositionByName(name_path)) : -1;
+    if (name_col_idx >= 0)
+        column_found[name_col_idx] = true;
+
+    if (value_col_idx >= 0)
+        column_found[value_col_idx] = true;
+
+    const int num_branches = static_cast<int>(node->leaves());
+    std::vector<std::string> bnames;
+    std::vector<DeserializeFn> value_fns;
+    std::vector<SkipFn> skip_fns;
+
+    bnames.reserve(num_branches);
+    skip_fns.reserve(num_branches);
+    if (value_col_idx >= 0)
+        value_fns.reserve(num_branches);
+
+    std::vector<int> branch_col_idxs(num_branches, -1);
+    std::vector<DeserializeFn> branch_col_fns(num_branches);
+    std::vector<int> inner_field_idxs(num_branches, -1);
+    std::vector<int> inner_name_col_idxs(num_branches, -1);
+    std::vector<std::vector<std::string>> inner_branch_names(num_branches);
+
+    for (int i = 0; i < num_branches; ++i)
+    {
+        const auto & branch_node = node->leafAt(i);
+        const bool is_null_branch = (branch_node->type() == avro::AVRO_NULL);
+
+        /// Empty string marks the null branch; execute() inserts NULL into the Nullable(String) column.
+        bnames.push_back(is_null_branch ? "" : nodeName(branch_node));
+        skip_fns.push_back(createSkipFn(branch_node));
+
+        if (value_col_idx >= 0)
+            value_fns.push_back(createBranchValueDeserializeFn(branch_node, value_type, node));
+
+        /// If a companion `fieldname.branchName` column was requested, wire it up so the
+        /// active branch fills it and inactive branches get NULL (filled in executeUnionName).
+        if (!is_null_branch)
+        {
+            const std::string branch_path = current_path + "." + nodeName(branch_node);
+            if (header.has(branch_path))
+            {
+                const int bidx = static_cast<int>(header.getPositionByName(branch_path));
+                const auto & branch_col_type = header.getByPosition(bidx).type;
+                /// A branch sub-column is NULL on every row where the union holds a different
+                /// branch, so it has to be Nullable. A non-nullable one cannot represent that:
+                /// it would silently store the type's default value instead of NULL, and the
+                /// value+branch fill path assumes ColumnNullable.
+                if (!branch_col_type->isNullable())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Avro union branch sub-column '{}' must be Nullable, because it is NULL on rows where the "
+                        "union holds a different branch, but it was declared as '{}'. Use 'Nullable({})' instead.",
+                        branch_path,
+                        branch_col_type->getName(),
+                        branch_col_type->getName());
+                branch_col_idxs[i] = bidx;
+                column_found[bidx] = true;
+                branch_col_fns[i] = createDeserializeFn(branch_node, branch_col_type);
+            }
+
+            /// If this branch is a record with a field that is itself a (multi-leaf) union, and
+            /// the companion `<branch>.<field>.$name` column was requested, wire it up so it can
+            /// be filled from the already-decoded value column's Variant (see executeUnionName).
+            auto resolved_branch = branch_node;
+            if (resolved_branch->type() == avro::AVRO_SYMBOLIC)
+                resolved_branch = avro::resolveSymbol(resolved_branch);
+            if (value_col_idx >= 0 && resolved_branch->type() == avro::AVRO_RECORD)
+            {
+                for (int f = 0; f < static_cast<int>(resolved_branch->leaves()); ++f)
+                {
+                    auto inner_field_node = resolved_branch->leafAt(f);
+                    if (inner_field_node->type() == avro::AVRO_SYMBOLIC)
+                        inner_field_node = avro::resolveSymbol(inner_field_node);
+                    if (inner_field_node->type() != avro::AVRO_UNION)
+                        continue;
+                    /// Only a union with more than one non-null branch maps to Variant. A
+                    /// [null, X] union maps to Nullable(X), which has no branch discriminators
+                    /// to report — and casting its type to DataTypeVariant below would be UB.
+                    int inner_non_null_branches = 0;
+                    for (int b = 0; b < static_cast<int>(inner_field_node->leaves()); ++b)
+                        if (inner_field_node->leafAt(b)->type() != avro::AVRO_NULL)
+                            ++inner_non_null_branches;
+                    if (inner_non_null_branches <= 1)
+                        continue;
+
+                    const std::string inner_name_path = branch_path + "." + resolved_branch->nameAt(f) + ".$name";
+                    if (!header.has(inner_name_path))
+                        continue;
+
+                    const int inner_name_idx = static_cast<int>(header.getPositionByName(inner_name_path));
+                    inner_name_col_idxs[i] = inner_name_idx;
+                    inner_field_idxs[i] = f;
+                    column_found[inner_name_idx] = true;
+
+                    /// Build the mapping from the inner Variant's global discriminator to the avro
+                    /// branch name, mirroring how createBranchValueDeserializeFn resolves discriminators.
+                    auto branch_type = AvroSchemaReader::avroNodeToDataType(
+                        branch_node, settings.schema_inference_allow_nullable_tuple_type);
+                    const auto & tuple_type = assert_cast<const DataTypeTuple &>(*branch_type);
+                    const auto & inner_type = tuple_type.getElement(f);
+                    const auto & inner_variant_type = assert_cast<const DataTypeVariant &>(*inner_type);
+
+                    std::vector<std::string> names_by_global_disc(inner_variant_type.getVariants().size());
+                    for (int b = 0; b < static_cast<int>(inner_field_node->leaves()); ++b)
+                    {
+                        const auto & inner_leaf = inner_field_node->leafAt(b);
+                        if (inner_leaf->type() == avro::AVRO_NULL)
+                            continue;
+                        auto leaf_type = AvroSchemaReader::avroNodeToDataType(
+                            inner_leaf, settings.schema_inference_allow_nullable_tuple_type);
+                        auto opt_disc = inner_variant_type.tryGetVariantDiscriminator(leaf_type->getName());
+                        if (opt_disc)
+                            names_by_global_disc[*opt_disc] = nodeName(inner_leaf);
+                    }
+                    inner_branch_names[i] = std::move(names_by_global_disc);
+
+                    /// Only the first qualifying nested union field per branch is exposed (PoC scope).
+                    break;
+                }
+            }
+        }
+    }
+
+    return Action::unionNameAction(
+        name_col_idx, value_col_idx, std::move(bnames), std::move(value_fns), std::move(skip_fns),
+        std::move(branch_col_idxs), std::move(branch_col_fns),
+        std::move(inner_field_idxs), std::move(inner_name_col_idxs), std::move(inner_branch_names));
 }
 
 AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, const avro::NodePtr & node, const std::string & current_path)
@@ -1012,6 +1442,16 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     {
         auto target_column_idx = header.getPositionByName(current_path);
         const auto & column = header.getByPosition(target_column_idx);
+
+        /// When a union field is requested together with its $name and/or branch-value
+        /// sub-columns, all must be handled inside a single action so the union index is
+        /// consumed only once.
+        if (node->type() == avro::AVRO_UNION && unionHasCompanionColumns(header, node, current_path))
+        {
+            return createUnionWithNameAction(
+                header, node, current_path, static_cast<int>(target_column_idx), column.type);
+        }
+
         try
         {
             AvroDeserializer::Action action(static_cast<int>(target_column_idx), createDeserializeFn(node, column.type));
@@ -1037,6 +1477,13 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
     else if (node->type() == avro::AVRO_UNION)
     {
+        /// If only the $name sub-column is requested (the value column itself is absent),
+        /// build a UnionName action that reads the branch index, writes the name, and skips the value.
+        if (!current_path.empty() && header.has(current_path + ".$name"))
+        {
+            return createUnionWithNameAction(header, node, current_path, -1, nullptr);
+        }
+
         std::vector<AvroDeserializer::Action> branch_actions(node->leaves());
         for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
@@ -1300,7 +1747,74 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
     NamesAndTypesList names_and_types;
     for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
-        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i), format_settings.schema_inference_allow_nullable_tuple_type));
+    {
+        const auto & field_name = root_node->nameAt(i);
+        const auto & field_node = root_node->leafAt(i);
+        names_and_types.emplace_back(field_name, avroNodeToDataType(field_node, format_settings.schema_inference_allow_nullable_tuple_type));
+
+        /// When enabled, add a companion `fieldname.$name` column for each top-level union field.
+        /// The column type is `Nullable(String)`: the active branch name, or NULL for the null branch.
+        if (format_settings.avro.union_type_name)
+        {
+            auto actual_node = field_node;
+            if (actual_node->type() == avro::AVRO_SYMBOLIC)
+                actual_node = avro::resolveSymbol(actual_node);
+            if (actual_node->type() == avro::AVRO_UNION && actual_node->leaves() > 1)
+            {
+                names_and_types.emplace_back(field_name + ".$name", makeNullable(std::make_shared<DataTypeString>()));
+
+                /// Count non-null branches: only multi-branch unions map to Variant, where
+                /// branch-value columns are meaningful. A single non-null branch maps to
+                /// Nullable(T) and is already directly accessible, so skip branch columns there.
+                int non_null_branches = 0;
+                for (int b = 0; b < static_cast<int>(actual_node->leaves()); ++b)
+                    if (actual_node->leafAt(b)->type() != avro::AVRO_NULL)
+                        ++non_null_branches;
+
+                if (non_null_branches > 1)
+                {
+                    for (int b = 0; b < static_cast<int>(actual_node->leaves()); ++b)
+                    {
+                        const auto & branch = actual_node->leafAt(b);
+                        if (branch->type() == avro::AVRO_NULL)
+                            continue;
+                        names_and_types.emplace_back(
+                            field_name + "." + nodeName(branch),
+                            makeNullable(avroNodeToDataType(branch, format_settings.schema_inference_allow_nullable_tuple_type)));
+
+                        /// One level deeper: if this branch is a record with a field that is
+                        /// itself a (multi-leaf) union, expose that inner union's active branch
+                        /// name as `<field>.<branch>.<inner_field>.$name`.
+                        auto branch_node = branch;
+                        if (branch_node->type() == avro::AVRO_SYMBOLIC)
+                            branch_node = avro::resolveSymbol(branch_node);
+                        if (branch_node->type() == avro::AVRO_RECORD)
+                        {
+                            for (int f = 0; f < static_cast<int>(branch_node->leaves()); ++f)
+                            {
+                                auto inner_field_node = branch_node->leafAt(f);
+                                if (inner_field_node->type() == avro::AVRO_SYMBOLIC)
+                                    inner_field_node = avro::resolveSymbol(inner_field_node);
+                                int inner_non_null_branches = 0;
+                                if (inner_field_node->type() == avro::AVRO_UNION)
+                                    for (int ib = 0; ib < static_cast<int>(inner_field_node->leaves()); ++ib)
+                                        if (inner_field_node->leafAt(ib)->type() != avro::AVRO_NULL)
+                                            ++inner_non_null_branches;
+                                /// Mirror the fill side: only multi-non-null-branch inner unions
+                                /// (which map to Variant) get a $name sub-column.
+                                if (inner_non_null_branches > 1)
+                                {
+                                    names_and_types.emplace_back(
+                                        field_name + "." + nodeName(branch) + "." + branch_node->nameAt(f) + ".$name",
+                                        makeNullable(std::make_shared<DataTypeString>()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     return names_and_types;
 }

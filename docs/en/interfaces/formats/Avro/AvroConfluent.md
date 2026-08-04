@@ -34,12 +34,18 @@ Each message uses the Confluent wire format: a magic byte (`0x00`) followed by a
 |------------------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
 | `input_format_avro_allow_missing_fields`             | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
 | `input_format_avro_null_as_default`                  | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
+| `input_format_avro_union_type_name`                  | Expose the active union branch name as a `$name` sub-column, and each branch of a multi-branch union as a named sub-column. See [Union sub-columns](./Avro.md#union-sub-columns). |   `0`   |
 | `format_avro_schema_registry_url`                    | The Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
 | `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0 and less than 600 (10 minutes). | `1`     |
 | `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
 | `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
 | `output_format_avro_confluent_subject`               | For output: the subject name under which the schema is registered in the Schema Registry. Required when writing. |         |
 | `output_format_avro_string_column_pattern`           | For output: regexp of String columns to serialize as Avro `string` (default is `bytes`). |         |
+
+Union sub-columns work the same way as for the [`Avro`](./Avro.md#union-sub-columns)
+format, since both share the same deserializer. On the streaming read path the
+structure comes from the columns already declared on the table rather than from
+schema inference, so the sub-columns you want must be part of that declaration.
 
 ## Examples {#examples}
 
