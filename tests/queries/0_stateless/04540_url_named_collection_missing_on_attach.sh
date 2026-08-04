@@ -164,6 +164,29 @@ $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE ${U}_ddl2" 2>&1 | grep -oE "NOT_IMPLEMENTE
 echo "ddl ok"
 
 # ---------------------------------------------------------------------------------------------
+echo "--- partition DDL, CHECK and catalog sweeps while the named collection is still missing ---"
+# Same class as the alter contract above: StorageProxy forwards these through getNested(), which
+# materializes. Partition DDL and CHECK TABLE are unsupported by every URL backend, so they must
+# report NOT_IMPLEMENTED; the action-lock and column-size paths are swept over every table by the
+# bulk SYSTEM and system.tables/system.columns forms, so one unresolvable table must not fail a
+# server-wide query.
+for cmd in "DROP PARTITION ID 'x'" "DETACH PARTITION ID 'x'" "FREEZE PARTITION ID 'x'" "MOVE PARTITION ID 'x' TO VOLUME 'v'"; do
+    $CLICKHOUSE_CLIENT -q "ALTER TABLE ${U}_ddl2 $cmd" 2>&1 | grep -oE "NOT_IMPLEMENTED|NAMED_COLLECTION_DOESNT_EXIST" | head -1
+done
+$CLICKHOUSE_CLIENT -q "CHECK TABLE ${U}_ddl2" 2>&1 | grep -oE "NOT_IMPLEMENTED|NAMED_COLLECTION_DOESNT_EXIST" | head -1
+# metadata_version reads supportsReplication and data_compressed_bytes reads getColumnSizes; both
+# are forwarded by StorageProxy and neither is wrapped in a try/catch by the system tables (unlike
+# total_rows/total_bytes), so a missing collection would fail the whole scan.
+$CLICKHOUSE_CLIENT -q "SELECT metadata_version FROM system.tables WHERE database = currentDatabase() AND name = '${U}_ddl2'"
+$CLICKHOUSE_CLIENT -q "SELECT data_compressed_bytes > 0 FROM system.columns WHERE database = currentDatabase() AND table = '${U}_ddl2' AND name = 'x'"
+# Both the per-table and the bulk action-lock forms call getActionLock.
+$CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES ${U}_ddl2" 2>&1 | grep -oE "NAMED_COLLECTION_DOESNT_EXIST" | head -1
+$CLICKHOUSE_CLIENT -q "SYSTEM START MERGES ${U}_ddl2"
+# None of the above may have resolved the collection: the table must still be unmaterialized.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.named_collections WHERE name = '${U}_nc_ddl'"
+echo "partition ddl and sweeps ok"
+
+# ---------------------------------------------------------------------------------------------
 echo "--- metadata-only DDL applied while missing survives materialization ---"
 # The deferred proxy rebuilds the nested storage from the table's CURRENT create query on first
 # access, not the attach-time clone. So the comment set by ALTER ... MODIFY COMMENT above must

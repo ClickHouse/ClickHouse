@@ -23,6 +23,16 @@ deferred url comment
 NOT_IMPLEMENTED
 NOT_IMPLEMENTED
 ddl ok
+--- partition DDL, CHECK and catalog sweeps while the named collection is still missing ---
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+0
+1
+0
+partition ddl and sweeps ok
 --- metadata-only DDL applied while missing survives materialization ---
 deferred url comment
 comment survived

@@ -2713,6 +2713,62 @@ public:
     bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
     bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
     bool isMessageQueue() const override { return getNested()->isMessageQueue(); }
+
+    /// Partition DDL and `CHECK TABLE` are unsupported by every backend a `URL` can dispatch to, so
+    /// resolve the answer here: `StorageProxy` would forward to `getNested()` and report the missing
+    /// collection instead of the `URL` engine's `NOT_IMPLEMENTED`.
+    void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr context) const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            materialized->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, context);
+        else
+            IStorage::checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, context); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    Pipe alterPartition(
+        const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, ContextPtr context) override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->alterPartition(metadata_snapshot, commands, context);
+        return IStorage::alterPartition(metadata_snapshot, commands, context); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->getCheckTaskList(check_task_filter, context);
+        return IStorage::getCheckTaskList(check_task_filter, context); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    /// Swept over every table by the bulk `SYSTEM STOP MERGES` / `SELECT ... FROM system.tables`
+    /// forms, so materializing here fails a server-wide query because of one unresolvable table.
+    ActionLock getActionLock(StorageActionBlockType action_type) override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->getActionLock(action_type);
+        return IStorage::getActionLock(action_type); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    bool supportsReplication() const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->supportsReplication();
+        return IStorage::supportsReplication(); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    /// Every backend derives these from the column list alone (`getFakeColumnSizes`), which this
+    /// proxy already holds, so the unmaterialized answer is the delegate's answer.
+    ColumnSizeByName getColumnSizes() const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->getColumnSizes();
+        auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        return metadata_snapshot->getFakeColumnSizes();
+    }
 };
 
 /// The full eager construction of a `URL(...)` engine: scheme dispatch, named-collection /
