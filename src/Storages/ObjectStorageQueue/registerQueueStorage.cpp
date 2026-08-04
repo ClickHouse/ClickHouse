@@ -266,7 +266,7 @@ Possible values:
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
 - ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
 
-Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
+Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, and the setting must be specified manually. For tables created before version 24.6, the default value remains `Ordered` for compatibility.
 
 ### `after_processing` {#after_processing}
 
@@ -860,7 +860,7 @@ Enable logging for the table via the table setting `enable_logging_to_queue_log=
 
 Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
-1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
+1. Use `system.azure_queue_metadata_cache` for the in-memory state of the queue in server versions 25.1 and later. Before version 25.1, use `system.s3queue_metadata_cache`, which also contains information for `AzureQueue` tables.
 2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
 ```xml

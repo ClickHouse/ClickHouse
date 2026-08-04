@@ -1,0 +1,10 @@
+---
+name: ClickHouse.RelativeVersion
+description: Avoid release references that become ambiguous as documentation evolves.
+extends: existence
+message: "Replace '%s' with an exact release or a context-specific term."
+vocab: false
+level: error
+ignorecase: true
+tokens:
+  - '(?:this|previous|next) versions?'

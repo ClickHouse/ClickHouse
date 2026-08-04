@@ -940,7 +940,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"rows_before_aggregation", false, false, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
             {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
             {"restore_replace_external_engines_to_null", false, false, "New setting."},
-            {"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."},
+            {"input_format_json_max_depth", 1000000, 1000, "Before ClickHouse 24.8, it was unlimited, but that was unsafe."},
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
             {"use_hive_partitioning", false, false, "Allows to use hive partitioning for File, URL, S3, AzureBlobStorage and HDFS engines."},
             {"allow_experimental_kafka_offsets_storage_in_keeper", false, false, "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper"},
@@ -1147,7 +1147,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "23.12",
         {
-            {"allow_suspicious_ttl_expressions", true, false, "It is a new setting, and in previous versions the behavior was equivalent to allowing."},
+            {"allow_suspicious_ttl_expressions", true, false, "New setting. Before ClickHouse 23.12, the behavior was equivalent to allowing suspicious TTL expressions."},
             {"input_format_parquet_allow_missing_columns", false, true, "Allow missing columns in Parquet files by default"},
             {"input_format_orc_allow_missing_columns", false, true, "Allow missing columns in ORC files by default"},
             {"input_format_arrow_allow_missing_columns", false, true, "Allow missing columns in Arrow files by default"}
@@ -1172,7 +1172,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "23.7",
         {
-            {"function_sleep_max_microseconds_per_block", 0, 3000000, "In previous versions, the maximum sleep time of 3 seconds was applied only for `sleep`, but not for `sleepEachRow` function. In the new version, we introduce this setting. If you set compatibility with the previous versions, we will disable the limit altogether."}
+            {"function_sleep_max_microseconds_per_block", 0, 3000000, "Before ClickHouse 23.7, the maximum sleep time of 3 seconds applied only to `sleep`, not to `sleepEachRow`. Compatibility with a release before 23.7 disables the limit."}
         });
         addSettingsChanges(settings_changes_history, "23.6",
         {

@@ -1,5 +1,9 @@
 # docker build -t clickhouse/docs-builder .
+FROM jdkato/vale:v3.15.2 AS vale
+
 FROM node:22-bookworm-slim
+
+COPY --from=vale /bin/vale /usr/local/bin/vale
 
 RUN apt-get update && \
     apt-get upgrade -y && \

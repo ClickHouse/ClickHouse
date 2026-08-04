@@ -296,7 +296,7 @@ For detailed microbatch usage, refer to the [official documentation](https://doc
 
 #### The Append Strategy {#append-strategy}
 
-This strategy replaces the `inserts_only` setting in previous versions of dbt-clickhouse. This approach simply appends
+This strategy replaces the legacy `inserts_only` setting in dbt-clickhouse. This approach simply appends
 new rows to the existing relation.
 As a result duplicate rows are not eliminated, and there is no temporary or intermediate table. It is the fastest
 approach if duplicates are either permitted

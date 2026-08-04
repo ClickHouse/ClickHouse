@@ -6,7 +6,7 @@ doc_type: 'reference'
 keywords: ['CityHash', 'native protocol hash', 'hash function', 'Google CityHash', 'protocol hashing']
 ---
 
-ClickHouse uses **one of the previous** versions of [CityHash from Google](https://github.com/google/cityhash).
+ClickHouse uses version 1.0.2 of [CityHash from Google](https://github.com/google/cityhash).
 
 <Info>
 CityHash has changed the algorithm after we have added it into ClickHouse.
@@ -14,7 +14,7 @@ CityHash has changed the algorithm after we have added it into ClickHouse.
 CityHash documentation specifically notes that the user shouldn't rely on 
 specific hash values and shouldn't save it anywhere or use it as a sharding key.
 
-But as we exposed this function to the user, we had to fix the version of CityHash (to 1.0.2). And now we guarantee that the behaviour of CityHash functions available in SQL won't change.
+Because we exposed this function to users, ClickHouse keeps its CityHash implementation fixed at version 1.0.2. We guarantee that the behaviour of CityHash functions available in SQL won't change.
 
 — Alexey Milovidov
 </Info>
@@ -23,7 +23,7 @@ But as we exposed this function to the user, we had to fix the version of CityHa
 **Note**
 
 
-Current version of Google's CityHash [differs](https://github.com/ClickHouse/ClickHouse/issues/8354) from ClickHouse `cityHash64` variant.
+Google's maintained CityHash implementation [differs](https://github.com/ClickHouse/ClickHouse/issues/8354) from the ClickHouse `cityHash64` variant.
 
 Don't use `farmHash64` to get Google's CityHash value! [FarmHash](https://opensource.googleblog.com/2014/03/introducing-farmhash.html) is a successor to CityHash, but they're not fully compatible.
 

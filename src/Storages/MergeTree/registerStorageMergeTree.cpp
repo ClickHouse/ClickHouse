@@ -2868,7 +2868,7 @@ This way of selecting the data is less efficient and is not recommended for use 
 
 The idea with this approach is that merges take into account only key fields.
 In the "cancel" row, we can therefore specify negative values
-that equalize the previous version of the row when summing without using the `Sign` column.
+that equalize the preceding row revision when summing without using the `Sign` column.
 
 For this example, we will make use of the sample data below:
 

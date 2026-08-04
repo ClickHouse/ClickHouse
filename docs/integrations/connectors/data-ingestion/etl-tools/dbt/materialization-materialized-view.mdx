@@ -436,7 +436,7 @@ The following table summarizes the safety of each operation when inserts are act
 |-----------|------------------|------------------------------------|
 | `dbt run` | Schema changes applied following the `mv_on_schema_change` setting | ✅ Safe. No data movement. |
 | `dbt run --full-refresh` (default) | Recreate the table (leaves it empty) | ⚠️ **Target table is empty** until MVs backfill it. MVs continue inserting into the new table once it exists. |
-| `dbt run --full-refresh` with `repopulate_from_mvs_on_full_refresh=True` | 1. Create backup table<br/>2. Insert data using each MV's SQL<br/>3. Exchange tables atomically | ⚠️ **MV is blind during recreation.** Data inserted between steps 1 and 3 will not appear in the new table. **This may change in next versions**.|
+| `dbt run --full-refresh` with `repopulate_from_mvs_on_full_refresh=True` | 1. Create backup table<br/>2. Insert data using each MV's SQL<br/>3. Exchange tables atomically | ⚠️ **MV is blind during recreation.** Data inserted between steps 1 and 3 will not appear in the new table. |
 
 <Tip>
 **Recommendations for production environments with active ingestion**

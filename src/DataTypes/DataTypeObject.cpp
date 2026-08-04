@@ -874,7 +874,7 @@ import WhenToUseJson from '/snippets/_when-to-use-json.mdx';
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
 
 <Note>
-In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
+The `JSON` data type is production-ready in ClickHouse Open Source as of version 25.3. Do not use this type in production with versions before 25.3.
 </Note>
 
 To declare a column of `JSON` type, you can use the following syntax:

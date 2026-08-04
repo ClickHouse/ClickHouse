@@ -545,8 +545,8 @@ Again, the result is the same but notice the improvement in query performance fo
 
 ### Combining projections in one query {#combining-projections}
 
-Starting in version 25.6, building on the `_part_offset` support introduced in 
-the previous version, ClickHouse can now use multiple projections to accelerate 
+Starting in version 25.6, building on the `_part_offset` support introduced in
+version 25.5, ClickHouse can now use multiple projections to accelerate
 a single query with multiple filters.
 
 Importantly, ClickHouse still reads data from only one projection (or the base table), 

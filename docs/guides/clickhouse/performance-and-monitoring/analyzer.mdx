@@ -98,7 +98,7 @@ JOIN VALUES('b UInt64, s String', (1, 'one'), (2, 'two')) t2
 USING (b);
 ```
 
-With `analyzer_compatibility_join_using_top_level_identifier` set to `true`, the join condition is interpreted as `t1.a + 1 = t2.b`, matching the behavior of the earlier versions.
+With `analyzer_compatibility_join_using_top_level_identifier` set to `true`, the join condition is interpreted as `t1.a + 1 = t2.b`, matching the behavior of the legacy query analyzer.
 The result will be `2, 'two'`.
 When the setting is `false`, the join condition defaults to `t1.b = t2.b`, and the query will return `2, 'one'`.
 If `b` is not present in `t1`, the query will fail with an error.

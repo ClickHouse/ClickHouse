@@ -95,7 +95,7 @@ namespace
 
 /// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
-    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. This version supports only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
+    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. ClickHouse 26.7 and later support only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Before upgrading to 26.7 or later, complete the deduplication migration on a release that supports `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -379,7 +379,7 @@ This ratio is applied in two ways:
 - At startup (and on configuration reload) it caps the server's hard memory limit at this fraction of the total physical RAM, as described above.
 - At runtime, the background memory worker periodically recomputes the hard memory limit as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host. When running inside a cgroup with a finite memory limit, the cgroup's available memory is used instead of the host-wide value. As other processes grow and the available memory shrinks, the server's hard limit follows it down, capping growth before the host (or the cgroup) runs out of memory.
 
-Setting the ratio to `0` disables both the startup cap and the runtime adjustment. The runtime adjustment is also a no-op on non-Linux systems and in `clickhouse-keeper`, which does not expose this setting. To keep the static startup/reload cap but disable the runtime adjustment (the behavior of previous versions), set `memory_worker_dynamic_hard_limit` to `0`.
+Setting the ratio to `0` disables both the startup cap and the runtime adjustment. The runtime adjustment is also a no-op on non-Linux systems and in `clickhouse-keeper`, which does not expose this setting. To keep the static startup/reload cap but disable the runtime adjustment (the behavior before ClickHouse 26.6), set `memory_worker_dynamic_hard_limit` to `0`.
 
 :::note
 The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage`.
@@ -1280,7 +1280,7 @@ rather than tracker bookkeeping lag.
     DECLARE(Bool, memory_worker_dynamic_hard_limit, true, R"(
 Whether the background memory worker periodically recomputes the server's hard memory limit at runtime as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host.
 
-When disabled, `max_server_memory_usage_to_ram_ratio` only caps the hard memory limit statically, at startup and on configuration reload, as in previous versions.
+When disabled, `max_server_memory_usage_to_ram_ratio` only caps the hard memory limit statically, at startup and on configuration reload, as it did before ClickHouse 26.6.
 
 Has no effect when `max_server_memory_usage_to_ram_ratio` is `0`.
 )", 0) \

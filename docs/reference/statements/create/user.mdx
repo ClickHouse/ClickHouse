@@ -160,7 +160,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
    ```
 
 Notes:
-1. Older versions of ClickHouse might not support the syntax of multiple authentication methods. Therefore, if the ClickHouse server contains such users and is downgraded to a version that does not support it, such users will become unusable and some user related operations will be broken. In order to downgrade gracefully, one must set all users to contain a single authentication method prior to downgrading. Alternatively, if the server was downgraded without the proper procedure, the faulty users should be dropped.
+1. Multiple authentication methods are supported in ClickHouse 24.9 and later. Before downgrading to a version before 24.9, configure each user with a single authentication method. Otherwise, users with multiple authentication methods become unusable and some user-related operations fail. If the server was downgraded without this preparation, drop the affected users.
 2. `no_password` can not co-exist with other authentication methods for security reasons. Therefore, you can only specify
 `no_password` if it is the only authentication method in the query. 
 

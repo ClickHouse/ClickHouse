@@ -858,7 +858,7 @@ try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
 Old client (V1) was using `com.clickhouse.client.ClickHouseClient#builder` as start point. The new client (V2) uses similar pattern with `com.clickhouse.client.api.Client.Builder`. Main
 differences are:
 - no service loader is used to grab implementation. The `com.clickhouse.client.api.Client` is facade class for all kinds of implementation in the future.
-- a fewer sources of configuration: one is provided to the builder and one is with operation settings (`QuerySettings`, `InsertSettings`). Previous version had configuration per node and was loading
+- a fewer sources of configuration: one is provided to the builder and one is with operation settings (`QuerySettings`, `InsertSettings`). V1 had configuration per node and was loading
 env. variables in some cases.
 
 ### Configuration Parameters Match {#migration_from_v1_config}

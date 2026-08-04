@@ -452,7 +452,7 @@ LIMIT 5
 5 rows in set. Elapsed: 0.073 sec. Processed 41.46 million rows, 82.92 MB (565.43 million rows/s., 1.13 GB/s.)
 ```
 
-This can be updated whenever a new table is added using the `EXCHANGE` table syntax. For example, to add a v4 table we can create a new table and exchange this atomically with the previous version.
+This can be updated whenever a new table is added using the `EXCHANGE` table syntax. For example, to add a v4 table we can create a new table and exchange it atomically with the existing merge table.
 
 ```sql
 CREATE TABLE otel_logs_merged_temp

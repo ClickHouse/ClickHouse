@@ -217,8 +217,8 @@ In history mode, every destination table includes the following metadata columns
 | Column | Type | Description |
 |--------|------|-------------|
 | `_fivetran_synced` | `DateTime64(9, 'UTC')` | Timestamp when the record was synced by Fivetran. Used as the version column for `SharedReplacingMergeTree`. |
-| `_fivetran_start` | `DateTime64(9, 'UTC')` | Timestamp when this version of the record became active. Part of the table's sorting key. |
-| `_fivetran_end` | `Nullable(DateTime64(9, 'UTC'))` | Timestamp when this version was superseded. Set to `2262-04-11 23:47:16` for currently active records. |
+| `_fivetran_start` | `DateTime64(9, 'UTC')` | Timestamp when the record revision became active. Part of the table's sorting key. |
+| `_fivetran_end` | `Nullable(DateTime64(9, 'UTC'))` | Timestamp when the record revision was superseded. Set to `2262-04-11 23:47:16` for currently active records. |
 | `_fivetran_active` | `Nullable(Bool)` | Whether this is the currently active version of the record. |
 | `_fivetran_id` | `String` | Auto-generated unique identifier. Only present when the source table has no primary keys. |
 
@@ -226,7 +226,7 @@ The `_fivetran_start` column is always included in the `ORDER BY` clause as the 
 This allows multiple versions of the same record (with different start times) to coexist in the table.
 
 When a record is updated:
-- The previous version's `_fivetran_end` is set to the new version's `_fivetran_start` minus one nanosecond, and `_fivetran_active` is set to `false`.
+- The superseded record's `_fivetran_end` is set to the new record's `_fivetran_start` minus one nanosecond, and `_fivetran_active` is set to `false`.
 - The new version is inserted with `_fivetran_active` set to `true` and `_fivetran_end` set to `2262-04-11 23:47:16.000000000` (the maximum `DateTime64(9)` value).
 
 #### Single primary key in the source table {#history-single-pk}

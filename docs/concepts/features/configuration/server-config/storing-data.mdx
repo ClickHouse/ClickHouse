@@ -722,8 +722,7 @@ These settings should be defined in the disk configuration section.
 | `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`          | Controls behavior when `max_query_cache_size` is reached: <br/>- `true`: Stops downloading new data <br/>- `false`: Evicts old data to make space for new data |
 
 <Warning>
-Cache configuration settings and cache query settings correspond to the latest ClickHouse version, 
-for earlier versions something might not be supported.
+The availability of cache configuration settings and cache query settings depends on the ClickHouse release.
 </Warning>
 
 #### Cache system tables {#cache-system-tables-file-cache}

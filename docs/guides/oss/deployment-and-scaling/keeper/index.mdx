@@ -1264,8 +1264,8 @@ WHERE path = '/clickhouse/tables/1/db_uuid/9e8a3cc2-0dec-4438-81a7-c3e63ce2a1cf/
 ```
 
 <Note>
-Database must be `Atomic`, if upgrading from a previous version, the
-`default` database is likely of `Ordinary` type.
+The database must be `Atomic`. When upgrading an installation that uses an
+`Ordinary` database, the `default` database is likely to use that engine.
 </Note>
 
 To check:

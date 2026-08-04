@@ -314,7 +314,7 @@ SELECT sum(number) FROM test_table;
 ```
 
 <Note>
-Recursive CTEs rely on the [query analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or update the **`compatibility`** setting to a more recent version.
+Recursive CTEs rely on the [query analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or set **`compatibility`** to version **`24.3`** or later.
 Starting from version `24.8` the analyzer has been fully promoted to production, and the setting `allow_experimental_analyzer` has been renamed to `enable_analyzer`.
 </Note>
 

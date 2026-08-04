@@ -7047,7 +7047,7 @@ Use schema from cache for URL with last modification time validation (for URLs w
 )", 0) \
     \
     DECLARE(String, compatibility, "", R"(
-The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
+The `compatibility` setting causes ClickHouse to use the default settings from the ClickHouse release specified as its value.
 
 If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
 
