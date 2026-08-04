@@ -2,7 +2,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
-#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/Context.h>
@@ -92,13 +91,8 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    /// Stamp the requested columns with their storage ids off the snapshot, so the reader keys files by id.
-    NamesAndTypesList columns = columns_to_read;
-    if (const auto mapping = storage_snapshot->metadata->getActiveColumnIdMapping())
-        mapping->stampColumnIds(columns);
-
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
-        read_info, columns, virtual_fields,
+        read_info, columns_to_read, virtual_fields,
         storage_snapshot, storage_settings, uncompressed_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);

@@ -81,8 +81,8 @@ NameToNameVector pruneRetainedNames(ColumnIdMapping & mapping, const ColumnIdAlt
 ColumnIdMappingUpdate::ColumnIdMappingUpdate(MergeTreeData & data_, LoggerPtr log_)
     : data(data_)
     , log(std::move(log_))
-    , published_before(data_.getColumnIdMapping())
     , published_policy(data_.getStoragePolicy())
+    , published_before(data_.getColumnIdMapping())
 {
 }
 

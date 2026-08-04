@@ -1325,9 +1325,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             {
                 for (const auto & column : projection_columns)
                 {
-                    /// The projection part is resolved by its own name: a projection's columns cannot be
-                    /// renamed, so its stored names never go stale. The parent part must go through the
-                    /// snapshot, since a parent column may have been renamed after the part was written.
+                    /// The projection part resolves by its own name: `MergeTreeData::checkAlterIsPossible`
+                    /// has always rejected RENAME of a projection-referenced column, so those stored names
+                    /// never go stale. The parent part must go through the snapshot -- it may be renamed.
                     if (!it->second->tryGetColumnByNameUnsafe(column.name)
                         && (part->tryGetColumnBySnapshotName(column.name, global_ctx->metadata_snapshot)
                             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))

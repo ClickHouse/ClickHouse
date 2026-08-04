@@ -2390,36 +2390,17 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
-/// Translates the part's on-disk column list (columns.txt) into logical names
-/// (see the mapping contract in `ColumnIdMapping.h`).
-///
-/// Every entry in columns.txt is a physical storage key: a column ID, or -- for a
-/// part written before activation -- the name that was also its ID at activation
-/// (identity). Resolution is purely in ID-space: the key is never reinterpreted as
-/// a current logical name, so a dropped column's stale key cannot be re-bound to a
-/// live sibling's stream.
-///
-/// Three cases per entry:
-///
-///  (a) The key is a live column ID: translate to its current logical name.
-///
-///  (b) The key is not a live ID: its column was dropped, so the on-disk stream is
-///      an orphan. Keep the slot -- compact ordinals must not shift (positions are
-///      the entry order in columns.txt; readers look up live columns by ID and miss
-///      the orphan, then default-fill). Pin the orphan to its physical key; if its
-///      stale name now belongs to a live column, give it a unique placeholder so the
-///      part's column list holds no duplicate logical name.
-///
-///  (c) The key is unknown to the mapping (persistent virtual columns like
-///      _row_exists, or columns that predate column IDs): pass through with identity.
-NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
+/// Resolution stays in ID-space: an on-disk key is never reinterpreted as a current logical name,
+/// or a dropped column's stale key could be re-bound to a live sibling's stream. A key that is no
+/// longer live keeps its slot -- compact ordinals must not shift -- under a placeholder name, since
+/// a duplicate logical name would make the reloaded part unresolvable.
+NamesAndTypesList IMergeTreeDataPart::remapColumnIdsToLogicalNames(
     const NamesAndTypesList & loaded_columns,
     const ColumnIdMapping & mapping) const
 {
-    /// Every on-disk key plus every current logical name is reserved so a case-(b) orphan
-    /// placeholder can collide with neither: a duplicate logical name in the part's list makes
-    /// the reloaded part unresolvable, and a placeholder equal to a live logical name would let
-    /// callers mistake the orphan's dropped-column bytes for that live column's.
+    /// Reserve every on-disk key and every current logical name so an orphan's placeholder can
+    /// collide with neither -- one equal to a live logical name would let callers mistake the
+    /// orphan's dropped-column bytes for that column's.
     NameSet reserved_names;
     for (const auto & column : loaded_columns)
         reserved_names.insert(column.name);
@@ -2429,7 +2410,7 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
     NamesAndTypesList remapped_columns;
     for (const auto & column : loaded_columns)
     {
-        /// Case (c): persistent virtual columns are not managed by the mapping.
+        /// Persistent virtual columns are not managed by the mapping.
         if (isPersistentVirtualColumn(column.name))
         {
             auto remapped_column = column;
@@ -2449,7 +2430,7 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
 
         if (mapping.hasColumnId(column.name))
         {
-            /// Case (a): the key is a live column ID -- resolve to its logical name.
+            /// A live column ID -- resolve to its logical name.
             auto remapped_column = column;
             remapped_column.name = mapping.getLogicalName(column.name);
             remapped_column.setColumnId(ColumnId{column.name});
@@ -2459,12 +2440,9 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
 
         if (mapping.hasLogicalName(column.name))
         {
-            /// Case (b): the key is a dropped column's orphan stream. Pin it to its physical
-            /// on-disk key and rename it to a unique placeholder: its stale name may now belong
-            /// to a live column (a RENAME or DROP+ADD freed it), and keeping the stale name would
-            /// both duplicate a live logical name in the part's list and let callers attribute the
-            /// orphan's bytes to that live column. Uniform for every orphan -- the placeholder and
-            /// the pinned id make the orphan's identity distinct from every live column's.
+            /// A dropped column's orphan stream, whose stale name a RENAME or DROP+ADD may since
+            /// have handed to a live column. Pin the on-disk key and give it a placeholder name so
+            /// the orphan's identity stays distinct from every live column's.
             auto remapped_column = column;
             remapped_column.setColumnId(ColumnId{column.getNameInStorage()});
             String placeholder = column.name;
@@ -2477,7 +2455,7 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
             continue;
         }
 
-        /// Case (c): unknown to the mapping -- pass through with identity.
+        /// Unknown to the mapping (predates column IDs) -- pass through with identity.
         auto remapped_column = column;
         remapped_column.setColumnId(ColumnId{column.getNameInStorage()});
         remapped_columns.push_back(remapped_column);
@@ -2534,7 +2512,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     }
 
     if (column_id_mapping)
-        loaded_columns = remapColumnsWithPhysicalNames(loaded_columns, *column_id_mapping);
+        loaded_columns = remapColumnIdsToLogicalNames(loaded_columns, *column_id_mapping);
 
     SerializationInfoByName infos({});
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))

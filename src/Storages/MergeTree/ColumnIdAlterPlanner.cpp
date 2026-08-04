@@ -98,23 +98,23 @@ void rejectUnsafeRenameChains(const AlterCommands & commands)
 
 /// Legality of a single RENAME COLUMN on the metadata-only path.  For
 /// flattened Nested siblings, the shared offset stream name is derived from
-/// the Nested prefix of the physical name, so a cross-parent rename is safe
+/// the Nested prefix of the column ID, so a cross-parent rename is safe
 /// only when that prefix stays coherent for the whole group.
 void validateTwoPhaseRename(
     const AlterCommand & command, const AlterCommands & commands, const ColumnIdMapping & mapping, bool nested_offsets_shared)
 {
-    auto physical = mapping.getColumnId(command.column_name);
-    auto [phys_parent, phys_child] = Nested::splitName(physical);
+    auto column_id = mapping.getColumnId(command.column_name);
+    auto [id_parent, id_child] = Nested::splitName(column_id);
     auto [old_parent, old_child] = Nested::splitName(command.column_name);
     auto [new_parent, new_child] = Nested::splitName(command.rename_to);
     bool is_nested = !old_child.empty();
     bool changes_prefix = (old_parent != new_parent);
-    bool physical_has_dot = !phys_child.empty();
+    bool id_has_dot = !id_child.empty();
 
     /// Plain-counter column ID (no dot, e.g. "5"): the offset stream name is
     /// derived from the logical Nested parent, so a cross-parent rename would
     /// change it while existing parts still carry the old stream name.
-    if (nested_offsets_shared && is_nested && changes_prefix && !physical_has_dot)
+    if (nested_offsets_shared && is_nested && changes_prefix && !id_has_dot)
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -126,29 +126,24 @@ void validateTwoPhaseRename(
             command.column_name,
             old_parent,
             new_parent,
-            physical);
+            column_id);
     }
 
-    /// Partial cross-parent Nested move is unsafe: the writer
-    /// folds the offset stream by the physical Nested prefix
-    /// (either the compound counter "5" in "5.x"/"5.y" or the
-    /// identity prefix "n" in "n.x"/"n.y"), so leaving any
-    /// sibling behind under the old logical parent makes two
-    /// logical parents read/write through one offsets stream.
-    /// Require all siblings sharing this physical prefix to be
-    /// renamed to the same new parent in the same ALTER.
-    if (nested_offsets_shared && is_nested && changes_prefix && physical_has_dot)
+    /// Partial cross-parent Nested move is unsafe: the writer folds the offset stream by the
+    /// Nested prefix of the column ID, so leaving a sibling under the old logical parent makes
+    /// two logical parents read and write through one offsets stream.
+    if (nested_offsets_shared && is_nested && changes_prefix && id_has_dot)
     {
         const String old_logical_prefix = old_parent + ".";
         const String new_logical_prefix = new_parent + ".";
-        for (const auto & [other_logical, other_physical] : mapping.getLogicalToId())
+        for (const auto & [other_logical, other_column_id] : mapping.getLogicalToId())
         {
             if (other_logical == command.column_name)
                 continue;
             if (!other_logical.starts_with(old_logical_prefix))
                 continue;
-            auto [other_phys_parent, other_phys_child] = Nested::splitName(other_physical);
-            if (other_phys_parent != phys_parent)
+            auto [other_id_parent, other_id_child] = Nested::splitName(other_column_id);
+            if (other_id_parent != id_parent)
                 continue;
             bool other_renamed = false;
             for (const auto & other_cmd : commands)
@@ -166,12 +161,12 @@ void validateTwoPhaseRename(
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Cross-parent Nested rename of '{}' to '{}' requires "
-                    "sibling column '{}' (sharing physical prefix '{}') "
+                    "sibling column '{}' (sharing column-ID prefix '{}') "
                     "to also be renamed to a child of '{}' in the same "
                     "ALTER. Partial cross-parent moves are unsafe "
                     "because the shared offset stream cannot be split.",
                     command.column_name, command.rename_to,
-                    other_logical, phys_parent, new_parent);
+                    other_logical, id_parent, new_parent);
         }
     }
 }
@@ -214,7 +209,7 @@ void rejectDropOrRenameThenReAdd(const AlterCommands & commands, const std::set<
     /// `RENAME COLUMN b TO old_b, ADD COLUMN b ...` because validation is
     /// order-aware (after the rename, `b` is free), but once phase 2 removes
     /// the old `b -> b` entry, the mapping has no entry for the new `b` and
-    /// reads fall back to physical name `b`, which is the renamed column's bytes.
+    /// reads fall back to the column ID `b`, which is the renamed column's bytes.
     std::set<String> rename_freed_sources;
     for (const auto & command : commands)
     {
@@ -258,7 +253,7 @@ void allocateNewColumnIds(
     const StorageInMemoryMetadata & new_metadata, const std::set<String> & old_col_names, ColumnIdMapping & mapping)
 {
     std::map<String, std::vector<std::pair<String, String>>> nested_groups;
-    std::map<String, String> incremental_child_prefix; // logical -> phys parent
+    std::map<String, String> incremental_child_prefix; // logical name -> column-ID parent
     std::vector<String> plain_new_columns;
 
     for (const auto & col : new_metadata.getColumns().getAllPhysical())
@@ -282,10 +277,10 @@ void allocateNewColumnIds(
                 if (!mapping.hasLogicalName(other.name))
                     continue;
                 const String & sibling_id = mapping.getColumnId(other.name);
-                auto [sib_phys_parent, sib_phys_child] = Nested::splitName(sibling_id);
-                if (!sib_phys_child.empty())
+                auto [sibling_id_parent, sibling_id_child] = Nested::splitName(sibling_id);
+                if (!sibling_id_child.empty())
                 {
-                    existing_prefix = sib_phys_parent;
+                    existing_prefix = sibling_id_parent;
                     break;
                 }
             }
@@ -326,19 +321,19 @@ void allocateNewColumnIds(
             mapping.addColumn(logical_name, base + "." + child_name);
     }
 
-    /// Incremental child additions inherit the existing siblings' physical
+    /// Incremental child additions inherit the existing siblings' column-ID
     /// prefix so the shared offset stream stays coherent.
-    for (const auto & [logical_name, phys_parent] : incremental_child_prefix)
+    for (const auto & [logical_name, id_parent] : incremental_child_prefix)
     {
         auto [_, child_name] = Nested::splitName(logical_name);
-        mapping.addColumn(logical_name, phys_parent + "." + child_name);
+        mapping.addColumn(logical_name, id_parent + "." + child_name);
     }
 
     /// Allocate plain counter-based column IDs for non-Nested columns.
     for (const auto & col_name : plain_new_columns)
     {
-        auto new_physical = mapping.allocateColumnId();
-        mapping.addColumn(col_name, new_physical);
+        auto new_column_id = mapping.allocateColumnId();
+        mapping.addColumn(col_name, new_column_id);
     }
 }
 

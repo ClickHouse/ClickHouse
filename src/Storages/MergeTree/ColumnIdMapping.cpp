@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -169,18 +168,18 @@ void ColumnIdMapping::removeColumn(const String & logical_name)
     if (it == logical_to_id.end())
         throwMissingLogicalName(logical_name);
 
-    const String physical = it->second;
+    const String column_id = it->second;
     logical_to_id.erase(it);
 
-    for (const auto & [other_logical, other_physical] : logical_to_id)
+    for (const auto & [other_logical, other_column_id] : logical_to_id)
     {
-        if (other_physical == physical)
+        if (other_column_id == column_id)
         {
-            id_to_logical[physical] = other_logical;
+            id_to_logical[column_id] = other_logical;
             return;
         }
     }
-    id_to_logical.erase(physical);
+    id_to_logical.erase(column_id);
 }
 
 void ColumnIdMapping::renameColumn(const String & old_logical_name, const String & new_logical_name)
@@ -215,7 +214,7 @@ void ColumnIdMapping::beginRename(const String & old_logical_name, const String 
 
     auto column_id = it->second;
 
-    /// Reject renaming a column to a name equal to another active column's physical id. On-disk
+    /// Reject renaming a column to a name equal to another active column's ID. On-disk
     /// artifacts (streams, minmax, sizes) are keyed by the column id, so a logical name that equals
     /// a foreign column's id makes name-vs-id resolution ambiguous -- reachable via a mutation that
     /// then reads/writes the wrong streams (silent data corruption). Allowing it safely would need
@@ -237,27 +236,24 @@ void ColumnIdMapping::beginRename(const String & old_logical_name, const String 
 void ColumnIdMapping::finishRename(const String & old_logical_name)
 {
     auto it = logical_to_id.find(old_logical_name);
+    /// `beginRename` registered the old name and nothing between the two phases removes it: the
+    /// planner only adds, and `AlterCommands::validate` rejects two renames of the same column.
     if (it == logical_to_id.end())
-    {
-        LOG_WARNING(getLogger("ColumnIdMapping"),
-            "finishRename: old logical name '{}' not found in mapping; "
-            "reconciliation may have already removed it",
-            old_logical_name);
-        return;
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "`finishRename` of logical column name '{}' without a matching `beginRename`", old_logical_name);
 
-    const String physical = it->second;
+    const String column_id = it->second;
     logical_to_id.erase(it);
 
-    for (const auto & [logical, phys] : logical_to_id)
+    for (const auto & [logical, other_column_id] : logical_to_id)
     {
-        if (phys == physical)
+        if (other_column_id == column_id)
         {
-            id_to_logical[physical] = logical;
+            id_to_logical[column_id] = logical;
             return;
         }
     }
-    id_to_logical.erase(physical);
+    id_to_logical.erase(column_id);
 }
 
 Names ColumnIdMapping::logicalNames() const
@@ -338,9 +334,9 @@ ColumnIdMapping ColumnIdMapping::fromString(const String & str)
     auto mapping_object = object->getObject(KEY_MAPPING);
     for (const auto & [logical_name, column_id_value] : *mapping_object)
     {
-        String physical = column_id_value.convert<String>();
-        mapping.logical_to_id.emplace(logical_name, physical);
-        mapping.id_to_logical[physical] = logical_name;
+        String column_id = column_id_value.convert<String>();
+        mapping.logical_to_id.emplace(logical_name, column_id);
+        mapping.id_to_logical[column_id] = logical_name;
     }
 
     /// During two-phase rename, both old and new logical names map to the
@@ -353,11 +349,11 @@ ColumnIdMapping ColumnIdMapping::fromString(const String & str)
     if (mapping.id_to_logical.size() < mapping.logical_to_id.size())
     {
         mapping.id_to_logical.clear();
-        for (const auto & [logical, physical] : mapping.logical_to_id)
+        for (const auto & [logical, column_id] : mapping.logical_to_id)
         {
-            auto it = mapping.id_to_logical.find(physical);
+            auto it = mapping.id_to_logical.find(column_id);
             if (it == mapping.id_to_logical.end() || logical < it->second)
-                mapping.id_to_logical[physical] = logical;
+                mapping.id_to_logical[column_id] = logical;
         }
     }
 

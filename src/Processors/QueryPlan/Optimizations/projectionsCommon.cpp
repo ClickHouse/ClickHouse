@@ -339,8 +339,9 @@ static bool projectionPartHasRequiredColumns(
 
     for (const auto & name : required_column_names)
     {
-        /// (1) Stored by the projection part. Resolved by the projection part's own name: a projection's
-        /// columns cannot be renamed, so its stored names never go stale.
+        /// (1) Stored by the projection part, resolved by its own name: `checkAlterIsPossible` has
+        /// rejected RENAME of a projection-referenced column since long before column IDs, so those
+        /// stored names never go stale.
         if (projection_part.tryGetColumnByNameUnsafe(name))
             continue;
 

@@ -767,32 +767,28 @@ void MergeTreeData::reconcileColumnIdMappingWithMetadata()
     if (changed)
         persistMapping(std::move(reconciled));
 
-    /// Fail loud on duplicate-physical-ID corruption.  Two-phase rename
-    /// produces a transient state where the old and new logical names map
-    /// to the same physical ID, but after the metadata-vs-mapping trim
-    /// above either the old name is gone (single survivor) or both are
-    /// still in metadata, which is true corruption.  Without this check a
-    /// hand-edited or torn `column_ids.json` could silently let two SQL
-    /// columns share one on-disk stream.
+    /// Two-phase rename transiently maps two logical names to one column ID, but the trim above
+    /// has already dropped the old name by now -- so a surviving duplicate is real corruption that
+    /// would silently let two SQL columns share one on-disk stream.
     auto final_mapping = getColumnIdMapping();
     if (final_mapping)
     {
-        std::unordered_map<String, std::vector<String>> physical_to_logicals;
-        for (const auto & [logical, physical] : final_mapping->getLogicalToId())
-            physical_to_logicals[physical].push_back(logical);
+        std::unordered_map<String, std::vector<String>> id_to_logicals;
+        for (const auto & [logical, column_id] : final_mapping->getLogicalToId())
+            id_to_logicals[column_id].push_back(logical);
 
-        for (const auto & [physical, logicals] : physical_to_logicals)
+        for (const auto & [column_id, logicals] : id_to_logicals)
         {
             if (logicals.size() > 1)
                 throw Exception(
                     ErrorCodes::CORRUPTED_DATA,
                     "Column ID mapping for table {} has multiple logical columns "
-                    "mapped to the same physical ID '{}': {}.  All of them are "
+                    "mapped to the same column ID '{}': {}.  All of them are "
                     "still present in the schema, which indicates a corrupted "
                     "`column_ids.json` (not a transient two-phase-rename state). "
                     "Restore from backup or repair the file manually.",
                     getStorageID().getNameForLogs(),
-                    physical,
+                    column_id,
                     fmt::join(logicals, ", "));
         }
     }
@@ -5083,18 +5079,18 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 local_context,
                 /*is_loading_from_existing_metadata=*/true);
 
-        bool settings_enable_pn =
+        bool settings_enable_column_ids =
             effective_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS;
         bool has_compat_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
         {
             return c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN || c.type == AlterCommand::ADD_COLUMN;
         });
-        bool pn_active = hasColumnIdMapping() || (settings_enable_pn && has_compat_alter);
+        bool column_ids_active = hasColumnIdMapping() || (settings_enable_column_ids && has_compat_alter);
 
         auto mutation_commands = commands.getMutationCommands(
             new_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
             /*with_alters=*/false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets],
-            /*column_ids_active=*/pn_active);
+            /*column_ids_active=*/column_ids_active);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -8631,16 +8627,10 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     }
     else
     {
-        /// Restoring into a non-empty table (`allow_non_empty_tables = 1`) must not
-        /// silently overwrite an existing active mapping: destination parts written
-        /// under the current mapping would then resolve through the backup's mapping
-        /// and read the wrong physical files.  Require the active `logical_to_id`
-        /// to match, and preserve the higher counter.
-        ///
-        /// Counter bump: backup parts may carry orphan column files at IDs the
-        /// destination's counter has not yet handed out.  Without the bump, a
-        /// later `ADD COLUMN` would reuse one of those IDs and read stale orphan
-        /// bytes from the restored parts.
+        /// Overwriting a non-empty destination's active mapping would make its own parts resolve
+        /// through the backup's mapping, so require the two to agree.  The counter must then take
+        /// the higher of the two, or a later `ADD COLUMN` would reuse an ID that restored parts
+        /// still carry orphan files for.
         if (getTotalActiveSizeInBytes() > 0)
         {
             auto current = getColumnIdMapping();
@@ -8649,8 +8639,8 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
             if (!same_mapping)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "RESTORE: backup's `{}` differs from destination's active "
-                    "column-ID mapping; existing parts would be read with the "
-                    "wrong physical column names.  Restore into an empty table.",
+                    "column-ID mapping; existing parts would be read under the "
+                    "wrong column IDs.  Restore into an empty table.",
                     COLUMN_IDS_FILE_NAME);
 
             if (restored->getNextColumnIdCounter() > current->getNextColumnIdCounter())
@@ -10960,17 +10950,17 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
 
-    auto my_pn = getActiveColumnIdMapping();
-    auto src_pn = src_data->getActiveColumnIdMapping();
-    bool my_has_pn = (my_pn != nullptr);
-    bool src_has_pn = (src_pn != nullptr);
-    if (my_has_pn != src_has_pn)
+    auto my_mapping = getActiveColumnIdMapping();
+    auto src_mapping = src_data->getActiveColumnIdMapping();
+    bool my_has_mapping = (my_mapping != nullptr);
+    bool src_has_mapping = (src_mapping != nullptr);
+    if (my_has_mapping != src_has_mapping)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Tables have incompatible column ID mapping state: "
             "one table has column IDs active while the other does not");
-    if (my_has_pn && src_has_pn)
+    if (my_has_mapping && src_has_mapping)
     {
-        if (my_pn->getLogicalToId() != src_pn->getLogicalToId())
+        if (my_mapping->getLogicalToId() != src_mapping->getLogicalToId())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Tables have different column ID mappings; "
                 "partition operations require identical logical-to-ID column mappings");
@@ -10979,13 +10969,13 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         /// IDs the destination's counter has not yet handed out.  Transferring
         /// such parts and later ADDing a column on the destination would
         /// allocate one of those IDs and read the stale orphan bytes.
-        if (src_pn->getNextColumnIdCounter() > my_pn->getNextColumnIdCounter())
+        if (src_mapping->getNextColumnIdCounter() > my_mapping->getNextColumnIdCounter())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Source table's column-ID counter ({}) is ahead of destination's "
                 "({}); transferred parts may carry orphan column IDs the "
                 "destination would later reuse.  Bump the destination's counter "
                 "(e.g. via ADD/DROP COLUMN cycles) before the partition operation.",
-                src_pn->getNextColumnIdCounter(), my_pn->getNextColumnIdCounter());
+                src_mapping->getNextColumnIdCounter(), my_mapping->getNextColumnIdCounter());
     }
 
     return *src_data;

@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -122,14 +121,9 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    /// Stamp the requested columns with their storage ids off the snapshot, so the reader keys files by id.
-    NamesAndTypesList columns = columns_to_read;
-    if (const auto mapping = storage_snapshot->metadata->getActiveColumnIdMapping())
-        mapping->stampColumnIds(columns);
-
     return std::make_unique<MergeTreeReaderWide>(
         read_info,
-        columns,
+        columns_to_read,
         virtual_fields,
         storage_snapshot,
         storage_settings,

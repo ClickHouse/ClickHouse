@@ -55,7 +55,7 @@ TEST(ColumnIdMapping, CounterWithNumericColumnNames)
     EXPECT_EQ(mapping.allocateColumnId(), "11");
 }
 
-TEST(ColumnIdMapping, RenamePreservesPhysical)
+TEST(ColumnIdMapping, RenamePreservesColumnId)
 {
     auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
 
@@ -149,7 +149,7 @@ TEST(ColumnIdMapping, TwoPhaseRenameCrashRecovery)
 
     EXPECT_TRUE(restored.hasLogicalName("a"));
     EXPECT_TRUE(restored.hasLogicalName("c"));
-    /// Both "a" and "c" map to physical "a"; reverse map must be deterministic
+    /// Both "a" and "c" map to column ID "a"; reverse map must be deterministic
     /// (lexicographically smallest logical name wins).
     EXPECT_EQ(restored.getLogicalName("a"), "a");
 
@@ -161,20 +161,20 @@ TEST(ColumnIdMapping, TwoPhaseRenameCrashRecovery)
     EXPECT_EQ(restored.getLogicalName("a"), "a");
 }
 
-TEST(ColumnIdMapping, TwoPhaseRenameRemoveOldPreservesPhysical)
+TEST(ColumnIdMapping, TwoPhaseRenameRemoveOldPreservesColumnId)
 {
     auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
 
-    auto phys = mapping.allocateColumnId();
-    mapping.addColumn("c", phys);
+    auto column_id = mapping.allocateColumnId();
+    mapping.addColumn("c", column_id);
 
     mapping.beginRename("c", "d");
 
     mapping.removeColumn("c");
 
     EXPECT_TRUE(mapping.hasLogicalName("d"));
-    EXPECT_EQ(mapping.getColumnId("d"), phys);
-    EXPECT_TRUE(mapping.hasColumnId(phys));
+    EXPECT_EQ(mapping.getColumnId("d"), column_id);
+    EXPECT_TRUE(mapping.hasColumnId(column_id));
 }
 
 TEST(ColumnIdMapping, ConcurrentDropAddCycle)
@@ -283,7 +283,7 @@ TEST(ColumnIdMapping, RemapEvictsDroppedNameCollision)
 /// Change-detector tied to the `addPersistent(...)` set in MergeTreeData::createVirtuals.
 /// `isPersistentVirtualColumn` hardcodes that set; if a new persistent virtual column is
 /// added there, BOTH `isPersistentVirtualColumn` and this test must be updated. Persistent
-/// virtuals are physically stored in parts and must NOT be remapped by the column ID mapping;
+/// virtuals are stored in parts and must NOT be remapped by the column ID mapping;
 /// misclassifying one would corrupt its stream resolution.
 TEST(ColumnIdMapping, IsPersistentVirtualColumnMatchesAddPersistentSet)
 {
@@ -303,7 +303,7 @@ TEST(ColumnIdMapping, IsPersistentVirtualColumnMatchesAddPersistentSet)
 /// (were the single source ever re-forked, this catches it): the predicate must cover every
 /// virtual `createVirtuals` registers, plus `_partition_value` (added only when a partition key
 /// is present, so absent from `createVirtuals(nullptr)`). With strict stamping, a miss means the
-/// stamp treats a virtual as a real physical column and throws.
+/// stamp treats a virtual as a real stored column and throws.
 TEST(ColumnIdMapping, IsVirtualColumnCoversCreateVirtuals)
 {
     const auto virtuals = MergeTreeData::createVirtuals(nullptr);
@@ -354,7 +354,7 @@ TEST(ColumnIdMapping, StampColumnIdsLenientLeavesUnmappedEmpty)
     EXPECT_TRUE(columns.tryGetByName("sum(c)")->column_id.empty());
 }
 
-/// Discriminating: a real physical column absent from an active mapping is a schema/mapping
+/// Discriminating: a real stored column absent from an active mapping is a schema/mapping
 /// desync. The unified stamp must fail loud (LOGICAL_ERROR -> abort under debug/sanitizer, a
 /// throw otherwise) instead of silently defaulting the id to the name / leaving it empty.
 /// With the old lenient code it would not fail, so this is RED without the fix.

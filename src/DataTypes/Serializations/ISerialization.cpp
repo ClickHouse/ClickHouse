@@ -485,13 +485,13 @@ String ISerialization::getFileNameForStreamByColumnId(
         /// gives "n"; for counter-allocated columns (column ID = "5.x")
         /// this gives "5".  Fall back to the logical name for columns
         /// whose column ID has no dot (plain counter like "5").
-        auto nested_from_physical = Nested::extractTableName(column_id_in_storage);
+        auto nested_from_id = Nested::extractTableName(column_id_in_storage);
         auto nested_from_logical = Nested::extractTableName(logical_name_in_storage);
-        bool physical_is_nested = (column_id_in_storage != nested_from_physical);
+        bool id_is_nested = (column_id_in_storage != nested_from_id);
         bool logical_is_nested = (logical_name_in_storage != nested_from_logical);
 
-        if (physical_is_nested)
-            stream_name = escapeForFileName(nested_from_physical);
+        if (id_is_nested)
+            stream_name = escapeForFileName(nested_from_id);
         else if (logical_is_nested)
             stream_name = escapeForFileName(nested_from_logical);
         else

@@ -126,10 +126,9 @@ ColumnIdMappingPtr StorageInMemoryMetadata::getActiveColumnIdMapping() const
 
 void StorageInMemoryMetadata::syncColumnIdsFromMapping()
 {
-    /// In-memory-C re-sync chokepoint: whenever the mapping is (re)published onto this metadata,
-    /// stamp every ColumnDescription's `column_id` off it so the schema itself carries the ID and
-    /// every derived NamesAndTypesList speaks IDs without a separate mapping consult. No-op for
-    /// tables without an active mapping (columns keep an empty ID → fall back to name).
+    /// The single chokepoint that keeps the schema's per-column IDs in step with the mapping, so
+    /// every derived `NamesAndTypesList` speaks IDs without a separate mapping consult. No-op for
+    /// tables without an active mapping (columns keep an empty ID -> fall back to name).
     if (column_id_mapping && column_id_mapping->isActive())
         columns.setColumnIds(*column_id_mapping);
 }

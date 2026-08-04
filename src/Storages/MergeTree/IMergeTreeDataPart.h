@@ -890,11 +890,10 @@ private:
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
 
-    /// When a column ID mapping is active, the on-disk column list
-    /// (columns.txt) uses physical storage names that differ from the logical
-    /// names in the current table schema. This method translates each entry
-    /// back to its logical name and attaches the column ID as metadata.
-    NamesAndTypesList remapColumnsWithPhysicalNames(
+    /// When a column ID mapping is active, every entry in the on-disk column list (columns.txt)
+    /// is a column ID rather than a current logical name. Translate each back to its logical name
+    /// and attach the column ID as metadata.
+    NamesAndTypesList remapColumnIdsToLogicalNames(
         const NamesAndTypesList & loaded_columns,
         const ColumnIdMapping & mapping) const;
 

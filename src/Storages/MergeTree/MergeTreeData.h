@@ -699,8 +699,9 @@ public:
         return getActiveColumnIdMapping() != nullptr;
     }
 
-    /// Returns the column ID mapping only if it is active (i.e. physical
-    /// names have been activated for this table). Returns nullptr otherwise.
+    /// The mapping only once it is active, i.e. parts are being written with IDs. Almost every
+    /// caller wants this one: an inactive mapping (a leftover from a failed activation) must not
+    /// make renames metadata-only. Use `getColumnIdMapping` when the activation state is the answer.
     ColumnIdMappingPtr getActiveColumnIdMapping() const
     {
         auto mapping = getColumnIdMapping();
@@ -718,9 +719,8 @@ public:
         return metadata->column_id_mapping;
     }
 
-    /// Snapshot the column-ID mapping pointer at BACKUP-lock time.
-    /// A fresh mapping pointer is installed per publish, so a different pointer at
-    /// `backupData` time means an ALTER landed.
+    /// A fresh mapping pointer is installed per publish, so pointer identity is what lets
+    /// `backupData` detect a column-ID ALTER -- see `IStorage::captureBackupAuxSnapshot`.
     ColumnIdMappingPtr captureBackupAuxSnapshot() const override
     {
         return getColumnIdMapping();

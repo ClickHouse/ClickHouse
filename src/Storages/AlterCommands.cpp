@@ -2058,15 +2058,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (from_nested && to_nested)
             {
-                /// Cross-parent Nested rename (n.x -> m.x) is only safe when the
-                /// table actively uses column IDs: the column-ID planning path
-                /// in `prepareColumnIdMappingForAlter` handles
-                /// the shared Nested offsets stream, while the legacy mutation
-                /// rename path does not rename `n.size0` and would leave reads
-                /// looking for `m.size0` files that do not exist.  A `with_size`
-                /// session setting alone is not enough: the table must already
-                /// have an active mapping.  Activate column IDs in a separate
-                /// ALTER first.
+                /// Cross-parent Nested rename (n.x -> m.x) is only safe on the column-ID path,
+                /// which keeps the shared Nested offsets stream coherent; the legacy mutation
+                /// rename leaves `n.size0` in place and reads then look for a `m.size0` that was
+                /// never written.
                 if (from_nested_table_name != to_nested_table_name
                     && !(merge_tree && merge_tree->hasColumnIdMapping()))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");

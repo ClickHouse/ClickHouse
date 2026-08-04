@@ -491,7 +491,7 @@ void StorageMergeTree::alter(
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
 
-    auto pn_plan = prepareColumnIdMappingForAlter(
+    auto column_id_plan = prepareColumnIdMappingForAlter(
         commands, old_metadata, new_metadata, *getSettings(), getColumnIdMapping(), getContext());
 
     /// Gated in two cases: the ALTER activates the mapping through add/drop/rename commands, or it
@@ -500,7 +500,7 @@ void StorageMergeTree::alter(
     if (!hasColumnIdMapping()
         && !local_context->getSettingsRef()[Setting::allow_experimental_column_ids])
     {
-        if (pn_plan.column_ids_active || pn_plan.persists_column_id_settings)
+        if (column_id_plan.column_ids_active || column_id_plan.persists_column_id_settings)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Column IDs require setting `allow_experimental_column_ids = 1`");
@@ -509,7 +509,7 @@ void StorageMergeTree::alter(
     auto maybe_mutation_commands = commands.getMutationCommands(
         old_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context,
         /*with_alters=*/false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets],
-        /*column_ids_active=*/pn_plan.column_ids_active);
+        /*column_ids_active=*/column_id_plan.column_ids_active);
 
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
@@ -533,7 +533,7 @@ void StorageMergeTree::alter(
         {
             settings_result = changeSettingsWithoutPublish(new_metadata.settings_changes, table_lock_holder, new_metadata);
 
-            mapping_update.persistBeforeSchemaCommit(pn_plan, new_metadata, settings_result.column_id_mapping_policy);
+            mapping_update.persistBeforeSchemaCommit(column_id_plan, new_metadata, settings_result.column_id_mapping_policy);
 
             /// Safe because the early max_query_size check already passed.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
@@ -627,14 +627,14 @@ void StorageMergeTree::alter(
                 if (!maybe_mutation_commands.empty())
                     prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
 
-                mapping_update.persistBeforeSchemaCommit(pn_plan, new_metadata, settings_result.column_id_mapping_policy);
+                mapping_update.persistBeforeSchemaCommit(column_id_plan, new_metadata, settings_result.column_id_mapping_policy);
 
                 /// Not under `currently_processing_in_background_mutex`: `alterTable` takes
                 /// `DatabaseAtomic::mutex`, which would invert lock order with the
                 /// scheduler/`RENAME`/`DROP` paths. Validation already ran above. See #80648.
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
 
-                mapping_update.persistAfterSchemaCommit(pn_plan, new_metadata);
+                mapping_update.persistAfterSchemaCommit(column_id_plan, new_metadata);
             }
             catch (...)
             {
@@ -3018,18 +3018,9 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     return results;
 }
 
-/// Pointer-identity guard for a pinned column-ID mapping. The partition-transfer and
-/// BACKUP paths hold only `lockForShare`, but column-ID ALTERs use `lockForAlter` and
-/// republish the mapping -- a field of `StorageInMemoryMetadata`, installed as a fresh
-/// `make_shared` per publish -- so one can land between pinning a mapping and committing.
-/// A different pointer therefore means a concurrent column-ID ALTER
-/// republished the mapping, which would leave the transferred or backed-up parts resolving
-/// through stale physical IDs; the caller must reject and retry.
-///
-/// Comparing raw addresses is safe only because `pinned` is a retained `ColumnIdMappingPtr`:
-/// the live reference keeps that mapping object alive, so its address cannot be freed and
-/// reused by a different object (no ABA). Callers must hold the pinned pointer across the
-/// whole pin-then-recheck window.
+/// A column-ID ALTER installs a fresh mapping pointer per publish, so a changed pointer means one
+/// landed inside a `lockForShare` window and the pinned parts would resolve through stale IDs.
+/// `pinned` must be held across the whole window: the live reference is what rules out ABA.
 static bool mappingPointersUnchanged(const ColumnIdMappingPtr & pinned, const ColumnIdMappingPtr & current)
 {
     return pinned.get() == current.get();
@@ -3258,7 +3249,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Column ID mapping changed concurrently with REPLACE/ATTACH PARTITION FROM; "
-                    "transferred parts may resolve through stale physical IDs on the destination. "
+                    "transferred parts may resolve through stale column IDs on the destination. "
                     "Retry the partition operation without a concurrent column-ID ALTER on either table.");
 
             /// Populate transaction
@@ -3453,7 +3444,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Column ID mapping changed concurrently with MOVE PARTITION TO TABLE; "
-                    "transferred parts may resolve through stale physical IDs on the destination. "
+                    "transferred parts may resolve through stale column IDs on the destination. "
                     "Retry the partition operation without a concurrent column-ID ALTER on either table.");
 
             dest_transaction.commit(dest_data_parts_lock);

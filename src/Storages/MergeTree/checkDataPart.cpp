@@ -162,6 +162,8 @@ static void checkCompactColumnIdSubstreamPositions(
     const SerializationInfoByName & serialization_infos,
     const IDataPartStorage & data_part_storage)
 {
+    chassert(data_part->getType() == MergeTreeDataPartType::Compact);
+
     const auto & cols_substreams = data_part->getColumnsSubstreams();
     if (cols_substreams.empty())
         return;
@@ -229,8 +231,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         assertEOF(*buf);
     }
 
-    auto pn_mapping = data_part->storage.getActiveColumnIdMapping();
-    bool column_ids_active = pn_mapping != nullptr;
+    auto column_id_mapping = data_part->storage.getActiveColumnIdMapping();
+    bool column_ids_active = column_id_mapping != nullptr;
 
     if (!column_ids_active)
     {
@@ -247,57 +249,50 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         std::unordered_map<String, DataTypePtr> expected_types;
         for (const auto & col : columns_list)
         {
-            auto phys = pn_mapping->getColumnIdOrDefault(col.name);
-            expected_types[phys] = col.type;
+            auto column_id = column_id_mapping->getColumnIdOrDefault(col.name);
+            expected_types[column_id] = col.type;
         }
         for (const auto & col : columns_txt)
         {
-            String phys;
-            /// Prefer column-ID resolution first: `columns.txt` for parts
-            /// written with column-IDs active stores the column_id form,
-            /// and after a `RENAME COLUMN b TO d` followed by reuse of the
-            /// name `b` for a new column, the on-disk token `b` is the
-            /// column_id for logical `d` (id_to_logical), NOT the logical
-            /// name for the new `b` (logical_to_id `b -> 1`).  Treating
-            /// `b` as a logical name first would compare the old part's
-            /// stream against the new `b` column's type and falsely report
-            /// `CORRUPTED_DATA`.  Mirrors `SerializationInfoByName::readJSONWithColumnIds`
-            /// and `remapColumnsWithPhysicalNames`.
-            if (pn_mapping->hasColumnId(col.name))
-                phys = col.name;
-            else if (auto id = pn_mapping->tryGetColumnId(col.name))
-                phys = id->value();
+            String column_id;
+            /// ID first, name second: after `RENAME b TO d` plus a new column named `b`, the on-disk
+            /// token `b` is `d`'s ID, not the new `b`. Name-first would compare mismatched types and
+            /// report `CORRUPTED_DATA`. Same order as `SerializationInfoByName::readJSONWithColumnIds`.
+            if (column_id_mapping->hasColumnId(col.name))
+                column_id = col.name;
+            else if (auto id = column_id_mapping->tryGetColumnId(col.name))
+                column_id = id->value();
             else
             {
-                /// A counter-format token below the counter is an orphan of a dropped
-                /// column (expected after DROP + re-ADD); anything else is suspicious.
                 UInt64 numeric_id = 0;
                 bool is_counter_format = tryParse(numeric_id, col.name.substr(0, col.name.find('.')))
-                    && numeric_id < pn_mapping->getNextColumnIdCounter();
-                LOG_TRACE(getLogger("checkDataPart"),
-                    "Token '{}' in columns.txt of part {} {}",
-                    col.name, data_part_storage.getFullPath(),
-                    is_counter_format ? "is an orphaned column ID of a dropped column, skipping"
-                                      : "matches no column ID or logical name of the table, skipping");
+                    && numeric_id < column_id_mapping->getNextColumnIdCounter();
+                /// Both shapes stay at TRACE: pre-activation IDs are the column names themselves, so a dropped
+                /// original column is indistinguishable from a foreign token, and a provably foreign token -- a
+                /// numeric ID at or above the counter -- already fails in `remapColumnIdsToLogicalNames`.
+                if (is_counter_format)
+                    LOG_TRACE(getLogger("checkDataPart"),
+                        "Token '{}' in columns.txt of part {} is an orphaned column ID of a dropped column, skipping",
+                        col.name, data_part_storage.getFullPath());
+                else
+                    LOG_TRACE(getLogger("checkDataPart"),
+                        "Token '{}' in columns.txt of part {} resolves to nothing under the current column-ID mapping "
+                        "-- a dropped pre-activation column, or a part from another table -- skipping",
+                        col.name, data_part_storage.getFullPath());
                 continue;
             }
 
-            auto it = expected_types.find(phys);
+            auto it = expected_types.find(column_id);
             if (it != expected_types.end() && !col.type->equals(*it->second))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Column type mismatch in part {} for column ID '{}': "
                     "expected {}, found {}",
-                    data_part_storage.getFullPath(), phys,
+                    data_part_storage.getFullPath(), column_id,
                     it->second->getName(), col.type->getName());
         }
 
-        /// The compact ordinal-consistency check (columns.txt order vs the
-        /// physical substream layout) runs below, once serializations are
-        /// loaded -- see `checkCompactColumnIdSubstreamPositions`.  A naive
-        /// `columns[i].name == columns_substreams[i].first` comparison cannot
-        /// be used: `columns_substreams` keeps the write-time name, so rename
-        /// history would false-positive.  The check resolves by column ID
-        /// instead, exactly as the reader does.
+        /// The compact ordinal-consistency check needs loaded serializations, so it runs
+        /// below -- see `checkCompactColumnIdSubstreamPositions`.
     }
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.

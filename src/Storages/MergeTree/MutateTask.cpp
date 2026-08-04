@@ -236,18 +236,11 @@ static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot
     return removed_stats;
 }
 
-/// Rewrites part_columns (the source part's load-time schema) in place to current logical names,
-/// keyed by each column's stamped id. A metadata-only RENAME under column ids neither reloads the
-/// part nor records the rename in alter_conversions (the stamped id carries it), so without this
-/// the split branches reason over stale names and emit stale-named READ_COLUMN commands. This is
-/// the same id->logical translation getColumnsForNewDataPart already applies.
-///
-/// part_id_columns carries the stamped ids (ColumnsDescription itself does not). A column whose
-/// stamped id is gone from the mapping was dropped by an earlier metadata-only ALTER; it has no
-/// current name, so it is evicted rather than carried into the current-schema view. That eviction
-/// also frees a name that a later RENAME reassigned to another column: DROP q; RENAME p TO q leaves
-/// the packed part carrying both, and ColumnsDescription::rename would otherwise collide on the
-/// ordered-unique name index and silently drop the renamed column.
+/// A metadata-only RENAME under column IDs neither reloads the part nor records the rename in
+/// alter_conversions (the stamped ID carries it), so the split branches below would otherwise
+/// reason over the part's stale load-time names. Columns whose stamped ID is gone from the mapping
+/// are evicted rather than renamed: that also frees a name a later RENAME reassigned, which
+/// `ColumnsDescription::rename` would otherwise collide on.
 void remapPartColumnsToCurrentNames(
     ColumnsDescription & part_columns,
     const NamesAndTypesList & part_id_columns,
@@ -702,7 +695,7 @@ static void addRenamedColumnToColumnsSubstreams(
     const auto & old_substreams = old_columns_substreams.getColumnSubstreams(old_position);
     for (const auto & substream : old_substreams)
     {
-        /// For column-IDs parts the substream names are physical IDs (e.g. "1"
+        /// For column-IDs parts the substream names are column IDs (e.g. "1"
         /// or "5.size0"), independent of the logical column name.  The legacy
         /// rename function rewrites the prefix from old_name to new_name; that
         /// would either no-op or throw LOGICAL_ERROR when the substream
@@ -1219,7 +1212,7 @@ static std::unordered_map<String, size_t> getStreamCounts(
             {
                 /// Resolve through the part's own pair so the stream keys by its stamped id, not by a
                 /// logical name that might equal a foreign column's id and miscount the shared-stream
-                /// refcount. A legacy id-less part (no pair) falls back to the name as the physical key.
+                /// refcount. A legacy id-less part (no pair) falls back to the name as the stream key.
                 std::optional<String> stream_name = part_column
                     ? IMergeTreeDataPart::getStreamNameForColumn(*part_column, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings())
                     : IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());

@@ -139,9 +139,9 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             size_t src_index = 0;
             size_t res_index = 0;
 
-            /// No column-ID remap here (unlike system.parts_columns): a projection part only
-            /// carries projection-referenced columns, and renaming/dropping such a column is
-            /// rejected, so the recorded name never goes stale.
+            /// No column-ID remap here (unlike system.parts_columns): a projection part only carries
+            /// projection-referenced columns, and `MergeTreeData::checkAlterIsPossible` has rejected
+            /// renaming or dropping those since long before column IDs, so the name never goes stale.
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->partition.serializeToString(part_metadata_snapshot));

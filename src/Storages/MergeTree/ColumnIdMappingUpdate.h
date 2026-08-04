@@ -26,7 +26,7 @@ public:
     ColumnIdMappingUpdate(const ColumnIdMappingUpdate &) = delete;
     ColumnIdMappingUpdate & operator=(const ColumnIdMappingUpdate &) = delete;
 
-    void persistBeforeSchemaCommit( ColumnIdAlterPlan & plan, StorageInMemoryMetadata & metadata_to_publish, const StoragePolicyPtr & target_policy_);
+    void persistBeforeSchemaCommit(ColumnIdAlterPlan & plan, StorageInMemoryMetadata & metadata_to_publish, const StoragePolicyPtr & target_policy_);
 
     void persistAfterSchemaCommit(const ColumnIdAlterPlan & plan, StorageInMemoryMetadata & metadata_to_publish);
 

@@ -362,11 +362,9 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
 
 std::optional<NameAndTypePair> IMergeTreeReader::tryResolveInPart(const NameAndTypePair & required_column) const
 {
-    /// The requested columns were stamped with their physical IDs at read ingress
-    /// (ColumnIdMapping::stampColumnIds), so an id-carrying request resolves by ID: no
-    /// query-name -> part-name remap. Resolving such a request by name would bind stale state --
-    /// after DROP+ADD an old part still lists a same-named dead column of the old type, and after
-    /// RENAME the part's cached logical names lag behind the requested ones.
+    /// An id-carrying request resolves by ID, never by name: the part's own logical names lag
+    /// behind after a metadata-only RENAME, and after DROP+ADD it still lists a same-named dead
+    /// column of the old type.
     if (!required_column.column_id.empty())
     {
         auto part_column = data_part_info_for_read->tryGetColumn(required_column.getColumnId());
@@ -644,10 +642,15 @@ MergeTreeReaderPtr createMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
+    /// Stamp the requested columns with their storage ids off the snapshot, so the reader keys files by id.
+    NamesAndTypesList columns = columns_to_read;
+    if (const auto mapping = storage_snapshot->metadata->getActiveColumnIdMapping())
+        mapping->stampColumnIds(columns);
+
     if (read_info->isCompactPart())
         return createMergeTreeReaderCompact(
             read_info,
-            columns_to_read,
+            columns,
             storage_snapshot,
             storage_settings,
             mark_ranges,
@@ -662,7 +665,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     if (read_info->isWidePart())
         return createMergeTreeReaderWide(
             read_info,
-            columns_to_read,
+            columns,
             storage_snapshot,
             storage_settings,
             mark_ranges,
