@@ -78,9 +78,9 @@ enum class CommitResult
     /// Another writer took the target version; nothing of ours was published, so the rewritten
     /// files are removed and the pre-compaction generation stays.
     Lost,
-    /// Published, but `version-hint.text` does not name it. Either generation can still be the one
-    /// a reader resolves, so BOTH are kept and nothing is deleted.
-    PublishedWithoutHint,
+    /// Published but not confirmed discoverable, or the outcome of the write is unknown. A reader
+    /// may resolve either generation, so BOTH are kept and nothing is deleted.
+    KeepEverything,
 };
 
 using namespace DB;
@@ -1625,7 +1625,27 @@ static CommitResult writeMetadataFiles(
                 object_storage,
                 context,
                 write_version_hint))
-            return CommitResult::Lost;
+        {
+            /// A false return also covers an exception while writing, which can happen after the
+            /// object storage already accepted the object. Deleting the rewritten files then strands
+            /// metadata that references them, so only report a lost commit once the target is known
+            /// not to exist, and keep everything when that cannot be established.
+            try
+            {
+                if (!object_storage->exists(StoredObject(path_resolver.resolve(generated_metadata_info.path))))
+                    return CommitResult::Lost;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to check whether the compacted metadata was written");
+            }
+            LOG_WARNING(
+                log,
+                "Iceberg compaction could not confirm that metadata version {} was not written; keeping every file so "
+                "nothing referenced by it is removed",
+                generated_metadata_info.version);
+            return CommitResult::KeepEverything;
+        }
 
         plan.metadata_published = true;
 
@@ -1659,7 +1679,7 @@ static CommitResult writeMetadataFiles(
         catch (...)
         {
             tryLogCurrentException(log, "Failed to verify version-hint.text after Iceberg compaction");
-            return CommitResult::PublishedWithoutHint;
+            return CommitResult::KeepEverything;
         }
 
         if (hint_data != std::to_string(generated_metadata_info.version))
@@ -1670,7 +1690,7 @@ static CommitResult writeMetadataFiles(
                 "the pre-compaction and the rewritten files so the table stays readable either way",
                 generated_metadata_info.version,
                 hint_data);
-            return CommitResult::PublishedWithoutHint;
+            return CommitResult::KeepEverything;
         }
         return CommitResult::Published;
     }
@@ -1894,10 +1914,9 @@ void compactIcebergTable(
                 "the table was modified during compaction. Retry OPTIMIZE.");
         }
 
-        /// Published but not pointed at by the hint: a reader may still resolve either generation,
-        /// so neither may be deleted. The rewritten files are reachable from the published metadata
-        /// and are left in place; a later OPTIMIZE cleans up once the hint agrees.
-        if (commit == CommitResult::PublishedWithoutHint)
+        /// A reader may resolve either generation, so neither may be deleted; a later OPTIMIZE
+        /// cleans up once the outcome is unambiguous.
+        if (commit == CommitResult::KeepEverything)
             return;
 
         clearOldFiles(object_storage_, old_files);

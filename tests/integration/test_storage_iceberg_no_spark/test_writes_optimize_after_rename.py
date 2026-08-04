@@ -614,13 +614,18 @@ def test_optimize_rejected_after_decimal_precision_change(
         ["bash", "-c", f"test -f {version_hint} && echo -n {new_version} > {version_hint} || true"]
     )
 
-    assert "NOT_IMPLEMENTED" in instance.query_and_get_error(
+    err = instance.query_and_get_error(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={
             "allow_experimental_iceberg_compaction": 1,
             "allow_insert_into_iceberg": 1,
         },
     )
+    # Name the guard, not just the error code: several unrelated refusals also raise
+    # NOT_IMPLEMENTED, and this test exists to prove the decimal change was what stopped it.
+    assert "NOT_IMPLEMENTED" in err, err
+    assert "changed type" in err, err
+    assert f"field id {field_id}" in err, err
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
@@ -884,6 +889,67 @@ def test_optimize_rejected_after_requiredness_change(
     assert (
         instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
     )
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_rejected_after_nested_requiredness_change(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    Requiredness matters at every level, not just the top. A nested struct field going from
+    optional to required changes only its `required` flag, so a guard that inspects only top-level
+    fields lets the rewrite through and the Parquet writer aborts on the mismatched column.
+
+    ClickHouse DDL cannot express a nested requiredness change, so the evolved schema is injected
+    into the metadata directly, which is enough because the guard runs before any file is written.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_nested_required_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, s Tuple(a Nullable(String), n Nullable(Int32)))",
+        2,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,('x',10)),(2,('y',20)),(3,('z',30));",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Positional delete so compaction would otherwise have work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    meta, latest_path = _read_latest_metadata(instance, TABLE_NAME)
+    n = int(latest_path.split("/v")[-1].split(".")[0])
+    evolved = json.loads(json.dumps(meta["schemas"][0]))
+    evolved["schema-id"] = 1
+    nested_id = None
+    for field in evolved["fields"]:
+        if isinstance(field.get("type"), dict) and field["type"].get("type") == "struct":
+            nested = field["type"]["fields"][0]
+            nested["required"] = not nested.get("required", False)
+            nested_id = nested["id"]
+    assert nested_id is not None, "expected a nested struct field to flip"
+    meta["schemas"].append(evolved)
+    meta["current-schema-id"] = 1
+    _write_metadata(instance, meta, f"{_metadata_dir(TABLE_NAME)}/v{n + 1}.metadata.json")
+
+    err = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+    assert "NOT_IMPLEMENTED" in err, err
+    # The nested field must be the one named, which a top-level-only guard could never report.
+    assert f"field id {nested_id}" in err, err
 
 
 def test_compaction_never_cleans_up_the_commit_target():
