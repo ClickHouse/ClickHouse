@@ -785,8 +785,10 @@ protected:
         return stats->getStats().at(GetParam());
     }
 
+#if !defined(SANITIZER)
     /// Requires `mutate` to throw under a memory limit and to leave more distinct values behind
-    /// than `distinct`, so that a surviving memo shows up as a too-low estimate.
+    /// than `distinct`, so that a surviving memo shows up as a too-low estimate. Sanitizer builds
+    /// have no tracked allocation to trip here, hence the guard.
     static void expectMemoDroppedWhenMutatorThrows(const ColumnStatisticsPtr & stats, size_t distinct, auto && mutate)
     {
         MainThreadStatus::getInstance();
@@ -834,6 +836,7 @@ protected:
         ASSERT_TRUE(threw) << "the mutator was expected to throw under the memory limit";
         EXPECT_GT(stats->estimateCardinality(), distinct);
     }
+#endif
 };
 
 TEST_P(UniqCardinalityInvalidation, BuildResetsCachedCardinality)
@@ -880,6 +883,7 @@ TEST_P(UniqCardinalityInvalidation, DeserializeResetsCachedCardinality)
     EXPECT_EQ(stats->estimateCardinality(), distinct_per_block);
 }
 
+#if !defined(SANITIZER)
 TEST_P(UniqCardinalityInvalidation, BuildResetsCachedCardinalityWhenItThrows)
 {
     auto stats = build(0);
@@ -903,6 +907,7 @@ TEST_P(UniqCardinalityInvalidation, MergeResetsCachedCardinalityWhenItThrows)
 
     expectMemoDroppedWhenMutatorThrows(stats, distinct_per_block, [&] { stats->merge(other); });
 }
+#endif
 
 TEST_P(UniqCardinalityInvalidation, RepeatedReadsAreStable)
 {
