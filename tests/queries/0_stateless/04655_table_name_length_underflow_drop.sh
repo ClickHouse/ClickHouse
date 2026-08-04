@@ -67,6 +67,17 @@ if [ "$use_s3_plain_rewriteable_as_db_disk" == "0" ]; then
     $CLICKHOUSE_CLIENT -q "CREATE TABLE \`$db_short\`.r2 (c0 Int) ENGINE = MergeTree() ORDER BY tuple()"
     $CLICKHOUSE_CLIENT -q "CREATE TABLE \`$db_rescue\`.t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple()"
 
+    # Views, materialized views, refreshable materialized views and dictionaries are renamed by the
+    # same statement, so the destination length is checked against the same database for all of
+    # them. They read `vsrc`, which no assertion renames, so each case below stands alone.
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE \`$db_short\`.vsrc (c0 Int) ENGINE = MergeTree() ORDER BY tuple()"
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE \`$db_short\`.mv_target (c0 Int) ENGINE = MergeTree() ORDER BY tuple()"
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE \`$db_short\`.rmv_target (c0 Int) ENGINE = MergeTree() ORDER BY tuple()"
+    $CLICKHOUSE_CLIENT -q "CREATE VIEW \`$db_short\`.v0 AS SELECT * FROM \`$db_short\`.vsrc"
+    $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW \`$db_short\`.mv0 TO \`$db_short\`.mv_target AS SELECT * FROM \`$db_short\`.vsrc"
+    $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW \`$db_short\`.rmv0 REFRESH EVERY 1 YEAR TO \`$db_short\`.rmv_target AS SELECT * FROM \`$db_short\`.vsrc"
+    $CLICKHOUSE_CLIENT -q "CREATE DICTIONARY \`$db_short\`.d0 (c0 Int DEFAULT 0) PRIMARY KEY c0 SOURCE(CLICKHOUSE(TABLE 'vsrc' DB '$db_short')) LAYOUT(FLAT()) LIFETIME(0)"
+
     # Into an oversized database: must be rejected, or the table cannot be dropped afterwards.
     rename_outcome "into-long" "RENAME TABLE \`$db_short\`.r0 TO \`$db_too_long\`.r0"
     rename_outcome "into-long-escaped" "RENAME TABLE \`$db_short\`.r1 TO \`$db_esc\`.r1"
@@ -86,6 +97,11 @@ if [ "$use_s3_plain_rewriteable_as_db_disk" == "0" ]; then
     over_limit_name=$(pad $((src_limit + 1)) a)
     rename_outcome "unknown-db" "RENAME TABLE \`$db_short\`.r2 TO \`$db_absent\`.\`$over_limit_name\`"
 
+    rename_outcome "view-into-long" "RENAME TABLE \`$db_short\`.v0 TO \`$db_too_long\`.v0"
+    rename_outcome "matview-into-long" "RENAME TABLE \`$db_short\`.mv0 TO \`$db_too_long\`.mv0"
+    rename_outcome "refreshable-matview-into-long" "RENAME TABLE \`$db_short\`.rmv0 TO \`$db_too_long\`.rmv0"
+    rename_outcome "dictionary-into-long" "RENAME DICTIONARY \`$db_short\`.d0 TO \`$db_too_long\`.d0"
+
     # db_too_long and db_esc are empty, but their own escaped names already fill the dropped
     # metadata budget, so shorten one of them first. That is the workaround from the issue.
     $CLICKHOUSE_CLIENT -q "RENAME DATABASE \`$db_too_long\` TO \`$db_shrunk\`"
@@ -102,4 +118,8 @@ else
     echo "out-of-long-accepted"
     echo "rescued-dropped"
     echo "unknown-db-reported"
+    echo "view-into-long-rejected"
+    echo "matview-into-long-rejected"
+    echo "refreshable-matview-into-long-rejected"
+    echo "dictionary-into-long-rejected"
 fi

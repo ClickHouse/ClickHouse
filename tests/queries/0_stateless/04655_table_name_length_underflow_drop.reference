@@ -6,3 +6,7 @@ into-long-escaped-rejected
 out-of-long-accepted
 rescued-dropped
 unknown-db-reported
+view-into-long-rejected
+matview-into-long-rejected
+refreshable-matview-into-long-rejected
+dictionary-into-long-rejected
