@@ -10,10 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # coalesce on one in-flight computation, just like concurrent identical top-level queries do.
 #
 # The outer queries differ from each other (the leading constant), so the top-level (`is_subquery = 0`) cache cannot
-# deduplicate them - only the subquery herd can. Without coalescing every outer query scans the 30M rows itself; with
+# deduplicate them - only the subquery herd can. Without coalescing every outer query scans the 20M rows itself; with
 # coalescing exactly one does and the others read the subquery result from the cache.
+# 20M rows is the largest scan allowed by the `max_rows_to_read` limit of the test configuration.
 
-SUBQUERY="SELECT sum(number) AS x FROM numbers(30000000)"
+SUBQUERY="SELECT sum(number) AS x FROM numbers(20000000)"
 SETTINGS="use_query_cache=1, query_cache_for_subqueries=1, query_cache_min_query_runs=0, query_cache_min_query_duration=0"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
