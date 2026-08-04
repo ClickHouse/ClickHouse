@@ -1870,11 +1870,25 @@ Chunk StorageFileSource::generate()
             /// master already has and pins in `04207_parquet_metadata_cache_local_file` - a
             /// freshly written file is the common case, and bypassing the cache for it would
             /// reparse the footer on every query. See the thread on this gate for the rationale.
+            ///
+            /// Gated on `!file_bucket_info`: a source assigned one bucket of a parallel
+            /// single-file split must parse the footer of the bytes it actually opened, not a
+            /// cached one. While the token has not settled it cannot prove which file generation
+            /// a cache entry describes (an in-place rewrite that keeps the inode and the byte
+            /// size in the same timestamp tick reuses the token), so a stale entry would let
+            /// `checkFileMatchesBucketAssignment` validate the bucket against the very footer the
+            /// assignment was computed from and silently apply a previous generation's row-group
+            /// layout to the file. Parsing the opened bytes instead makes the footer-digest guard
+            /// (`ParquetFileBucketInfo::footer_digest`) compare the assignment against the real
+            /// file and fail close with `FILE_CHANGED_WHILE_READING` on a mismatch. The plain
+            /// path keeps the cache: with no bucket assignment there is nothing to
+            /// cross-validate, which is the master-pinned residual described above.
             std::optional<RelativePathWithMetadata> object_with_metadata;
             if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache]
                 && !storage->use_table_fd && !storage->archive_info && !current_path.empty()
                 && current_file_size.has_value() && current_file_last_modified.has_value()
-                && current_file_cache_version.has_value())
+                && current_file_cache_version.has_value()
+                && !file_bucket_info)
             {
                 ObjectMetadata md;
                 md.size_bytes = *current_file_size;
@@ -2401,10 +2415,16 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 #if USE_PARQUET
             if (boost::iequals(storage->format_name, "Parquet"))
             {
-                /// Use the same `(file_path, etag)` key `StorageFileSource` uses when it later
-                /// fetches metadata via `ParquetMetadataCache`, so the per-bucket sources hit the
-                /// cache and don't re-parse the footer. The etag is `decision_file_version`
-                /// (sub-second mtime + inode + size) for in-place-rewrite safety.
+                /// Use the same `(file_path, etag)` key the plain read path uses when it fetches
+                /// metadata via `ParquetMetadataCache`, so a footer parsed here warms the cache
+                /// for later queries (including their split decisions, via the cache-only fast
+                /// path below). The per-bucket sources themselves deliberately do NOT read this
+                /// entry: each parses the footer of the bytes it actually opened, so the
+                /// footer-digest guard (`ParquetFileBucketInfo::footer_digest`) can fail close if
+                /// the assignment computed here - possibly from a stale cached footer under an
+                /// unsettled token - does not match the real file. The etag is
+                /// `decision_file_version` (sub-second mtime + inode + size) for
+                /// in-place-rewrite safety.
                 const String & cache_etag = decision_file_version;
 
                 /// Honor `use_parquet_metadata_cache`: when it is disabled we must neither
@@ -2414,13 +2434,15 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                 /// `splitParquetFileWithCache` (parses without caching) honor the setting,
                 /// matching `StorageObjectStorageSource`.
                 ///
-                /// Not additionally gated on `isFileCacheVersionSettled`, for the same reason
-                /// as `object_with_metadata` in `StorageFileSource::generate`: this is the very
-                /// same `(path, etag)` entry the sources use, so gating only here would just
-                /// make the plan and the sources disagree about the cache while leaving the
-                /// entry itself reachable. A split decision taken from a stale footer is also
-                /// not silently wrong - the read re-stats the file and throws
-                /// `FILE_CHANGED_WHILE_READING` when the token moved under it.
+                /// Not additionally gated on `isFileCacheVersionSettled`: a split decision taken
+                /// from a stale cached footer is not silently wrong. The per-bucket sources parse
+                /// the footer of the bytes they actually open (they bypass this cache, see
+                /// `object_with_metadata` in `StorageFileSource::generate`) and verify the
+                /// assignment against it - the footer digest and row-group count in
+                /// `checkFileMatchesBucketAssignment` fail close with
+                /// `FILE_CHANGED_WHILE_READING` when the file diverged from what the split was
+                /// computed on, and the re-stat bracket below already downgrades to an unsplit
+                /// read when the token visibly moved during the decision.
                 auto metadata_cache = ctx->getSettingsRef()[Setting::use_parquet_metadata_cache]
                     ? ctx->tryGetParquetMetadataCache()
                     : nullptr;

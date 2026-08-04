@@ -26,6 +26,24 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// the check.
     size_t file_num_row_groups = 0;
 
+    /// Digest of the footer (`FileMetaData`) the bucket assignment was computed from
+    /// (see `computeParquetFooterDigest`). 0 means "unknown" and disables the check.
+    ///
+    /// This field never travels over the cluster protocol (see `serialize`): it exists for the
+    /// local `StorageFile` path, whose `{mtime, inode, size}` version token cannot prove a rewrite
+    /// while the file has not settled — an in-place rewrite that keeps the inode and the byte size
+    /// and lands in the same filesystem timestamp tick produces an identical token, so a
+    /// `ParquetMetadataCache` entry keyed on that token may describe a previous generation of the
+    /// file. A per-bucket source therefore parses the footer of the bytes it actually opened
+    /// (bypassing the metadata cache) and compares this digest, so an assignment computed from a
+    /// stale cached footer — or from a different same-token generation — fails close with
+    /// `FILE_CHANGED_WHILE_READING` instead of silently applying the previous generation's
+    /// row-group layout. Because the field stays local, it does not raise
+    /// `getMinProtocolVersion`; a bucket that traveled through the cluster protocol arrives with 0
+    /// (the object-storage cluster path keys its metadata cache on a storage-provided etag that a
+    /// rewrite changes, and keeps the row-group-count guard above).
+    UInt64 footer_digest = 0;
+
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_, size_t file_num_row_groups_ = 0);
     void serialize(WriteBuffer & buffer, size_t protocol_version) override;
@@ -48,6 +66,13 @@ struct ParquetBucketSplitter : public IBucketSplitter
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
     std::vector<FileBucketInfoPtr> splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_) override;
 };
+
+/// Digest of a parsed Parquet footer, used to tie a single-file bucket assignment to the file
+/// generation it was computed from (see `ParquetFileBucketInfo::footer_digest`). Computed over the
+/// re-serialized thrift representation, so a footer parsed from the file and the same footer
+/// returned by `ParquetMetadataCache` produce the same value. Never returns 0 (the "unknown"
+/// marker).
+UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_metadata);
 
 /// Cache-aware single-file split. Parses the Parquet footer via `Parquet::Reader::readFileMetaData`
 /// (the same path the input format uses) and stores the result in the `ParquetMetadataCache` under

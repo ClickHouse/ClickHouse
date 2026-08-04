@@ -137,4 +137,53 @@ TEST(ParquetFileBucketInfoSerialization, CoversWholeFile)
     EXPECT_FALSE(ParquetFileBucketInfo({0, 0, 2}, /*file_num_row_groups=*/3).coversWholeFile());
 }
 
+/// `footer_digest` is a local-process guard for the `StorageFile` single-file split and must never
+/// travel over the cluster protocol: it is neither written (the payload stays byte-identical with
+/// or without it, so the stream stays aligned) nor read (a received bucket carries 0 = "unknown",
+/// disabling the check), and it does not raise the minimum protocol version.
+TEST(ParquetFileBucketInfoSerialization, FooterDigestIsLocalOnly)
+{
+    const std::vector<size_t> row_group_ids = {0, 2, 5};
+    ParquetFileBucketInfo info(row_group_ids, /*file_num_row_groups=*/7);
+    info.footer_digest = 0xdeadbeef;
+
+    String str;
+    {
+        WriteBufferFromString out(str);
+        info.serialize(out, NEW_VERSION);
+    }
+    EXPECT_EQ(str, serializeBucket(row_group_ids, /*file_num_row_groups=*/7, NEW_VERSION));
+
+    ParquetFileBucketInfo restored;
+    ReadBufferFromMemory in(str);
+    restored.deserialize(in, NEW_VERSION);
+    ASSERT_TRUE(in.eof());
+    EXPECT_EQ(restored.footer_digest, 0u);
+
+    EXPECT_EQ(info.getMinProtocolVersion(), static_cast<UInt64>(NEW_VERSION));
+}
+
+/// Narrowing a bucket to the row groups that survived the query condition cache must keep the
+/// footer digest: the narrowed bucket still describes the same file generation, and dropping the
+/// digest would silently disable the fail-close guard on the read path.
+TEST(ParquetFileBucketInfoSerialization, FilterByMatchingRowGroupsKeepsFooterDigest)
+{
+    ParquetFileBucketInfo info({0, 2, 5}, /*file_num_row_groups=*/7);
+    info.footer_digest = 0xdeadbeef;
+
+    auto filtered = std::dynamic_pointer_cast<ParquetFileBucketInfo>(
+        info.filterByMatchingRowGroups({2, 5}, /*file_num_row_groups=*/7));
+    ASSERT_NE(filtered, nullptr);
+    EXPECT_EQ(filtered->row_group_ids, (std::vector<size_t>{2, 5}));
+    EXPECT_EQ(filtered->footer_digest, 0xdeadbeefu);
+
+    /// The prototype path (empty ids = "keep everything that matched") keeps it as well.
+    ParquetFileBucketInfo prototype;
+    prototype.footer_digest = 0xdeadbeef;
+    auto from_prototype = std::dynamic_pointer_cast<ParquetFileBucketInfo>(
+        prototype.filterByMatchingRowGroups({1, 3}, /*file_num_row_groups=*/4));
+    ASSERT_NE(from_prototype, nullptr);
+    EXPECT_EQ(from_prototype->footer_digest, 0xdeadbeefu);
+}
+
 #endif

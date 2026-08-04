@@ -16,8 +16,11 @@
 #include <IO/VarInt.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/SipHash.h>
+#include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <parquet/file_reader.h>
 
 namespace DB
@@ -52,14 +55,26 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
 /// silently undercount. Comparing the total row-group count fails close in both directions.
 /// `file_num_row_groups == 0` means the count is unknown (e.g. an older serialized bucket) and
 /// skips the check.
-static void checkFileMatchesBucketAssignment(size_t file_num_row_groups, size_t actual_num_row_groups)
+static void checkFileMatchesBucketAssignment(const ParquetFileBucketInfo & bucket, const parquet::format::FileMetaData & file_metadata)
 {
-    if (file_num_row_groups != 0 && actual_num_row_groups != file_num_row_groups)
+    if (bucket.file_num_row_groups != 0 && file_metadata.row_groups.size() != bucket.file_num_row_groups)
         throw Exception(
             ErrorCodes::FILE_CHANGED_WHILE_READING,
             "The Parquet file has {} row groups, but the parallel single-file bucket assignment was computed for a file "
             "with {} row groups. The file was likely modified concurrently while a parallel single-file read was in progress",
-            actual_num_row_groups, file_num_row_groups);
+            file_metadata.row_groups.size(), bucket.file_num_row_groups);
+
+    /// A matching row-group count can still hide a rewrite: on the local `StorageFile` path an
+    /// in-place rewrite that keeps the inode, the byte size and the filesystem timestamp tick is
+    /// invisible to the file-version token, so the assignment (or a cached footer it was computed
+    /// from) may describe a previous generation of the file. Comparing the digest of the footer
+    /// actually read here against the one the assignment was computed from fails close in that
+    /// case (see `ParquetFileBucketInfo::footer_digest`).
+    if (bucket.footer_digest != 0 && computeParquetFooterDigest(file_metadata) != bucket.footer_digest)
+        throw Exception(
+            ErrorCodes::FILE_CHANGED_WHILE_READING,
+            "The Parquet file's footer differs from the one the parallel single-file bucket assignment was computed from. "
+            "The file was likely modified concurrently while a parallel single-file read was in progress");
 }
 
 ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
@@ -123,7 +138,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
             reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
             if (buckets_to_read)
-                checkFileMatchesBucketAssignment(buckets_to_read->file_num_row_groups, reader->reader.file_metadata.row_groups.size());
+                checkFileMatchesBucketAssignment(*buckets_to_read, reader->reader.file_metadata);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
         }
@@ -174,7 +189,7 @@ Chunk ParquetV3BlockInputFormat::read()
             /// an undercount. The out-of-range check below catches a shrunk file; the
             /// total-count check here also catches a file that grew (every old id still in
             /// range, but new row groups assigned to no bucket).
-            checkFileMatchesBucketAssignment(buckets_to_read->file_num_row_groups, file_metadata.row_groups.size());
+            checkFileMatchesBucketAssignment(*buckets_to_read, file_metadata);
             for (size_t rg : buckets_to_read->row_group_ids)
             {
                 if (rg >= file_metadata.row_groups.size())
@@ -299,6 +314,9 @@ void ParquetFileBucketInfo::serialize(WriteBuffer & buffer, size_t protocol_vers
     /// not expect it (and would leave the field unread, breaking the following payload).
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT)
         writeVarUInt(file_num_row_groups, buffer);
+    /// `footer_digest` is deliberately NOT serialized: it guards the local `StorageFile` path,
+    /// where the split decision and the per-bucket sources run in the same process (see the
+    /// comment on the field). Buckets that travel over the cluster protocol arrive with 0.
 }
 
 void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer, size_t protocol_version)
@@ -346,7 +364,11 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     if (matching_row_groups.empty())
         return nullptr;
     if (row_group_ids.empty())
-        return std::make_shared<ParquetFileBucketInfo>(matching_row_groups, result_file_num_row_groups);
+    {
+        auto result = std::make_shared<ParquetFileBucketInfo>(matching_row_groups, result_file_num_row_groups);
+        result->footer_digest = footer_digest;
+        return result;
+    }
     std::unordered_set<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
     std::vector<size_t> filtered;
     for (size_t rg : row_group_ids)
@@ -354,7 +376,9 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
             filtered.push_back(rg);
     if (filtered.empty())
         return nullptr;
-    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered), result_file_num_row_groups);
+    auto result = std::make_shared<ParquetFileBucketInfo>(std::move(filtered), result_file_num_row_groups);
+    result->footer_digest = footer_digest;
+    return result;
 }
 
 UInt64 ParquetFileBucketInfo::getMinProtocolVersion() const
@@ -662,12 +686,41 @@ parquet::format::FileMetaData parseFileMetadataNative(ReadBuffer & buf, const Fo
     return Parquet::Reader::readFileMetaData(prefetcher);
 }
 
+/// Stamps every bucket of a freshly computed split with the digest of the footer the split was
+/// computed from, so the per-bucket read fails close if the file it opens has a different footer
+/// (see `ParquetFileBucketInfo::footer_digest`).
+void setFooterDigest(std::vector<FileBucketInfoPtr> & buckets, const parquet::format::FileMetaData & file_metadata)
+{
+    if (buckets.empty())
+        return;
+    const UInt64 digest = computeParquetFooterDigest(file_metadata);
+    for (auto & bucket : buckets)
+        if (auto * parquet_bucket = dynamic_cast<ParquetFileBucketInfo *>(bucket.get()))
+            parquet_bucket->footer_digest = digest;
+}
+
+}
+
+UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_metadata)
+{
+    /// Thrift serialization of the same in-memory struct is deterministic (fields are written in a
+    /// fixed order), so a footer parsed from the file and the same footer returned by
+    /// `ParquetMetadataCache` re-serialize identically. The digest distinguishes file generations
+    /// through the full footer contents - row-group and column-chunk offsets, sizes, statistics -
+    /// not just the row-group count.
+    WriteBufferFromOwnString out;
+    Parquet::serializeThriftStruct(file_metadata, out);
+    const UInt64 digest = sipHash64(out.str().data(), out.str().size());
+    /// 0 is the "unknown" marker in `ParquetFileBucketInfo::footer_digest`; never return it.
+    return digest == 0 ? 1 : digest;
 }
 
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
     auto file_metadata = parseFileMetadataNative(buf, format_settings_);
-    return computeBucketsByCount(target_count, file_metadata.row_groups.size());
+    auto buckets = computeBucketsByCount(target_count, file_metadata.row_groups.size());
+    setFooterDigest(buckets, file_metadata);
+    return buckets;
 }
 
 std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
@@ -692,9 +745,11 @@ std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
     {
         file_metadata = parseFileMetadataNative(buf, format_settings);
     }
-    return computeBucketsByCountAndBytes(
+    auto buckets = computeBucketsByCountAndBytes(
         target_count, file_metadata.row_groups.size(), projectedCompressedBytes(file_metadata, requested_columns),
         min_bytes_to_split, min_bytes_per_bucket);
+    setFooterDigest(buckets, file_metadata);
+    return buckets;
 }
 
 std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
@@ -712,9 +767,11 @@ std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
     auto cached = metadata_cache->get(key);
     if (!cached)
         return {};
-    return computeBucketsByCountAndBytes(
+    auto buckets = computeBucketsByCountAndBytes(
         target_count, cached->metadata.row_groups.size(), projectedCompressedBytes(cached->metadata, requested_columns),
         min_bytes_to_split, min_bytes_per_bucket);
+    setFooterDigest(buckets, cached->metadata);
+    return buckets;
 }
 
 void registerInputFormatParquet(FormatFactory & factory);
