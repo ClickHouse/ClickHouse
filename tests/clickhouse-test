@@ -86,7 +86,9 @@ def forget_test_process_group() -> None:
     """Drop this worker's PGID record, once its process group is known to be dead.
 
     Sole remover on the normal paths: leaving a record behind would let a later
-    `--cleanup` signal an unrelated, PID-recycled group.
+    `--cleanup` signal an unrelated, PID-recycled group. The per-test alarm path does
+    not reach here, and needs no reaper of its own: `timeout_handler` calls
+    `stop_tests`, whose `cleanup_child_processes` already kills the group.
     """
     test_process_group_record().unlink(missing_ok=True)
 
@@ -698,8 +700,9 @@ CAPTURE_CLIENT_STACKTRACE = False
 
 
 def kill_process_group(pgid, fatal_log, diagnostics=True):
-    # `diagnostics=False` skips both evidence-gathering delays below (60 s + 10 s), which
-    # `cleanup_test_groups` would otherwise pay serially per group.
+    # `diagnostics=False` skips the evidence gathering: both delays (60 s + 10 s) and the
+    # per-group listing, whose `pgrep` shells out to an unbounded full `ps`. Walked serially
+    # per record, that is what `cleanup_test_groups` would otherwise pay.
     try:
         if SANITIZED and diagnostics:
             print(f"Processes left in process group {pgid}:")
@@ -710,10 +713,11 @@ def kill_process_group(pgid, fatal_log, diagnostics=True):
             sleep(60)
 
         print(f"Killing process group {pgid}")
-        print(f"Processes in process group {pgid}:")
-        print(
-            '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
-        )
+        if diagnostics:
+            print(f"Processes in process group {pgid}:")
+            print(
+                '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
+            )
 
         if CAPTURE_CLIENT_STACKTRACE and diagnostics:
             # Let's try to dump stacktrace in client (useful to catch issues there)
@@ -3141,15 +3145,27 @@ class TestCase:
         if proc:
             if proc.returncode is None:
                 f = io.StringIO()
-                with redirect_stdout(f):
-                    kill_process_group(
-                        os.getpgid(proc.pid), self.fatal_sanitizer_prefix
-                    )
-                kill_output = f.getvalue()
-            # The group is dead now (it either exited on its own or was just killed),
-            # so this is the point where the record stops being needed. `run_single_test`
-            # deliberately keeps it alive until here.
-            forget_test_process_group()
+                try:
+                    with redirect_stdout(f):
+                        kill_process_group(
+                            os.getpgid(proc.pid), self.fatal_sanitizer_prefix
+                        )
+                except Exception as e:
+                    # This worker's next test overwrites the record, so an escaping
+                    # exception here would strand the group with nothing pointing at it.
+                    # `proc.pid` is the pgid (`start_new_session=True`).
+                    print(f"Warning: could not kill the test group: {e}", file=sys.stderr)
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                finally:
+                    kill_output = f.getvalue()
+                    forget_test_process_group()
+            else:
+                # The group exited on its own, so the record stops being needed here.
+                # `run_single_test` deliberately keeps it alive until this point.
+                forget_test_process_group()
 
         description = ""
 
@@ -5201,6 +5217,10 @@ def do_run_tests(
     # code here (before setting `stop_testing`) so the parent can re-raise with
     # the same code instead of defaulting to "Server died". 0 means unset.
     stop_exit_code = multiprocessing.Value('i', 0)
+    # PIDs of the workers this run started, so the abort-path reap only touches records
+    # written by them. Never pruned, unlike `processes`: a worker that already exited is
+    # exactly the one whose orphan needs reaping.
+    worker_pids = set()
 
     if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
@@ -5268,6 +5288,7 @@ def do_run_tests(
             )
             processes.append(process)
             process.start()
+            worker_pids.add(process.pid)
 
         # How often (seconds) to query server memory usage.
         MEMORY_CHECK_INTERVAL = 5.0
@@ -5372,11 +5393,7 @@ def do_run_tests(
                         p.join(timeout=5)
                     # Reap the groups the killed workers left behind. Safe only here: every
                     # worker is joined, and the parent is the last process still alive.
-                    # Must not raise - that would replace the `StopTesting` below.
-                    try:
-                        cleanup_test_groups(diagnostics=False)
-                    except Exception as e:
-                        print(f"Warning: could not reap test process groups: {e}")
+                    reap_recorded_test_groups(worker_pids)
                 finally:
                     signal.signal(signal.SIGTERM, old_sigterm_handler)
                 if global_time_limit_reached:
@@ -5412,24 +5429,29 @@ def do_run_tests(
         # Sequential runner shares the total_failures_shared counter with parallel workers
         # so that --max-failures counts failures from both groups combined.
         seq_total_failures = total_failures_shared if test_suite.parallel_tests else multiprocessing.Value('i', 0)
-        run_tests_array(
-            (
-                list(test_suite.sequential_tests),
-                len(test_suite.sequential_tests),
-                test_suite,
-                False,
-                args,
-                exit_code,
-                stop_testing,
-                multiprocessing.Value('i', 0),  # sequential runner is never shed
-                restarted_tests,
-                jobs + 1,
-                seq_total_failures,
-                progress_counter,
-                total_tests,
-                stop_exit_code,
+        # The sequential runner IS this process, so its records are written under our pid.
+        seq_worker_pids = worker_pids | {os.getpid()}
+        try:
+            run_tests_array(
+                (
+                    list(test_suite.sequential_tests),
+                    len(test_suite.sequential_tests),
+                    test_suite,
+                    False,
+                    args,
+                    exit_code,
+                    stop_testing,
+                    multiprocessing.Value('i', 0),  # sequential runner is never shed
+                    restarted_tests,
+                    jobs + 1,
+                    seq_total_failures,
+                    progress_counter,
+                    total_tests,
+                    stop_exit_code,
+                )
             )
-        )
+        finally:
+            reap_recorded_test_groups(seq_worker_pids)
 
     return total_tests
 
@@ -6800,15 +6822,25 @@ def parse_args():
     return parser.parse_args()
 
 
-def cleanup_test_groups(diagnostics=True):
+def cleanup_test_groups(diagnostics=True, worker_pids=None):
     """Kill all process groups recorded in per-worker PGID files.
 
     Records are walked serially, so `diagnostics=False` (see `kill_process_group`) is
     what keeps the total bounded when this runs on the abort path.
+
+    `worker_pids` restricts the sweep to records written by those workers. Records are
+    repo-wide, so a live run passes its own to avoid signalling a concurrent invocation's
+    tests; `--cleanup` passes nothing, being an orphan sweep run when nothing else is live.
     """
     for _pgid_file in _GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"):
         if _pgid_file.name.endswith(".tmp"):
             continue
+        if worker_pids is not None:
+            try:
+                if int(_pgid_file.name.rsplit(".", 1)[1]) not in worker_pids:
+                    continue
+            except ValueError:
+                continue
         try:
             pgid = int(_pgid_file.read_text())
             kill_process_group(pgid, None, diagnostics=diagnostics)
@@ -6817,6 +6849,18 @@ def cleanup_test_groups(diagnostics=True):
             continue
         finally:
             _pgid_file.unlink(missing_ok=True)
+
+
+def reap_recorded_test_groups(worker_pids):
+    """Kill the test groups recorded by `worker_pids`, from a live run.
+
+    Never raises: on the abort path an exception here would replace the `StopTesting`
+    the job side keys on.
+    """
+    try:
+        cleanup_test_groups(diagnostics=False, worker_pids=worker_pids)
+    except Exception as e:
+        print(f"Warning: could not reap test process groups: {e}")
 
 
 class Terminated(KeyboardInterrupt):

@@ -32,6 +32,7 @@ EFFECT - is the group dead, is the record present, was the delay taken - because
 statement proves nothing about whether it runs on the path that matters.
 """
 
+import errno
 import multiprocessing
 import os
 import runpy
@@ -60,10 +61,15 @@ def _records():
 
 
 def _clear_records():
+    """Clear every record, not just ours.
+
+    The directory is shared with `test_cleanup_test_groups.py`, so this rests on these
+    files running serially: `ci/jobs/ci_tests_job.py` builds a plain `pytest ci/tests/`
+    with no `-n`, and no conftest enables xdist.
+    """
     _GROUP_PID_PATH.mkdir(parents=True, exist_ok=True)
     for f in _GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"):
         f.unlink(missing_ok=True)
-
 
 
 def _patch(ct, **names):
@@ -114,6 +120,60 @@ def _alive(pgid):
     return alive
 
 
+def _spawn_group(lifetime=600, members=3):
+    """A live process group in its own session, shaped like a test's own group."""
+    group = subprocess.Popen(
+        f"sleep {lifetime} & sleep {lifetime} & wait",
+        shell=True,
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    # Poll on the child count, not on `_alive`: the latter walks all of /proc, and the
+    # fixture is up as soon as the leader has forked its members.
+    children = f"/proc/{group.pid}/task/{group.pid}/children"
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        try:
+            with open(children, "rb") as f:
+                kids = f.read().split()
+        except OSError:
+            kids = []
+        if len(kids) + 1 >= members:
+            break
+        time.sleep(0.05)
+    assert len(_alive(group.pid)) >= members, "fixture group did not come up"
+    return group
+
+
+def _group_gone(pgid):
+    """Cheap poll: does the kernel still know of any process in `pgid`?
+
+    One syscall, versus `_alive`'s walk over every process on the machine.  It counts an
+    unreaped zombie leader, so it can only ever be *pessimistic* here - which makes it safe
+    to poll on and useless as a verdict.  `_alive` stays the authority.
+
+    Do NOT replace `_alive` with a walk down the leader's `/proc/<pid>/task/<pid>/children`
+    instead: when the leader dies first its children are reparented out of that tree, so the
+    walk reports an empty group while live members still hold the inherited fd - vacuous in
+    exactly the case these tests exist to catch (measured).
+    """
+    try:
+        os.killpg(pgid, 0)
+        return False
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+
+
+def _wait_dead(pgid, timeout=10):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and not _group_gone(pgid):
+        time.sleep(0.05)
+    return _alive(pgid)
+
+
 def _launch_real_test(ct, tmp_path, monkeypatch, lifetime=600):
     """Drive the REAL ``run_single_test`` so the PGID record is written by the real code.
 
@@ -125,17 +185,7 @@ def _launch_real_test(ct, tmp_path, monkeypatch, lifetime=600):
 
     Returns the group's pgid.
     """
-    group = subprocess.Popen(
-        f"sleep {lifetime} & sleep {lifetime} & wait",
-        shell=True,
-        start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline and len(_alive(group.pid)) < 3:
-        time.sleep(0.05)
-    assert len(_alive(group.pid)) >= 3, "fixture group did not come up"
+    group = _spawn_group(lifetime=lifetime)
 
     monkeypatch.setenv("CLICKHOUSE_DATABASE", "test_abort_path_reaps_test_groups")
     monkeypatch.setenv("CLICKHOUSE_TMP", str(tmp_path))
@@ -233,10 +283,7 @@ def test_abort_path_leaves_no_live_test_group(tmp_path, monkeypatch):
         # What the parent does at the end of the abort block.
         ct["cleanup_test_groups"]()
 
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and _alive(pgid):
-            time.sleep(0.1)
-        survivors = _alive(pgid)
+        survivors = _wait_dead(pgid)
         assert not survivors, (
             "the abort path must leave no live test process group; still alive: "
             f"{survivors}"
@@ -295,47 +342,289 @@ def test_record_survives_the_launch_and_is_dropped_after_the_kill(tmp_path, monk
         _clear_records()
 
 
-def test_teardown_mode_skips_both_delays():
-    """Pins coupling 2: ``diagnostics=False`` skips BOTH delays, and the default keeps them.
+def test_teardown_mode_skips_all_evidence_gathering(monkeypatch):
+    """Pins coupling 2: ``diagnostics=False`` skips both delays AND the process listing.
 
-    The two are independent (``SANITIZED`` -> 60 s, ``CAPTURE_CLIENT_STACKTRACE`` -> 10 s) and
-    ``cleanup_test_groups`` walks records serially, so skipping only one would still add a
-    minute per group on every sanitizer job - inside the window the job is timed against.
-    The second half matters just as much: it stops the fix from silently deleting the
-    sanitizer report window that the delay exists to provide.
+    The three are independent (``SANITIZED`` -> 60 s, ``CAPTURE_CLIENT_STACKTRACE`` -> 10 s,
+    and an unconditional ``pgrep`` between them) and ``cleanup_test_groups`` walks records
+    serially, so skipping only some would still cost per group on the one path with no outer
+    timeout.  ``pgrep`` shells out to a full ``ps`` with no timeout, so it is the one item
+    here that is unbounded rather than merely slow.  The second half matters just as much:
+    it stops the fix from silently deleting the evidence the default path exists to gather.
     """
     ct = runpy.run_path(_CLICKHOUSE_TEST)
     slept = []
-    # `pgrep` is stubbed because the real one shells out to a full `ps` listing; `killpg`
-    # because this pgid is synthetic. Both are incidental to what is being measured.
+    pgreps = []
+
+    def pgrep_spy(**kw):
+        pgreps.append(kw)
+        return []
+
+    # `killpg` is stubbed because this pgid is synthetic; `sleep`/`pgrep` are what is
+    # being measured.
     _patch(
         ct,
         SANITIZED=True,  # the asan/msan/tsan shape
         CAPTURE_CLIENT_STACKTRACE=True,
         RELEASE_NON_SANITIZED=False,
         sleep=slept.append,
-        pgrep=lambda **kw: [],
+        pgrep=pgrep_spy,
     )
-    real_killpg = os.killpg
-    os.killpg = lambda *a: None
-    try:
-        ct["kill_process_group"](12345, None, diagnostics=False)
-        # The only remaining wait is the 0.1 s SIGTERM->SIGKILL grace, which is part of
-        # killing rather than of gathering evidence. Assert the total, so a re-introduced
-        # delay of any size fails here.
-        assert sum(slept) < 1, (
-            f"teardown mode must skip both the 60 s sanitizer wait and the 10 s "
-            f"stacktrace wait; slept {slept}"
-        )
+    monkeypatch.setattr(os, "killpg", lambda *a: None)
 
-        slept.clear()
-        ct["kill_process_group"](12345, None)
-        assert 60 in slept, (
-            f"the default must keep the sanitizer report window, or the fix silently "
-            f"deletes the evidence path it exists for; slept {slept}"
+    ct["kill_process_group"](12345, None, diagnostics=False)
+    # The only remaining wait is the 0.1 s SIGTERM->SIGKILL grace, which is part of
+    # killing rather than of gathering evidence. Assert the total, so a re-introduced
+    # delay of any size fails here.
+    assert sum(slept) < 1, (
+        f"teardown mode must skip both the 60 s sanitizer wait and the 10 s "
+        f"stacktrace wait; slept {slept}"
+    )
+    assert not pgreps, (
+        f"teardown mode must not shell out to `ps` at all: it is unbounded and this runs "
+        f"in the parent, per record, on the path with no outer timeout; saw {pgreps}"
+    )
+
+    slept.clear()
+    ct["kill_process_group"](12345, None)
+    assert 60 in slept, (
+        f"the default must keep the sanitizer report window, or the fix silently "
+        f"deletes the evidence path it exists for; slept {slept}"
+    )
+    assert 10 in slept, (
+        f"the default must keep the client-stacktrace wait; slept {slept}"
+    )
+    assert pgreps, "the default must still list the processes in the group"
+
+
+def test_failed_kill_neither_propagates_nor_strands_the_group(tmp_path, monkeypatch):
+    """A kill that raises must not leave a live group with no record pointing at it.
+
+    ``process_result_impl`` is the sole normal-path remover, and the worker's NEXT test
+    overwrites the same record path (it is named for the worker's pid).  So an exception
+    escaping into ``TestCase.run``'s generic handler - which returns UNKNOWN without setting
+    ``stop_testing``, so the worker keeps going - re-creates the very defect this file
+    guards: a live group nothing can find.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+
+    def boom(pgid, fatal_log, *a, **kw):
+        raise OSError(errno.EACCES, "boom")
+
+    _patch(ct, pgrep=lambda **kw: [], kill_process_group=boom)
+    pgid = None
+    try:
+        pgid, case, proc = _launch_real_test(ct, tmp_path, monkeypatch)
+        assert len(_alive(pgid)) >= 3, "precondition: the group must still be running"
+
+        # Must not propagate: the caller would otherwise return UNKNOWN and carry on.
+        ct["TestCase"].process_result_impl(case, proc, 1.0)
+
+        survivors = _wait_dead(pgid)
+        assert not survivors, (
+            f"a group whose kill failed must still be killed, not stranded; alive: "
+            f"{survivors}"
         )
-        assert 10 in slept, (
-            f"the default must keep the client-stacktrace wait; slept {slept}"
+        assert not _records(), (
+            "the record must not outlive the worker's next test, which overwrites it"
         )
     finally:
-        os.killpg = real_killpg
+        if pgid:
+            _kill_group(pgid)
+        _clear_records()
+
+
+def test_reap_leaves_another_invocations_groups_alone():
+    """The reap must be scoped to this run's own workers.
+
+    Records live in the repo-wide ``ci/tmp`` and carry only a worker pid, no run identity.
+    That was safe while the only caller was ``--cleanup`` at job teardown; called from a
+    LIVE parent it can otherwise SIGKILL a concurrent invocation's in-flight tests, and
+    concurrent invocations over one tree are a documented condition here (see
+    ``test_shared_engine_replacer_discovery.py``).
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    _patch(ct, pgrep=lambda **kw: [])
+    mine = theirs = None
+    try:
+        mine = _spawn_group()
+        theirs = _spawn_group()
+        # A foreign worker's record: same directory, a pid this run never started.
+        foreign = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{theirs.pid}"
+        ct["write_text_atomic"](
+            _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}", f"{mine.pid}\n"
+        )
+        ct["write_text_atomic"](foreign, f"{theirs.pid}\n")
+
+        ct["reap_recorded_test_groups"]({os.getpid()})
+
+        assert not _wait_dead(mine.pid), "an owned group must be reaped"
+        assert _alive(theirs.pid), (
+            "a foreign invocation's live test group must survive this run's abort"
+        )
+        assert foreign.exists(), "a foreign record must not be consumed either"
+    finally:
+        for group in (mine, theirs):
+            if group:
+                _kill_group(group.pid)
+        _clear_records()
+
+
+def _abort_run(ct, sequential, jobs=2):
+    """Drive the REAL ``do_run_tests`` through an abort, server-free.
+
+    The worker stub creates a live group and records it through the real
+    ``write_text_atomic``/``test_process_group_record`` pair, then blocks forever, so the
+    parent must ``terminate()`` and then ``kill()`` it - the exact CI shape, in which no
+    Python ``finally`` in the worker can clean up.  Returns the group's pgid.
+    """
+    started = multiprocessing.Queue()
+    stop_testing = multiprocessing.Event()
+
+    def spawn_and_record():
+        group = subprocess.Popen(
+            "sleep 600 & sleep 600 & wait",
+            shell=True,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # Through the real pair, so the record's NAME is produced by the code under test.
+        ct["write_text_atomic"](ct["test_process_group_record"](), f"{group.pid}\n")
+        started.put(group.pid)
+        return group
+
+    def parallel_worker(_payload):
+        spawn_and_record()
+        stop_testing.set()
+        # Ignore SIGTERM so the parent must reach its `p.kill()`: SIGKILL runs no Python
+        # `finally`, which is exactly why the group is orphaned in CI.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        while True:
+            time.sleep(3600)
+
+    def sequential_worker(_payload):
+        # The sequential runner IS the parent, so there is no worker to kill; the abort
+        # arrives as the exception the real runner raises.
+        spawn_and_record()
+        raise ct["StopTesting"]("simulated abort out of the sequential runner")
+
+    # The sanitizer shape, so the reap's `diagnostics=False` is OBSERVABLE here: at import
+    # both flags are False, and then neither the default nor teardown mode pays a delay, so
+    # a probe taken in the default shape cannot tell them apart.
+    slept = []
+
+    def sleep_spy(seconds):
+        slept.append(seconds)
+        # Still yield, so the parent's own 0.1 s poll loop does not busy-spin, but never
+        # actually pay a diagnostic delay: a real 60 s here would defeat the point.
+        time.sleep(min(seconds, 0.05))
+
+    _patch(
+        ct,
+        SANITIZED=True,
+        CAPTURE_CLIENT_STACKTRACE=True,
+        RELEASE_NON_SANITIZED=False,
+        sleep=sleep_spy,
+        pgrep=lambda **kw: [],
+        get_server_memory_fraction=lambda _args: None,
+        run_tests_process=sequential_worker if sequential else parallel_worker,
+        run_tests_array=sequential_worker if sequential else parallel_worker,
+    )
+
+    names = ["04999_a.sh", "04999_b.sh"]
+    suite = SimpleNamespace(
+        parallel_tests=[] if sequential else list(names),
+        sequential_tests=list(names) if sequential else [],
+    )
+    args = Namespace(
+        jobs=jobs,
+        no_self_parallel=True,  # avoids the multiprocessing.Manager
+        stop_time=None,
+        hung_check=False,
+    )
+    raised = None
+    try:
+        ct["do_run_tests"](
+            jobs,
+            suite,
+            args,
+            multiprocessing.Value("i", 0),  # exit_code
+            [],  # restarted_tests
+            stop_testing,
+            multiprocessing.Event(),  # runner_process_killed
+        )
+    except BaseException as e:
+        raised = e
+    assert isinstance(raised, ct["StopTesting"]), (
+        f"the abort must surface as StopTesting; got {raised!r}"
+    )
+
+    pgids = []
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        try:
+            pgids.append(started.get(timeout=0.5))
+        except Exception:
+            if pgids:
+                break
+    assert pgids, "the stub worker never reported its group"
+    return pgids, slept
+
+
+def test_parallel_abort_reaps_the_orphaned_group():
+    """The load-bearing wiring: ``do_run_tests``'s parallel abort must reap, in teardown mode.
+
+    Asserted through ``do_run_tests`` itself rather than by calling the reap directly, so that
+    deleting the call fails here; and the sanitizer flags are set for the run, so that
+    dropping the reap's ``diagnostics=False`` fails here too.  Without those flags both
+    mutations look identical, because at import neither delay is enabled at all.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    pgids = []
+    try:
+        pgids, slept = _abort_run(ct, sequential=False)
+        survivors = {pgid: _wait_dead(pgid, timeout=20) for pgid in pgids}
+        assert not any(survivors.values()), (
+            f"the parallel abort path must reap the groups its killed workers left; "
+            f"alive: {survivors}"
+        )
+        # Only the two diagnostic delays are forbidden; the abort block's own 5 s
+        # results-flush wait is unrelated and stays.
+        assert not {60, 10} & set(slept), (
+            f"the abort-path reap must not pay the evidence-gathering delays: on a "
+            f"sanitizer job that is 60 s + 10 s per group, serially, inside the window "
+            f"the job is timed against; slept {slept}"
+        )
+    finally:
+        for pgid in pgids:
+            _kill_group(pgid)
+        _clear_records()
+
+
+def test_sequential_abort_reaps_the_orphaned_group():
+    """Same wiring for the sequential runner, which is invoked outside the parallel block.
+
+    Its orphan cannot come from a SIGKILLed worker (it IS the parent), but the exception
+    path above can strand a group there, and without this the sequential runner has no
+    reaper at all.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    pgids = []
+    try:
+        pgids, slept = _abort_run(ct, sequential=True)
+        survivors = {pgid: _wait_dead(pgid, timeout=20) for pgid in pgids}
+        assert not any(survivors.values()), (
+            f"the sequential abort path must reap the group it left; alive: {survivors}"
+        )
+        assert not {60, 10} & set(slept), (
+            f"the sequential reap must not pay the diagnostic delays either; slept {slept}"
+        )
+    finally:
+        for pgid in pgids:
+            _kill_group(pgid)
+        _clear_records()
