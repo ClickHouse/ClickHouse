@@ -22,6 +22,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -97,6 +98,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
@@ -1520,6 +1522,12 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
 
 DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterator(const String & database_name, ContextPtr local_context) const
 {
+    /// The internal database of temporary tables holds the temporary tables of all sessions and all users,
+    /// and it is not covered by access control, so direct access to it is denied, see `DatabaseCatalog::tryGetDatabaseAndTable`.
+    if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        throw Exception(
+            ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
+
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     auto table_name_match = [this, database_name](const String & table_name_) -> bool
@@ -1562,6 +1570,10 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
 
         for (const auto & db : databases)
         {
+            /// A regexp is not an explicit request for the internal database of temporary tables, so it is skipped silently.
+            if (db.first == DatabaseCatalog::TEMPORARY_DATABASE)
+                continue;
+
             if (source_database_regexp->match(db.first))
                 database_table_iterators.emplace_back(getDatabaseIterator(db.first, local_context));
         }
