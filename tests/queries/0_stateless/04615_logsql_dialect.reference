@@ -133,7 +133,7 @@ error	1
 
 alice
 bob
-app=web level=WARN size=200
+app=web level=warn size=200
 		
 x	42	y
 z	7	

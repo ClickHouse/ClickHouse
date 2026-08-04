@@ -192,7 +192,7 @@ SET dialect = 'logsql';
 * | extract_regexp "user=(?P<username>[a-z]+)" | fields username | sort by (username);
 
 -- format
-level:=warn | format "app=<app> level=<uc:level> size=<size>" as summary | fields summary;
+level:=warn | format "app=<app> level=<level> size=<size>" as summary | fields summary;
 
 -- unpack_json
 * | unpack_json from payload fields (a, n, nested.b) | fields a, n, nested.b | sort by (a);
