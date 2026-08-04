@@ -1,0 +1,478 @@
+---
+description: 'توثيق لعبارة `WHERE` في ClickHouse'
+sidebarTitle: 'WHERE'
+slug: /sql-reference/statements/select/where
+title: 'عبارة `WHERE`'
+doc_type: 'reference'
+keywords: ['WHERE']
+---
+
+تتيح لك عبارة `WHERE` تصفية البيانات القادمة من عبارة [`FROM`](/ar/reference/statements/select/from) في `SELECT`.
+
+إذا وُجدت عبارة `WHERE`، فيجب أن تليها تعبير من النوع `UInt8`.
+وتُستبعَد الصفوف التي تُقيَّم فيها هذه التعبير إلى `0` من المعالجات اللاحقة أو من النتيجة.
+
+غالبًا ما تُستخدم تعبير التي تلي عبارة `WHERE` مع [عوامل المقارنة](/ar/reference/operators/index#comparison-operators) و[العوامل المنطقية](/ar/reference/operators/index#operators-for-working-with-data-sets)، أو مع إحدى [الدوال العادية](/ar/reference/functions/regular-functions/regular-functions-index) العديدة.
+
+تُقيَّم تعبير الخاصة بـ `WHERE` من حيث إمكانية استخدام الفهارس وpartition pruning، إذا كان table engine الخاص بـ underlying table يدعم ذلك.
+
+<Info>
+  **PREWHERE**
+
+  توجد أيضًا آلية تحسين للتصفية تُسمى [`PREWHERE`](/ar/reference/statements/select/prewhere).
+  ‏Prewhere هو تحسين يتيح تطبيق التصفية بكفاءة أعلى.
+  وهو مفعّل افتراضيًا حتى إذا لم تُحدَّد عبارة `PREWHERE` صراحةً.
+</Info>
+
+<div id="testing-for-null">
+  ## التحقق من `NULL`
+</div>
+
+إذا كنت بحاجة إلى التحقق مما إذا كانت قيمة هي [`NULL`](/ar/reference/syntax#null)، فاستخدم:
+
+* [`IS NULL`](/ar/reference/operators/index#is_null) أو [`isNull`](/ar/reference/functions/regular-functions/functions-for-nulls#isNull)
+* [`IS NOT NULL`](/ar/reference/operators/index#is_not_null)   أو [`isNotNull`](/ar/reference/functions/regular-functions/functions-for-nulls#isNotNull)
+
+وإلا فلن يطابق أي تعبير يحتوي على `NULL` أي شرط مطلقًا.
+
+<div id="filtering-data-with-logical-operators">
+  ## تصفية البيانات باستخدام العوامل المنطقية
+</div>
+
+يمكنك استخدام [الدوال المنطقية](/ar/reference/functions/regular-functions/logical-functions#and) التالية مع عبارة `WHERE` لدمج عدة شروط:
+
+* [`and()`](/ar/reference/functions/regular-functions/logical-functions#and) أو `AND`
+* [`not()`](/ar/reference/functions/regular-functions/logical-functions#not) أو `NOT`
+* [`or()`](/ar/reference/functions/regular-functions/logical-functions#or) أو `NOT`
+* [`xor()`](/ar/reference/functions/regular-functions/logical-functions#xor)
+
+<div id="using-uint8-columns-as-a-condition">
+  ## استخدام أعمدة `UInt8` كشرط
+</div>
+
+في ClickHouse، يمكن استخدام أعمدة `UInt8` مباشرةً كشروط منطقية، بحيث تمثّل `0` القيمة `false` وتمثّل أي قيمة غير صفرية (وغالبًا `1`) القيمة `true`.
+ويَرِد مثال على ذلك في القسم [أدناه](#example-uint8-column-as-condition).
+
+<div id="using-comparison-operators">
+  ## استخدام معاملات المقارنة
+</div>
+
+يمكن استخدام [معاملات المقارنة](/ar/reference/operators/index#comparison-operators) التالية:
+
+| المعامل                 | الدالة                  | الوصف                                 | مثال                            |
+| ----------------------- | ----------------------- | ------------------------------------- | ------------------------------- |
+| `a = b`                 | `equals(a, b)`          | يساوي                                 | `price = 100`                   |
+| `a == b`                | `equals(a, b)`          | يساوي (صيغة بديلة)                    | `price == 100`                  |
+| `a != b`                | `notEquals(a, b)`       | لا يساوي                              | `category != 'Electronics'`     |
+| `a <> b`                | `notEquals(a, b)`       | لا يساوي (صيغة بديلة)                 | `category <> 'Electronics'`     |
+| `a < b`                 | `less(a, b)`            | أقل من                                | `price < 200`                   |
+| `a <= b`                | `lessOrEquals(a, b)`    | أقل من أو يساوي                       | `price <= 200`                  |
+| `a > b`                 | `greater(a, b)`         | أكبر من                               | `price > 500`                   |
+| `a >= b`                | `greaterOrEquals(a, b)` | أكبر من أو يساوي                      | `price >= 500`                  |
+| `a LIKE s`              | `like(a, b)`            | مطابقة النمط (حساسة لحالة الأحرف)     | `name LIKE '%top%'`             |
+| `a NOT LIKE s`          | `notLike(a, b)`         | عدم مطابقة النمط (حساسة لحالة الأحرف) | `name NOT LIKE '%top%'`         |
+| `a ILIKE s`             | `ilike(a, b)`           | مطابقة النمط (غير حساسة لحالة الأحرف) | `name ILIKE '%LAPTOP%'`         |
+| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | التحقق من النطاق (شامل)               | `price BETWEEN 100 AND 500`     |
+| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | التحقق من الخروج عن النطاق            | `price NOT BETWEEN 100 AND 500` |
+
+<div id="pattern-matching-and-conditional-expressions">
+  ## مطابقة الأنماط والتعبيرات الشرطية
+</div>
+
+إلى جانب معاملات المقارنة، يمكنك استخدام مطابقة الأنماط والتعبيرات الشرطية في عبارة `WHERE`.
+
+| الميزة      | الصياغة                        | مراعي لحالة الأحرف | الأداء | الأفضل لـ                           |
+| ----------- | ------------------------------ | ------------------ | ------ | ----------------------------------- |
+| `LIKE`      | `col LIKE '%pattern%'`         | نعم                | سريع   | مطابقة الأنماط مع تمييز حالة الأحرف |
+| `ILIKE`     | `col ILIKE '%pattern%'`        | لا                 | أبطأ   | البحث دون تمييز حالة الأحرف         |
+| `if()`      | `if(cond, a, b)`               | لا ينطبق           | سريع   | الشروط الثنائية البسيطة             |
+| `multiIf()` | `multiIf(c1, r1, c2, r2, def)` | لا ينطبق           | سريع   | الشروط المتعددة                     |
+| `CASE`      | `CASE WHEN ... THEN ... END`   | لا ينطبق           | سريع   | منطق شرطي قياسي في SQL              |
+
+راجع [&quot;مطابقة الأنماط والتعبيرات الشرطية&quot;](#examples-pattern-matching-and-conditional-expressions) للاطلاع على أمثلة الاستخدام.
+
+<div id="expressions-with-literals-columns-subqueries">
+  ## تعبير يتضمن قيماً حرفية أو أعمدة أو استعلامات فرعية
+</div>
+
+يمكن أن يتضمن التعبير الذي يلي عبارة `WHERE` أيضاً [قيماً حرفية](/ar/reference/syntax#literals)، أو أعمدة، أو استعلامات فرعية، وهي عبارات `SELECT` متداخلة تُرجِع قيماً تُستخدم في الشروط.
+
+| النوع            | التعريف                | التقييم             | الأداء | المثال                     |
+| ---------------- | ---------------------- | ------------------- | ------ | -------------------------- |
+| **قيمة حرفية**   | قيمة ثابتة             | عند كتابة الاستعلام | الأسرع | `WHERE price > 100`        |
+| **عمود**         | مرجع إلى بيانات الجدول | لكل صف              | سريع   | `WHERE price > cost`       |
+| **استعلام فرعي** | عبارة SELECT متداخلة   | وقت تنفيذ الاستعلام | يختلف  | `WHERE id IN (SELECT ...)` |
+
+يمكنك المزج بين القيم الحرفية والأعمدة والاستعلامات الفرعية في الشروط المعقدة:
+
+```sql
+-- Literal + Column
+WHERE price > 100 AND category = 'Electronics'
+
+-- Column + Subquery
+WHERE price > (SELECT AVG(price) FROM products) AND in_stock = true
+
+-- Literal + Column + Subquery
+WHERE category = 'Electronics' 
+  AND price < 500
+  AND id IN (SELECT product_id FROM bestsellers)
+
+-- All three with logical operators
+WHERE (price > 100 OR category IN (SELECT category FROM featured))
+  AND in_stock = true
+  AND name LIKE '%Special%'
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="examples-testing-for-null">
+  ### التحقق من `NULL`
+</div>
+
+الاستعلامات التي تتضمن قيماً من نوع `NULL`:
+
+```sql
+CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE=MergeTree() ORDER BY x;
+INSERT INTO t_null VALUES (1, NULL), (2, 3);
+
+SELECT * FROM t_null WHERE y IS NULL;
+SELECT * FROM t_null WHERE y != 0;
+```
+
+```response
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+┌─x─┬─y─┐
+│ 2 │ 3 │
+└───┴───┘
+```
+
+<div id="example-filtering-with-logical-operators">
+  ### تصفية البيانات باستخدام العوامل المنطقية
+</div>
+
+بالنظر إلى الجدول والبيانات التاليين:
+
+```sql
+CREATE TABLE products (
+    id UInt32,
+    name String,
+    price Float32,
+    category String,
+    in_stock Bool
+) ENGINE = MergeTree()
+ORDER BY id;
+
+INSERT INTO products VALUES
+(1, 'Laptop', 999.99, 'Electronics', true),
+(2, 'Mouse', 25.50, 'Electronics', true),
+(3, 'Desk', 299.00, 'Furniture', false),
+(4, 'Chair', 150.00, 'Furniture', true),
+(5, 'Monitor', 350.00, 'Electronics', true),
+(6, 'Lamp', 45.00, 'Furniture', false);
+```
+
+**1. `AND` - يجب أن يكون كلا الشرطين true:**
+
+```sql
+SELECT * FROM products
+WHERE category = 'Electronics' AND price < 500;
+```
+
+```response
+   ┌─id─┬─name────┬─price─┬─category────┬─in_stock─┐
+1. │  2 │ Mouse   │  25.5 │ Electronics │ true     │
+2. │  5 │ Monitor │   350 │ Electronics │ true     │
+   └────┴─────────┴───────┴─────────────┴──────────┘
+```
+
+**2. `OR` - يجب أن يتحقق شرط واحد على الأقل:**
+
+```sql
+SELECT * FROM products
+WHERE category = 'Furniture' OR price > 500;
+```
+
+```response
+   ┌─id─┬─name───┬──price─┬─category────┬─in_stock─┐
+1. │  1 │ Laptop │ 999.99 │ Electronics │ true     │
+2. │  3 │ Desk   │    299 │ Furniture   │ false    │
+3. │  4 │ Chair  │    150 │ Furniture   │ true     │
+4. │  6 │ Lamp   │     45 │ Furniture   │ false    │
+   └────┴────────┴────────┴─────────────┴──────────┘
+```
+
+**3. `NOT` - ينفي شرطًا:**
+
+```sql
+SELECT * FROM products
+WHERE NOT in_stock;
+```
+
+```response
+   ┌─id─┬─name─┬─price─┬─category──┬─in_stock─┐
+1. │  3 │ Desk │   299 │ Furniture │ false    │
+2. │  6 │ Lamp │    45 │ Furniture │ false    │
+   └────┴──────┴───────┴───────────┴──────────┘
+```
+
+**4. `XOR` - يجب أن يتحقق شرط واحد فقط (وليس كلاهما):**
+
+```sql
+SELECT *
+FROM products
+WHERE xor(price > 200, category = 'Electronics')
+```
+
+```response
+   ┌─id─┬─name──┬─price─┬─category────┬─in_stock─┐
+1. │  2 │ Mouse │  25.5 │ Electronics │ true     │
+2. │  3 │ Desk  │   299 │ Furniture   │ false    │
+   └────┴───────┴───────┴─────────────┴──────────┘
+```
+
+**5. دمج عدة عوامل:**
+
+```sql
+SELECT * FROM products
+WHERE (category = 'Electronics' OR category = 'Furniture')
+  AND in_stock = true
+  AND price < 400;
+```
+
+```response
+   ┌─id─┬─name────┬─price─┬─category────┬─in_stock─┐
+1. │  2 │ Mouse   │  25.5 │ Electronics │ true     │
+2. │  4 │ Chair   │   150 │ Furniture   │ true     │
+3. │  5 │ Monitor │   350 │ Electronics │ true     │
+   └────┴─────────┴───────┴─────────────┴──────────┘
+```
+
+**6. استخدام صيغة الدوال:**
+
+```sql
+SELECT * FROM products
+WHERE and(or(category = 'Electronics', price > 100), in_stock);
+```
+
+```response
+   ┌─id─┬─name────┬──price─┬─category────┬─in_stock─┐
+1. │  1 │ Laptop  │ 999.99 │ Electronics │ true     │
+2. │  2 │ Mouse   │   25.5 │ Electronics │ true     │
+3. │  4 │ Chair   │    150 │ Furniture   │ true     │
+4. │  5 │ Monitor │    350 │ Electronics │ true     │
+   └────┴─────────┴────────┴─────────────┴──────────┘
+```
+
+تكون صيغة الكلمات المفتاحية في SQL (`AND`, `OR`, `NOT`, `XOR`) أوضح للقراءة عمومًا، لكن صيغة الدوال قد تكون مفيدة في التعبيرات المعقدة أو عند إنشاء استعلامات ديناميكية.
+
+<div id="example-uint8-column-as-condition">
+  ### استخدام أعمدة UInt8 كشرط
+</div>
+
+انطلاقًا من الجدول الوارد في [مثال سابق](#example-filtering-with-logical-operators)، يمكنك استخدام اسم العمود مباشرةً كشرط:
+
+```sql
+SELECT * FROM products
+WHERE in_stock
+```
+
+```response
+   ┌─id─┬─name────┬──price─┬─category────┬─in_stock─┐
+1. │  1 │ Laptop  │ 999.99 │ Electronics │ true     │
+2. │  2 │ Mouse   │   25.5 │ Electronics │ true     │
+3. │  4 │ Chair   │    150 │ Furniture   │ true     │
+4. │  5 │ Monitor │    350 │ Electronics │ true     │
+   └────┴─────────┴────────┴─────────────┴──────────┘
+```
+
+<div id="example-using-comparison-operators">
+  ### استخدام معاملات المقارنة
+</div>
+
+تستخدم الأمثلة أدناه الجدول والبيانات من [المثال](#example-filtering-with-logical-operators) أعلاه. حُذفت النتائج للإيجاز.
+
+**1. المساواة الصريحة مع true (`= 1` أو `= true`):**
+
+```sql
+SELECT * FROM products
+WHERE in_stock = true;
+-- or
+WHERE in_stock = 1;
+```
+
+**2. المساواة الصريحة بـ false (`= 0` أو `= false`):**
+
+```sql
+SELECT * FROM products
+WHERE in_stock = false;
+-- or
+WHERE in_stock = 0;
+```
+
+**3. عدم التساوي (`!= 0` أو `!= false`):**
+
+```sql
+SELECT * FROM products
+WHERE in_stock != false;
+-- or
+WHERE in_stock != 0;
+```
+
+**4. أكبر من:**
+
+```sql
+SELECT * FROM products
+WHERE in_stock > 0;
+```
+
+**5. أصغر من أو يساوي:**
+
+```sql
+SELECT * FROM products
+WHERE in_stock <= 0;
+```
+
+**6. الجمع بين شروط أخرى:**
+
+```sql
+SELECT * FROM products
+WHERE in_stock AND price < 400;
+```
+
+**7. استخدام المعامل `IN`:**
+
+في المثال أدناه، تمثّل `(1, true)` قيمة من النوع [Tuple](/ar/reference/data-types/tuple).
+
+```sql
+SELECT * FROM products
+WHERE in_stock IN (1, true);
+```
+
+يمكنك أيضًا استخدام [مصفوفة](/ar/reference/data-types/array) لتحقيق ذلك:
+
+```sql
+SELECT * FROM products
+WHERE in_stock IN [1, true];
+```
+
+**8. الخلط بين أساليب المقارنة:**
+
+```sql
+SELECT * FROM products
+WHERE category = 'Electronics' AND in_stock = true;
+```
+
+<div id="examples-pattern-matching-and-conditional-expressions">
+  ### مطابقة الأنماط والتعبيرات الشرطية
+</div>
+
+تستخدم الأمثلة أدناه الجدول والبيانات الواردين في [المثال](#example-filtering-with-logical-operators) أعلاه. وحُذفت النتائج للاختصار.
+
+<div id="like-examples">
+  #### أمثلة على LIKE
+</div>
+
+```sql
+-- Find products with 'o' in the name
+SELECT * FROM products WHERE name LIKE '%o%';
+-- Result: Laptop, Monitor
+
+-- Find products starting with 'L'
+SELECT * FROM products WHERE name LIKE 'L%';
+-- Result: Laptop, Lamp
+
+-- Find products with exactly 4 characters
+SELECT * FROM products WHERE name LIKE '____';
+-- Result: Desk, Lamp
+```
+
+<div id="ilike-examples">
+  #### أمثلة على ILIKE
+</div>
+
+```sql
+-- Case-insensitive search for 'LAPTOP'
+SELECT * FROM products WHERE name ILIKE '%laptop%';
+-- Result: Laptop
+
+-- Case-insensitive prefix match
+SELECT * FROM products WHERE name ILIKE 'l%';
+-- Result: Laptop, Lamp
+```
+
+<div id="if-examples">
+  #### أمثلة على IF
+</div>
+
+```sql
+-- Different price thresholds by category
+SELECT * FROM products
+WHERE if(category = 'Electronics', price < 500, price < 200);
+-- Result: Mouse, Chair, Monitor
+-- (Electronics under $500 OR Furniture under $200)
+
+-- Filter based on stock status
+SELECT * FROM products
+WHERE if(in_stock, price > 100, true);
+-- Result: Laptop, Chair, Monitor, Desk, Lamp
+-- (In stock items over $100 OR all out-of-stock items)
+```
+
+<div id="multiif-examples">
+  #### أمثلة على multiIf
+</div>
+
+```sql
+-- Multiple category-based conditions
+SELECT * FROM products
+WHERE multiIf(
+    category = 'Electronics', price < 600,
+    category = 'Furniture', in_stock = true,
+    false
+);
+-- Result: Mouse, Monitor, Chair
+-- (Electronics < $600 OR in-stock Furniture)
+
+-- Tiered filtering
+SELECT * FROM products
+WHERE multiIf(
+    price > 500, category = 'Electronics',
+    price > 100, in_stock = true,
+    true
+);
+-- Result: Laptop, Chair, Monitor, Lamp
+```
+
+<div id="case-examples">
+  #### أمثلة على CASE
+</div>
+
+**صيغة CASE البسيطة:**
+
+```sql
+-- Different rules per category
+SELECT * FROM products
+WHERE CASE category
+    WHEN 'Electronics' THEN price < 400
+    WHEN 'Furniture' THEN in_stock = true
+    ELSE false
+END;
+-- Result: Mouse, Monitor, Chair
+```
+
+**CASE الشرطي:**
+
+```sql
+-- Price-based tiered logic
+SELECT * FROM products
+WHERE CASE
+    WHEN price > 500 THEN in_stock = true
+    WHEN price > 100 THEN category = 'Electronics'
+    ELSE true
+END;
+-- Result: Laptop, Monitor, Mouse, Lamp
+```

@@ -55,7 +55,7 @@ ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & argume
         preprocessed_columns[i] = std::move(preprocessed_column);
     }
 
-    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
+    VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
 
     for (auto & argument_column : preprocessed_columns)
     {

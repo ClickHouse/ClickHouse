@@ -1,0 +1,349 @@
+---
+description: 'Обзор системы непрерывной интеграции ClickHouse'
+sidebarTitle: 'Непрерывная интеграция (CI)'
+slug: /development/continuous-integration
+title: 'Непрерывная интеграция (CI)'
+doc_type: 'reference'
+---
+
+Когда вы отправляете pull request, система [непрерывной интеграции (CI)](/ru/resources/develop-contribute/contribute/tests#test-automation) ClickHouse запускает для вашего кода ряд автоматических проверок.
+Это происходит после того, как мейнтейнер репозитория (кто-то из команды ClickHouse) просмотрит ваш код и добавит к вашему pull request метку `can be tested`.
+Результаты проверок отображаются на странице pull request в GitHub, как описано в [документации GitHub о проверках](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-status-checks).
+Если какая-либо проверка завершается ошибкой, вам может потребоваться её исправить.
+На этой странице приведён обзор проверок, с которыми вы можете столкнуться, и того, что можно сделать для их исправления.
+
+Если похоже, что сбой проверки не связан с вашими изменениями, это может быть временный сбой или проблема с инфраструктурой.
+Отправьте пустой коммит в pull request, чтобы перезапустить проверки CI:
+
+```shell
+git commit --allow-empty
+git push
+```
+
+Если вы не уверены, что делать, обратитесь за помощью к мейнтейнеру.
+
+<div id="merge-with-master">
+  ## Слияние с master
+</div>
+
+Проверяет, можно ли слить PR с веткой master.
+Если нет, проверка завершится с сообщением `Cannot fetch mergecommit`.
+Чтобы эта проверка прошла, разрешите конфликт слияния, как описано в [документации GitHub](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/resolving-a-merge-conflict-on-github), или слейте ветку `master` в ветку вашего pull request с помощью git.
+
+<div id="docs-check">
+  ## Проверка документации
+</div>
+
+Пытается собрать сайт документации ClickHouse.
+Проверка может завершиться ошибкой, если вы внесли изменения в документацию.
+Наиболее вероятная причина — некорректная перекрёстная ссылка в документации.
+Перейдите к отчёту о проверке и найдите сообщения `ERROR` и `WARNING`.
+
+<div id="description-check">
+  ## Проверка описания
+</div>
+
+Проверьте, что описание вашего pull request соответствует шаблону [PULL&#95;REQUEST&#95;TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
+Вы должны указать категорию в changelog для вашего изменения (например, Bug Fix) и написать понятное пользователю сообщение с описанием этого изменения для [CHANGELOG.md](/ru/resources/changelogs/oss/2026)
+
+<div id="docker-image">
+  ## Docker-образ
+</div>
+
+Собирает Docker-образы сервера ClickHouse и Keeper, чтобы убедиться, что их сборка проходит корректно.
+
+<div id="official-docker-library-tests">
+  ### Тесты официальной библиотеки Docker
+</div>
+
+Запускаются тесты из [официальной библиотеки Docker](https://github.com/docker-library/official-images/tree/master/test#alternate-config-files), чтобы убедиться, что Docker-образ `clickhouse/clickhouse-server` работает корректно.
+
+Чтобы добавить новые тесты, создайте каталог `ci/jobs/scripts/docker_server/tests/$test_name` и поместите в него скрипт `run.sh`.
+
+Дополнительные сведения о тестах можно найти в [документации по скриптам CI-задач](https://github.com/ClickHouse/ClickHouse/tree/master/ci/jobs/scripts/docker_server).
+
+<div id="marker-check">
+  ## Проверка маркера
+</div>
+
+Эта проверка означает, что система CI начала обрабатывать pull request.
+Статус &#39;pending&#39; означает, что запущены ещё не все проверки.
+После запуска всех проверок статус изменится на &#39;success&#39;.
+
+<div id="style-check">
+  ## Проверка стиля
+</div>
+
+Выполняет различные проверки стиля кодовой базы. Каждая из перечисленных ниже проверок соответствует `testname` в [`ci/jobs/check_style.py`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/check_style.py) и может быть запущена отдельно с помощью `--test <name>` (см. ниже).
+
+<div id="cpp">
+  ##### cpp
+</div>
+
+Проверки стиля C++ на основе регулярных выражений с помощью [`check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh). Если проверка завершилась ошибкой, исправьте проблемы со стилем в соответствии с [руководством по стилю кода](/ru/resources/develop-contribute/contribute/style).
+
+<div id="whitespace-check">
+  ##### whitespace_check
+</div>
+
+Выявляет двойные пробелы после запятых в C++, если они не используются для выравнивания столбцов.
+
+<div id="catch-all">
+  ##### catch_all
+</div>
+
+Запрещает `catch (...)` вне деструкторов, `main` и точек входа фаззера, где небезопасно подавлять неизвестные исключения.
+
+<div id="yamllint">
+  ##### yamllint
+</div>
+
+Проверяет YAML-файлы workflow в каталоге `.github/` с помощью `.yamllint`.
+
+<div id="xmllint">
+  ##### xmllint
+</div>
+
+Проверяет XML-файлы в каталогах `tests/` и `programs/`.
+
+<div id="functional-tests-check">
+  ##### functional_tests_check
+</div>
+
+Проверяет тесты без сохранения состояния: в запросах с фильтрацией по `event_date` следует использовать `>= yesterday()`, а не `today()` (чтобы избежать нестабильности на границе полуночи), а имена файлов тестов не должны содержать `fail`.
+
+<div id="test-numbers-check">
+  ##### test_numbers_check
+</div>
+
+Выявляет большие пропуски в нумерации тестов без сохранения состояния (`tests/queries/0_stateless/<NNNNN>_*`).
+
+<div id="symlinks">
+  ##### симлинки
+</div>
+
+Обнаруживает неработающие симлинки в репозитории.
+
+<div id="various">
+  ##### разное
+</div>
+
+Прочие проверки репозитория через [`various_checks.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/various_checks.sh): запросы к `system.query_log` / `system.parts` / etc. должны фильтроваться по `currentDatabase`, пути ZooKeeper для `Replicated*MergeTree` должны включать отдельный префикс для каждого теста, каталоги интеграционных тестов должны содержать `__init__.py`, файлы не должны содержать UTF BOM, у исходных файлов и файлов данных не должно быть бита исполняемости, в сторонних образах docker-compose нельзя использовать тег `:latest` и многое другое.
+
+<div id="running-style-check-locally">
+  ### Запуск задачи проверки стиля локально
+</div>
+
+Всю задачу *проверки стиля* можно запустить локально в контейнере Docker с помощью:
+
+```sh
+python -m ci.praktika run "Style check"
+```
+
+Чтобы запустить конкретную проверку (например, *cpp*):
+
+```sh
+python -m ci.praktika run "Style check" --test cpp
+```
+
+Эти команды загружают Docker-образ `clickhouse/style-test` и запускают задачу в контейнерной среде.
+Никаких дополнительных зависимостей, кроме Python 3 и Docker, не требуется.
+
+<div id="running-stateless-tests">
+  ## Запуск тестов без сохранения состояния
+</div>
+
+Локально установленный ClickHouse с настройками по умолчанию может подойти для отдельных тестовых сценариев, но не позволяет корректно выполнять все тестовые запросы. В CI для каждой задачи применяется определённая конфигурация ClickHouse (например, хранилище S3, параллельные реплики), и вручную воспроизвести её бывает затруднительно. Чтобы этого избежать, вы можете локально воспроизвести любую задачу CI, используя ту же оркестрацию, что и в CI, — ручная настройка не требуется.
+
+<div id="ci-prerequisites">
+  #### Необходимые условия
+</div>
+
+* Python 3 (только стандартная библиотека)
+* Docker
+
+При необходимости установите Docker в Ubuntu и войдите в систему заново:
+
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "ipv6": true,
+  "ip6tables": true
+}
+EOF
+sudo systemctl restart docker
+```
+
+<div id="run-ci-job-locally">
+  #### Запустите задачу CI локально
+</div>
+
+Выберите любое название задачи из отчёта CI и запустите её локально:
+
+```bash
+python -m ci.praktika run "<JOB_NAME>"
+```
+
+* Всегда указывайте имя задачи в кавычках и в точности так, как оно приведено в отчёте CI (оно может содержать пробелы и запятые), например: `"Stateless tests (amd_debug, parallel)"`. Это задаёт ту же конфигурацию ClickHouse и запускает те же тесты, что и в CI.
+* Архитектура и тип сборки в имени задачи (например, `amd_debug`) — это метки, специфичные для CI. При локальном запуске они ни на что не влияют: задача будет использовать тот бинарный файл, который вы указали, и ту архитектуру, на которой вы её запускаете. Имя задачи определяет только конфигурацию ClickHouse и набор тестов (если это не переопределено через `--test`).
+* В CI функциональные тесты разделены на батчи для более эффективного использования ресурсов. Например, `"Stateless tests (amd_debug, parallel)"` и `"Stateless tests (amd_debug, sequential)"` вместе охватывают весь объём: тесты, безопасные для параллельного запуска, выполняются одновременно, а остальные — последовательно. Такое разделение сокращает общее время CI, максимально используя параллелизм там, где это возможно. Чтобы локально воспроизвести полный набор тестов, запустите оба батча.
+* Также есть задача CI `"Fast test"`, которая запускает ограниченный набор функциональных тестов для проверки базовой работоспособности ClickHouse. Она использует сборку не со всеми необязательными модулями и позволяет быстрее всего обнаружить регрессии. Её можно запустить локально тем же способом. Поместите бинарный файл ClickHouse в один из стандартных путей поиска (`./ci/tmp/clickhouse`, `./build/programs/clickhouse` или `./clickhouse`) — иначе задача сначала попытается собрать ClickHouse:
+  ```bash
+  python -m ci.praktika run "Fast test"
+  ```
+
+<div id="run-specific-tests-within-ci-job">
+  #### Запуск отдельных тестов в рамках задачи CI
+</div>
+
+С `--test` задача подготавливает ту же конфигурацию ClickHouse, что используется в CI, но запускает только выбранные тесты:
+
+```bash
+python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
+  --test 00001_select1
+```
+
+* Можно указать несколько имен тестов:
+  ```bash
+  python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
+    --test 00001_select1 00002_log_and_exception_messages_formatting
+  ```
+* Совет: если подходит любая конфигурация ClickHouse и вам нужно запустить только определенные тесты, используйте псевдоним `functional` вместо полного имени задачи:
+  ```bash
+  python -m ci.praktika run functional --test 00001_select1
+  ```
+
+<div id="additional-customization-options">
+  #### Дополнительные параметры настройки
+</div>
+
+* `--path PATH` — пользовательский путь к бинарному файлу ClickHouse. По умолчанию runner ищет в следующем порядке: `./ci/tmp/clickhouse`, `./build/programs/clickhouse`, `./clickhouse`.
+* `--count N` — повторить каждый тест N раз.
+* `--workers N` — переопределить автоматический расчёт числа параллельных воркеров на основе ресурсов машины.
+
+<div id="build-check">
+  ## Проверка сборки
+</div>
+
+Сборка ClickHouse в различных конфигурациях для использования на следующих этапах.
+
+<div id="running-builds-locally">
+  ### Локальный запуск сборок
+</div>
+
+Сборки можно запускать локально в среде, близкой к CI, с помощью:
+
+```bash
+python -m ci.praktika run "<BUILD_JOB_NAME>"
+```
+
+Никаких зависимостей, кроме Python 3 и Docker, не требуется.
+
+<div id="available-build-jobs">
+  #### Доступные задачи сборки
+</div>
+
+Названия задач сборки в точности совпадают с тем, как они указаны в отчёте CI:
+
+**Сборки AMD64:**
+
+* `Build (amd_debug)` - Отладочная сборка с символами
+* `Build (amd_release)` - Оптимизированная релизная сборка
+* `Build (amd_asan)` - Сборка с Address Sanitizer
+* `Build (amd_tsan)` - Сборка с Thread Sanitizer
+* `Build (amd_msan)` - Сборка с Memory Sanitizer
+* `Build (amd_ubsan)` - Сборка с Undefined Behavior Sanitizer
+* `Build (amd_binary)` - Быстрая релизная сборка без Thin LTO
+* `Build (amd_compat)` - Сборка для старых систем
+* `Build (amd_musl)` - Сборка с musl libc
+* `Build (amd_darwin)` - Сборка для macOS
+* `Build (amd_freebsd)` - Сборка для FreeBSD
+
+**Сборки ARM64:**
+
+* `Build (arm_release)` - Оптимизированная релизная сборка ARM64
+* `Build (arm_asan)` - Сборка ARM64 с Address Sanitizer
+* `Build (arm_coverage)` - Сборка ARM64 с инструментированием для анализа покрытия
+* `Build (arm_binary)` - Быстрая релизная сборка ARM64 без Thin LTO
+* `Build (arm_darwin)` - Сборка ARM64 для macOS
+* `Build (arm_v80compat)` - Сборка для совместимости с ARMv8.0
+
+**Другие архитектуры:**
+
+* `Build (ppc64le)` - PowerPC 64-bit Little Endian
+* `Build (riscv64)` - 64-разрядная RISC-V
+* `Build (s390x)` - 64-разрядная IBM System/390
+* `Build (loongarch64)` - 64-разрядная LoongArch
+
+Если задача завершается успешно, результаты сборки будут доступны в каталоге `<repo_root>/ci/tmp/build`.
+
+**Примечание:** Для сборок, не относящихся к категории &quot;Другие архитектуры&quot; (в которой используется кросс-компиляция), архитектура локальной машины должна соответствовать типу сборки, чтобы получить сборку, указанную в `BUILD_JOB_NAME`.
+
+<div id="example-run-local">
+  #### Пример
+</div>
+
+Чтобы запустить локальную отладочную сборку:
+
+```bash
+python -m ci.praktika run "Build (amd_debug)"
+```
+
+Если описанный выше подход вам не подходит, используйте параметры cmake из журнала сборки и следуйте [общей процедуре сборки](/ru/resources/develop-contribute/build/build).
+
+<div id="functional-stateless-tests">
+  ## Функциональные тесты без сохранения состояния
+</div>
+
+Запускает [функциональные тесты без сохранения состояния](/ru/resources/develop-contribute/contribute/tests#functional-tests) для бинарных файлов ClickHouse, собранных в различных конфигурациях — release, debug, с санитайзерами и т. д.
+Посмотрите отчет, чтобы понять, какие тесты завершаются ошибкой, а затем воспроизведите сбой локально, как описано [здесь](/ru/resources/develop-contribute/contribute/tests#functional-tests).
+Обратите внимание: для воспроизведения нужно использовать правильную конфигурацию сборки — тест может завершаться ошибкой с AddressSanitizer, но проходить в Debug.
+Скачайте бинарный файл со [страницы CI build checks](/ru/get-started/setup/self-managed/advanced) или соберите его локально.
+
+<div id="integration-tests">
+  ## Интеграционные тесты
+</div>
+
+Запускает [интеграционные тесты](/ru/resources/develop-contribute/contribute/tests#integration-tests).
+
+<div id="bugfix-validate-check">
+  ## Проверка валидации исправления ошибки
+</div>
+
+Проверяет, что либо добавлен новый тест (функциональный или интеграционный), либо есть изменённые тесты, которые завершаются ошибкой при запуске с бинарным файлом, собранным из ветки master.
+Эта проверка запускается, когда у pull request есть метка &quot;pr-bugfix&quot;.
+
+<div id="stress-test">
+  ## Стресс-тест
+</div>
+
+Запускает функциональные тесты без сохранения состояния одновременно с нескольких клиентов, чтобы выявить ошибки, связанные с параллелизмом. Если тест завершается сбоем:
+
+* Сначала устраните все остальные сбои тестов;
+  * Просмотрите отчет, чтобы найти журналы сервера, и проверьте их на наличие возможных причин
+    ошибки.
+
+<div id="compatibility-check">
+  ## Проверка совместимости
+</div>
+
+Проверяет, запускается ли бинарный файл `clickhouse` в дистрибутивах со старыми версиями libc.
+Если нет, обратитесь за помощью к мейнтейнеру.
+
+<div id="ast-fuzzer">
+  ## AST-фаззер
+</div>
+
+Запускает случайно сгенерированные запросы, чтобы выявлять ошибки в программе.
+Если он завершается сбоем, обратитесь за помощью к мейнтейнеру.
+
+<div id="performance-tests">
+  ## Тесты производительности
+</div>
+
+Оценивайте изменения в производительности запросов.
+Это самая длительная проверка, её выполнение занимает чуть менее 6 часов.
+Отчёт о тестах производительности подробно описан [здесь](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).

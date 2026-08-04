@@ -1,7 +1,7 @@
 --- parts_columns: which columns chose sparse serialization ---
-all_1_1_0	Default
-all_1_1_0	Sparse
-all_1_1_0	Sparse
+id	Default
+s	Sparse
+v	Sparse
 --- aggregate over sparse Int64 column ---
 300	285	15
 2115	7.05	0	281

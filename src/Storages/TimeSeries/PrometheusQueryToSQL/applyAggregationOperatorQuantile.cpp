@@ -23,7 +23,7 @@ namespace
 {
     /// Checks if the types of the specified arguments are valid for the `quantile` aggregation operator.
     void checkArgumentTypes(
-        const PQT::AggregationOperator * operator_node,
+        const PrometheusQueryTree::AggregationOperator * operator_node,
         const std::vector<SQLQueryPiece> & arguments,
         const ConverterContext & context)
     {
@@ -89,7 +89,7 @@ namespace
 
 
 SQLQueryPiece applyAggregationOperatorQuantile(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(operator_node, arguments, context);
 
@@ -129,6 +129,12 @@ SQLQueryPiece applyAggregationOperatorQuantile(
 
         if (operator_node->by || operator_node->without)
             builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+
+        /// Drop empty-values rows.
+        /// If the input has no rows then quantileExactInclusiveForEach(...)([]) returns [], but the number of values
+        /// in array must always match the number of steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID),
+        /// so we just drop such rows.
+        builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         aggregation_query = builder.getSelectQuery();
     }

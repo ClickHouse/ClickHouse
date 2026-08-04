@@ -83,10 +83,10 @@ public:
 
     struct Request
     {
-        UInt64 reqiest_id;
+        UInt64 reqiest_id{};
         TBaseHolderPtr base_holder;
         std::shared_ptr<TPromiseStatus> promise;
-        bool with_zk_fields;
+        bool with_zk_fields{};
     };
 
     struct RequestInfo

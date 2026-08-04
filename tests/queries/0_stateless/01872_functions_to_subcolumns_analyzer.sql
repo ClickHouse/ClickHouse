@@ -41,10 +41,10 @@ DROP TABLE t_func_to_subcolumns;
 
 DROP TABLE IF EXISTS t_tuple_null;
 
-CREATE TABLE t_tuple_null (t Tuple(null UInt32)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_tuple_null (t Tuple(n UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_tuple_null VALUES ((10)), ((20));
 
-SELECT t IS NULL, t.null FROM t_tuple_null;
+SELECT t IS NULL, t.n FROM t_tuple_null;
 
 DROP TABLE t_tuple_null;

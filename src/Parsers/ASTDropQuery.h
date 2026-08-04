@@ -3,6 +3,7 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -19,12 +20,16 @@ public:
         Truncate,
     };
 
-    Kind kind;
+    Kind kind{};
     bool if_exists{false};
     bool if_empty{false};
 
     /// Useful if we already have a DDL lock
     bool no_ddl_lock{false};
+
+    /// Skip the access check on Drop. Set only for internal cleanup drops whose access was already
+    /// authorized against the dropped object's user-visible name. Never parsed nor serialized.
+    bool no_access_check{false};
 
     /// For `TRUNCATE ALL TABLES` query
     bool has_all{false};
@@ -55,6 +60,8 @@ public:
     /// Get the text that identifies this element.
     String getID(char) const override;
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {

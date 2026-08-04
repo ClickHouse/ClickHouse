@@ -7,6 +7,15 @@
 -- and the ANTLR visitor) via the prometheusQuery() / prometheusQueryRange() table
 -- functions against an empty TimeSeries table. This drives tryParseScalar,
 -- tryUnescapeStringLiteral and the ANTLR grammar end-to-end.
+--
+-- Scope note: scalar / arithmetic / unary / bool-comparison / vector / scalar
+-- expressions return concrete values that genuinely exercise the evaluator.
+-- The selector-based queries (rate, offset, label matchers, by/without,
+-- group_left/right, prometheusQueryRange) only assert count() == 0 because the
+-- TimeSeries engine does not support direct INSERT (data only enters via the
+-- Prometheus remote-write HTTP path). They still cover the *parser* surface,
+-- which is the goal here; an evaluator regression on an empty selector would
+-- need a separate integration test.
 
 SET allow_experimental_time_series_table = 1;
 

@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Block.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -38,7 +39,7 @@ struct NamePair
 
 using NamePairs = std::vector<NamePair>;
 
-InConversion buildInConversion(
+static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
@@ -93,9 +94,9 @@ InConversion buildInConversion(
     auto future_set = std::make_shared<FutureSetFromSubquery>(
         get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
 
-    ColumnPtr set_col = ColumnSet::create(1, future_set);
+    ColumnConst::Ptr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 0);
     const ActionsDAG::Node * in_rhs_arg =
-        &lhs_dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
+        &lhs_dag.addColumn(std::move(set_col), std::make_shared<DataTypeSet>(), "set column");
 
     /// IN function
     auto func_in = FunctionFactory::instance().get("in", nullptr);
@@ -245,7 +246,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// JoinStepLogical materializes the `__join_result_dummy` constant column in its output header,
     /// but the replacement ExpressionStep does not, causing a block structure mismatch.
     for (auto & output_node : join_output_actions_dag.getOutputs())
-        if (output_node->column && isColumnConst(*output_node->column))
+        if (output_node->column)
             output_node = &join_output_actions_dag.materializeNode(*output_node, /*materialize_sparse=*/ false);
 
     creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimization");

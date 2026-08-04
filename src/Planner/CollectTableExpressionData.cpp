@@ -1,6 +1,8 @@
 #include <Planner/CollectTableExpressionData.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -12,6 +14,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
@@ -24,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_PREWHERE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -63,7 +67,7 @@ public:
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::LAMBDA || column_source_node_type == QueryTreeNodeType::INTERPOLATE)
+        if (column_source_node_type == QueryTreeNodeType::LAMBDA_ARGS || column_source_node_type == QueryTreeNodeType::INTERPOLATE)
             return;
 
         /// JOIN using expression
@@ -107,6 +111,11 @@ public:
 
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
+                /// The ALIAS column may be referenced from inside a subquery, which collectSets
+                /// never descends into (it skips QUERY and UNION children), so register the sets
+                /// of the ALIAS expression here before building actions over it.
+                collectSets(column_node->getExpression(), *planner_context);
+
                 ActionsDAG alias_column_actions_dag;
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false);
@@ -114,9 +123,13 @@ public:
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
+                /// ColumnsDescription validation (ColumnsDescription.cpp) now recursively rejects
+                /// subqueries at any depth in ALIAS expressions. This check remains as a
+                /// safety net in case any code path bypasses DDL-time validation (e.g. loading
+                /// tables from metadata created before the recursive check was added).
                 if (correlated_subtrees.notEmpty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Correlated subquery in alias column expression {}. Actual {}", column_node->dumpTree(), outputs.size());
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Correlated subqueries in ALIAS column expressions are not supported. Column: {}", column_node->getColumnName());
 
                 auto & alias_node = outputs[0];
                 const auto & column_name = column_node->getColumnName();
@@ -304,11 +317,20 @@ public:
                     storage->getName(),
                     storage->getStorageID().getNameForLogs());
 
+            table_storage_snapshot
+                = table_column_source ? table_column_source->getStorageSnapshot() : table_function_column_source->getStorageSnapshot();
             table_expression = std::move(column_source);
             table_supported_prewhere_columns = storage->supportedPrewhereColumns();
+            table_supported_prewhere_columns_include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
         }
 
-        if (table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName()))
+        /// The contract lists top-level names; a subcolumn is admitted through its origin column.
+        if (table_supported_prewhere_columns
+            && !prewhereSupportedColumnsContain(
+                *table_supported_prewhere_columns,
+                table_supported_prewhere_columns_include_subcolumns,
+                table_storage_snapshot->metadata->getColumns(),
+                column_node->getColumnName()))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Table expression {} does not support column {} in PREWHERE. In query {}",
                 table_expression->formatASTForErrorMessage(),
@@ -327,7 +349,9 @@ public:
 private:
     QueryTreeNodePtr query_node;
     QueryTreeNodePtr table_expression;
+    StorageSnapshotPtr table_storage_snapshot;
     std::optional<NameSet> table_supported_prewhere_columns;
+    bool table_supported_prewhere_columns_include_subcolumns = false;
 };
 
 void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
@@ -363,7 +387,7 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
 void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr & planner_context)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
-    auto table_expressions_nodes = extractTableExpressions(query_node_typed.getJoinTree());
+    auto table_expressions_nodes = extractTableExpressions(query_node_typed.getJoinTreeNodeTyped());
 
     for (auto & table_expression_node : table_expressions_nodes)
     {
@@ -458,6 +482,12 @@ void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr 
 {
     CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context, keep_alias_columns);
     collect_source_columns_visitor.visit(expression_node);
+}
+
+void collectSetsAndSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context, bool keep_alias_columns)
+{
+    collectSets(expression_node, *planner_context);
+    collectSourceColumns(expression_node, planner_context, keep_alias_columns);
 }
 
 }
