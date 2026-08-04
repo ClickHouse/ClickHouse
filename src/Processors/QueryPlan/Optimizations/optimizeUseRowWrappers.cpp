@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/RowWrapper.h>
+#include <Storages/SelectQueryInfo.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -52,10 +53,14 @@ struct WrapperPick
 /// covers the most uncovered columns (ties broken by the smaller wrapper).
 /// Cost guard: only use a wrapper that replaces >= 2 column reads, unless it is
 /// fully covered (no wasted fields).
-std::vector<WrapperPick> pickWrappers(const Names & required_columns, const std::vector<RowWrapperInfo> & wrappers)
+std::vector<WrapperPick> pickWrappers(
+    const Names & required_columns, const std::vector<RowWrapperInfo> & wrappers, const std::unordered_set<String> & not_coverable)
 {
     std::vector<WrapperPick> picks;
-    std::unordered_set<String> uncovered(required_columns.begin(), required_columns.end());
+    std::unordered_set<String> uncovered;
+    for (const auto & column : required_columns)
+        if (!not_coverable.contains(column))
+            uncovered.insert(column);
 
     while (true)
     {
@@ -169,7 +174,17 @@ size_t tryOptimizeUseRowWrappers(
         if (wrappers.empty())
             continue;
 
-        auto picks = pickWrappers(reading->getAllColumnNames(), wrappers);
+        /// PREWHERE and row-level filter DAGs are applied inside the reading step and are
+        /// not rewritten here, so a column they consume must keep being read directly.
+        std::unordered_set<String> filter_columns;
+        if (const auto & prewhere_info = reading->getPrewhereInfo())
+            for (const auto & name : prewhere_info->prewhere_actions.getRequiredColumnsNames())
+                filter_columns.insert(name);
+        if (const auto & row_level_filter = reading->getRowLevelFilter())
+            for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
+                filter_columns.insert(name);
+
+        auto picks = pickWrappers(reading->getAllColumnNames(), wrappers, filter_columns);
         if (picks.empty())
             continue;
 
