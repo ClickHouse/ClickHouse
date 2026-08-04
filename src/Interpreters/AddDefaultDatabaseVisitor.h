@@ -185,13 +185,34 @@ private:
             return;
 
         auto * function = table_function.as<ASTFunction>();
-        if (!function || function->name != "merge" || !function->arguments)
+        if (!function || !function->arguments)
             return;
 
-        /// merge('tables_regexp') -> merge('database_name', 'tables_regexp')
         auto & arguments = function->arguments->children;
-        if (arguments.size() == 1)
-            arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(database_name));
+
+        if (function->name == "merge")
+        {
+            /// merge('tables_regexp') -> merge('database_name', 'tables_regexp')
+            if (arguments.size() == 1)
+            {
+                arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(database_name));
+            }
+            /// merge(currentDatabase(), 'tables_regexp') -> merge('database_name', 'tables_regexp'),
+            /// because `currentDatabase` would be evaluated too late, in a context where the current database can be different.
+            else if (arguments.size() == 2)
+            {
+                if (const auto * first_argument = arguments[0]->as<ASTFunction>();
+                    first_argument && first_argument->name == "currentDatabase"
+                    && (!first_argument->arguments || first_argument->arguments->children.empty()))
+                {
+                    arguments[0] = make_intrusive<ASTLiteral>(database_name);
+                }
+            }
+        }
+
+        /// A table function can be an argument of another table function, e.g. `remote('127.0.0.1', merge('tables_regexp'))`.
+        for (auto & argument : arguments)
+            visitTableFunction(*argument);
     }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
