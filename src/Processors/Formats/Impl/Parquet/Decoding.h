@@ -303,6 +303,42 @@ extern template struct BigEndianDecimalFixedSizeConverter<Int64>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int128>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int256>;
 
+/// Input physical type: a `DECIMAL`-annotated `FIXED_LEN_BYTE_ARRAY`.
+/// Output column and `Field` type: `T`, where `T` is `Int128`, `UInt128`, `Int256`, or `UInt256`.
+/// Values are range-checked instead of truncating leading sign-extension bytes.
+template <typename T>
+struct BigEndianDecimalWideIntegerConverter : public FixedSizeConverter
+{
+    explicit BigEndianDecimalWideIntegerConverter(size_t input_size_)
+    {
+        chassert(input_size_ > 0);
+        input_size = input_size_;
+    }
+
+    void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
+    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+};
+
+extern template struct BigEndianDecimalWideIntegerConverter<Int128>;
+extern template struct BigEndianDecimalWideIntegerConverter<UInt128>;
+extern template struct BigEndianDecimalWideIntegerConverter<Int256>;
+extern template struct BigEndianDecimalWideIntegerConverter<UInt256>;
+
+/// Input physical type: a `DECIMAL`-annotated `BYTE_ARRAY`.
+/// Output column and `Field` type: `T`, where `T` is `Int128`, `UInt128`, `Int256`, or `UInt256`.
+/// Values are range-checked instead of truncating leading sign-extension bytes.
+template <typename T>
+struct BigEndianDecimalWideIntegerStringConverter : public StringConverter
+{
+    void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
+    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+};
+
+extern template struct BigEndianDecimalWideIntegerStringConverter<Int128>;
+extern template struct BigEndianDecimalWideIntegerStringConverter<UInt128>;
+extern template struct BigEndianDecimalWideIntegerStringConverter<Int256>;
+extern template struct BigEndianDecimalWideIntegerStringConverter<UInt256>;
+
 /// Input physical type: BYTE_ARRAY.
 /// Output column type: Decimal<T>, where T = Int{32,64,128,256}.
 /// Output Field type: Decimal<T>.

@@ -50,6 +50,7 @@ namespace ProfileEvents
 {
     extern const Event ParquetRowsFilterExpression;
     extern const Event ParquetColumnsFilterExpression;
+    extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
 }
 
@@ -1910,6 +1911,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
+        size_t pruned_pages = 0;
         for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
         {
             Range & range = hyperrectangle[column_info.idx_in_output_block];
@@ -1965,12 +1967,15 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                 if (start_row > prev_row_idx)
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
-                ProfileEvents::increment(ProfileEvents::ParquetPrunedPages);
+                ++pruned_pages;
             }
         }
 
         if (size_t(row_group.meta->num_rows) > prev_row_idx)
             column.row_ranges_after_column_index.emplace_back(prev_row_idx, row_group.meta->num_rows);
+
+        if (pruned_pages)
+            ProfileEvents::increment(ProfileEvents::ParquetPrunedPages, pruned_pages);
     }
     catch (Exception & e)
     {
@@ -2835,6 +2840,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     if (max_rep > 0 || column.need_null_map)
         decodeRepOrDefLevels(def_encoding, max_def, page.num_values, std::span(encoded_def, encoded_def_size), page.def);
 
+    ProfileEvents::increment(ProfileEvents::ParquetReadPages);
     page.initialized = true;
     return true;
 }

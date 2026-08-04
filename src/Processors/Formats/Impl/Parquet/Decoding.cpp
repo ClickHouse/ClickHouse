@@ -1731,6 +1731,129 @@ template struct BigEndianDecimalFixedSizeConverter<Int128>;
 template struct BigEndianDecimalFixedSizeConverter<Int256>;
 
 template <typename T>
+static T convertBigEndianDecimalWideInteger(std::span<const char> data)
+{
+    if (data.empty())
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected empty wide-integer Decimal value");
+
+    using Unsigned = std::conditional_t<sizeof(T) == sizeof(UInt128), UInt128, UInt256>;
+    constexpr bool is_signed = std::numeric_limits<T>::is_signed;
+    const bool negative = static_cast<uint8_t>(data.front()) >= 0x80;
+
+    if constexpr (!is_signed)
+    {
+        if (negative)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Negative Parquet Decimal cannot be read as an unsigned wide integer");
+    }
+
+    const size_t leading_bytes = data.size() > sizeof(T) ? data.size() - sizeof(T) : 0;
+    const uint8_t extension = negative ? 0xff : 0;
+    for (size_t i = 0; i < leading_bytes; ++i)
+    {
+        if (static_cast<uint8_t>(data[i]) != extension)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Parquet Decimal does not have valid sign extension for the requested wide integer type");
+    }
+
+    if constexpr (is_signed)
+    {
+        if (leading_bytes && (static_cast<uint8_t>(data[leading_bytes]) >= 0x80) != negative)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Parquet Decimal is out of range for the requested signed wide integer type");
+    }
+
+    /// Initialize every limb with the sign extension, then replace the bytes present in the input.
+    /// This avoids shifting the whole wide integer once per input byte.
+    const std::span significant_data = data.subspan(leading_bytes);
+    constexpr size_t num_limbs = sizeof(T) / sizeof(UInt64);
+    static_assert(sizeof(T) % sizeof(UInt64) == 0);
+    const UInt64 extension_limb = negative ? std::numeric_limits<UInt64>::max() : 0;
+    Unsigned value;
+    for (size_t limb_idx = 0; limb_idx < num_limbs; ++limb_idx)
+    {
+        UInt64 limb = extension_limb;
+        for (size_t byte_idx = 0; byte_idx < sizeof(UInt64); ++byte_idx)
+        {
+            const size_t input_byte_offset = limb_idx * sizeof(UInt64) + byte_idx;
+            if (input_byte_offset >= significant_data.size())
+                break;
+
+            const UInt64 shift = byte_idx * 8;
+            const UInt64 mask = UInt64(0xff) << shift;
+            const UInt64 byte = static_cast<uint8_t>(significant_data[significant_data.size() - input_byte_offset - 1]);
+            limb = (limb & ~mask) | (byte << shift);
+        }
+
+        const size_t native_limb_idx = std::endian::native == std::endian::little
+            ? limb_idx
+            : num_limbs - limb_idx - 1;
+        value.items[native_limb_idx] = limb;
+    }
+
+    return static_cast<T>(value);
+}
+
+template <typename T>
+void BigEndianDecimalWideIntegerConverter<T>::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
+{
+    if (num_values > data.size() / input_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Not enough bytes for wide-integer Decimal values");
+
+    auto to_bytes = col.insertRawUninitialized(num_values);
+    chassert(to_bytes.size() == num_values * sizeof(T));
+    T * to = reinterpret_cast<T *>(to_bytes.data());
+    for (size_t i = 0; i < num_values; ++i)
+        to[i] = convertBigEndianDecimalWideInteger<T>(data.subspan(i * input_size, input_size));
+}
+
+template <typename T>
+void BigEndianDecimalWideIntegerConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+{
+    if (data.size() != input_size)
+        throw Exception(
+            ErrorCodes::CANNOT_PARSE_NUMBER,
+            "Unexpected value size in wide-integer Decimal statistics: {} != {}",
+            data.size(),
+            input_size);
+
+    out = Field(convertBigEndianDecimalWideInteger<T>(data));
+}
+
+template struct BigEndianDecimalWideIntegerConverter<Int128>;
+template struct BigEndianDecimalWideIntegerConverter<UInt128>;
+template struct BigEndianDecimalWideIntegerConverter<Int256>;
+template struct BigEndianDecimalWideIntegerConverter<UInt256>;
+
+template <typename T>
+void BigEndianDecimalWideIntegerStringConverter<T>::convertColumn(
+    std::span<const char> chars,
+    const UInt64 * offsets,
+    size_t separator_bytes,
+    size_t num_values,
+    IColumn & col) const
+{
+    auto to_bytes = col.insertRawUninitialized(num_values);
+    chassert(to_bytes.size() == num_values * sizeof(T));
+    T * to = reinterpret_cast<T *>(to_bytes.data());
+
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        const size_t begin = offsets[ssize_t(i) - 1];
+        const size_t size = offsets[i] - begin - separator_bytes;
+        to[i] = convertBigEndianDecimalWideInteger<T>(chars.subspan(begin, size));
+    }
+}
+
+template <typename T>
+void BigEndianDecimalWideIntegerStringConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+{
+    out = Field(convertBigEndianDecimalWideInteger<T>(data));
+}
+
+template struct BigEndianDecimalWideIntegerStringConverter<Int128>;
+template struct BigEndianDecimalWideIntegerStringConverter<UInt128>;
+template struct BigEndianDecimalWideIntegerStringConverter<Int256>;
+template struct BigEndianDecimalWideIntegerStringConverter<UInt256>;
+
+template <typename T>
 void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
     auto to_bytes = col.insertRawUninitialized(num_values);
