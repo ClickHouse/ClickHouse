@@ -35,6 +35,7 @@ class _Environment(MetaClasses.Serializable):
     USER_LOGIN: str
     FORK_NAME: str
     COMMIT_MESSAGE: str = ""
+    HEAD_UPDATE_USER: str = ""
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False
@@ -50,6 +51,7 @@ class _Environment(MetaClasses.Serializable):
     # whole inherited bucket into every job's output (toJson(needs)).
     JOB_KV_DATA_BASE_KEYS: List[str] = dataclasses.field(default_factory=list)
     COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
+    COMMIT_AUTHOR_EMAILS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
     name = "environment"
 
@@ -77,7 +79,9 @@ class _Environment(MetaClasses.Serializable):
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
         USER_LOGIN = ""
+        HEAD_UPDATE_USER = ""
         COMMIT_AUTHORS = []
+        COMMIT_AUTHOR_EMAILS = []
         FORK_NAME = REPOSITORY
         PR_BODY = ""
         PR_TITLE = ""
@@ -91,6 +95,7 @@ class _Environment(MetaClasses.Serializable):
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
                 github_event = json.load(f)
+            HEAD_UPDATE_USER = github_event.get("sender", {}).get("login", "")
             if "pull_request" in github_event:
                 FORK_NAME = github_event["pull_request"]["head"]["repo"]["full_name"]
                 EVENT_TYPE = Workflow.Event.PULL_REQUEST
@@ -128,6 +133,7 @@ class _Environment(MetaClasses.Serializable):
                     if email and "@" in email:
                         commit_authors.add(email)
                 COMMIT_AUTHORS = list(commit_authors)
+                COMMIT_AUTHOR_EMAILS = list(commit_authors)
             elif "schedule" in github_event:
                 EVENT_TYPE = Workflow.Event.SCHEDULE
                 SHA = os.getenv(
@@ -226,7 +232,9 @@ class _Environment(MetaClasses.Serializable):
             PR_BODY=PR_BODY,
             PR_TITLE=PR_TITLE,
             USER_LOGIN=USER_LOGIN,
+            HEAD_UPDATE_USER=HEAD_UPDATE_USER,
             COMMIT_AUTHORS=COMMIT_AUTHORS,
+            COMMIT_AUTHOR_EMAILS=COMMIT_AUTHOR_EMAILS,
             FORK_NAME=FORK_NAME,
             COMMIT_MESSAGE=COMMIT_MESSAGE,
             PR_LABELS=PR_LABELS,
@@ -236,6 +244,7 @@ class _Environment(MetaClasses.Serializable):
             # TODO: Find a better way to store and pass commit authors data through workflow
             JOB_KV_DATA={
                 "commit_authors": COMMIT_AUTHORS,
+                "commit_author_emails": COMMIT_AUTHOR_EMAILS,
                 # Initial parent PR inference:
                 # - Defaults to LINKED_PR_NUMBER, which is the PR merged by a push/merge-queue event
                 # - Can be explicitly overridden later via workflow hooks (see Info.set_parent_pr_number)

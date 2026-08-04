@@ -807,9 +807,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         result = _prepare_submodule_cache(workflow_config)
         results.append(result)
 
-    if workflow.enable_slack_feed:
+    # Always collect PR commit authors: Slack uses the human-filtered
+    # `commit_authors`, while security checks may need the complete author email
+    # set, including bot noreply addresses with a `+` suffix.
+    if env.PR_NUMBER or workflow.enable_slack_feed:
         if env.PR_NUMBER:
             commit_authors = set()
+            commit_author_emails = set()
             try:
                 # Find the first merge commit (going backwards from SHA) that has no parent from BASE_BRANCH
                 # This indicates a merge from outside the base branch, where we should stop (support complex git scenarious with forks syncronization)
@@ -865,6 +869,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
                 if commits_emails:
                     # Validate emails contain @ symbol
+                    commit_author_emails = set(
+                        email
+                        for email in commits_emails.split("\n")
+                        if email and "@" in email
+                    )
                     commit_authors = set(
                         email
                         for email in commits_emails.split("\n")
@@ -876,6 +885,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             if commit_authors:
                 env.COMMIT_AUTHORS = list(commit_authors)
                 env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
+            if commit_author_emails:
+                env.COMMIT_AUTHOR_EMAILS = list(commit_author_emails)
+                env.JOB_KV_DATA["commit_author_emails"] = list(commit_author_emails)
+                env.dump()
+            elif commit_authors:
                 env.dump()
         elif not env.COMMIT_AUTHORS:
             # A push event already has COMMIT_AUTHORS seeded from the webhook
@@ -896,7 +910,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 print(f"WARNING: Failed to get head commit author: {e}")
             authors = [author_email] if author_email else []
             env.COMMIT_AUTHORS = authors
+            env.COMMIT_AUTHOR_EMAILS = authors
             env.JOB_KV_DATA["commit_authors"] = authors
+            env.JOB_KV_DATA["commit_author_emails"] = authors
             env.dump()
 
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")

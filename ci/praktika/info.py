@@ -110,8 +110,16 @@ class Info:
         return self.env.USER_LOGIN
 
     @property
+    def head_update_user(self):
+        return self.env.HEAD_UPDATE_USER
+
+    @property
     def commit_authors(self):
         return self.env.COMMIT_AUTHORS or []
+
+    @property
+    def commit_author_emails(self):
+        return self.env.COMMIT_AUTHOR_EMAILS or []
 
     @property
     def run_url(self):
