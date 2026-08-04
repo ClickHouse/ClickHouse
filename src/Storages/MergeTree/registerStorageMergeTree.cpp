@@ -941,9 +941,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (is_stored_in_definition(name))
                 {
                     /// Stored values are durable: they were gated when they were introduced, so only
-                    /// fresh definitions are checked, against the session setting.
-                    if (is_fresh_definition && !session_allows)
-                        CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                    /// fresh definitions are checked. The experimental part is gated by the session
+                    /// setting, but the untyped-safety part (`requiresColumnTypeToCompress`, e.g. `T64`)
+                    /// runs unconditionally, so that a fresh definition rejects such a codec CREATE-like
+                    /// instead of `MergeTreeData` silently dropping the setting on the sanitize path.
+                    if (is_fresh_definition)
+                        CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ session_allows);
                 }
                 else
                 {
