@@ -118,10 +118,9 @@ wait_for_port "$DEAD_PORT"
 wait_for_port "$LIVE_PORT"
 wait_for_port "$EMPTY_PORT"
 
-# Both poll helpers read the awaited value and the row's existence in ONE query, so the two cannot be
-# sampled at different instants: a query observed and then gone can never reach the value, so it is
-# reported at once rather than polled for. Poll 300 ends the registration window, 600 the overall cap.
-# A non-numeric reply only means "not observed yet" and must not reach the arithmetic tests.
+# Both poll helpers read the awaited value and the row's existence in ONE query, so a query observed
+# and then gone is reported at once rather than polled for. Poll 300 ends the registration window,
+# 600 the overall cap; a non-numeric reply only means "not observed yet".
 
 # Counts the HTTP requests the still-running query itself has sent. The counter belongs to the
 # query's own thread group, so readiness probes, earlier groups and parallel copies cannot contribute.
@@ -205,6 +204,19 @@ outcome()
         ORDER BY event_time_microseconds DESC LIMIT 1"
 }
 
+# Whether a soft break timeout was reported as a cancellation. Only that property is pinned: whether
+# the read then fails with the aggregate NETWORK_ERROR or returns its partial result is a separate
+# contract, changed by #112930.
+break_outcome()
+{
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT if(exception_code IN (159, 394), 'reported as a cancellation', 'not reported as a cancellation')
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$1' AND type != 'QueryStart'
+        ORDER BY event_time_microseconds DESC LIMIT 1"
+}
+
 # Every SETTINGS pin below is measured load-bearing: http_max_tries turns the request count into a
 # per-option counter, send_logs_level suppresses the failover loop's own Error logging, and
 # parallel_replicas_for_cluster_engines keeps the read on the initiator. http_make_head_request is a guard.
@@ -250,12 +262,13 @@ wait "$CLIENT_PID" ||:
 grep -c -m1 'All uri' "$STDERR" | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
 outcome "$QUERY_ID_LAST"
 
-# An option skipped for being empty also advances to the next one, so that exit needs the same check.
-# The empty option answers only once the kill has been observed, so the skip happens on a cancelled
-# query; without the check the second option is requested anyway and the request count records it.
-# http_receive_timeout is above the harness window so the held read cannot complete on its own and
-# strand the release it waits for, and the second option is the responsive listener so an unwanted
-# attempt on it is counted at once instead of blocking for that same timeout.
+# An option skipped for being empty returns to the top of the failover loop, so the check there also
+# covers that exit. The empty option answers only once the kill has been observed, so the skip happens
+# on a cancelled query and an unwanted attempt on the second option is counted.
+
+# Two load-bearing pins: http_receive_timeout is above the harness window so the held read cannot
+# complete on its own and strand the release it waits for, and the second option is the responsive
+# listener so an unwanted attempt is counted at once instead of blocking for that timeout.
 echo "--- KILL QUERY while an empty option is skipped ---"
 QUERY_ID_EMPTY="04674_empty_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_EMPTY" --query "
@@ -294,8 +307,9 @@ ${CLICKHOUSE_CLIENT} --query "
              http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'"
 
-# Must not regress: timeout_overflow_mode = 'break' does not mark the query killed, so the failover
-# loop is not interrupted and the aggregate NETWORK_ERROR is still reported.
+# Must not regress: timeout_overflow_mode = 'break' does not mark the query killed, so the checks
+# added here must not fire for it. This is the discriminator against rethrowing on an error code
+# rather than on the query status.
 echo "--- timeout_overflow_mode = break ---"
 QUERY_ID_BREAK="04674_break_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_BREAK" --query "
@@ -303,5 +317,5 @@ ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_BREAK" --query "
     SETTINGS max_execution_time = 2, timeout_overflow_mode = 'break', http_receive_timeout = 5,
              http_max_tries = 1, http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'
-" 2>&1 | grep -o -m1 'All uri (2) options are unreachable'
-outcome "$QUERY_ID_BREAK"
+" > /dev/null 2>&1 ||:
+break_outcome "$QUERY_ID_BREAK"

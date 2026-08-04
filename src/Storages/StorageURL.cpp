@@ -599,6 +599,9 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
+        /// Also reached again when an empty option is skipped, and on re-entry from the callers.
+        CurrentThread::checkIfNotCancelled();
+
         bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
 
@@ -629,7 +632,6 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             if (context_->getSettingsRef()[Setting::engine_url_skip_empty_files] && res->eof() && option != std::prev(end))
             {
                 last_skipped_empty_res = {request_uri, std::move(res)};
-                CurrentThread::checkIfNotCancelled();
                 continue;
             }
 
