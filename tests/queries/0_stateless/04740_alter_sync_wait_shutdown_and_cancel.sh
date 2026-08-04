@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, replica, zookeeper, no-shared-merge-tree
+# Tags: long, replica, zookeeper, no-shared-merge-tree, no-replicated-database
+# no-replicated-database: creates two explicit replicas (r1, r2) sharing one ZooKeeper path,
+#                         and the replica name is rewritten under a Replicated database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
