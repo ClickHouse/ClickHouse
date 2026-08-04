@@ -438,17 +438,71 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
+namespace
+{
+    /// The parser splits `GRANT READ, WRITE ON FILE` into two sibling elements
+    /// (one READ, one WRITE) on the same source. makeBackwardCompatible() only
+    /// collapses the combined READ|WRITE form, so unless these siblings are merged
+    /// first they are emitted as modern syntax (READ, WRITE ON FILE) instead of the
+    /// backward-compatible deprecated form (FILE ON *.*). Merge each adjacent
+    /// READ+WRITE pair (in either order) that is otherwise identical.
+    AccessRightsElements mergeReadWriteSiblings(const AccessRightsElements & elements)
+    {
+        static const AccessFlags read_flags = AccessFlags(AccessType::READ);
+        static const AccessFlags write_flags = AccessFlags(AccessType::WRITE);
+
+        AccessRightsElements result;
+        result.reserve(elements.size());
+
+        for (size_t i = 0; i != elements.size(); ++i)
+        {
+            if (i + 1 < elements.size())
+            {
+                const auto & cur = elements[i];
+                const auto & next = elements[i + 1];
+
+                const bool complementary_read_write =
+                    ((cur.access_flags == read_flags && next.access_flags == write_flags)
+                     || (cur.access_flags == write_flags && next.access_flags == read_flags));
+
+                const bool same_target =
+                    (cur.parameter == next.parameter) && (cur.database == next.database)
+                    && (cur.table == next.table) && (cur.columns == next.columns)
+                    && (cur.filter == next.filter) && (cur.wildcard == next.wildcard)
+                    && (cur.default_database == next.default_database)
+                    && (cur.grant_option == next.grant_option)
+                    && (cur.is_partial_revoke == next.is_partial_revoke);
+
+                if (complementary_read_write && same_target)
+                {
+                    AccessRightsElement merged = cur;
+                    merged.access_flags = read_flags | write_flags;
+                    result.push_back(std::move(merged));
+                    ++i;
+                    continue;
+                }
+            }
+
+            result.push_back(elements[i]);
+        }
+
+        return result;
+    }
+}
+
 void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
 {
+    const AccessRightsElements merged = mergeReadWriteSiblings(*this);
+
     bool no_output = true;
     /// Track which access flags have already been output within the current group
     /// to avoid duplicate keywords after backward-compatible conversion
     /// (e.g., READ ON FILE and WRITE ON FILE both become FILE after makeBackwardCompatible).
     AccessFlags group_flags;
 
-    for (size_t i = 0; i != size(); ++i)
+    for (size_t i = 0; i != merged.size(); ++i)
     {
-        auto element = (*this)[i];
+        auto element = merged[i];
         element.makeBackwardCompatible();
 
         auto keywords = element.access_flags.toKeywords();
@@ -476,11 +530,11 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         }
 
         bool next_element_on_same_db_and_table = false;
-        if (i != size() - 1)
+        if (i != merged.size() - 1)
         {
             /// Compare backward-compatible versions of both elements so that
             /// the parameter field (cleared by makeBackwardCompatible) matches on both sides.
-            auto next_element = (*this)[i + 1];
+            auto next_element = merged[i + 1];
             next_element.makeBackwardCompatible();
             if (element.sameDatabaseAndTableAndParameter(next_element))
             {
