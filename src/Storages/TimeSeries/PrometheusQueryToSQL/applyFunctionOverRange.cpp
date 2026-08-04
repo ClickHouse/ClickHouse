@@ -308,8 +308,19 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"changes",
+             {
+                 "timeSeriesChangesToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"resets",
+             {
+                 "timeSeriesResetsToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
-            /// resets
             /// avg_over_time
             /// min_over_time
             /// max_over_time

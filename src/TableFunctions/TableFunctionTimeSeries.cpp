@@ -208,7 +208,7 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
 - `min_time - Start timestamp, inclusive.
 - `max_time - End timestamp, inclusive.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The function returns three columns:
 - `id` - Contains the identifiers of time series matching the specified selector.
@@ -243,7 +243,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 - `evaluation_time - The evaluation timestamp. To evaluate a query at the current time, use `now()` as `evaluation_time`.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The function can returns different columns depending on the result type of the query passed to parameter `promql_query`:
 
@@ -264,7 +264,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `last_over_time` |
+| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `deriv`, `predict_linear`, `last_over_time`, `changes`, `resets` |
 | Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -273,6 +273,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other    | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
+
+**Note**: Prometheus stale markers are recognized only when the sample value column of the `TimeSeries` table is `Float64`. The stale marker is a specific `NaN` payload, and a `Float32` value column cannot preserve it: the marker is downcast to an ordinary `NaN` on insert, so on such a table stale samples are treated as regular `NaN` values by selectors and range functions.
 
 ### Operators {#operators}
 
@@ -313,7 +315,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 - `end_time` - The end time of the evaluation range.
 - `step` - The step used to iterate the evaluation time from `start_time` to `end_time` (inclusively).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The function can returns different columns depending on the result type of the query passed to parameter `promql_query`:
 
@@ -334,7 +336,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `last_over_time` |
+| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `deriv`, `predict_linear`, `last_over_time`, `changes`, `resets` |
 | Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -343,6 +345,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other    | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
+
+**Note**: Prometheus stale markers are recognized only when the sample value column of the `TimeSeries` table is `Float64`. The stale marker is a specific `NaN` payload, and a `Float32` value column cannot preserve it: the marker is downcast to an ordinary `NaN` on insert, so on such a table stale samples are treated as regular `NaN` values by selectors and range functions.
 
 ### Operators {#operators}
 
