@@ -25,9 +25,8 @@ struct StorageSnapshot
     {
         virtual ~Data() = default;
     };
-
     using DataPtr = std::shared_ptr<const Data>;
-    DataPtr data;
+    const DataPtr data;
 
     StorageSnapshot(
         const IStorage & storage_,
