@@ -561,6 +561,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
@@ -599,6 +600,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
