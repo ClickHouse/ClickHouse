@@ -135,7 +135,7 @@ struct TimeWindowImpl
 };
 
 template <TimeWindowFunctionName type>
-class FunctionTimeWindow final : public IFunction
+class FunctionTimeWindow : public IFunction
 {
 public:
     static constexpr auto name = TimeWindowImpl<type>::name;

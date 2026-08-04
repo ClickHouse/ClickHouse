@@ -157,12 +157,8 @@ private:
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 
-    VectorWithMemoryTracking<ColumnPtr> splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets, IColumn & bucket_index_column) const;
+    VectorWithMemoryTracking<ColumnPtr> splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets) const;
     void collectMapFromBuckets(const VectorWithMemoryTracking<ColumnPtr> & map_buckets, IColumn & map_column) const;
-    void collectMapFromBucketsWithOrder(
-        const VectorWithMemoryTracking<ColumnPtr> & map_buckets,
-        const IColumn & bucket_index_column,
-        IColumn & map_column) const;
 };
 
 }
