@@ -241,6 +241,7 @@ DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
+void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -267,6 +268,9 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
-    });
+    }, Documentation{
+        .description = "A read-only database that exposes files in a directory on the local filesystem as tables, queryable by their path.",
+        .syntax = "ENGINE = Filesystem([path])",
+        .related = {"S3", "HDFS"}});
 }
 }

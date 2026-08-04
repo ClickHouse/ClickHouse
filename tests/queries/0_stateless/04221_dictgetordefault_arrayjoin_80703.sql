@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
+
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/80703
 -- `dictGetOrDefault` + `arrayJoin` in WHERE on a `MergeTree` with a `PROJECTION` used to throw `NOT_FOUND_COLUMN_IN_BLOCK`.
 

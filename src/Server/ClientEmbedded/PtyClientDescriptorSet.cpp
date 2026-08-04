@@ -1,6 +1,7 @@
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/logger_useful.h>
 
 #include <base/openpty.h>
 #include <sys/ioctl.h>
@@ -17,12 +18,30 @@ namespace ErrorCodes
 
 void PtyClientDescriptorSet::FileDescriptorWrapper::close()
 {
-    if (fd != -1)
-    {
-        if (::close(fd) != 0 && errno != EINTR)
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Unexpected error while closing file descriptor");
-    }
+    if (fd == -1)
+        return;
+    /// Capture and clear the descriptor before calling `::close`. After `::close` returns
+    /// (success or failure), the kernel-side state of this descriptor is gone and the
+    /// number can be reused by another `open` call in this process. Keeping `fd` set
+    /// after a failed close would invite a double-close from the destructor that hits an
+    /// unrelated descriptor opened in the meantime.
+    int to_close = fd;
     fd = -1;
+    if (::close(to_close) != 0 && errno != EINTR)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Unexpected error while closing file descriptor");
+}
+
+
+PtyClientDescriptorSet::FileDescriptorWrapper::~FileDescriptorWrapper()
+{
+    try
+    {
+        close();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -46,7 +65,7 @@ PtyClientDescriptorSet::PtyClientDescriptorSet(const String & term_name_, int wi
     fd_sink.open(pty_slave.get(), boost::iostreams::never_close_handle);
 
     // disable signals from tty
-    struct termios tios;
+    struct termios tios{};
     if (tcgetattr(pty_slave.get(), &tios) == -1)
     {
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot get termios from tty via tcgetattr");

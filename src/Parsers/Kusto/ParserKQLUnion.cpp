@@ -49,7 +49,7 @@ bool ParserKQLUnion::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Parse the right subquery as KQL
     ASTPtr right_select_node;
     Tokens right_tokens(right_query.data(), right_query.data() + right_query.size(), 0, true);
-    IParser::Pos right_pos(right_tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos right_pos(right_tokens, pos);
     if (!ParserKQLWithUnionQuery().parse(right_pos, right_select_node, expected))
         return false;
 
@@ -71,7 +71,7 @@ bool ParserKQLUnion::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// Parse the union query as standard SQL and use its tables expression
     Tokens union_tokens(union_query.data(), union_query.data() + union_query.size(), 0, true);
-    IParser::Pos union_pos(union_tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos union_pos(union_tokens, pos);
 
     ASTPtr union_select;
     ParserSelectWithUnionQuery union_parser;
@@ -117,7 +117,7 @@ bool ParserKQLUnion::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Set project to *
     String star = "*";
     Tokens star_tokens(star.data(), star.data() + star.size(), 0, true);
-    IParser::Pos star_pos(star_tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos star_pos(star_tokens, pos);
     ASTPtr select_expr;
     if (!ParserNotEmptyExpressionList(true).parse(star_pos, select_expr, expected))
         return false;

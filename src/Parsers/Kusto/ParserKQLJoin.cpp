@@ -127,7 +127,7 @@ bool ParserKQLJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr right_select_node;
     {
         Tokens right_tokens(right_query.data(), right_query.data() + right_query.size(), 0, true);
-        IParser::Pos right_pos(right_tokens, pos.max_depth, pos.max_backtracks);
+        IParser::Pos right_pos(right_tokens, pos);
         if (!ParserKQLWithUnionQuery().parse(right_pos, right_select_node, expected))
             return false;
     }
@@ -137,7 +137,7 @@ bool ParserKQLJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// In KQL "on col1, col2" means "on left.col1 = right.col1 AND left.col2 = right.col2"
     /// We add suffix "1" for the right table columns (ClickHouse join convention)
     String sql_on;
-    if (on_conditions.find("==") == String::npos && on_conditions.find('=') == String::npos)
+    if (!on_conditions.contains("==") && !on_conditions.contains('='))
     {
         /// Simple column name(s) - KQL convention: on col means left.col = right.col
         /// Handle comma-separated keys: on a, b -> a = a1 AND b = b1
@@ -239,7 +239,7 @@ bool ParserKQLJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Parse on expression
     String on_expr_str = sql_on;
     Tokens on_tokens(on_expr_str.data(), on_expr_str.data() + on_expr_str.size(), 0, true);
-    IParser::Pos on_pos(on_tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos on_pos(on_tokens, pos);
     ASTPtr on_expr;
     if (!ParserExpressionWithOptionalAlias(false).parse(on_pos, on_expr, expected))
         return false;

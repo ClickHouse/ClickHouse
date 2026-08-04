@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -19,6 +18,7 @@
 #include <Storages/MutationCommands.h>
 
 #include <memory>
+#include <mutex>
 
 #include <Storages/IPartitionStrategy.h>
 namespace DB
@@ -64,6 +64,10 @@ public:
 
     String getName() const override;
 
+    /// The concrete data format resolved for this table (after schema/format inference).
+    /// Used by the unified `URL` engine to persist the delegate's inferred format.
+    String getFormatName() const { return configuration->format; }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -92,6 +96,12 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    /// Reading a `.null`/`.size0`/... subcolumn does not skip reading the parent column from
+    /// these file formats, and the native readers (e.g. Parquet V3 `PREWHERE`) cannot supply such
+    /// subcolumns as standalone inputs, so `isNotNull(x)` -> `not(x.null)` pushed into `PREWHERE`
+    /// throws `NOT_FOUND_COLUMN_IN_BLOCK`. Disable the optimization, like `StorageFile`/`StorageURL`.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
@@ -99,6 +109,8 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+
+    bool isIcebergStorage() const { return configuration->isIcebergConfiguration(); }
 
     bool isObjectStorage() const override { return true; }
 
@@ -143,6 +155,8 @@ public:
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
+    std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
@@ -156,9 +170,9 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    bool supportsDelete() const override;
 
-    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
+    bool supportsParallelInsert() const override;
 
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
@@ -198,6 +212,11 @@ protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
+    /// Resolve the deferred hive partitioning sample path. Requires listing the object storage.
+    void resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context);
+
+    VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
+
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -222,6 +241,12 @@ protected:
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
+
+    /// Set only in the constructor when hive partitioning detection is deferred to the first use.
+    bool hive_partitioning_sample_path_deferred = false;
+    std::mutex hive_partitioning_resolution_mutex;
+    /// Stays false on a failed resolution, so the next query retries it.
+    bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
 
     LoggerPtr log;
 

@@ -28,7 +28,9 @@ class ASTColumnDeclaration;
 class ASTDropQuery;
 class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
+class ASTRefreshStrategy;
 class ASTSetQuery;
+class ASTStorage;
 struct ASTTableExpression;
 struct ASTTableJoin;
 struct ASTWindowDefinition;
@@ -130,11 +132,11 @@ public:
         if (!parsed_query)
             return {};
 
-        const auto & query_ast = *parsed_query->template as<ParsedAST>();
-        if (!query_ast.table)
+        const auto * query_ast = parsed_query->template as<ParsedAST>();
+        if (!query_ast || !query_ast->table)
             return {};
 
-        auto table_name = query_ast.getTable();
+        auto table_name = query_ast->getTable();
         auto it = original_table_name_to_fuzzed.find(table_name);
         if (it == original_table_name_to_fuzzed.end())
             return {};
@@ -145,8 +147,14 @@ public:
             /// Parse query from scratch for each table instead of clone,
             /// to store proper pointers to inlined data,
             /// which are not copied during clone.
-            auto & query = queries.emplace_back(tryParseQueryForFuzzedTables<Parser>(full_query));
-            query->template as<ParsedAST>()->setTable(fuzzed_name);
+            auto query = tryParseQueryForFuzzedTables<Parser>(full_query);
+            if (!query)
+                continue;
+            auto * fuzzed_ast = query->template as<ParsedAST>();
+            if (!fuzzed_ast)
+                continue;
+            fuzzed_ast->setTable(fuzzed_name);
+            queries.emplace_back(std::move(query));
         }
 
         return queries;
@@ -218,6 +226,15 @@ private:
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
+    /// Builds a fuzzed asterisk/matcher (`*`, `* LIKE/ILIKE '<pattern>'`, `table.*`, `COLUMNS(...)`),
+    /// optionally with column transformers, exercising the parser path added in
+    /// https://github.com/ClickHouse/ClickHouse/pull/104569.
+    ASTPtr makeFuzzedAsteriskLikeMatcher();
+    /// Builds an `ASTColumnsTransformerList` with fuzzed `APPLY` / `EXCEPT` / `REPLACE` transformers.
+    ASTPtr makeFuzzedColumnTransformers();
+    /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
+    /// occasionally qualified with a known table name.
+    ASTPtr makeFuzzedVirtualColumn();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
@@ -229,6 +246,8 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
+    void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
@@ -238,10 +257,18 @@ private:
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
     void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
+    void fuzzTableFunctionName(ASTPtr & table_function);
+    void fuzzClusterFunctionArguments(ASTFunction & fn);
+    void fuzzMergeFunctionArguments(ASTFunction & fn);
+    String makeBraceExpansion();
+    String makeRemoteHostDescriptor(bool secure);
+    void wrapTableAsDistributed(ASTTableExpression & table);
+    void wrapTableAsMerge(ASTTableExpression & table);
+    void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
-    ASTPtr tryNegateNextPredicate(const ASTPtr & pred, int prob);
+    ASTPtr fuzzPredicate(const ASTPtr & pred, int negProb);
     ASTPtr setIdentifierAliasOrNot(ASTPtr & exp);
     ASTPtr addJoinClause();
     ASTPtr addArrayJoinClause();
@@ -263,6 +290,7 @@ private:
     template <typename Container>
     const auto & pickRandomly(pcg64 & rand, const Container & container)
     {
+        chassert(!container.empty());
         std::uniform_int_distribution<size_t> d{0, container.size() - 1};
         auto it = container.begin();
         std::advance(it, d(rand));

@@ -34,7 +34,7 @@ enum class SubstringDirection : uint8_t
 };
 
 template <bool is_utf8, SubstringDirection direction>
-class FunctionLeftRight : public IFunction
+class FunctionLeftRight final : public IFunction
 {
 public:
     static constexpr auto name = direction == SubstringDirection::Left
@@ -100,7 +100,7 @@ public:
                 // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
-                    Int64 abs_length_value;
+                    Int64 abs_length_value = 0;
                     if (common::subOverflow(Int64(0), length_value, abs_length_value))
                         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                             "Argument of function {} is out of bound: {}", getName(), length_value);
@@ -127,7 +127,7 @@ public:
                         slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
                     else if (length < 0)
                     {
-                        Int64 abs_length;
+                        Int64 abs_length = 0;
                         if (common::subOverflow(Int64(0), length, abs_length))
                             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                 "Argument of function {} is out of bound: {}", getName(), length);

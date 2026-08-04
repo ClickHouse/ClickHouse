@@ -36,7 +36,7 @@ namespace
         }
     }
 
-    class FunctionCurrentRoles : public IFunction
+    class FunctionCurrentRoles final : public IFunction
     {
     public:
         static FunctionPtr create(const ContextPtr & context, Kind kind)

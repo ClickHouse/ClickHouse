@@ -41,7 +41,10 @@ ENGINE = MergeTree
 ORDER BY (resource)
 AS SELECT map('cluster', 'b', 'c', '1'), map('d', 'e', 'job', 'g'), map();
 
-SELECT * FROM t_88558_map
+-- Wrap each `Map` column in `mapSort` so the output is deterministic regardless of
+-- the on-disk map serialization version (`map_serialization_version_for_zero_level_parts`),
+-- which CI randomizes (`with_buckets` reorders keys by hash bucket).
+SELECT mapSort(attribute), mapSort(resource), mapSort(scope) FROM t_88558_map
 WHERE has(arrayConcat(mapKeys(attribute), mapKeys(scope), mapKeys(resource)), 'cluster')
   AND has(arrayConcat(mapKeys(attribute), mapKeys(scope), mapKeys(resource)), 'job');
 

@@ -14,38 +14,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
-
-namespace
-{
-String extractProviderError(const std::string & response_body, int status_code)
-{
-    try
-    {
-        Poco::JSON::Parser err_parser;
-        auto err_json = err_parser.parse(response_body);
-        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
-        if (err_obj && err_obj->has("error"))
-        {
-            auto err = err_obj->getObject("error");
-            if (err)
-            {
-                String msg = err->optValue<String>("message", "");
-                String type = err->optValue<String>("type", "");
-                if (!msg.empty())
-                    return fmt::format("HTTP {} [{}]: {}", status_code, type, msg);
-            }
-        }
-    }
-    catch (...) {} // NOLINT(bugprone-empty-catch) Ok: we throw error with full response body below
-
-    size_t max_len = 256;
-    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
-        response_body.substr(0, std::min(response_body.size(), max_len)));
-}
-}
-
 
 static constexpr auto DEFAULT_ANTHROPIC_API_VERSION = "2023-06-01";
 
@@ -110,7 +80,8 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    http_request.set("x-api-key", api_key);
+    if (!api_key.empty()) /// not all providers need API key
+        http_request.set("x-api-key", api_key);
     http_request.set("anthropic-version", api_version);
     http_request.setContentLength(body.size());
 
@@ -130,9 +101,9 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "Anthropic provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+        throw AIProviderHTTPException(
+            status,
+            PreformattedMessage::create("Anthropic provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
     }
 
     Poco::JSON::Parser parser;
@@ -150,30 +121,32 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
         ai_response.finish_reason = anthropic_stop_reason;
 
     auto content = json_obj->getArray("content");
-    if (content)
+    if (!content)
+        throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
+            "Anthropic response is missing 'content' array");
+
+    for (unsigned i = 0; i < content->size(); ++i)
     {
-        for (unsigned i = 0; i < content->size(); ++i)
+        auto block = content->getObject(i);
+        if (!block)
+            throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
+                "Anthropic response 'content' does not contain output");
+        String type = block->optValue<String>("type", "");
+        if (type == "text")
         {
-            auto block = content->getObject(i);
-            if (!block)
-                continue;
-            String type = block->optValue<String>("type", "");
-            if (type == "text")
-            {
-                ai_response.result = block->optValue<String>("text", "");
-                break;
-            }
-            else if (type == "tool_use")
-            {
-                auto input = block->getObject("input");
-                if (input)
-                {
-                    std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                    input->stringify(ss);
-                    ai_response.result = ss.str();
-                }
-                break;
-            }
+            ai_response.result = block->optValue<String>("text", "");
+            break;
+        }
+        else if (type == "tool_use")
+        {
+            auto input = block->getObject("input");
+            if (!input)
+                throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
+                    "Anthropic response output is missing for tool_use block");
+            std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            input->stringify(ss);
+            ai_response.result = ss.str();
+            break;
         }
     }
 

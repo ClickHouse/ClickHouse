@@ -35,7 +35,7 @@ bool isStringOrFixedStringOrNativeNumber(const IDataType & arg)
 
 }
 
-class FunctionConv : public IFunction
+class FunctionConv final : public IFunction
 {
 public:
     static constexpr auto name = "conv";
@@ -61,7 +61,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr number_column = arguments[0].column;
-        if (!isStringOrFixedString(arguments[0].type))
+        if (!isString(arguments[0].type))
         {
             ColumnWithTypeAndName string_arg = {number_column, arguments[0].type, arguments[0].name};
             number_column = castColumn(string_arg, std::make_shared<DataTypeString>());

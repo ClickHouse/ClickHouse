@@ -4,8 +4,6 @@
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
 #include <Parsers/Kusto/Utilities.h>
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/split.hpp>
 #include <Poco/String.h>
 
 
@@ -89,7 +87,7 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         kind = getConvertedArgument(fn_name, pos);
     }
-    assert(kind == "'normal'" || kind == "'regex'");
+    chassert(kind == "'normal'" || kind == "'regex'");
 
     if (kind == "'normal'")
         out = "countSubstrings(" + source + ", " + search + ")";
@@ -773,7 +771,7 @@ bool Trim::convertImpl(String & out, IParser::Pos & pos)
 
     const auto regex = getArgument(fn_name, pos, ArgumentState::Raw);
     const auto source = getArgument(fn_name, pos, ArgumentState::Raw);
-    out = kqlCallToExpression("trim_start", {regex, fmt::format("trim_end({0}, {1})", regex, source)}, pos.max_depth, pos.max_backtracks);
+    out = kqlCallToExpression("trim_start", {regex, fmt::format("trim_end({0}, {1})", regex, source)}, pos);
 
     return true;
 }

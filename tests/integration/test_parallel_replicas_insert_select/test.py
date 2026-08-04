@@ -106,7 +106,7 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
         == ""
     )
 
-    execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
+    execute_on_cluster("SYSTEM FLUSH LOGS query_log")
     number_of_queries = node1.query(
             f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND initial_query_id = '{query_id}' AND type = 'QueryFinish' AND query_kind = 'Insert'""",
         settings={"skip_unavailable_shards": 1},
@@ -322,7 +322,7 @@ def test_insert_select_where(start_cluster, max_parallel_replicas, parallel_repl
     )
 
     # check that query executed in distributed way
-    execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
+    execute_on_cluster("SYSTEM FLUSH LOGS query_log")
     number_of_queries = node1.query(
             f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND initial_query_id = '{query_id}' AND type = 'QueryFinish' AND query_kind = 'Insert'""",
         settings={"skip_unavailable_shards": 1},
