@@ -367,7 +367,6 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    DOCS = "Docs check"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
     DOCS_EXAMPLES = "Docs examples"
     CLICKBENCH = "ClickBench"
