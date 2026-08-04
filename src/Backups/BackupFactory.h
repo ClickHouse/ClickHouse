@@ -37,8 +37,8 @@ public:
         ContextPtr context;
         bool is_internal_backup = false;
         bool is_lightweight_snapshot = false;
-        /// See BackupSettings::experimental_backup_pack_format.
-        bool experimental_backup_pack_format = false;
+        /// See BackupSettings::backup_pack_format.
+        bool backup_pack_format = false;
         BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
         size_t data_file_name_prefix_length = 3;
         std::shared_ptr<IBackupCoordination> backup_coordination;

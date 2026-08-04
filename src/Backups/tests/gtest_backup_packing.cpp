@@ -39,7 +39,7 @@ BackupCoordinationFileInfos::Config packedConfig(UInt64 pack_size, UInt64 pack_m
         /* pack_format= */ true, pack_size, pack_min_size};
 }
 
-BackupCoordinationFileInfos::Config plainDedupConfig()
+BackupCoordinationFileInfos::Config unpackedConfig()
 {
     return BackupCoordinationFileInfos::Config{
         /* plain_backup= */ false, BackupDataFileNameGeneratorType::FirstFileName, /* prefix_length= */ 3};
@@ -69,7 +69,7 @@ std::map<String, BackupFileInfo> resolve(const BackupCoordinationFileInfos::Conf
 /// Packing off: every blob keeps its own object (pack_id == -1) -- the discriminator for the packed tests below.
 TEST(BackupPackingAssignment, PackingOffLeavesOwnObjects)
 {
-    auto r = resolve(plainDedupConfig(), {makeInfo("a", 10, 1), makeInfo("b", 20, 2)});
+    auto r = resolve(unpackedConfig(), {makeInfo("a", 10, 1), makeInfo("b", 20, 2)});
     EXPECT_EQ(r["a"].pack_id, -1);
     EXPECT_EQ(r["b"].pack_id, -1);
 }

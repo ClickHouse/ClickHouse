@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# experimental_backup_pack_format bundles many small backup blobs into a few pack objects. Row counts are
+# backup_pack_format bundles many small backup blobs into a few pack objects. Row counts are
 # tiny on purpose: the number of data files, hence of packs, follows the schema and not the row count, so a
 # few dozen rows exercises every path.
 
@@ -34,19 +34,19 @@ small_insert="INSERT INTO t SELECT number, toString(number) FROM numbers(50)"
 
 # Case 1: small files only -> packed.
 roundtrip "small-only" "Disk('backups', '${name}_1')" "$small_create" "$small_insert" \
-    "SETTINGS experimental_backup_pack_format=1"
+    "SETTINGS backup_pack_format=1"
 
 # Case 2: mixed small + big; big blobs stay their own object, small ones packed.
 roundtrip "mixed" "Disk('backups', '${name}_2')" \
     "CREATE TABLE t (a UInt64, s String) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=0" \
     "INSERT INTO t SELECT number, repeat('x', 200) FROM numbers(50)" \
-    "SETTINGS experimental_backup_pack_format=1, backup_pack_min_size=200"
+    "SETTINGS backup_pack_format=1, backup_pack_min_size=200"
 
 # Case 3: small files spilling across a few packs. pack_size is chosen just under the packable total so it
 # spills into 2-3 packs (kept tiny on purpose) -- then assert >1 pack actually formed.
 roundtrip "multi-pack" "Disk('backups', '${name}_3')" "$small_create" \
     "$small_insert" \
-    "SETTINGS experimental_backup_pack_format=1, backup_pack_size=800"
+    "SETTINGS backup_pack_format=1, backup_pack_size=800"
 npacks=$(ls "${backups_disk_path}${name}_3"/packs_* 2>/dev/null | wc -l)
 if [ "$npacks" -gt 1 ]; then echo "multi-pack spilled"; else echo "multi-pack ONLY $npacks pack(s)"; fi
 
@@ -54,7 +54,7 @@ if [ "$npacks" -gt 1 ]; then echo "multi-pack spilled"; else echo "multi-pack ON
 roundtrip "dedup" "Disk('backups', '${name}_4')" \
     "CREATE TABLE t (a UInt64, b UInt64) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0" \
     "INSERT INTO t SELECT number, number FROM numbers(50)" \
-    "SETTINGS experimental_backup_pack_format=1"
+    "SETTINGS backup_pack_format=1"
 # A duplicate of a packed member must not write a loose own-object (it would land nested under data/...),
 # so the backup dir holds nothing but the manifest and the packs.
 find "${backups_disk_path}${name}_4" -type f ! -name '.backup' ! -name 'packs_*' | wc -l
@@ -65,17 +65,17 @@ roundtrip "setting-off" "Disk('backups', '${name}_6')" "$small_create" "$small_i
 # Case 5: incremental backup on top of a packed base.
 ${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS t; $small_create"
 ${CLICKHOUSE_CLIENT} --query "$small_insert"
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_base') SETTINGS experimental_backup_pack_format=1" | grep -o BACKUP_CREATED
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_base') SETTINGS backup_pack_format=1" | grep -o BACKUP_CREATED
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t SELECT number, toString(number) FROM numbers(50, 50)"
 incr_before=$(checksum t)
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_incr') SETTINGS experimental_backup_pack_format=1, base_backup=Disk('backups', '${name}_base')" | grep -o BACKUP_CREATED
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_incr') SETTINGS backup_pack_format=1, base_backup=Disk('backups', '${name}_base')" | grep -o BACKUP_CREATED
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE t FROM Disk('backups', '${name}_incr') SETTINGS base_backup=Disk('backups', '${name}_base')" | grep -o RESTORED
 incr_after=$(checksum t)
 if [ "$incr_before" = "$incr_after" ]; then echo "incremental identical"; else echo "incremental MISMATCH"; fi
 
 # Case 7: packing is mutually exclusive with an archive destination.
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_7.zip') SETTINGS experimental_backup_pack_format=1" 2>&1 \
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_7.zip') SETTINGS backup_pack_format=1" 2>&1 \
     | grep -o "is not supported with an archive destination" | head -1
 
 # Case 8: system.backups accounting. A pack is one entry whose stored size includes the serialized front index.
@@ -84,7 +84,7 @@ ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_7.zip')
 ${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS t; $small_create"
 ${CLICKHOUSE_CLIENT} --query "$small_insert"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_8off') SETTINGS id='${name}_8off'" | grep -o BACKUP_CREATED
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_8on') SETTINGS id='${name}_8on', experimental_backup_pack_format=1" | grep -o BACKUP_CREATED
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_8on') SETTINGS id='${name}_8on', backup_pack_format=1" | grep -o BACKUP_CREATED
 ${CLICKHOUSE_CLIENT} --query "
 SELECT
     (SELECT num_entries FROM system.backups WHERE id='${name}_8on') <
@@ -105,7 +105,7 @@ SELECT
 
 # Case 9: a tampered archive manifest carrying <num_packs> must fail closed on read. An archive is never packed
 # on write (rejected), so num_packs>0 in an archive backup is corruption -- RESTORE must reject it as
-# BACKUP_DAMAGED instead of chasing a non-existent sibling packs_* object through the plain reader.
+# BACKUP_DAMAGED instead of chasing a non-existent sibling packs_* object through the per-file read path.
 ${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS t; $small_create"
 ${CLICKHOUSE_CLIENT} --query "$small_insert"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_9.zip')" | grep -o BACKUP_CREATED
@@ -127,15 +127,16 @@ ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE t FROM Disk('backups', '${name}_9.zi
 
 # Case 10: packing is unsupported on the plain path (deduplicate_files=0), which doesn't build the dedup
 # identity packing needs -- reject rather than silently no-op.
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_10') SETTINGS experimental_backup_pack_format=1, deduplicate_files=0" 2>&1 \
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_10') SETTINGS backup_pack_format=1, deduplicate_files=0" 2>&1 \
     | grep -o "not supported with deduplicate_files" | head -1
 
-# Case 11: the manifest's <packed> markers and the packs' front indexes state the same membership, and
-# restore must reject any disagreement -- a member dropped from an index would otherwise be read as an own
-# object of the same data_file id. Each case tampers with a copy of one good packed backup.
+# Case 11: the manifest's <packed> markers and the packs' front indexes state the same membership and the same
+# byte ranges, and restore must reject any disagreement -- a member dropped from an index would otherwise be
+# read as an own object of the same data_file id, and an understated member size would restore a short file
+# through the ranged-copy path. Each case tampers with a copy of one good packed backup.
 ${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS t; $small_create"
 ${CLICKHOUSE_CLIENT} --query "$small_insert"
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_11') SETTINGS experimental_backup_pack_format=1" | grep -o BACKUP_CREATED
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_11') SETTINGS backup_pack_format=1" | grep -o BACKUP_CREATED
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
 
 restore_tampered() {
@@ -149,7 +150,7 @@ import glob, os, re, struct, sys
 directory, mode = sys.argv[1], sys.argv[2]
 manifest_path = os.path.join(directory, ".backup")
 
-if mode != "drop_index_member":
+if mode not in ("drop_index_member", "shrink_index_member"):
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest = f.read()
     if mode == "drop_num_packs":
@@ -198,21 +199,30 @@ for _ in range(count):
     members.append((name, struct.unpack_from(entry_format, pack, pos)))
     pos += entry_size
 
-# Drop the first member. Bodies keep their absolute offsets, and the shortened index is zero-padded back to
-# its original length, so every surviving member still resolves -- only the dropped one goes missing.
-index = bytearray(pack[:1]) + struct.pack("<Q", len(members) - 1)
-for name, entry in members[1:]:
+if mode == "drop_index_member":
+    # Drop the first member. Bodies keep their absolute offsets, and the shortened index is zero-padded back to
+    # its original length, so every surviving member still resolves -- only the dropped one goes missing.
+    members = members[1:]
+else:
+    # Understate the first member's recorded size by one byte. Every field keeps its width, so the index still
+    # parses and every member still resolves -- the only damage is the disagreement with the manifest.
+    name, entry = members[0]
+    members[0] = (name, entry[:1] + (entry[1] - 1,) + entry[2:])
+
+index = bytearray(pack[:1]) + struct.pack("<Q", len(members))
+for name, entry in members:
     index += write_varint(len(name)) + name + struct.pack(entry_format, *entry)
 index += b"\0" * (pos - len(index))
 with open(pack_path, "wb") as f:
     f.write(bytes(index) + pack[pos:])
 PY
     ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE t FROM Disk('backups', '${name}_11_${mode}')" 2>&1 \
-        | grep -oE "marked as packed in the metadata but no pack contains it|is not marked as packed in the metadata|predates the packed format" | head -1
+        | grep -oE "marked as packed in the metadata but no pack contains it|is not marked as packed in the metadata|predates the packed format|in the pack index but the metadata declares" | head -1
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t"
 }
 
 restore_tampered drop_index_member
+restore_tampered shrink_index_member
 restore_tampered drop_num_packs
 restore_tampered drop_markers
 restore_tampered downgrade_version

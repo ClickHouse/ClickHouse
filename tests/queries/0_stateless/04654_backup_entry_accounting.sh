@@ -55,7 +55,7 @@ packref_backup() {
     ${CLICKHOUSE_CLIENT} --query "RENAME TABLE km_a TO ${name_a}, km_b TO ${name_b}"
     ${CLICKHOUSE_CLIENT} --query "
         BACKUP TABLE ${name_a}, TABLE ${name_b} TO Disk('backups', '${name}_${tag}')
-        SETTINGS id='${name}_${tag}_backup', experimental_backup_pack_format=1" | grep -o BACKUP_CREATED
+        SETTINGS id='${name}_${tag}_backup', backup_pack_format=1" | grep -o BACKUP_CREATED
     ${CLICKHOUSE_CLIENT} --query "RENAME TABLE ${name_a} TO km_a, ${name_b} TO km_b"
 }
 

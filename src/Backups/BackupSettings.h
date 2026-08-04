@@ -106,7 +106,7 @@ struct BackupSettings
     /// Experimental: pack many small backup blobs into a bounded set of larger objects (the PackedFilesIO
     /// ".packed" format) to cut the number of objects written. Opt-in, single-node, any destination that is not
     /// an archive; only restore's server-side ranged copy is S3-specific, elsewhere the range is read through IO.
-    bool experimental_backup_pack_format = false;
+    bool backup_pack_format = false;
 
     /// Target size of one pack object. Packing fills packs up to about this size.
     UInt64 backup_pack_size = 33554432; /// 32 MiB

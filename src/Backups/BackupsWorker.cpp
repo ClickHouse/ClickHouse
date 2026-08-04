@@ -409,23 +409,23 @@ struct BackupsWorker::BackupStarter
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
         /// ON CLUSTER routes through BackupCoordinationOnCluster, which does not forward
-        /// experimental_backup_pack_format into the packing Config -- so packing would be silently a no-op.
+        /// backup_pack_format into the packing Config -- so packing would be silently a no-op.
         /// Reject until ON CLUSTER packing is implemented.
-        if (on_cluster && backup_settings.experimental_backup_pack_format)
+        if (on_cluster && backup_settings.backup_pack_format)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "experimental_backup_pack_format is not supported with ON CLUSTER yet");
+                "backup_pack_format is not supported with ON CLUSTER yet");
 
         /// A lightweight snapshot stores files by object_key (kept in lightweight_snapshot_file_infos, not
         /// file_infos). Packing has no path for those, and the read-side pack accounting assumes a packed
         /// backup has no object_key files -- reject the combination rather than silently mis-account.
-        if (backup_settings.experimental_backup_pack_format && backup_settings.experimental_lightweight_snapshot)
+        if (backup_settings.backup_pack_format && backup_settings.experimental_lightweight_snapshot)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "experimental_backup_pack_format is not supported with experimental_lightweight_snapshot");
+                "backup_pack_format is not supported with experimental_lightweight_snapshot");
 
         /// The plain path (deduplicate_files=0) doesn't build the dedup identity/data_file_index packing needs.
-        if (backup_settings.experimental_backup_pack_format && !backup_settings.deduplicate_files)
+        if (backup_settings.backup_pack_format && !backup_settings.deduplicate_files)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "experimental_backup_pack_format is not supported with deduplicate_files=0");
+                "backup_pack_format is not supported with deduplicate_files=0");
 
         if (!backup_settings.backup_uuid)
             backup_settings.backup_uuid = UUIDHelpers::generateV4();
@@ -645,7 +645,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
     backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
-    backup_create_params.experimental_backup_pack_format = backup_settings.experimental_backup_pack_format;
+    backup_create_params.backup_pack_format = backup_settings.backup_pack_format;
     backup_create_params.data_file_name_generator = backup_settings.data_file_name_generator;
     chassert(backup_settings.data_file_name_prefix_length);
     backup_create_params.data_file_name_prefix_length = *backup_settings.data_file_name_prefix_length;

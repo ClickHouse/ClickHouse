@@ -149,15 +149,16 @@ private:
 
     /// Reads each pack's front index (packs_0000 .. packs_{num_packs-1}) and fills `packed_members`.
     void loadPackIndexes() TSA_REQUIRES(mutex);
-    /// Fails closed unless the pack indexes and the manifest's <packed> markers name the same data files.
-    void checkPackedMembershipMatchesManifest(const std::unordered_set<String> & declared_packed_files) const TSA_REQUIRES(mutex);
+    /// Fails closed unless the pack indexes and the manifest agree on which data files are packed and on each
+    /// member's byte range.
+    void checkPacksMatchManifest(const std::unordered_set<String> & declared_packed_files) const TSA_REQUIRES(mutex);
     std::unique_ptr<ReadBufferFromFileBase> readPackedMember(const MemberLocation & member) const;
 
-    /// How the backup's objects are laid out. Set at construction; the read path upgrades a plain-opened
+    /// How the backup's objects are laid out. Set at construction; the read path upgrades a PerFile-opened
     /// backup to Packed once the manifest reports num_packs > 0.
     enum class BackupLayout : uint8_t
     {
-        Plain,
+        PerFile, /// One object per backed-up file.
         Archive,
         Packed,
     };

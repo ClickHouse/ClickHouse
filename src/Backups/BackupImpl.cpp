@@ -182,7 +182,7 @@ BackupImpl::BackupImpl(
     : params(std::move(params_))
     , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
-    , layout(!archive_params_.archive_name.empty() ? BackupLayout::Archive : BackupLayout::Plain)
+    , layout(!archive_params_.archive_name.empty() ? BackupLayout::Archive : BackupLayout::PerFile)
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
@@ -204,7 +204,7 @@ BackupImpl::BackupImpl(
     , backup_name_for_logging(backup_info.toStringForLogging())
     , layout(!archive_params_.archive_name.empty()
             ? BackupLayout::Archive
-            : (params.experimental_backup_pack_format ? BackupLayout::Packed : BackupLayout::Plain))
+            : (params.backup_pack_format ? BackupLayout::Packed : BackupLayout::PerFile))
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
@@ -218,9 +218,9 @@ BackupImpl::BackupImpl(
 {
     /// Single source of truth for the archive+pack mutual exclusion (covers S3, File/Disk, Azure, and any
     /// future engine): packing bundles objects, which an archive destination has no path for.
-    if (!archive_params_.archive_name.empty() && params.experimental_backup_pack_format)
+    if (!archive_params_.archive_name.empty() && params.backup_pack_format)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Object packing (experimental_backup_pack_format) is not supported with an archive destination");
+            "Object packing (backup_pack_format) is not supported with an archive destination");
 
     open();
 }
@@ -231,7 +231,7 @@ BackupImpl::BackupImpl(
     std::shared_ptr<IBackupReader> reader_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
-    , layout(!archive_params_.archive_name.empty() ? BackupLayout::Archive : BackupLayout::Plain)
+    , layout(!archive_params_.archive_name.empty() ? BackupLayout::Archive : BackupLayout::PerFile)
     , archive_params(archive_params_)
     , open_mode(OpenMode::UNLOCK)
     , reader(reader_)
@@ -493,7 +493,7 @@ void BackupImpl::writeBackupMetadata()
         throw Exception(ErrorCodes::BACKUP_IS_EMPTY, "Backup must not be empty");
 
     /// Bump the version and emit num_packs only if a pack was actually written; an all-large-blob packed
-    /// backup is a plain whole-object backup and stays readable by older servers.
+    /// backup is a one-object-per-file backup and stays readable by older servers.
     const bool has_packs = isPacked() && (max_pack_id >= 0);
     num_packs = has_packs ? static_cast<size_t>(max_pack_id + 1) : 0;
 
@@ -926,7 +926,7 @@ void BackupImpl::readBackupMetadata()
     /// Deliberately outside the num_packs branch: deleting that one element would otherwise skip the pack
     /// indexes and route every declared-packed member to the own-object path.
     if (open_mode == OpenMode::READ)
-        checkPackedMembershipMatchesManifest(declared_packed_files);
+        checkPacksMatchManifest(declared_packed_files);
 
     uncompressed_size = size_of_entries + str.size();
     compressed_size = uncompressed_size;
@@ -1160,7 +1160,7 @@ void BackupImpl::loadPackIndexes()
     }
 }
 
-void BackupImpl::checkPackedMembershipMatchesManifest(const std::unordered_set<String> & declared_packed_files) const
+void BackupImpl::checkPacksMatchManifest(const std::unordered_set<String> & declared_packed_files) const
 {
     for (const auto & data_file_name : declared_packed_files)
     {
@@ -1180,6 +1180,43 @@ void BackupImpl::checkPackedMembershipMatchesManifest(const std::unordered_set<S
                 "Backup {}: Pack member {} is not marked as packed in the metadata",
                 backup_name_for_logging,
                 quoteString(member_name));
+    }
+
+    if (packed_members.empty())
+        return; /// Nothing packed: skip the walk over file_infos, which can hold millions of entries.
+
+    /// The restore fast path copies the index's byte range verbatim (see copyFileToDisk), so an index that
+    /// understates a member's length would restore a short file and report success. `file_infos` is keyed by
+    /// (size, checksum), so a deduplicated blob is checked once, against the entry restore resolves.
+    for (const auto & [size_and_checksum, info] : file_infos)
+    {
+        auto it = packed_members.find(info.data_file_name);
+        if (it == packed_members.end())
+            continue;
+
+        const auto & member = it->second;
+        if ((member.offset > member.pack_object_size) || (member.size > member.pack_object_size - member.offset))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: Pack member {} at offset {} with size {} does not fit in its pack object {} of {} bytes",
+                backup_name_for_logging,
+                quoteString(info.data_file_name),
+                member.offset,
+                member.size,
+                quoteString(member.pack_object),
+                member.pack_object_size);
+
+        if (member.size + info.base_size != info.size)
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: Pack member {} holds {} bytes in the pack index but the metadata declares {} bytes "
+                "for it (entry size {}, base size {})",
+                backup_name_for_logging,
+                quoteString(info.data_file_name),
+                member.size,
+                info.size - info.base_size,
+                info.size,
+                info.base_size);
     }
 }
 

@@ -30,6 +30,7 @@ Archive backup cannot contain packed objects
 not supported with deduplicate_files
 BACKUP_CREATED
 marked as packed in the metadata but no pack contains it
+in the pack index but the metadata declares
 marked as packed in the metadata but no pack contains it
 is not marked as packed in the metadata
 predates the packed format

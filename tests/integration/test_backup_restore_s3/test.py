@@ -643,7 +643,7 @@ def test_backup_to_s3_object_packing(cluster):
         cluster,
         storage_policy,
         dest_on,
-        backup_settings={"experimental_backup_pack_format": 1},
+        backup_settings={"backup_pack_format": 1},
     )
     objects_on = _count_backup_objects(cluster, backup_name_on)
 
@@ -675,7 +675,7 @@ def test_backup_to_s3_object_packing_incremental(cluster):
         base_name = new_backup_name()
         base_dest = f"S3('http://minio1:9001/root/data/backups/{base_name}', 'minio', '{minio_secret_key}')"
         node.query(
-            f"BACKUP TABLE data TO {base_dest} {format_settings({'experimental_backup_pack_format': 1})}"
+            f"BACKUP TABLE data TO {base_dest} {format_settings({'backup_pack_format': 1})}"
         )
 
         # New rows land in fresh parts, so the incremental must store new small data files.
@@ -692,7 +692,7 @@ def test_backup_to_s3_object_packing_incremental(cluster):
         incr_on_name = new_backup_name()
         incr_on_dest = f"S3('http://minio1:9001/root/data/backups/{incr_on_name}', 'minio', '{minio_secret_key}')"
         node.query(
-            f"BACKUP TABLE data TO {incr_on_dest} SETTINGS base_backup = {base_dest}, experimental_backup_pack_format = 1"
+            f"BACKUP TABLE data TO {incr_on_dest} SETTINGS base_backup = {base_dest}, backup_pack_format = 1"
         )
         objects_on = _count_backup_objects(cluster, incr_on_name)
 
@@ -727,7 +727,7 @@ def test_backup_to_s3_object_packing_incremental(cluster):
 
 def test_backup_to_s3_object_packing_on_cluster_rejected(cluster):
     # ON CLUSTER routes through BackupCoordinationOnCluster, which does not forward
-    # experimental_backup_pack_format into the packing Config -- packing would be silently a no-op. Until
+    # backup_pack_format into the packing Config -- packing would be silently a no-op. Until
     # ON CLUSTER packing is implemented the setting must be rejected, not ignored.
     node = cluster.instances["node"]
     node.query(
@@ -740,7 +740,7 @@ def test_backup_to_s3_object_packing_on_cluster_rejected(cluster):
     try:
         backup_dest = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
         error = node.query_and_get_error(
-            f"BACKUP TABLE data ON CLUSTER 'cluster' TO {backup_dest} SETTINGS experimental_backup_pack_format = 1"
+            f"BACKUP TABLE data ON CLUSTER 'cluster' TO {backup_dest} SETTINGS backup_pack_format = 1"
         )
         assert "not supported with ON CLUSTER" in error, error
     finally:
@@ -761,7 +761,7 @@ def test_backup_to_s3_object_packing_lightweight_snapshot_rejected(cluster):
     try:
         backup_dest = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
         error = node.query_and_get_error(
-            f"BACKUP TABLE data TO {backup_dest} SETTINGS experimental_backup_pack_format = 1, experimental_lightweight_snapshot = 1"
+            f"BACKUP TABLE data TO {backup_dest} SETTINGS backup_pack_format = 1, experimental_lightweight_snapshot = 1"
         )
         assert "not supported with experimental_lightweight_snapshot" in error, error
     finally:
