@@ -62,25 +62,47 @@ grep -om1 'Code: 394.*Query was cancelled' "$KILL_OUT" | sed 's/DB::Exception: /
 # only ever reach the first stage. Letting r2 pull the entry into its queue and blocking execution
 # instead sends the wait into waitForDisappear on the queue node.
 $CLICKHOUSE_CLIENT -q "SYSTEM START PULLING REPLICATION LOG r2; SYSTEM STOP REPLICATION QUEUES r2"
-$CLICKHOUSE_CLIENT -q "$TRUNCATE_UNLIMITED" > "$QUEUE_OUT" 2>&1 &
-wait_for_truncate
-# Reaching the third stage requires this TRUNCATE's own entry to be in r2's queue. The entry exists
-# by now, so the log size read here already counts it, and waiting for r2 to copy past that number
-# proves this entry was copied. Comparing against a freshly read log_max_index instead would prove
-# nothing: log_pointer is the maximum copied entry plus one and may point at an entry that does not
-# exist yet, so the arm could degenerate into a copy of arm 2.
-target=$($CLICKHOUSE_CLIENT -q "
+# The log maximum has to be sampled before the statement starts: its process list row appears
+# before the interpreter creates the log node, so a value read after wait_for_truncate can still
+# be the previous maximum.
+before=$($CLICKHOUSE_CLIENT -q "
     SELECT log_max_index FROM system.replicas
     WHERE database = currentDatabase() AND table = 'r2'")
+$CLICKHOUSE_CLIENT -q "$TRUNCATE_UNLIMITED" > "$QUEUE_OUT" 2>&1 &
+wait_for_truncate
+# Reaching the third stage requires this TRUNCATE's own entry to be in r2's queue. The advance of
+# the log maximum past the pre-statement value is what proves that entry exists, and the observed
+# value names it. Comparing log_pointer against a freshly read log_max_index instead would prove
+# nothing: log_pointer is the maximum copied entry plus one and may point at an entry that does not
+# exist yet, so the arm could degenerate into a copy of arm 2.
+entry_index=
 for _ in {1..600}; do
-    if [ "$($CLICKHOUSE_CLIENT -q "
-                SELECT log_pointer > $target FROM system.replicas
-                WHERE database = currentDatabase() AND table = 'r2'")" = "1" ]; then
-        echo 'entry queued on r2'
+    current=$($CLICKHOUSE_CLIENT -q "
+        SELECT log_max_index FROM system.replicas
+        WHERE database = currentDatabase() AND table = 'r2'")
+    if [ -n "$current" ] && [ "$current" -gt "$before" ]; then
+        entry_index=$current
         break
     fi
     sleep 0.5
 done
+if [ -z "$entry_index" ]; then
+    echo 'log entry for the TRUNCATE never appeared'
+else
+    # log_pointer is the maximum copied entry plus one, so this means entry_index was copied.
+    queued=
+    for _ in {1..600}; do
+        if [ "$($CLICKHOUSE_CLIENT -q "
+                    SELECT log_pointer > $entry_index FROM system.replicas
+                    WHERE database = currentDatabase() AND table = 'r2'")" = "1" ]; then
+            queued=1
+            echo 'entry queued on r2'
+            break
+        fi
+        sleep 0.5
+    done
+    [ -n "$queued" ] || echo "r2 never copied log entry $entry_index"
+fi
 query_id=$($CLICKHOUSE_CLIENT -q "
     SELECT query_id FROM system.processes
     WHERE current_database = currentDatabase() AND query LIKE 'TRUNCATE%' LIMIT 1")
