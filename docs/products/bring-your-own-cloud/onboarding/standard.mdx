@@ -62,6 +62,14 @@ Replace `<version>` with the latest tag from the module's [releases page](https:
 <Note>
 The module was previously distributed as a tarball at `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. That URL remains available but is deprecated — use the GitHub module above.
 </Note>
+
+#### AWS external ID {#aws-external-id}
+
+On AWS, the IAM role created during setup trusts ClickHouse Cloud with an [external ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) to protect against confused-deputy attacks. The ClickHouse Cloud console generates an external ID for your AWS account when you start onboarding and pre-fills it in the CloudFormation link; if you use Terraform, pass the same value as `external_id`. All BYOC infrastructures on the same AWS account share the same external ID.
+
+<Note>
+BYOC infrastructures onboarded before external IDs were introduced use the placeholder value `emptyid` for backward compatibility. The console shows this value when you add infrastructure on an AWS account with an existing legacy deployment, so that all infrastructures on the account keep a consistent trust configuration. If you would like to switch to a unique external ID, contact ClickHouse Support.
+</Note>
 </Step>
 <Step title="Set up BYOC infrastructure" id="setup-byoc-infrastructure">
 You will be prompted to set up the infrastructure, including object storage buckets, VPC/VNet, and the Kubernetes cluster, from the ClickHouse Cloud console. Certain configurations must be determined at this stage, as they can't be changed later. Specifically:
