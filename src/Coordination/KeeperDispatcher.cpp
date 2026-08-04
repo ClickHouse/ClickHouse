@@ -186,9 +186,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
         if (new_dispatcher_response_thread_started && dispatcher)
         {
-            /// Raft startup failed, so we can't join nuraft's commit thread here. That's ok:
-            /// closed_all_connections is false, so drainAndCheckQueues only drains and asserts
-            /// nothing.
+            /// Raft startup failed, so we can't join nuraft's commit thread here.
             dispatcher->shutdownRequests();
             dispatcher->drainAndCheckQueues(/*closed_all_connections=*/false);
         }

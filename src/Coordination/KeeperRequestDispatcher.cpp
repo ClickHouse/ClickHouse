@@ -343,36 +343,20 @@ void KeeperRequestDispatcher::shutdownRequests()
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count());
     }
 
-    /// Widens the window in which this function's own consumer threads are already joined while
-    /// nuraft's commit thread is still running, so that a test can observe responses accumulating
-    /// in responses_queue with nothing to pop them. The wait above can legitimately take up to
-    /// session_shutdown_timeout, so this window exists in production too; the failpoint only makes
-    /// it long enough to observe reliably. See
-    /// test_keeper_session/test.py::test_no_logical_error_on_shutdown_with_late_commit.
     fiu_do_on(FailPoints::keeper_shutdown_delay_before_queue_check, { sleepForMilliseconds(3000); });
 }
 
 void KeeperRequestDispatcher::drainAndCheckQueues(bool closed_all_connections)
 {
-    /// Must be called after KeeperServer::shutdown, so that no thread can produce responses
-    /// anymore: onResponse runs on nuraft's commit thread, and only raft_server::shutdown joins it.
-    /// Otherwise a commit landing here would push a response after the drain and break the
-    /// asserts below (and leak the counter, since response_thread is already joined).
-    /// This collects the responses that nuraft's commit thread published while shutdownRequests
-    /// was waiting for the Close entries to reach the leader: response_thread is joined before
-    /// that wait, so from then on nothing pops responses_queue.
+    /// Drain again after all request/response producers were stopped (if closed_all_connections).
     size_t drained_response_bytes = drainQueues();
 
-    /// Widens the window between the drain and the checks below, so that a test can observe
-    /// whether any thread is still producing responses at this point. See
-    /// test_keeper_session/test.py::test_no_logical_error_on_shutdown_with_late_commit.
     fiu_do_on(FailPoints::keeper_shutdown_delay_before_queue_check, { sleepForMilliseconds(3000); });
 
     if (closed_all_connections) // otherwise there might be concurrent putRequest calls or missing onResponseDeallocated calls
     {
-        /// Fixed prefix, so that a test can assert that the checks below ran, and that they ran
-        /// after nuraft's commit thread was joined. The byte count is how much the drain above
-        /// released, i.e. how much was published with no consumer left to pop it.
+        /// (test_no_logical_error_on_shutdown_with_late_commit relies on this message, update the
+        ///  test if changing wording or logic.)
         LOG_DEBUG(log, "Checking dispatcher queue byte accounting, drained {} response bytes", drained_response_bytes);
         chassert(requests_queue_bytes.load() == 0);
         chassert(response_bytes_in_all_queues.load() == 0);
