@@ -109,6 +109,7 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/RowWrapper.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -980,6 +981,11 @@ void MergeTreeData::checkProperties(
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
+
+    /// Rejects a schema where a column is wrapped by two Row wrappers, or where a
+    /// wrapper references a missing column. Must happen here rather than lazily from
+    /// the read optimizer, which only runs when `query_plan_use_row_wrappers` is on.
+    collectRowWrappers(new_metadata.columns);
 
     KeyDescription new_sorting_key = new_metadata.sorting_key;
     KeyDescription new_primary_key = new_metadata.primary_key;
