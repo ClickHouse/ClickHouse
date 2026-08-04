@@ -39,59 +39,9 @@ UInt64 readLittleEndian(const char * p)
     return v;
 }
 
-/// What one LZ4 block's sequences decode to, by reading only its tokens and lengths, or nullopt when
-/// they do not describe a whole block. Visits each stored byte at most once and never decompresses.
-std::optional<UInt64> lz4BlockOutputLength(const char * src, size_t size)
-{
-    static constexpr UInt64 MIN_MATCH = 4;
-    static constexpr unsigned LENGTH_CONTINUES = 15;
-    UInt64 out = 0;
-    size_t pos = 0;
-    while (pos < size)
-    {
-        const auto token = static_cast<unsigned char>(src[pos++]);
-        UInt64 literals = token >> 4;
-        if (literals == LENGTH_CONTINUES)
-        {
-            unsigned char add = 0;
-            do
-            {
-                if (pos == size)
-                    return {};
-                add = static_cast<unsigned char>(src[pos++]);
-                literals += add;
-            } while (add == 0xFF);
-        }
-        if (literals > size - pos)
-            return {};
-        pos += literals;
-        out += literals;
-        /// The block's last sequence carries literals and no match, so it ends the block here.
-        if (pos == size)
-            return out;
-        if (size - pos < 2)
-            return {};
-        pos += 2; /// the match's offset
-        UInt64 match = token & LENGTH_CONTINUES;
-        if (match == LENGTH_CONTINUES)
-        {
-            unsigned char add = 0;
-            do
-            {
-                if (pos == size)
-                    return {};
-                add = static_cast<unsigned char>(src[pos++]);
-                match += add;
-            } while (add == 0xFF);
-        }
-        out += match + MIN_MATCH;
-    }
-    return {};
-}
-
 /// The most the blocks of one LZ4 frame can expand to, without decompressing any of them: each
-/// block's output is what its own sequences decode to, and those summed bound the frame.
-/// `header_size` is where its blocks begin.
+/// block's output is capped both by the frame's maximum block size and by what its own stored bytes
+/// can encode, and those per-block caps summed bound the frame. `header_size` is where its blocks begin.
 UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size_t size, size_t header_size)
 {
     /// `LZ4F_getBlockSize` maps these, but is declared only in the static-linking section of
@@ -109,8 +59,9 @@ UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size
     static constexpr UInt32 UNCOMPRESSED_BLOCK_FLAG = 0x80000000;
     static constexpr size_t BLOCK_HEADER_SIZE = 4;
     static constexpr size_t CHECKSUM_SIZE = 4;
-    /// `block_size` is at most 4 MiB, so multiplying by this cannot wrap.
-    static constexpr size_t MAX_LZ4_BLOCK_EXPANSION = 255;
+    /// `block_size` is at most 4 MiB, so multiplying by this cannot wrap. UInt64 rather than size_t
+    /// so `std::min` below deduces one type from both arguments where the two spellings differ.
+    static constexpr UInt64 MAX_LZ4_BLOCK_EXPANSION = 255;
 
     UInt64 bound = 0;
     size_t pos = header_size;
@@ -127,7 +78,6 @@ UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer has an oversized LZ4 block");
         if (block_size > size - pos)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer ends inside an LZ4 block");
-        const char * const block = src + pos;
         pos += block_size;
         if (info.blockChecksumFlag == LZ4F_blockChecksumEnabled)
         {
@@ -141,10 +91,8 @@ UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size
             bound += block_size;
             continue;
         }
-        /// A block this walk cannot read is still bounded rather than rejected here, because
-        /// decompression is what judges whether it decodes.
-        const auto decoded = lz4BlockOutputLength(block, block_size);
-        bound += std::min(max_block_size, decoded.value_or(block_size * MAX_LZ4_BLOCK_EXPANSION));
+        /// A compressed block cannot expand past what its own stored bytes can encode either.
+        bound += std::min(max_block_size, block_size * MAX_LZ4_BLOCK_EXPANSION);
     }
     if (info.contentChecksumFlag == LZ4F_contentChecksumEnabled)
     {

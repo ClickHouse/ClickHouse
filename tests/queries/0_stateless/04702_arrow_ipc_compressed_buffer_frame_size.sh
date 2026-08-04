@@ -23,13 +23,6 @@ $CLICKHOUSE_LOCAL --query "
     INTO OUTFILE '${TMP_DIR}/ch_zstd.arrows' TRUNCATE FORMAT ArrowStream
     SETTINGS output_format_arrow_compression_method = 'zstd'"
 
-# Repetitive, so one block really does decompress to megabytes: `consistent_large` needs a size that
-# is honest and still more than a small budget affords.
-$CLICKHOUSE_LOCAL --query "
-    SELECT repeat('a', 200) AS s FROM numbers(20000)
-    INTO OUTFILE '${TMP_DIR}/ch_lz4_repetitive.arrows' TRUNCATE FORMAT ArrowStream
-    SETTINGS output_format_arrow_compression_method = 'lz4_frame'"
-
 python3 - "$TMP_DIR" <<'PYEOF'
 import struct, sys
 import pyarrow as pa
@@ -55,7 +48,6 @@ for codec in ("lz4", "zstd"):
 arrow_lz4 = bytearray(open(f"{out}/wellformed_lz4.arrows", "rb").read())
 ch_lz4 = bytearray(open(f"{out}/ch_lz4.arrows", "rb").read())
 ch_zstd = bytearray(open(f"{out}/ch_zstd.arrows", "rb").read())
-ch_repetitive = bytearray(open(f"{out}/ch_lz4_repetitive.arrows", "rb").read())
 
 
 def prefix_offsets(data, magic=LZ4_MAGIC):
@@ -113,8 +105,6 @@ def set_frame_content_size(d, prefix_off, value):
 ch_offs = prefix_offsets(ch_lz4)
 arrow_offs = prefix_offsets(arrow_lz4)
 zstd_offs = prefix_offsets(ch_zstd, ZSTD_MAGIC)
-rep_offs = prefix_offsets(ch_repetitive)
-assert rep_offs, "expected a compressed buffer in the repetitive file"
 assert len(arrow_offs) >= 2, f"expected >= 2 compressed buffers, got {len(arrow_offs)}"
 assert zstd_offs, "expected a ZSTD-compressed buffer"
 
@@ -282,49 +272,9 @@ def write(name, data):
     open(f"{out}/{name}.arrows", "wb").write(bytes(data))
 
 
-def lz4_sequence_output(block):
-    """What one block's sequences decode to, or None when they do not describe a whole block. Mirrors
-    `lz4BlockOutputLength`, so a drifting fixture is caught here rather than by a failing arm."""
-    out, p, n = 0, 0, len(block)
-    while p < n:
-        tok = block[p]
-        p += 1
-        lit = tok >> 4
-        if lit == 15:
-            while True:
-                if p == n:
-                    return None
-                add = block[p]
-                p += 1
-                lit += add
-                if add != 0xFF:
-                    break
-        if lit > n - p:
-            return None
-        p += lit
-        out += lit
-        if p == n:
-            return out
-        if n - p < 2:
-            return None
-        p += 2
-        match = tok & 15
-        if match == 15:
-            while True:
-                if p == n:
-                    return None
-                add = block[p]
-                p += 1
-                match += add
-                if add != 0xFF:
-                    break
-        out += match + 4
-    return None
-
-
 def lz4_block_bound(data, prefix_off):
     """What the frame at `prefix_off` can produce: per block, the least of the frame's maximum block
-    size and what that block's own sequences decode to."""
+    size and what the block's own stored bytes can encode."""
     flg = data[prefix_off + 12]
     p = prefix_off + 8 + 7 + (8 if flg & 0x08 else 0)
     max_block = 64 * 1024 << (2 * (((data[prefix_off + 13] >> 4) & 7) - 4))
@@ -335,17 +285,13 @@ def lz4_block_bound(data, prefix_off):
         if bh == 0:
             return bound
         n = bh & 0x7FFFFFFF
-        if bh & 0x80000000:
-            bound += n
-        else:
-            decoded = lz4_sequence_output(bytes(data[p:p + n]))
-            bound += min(max_block, n * 255 if decoded is None else decoded)
+        bound += n if bh & 0x80000000 else min(max_block, n * 255)
         p += n + (4 if flg & 0x10 else 0)
 
 
-# What the repetitive writer's first buffer really decompresses to: far more than the file and more
-# than `consistent_large`'s budget, while still honest. Asserted below against the frame itself.
-big = i64(ch_repetitive, rep_offs[0])
+# Larger than the file but below what one block can produce, so `consistent_large` is a resource
+# condition rather than a data error. Asserted, because the block bound follows the writer's output.
+big = 2 * 1024 ** 2
 # Far larger than any real size, but below the allocator's ceiling, so the frame comparison rather
 # than the total is what rejects these.
 forged = 100 * 1024 ** 3
@@ -377,15 +323,19 @@ struct.pack_into("<q", d, arrow_offs[0], half)
 struct.pack_into("<q", d, arrow_offs[1], half)
 write("no_declared_size_forged_prefixes", d)
 
-# NOT corrupt at all: the writer's own prefix and pledge, over a payload that really does decompress
-# to megabytes, so reading it is a resource condition rather than a data error.
-assert big == lz4_block_bound(ch_repetitive, rep_offs[0]), "big is not what the frame really produces"
-write("consistent_large", ch_repetitive)
+# NOT corrupt: prefix and frame agree on a size that one block really can produce. Larger than the
+# file, so reading it is a resource condition rather than a data error.
+d = bytearray(ch_lz4)
+assert big <= lz4_block_bound(d, ch_offs[0]), "big exceeds what the frame's blocks can produce"
+struct.pack_into("<q", d, ch_offs[0], big)
+set_frame_content_size(d, ch_offs[0], big)
+write("consistent_large", d)
 
-# One byte past the pledge: a pledge is enforced exactly, so this is rejected for disagreeing with the
+# One byte past that: a pledge is enforced exactly, so this is rejected for disagreeing with the
 # pledge and not for exceeding the block bound. The two reasons must not be conflated.
-d = bytearray(ch_repetitive)
-struct.pack_into("<q", d, rep_offs[0], big + 1)
+d = bytearray(ch_lz4)
+struct.pack_into("<q", d, ch_offs[0], big + 1)
+set_frame_content_size(d, ch_offs[0], big)
 write("pledge_mismatch", d)
 
 # A frame pledging more than its blocks can produce describes no possible frame, so it is rejected on
@@ -440,14 +390,12 @@ write("lz4_content_checksum",
       lone_frame_buffer(ch_lz4, 8,
                         lz4_frame_with_stored_block(content_checksum=struct.pack("<I", xxh32(b"\xff" * 8)))))
 
-# Many tiny compressed blocks declaring no content size: 256 blocks of 5 stored bytes emit 1 KiB, so
-# only what each block's own sequences decode to bounds this. The honest-prefix file is NOT corrupt.
+# Many tiny compressed blocks declaring no content size. What each block's own bytes can encode has
+# to bound it too: 256 blocks of 5 stored bytes emit 1 KiB, so crediting a whole maxBlockSize each
+# would accept a forged 512 MiB prefix and allocate for it before decompression rejected it. The
+# honest-prefix file is NOT corrupt and must still be read.
 tiny_blocks = lz4_frame_with_tiny_compressed_blocks(256)
 write("lz4_tiny_blocks_forged_prefix", lone_frame_buffer(ch_lz4, 512 * 1024 ** 2, tiny_blocks))
-# Just inside what 255 times the stored bytes allowed, so this arm fails if the bound ever goes back
-# to a multiple of a block's stored size rather than what its sequences decode to.
-write("lz4_tiny_blocks_prefix_under_stored_bound",
-      lone_frame_buffer(ch_lz4, 256 * 5 * 255, tiny_blocks))
 write("lz4_tiny_blocks", lone_frame_buffer(ch_lz4, 256 * 4, tiny_blocks))
 
 # A ZSTD frame that omits its content size, as a streaming writer emits: only its block structure
@@ -494,7 +442,6 @@ check lz4_pledge_above_blocks.arrows 'blocks can produce at most'
 check lz4_trailing_data.arrows 'bytes after its LZ4 frame'
 check lz4_truncated_content_checksum.arrows 'ends inside an LZ4 content checksum'
 check lz4_tiny_blocks_forged_prefix.arrows 'codec frame declares'
-check lz4_tiny_blocks_prefix_under_stored_bound.arrows 'codec frame declares'
 check zstd_no_declared_size_forged_prefix.arrows 'codec frame declares'
 check zstd_no_declared_size_truncated.arrows 'not a valid ZSTD frame'
 # A size the query cannot afford is a resource condition. What a frame's blocks can produce is

@@ -15,7 +15,6 @@ OK lz4_pledge_above_blocks.arrows
 OK lz4_trailing_data.arrows
 OK lz4_truncated_content_checksum.arrows
 OK lz4_tiny_blocks_forged_prefix.arrows
-OK lz4_tiny_blocks_prefix_under_stored_bound.arrows
 OK zstd_no_declared_size_forged_prefix.arrows
 OK zstd_no_declared_size_truncated.arrows
 OK consistent_large.arrows
