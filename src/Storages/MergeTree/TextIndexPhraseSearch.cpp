@@ -15,24 +15,27 @@ void TextIndexPhraseSearch::matchCandidatePositions(
 
     /// Per candidate: keep the positions of term k that continue a phrase started k terms back,
     /// advancing with a two-pointer over each next term's sorted positions. A candidate matches
-    /// at the first position that survives to the last term.
-    std::vector<UInt32> chain;
-    std::vector<UInt32> next;
+    /// at the first position that survives to the last term. The chain starts as a view of the
+    /// first term's positions, so a two-term phrase copies nothing; longer phrases alternate
+    /// between two buffers, since the chain being read must outlive the one being written.
+    std::vector<UInt32> buffers[2];
     for (size_t i = 0; i < candidates.size(); ++i)
     {
         const size_t u0 = term_to_unique[0];
-        chain.assign(
+        std::span<const UInt32> chain(
             per_token_positions[u0].data() + per_token_offsets[u0][i],
             per_token_positions[u0].data() + per_token_offsets[u0][i + 1]);
 
         bool matched = term_to_unique.size() == 1 && !chain.empty();
+        size_t buffer_index = 0;
         for (size_t k = 1; k < term_to_unique.size(); ++k)
         {
             const size_t u = term_to_unique[k];
             const UInt32 * next_position = per_token_positions[u].data() + per_token_offsets[u][i];
             const UInt32 * const end = per_token_positions[u].data() + per_token_offsets[u][i + 1];
             const bool last = k + 1 == term_to_unique.size();
-            next.clear();
+            auto & continuing = buffers[buffer_index];
+            continuing.clear();
             for (UInt32 position : chain)
             {
                 while (next_position != end && *next_position < position + 1)
@@ -46,14 +49,13 @@ void TextIndexPhraseSearch::matchCandidatePositions(
                         matched = true;
                         break;
                     }
-                    next.push_back(position + 1);
+                    continuing.push_back(position + 1);
                 }
             }
-            if (last)
+            if (last || continuing.empty())
                 break;
-            chain.swap(next);
-            if (chain.empty())
-                break;
+            chain = continuing;
+            buffer_index ^= 1;
         }
 
         if (matched)
