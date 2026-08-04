@@ -797,7 +797,12 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
         /// The shared bundle and serializations manage their own arena scopes
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        serialization_infos = new_infos;
+        /// Copy the infos themselves, not just the pointers to them: the caller builds them while writing
+        /// the part (`SerializationInfoByName(columns, settings)` in `MergeTreeDataWriter`, `MergeTask`,
+        /// `MutateTask`), so a shallow copy leaves objects that whoever wrote the part was charged for
+        /// alive on the part, and outside the arena, until a background thread drops the part. One info
+        /// per column, so on the asynchronous insert path this is ~100 bytes per column of drift.
+        serialization_infos = new_infos.clone();
     }
 
     metadata_version = new_metadata_version;
