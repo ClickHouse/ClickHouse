@@ -86,11 +86,13 @@ CREATE TABLE residual_04726 (id Int32, pad Int32) ENGINE = MergeTree ORDER BY id
     SETTINGS auto_statistics_types = '';
 INSERT INTO residual_04726 SELECT number, number % 100000 FROM numbers(100000);
 
--- The outer join must keep `residual_04726` as its build side, i.e. it must not become the first
--- input of that join. Matching on position rather than on the join symbol keeps the assertion
--- independent of the join kind the plan ends up using.
-SELECT 'overstated right side keeps orientation', countIf(
-        explain ILIKE '%residual_04726%' AND explain NOT ILIKE '%Join: residual\_04726%') = 1 FROM (
+-- `residual_04726` must never become the first input of a join, i.e. it stays on the build side.
+-- The first condition keeps the assertion non-vacuous if the relation stops appearing at all; the
+-- second is the property itself, over every join of the plan rather than a fixed number of them,
+-- so a different join order does not change the verdict.
+SELECT 'overstated right side keeps orientation',
+        countIf(explain ILIKE '%residual\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: residual\_04726%') = 0 FROM (
     EXPLAIN actions = 1, keep_logical_steps = 1
     SELECT count()
     FROM (SELECT * FROM dim_04726 JOIN nation_04726 USING (nation_id) WHERE name = '2') AS d
