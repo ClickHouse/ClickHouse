@@ -18,9 +18,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 в ClickHouse.
 
 <Steps>
-  <Step>
-    ## Экспорт данных из Snowflake
-
+  <Step title="Экспорт данных из Snowflake" id="1-exporting-data-from-snowflake">
     <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Миграция из Snowflake в ClickHouse" />
 
     Для экспорта данных из Snowflake требуется использовать внешний stage, как показано на диаграмме выше.
@@ -57,9 +55,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Для dataset объемом около 5 ТБ, с максимальным размером файла 150 МБ и при использовании хранилища Snowflake 2X-Large, расположенного в том же Region AWS `us-east-1`, копирование данных в S3 бакет займет около 30 минут.
   </Step>
 
-  <Step>
-    ## Импорт в ClickHouse
-
+  <Step title="Импорт в ClickHouse" id="2-importing-to-clickhouse">
     После того как данные помещены в промежуточное Объектное хранилище, для их вставки в таблицу можно использовать функции ClickHouse, такие как [s3 table function](/ru/reference/functions/table-functions/s3), как показано ниже.
 
     В этом примере используется [s3 table function](/ru/reference/functions/table-functions/s3) для AWS S3, но для Google Cloud Storage можно использовать [gcs table function](/ru/reference/functions/table-functions/gcs), а для Azure Blob Storage — [azureBlobStorage table function](/ru/reference/functions/table-functions/azureBlobStorage).
@@ -107,9 +103,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## Проверка успешного экспорта данных
-
+  <Step title="Проверка успешного экспорта данных" id="3-testing-successful-data-export">
     Чтобы проверить, что данные были корректно вставлены, просто выполните запрос `SELECT` к новой таблице:
 
     ```sql

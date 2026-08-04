@@ -14,6 +14,7 @@
 
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/SipHash.h>
+#include <Common/HashTable/HashTable.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -44,6 +45,57 @@ struct UniqCombinedHashTableGrower : public HashTableGrowerWithPrecalculation<>
 {
     void increaseSize() { increaseSizeDegree(1); }
 };
+
+template <typename T, typename Key, typename ColumnType>
+struct AggregateFunctionUniqCombinedTraits
+{
+    /// Returns Key, not HashValueType: for String and IPv6 the set stores
+    /// the full 64-bit hash even in the 32-bit uniqCombined (see Data::Key).
+    static ALWAYS_INLINE auto hash(T x)
+    {
+        if constexpr (std::is_same_v<T, std::string_view>)
+        {
+            return CityHash_v1_0_2::CityHash64(x.data(), x.size());
+        }
+        else if constexpr (std::is_same_v<T, IPv6>)
+        {
+            /// This specialization exists for compatibility with the initial implementation.
+            return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&x), sizeof(IPv6));
+        }
+        else if constexpr (std::is_same_v<T, UInt128>)
+        {
+            /// This specialization exists due to historical circumstances.
+            /// Initially UInt128 was introduced only for UUID, and then the other big-integer types were added.
+            return static_cast<Key>(sipHash64(x));
+        }
+        else if constexpr (is_floating_point<T>)
+        {
+            return static_cast<Key>(intHash64(bit_cast<UInt64>(x)));
+        }
+        else if constexpr (sizeof(T) > sizeof(UInt64))
+        {
+            return static_cast<Key>(DefaultHash64<T>(x));
+        }
+        else
+        {
+            /// This specialization exists also for compatibility with the initial implementation.
+            return static_cast<Key>(intHash64(x));
+        }
+    }
+
+    static ALWAYS_INLINE T value(const IColumn & column, size_t row_num)
+    {
+        if constexpr (std::is_same_v<T, std::string_view>)
+        {
+            return assert_cast<const ColumnType &>(column).getDataAt(row_num);
+        }
+        else
+        {
+            return assert_cast<const ColumnType &>(column).getData()[row_num];
+        }
+    }
+};
+
 
 template <typename T, UInt8 K, typename HashValueType>
 struct AggregateFunctionUniqCombinedData
@@ -76,13 +128,17 @@ struct AggregateFunctionUniqCombinedData
 };
 
 
-template <typename T, UInt8 K, typename HashValueType>
+template <typename T, typename ColumnType, UInt8 K, typename HashValueType>
 class AggregateFunctionUniqCombined final
-    : public IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, K, HashValueType>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, ColumnType, K, HashValueType>>
 {
 public:
+    using Data = AggregateFunctionUniqCombinedData<T, K, HashValueType>;
+    using Key = typename Data::Key;
+    using Traits = AggregateFunctionUniqCombinedTraits<T, Key, ColumnType>;
+
     AggregateFunctionUniqCombined(const DataTypes & argument_types_, const Array & params_)
-        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, K, HashValueType>>(argument_types_, params_, std::make_shared<DataTypeUInt64>())
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, ColumnType, K, HashValueType>>(argument_types_, params_, std::make_shared<DataTypeUInt64>())
     {}
 
     String getName() const override
@@ -97,16 +153,9 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if constexpr (std::is_same_v<T, std::string_view>)
-        {
-            auto value = columns[0]->getDataAt(row_num);
-            this->data(place).set.insert(hashOne(value));
-        }
-        else
-        {
-            const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getElement(row_num);
-            this->data(place).set.insert(hashOne(value));
-        }
+        const auto value = Traits::value(*columns[0], row_num);
+        const auto key = Traits::hash(value);
+        this->data(place).set.insert(key);
     }
 
     void addBatchSinglePlace( /// NOLINT
@@ -166,56 +215,10 @@ public:
     }
 
 private:
-    using Data = AggregateFunctionUniqCombinedData<T, K, HashValueType>;
-    using Key = typename Data::Key;
-
     static constexpr size_t hash_chunk_size = 512;
 
-    /// Returns Key, not HashValueType: for String and IPv6 the set stores
-    /// the full 64-bit hash even in the 32-bit uniqCombined (see Data::Key).
-    static ALWAYS_INLINE Key hashOne(T value)
-    {
-        if constexpr (std::is_same_v<T, std::string_view>)
-        {
-            return CityHash_v1_0_2::CityHash64(value.data(), value.size());
-        }
-        else if constexpr (std::is_same_v<T, IPv6>)
-        {
-            /// This specialization exists for compatibility with the initial implementation.
-            return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&value), sizeof(IPv6));
-        }
-        else if constexpr (std::is_same_v<T, UInt128>)
-        {
-            /// This specialization exists due to historical circumstances.
-            /// Initially UInt128 was introduced only for UUID, and then the other big-integer types were added.
-            return static_cast<Key>(sipHash64(value));
-        }
-        else if constexpr (is_floating_point<T>)
-        {
-            return static_cast<Key>(intHash64(bit_cast<UInt64>(value)));
-        }
-        else if constexpr (sizeof(T) > sizeof(UInt64))
-        {
-            return static_cast<Key>(DefaultHash64<T>(value));
-        }
-        else
-        {
-            /// This specialization exists also for compatibility with the initial implementation.
-            return static_cast<Key>(intHash64(value));
-        }
-    }
-
-    /// Compares values the same way hashOne distinguishes them. Floats are compared
-    /// as bit patterns: e.g. -0.0 == +0.0, but their hashes differ.
-    template <typename U>
-    static ALWAYS_INLINE bool bitEquals(const U & lhs, const U & rhs)
-    {
-        if constexpr (is_floating_point<U>)
-            return bit_cast<UInt64>(lhs) == bit_cast<UInt64>(rhs);
-        else
-            return lhs == rhs;
-    }
-
+    /// Hashes rows a chunk ahead into a stack buffer, so that hash computation pipelines
+    /// independently of the set inserts, and inserts whole chunks via insertMany.
     void addBatchImpl(
         size_t row_begin,
         size_t row_end,
@@ -224,34 +227,11 @@ private:
         const UInt8 * flags,
         const UInt8 * null_map) const
     {
-        auto & set = this->data(place).set;
-
-        if constexpr (std::is_same_v<T, std::string_view>)
-        {
-            if (const auto * column_string = typeid_cast<const ColumnString *>(columns[0]))
-            {
-                insertChunked(row_begin, row_end, set, flags, null_map, [&column_string](size_t row) { return column_string->getDataAt(row); });
-            }
-            else
-            {
-                const auto & column_fixed = assert_cast<const ColumnFixedString &>(*columns[0]);
-                insertChunked(row_begin, row_end, set, flags, null_map, [&column_fixed](size_t row) { return column_fixed.getDataAt(row); });
-            }
-        }
-        else
-        {
-            const auto & data = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
-            insertChunked(row_begin, row_end, set, flags, null_map, [&data](size_t row) { return data[row]; });
-        }
-    }
-
-    /// Hashes rows a chunk ahead into a stack buffer, so that hash computation pipelines
-    /// independently of the set inserts, and inserts whole chunks via insertMany.
-    template <typename Getter>
-    static void insertChunked(size_t row_begin, size_t row_end, typename Data::Set & set, const UInt8 * flags, const UInt8 * null_map, Getter getter)
-    {
         if (row_begin == row_end)
             return;
+
+        const auto & column = *columns[0];
+        auto & set = this->data(place).set;
 
         std::array<Key, hash_chunk_size> hashes{};
         size_t row = row_begin;
@@ -270,17 +250,17 @@ private:
             {
                 if (use_last_value_cache)
                 {
-                    last_value = getter(row);
-                    hashes[num_hashes++] = hashOne(last_value);
+                    last_value = Traits::value(column, row);
+                    hashes[num_hashes++] = Traits::hash(last_value);
 
                     for (size_t i = 1; i < chunk_size; ++i)
                     {
-                        auto value = getter(row + i);
+                        const auto value = Traits::value(column, row + i);
                         if (bitEquals(value, last_value))
                             continue;
 
                         last_value = value;
-                        hashes[num_hashes++] = hashOne(value);
+                        hashes[num_hashes++] = Traits::hash(value);
                     }
 
                     /// Disable the cache for the rest of the batch when consecutive duplicates are rare.
@@ -295,7 +275,7 @@ private:
                     num_hashes = chunk_size;
 
                     for (size_t i = 0; i < chunk_size; ++i)
-                        hashes[i] = hashOne(getter(row + i));
+                        hashes[i] = Traits::hash(Traits::value(column, row + i));
                 }
             }
             else
@@ -305,7 +285,7 @@ private:
                     if ((flags && !flags[row + i]) || (null_map && null_map[row + i]))
                         continue;
 
-                    hashes[num_hashes++] = hashOne(getter(row + i));
+                    hashes[num_hashes++] = Traits::hash(Traits::value(column, row + i));
                 }
             }
 
@@ -378,12 +358,25 @@ public:
 template <UInt8 K, typename HashValueType>
 struct WithK
 {
-    template <typename T>
-    using AggregateFunction = AggregateFunctionUniqCombined<T, K, HashValueType>;
+    template <typename T, typename ColumnType>
+    using AggregateFunction = AggregateFunctionUniqCombined<T, ColumnType, K, HashValueType>;
 
     template <bool is_exact, bool argument_is_tuple>
     using AggregateFunctionVariadic = AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K, HashValueType>;
 };
+
+template <UInt8 K, typename HashValueType>
+AggregateFunctionPtr createUniqCombinedWithNumericType(const IDataType & argument_type, const DataTypes & argument_types, const Array & params)
+{
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return std::make_shared<AggregateFunctionUniqCombined<TYPE, ColumnVector<TYPE>, K, HashValueType>>(argument_types, params);
+    FOR_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return std::make_shared<AggregateFunctionUniqCombined<Int8, ColumnVector<Int8>, K, HashValueType>>(argument_types, params);
+    if (which.idx == TypeIndex::Enum16) return std::make_shared<AggregateFunctionUniqCombined<Int16, ColumnVector<Int16>, K, HashValueType>>(argument_types, params);
+    return nullptr;
+}
 
 template <UInt8 K, typename HashValueType>
 AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_types, const Array & params)
@@ -395,38 +388,58 @@ AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_typ
     {
         const IDataType & argument_type = *argument_types[0];
 
-        AggregateFunctionPtr res(createWithNumericType<WithK<K, HashValueType>::template AggregateFunction>(*argument_types[0], argument_types, params));
+        AggregateFunctionPtr res(createUniqCombinedWithNumericType<K, HashValueType>(argument_type, argument_types, params));
 
-        WhichDataType which(argument_type);
         if (res)
             return res;
+
+        WhichDataType which(argument_type);
         if (which.isDate())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate::FieldType>>(
-                argument_types, params);
+        {
+            using T = DataTypeDate::FieldType;
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<T, ColumnVector<T>>>(argument_types, params);
+        }
         if (which.isDate32())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate32::FieldType>>(
-                argument_types, params);
+        {
+            using T = DataTypeDate32::FieldType;
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<T, ColumnVector<T>>>(argument_types, params);
+        }
         if (which.isDateTime())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDateTime::FieldType>>(
-                argument_types, params);
-        if (which.isStringOrFixedString())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<std::string_view>>(argument_types, params);
+        {
+            using T = DataTypeDateTime::FieldType;
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<T, ColumnVector<T>>>(argument_types, params);
+        }
+        if (which.isString())
+        {
+            using T = std::string_view;
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<T, ColumnString>>(argument_types, params);
+        }
+        if (which.isFixedString())
+        {
+            using T = std::string_view;
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<T, ColumnFixedString>>(argument_types, params);
+        }
         if (which.isUUID())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeUUID::FieldType>>(
-                argument_types, params);
+        {
+            using T = DataTypeUUID::FieldType;
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<T, ColumnVector<T>>>(argument_types, params);
+        }
         if (which.isIPv4())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv4::FieldType>>(
-                argument_types, params);
+        {
+            using T = DataTypeIPv4::FieldType;
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<T, ColumnVector<T>>>(argument_types, params);
+        }
         if (which.isIPv6())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv6::FieldType>>(
-                argument_types, params);
+        {
+            using T = DataTypeIPv6::FieldType;
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<T, ColumnVector<T>>>(argument_types, params);
+        }
         if (which.isTuple())
         {
             if (use_exact_hash_function)
-                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<true, true>>(
-                    argument_types, params);
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<false, true>>(
-                argument_types, params);
+                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<true, true>>(argument_types, params);
+
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<false, true>>(argument_types, params);
         }
     }
 
