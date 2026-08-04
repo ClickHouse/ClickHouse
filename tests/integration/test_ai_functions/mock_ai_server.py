@@ -214,6 +214,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(400, make_error_response("invalid request", error_type="invalid_request_error"))
             return
 
+        if parsed.path == "/v1/error_control_chars":
+            # An error whose `message` and `type` carry control characters (newline, tab, carriage
+            # return, BEL). The server must not copy these verbatim into the logged exception, so the
+            # AI functions sanitize them; this endpoint lets the test assert that.
+            self._send_json(
+                400,
+                make_error_response("start\nmid\tend\rBEL\x07done", error_type="err\ttype"),
+            )
+            return
+
+        if parsed.path == "/v1/error_nonjson":
+            # A non-JSON error body with control characters. It cannot be parsed as a structured
+            # error, so the AI functions fall back to the truncated raw body -- which must also be
+            # sanitized before it reaches the logs.
+            self._send_raw(500, b"Internal Error:\nstack\ttrace\x07here")
+            return
+
         if parsed.path == "/v1/embeddings":
             self._send_json(200, make_embeddings_response(body))
             return
@@ -240,6 +257,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_raw(self, status, body_bytes, content_type="text/plain"):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body_bytes)))
+        self.end_headers()
+        self.wfile.write(body_bytes)
 
     def log_message(self, format, *args):
         pass  # suppress request logs
