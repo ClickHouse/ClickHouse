@@ -946,7 +946,15 @@ bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
 /// Without an explicit check here the statement leaks metadata of tables the user is not allowed to
 /// read (https://github.com/ClickHouse/ClickHouse/issues/78938). Reproduce the planner's SELECT access
 /// check for every table referenced anywhere in the query tree.
-void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & query_context)
+///
+/// Returns whether the check ran in full. The per-table `SELECT` checks always run (denials throw), but
+/// the recursive base-table pass for a non-inlined view (`checkViewBaseTableAccess` below) skips itself
+/// when the view's inner query cannot be resolved by the analyzer - e.g. a view created under
+/// `enable_analyzer = 0` whose body is legacy-explainable but analyzer-unresolvable. `false` means such
+/// a skip happened: the caller is about to dump a resolved tree whose base-table access was never
+/// verified, and must fall back to a non-resolved dump - the same fail-close the legacy formatter
+/// implements by keeping such a view unexpanded (`checkNonParameterizedViewBaseTableAccess` above).
+bool checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & query_context)
 {
     /// Collect every table referenced anywhere in the query tree, including inside subqueries in
     /// expressions (e.g. `WHERE x IN (SELECT ... FROM t)`), which `extractAllTableReferences` skips.
@@ -1015,6 +1023,7 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
     /// A table expression node instance is unique per scope, so each entry identifies one table in one
     /// scope. Guard against the same node being visited twice (shared subtrees) so we check it only once.
     std::unordered_set<const IQueryTreeNode *> checked_tables;
+    bool view_checks_performed = true;
     for (auto & [node, storage, storage_id, storage_snapshot, scope_context] : visitor.tables)
     {
         /// StorageDummy is created on preliminary stages; ignore access check for it (as the planner does).
@@ -1074,9 +1083,17 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         /// `FINAL` / `SAMPLE` / `SQL SECURITY DEFINER` / `NONE`) and read metadata that real execution rejects
         /// in `StorageView::readImpl`. Inlined views already expose their base tables as `TableNode`s handled
         /// by the loop above, so they are not double-checked here.
+        ///
+        /// `checkViewBaseTableAccess` skips itself (returning `false`) when the view's inner query cannot
+        /// be resolved by the analyzer, so no base-table `SELECT` check ever ran for that view. Propagate
+        /// that to the caller instead of dropping it: dumping the resolved tree then would hand out
+        /// resolved metadata after only the view-object grant, while the legacy formatter fail-closes for
+        /// exactly this case by keeping the view unexpanded.
         if (typeid_cast<const StorageView *>(storage.get()))
-            checkViewBaseTableAccess(storage, storage_snapshot, scope_context, column_names);
+            view_checks_performed = checkViewBaseTableAccess(storage, storage_snapshot, scope_context, column_names) && view_checks_performed;
     }
+
+    return view_checks_performed;
 }
 
 /// Resolve a throwaway `query_tree` (which the caller owns) and run the access check on it. A query
@@ -1087,8 +1104,9 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
 /// covers a remote table function (e.g. `paimonAzure`, `url`) that throws a non-`DB::Exception` while
 /// connecting during resolution: `EXPLAIN QUERY TREE run_passes = 0` dumps the unresolved tree and must
 /// not turn into a connection error. An `ACCESS_DENIED` raised during resolution is still propagated.
-/// Returns whether the access check was actually performed, so a caller about to dump something the
-/// check was supposed to protect can tell that it never ran.
+/// Returns whether the access check was actually performed in full, so a caller about to dump something
+/// the check was supposed to protect can tell that it never ran (the query did not resolve) or ran only
+/// partially (a non-inlined view's base-table pass skipped itself, see `checkAccessRightsForQueryTree`).
 bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassManager & pass_manager, const ContextPtr & query_context)
 {
     bool resolved = false;
@@ -1110,10 +1128,7 @@ bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
         /// into an error.
     }
 
-    if (resolved)
-        checkAccessRightsForQueryTree(query_tree, query_context);
-
-    return resolved;
+    return resolved && checkAccessRightsForQueryTree(query_tree, query_context);
 }
 
 /// Reproduce the planner's per-table `SELECT` access check for the tables referenced by one explained
@@ -1125,9 +1140,11 @@ bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
 /// in `QueryAnalyzer::resolveTableFunction` and checks `SELECT` on it in
 /// `prepareBuildQueryPlanForTableExpression`. `run_passes` / `passes` mirror the `EXPLAIN SYNTAX`
 /// settings so the tree is resolved the same way the dump is.
-/// Returns whether the access check was actually performed: for a query that cannot be resolved (a
-/// "format but do not resolve" shape) `resolveThenCheckAccessRights` deliberately skips the check, and
-/// the caller must then not dump anything the skipped check was supposed to protect.
+/// Returns whether the access check was actually performed in full: for a query that cannot be resolved
+/// (a "format but do not resolve" shape) `resolveThenCheckAccessRights` deliberately skips the check, and
+/// for a query reading from a non-inlined view whose inner query the analyzer cannot resolve the
+/// recursive base-table pass skips itself (see `checkAccessRightsForQueryTree`). In both cases the
+/// caller must not dump anything the skipped check was supposed to protect.
 bool checkAccessForExplainedSelect(const ASTPtr & explained_query, const ContextPtr & query_context, bool run_passes, Int64 passes)
 {
     /// `joined_subquery_requires_alias` is a convenience restriction on how a query may be written, not
@@ -1146,8 +1163,7 @@ bool checkAccessForExplainedSelect(const ASTPtr & explained_query, const Context
     if (run_passes && pass_index >= 1)
     {
         query_tree_pass_manager.run(query_tree, pass_index);
-        checkAccessRightsForQueryTree(query_tree, check_context);
-        return true;
+        return checkAccessRightsForQueryTree(query_tree, check_context);
     }
 
     return resolveThenCheckAccessRights(std::move(query_tree), query_tree_pass_manager, check_context);
@@ -1231,7 +1247,20 @@ bool explainQueryTree(
     {
         if (settings.run_passes && pass_index >= 1)
         {
-            checkAccessRightsForQueryTree(query_tree, query_context);
+            if (!checkAccessRightsForQueryTree(query_tree, query_context))
+            {
+                /// The query reads from a non-inlined view whose inner query the analyzer cannot resolve
+                /// (a view created under `enable_analyzer = 0` with a legacy-only shape, a remote table
+                /// function that fails while connecting, ...), so the recursive base-table `SELECT` check
+                /// skipped itself after only the view-object grant was verified. Dumping the resolved tree
+                /// then would hand out resolved metadata the skipped check was supposed to protect, so
+                /// fall back to a freshly built, unresolved tree - it carries no resolved column names or
+                /// types, only the user's own query text, matching the fail-close the legacy formatter
+                /// implements by keeping such a view unexpanded. A real `SELECT` through such a view fails
+                /// while resolving the inner query in `StorageView::readImpl`, so no successfully running
+                /// query loses its resolved `EXPLAIN` here.
+                query_tree = buildQueryTree(explained_query, query_context);
+            }
         }
         else
         {

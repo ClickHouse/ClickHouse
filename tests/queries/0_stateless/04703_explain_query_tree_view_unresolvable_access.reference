@@ -1,0 +1,6 @@
+query tree, outsider: ACCESS_DENIED
+query tree, view_only: OK, resolved metadata not revealed
+query tree, full: OK, resolved metadata not revealed
+syntax, outsider: ACCESS_DENIED
+syntax, view_only: OK, resolved metadata not revealed
+syntax, full: OK, resolved metadata not revealed
