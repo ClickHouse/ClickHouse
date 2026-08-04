@@ -295,7 +295,9 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
             return makeRandomObject(
                 std::move(typed_paths),
                 fuzzObjectPathsToSkip(type_object->getPathsToSkip()),
-                fuzzObjectPathRegexpsToSkip(type_object->getPathRegexpsToSkip()));
+                fuzzObjectPathRegexpsToSkip(type_object->getPathRegexpsToSkip()),
+                type_object->getMaxDynamicPaths(),
+                type_object->getMaxDynamicTypes());
         }
         catch (...) // NOLINT(bugprone-empty-catch) Ok: a fuzzed typed-path type may violate an Object invariant
         {
@@ -450,15 +452,18 @@ std::vector<String> QueryFuzzer::fuzzObjectPathRegexpsToSkip(std::vector<String>
 DataTypePtr QueryFuzzer::makeRandomObject(
     std::unordered_map<String, DataTypePtr> typed_paths,
     std::unordered_set<String> paths_to_skip,
-    std::vector<String> path_regexps_to_skip)
+    std::vector<String> path_regexps_to_skip,
+    std::optional<size_t> source_max_dynamic_paths,
+    std::optional<size_t> source_max_dynamic_types)
 {
     /// Only the numeric parameters are randomized here; the typed paths and SKIP lists are used as given.
+    /// An unfired roll keeps the source limit, so mutating one part of the type does not reset the others.
     const size_t max_dynamic_paths = (fuzz_rand() % 4 == 0)
         ? fuzz_rand() % (DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT + 1)
-        : DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS;
+        : source_max_dynamic_paths.value_or(DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS);
     const size_t max_dynamic_types = (fuzz_rand() % 4 == 0)
         ? fuzz_rand() % (ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT + 1)
-        : DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES;
+        : source_max_dynamic_types.value_or(DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
     return std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
         std::move(typed_paths),

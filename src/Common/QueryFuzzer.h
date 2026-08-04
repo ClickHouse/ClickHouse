@@ -263,11 +263,14 @@ private:
     std::unordered_set<String> fuzzObjectPathsToSkip(std::unordered_set<String> paths_to_skip);
     /// Mutate a JSON `SKIP REGEXP` list. Replacements are RE2-compilable, which the type requires.
     std::vector<String> fuzzObjectPathRegexpsToSkip(std::vector<String> path_regexps_to_skip);
-    /// A JSON Object with the given typed paths / SKIP lists and randomized numeric parameters.
+    /// A JSON Object with the given typed paths / SKIP lists and randomized numeric parameters. A source
+    /// limit, when given, is what an unfired randomization keeps.
     DataTypePtr makeRandomObject(
         std::unordered_map<String, DataTypePtr> typed_paths = {},
         std::unordered_set<String> paths_to_skip = {},
-        std::vector<String> path_regexps_to_skip = {});
+        std::vector<String> path_regexps_to_skip = {},
+        std::optional<size_t> source_max_dynamic_paths = std::nullopt,
+        std::optional<size_t> source_max_dynamic_types = std::nullopt);
     /// An (Simple)AggregateFunction re-validated via the factory; nullptr if the aggregate rejects the
     /// arguments or the emitted name does not reparse. version is the one parsed from the source AST.
     DataTypePtr makeAggregateFunctionType(
