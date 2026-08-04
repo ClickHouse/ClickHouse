@@ -290,3 +290,21 @@ SELECT formatQuery('SELECT s NOT SIMILAR TO p ESCAPE ''#''');
 
 SELECT '-- ESCAPE must be a single ASCII character';
 SELECT 'a' SIMILAR TO 'a' ESCAPE 'ab'; -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- ESCAPE combines with the array quantifiers SOME / ALL';
+SELECT 'a_b' SIMILAR TO SOME(['a#_b', 'z%']) ESCAPE '#';       -- Returns: 1 (#_ is a literal _)
+SELECT 'axb' SIMILAR TO SOME(['a#_b', 'z%']) ESCAPE '#';       -- Returns: 0 (the escaped _ is no longer a wildcard)
+SELECT 'a_b' SIMILAR TO ALL(['a#_b', 'a%']) ESCAPE '#';        -- Returns: 1
+SELECT 'a_b' SIMILAR TO ALL(['a#_b', 'z%']) ESCAPE '#';        -- Returns: 0
+SELECT 'a_b' NOT SIMILAR TO ALL(['x#_y', 'z%']) ESCAPE '#';    -- Returns: 1
+SELECT 'a_b' NOT SIMILAR TO SOME(['a#_b', 'a%']) ESCAPE '#';   -- Returns: 0
+SELECT ('a_b' SIMILAR TO SOME(['a#_b', 'z%']) ESCAPE '#') = arrayExists(_a -> 'a_b' SIMILAR TO _a ESCAPE '#', ['a#_b', 'z%']); -- Returns: 1
+SELECT ('a_b' SIMILAR TO ALL(['a#_b', 'a%']) ESCAPE '#') = arrayAll(_a -> 'a_b' SIMILAR TO _a ESCAPE '#', ['a#_b', 'a%']);     -- Returns: 1
+
+SELECT '-- ESCAPE also combines with LIKE quantifiers';
+SELECT 'a_b' LIKE SOME(['a#_b', 'z%']) ESCAPE '#';             -- Returns: 1
+SELECT 'axb' LIKE SOME(['a#_b', 'z%']) ESCAPE '#';             -- Returns: 0
+SELECT 'a_b' NOT LIKE ALL(['x#_y', 'z%']) ESCAPE '#';          -- Returns: 1
+
+SELECT '-- A quantifier with ESCAPE round-trips through the formatter';
+SELECT formatQuery('SELECT s SIMILAR TO SOME([''a#_b'']) ESCAPE ''#''');

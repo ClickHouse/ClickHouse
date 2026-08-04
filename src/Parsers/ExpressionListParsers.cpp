@@ -3516,6 +3516,15 @@ static bool isArrayQuantifierPredicate(std::string_view function_name)
     return predicates.contains(function_name);
 }
 
+/// Predicates that accept a trailing `ESCAPE 'char'` clause: `LIKE` and `SIMILAR TO`
+/// with their case-insensitive and negated variants.
+static bool isEscapeSupportingPredicate(std::string_view function_name)
+{
+    return function_name == "like" || function_name == "ilike"
+        || function_name == "notLike" || function_name == "notILike"
+        || function_name == "similarTo" || function_name == "notSimilarTo";
+}
+
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
@@ -3693,7 +3702,29 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                     for (size_t suffix = 1; used_identifiers.contains(lambda_var); ++suffix)
                         lambda_var = "_a" + std::to_string(suffix);
 
-                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
+                    /// `LIKE` / `SIMILAR TO` (and their variants) accept a trailing `ESCAPE 'char'`
+                    /// clause after the array quantifier: `expr SIMILAR TO SOME(arr) ESCAPE '#'`.
+                    /// It must be consumed here, before the predicate is lowered into the lambda,
+                    /// because afterwards no `LIKE`-family operator remains on the operator stack
+                    /// for the `ESCAPE` handler in `tryParseOperator` to attach to. The escape
+                    /// literal becomes the third argument of the lambda body, mirroring the direct
+                    /// (non-quantified) form.
+                    ASTPtr escape_ast;
+                    if (isEscapeSupportingPredicate(prev_op.function_name))
+                    {
+                        Expected escape_stub;
+                        if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, escape_stub))
+                        {
+                            auto escape_pos = pos;
+                            ParserKeyword(Keyword::ESCAPE).ignore(pos, expected);
+                            if (!ParserStringLiteral().parse(pos, escape_ast, expected))
+                                pos = escape_pos;
+                        }
+                    }
+
+                    auto body = escape_ast
+                        ? makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var), escape_ast)
+                        : makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
                     auto lambda = makeASTLambda({lambda_var}, std::move(body));
                     const char * fn_name = some_kw ? "arrayExists" : "arrayAll";
                     function = makeASTFunction(fn_name, std::move(lambda), tmp);
@@ -3847,10 +3878,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         bool popped = layers.back()->popOperator(top_op);
 
         /// LIKE and SIMILAR TO both accept a trailing `ESCAPE 'char'` clause.
-        bool supports_escape = popped
-            && (top_op.function_name == "like" || top_op.function_name == "ilike"
-                || top_op.function_name == "notLike" || top_op.function_name == "notILike"
-                || top_op.function_name == "similarTo" || top_op.function_name == "notSimilarTo");
+        bool supports_escape = popped && isEscapeSupportingPredicate(top_op.function_name);
 
         if (supports_escape)
         {

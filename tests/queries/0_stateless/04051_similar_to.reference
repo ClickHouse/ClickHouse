@@ -228,3 +228,18 @@
 SELECT s SIMILAR TO p ESCAPE \'#\'
 SELECT s NOT SIMILAR TO p ESCAPE \'#\'
 -- ESCAPE must be a single ASCII character
+-- ESCAPE combines with the array quantifiers SOME / ALL
+1
+0
+1
+0
+1
+0
+1
+1
+-- ESCAPE also combines with LIKE quantifiers
+1
+0
+1
+-- A quantifier with ESCAPE round-trips through the formatter
+SELECT arrayExists(lambda(tuple(_a), s SIMILAR TO _a ESCAPE \'#\'), [\'a#_b\'])
