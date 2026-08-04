@@ -115,8 +115,19 @@ TEST(ExecutingGraph, AddEdgeMissingPeerIdentifiesBothEndpoints)
     }
     catch (const DB::Exception & e)
     {
-        ASSERT_NE(e.message().find(graph.expected_message), std::string::npos)
-            << "Expected '" << graph.expected_message << "', got: " << e.message();
+        const auto & message = e.message();
+        const auto exception_pos = message.find(graph.expected_message);
+        ASSERT_NE(exception_pos, std::string::npos)
+            << "Expected '" << graph.expected_message << "', got: " << message;
+
+        /// `PipelineExecutor` appends a `printPipeline` dump to the exception, labelled with the
+        /// same `{uniqID} at {address}` format, so the endpoints named by the exception can be
+        /// matched against the nodes of the dump even in this degraded no-`CurrentThread`
+        /// context. The source is the only processor in the list, so its description must
+        /// reappear verbatim in the dump after the exception message.
+        ASSERT_NE(message.find("Query pipeline:"), std::string::npos) << "Expected a pipeline dump, got: " << message;
+        ASSERT_NE(message.find(graph.source_description, exception_pos + graph.expected_message.size()), std::string::npos)
+            << "Expected the pipeline dump to repeat '" << graph.source_description << "', got: " << message;
     }
 }
 
