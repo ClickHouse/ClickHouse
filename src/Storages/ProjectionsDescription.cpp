@@ -380,8 +380,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
     auto mut_context = Context::createCopy(query_context);
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
-    /// Projection required-columns must expand ALIAS columns unconditionally: the source
-    /// columns an alias depends on are intrinsic to the projection, not a query-time choice.
+    /// Projection required-columns must always expand ALIAS columns, whatever the session asked for.
     mut_context->setSetting("optimize_respect_aliases", true);
     mut_context->setQueryKindInitial();
 
