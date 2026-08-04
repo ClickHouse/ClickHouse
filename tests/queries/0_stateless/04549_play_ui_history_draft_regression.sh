@@ -27,7 +27,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     unrun draft (or a live parameter edit) typed while the run was still in flight: `saveHistory`
 #     leaves the live editor/params alone (`tab.query`/`tab.params` diverged from `tab.launchQuery`
 #     / the launch-time params) and drops `run=1` on the entry it writes, while still keeping the
-#     completed run's own result snapshot;
+#     completed run's own result snapshot; the multi-statement flavor of this hazard is driven
+#     through the REAL `postAll` -> `postMulti` completion plumbing (only the lexer and the network
+#     round-trip are stubbed), pinning that the launch-time editor snapshot — captured before the
+#     preflight awaits — is what reaches `saveHistory`, not the live `query_area.value`;
 #   - Back onto a LEGACY (pre-`run_id`) history entry written while its tab was mid-run: the
 #     query/params fallback that recognizes such a null-result entry as the tab's own — now
 #     finished — run compares the parameter maps by value per name (`sameParamValues`), so merely
@@ -48,10 +51,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The harness extracts the real tab/history functions from the served /play page and drives them
 # under node with stub DOM/history objects (including a minimal in-memory IndexedDB), asserting on
 # the observable state: history entries, the active tab, the editor, the persisted workspace, and
-# whether a reload auto-runs the restored query. The per-tab run path (`postOne`/`postAll`/
-# `postSingle`/`postMulti` and the WASM-lexer preflight) is master's and has its own coverage; here
-# a run is driven through the real `saveHistory` with the same launch-time snapshot those
-# entrypoints capture, which is what the history contract turns on.
+# whether a reload auto-runs the restored query. Most cases drive a run through the real
+# `saveHistory` with the same launch-time snapshot the run entrypoints capture, which is what the
+# history contract turns on; the "run all in flight" cases additionally complete through the real
+# `postAll` -> `postMulti` plumbing (the WASM lexer and `postImpl` are stubbed), so the
+# launch-snapshot capture and threading of those entrypoints is pinned end-to-end too.
 
 html="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_play.html"
 harness="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_play_history_harness.js"
@@ -88,12 +92,21 @@ const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tab
     'sameServerAddress', 'effectiveConnectionUser', 'stampSelectedDatabaseConnection',
     'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory', 'resolveTabForState',
     'markBootstrapDirty', 'switchToTab', 'addTab', 'closeTab', 'closeOtherTabs', 'scheduleSave', 'loadFromDb',
-    'persist', 'persistColorModes', 'persistPinnedColumns', 'reconcileStartup'];
+    'persist', 'persistColorModes', 'persistPinnedColumns', 'reconcileStartup',
+    'resolveRunParams', 'pickRunParams', 'extractRunParamNames', 'beginFlight', 'endFlight', 'postMulti'];
 let code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
+/// The real `postAll` too, under a distinct name: `reconcileStartup`'s startup auto-run must keep
+/// hitting the observable stub (`postAllCalled`), while the "run all in flight" cases drive the
+/// real entrypoint — and through it the real `postMulti` completion path — explicitly.
+code += '\n' + extractTopLevel(/^async function postAll\(/, 'postAll')
+    .replace('async function postAll(', 'async function realPostAll(');
 
 const sandbox = {
     console, URL, TextEncoder, TextDecoder, JSON, Object, Array, Promise, Math, Set, Map,
+    /// Present so the real `extractRunParamNames` takes its lexer path (and thus the gated
+    /// `tokenize` stub below) instead of bailing out to the no-WASM fallback before the gate.
+    WebAssembly,
     btoa: s => Buffer.from(s, 'binary').toString('base64'),
     atob: s => Buffer.from(s, 'base64').toString('binary'),
     /// `scheduleSave` must arm its debounce timer without the save ever firing (the reload cases
@@ -138,9 +151,12 @@ const sandbox = {
                     ? { value: sandbox.param_inputs[name] }
                     : null;
             }
-            return { style: {}, innerHTML: '' };
+            return { style: {}, innerHTML: '', blur() {} };
         },
-        createElement: () => ({ style: {}, innerHTML: '', appendChild() {} }),
+        /// Covers both the plain containers and the `query-result` custom elements the real
+        /// `postMulti` builds its per-statement panels from; no rendering happens in the harness.
+        createElement: () => ({ style: {}, innerHTML: '', className: '', appendChild() {}, addEventListener() {},
+                                rowCount: 0, elapsedNs: 0, incompleteResult: false }),
         querySelectorAll: () => [],
         body: { scrollTo() {} },
     },
@@ -162,6 +178,53 @@ const sandbox = {
     focusEditorForRun: () => {},
     updateRunButtons: () => {},
     anyInFlight: () => false,
+    /// The run-path chrome the extracted `beginFlight`/`endFlight`/`postMulti` repaint: the shared
+    /// progress widget, the logo, the tab bar (visible, so `beginFlight` does not rebuild it) and
+    /// the panel reset. None of it feeds back into the history contract under test.
+    progressEl: { start() {}, finish() {}, clear() {}, updateProgress() {}, updateText() {}, style: { setProperty() {} } },
+    logoEl: { style: {} },
+    tab_bar_elem: { hidden: false },
+    multiQueryContainer: null,
+    elapsed_ns: 0,
+    isMultiQuery: false,
+    performance: { now: () => 0 },
+    AbortController,
+    closeCompletions: () => {},
+    clearQueryError: () => {},
+    clearPanel: tab => { tab.logoVisible = true; },
+    paintDownloadCopy: () => {},
+    /// The WASM lexer entry the run preflight awaits first (`extractRunParamNames`). While
+    /// `lexerGate` is armed the await parks here — the window in which the user keeps typing —
+    /// and the throw after it makes the preflight fall back to the launch-time snapshot, exactly
+    /// like a page with no lexer. Everything downstream of this FIRST await (`splitAllQueries`,
+    /// `postImpl`, the completion) therefore runs with the edit already in the live editor, so
+    /// any reverted re-read of `query_area.value` after a preflight await is caught.
+    lexerGate: null,
+    tokenize: async () => { if (sandbox.lexerGate) await sandbox.lexerGate; throw new Error('no lexer in this harness'); },
+    /// Never reached (`tokenize` above throws), but the call is `extractQueryParams(await
+    /// tokenize(text))` and the CALLEE is looked up before the argument is evaluated — an
+    /// undefined name would short-circuit the preflight to its fallback without parking on the
+    /// gate at all.
+    extractQueryParams: () => { throw new Error('unreachable: tokenize always throws here'); },
+    /// The multi-statement preflight for the real `postAll`: statements split on ';' with their
+    /// offsets, every one a SELECT (a single parallel group), as the real lexer produces for the
+    /// plain SELECT texts these cases run.
+    splitAllQueries: async text =>
+    {
+        const parsed = [];
+        let start = 0;
+        for (const piece of text.split(';'))
+        {
+            const query = piece.trim();
+            if (query) parsed.push({ query, start, end: start + piece.length, queryStart: start + piece.indexOf(query), is_select: true });
+            start += piece.length + 1;
+        }
+        return parsed;
+    },
+    /// The per-statement network round-trip the real `postMulti` issues; resolves to the shape its
+    /// completion path consumes.
+    postImpl: async (tab, posted_request_num, query) =>
+        ({ cancelled: false, is_error: false, response_ok: true, format: 'JSONCompact', reply: 'result of ' + query, is_image: false }),
     /// A run in a tab is stopped by bumping its generation and aborting its request; no live
     /// request here, so the token bump is all that matters.
     abortTabQuery: tab => { if (tab) ++tab.reqNum; },
@@ -669,6 +732,52 @@ async function openRunUrl(query, tab_name)
     assert_eq('delayed completion (params changed): the query is kept', active().query, 'SELECT {x:Int32}');
     assert_params('delayed completion (params changed): the live param edit survives', active().params, { x: '9' });
     assert_eq('delayed completion (params changed): the entry does not carry run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+
+    /// The same hazard driven through the REAL run plumbing, not a pre-captured `saveHistory`
+    /// call: `postAll` snapshots the editor BEFORE its preflight awaits and `postMulti` completes
+    /// the run with that snapshot (`editorText`). The edit below lands while the launch is parked
+    /// on its FIRST await (the gated lexer stub), so a revert of either function to re-read the
+    /// live `query_area.value` after an await — at snapshot time or at completion — would stamp
+    /// the unrun draft as the run (`run=1`, auto-executed on reload) and is caught here.
+    reset();
+    await run('SELECT 0');
+    {
+        const tab = active();
+        tab.resultEl = { style: {} };      /// the panel surface the real `postMulti` repaints
+        tab.panel = { insertBefore() {} };
+        type('SELECT 1; SELECT 2');
+        let release;
+        sandbox.lexerGate = new Promise(resolve => { release = resolve; });
+        const flight = sandbox.realPostAll();
+        await drain();                     /// the launch is now parked inside the lexer preflight
+        type('SELECT 3 -- typed while Run all was in flight');
+        release();
+        sandbox.lexerGate = null;
+        await flight;
+        await drain();
+        assert_eq('run all in flight: the live draft survives the real completion', active().query, 'SELECT 3 -- typed while Run all was in flight');
+        assert_eq('run all in flight: the result snapshot holds the launched editor text', tab.result && tab.result.query, 'SELECT 1; SELECT 2');
+        assert_eq('run all in flight: the per-statement snapshots are kept', tab.result && tab.result.multi && tab.result.multi.length, 2);
+        assert_eq('run all in flight: the first statement result is snapshotted', tab.result && tab.result.multi && tab.result.multi[0].data, 'result of SELECT 1');
+        assert_eq('run all in flight: the entry carries the draft', sandbox.history.stack[sandbox.history.idx].state.query, 'SELECT 3 -- typed while Run all was in flight');
+        assert_eq('run all in flight: the entry does not carry run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    }
+
+    /// Control for the case above: the same real `postAll` -> `postMulti` path with NO in-flight
+    /// edit is a clean full-editor run, so the entry holds the launched text and carries `run=1`
+    /// (the session was opened with `?run=1`) — the divergence guard must not fire spuriously.
+    reset();
+    {
+        const tab = active();
+        tab.resultEl = { style: {} };
+        tab.panel = { insertBefore() {} };
+        type('SELECT 1; SELECT 2');
+        await sandbox.realPostAll();
+        await drain();
+        assert_eq('run all clean: the entry holds the launched text', sandbox.history.stack[sandbox.history.idx].state.query, 'SELECT 1; SELECT 2');
+        assert_eq('run all clean: the entry carries run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+        assert_eq('run all clean: the completed run leaves flight', tab.inFlight, false);
+    }
 
     /// A LEGACY history entry — persisted before entries recorded the run identity (`run_id`) —
     /// that was written while its tab was mid-run carries no result snapshot, so Back onto it must

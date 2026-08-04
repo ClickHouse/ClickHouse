@@ -37,6 +37,15 @@ delayed completion: the entry does not carry run=1
 delayed completion (params changed): the query is kept
 delayed completion (params changed): the live param edit survives
 delayed completion (params changed): the entry does not carry run=1
+run all in flight: the live draft survives the real completion
+run all in flight: the result snapshot holds the launched editor text
+run all in flight: the per-statement snapshots are kept
+run all in flight: the first statement result is snapshotted
+run all in flight: the entry carries the draft
+run all in flight: the entry does not carry run=1
+run all clean: the entry holds the launched text
+run all clean: the entry carries run=1
+run all clean: the completed run leaves flight
 legacy mid-run entry: the entry the tab was left at holds no result
 legacy mid-run entry (reordered params): the tab is reactivated
 legacy mid-run entry (reordered params): the finished run is preserved
