@@ -16,6 +16,7 @@ retry code is exercised; only `time.sleep` is neutralized.
 """
 
 import ast
+import json
 import os
 import stat
 import sys
@@ -30,7 +31,7 @@ import ci.praktika.gh as gh_mod
 from ci.jobs import check_style
 from ci.jobs.scripts.workflow_hooks.store_data import (
     SETTINGS_HISTORY_FILE,
-    fetch_settings_history_patch,
+    fetch_settings_history_patch_and_file,
     settings_history_fetch_error_message,
     store_settings_history_changes,
 )
@@ -40,6 +41,12 @@ from ci.praktika.settings import Settings
 _REPO = "ClickHouse/ClickHouse"
 _PR = 12345
 _PATCH = '@@ -1,2 +1,3 @@\n+    {"some_setting", false, true, "reason"},\n'
+_CONTENTS_URL = f"https://api.github.com/repos/{_REPO}/contents/{SETTINGS_HISTORY_FILE}?ref=deadbeef"
+_HEAD_FILE = (
+    'addSettingsChanges(settings_changes_history, "26.7",\n'
+    "    {\n"
+    "    });\n"
+)
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 
@@ -47,22 +54,40 @@ _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 def fake_gh(tmp_path, monkeypatch):
     """Install a fake `gh` on PATH; returns an installer, an invocation counter and the argv.
 
+    The fetch issues two API reads - the PR's file entry, then that entry's
+    `contents_url` - so the fake dispatches on the raw-content Accept header and each
+    read has its own body and exit code. A fake that answered both alike could not tell
+    a failure of one from a failure of the other.
+
     The counter is what distinguishes "retried" from "gave up": asserting only the
-    final message cannot tell those apart. The recorded argv is what pins the command
+    final message cannot tell those apart. The recorded argv is what pins the commands
     actually issued: a fake that ignores its arguments constrains nothing, so pointing
-    the fetch at the wrong PR or the wrong file would otherwise stay green.
+    the fetch at the wrong PR, file or revision would otherwise stay green.
     """
     counter = tmp_path / "invocations"
     argv_log = tmp_path / "argv"
-    patch_file = tmp_path / "patch.diff"
-    patch_file.write_text(_PATCH)
 
-    def install(body, exit_code):
+    def entry_body(patch=_PATCH, contents_url=_CONTENTS_URL):
+        """A body emitting the `{patch, contents_url}` object the jq filter produces."""
+        entry = tmp_path / f"entry-{abs(hash((patch, contents_url)))}.json"
+        entry.write_text(json.dumps({"patch": patch, "contents_url": contents_url}) + "\n")
+        return f'cat "{entry}"'
+
+    def file_body(text=_HEAD_FILE):
+        content = tmp_path / f"head-{abs(hash(text))}.cpp"
+        content.write_text(text)
+        return f'cat "{content}"'
+
+    def install(body, exit_code, contents_body=None, contents_exit_code=0):
         script = tmp_path / "gh"
         script.write_text(
             "#!/bin/bash\n"
             f'echo x >> "{counter}"\n'
             f'printf "%s\\n" "$*" >> "{argv_log}"\n'
+            'if [[ "$*" == *vnd.github.raw* ]]; then\n'
+            f"{contents_body if contents_body is not None else file_body()}\n"
+            f"exit {contents_exit_code}\n"
+            "fi\n"
             f"{body}\n"
             f"exit {exit_code}\n"
         )
@@ -75,18 +100,31 @@ def fake_gh(tmp_path, monkeypatch):
     def invocations():
         return len(counter.read_text().splitlines()) if counter.exists() else 0
 
+    def argv_all():
+        return argv_log.read_text().splitlines() if argv_log.exists() else []
+
     def argv():
         """The argument line of the last `gh` invocation."""
-        return argv_log.read_text().splitlines()[-1] if argv_log.exists() else ""
+        return argv_all()[-1] if argv_all() else ""
+
+    def files_argv():
+        """The argument line of the PR-file-list read, whatever ran after it."""
+        matching = [line for line in argv_all() if "/files" in line]
+        return matching[-1] if matching else ""
 
     install.invocations = invocations
     install.argv = argv
-    install.emit_patch = f'cat "{patch_file}"'
+    install.argv_all = argv_all
+    install.files_argv = files_argv
+    install.entry_body = entry_body
+    install.file_body = file_body
+    install.emit_patch = entry_body()
     return install
 
 
 def _fetch():
-    return fetch_settings_history_patch(_REPO, _PR)
+    """The patch alone; the cells that care about the file lines read the pair directly."""
+    return fetch_settings_history_patch_and_file(_REPO, _PR)[0]
 
 
 class _FakeInfo:
@@ -177,15 +215,16 @@ def test_transient_failure_recovers_on_the_next_attempt(fake_gh, tmp_path):
         0,
     )
     assert _fetch().strip() == _PATCH.strip()
-    assert fake_gh.invocations() == 2
+    # One failed entry read, its retry, then the contents read.
+    assert fake_gh.invocations() == 3
 
 
 # --- rc=0 cases stay distinguishable from each other -------------------------
 
 
 def test_null_patch_keeps_the_large_diff_message(fake_gh):
-    """GitHub really does omit the patch for a very large diff; `jq -r` prints "null"."""
-    fake_gh("echo null", 0)
+    """GitHub really does omit the patch for a very large diff; the field is then null."""
+    fake_gh(fake_gh.entry_body(patch=None), 0)
     with pytest.raises(RuntimeError) as excinfo:
         _fetch()
     assert "very large diffs" in str(excinfo.value)
@@ -203,8 +242,12 @@ def test_empty_output_names_the_absent_file(fake_gh):
 
 def test_real_patch_succeeds_unretried(fake_gh):
     fake_gh(fake_gh.emit_patch, 0)
-    assert _fetch().strip() == _PATCH.strip()
-    assert fake_gh.invocations() == 1
+    patch, file_lines = fetch_settings_history_patch_and_file(_REPO, _PR)
+    assert patch.strip() == _PATCH.strip()
+    # The lines must come from the fetched head revision, not from the checked-out file.
+    assert file_lines == _HEAD_FILE.splitlines()
+    # One read for the file entry, one for its contents; neither retried.
+    assert fake_gh.invocations() == 2
 
 
 def test_the_issued_command_targets_the_right_pr_and_file(fake_gh):
@@ -212,18 +255,59 @@ def test_the_issued_command_targets_the_right_pr_and_file(fake_gh):
     wrong file and every message-only assertion would still pass."""
     fake_gh(fake_gh.emit_patch, 0)
     _fetch()
-    argv = fake_gh.argv()
+    argv = fake_gh.files_argv()
     assert f"repos/{_REPO}/pulls/{_PR}/files" in argv
     assert "--paginate" in argv
     # Without the `select` the parser would be handed every changed file's patch.
     assert f'select(.filename == "{SETTINGS_HISTORY_FILE}")' in argv
-    assert ".patch" in argv
+    assert "patch" in argv
+    # Both halves must come from the same entry, or the patch's line numbers and the file
+    # they are resolved against can be two different revisions.
+    assert "contents_url" in argv
+
+
+def test_the_file_is_read_from_the_revision_the_patch_names(fake_gh):
+    """The jq output pins which revision to read; a fetch that ignored `contents_url` and
+    re-derived the URL could read a different commit and keep every other cell green."""
+    other = _CONTENTS_URL.replace("deadbeef", "cafef00d")
+    fake_gh(fake_gh.entry_body(contents_url=other), 0)
+    _fetch()
+    raw_reads = [line for line in fake_gh.argv_all() if "vnd.github.raw" in line]
+    assert len(raw_reads) == 1
+    assert other in raw_reads[0]
+
+
+def test_empty_head_file_is_reported_rather_than_parsed_as_empty(fake_gh):
+    """An empty file would make the parser attribute every entry to no block at all, so it
+    must fail closed with its own message instead of reaching the parser."""
+    fake_gh(fake_gh.emit_patch, 0, contents_body="true")
+    with pytest.raises(RuntimeError) as excinfo:
+        _fetch()
+    assert "no content returned" in str(excinfo.value)
+
+
+def test_a_failing_contents_read_names_the_cause_and_retries(fake_gh):
+    """The second read is jointly load-bearing: a 5xx there used to be laundered into an
+    empty string, which the emptiness check would then mislabel."""
+    fake_gh(
+        fake_gh.emit_patch,
+        0,
+        contents_body='echo "gh: Server Error (HTTP 502)" >&2',
+        contents_exit_code=1,
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        _fetch()
+    message = str(excinfo.value)
+    assert "502" in message
+    assert "exit_code:[1]" in message
+    # One entry read plus the whole retry ladder for the contents read.
+    assert fake_gh.invocations() == 1 + Settings.MAX_RETRIES_GH
 
 
 def test_unresolvable_pr_number_is_reported_without_calling_gh(fake_gh):
     fake_gh(fake_gh.emit_patch, 0)
     with pytest.raises(RuntimeError) as excinfo:
-        fetch_settings_history_patch(_REPO, 0)
+        fetch_settings_history_patch_and_file(_REPO, 0)
     assert "could not resolve the PR number" in str(excinfo.value)
     assert fake_gh.invocations() == 0
 
@@ -274,26 +358,44 @@ def test_hook_does_not_raise_so_the_remaining_kv_data_is_still_stored(fake_gh):
     store_settings_history_changes(_FakeInfo())  # must not raise
 
 
-def test_hook_stores_the_changed_settings_on_success(fake_gh, tmp_path, monkeypatch):
+def test_hook_stores_the_changed_settings_on_success(fake_gh):
     """The success path still reaches the parser, and then the check has nothing to report."""
-    history = tmp_path / "SettingsChangesHistory.cpp"
-    history.write_text(
-        'addSettingsChanges(settings_changes_history, "26.7",\n'
-        '    {\n'
-        '    });\n'
-    )
     fake_gh(
-        'printf \'%s\\n\' "@@ -2,0 +2,1 @@" '
-        '\'+    {"some_setting", false, true, "reason"},\'',
+        fake_gh.entry_body(
+            patch='@@ -2,0 +2,1 @@\n+    {"some_setting", false, true, "reason"},\n'
+        ),
         0,
     )
     info = _FakeInfo()
-    store_settings_history_changes(info, path=str(history))
+    store_settings_history_changes(info)
     assert info.kv["settings_history_changed_settings"] == [
         {"namespace": "Session", "name": "some_setting"}
     ]
     assert "settings_history_fetch_error" not in info.kv
     assert _style_check_report(info.kv) == ""
+
+
+def test_the_hook_never_reads_the_checked_out_file(fake_gh, tmp_path, monkeypatch):
+    """The bug master fixed: resolving the patch against the CI checkout attributes entries
+    to the wrong block. Point `path` at a decoy whose blocks disagree with the fetched head
+    file - the reported namespace must come from the fetched one."""
+    decoy = tmp_path / "SettingsChangesHistory.cpp"
+    decoy.write_text(
+        'addSettingsChanges(merge_tree_settings_changes_history, "26.7",\n'
+        "    {\n"
+        "    });\n"
+    )
+    fake_gh(
+        fake_gh.entry_body(
+            patch='@@ -2,0 +2,1 @@\n+    {"some_setting", false, true, "reason"},\n'
+        ),
+        0,
+    )
+    info = _FakeInfo()
+    store_settings_history_changes(info, path=str(decoy))
+    assert info.kv["settings_history_changed_settings"] == [
+        {"namespace": "Session", "name": "some_setting"}
+    ]
 
 
 def test_hook_uses_the_linked_pr_number_in_the_merge_queue(fake_gh):
@@ -304,7 +406,7 @@ def test_hook_uses_the_linked_pr_number_in_the_merge_queue(fake_gh):
     store_settings_history_changes(info)
     assert "settings_history_fetch_error" not in info.kv
     # The linked number has to reach the command, not merely pass the guard.
-    assert f"/pulls/{_PR}/files" in fake_gh.argv()
+    assert f"/pulls/{_PR}/files" in fake_gh.files_argv()
 
 
 def test_hook_reports_an_unresolvable_pr_number(fake_gh):
@@ -343,9 +445,8 @@ def test_large_stdout_with_a_failing_gh_still_names_the_cause(fake_gh):
     5xx on a later page exits non-zero with an earlier page's patch already on stdout. The
     bounded message must still name the 5xx, the exit code and the attempt count."""
     fake_gh(
-        f"{fake_gh.emit_patch}\n"
-        + "\n".join(f'echo \'+    {{"setting_{i:03d}", false, true, "reason"}},\'' for i in range(20))
-        + '\necho "gh: Server Error (HTTP 502)" >&2',
+        'head -c 5000 /dev/zero | tr "\\0" "x"\n'
+        'echo "gh: Server Error (HTTP 502)" >&2',
         1,
     )
     info = _FakeInfo()

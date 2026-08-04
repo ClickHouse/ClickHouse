@@ -1,4 +1,5 @@
 import copy
+import json
 import re
 
 from ci.defs.job_configs import JobConfigs
@@ -28,12 +29,19 @@ def _settings_history_entry_signature(entry_body):
 SETTINGS_HISTORY_FILE = "src/Core/SettingsChangesHistory.cpp"
 
 
-def fetch_settings_history_patch(repo_name, pr_number, path=SETTINGS_HISTORY_FILE):
-    """Return the unified diff of `path` for `pr_number`, or raise naming the actual cause.
+def fetch_settings_history_patch_and_file(
+    repo_name, pr_number, path=SETTINGS_HISTORY_FILE
+):
+    """Return `(patch, file_lines)` for `path` in `pr_number`, or raise naming the cause.
 
-    CI containers have no .git history, so the patch comes from the GitHub API. The style
-    check reports whichever message this raises, so the three failure modes must stay
-    distinguishable: a failed command, a `null` patch, and an empty result."""
+    CI containers have no .git history, so both come from the GitHub API, and from the same
+    file entry: `.contents_url` names the file at the very revision `.patch` was computed
+    against. Reading the checked-out file instead would resolve the patch's new-file line
+    numbers against the PR merged with its base, whose numbering can differ, attributing
+    entries to the wrong block or namespace.
+
+    The style check reports whichever message this raises, so the failure modes must stay
+    distinguishable: a failed command, a `null` patch, and an entry the API never returned."""
     if pr_number <= 0:
         raise RuntimeError(
             "could not resolve the PR number for the settings-history diff"
@@ -41,34 +49,43 @@ def fetch_settings_history_patch(repo_name, pr_number, path=SETTINGS_HISTORY_FIL
     # `.patch` is the unified diff for just this file (hunks only, no file header).
     # strict=True so a command failure is not laundered into an empty result, which the
     # checks below would then mislabel as the large-diff case.
-    patch = GH.get_output_with_retries(
+    file_entry = GH.get_output_with_retries(
         f"gh api repos/{repo_name}/pulls/{pr_number}/files --paginate "
-        f"--jq '.[] | select(.filename == \"{path}\") | .patch'",
+        f"--jq '.[] | select(.filename == \"{path}\") "
+        "| {patch, contents_url}'",
         verbose=True,
         strict=True,
     )
-    if patch.strip() == "null":
-        # GitHub omits the per-file patch for very large diffs; the `.patch` field is then
-        # null, which `jq -r` prints as the literal string "null".
-        raise RuntimeError(
-            f"no patch returned for changed file {path} "
-            "(GitHub omits the patch for very large diffs)"
-        )
-    if patch.strip() == "":
+    if not file_entry.strip():
         # rc=0 with no output: the jq `select` matched nothing, i.e. the API's file list does
         # not contain this file even though changed_files says it changed.
         raise RuntimeError(
             f"{path} is in changed_files but absent from the GitHub API file list for "
             f"PR {pr_number}"
         )
-    return patch
+    file_entry = json.loads(file_entry)
+    patch = file_entry["patch"] or ""
+    if not patch.strip():
+        # GitHub omits the per-file patch for very large diffs; `.patch` is then null.
+        raise RuntimeError(
+            f"no patch returned for changed file {path} "
+            "(GitHub omits the patch for very large diffs)"
+        )
+    contents_url = file_entry["contents_url"]
+    head_file = GH.get_output_with_retries(
+        f'gh api -H "Accept: application/vnd.github.raw" "{contents_url}"',
+        verbose=True,
+        strict=True,
+    )
+    if not head_file.strip():
+        raise RuntimeError(f"no content returned for {contents_url}")
+    return patch, head_file.splitlines()
 
 
 _FETCH_ERROR_MESSAGE_LIMIT = 500
-# Elide the middle, not the head: `GH.get_output_with_retries` front-loads the fields that
-# name the cause ahead of the API-controlled output, so it is the head window that preserves
-# the cause. The tail window is a cheap hedge for arbitrary exception texts; it is not a
-# guarantee for that helper's `err` field, which a large `out` can still push past the bound.
+# Elide the middle: the head window is the one that keeps the cause, because
+# `GH.get_output_with_retries` puts it ahead of the API-controlled output. The tail window is
+# only a hedge for arbitrary exception texts, not a guarantee for that helper's `err` field.
 _FETCH_ERROR_MESSAGE_TAIL = 80
 
 
@@ -267,9 +284,9 @@ def store_settings_history_changes(info, path=SETTINGS_HISTORY_FILE):
         pr_number = info.pr_number
         if pr_number <= 0 and info.is_merge_queue_event:
             pr_number = info.linked_pr_number
-        patch = fetch_settings_history_patch(info.repo_name, pr_number, path)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            file_lines = f.read().splitlines()
+        patch, file_lines = fetch_settings_history_patch_and_file(
+            info.repo_name, pr_number, path
+        )
         changed_settings = parse_settings_history_changes(patch, file_lines)
         info.store_kv_data("settings_history_changed_settings", changed_settings)
         print(f"Stored settings-history changed settings: {changed_settings}")
@@ -295,11 +312,11 @@ if __name__ == "__main__":
     # For the settings-history style check (check_style.py): when
     # src/Core/SettingsChangesHistory.cpp changed in a PR or merge-queue run, record the
     # names of the setting entries this change ADDS, VALUE-EDITS or REMOVES so the style check
-    # can verify each is recorded under the current version block. The success key stores only
-    # those names, never the raw diff, to keep the pipeline `data` output small and free of
-    # user-authored free text (see the note further below about the GH Actions runner dropping
-    # outputs that match a secret pattern). The failure key stores a separately bounded
-    # diagnostic, which can include a capped slice of the `gh` output.
+    # can verify each is recorded under the current version block. Only the setting names are
+    # stored (never the
+    # raw diff) to keep the pipeline `data` output small and free of user-authored free text
+    # (see the note further below about the GH Actions runner dropping outputs that match a
+    # secret pattern). On failure the reason is stored instead, separately bounded.
     if (
         info.pr_number or info.is_merge_queue_event
     ) and SETTINGS_HISTORY_FILE in changed_files:

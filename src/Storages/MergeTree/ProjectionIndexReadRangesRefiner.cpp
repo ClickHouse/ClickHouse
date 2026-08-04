@@ -37,7 +37,7 @@ MarkRanges ProjectionIndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo 
         return ranges;
 
     const auto & bitmap = *index_read_result->projection_index_read_result;
-    const auto & index_granularity = *info.data_part->index_granularity;
+    const auto & index_granularity = info.data_part_info->getIndexGranularity();
 
     /// Same predicate as the projection branch of MergeTreeReaderIndex::canSkipMark,
     /// applied before the ranges become a read task.
@@ -71,7 +71,7 @@ MarkRanges ProjectionIndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo 
         bool part_fully_processed = remaining_marks.fetch_sub(dropped_marks, std::memory_order_acq_rel) == dropped_marks;
 
         if (part_fully_processed)
-            index_build_context->index_reader_pool->clear(info.data_part);
+            index_build_context->index_reader_pool->clear(info.data_part_info->getDataPart());
     }
 
     return result;
