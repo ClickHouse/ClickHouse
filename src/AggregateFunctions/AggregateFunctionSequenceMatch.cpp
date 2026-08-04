@@ -633,19 +633,23 @@ protected:
         return {};
     }
 
-    /// Find the last matching sequence chronologically
+    /// Find the last matching sequence chronologically. A complete match is always preferred over
+    /// a partial one - a partial result is only ever returned when no complete match exists
+    /// anywhere in the data, mirroring backtrackingMatchEventsFirst's own preference.
     template <typename EventEntry>
     VectorWithMemoryTracking<T> backtrackingMatchEventsLast(EventEntry & events_it, const EventEntry events_end) const
     {
         VectorWithMemoryTracking<T> last_matched_events;
         auto events_it_copy = events_it;
+        bool found_complete_match = false;
 
         /// Shared across every backtrackingMatch call made below (see backtrackingMatchEventsFirst).
         size_t iteration_count = 0;
 
         /// Phase 1: collect complete matches via plain (unanchored) calls. A complete match is
         /// always unambiguous (backtracking stops the instant one completes), so this reliably
-        /// finds every non-overlapping complete match in order.
+        /// finds every non-overlapping complete match in order; the last one collected wins
+        /// outright over anything found in phase 2 below.
         while (events_it_copy != events_end)
         {
             auto anchor = events_it_copy;
@@ -655,6 +659,7 @@ protected:
             if (match_result)
             {
                 last_matched_events = current_match;
+                found_complete_match = true;
                 continue;
             }
 
@@ -665,9 +670,12 @@ protected:
             break;
         }
 
-        /// Phase 2: no complete match remains; find the latest anchor with any (partial) result.
-        /// A plain (unanchored) call's partial result on total failure is the longest one found
-        /// anywhere in the remaining suffix, not necessarily the one starting latest.
+        if (found_complete_match)
+            return last_matched_events;
+
+        /// Phase 2: no complete match exists anywhere; find the latest anchor with any (partial)
+        /// result. A plain (unanchored) call's partial result on total failure is the longest one
+        /// found anywhere in the remaining suffix, not necessarily the one starting latest.
         ///
         /// Drive the scan with a separate `anchor` iterator, advanced by exactly one candidate
         /// position at a time, and pass a *copy* into backtrackingMatch: a time constraint

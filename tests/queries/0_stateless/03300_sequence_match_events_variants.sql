@@ -25,9 +25,11 @@ select 'Two consecutive - All count' as test, 4 = length(sequenceMatchEventsAll(
 -- Test: Three consecutive events (?1)(?1)(?1)
 -- Non-overlapping complete matches: [0,1,2], [6,7,8] = 2 matches
 -- Partial match at end: [9] (only one data=0 left, can't complete pattern)
--- First match should be [0,1,2], Last should be [9] (partial), All should include partial
+-- First should be the first complete match [0,1,2]; Last must prefer the last *complete* match
+-- [6,7,8] over the trailing partial [9] - a complete match is always preferred over a partial one.
+-- All still reports the trailing partial as its own entry, alongside every complete match.
 select 'Three consecutive - First' as test, [0,1,2] = sequenceMatchEventsFirst('(?1)(?1)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
-select 'Three consecutive - Last (partial)' as test, [9] = sequenceMatchEventsLast('(?1)(?1)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
+select 'Three consecutive - Last prefers the last complete match' as test, [6,7,8] = sequenceMatchEventsLast('(?1)(?1)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
 select 'Three consecutive - All count' as test, 3 = length(sequenceMatchEventsAll('(?1)(?1)(?1)')(time, data = 0, data = 1, data = 2, data = 3)) from sequence_test_variants;
 select 'Three consecutive - All has partial' as test, [9] = sequenceMatchEventsAll('(?1)(?1)(?1)')(time, data = 0, data = 1, data = 2, data = 3)[3] from sequence_test_variants;
 
@@ -50,12 +52,15 @@ select 'Time constraint <11 - First' as test, [0,4] = sequenceMatchEventsFirst('
 
 -- Test: Mixed pattern (?2)(?3)(?1)
 -- data=1 at 4, data=2 at 5, data=0 at 6 -> complete match [4,5,6]
--- data=1 at 10 and 11, no data=2 after either -> the latest anchor with any result is [11]
--- (matching only action1/cond2; there's nothing left to even attempt cond3 against), not [10]
--- (which got as far as failing cond3 against 11): Last/All must prefer the later one.
+-- data=1 at 10 and 11, no data=2 after either -> only trailing partials remain after that.
+-- Last must prefer the complete match [4,5,6] over any trailing partial (a complete match is
+-- always preferred). All still reports the latest trailing partial ([11], not [10] - matching
+-- only action1/cond2 with nothing left to attempt cond3 against beats [10], which got as far as
+-- failing cond3 against 11) as its own entry, alongside the complete match.
 select 'Mixed pattern - First' as test, [4,5,6] = sequenceMatchEventsFirst('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
-select 'Mixed pattern - Last (partial)' as test, [11] = sequenceMatchEventsLast('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
+select 'Mixed pattern - Last prefers the complete match' as test, [4,5,6] = sequenceMatchEventsLast('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
 select 'Mixed pattern - All count' as test, 2 = length(sequenceMatchEventsAll('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3)) from sequence_test_variants;
+select 'Mixed pattern - All trailing partial is the latest anchor' as test, [11] = sequenceMatchEventsAll('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3)[2] from sequence_test_variants;
 
 -- Test: No match cases (data=3 never appears)
 select 'No match - First' as test, [] = sequenceMatchEventsFirst('(?4)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
@@ -94,9 +99,11 @@ insert into sequence_test_variants values
     (0, 'A'),(1, 'B'),(2, 'C'),
     (5, 'A'),(6, 'B');  -- Incomplete pattern
 
--- Pattern A->B->C: one complete match [0,1,2], one partial [5,6]
+-- Pattern A->B->C: one complete match [0,1,2], one partial [5,6]. Last must prefer the complete
+-- match over the trailing partial (a complete match is always preferred over a partial one), even
+-- though the partial is chronologically later; All still reports both, in order.
 select 'Partial match - First (complete)' as test, [0,1,2] = sequenceMatchEventsFirst('(?1)(?2)(?3)')(time, event='A', event='B', event='C') from sequence_test_variants;
-select 'Partial match - Last (partial)' as test, [5,6] = sequenceMatchEventsLast('(?1)(?2)(?3)')(time, event='A', event='B', event='C') from sequence_test_variants;
+select 'Partial match - Last prefers the complete match' as test, [0,1,2] = sequenceMatchEventsLast('(?1)(?2)(?3)')(time, event='A', event='B', event='C') from sequence_test_variants;
 select 'Partial match - All count' as test, 2 = length(sequenceMatchEventsAll('(?1)(?2)(?3)')(time, event='A', event='B', event='C')) from sequence_test_variants;
 select 'Partial match - All complete' as test, [0,1,2] = sequenceMatchEventsAll('(?1)(?2)(?3)')(time, event='A', event='B', event='C')[1] from sequence_test_variants;
 select 'Partial match - All partial' as test, [5,6] = sequenceMatchEventsAll('(?1)(?2)(?3)')(time, event='A', event='B', event='C')[2] from sequence_test_variants;

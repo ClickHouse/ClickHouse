@@ -299,6 +299,8 @@ SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2,
 
 Return event timestamps of the first event chain (chronologically) that matched the pattern. The function searches for non-overlapping matches and returns the earliest one found. Unlike `sequenceMatchEvents` which returns the longest match, this function returns the first match encountered in time order. Matches are non-overlapping, similar to how `sequenceCount` works: among overlapping candidate chains, the one reachable from the earliest starting position is preferred.
 
+A complete match (satisfying every condition in the pattern) is always preferred over a partial one, no matter where each occurs: if the pattern is fully satisfied anywhere at all in the data, the earliest such complete match is returned, even if an earlier position only produced a partial match. A partial match is only ever returned when the pattern is never fully satisfied anywhere in the data.
+
 :::note
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 :::
@@ -321,7 +323,7 @@ sequenceMatchEventsFirst(pattern)(timestamp, cond1, cond2, ...)
 
 **Returned values**
 
-- Array of timestamps for the first matched chain. Returns partial match if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all. Patterns with no numbered `(?N)` captures (`''`, `.`, `.*`) can match without capturing any event, in which case this also returns an empty array (indistinguishable from no match at all) - the same behavior as `sequenceMatchEvents` for these patterns.
+- Array of timestamps for the first matched chain. Returns a complete match whenever one exists anywhere in the data; only returns a partial match if the pattern is never fully satisfied at all. Returns empty array if no events match the pattern at all. Patterns with no numbered `(?N)` captures (`''`, `.`, `.*`) can match without capturing any event, in which case this also returns an empty array (indistinguishable from no match at all) - the same behavior as `sequenceMatchEvents` for these patterns.
 
 Type: Array.
 
@@ -364,6 +366,8 @@ The function returns `[1,2,3]` (first match) even though there is also a later m
 
 Return event timestamps of the last event chain (chronologically) that matched the pattern. The function searches for non-overlapping matches and returns the latest one found. Matches are non-overlapping, similar to how `sequenceCount` works: among overlapping candidate chains, the one reachable from the earliest starting position is preferred, the same greedy decomposition `sequenceMatchEventsAll` produces.
 
+A complete match (satisfying every condition in the pattern) is always preferred over a partial one: if any complete match exists anywhere in the data, the last such complete match is returned, even if a later, incomplete chain exists after it. A partial match is only ever returned when the pattern is never fully satisfied anywhere in the data - unlike `sequenceMatchEventsAll`, which reports a trailing partial chain alongside the complete matches it finds rather than discarding it.
+
 :::note
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 :::
@@ -386,7 +390,7 @@ sequenceMatchEventsLast(pattern)(timestamp, cond1, cond2, ...)
 
 **Returned values**
 
-- Array of timestamps for the last matched chain. Returns partial match if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all. Patterns with no numbered `(?N)` captures (`''`, `.`, `.*`) can match without capturing any event, in which case this also returns an empty array (indistinguishable from no match at all) - the same behavior as `sequenceMatchEvents` for these patterns.
+- Array of timestamps for the last matched chain. Returns a complete match whenever one exists anywhere in the data; only returns a partial match if the pattern is never fully satisfied at all. Returns empty array if no events match the pattern at all. Patterns with no numbered `(?N)` captures (`''`, `.`, `.*`) can match without capturing any event, in which case this also returns an empty array (indistinguishable from no match at all) - the same behavior as `sequenceMatchEvents` for these patterns.
 
 Type: Array.
 
@@ -428,6 +432,8 @@ The function returns `[4,5,6]` (last match) even though there is also an earlier
 ## sequenceMatchEventsAll {#sequencematcheventsall}
 
 Return event timestamps of all non-overlapping event chains that matched the pattern. The function searches for all possible non-overlapping matches and returns them as an array of arrays.
+
+Unlike `sequenceMatchEventsFirst`/`sequenceMatchEventsLast`, which discard a partial chain whenever a complete match exists elsewhere, `sequenceMatchEventsAll` always includes a trailing partial chain (if the pattern still has one being matched when the data runs out) as its own entry, in addition to every complete match found - it represents the still-in-progress match at the end of the data, not a competing candidate result.
 
 :::note
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
