@@ -10,6 +10,8 @@ array tokenizer
 Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\'), hasAllTokens(tags, [\'make-payment-check\'], \'array\')
 -- EXPLAIN shows the tokenizer injected into the WHERE filter (use_skip_indexes = 0)
 Filter column: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
+-- ORDER BY: projection lifted above the sort still gets the tokenizer
+47
 preprocessor is applied only on the index path
 -- SELECT-list position: preprocessor not applied
 0

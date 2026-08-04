@@ -51,6 +51,11 @@ SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
     SELECT count() FROM tab WHERE hasAnyTokens(tags, ['make-payment-check']) SETTINGS use_skip_indexes = 0
 ) WHERE explain ILIKE '%hasAnyTokens%';
 
+-- liftUpFunctions can hoist the projection above the SortingStep; the tokenizer must still be injected there.
+SELECT '-- ORDER BY: projection lifted above the sort still gets the tokenizer';
+
+SELECT count() FROM (SELECT hasAnyTokens(tags, ['make-payment-check']) AS h FROM tab ORDER BY id) WHERE h;
+
 DROP TABLE tab;
 
 SELECT 'preprocessor is applied only on the index path';

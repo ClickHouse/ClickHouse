@@ -17,8 +17,13 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -937,6 +942,16 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
     return true;
 }
 
+/// Row-preserving steps that keep the indexed column intact, so the injection walk can traverse past them.
+static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
+{
+    return typeid_cast<const SortingStep *>(step)
+        || typeid_cast<const LimitStep *>(step)
+        || typeid_cast<const OffsetStep *>(step)
+        || typeid_cast<const LimitByStep *>(step)
+        || typeid_cast<const DistinctStep *>(step);
+}
+
 /// Applies text index optimizations to the query plan.
 ///
 /// Always preprocesses `hasAllTokens`/`hasAnyTokens` arguments with text index metadata
@@ -986,9 +1001,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed);
     }
 
-    /// Walk the contiguous Expression/Filter chain above the scan. The immediate WHERE filter can use direct
-    /// read; every other step gets the inject rewrite only. Stop at the first non-Expression/Filter step
-    /// (aggregation, sorting, join, ...), above which the column is no longer the raw indexed column.
+    /// Walk the steps above the scan; traverse row-preserving pass-throughs (liftUpFunctions may hoist a projection above a sort) and stop where the column set changes (aggregation, join).
     for (auto it = stack.rbegin() + 1; it != stack.rend(); ++it)
     {
         QueryPlan::Node * node = it->node;
@@ -997,7 +1010,11 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         auto * filter_step = typeid_cast<FilterStep *>(step);
         auto * expression_step = typeid_cast<ExpressionStep *>(step);
         if (!filter_step && !expression_step)
+        {
+            if (isRowScanPassThroughStep(step))
+                continue;
             break;
+        }
 
         /// Direct read only for the WHERE filter directly above the scan (its rebuild uses the scan's header).
         if (filter_step && it == stack.rbegin() + 1)
