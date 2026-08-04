@@ -102,7 +102,7 @@ def set_default_env():
             "KEEPER_FAULTS": "false",
             "KEEPER_RUN_FAULT_TESTS": "false",
             "KEEPER_RUN_NO_FAULT_TESTS": "true",
-            "KEEPER_MATRIX_BACKENDS": "default",
+            "KEEPER_MATRIX_BACKENDS": "default,lsmt",
             "KEEPER_INCLUDE_IDS": "prod-mix-no-fault,read-multi-no-fault,write-multi-no-fault",
             "KEEPER_METRICS_INTERVAL_S": "5",
             "KEEPER_JOB_TYPE": "pr",

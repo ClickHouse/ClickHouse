@@ -13,7 +13,8 @@ Apache ZooKeeper, or RaftKeeper backends), optionally with fault injection.
   `timelimit` (from `--duration`). Request mix, setup tree, and value sizes come from
   the workload YAML.
 - **Backends:** `default` (NuRaft log store), `lsmt` (Keeper with on-disk node storage,
-  `use_new_storage`), `zookeeper` (Apache ZooKeeper), `raftkeeper` (JDRaftKeeper).
+  `use_new_storage` with `storage_memory_only` turned off), `zookeeper` (Apache ZooKeeper),
+  `raftkeeper` (JDRaftKeeper).
 
 **Example patched config sent to keeper-bench** (`[keeper][bench][config patched]` in logs):
 
