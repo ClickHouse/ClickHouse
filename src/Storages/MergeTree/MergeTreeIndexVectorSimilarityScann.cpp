@@ -39,12 +39,15 @@
 #include <scann/base/single_machine_factory_scann.h>
 #include <scann/data_format/dataset.h>
 #include <scann/data_format/docid_collection.h>
+#include <scann/oss_wrappers/scann_down_cast.h>
 #include <scann/oss_wrappers/scann_serialize.h>
 #include <scann/partitioning/partitioner.pb.h>
 #include <scann/proto/centers.pb.h>
 #include <scann/proto/scann.pb.h>
+#include <scann/tree_x_hybrid/tree_ah_hybrid_residual.h>
 #include <scann/utils/threads.h>
 #include <scann/utils/types.h>
+#include <scann_persistence_adapter.h>
 #include <google/protobuf/text_format.h>
 #pragma GCC diagnostic pop
 
@@ -82,6 +85,7 @@ extern const int FORMAT_VERSION_TOO_OLD;
 struct ScannSearcherWrapper
 {
     std::unique_ptr<research_scann::SingleMachineSearcherBase<float>> inner;
+    research_scann::TreeAHHybridResidual * tree_ah = nullptr;
 };
 
 namespace
@@ -444,12 +448,16 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
     writeIntBinary(static_cast<UInt64>(serialized_codebook_proto.size()), ostr);
     ostr.write(serialized_codebook_proto.data(), serialized_codebook_proto.size());
 
+    const bool stream_hashed_data = hashed_data.empty()
+        && searcher && searcher->tree_ah && hashed_dim > 0;
     const size_t hashed_rows = [&]() -> size_t
     {
         if (hashed_dim == 0)
             return 0;
         if (!hashed_data.empty())
             return hashed_data.size() / hashed_dim;
+        if (stream_hashed_data)
+            return num_vectors;
         /// hashed_data was moved into the searcher's hashed_dataset by buildIndexFromSerialized.
         if (searcher && searcher->inner && searcher->inner->hashed_dataset())
             return searcher->inner->hashed_dataset()->size();
@@ -463,6 +471,20 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
         {
             ostr.write(reinterpret_cast<const char *>(hashed_data.data()), hashed_data.size());
         }
+        else if (stream_hashed_data)
+        {
+            const auto status = research_scann::TreeAHHybridResidualPersistenceAdapter::streamHashedDataset(
+                *searcher->tree_ah, false,
+                [&ostr](research_scann::ConstSpan<uint8_t> row)
+                {
+                    ostr.write(reinterpret_cast<const char *>(row.data()), row.size());
+                    return research_scann::OkStatus();
+                });
+            if (!status.ok())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ScaNN index serialization failed while streaming primary AH codes: {}",
+                    status.ToString());
+        }
         else
         {
             chassert(searcher && searcher->inner && searcher->inner->hashed_dataset());
@@ -471,13 +493,35 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
         }
     }
 
-    /// SOAR secondary codes (empty for non-SOAR indexes → soar_rows = 0). No searcher fallback:
-    /// the searcher exposes no soar_hashed_dataset() accessor, but a restored granule is never
-    /// re-serialized (merges rebuild the index from scratch), so the member is authoritative here.
-    const size_t soar_rows = (hashed_dim > 0 && !soar_hashed_data.empty()) ? soar_hashed_data.size() / hashed_dim : 0;
+    /// SOAR secondary codes use the same on-disk row-major representation as before, but freshly
+    /// built indexes unpack each row directly from the leaf searchers while writing it.
+    const bool stream_soar_hashed_data = soar_hashed_data.empty() && stream_hashed_data
+        && research_scann::TreeAHHybridResidualPersistenceAdapter::hasSecondaryHashedDataset(*searcher->tree_ah);
+    const size_t soar_rows = !soar_hashed_data.empty()
+        ? soar_hashed_data.size() / hashed_dim
+        : (stream_soar_hashed_data ? num_vectors : 0);
     writeIntBinary(static_cast<UInt64>(soar_rows), ostr);
     if (soar_rows > 0)
-        ostr.write(reinterpret_cast<const char *>(soar_hashed_data.data()), soar_hashed_data.size());
+    {
+        if (!soar_hashed_data.empty())
+        {
+            ostr.write(reinterpret_cast<const char *>(soar_hashed_data.data()), soar_hashed_data.size());
+        }
+        else
+        {
+            const auto status = research_scann::TreeAHHybridResidualPersistenceAdapter::streamHashedDataset(
+                *searcher->tree_ah, true,
+                [&ostr](research_scann::ConstSpan<uint8_t> row)
+                {
+                    ostr.write(reinterpret_cast<const char *>(row.data()), row.size());
+                    return research_scann::OkStatus();
+                });
+            if (!status.ok())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ScaNN index serialization failed while streaming secondary AH codes: {}",
+                    status.ToString());
+        }
+    }
 
     writeIntBinary(static_cast<UInt64>(datapoints_by_token.size()), ostr);
     for (const auto & token_dps : datapoints_by_token)
@@ -700,6 +744,8 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
         searcher = std::make_unique<ScannSearcherWrapper>();
         searcher->inner = std::move(status_or).value();
+        if (use_residual)
+            searcher->tree_ah = down_cast<research_scann::TreeAHHybridResidual *>(searcher->inner.get());
     }
     catch (const DB::Exception &)
     {
@@ -726,9 +772,11 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     LOG_DEBUG(log, "ScaNN index built successfully for {} vectors", num_vectors);
 
-    /// Extract pre-trained artifacts so serializeBinary can persist them
-    /// without retraining on the next server restart.
-    auto opts_or = searcher->inner->ExtractSingleMachineFactoryOptions();
+    /// Tree-AH residual indexes keep their AH codes packed in the leaf searchers and stream them
+    /// during serialization. Other ScaNN searchers use the upstream artifact extraction path.
+    auto opts_or = searcher->tree_ah
+        ? research_scann::TreeAHHybridResidualPersistenceAdapter::extractFactoryOptions(*searcher->tree_ah)
+        : searcher->inner->ExtractSingleMachineFactoryOptions();
     if (!opts_or.ok())
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ScaNN index build failed: could not extract trained artifacts: {}",
@@ -742,29 +790,18 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     if (opts.ah_codebook)
         opts.ah_codebook->SerializeToString(&serialized_codebook_proto);
 
-    /// Persist the quantized (hashed) codes so that a later restore reuses them instead of
-    /// re-quantizing every datapoint, which otherwise dominates cold-load time (~200s for 1M
-    /// vectors). The codes come from the extracted options: ExtractSingleMachineFactoryOptions
-    /// unpacks them from the leaf searchers' packed LUT16 format. They cannot be read back from
-    /// the tree searcher's top-level hashed_dataset() during serializeBinary - it is null for
-    /// Tree-AH, where the codes live in the per-leaf searchers - so transfer the extracted flat
-    /// data into the granule's hashed_data member here.
-    size_t hashed_rows_extracted = 0;
     if (opts.hashed_dataset && !opts.hashed_dataset->empty())
     {
-        hashed_rows_extracted = opts.hashed_dataset->size();
         hashed_dim = opts.hashed_dataset->dimensionality();
         hashed_data = opts.hashed_dataset->ClearRecyclingDataVector();
     }
-
-    /// SOAR: persist the secondary-partition AH codes too. Same shape as hashed_dataset
-    /// (num_vectors × hashed_dim). On restore the per-datapoint secondary token (the docid the
-    /// reconstruction needs) is recomputed from datapoints_by_token, so only the flat codes are
-    /// stored here.
-    if (opts.soar_hashed_dataset && !opts.soar_hashed_dataset->empty())
+    else
     {
-        soar_hashed_data = opts.soar_hashed_dataset->ClearRecyclingDataVector();
+        hashed_dim = opts.ah_codebook ? static_cast<size_t>(opts.ah_codebook->subspace_centers_size()) : 0;
     }
+
+    if (opts.soar_hashed_dataset && !opts.soar_hashed_dataset->empty())
+        soar_hashed_data = opts.soar_hashed_dataset->ClearRecyclingDataVector();
 
     if (opts.datapoints_by_token)
     {
@@ -801,8 +838,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     LOG_DEBUG(log, "Extracted ScaNN artifacts: partitioner={} bytes, codebook={} bytes, "
         "hashed_dataset={}×{} bytes, {} IVF tokens",
-        serialized_partitioner_proto.size(), serialized_codebook_proto.size(),
-        hashed_rows_extracted, hashed_dim,
+        serialized_partitioner_proto.size(), serialized_codebook_proto.size(), num_vectors, hashed_dim,
         datapoints_by_token.size());
 }
 
@@ -943,6 +979,8 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized(const 
 
         searcher = std::make_unique<ScannSearcherWrapper>();
         searcher->inner = std::move(status_or).value();
+        if (params.distance_name != "L2Distance")
+            searcher->tree_ah = down_cast<research_scann::TreeAHHybridResidual *>(searcher->inner.get());
         searcher_owned_memory_bytes = restored_searcher_owned_memory_bytes;
     }
     catch (const DB::Exception &)

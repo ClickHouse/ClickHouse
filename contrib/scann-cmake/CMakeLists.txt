@@ -351,7 +351,25 @@ file(WRITE "${_ds_cc_dst}" "${_ds_cc_content}")
 list(REMOVE_ITEM SCANN_SOURCES "${_ds_cc_src}")
 list(APPEND SCANN_SOURCES "${_ds_cc_dst}")
 
-# 3) Rewrite ComputeResidualsImpl in tree_ah_hybrid_residual.cc to sample.
+# 3) Allow ClickHouse's persistence adapter to read Tree-AH artifacts without
+# adding a persistence-specific public API to the upstream ScaNN class.
+set(_tahr_h_src "${SCANN_SOURCE_DIR}/scann/tree_x_hybrid/tree_ah_hybrid_residual.h")
+set(_tahr_h_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/tree_x_hybrid/tree_ah_hybrid_residual.h")
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/scann/tree_x_hybrid")
+configure_file("${_tahr_h_src}" "${_tahr_h_dst}" COPYONLY)
+file(READ "${_tahr_h_dst}" _tahr_h_content)
+string(REPLACE
+[==[ private:
+  class UnlockedTreeAHHybridResidualPreprocessingResults]==]
+[==[ private:
+  friend class TreeAHHybridResidualPersistenceAdapter;
+
+  class UnlockedTreeAHHybridResidualPreprocessingResults]==]
+    _tahr_h_content "${_tahr_h_content}")
+file(WRITE "${_tahr_h_dst}" "${_tahr_h_content}")
+
+# 4) Rewrite ComputeResidualsImpl in tree_ah_hybrid_residual.cc to sample the
+# AH codebook training data.
 set(_tahr_src "${SCANN_SOURCE_DIR}/scann/tree_x_hybrid/tree_ah_hybrid_residual.cc")
 set(_tahr_dst "${CMAKE_CURRENT_BINARY_DIR}/tree_ah_hybrid_residual.cc")
 configure_file("${_tahr_src}" "${_tahr_dst}" COPYONLY)
@@ -459,6 +477,11 @@ string(REPLACE
 file(WRITE "${_tahr_dst}" "${_tahr_content}")
 list(REMOVE_ITEM SCANN_SOURCES "${_tahr_src}")
 list(APPEND SCANN_SOURCES "${_tahr_dst}")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/scann_persistence_adapter.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/scann_persistence_adapter.h"
+    COPYONLY)
+list(APPEND SCANN_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/scann_persistence_adapter.cpp")
 
 # Tree-AH residual training no longer needs its row-major residual dataset once
 # all block-major training datasets have been materialized. Keep those block
@@ -466,7 +489,7 @@ list(APPEND SCANN_SOURCES "${_tahr_dst}")
 # k-means. The release callback opts only the Tree-AH residual path into this
 # behavior; ordinary AH training continues to use the upstream all-double path.
 
-# 4) Extend the internal AH training declaration with an optional release callback.
+# 5) Extend the internal AH training declaration with an optional release callback.
 set(_ahi_h_src "${SCANN_SOURCE_DIR}/scann/hashes/internal/asymmetric_hashing_impl.h")
 set(_ahi_h_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/hashes/internal/asymmetric_hashing_impl.h")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/scann/hashes/internal")
@@ -506,7 +529,7 @@ string(REPLACE
     _ahi_h_content "${_ahi_h_content}")
 file(WRITE "${_ahi_h_dst}" "${_ahi_h_content}")
 
-# 5) Forward the callback through TrainSingleMachine.
+# 6) Forward the callback through TrainSingleMachine.
 set(_aht_h_src "${SCANN_SOURCE_DIR}/scann/hashes/asymmetric_hashing2/training.h")
 set(_aht_h_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/hashes/asymmetric_hashing2/training.h")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/scann/hashes/asymmetric_hashing2")
@@ -534,7 +557,7 @@ string(REPLACE
     _aht_h_content "${_aht_h_content}")
 file(WRITE "${_aht_h_dst}" "${_aht_h_content}")
 
-# 6) Stage block residuals in their native floating-point type and convert one
+# 7) Stage block residuals in their native floating-point type and convert one
 # block at a time for GmmUtils. The callback is invoked only after staging has
 # finished, so releasing the row-major dataset cannot invalidate projection.
 set(_ahi_cc_src "${SCANN_SOURCE_DIR}/scann/hashes/internal/asymmetric_hashing_impl.cc")
@@ -642,7 +665,7 @@ file(WRITE "${_ahi_cc_dst}" "${_ahi_cc_content}")
 list(REMOVE_ITEM SCANN_SOURCES "${_ahi_cc_src}")
 list(APPEND SCANN_SOURCES "${_ahi_cc_dst}")
 
-# 7) The Tree-AH residual dataset is the only caller that can release its
+# 8) The Tree-AH residual dataset is the only caller that can release its
 # training input after block staging. Full-dataset hashing later recomputes
 # residuals from the original vectors and does not use this sampled dataset.
 set(_txhf_src "${SCANN_SOURCE_DIR}/scann/base/internal/tree_x_hybrid_factory.cc")
