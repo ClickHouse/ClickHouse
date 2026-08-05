@@ -33,6 +33,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1946,11 +1947,13 @@ void registerStorageMerge(StorageFactory & factory)
 
         String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
 
-        /// With an explicit column list, `CREATE` does not need schema inference and would not read the source tables,
-        /// so the unusable table definition would be stored; deny it right away, the same way as reading does,
-        /// see `DatabaseNameOrRegexp::getDatabaseIterator`.
+        /// With an explicit column list, `CREATE` (or a full-definition `ATTACH`, which is CREATE-like user input)
+        /// does not need schema inference and would not read the source tables, so the unusable table definition
+        /// would be stored; deny it right away, the same way as reading does, see `DatabaseNameOrRegexp::getDatabaseIterator`.
+        /// Only loads of previously stored metadata (server startup, short-syntax `ATTACH`) are exempt.
+        bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
         if (!is_regexp && source_database_name_or_regexp == DatabaseCatalog::TEMPORARY_DATABASE
-            && args.mode <= LoadingStrictnessLevel::CREATE)
+            && !loading_from_existing_metadata)
             throw Exception(
                 ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
 
