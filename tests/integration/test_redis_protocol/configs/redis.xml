@@ -29,6 +29,13 @@
                 <key_column>name</key_column>
                 <value_column>surname</value_column>
             </_3>
+            <_4>
+                <db_type>string</db_type>
+                <clickhouse_db>default</clickhouse_db>
+                <clickhouse_table>reload_map_before</clickhouse_table>
+                <key_column>name</key_column>
+                <value_column>surname</value_column>
+            </_4>
         </db>
     </redis>
 </clickhouse>

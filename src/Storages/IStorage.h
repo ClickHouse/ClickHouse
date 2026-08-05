@@ -514,13 +514,17 @@ public:
         renameInMemory(new_table_id);
     }
 
-    /** Get a single-row block with the values of the requested columns for the given key.
+    /** Get a block with the values of the requested columns for the given keys.
+      * `keys` contains one entry per requested row, and every entry contains one value per key column
+      * (see getKeyColumnNamesForGetRequests). The returned block has the requested columns and one row
+      * per requested key, in the same order. All the keys and columns of a single call observe the same
+      * state of the table.
       * The returned columns are Nullable, and a NULL value means the key was not found
       * (as opposed to being present with a default value).
       * Key-value point lookup used by the Redis wire protocol.
       * Supported only if supportsGetRequests returns true.
       */
-    virtual Block getBlockByKeys(const std::vector<Field> & /*keys*/, const Names & /*column_names*/, ContextPtr /*context*/) { return {}; }
+    virtual Block getBlockByKeys(const std::vector<std::vector<Field>> & /*keys*/, const Names & /*column_names*/, ContextPtr /*context*/) { return {}; }
 
     /// Names of the key columns for getBlockByKeys lookups.
     /// Supported only if supportsGetRequests returns true.

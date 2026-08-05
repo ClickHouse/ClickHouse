@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Defines.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
@@ -947,38 +948,24 @@ private:
     }
 };
 
-Block StorageJoin::getBlockByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context)
+Block StorageJoin::getBlockByKeys(const std::vector<std::vector<Field>> & keys, const Names & column_names, ContextPtr context)
 {
     /// For a composite key, check that all necessary data has been provided.
-    if (keys.size() != key_names.size())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mismatched number of keys ({}) and join key columns ({})", keys.size(), key_names.size());
+    for (const auto & key : keys)
+        if (key.size() != key_names.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Mismatched number of keys ({}) and join key columns ({})", key.size(), key_names.size());
 
-    /// Build a single-row key block.
-    Block key_block;
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto cur_sample_block = metadata_snapshot->getSampleBlock();
 
     DataTypes key_types;
     key_types.reserve(key_names.size());
+    for (const auto & key_name : key_names)
+        key_types.push_back(cur_sample_block.getColumnOrSubcolumnByName(key_name).type);
 
-    for (size_t i = 0; i < key_names.size(); ++i)
-    {
-        const auto & key_name = key_names[i];
-        const auto & key_value = keys[i];
-
-        const auto & sample_column = cur_sample_block.getColumnOrSubcolumnByName(key_name);
-        auto type = sample_column.type;
-        MutableColumnPtr column = type->createColumn();
-
-        column->insert(key_value);
-
-        key_block.insert({std::move(column), type, key_name});
-        key_types.push_back(type);
-    }
-
-    /// `joinGet` returns a single column, so request the columns one by one.
-    Block result_block;
-
+    DataTypes return_types;
+    return_types.reserve(column_names.size());
     for (const auto & name : column_names)
     {
         if (!cur_sample_block.has(name))
@@ -994,10 +981,59 @@ Block StorageJoin::getBlockByKeys(const std::vector<Field> & keys, const Names &
                 "would not be distinguishable from a default value",
                 name, return_type->getName(), getStorageID().getNameForLogs());
 
-        Block block_with_column_to_add({{return_type->createColumn(), return_type, name}});
-        auto result = joinGet(key_block, block_with_column_to_add, context);
-        result_block.insert(std::move(result));
+        return_types.push_back(std::move(return_type));
     }
+
+    MutableColumns result_columns;
+    result_columns.reserve(column_names.size());
+    for (const auto & return_type : return_types)
+    {
+        result_columns.push_back(return_type->createColumn());
+        result_columns.back()->reserve(keys.size());
+    }
+
+    /// A single read lock for the whole request: every key and every column of one request has to
+    /// observe the same state of the table, and `joinGet` would take and release the lock on each call.
+    if (!keys.empty())
+    {
+        TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+
+        /// `joinGet` returns at most `max_joined_block_rows` rows at once, so look the keys up in batches.
+        for (size_t begin = 0; begin < keys.size(); begin += DEFAULT_BLOCK_SIZE)
+        {
+            const size_t end = std::min(begin + DEFAULT_BLOCK_SIZE, keys.size());
+
+            Block key_block;
+            for (size_t i = 0; i < key_names.size(); ++i)
+            {
+                MutableColumnPtr column = key_types[i]->createColumn();
+                column->reserve(end - begin);
+                for (size_t row = begin; row < end; ++row)
+                    column->insert(keys[row][i]);
+                key_block.insert({std::move(column), key_types[i], key_names[i]});
+            }
+
+            /// `joinGet` returns a single column, so request the columns one by one.
+            for (size_t i = 0; i < column_names.size(); ++i)
+            {
+                Block block_with_column_to_add({{return_types[i]->createColumn(), return_types[i], column_names[i]}});
+                auto result = join->joinGet(key_block, block_with_column_to_add);
+                auto column = result.column->convertToFullColumnIfConst();
+
+                if (column->size() != end - begin)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Lookup of column {} in table {} returned {} values for {} keys",
+                        column_names[i], getStorageID().getNameForLogs(), column->size(), end - begin);
+
+                result_columns[i]->insertRangeFrom(*column, 0, column->size());
+            }
+        }
+    }
+
+    Block result_block;
+    for (size_t i = 0; i < column_names.size(); ++i)
+        result_block.insert({std::move(result_columns[i]), return_types[i], column_names[i]});
 
     return result_block;
 }

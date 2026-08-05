@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Server/IServer.h>
-#include <Server/RedisProtocolMapping.h>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Common/Logger.h>
 
@@ -16,11 +15,8 @@ public:
     Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override;
 
 private:
-    void parseConfig();
-
     IServer & server;
     LoggerPtr log;
-    RedisProtocol::ConfigPtr config;
 };
 
 }

@@ -109,7 +109,7 @@ public:
         return kind == JoinKind::Left && (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny);
     }
 
-    Block getBlockByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context) override;
+    Block getBlockByKeys(const std::vector<std::vector<Field>> & keys, const Names & column_names, ContextPtr context) override;
 
     Names getKeyColumnNamesForGetRequests() const override { return key_names; }
 

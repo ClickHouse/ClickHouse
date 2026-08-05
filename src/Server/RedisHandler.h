@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <memory>
 #include <optional>
 
@@ -26,7 +25,7 @@ class TCPServer;
 class RedisHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, RedisProtocol::ConfigPtr config_);
+    RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_);
 
     void run() final;
 
@@ -42,19 +41,22 @@ private:
     /// the client has to authenticate explicitly.
     void ensureAuthenticated();
 
-    void initDB(UInt32 db_);
     void checkDBSet() const;
 
-    /// Resolves the table configured for the selected Redis database and validates that it can
-    /// serve lookups. The table is resolved for every request, so DDL on it is visible immediately.
-    StoragePtr resolveTable(UInt32 db_, const RedisProtocol::MappingPtr & mapping) const;
+    /// Reads the binding of the selected Redis database from the live server configuration. It is read
+    /// for every request, so that `SYSTEM RELOAD CONFIG` is visible to already connected clients.
+    RedisProtocol::MapDescription getMapDescription(UInt32 db_) const;
+
+    /// Resolves the table configured for a Redis database and validates that it can serve lookups.
+    /// The table is resolved for every request, so DDL on it is visible immediately.
+    StoragePtr resolveTable(UInt32 db_, const RedisProtocol::MapDescription & mapping) const;
 
     /// Checks that the table matches the configuration of the Redis database and supports lookups.
-    void validateTable(UInt32 db_, const StoragePtr & table) const;
+    void validateTable(UInt32 db_, const RedisProtocol::MapDescription & mapping, const StoragePtr & table) const;
 
-    /// Renders a single value of a single-row lookup result as a Redis bulk string.
+    /// Renders the value in the given row of a lookup result column as a Redis bulk string.
     /// An unset optional means the key was not found (serialized as Nil).
-    static std::optional<String> serializeValue(const ColumnWithTypeAndName & column);
+    static std::optional<String> serializeValue(const ColumnWithTypeAndName & column, size_t row);
 
     IServer & server;
     TCPServer & tcp_server;
@@ -64,9 +66,7 @@ private:
     ContextMutablePtr query_context;
     bool authenticated = false;
 
-    RedisProtocol::ConfigPtr config;
     UInt32 db = RedisProtocol::DB_MAX_NUM;
-    std::map<UInt32, RedisProtocol::MappingPtr> redis_clickhouse_mapping;
 
     LoggerPtr log = getLogger("RedisHandler");
 };

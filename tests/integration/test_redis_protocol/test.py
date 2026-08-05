@@ -209,6 +209,64 @@ def test_table_is_resolved_for_every_request(started_cluster, redis_client):
     assert "recreated_map" in str(resp_err.value)
 
 
+def test_mapping_is_reread_after_reload_config(started_cluster, redis_client):
+    for table, surname in (("reload_map_before", "Smith"), ("reload_map_after", "Jones")):
+        node.query(
+            f"""
+            CREATE TABLE {table} (name String, surname String)
+            ENGINE = Join(ANY, LEFT, name)
+            """
+        )
+        node.query(f"INSERT INTO {table} VALUES ('Alice', '{surname}')")
+
+    assert redis_client.select(4)
+    assert redis_client.get("Alice") == b"Smith"
+
+    config_path = "/etc/clickhouse-server/config.d/redis.xml"
+    node.replace_in_config(config_path, "reload_map_before", "reload_map_after")
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+
+        # The new mapping has to be visible to the already connected client: the listener is not
+        # restarted by `SYSTEM RELOAD CONFIG` as long as the port stays the same.
+        assert redis_client.get("Alice") == b"Jones"
+
+        # And to a newly connected client as well.
+        new_client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port)
+        try:
+            assert new_client.select(4)
+            assert new_client.get("Alice") == b"Jones"
+        finally:
+            new_client.close()
+
+        # Removing the mapping stops exposing the table.
+        node.replace_in_config(config_path, "<_4>", "<_200>")
+        node.replace_in_config(config_path, "</_4>", "</_200>")
+        node.query("SYSTEM RELOAD CONFIG")
+        with pytest.raises(exceptions.ResponseError) as resp_err:
+            redis_client.get("Alice")
+        assert "Redis database 4 is not configured" in str(resp_err.value)
+    finally:
+        node.replace_in_config(config_path, "<_200>", "<_4>")
+        node.replace_in_config(config_path, "</_200>", "</_4>")
+        node.replace_in_config(config_path, "reload_map_after", "reload_map_before")
+        node.query("SYSTEM RELOAD CONFIG")
+        for table in ("reload_map_before", "reload_map_after"):
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_mget_returns_values_of_all_keys(redis_client):
+    # All the keys of one `MGET` are looked up in a single request, in the order they were sent.
+    assert redis_client.select(1)
+    assert redis_client.mget("Bob", "Alice", "Mark", "Bob", "Frank") == [
+        b"Johnson",
+        b"Smith",
+        None,
+        b"Johnson",
+        b"",
+    ]
+
+
 def send_raw_request(started_cluster, request):
     sock = socket.create_connection((started_cluster.get_instance_ip("node"), server_port), timeout=30)
     try:

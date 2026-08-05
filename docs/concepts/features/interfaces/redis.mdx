@@ -22,7 +22,9 @@ Supported commands:
 
 Data commands require an authenticated session, and the user needs the `SELECT` privilege on the columns of the mapped table. If a client does not send `AUTH`, the first data command implicitly tries to authenticate as the `default` user with an empty password, matching the behavior of an unprotected Redis server; if the `default` user has a password, the command fails with an authentication error until the client sends `AUTH`.
 
-The mapped table is resolved for every request, so `DROP TABLE`, `RENAME TABLE`, and recreating the table take effect for already connected clients as well.
+The database mapping and the mapped table are read from the configuration and resolved for every request, so `SYSTEM RELOAD CONFIG`, as well as `DROP TABLE`, `RENAME TABLE`, and recreating the table, take effect for already connected clients as well.
+
+A single command observes a single state of the mapped table: all the keys of an `MGET` and all the fields of an `HMGET` are looked up together, so a concurrent `INSERT` or `TRUNCATE` cannot make one command return values from different states of the table.
 
 Keys that are not present in the table are returned as RESP `nil`, matching Redis semantics (values are looked up the same way as with the `joinGetOrNull` function, so a missing key is distinguishable from a stored empty string). Non-string values are returned in their text representation. Write commands are not supported.
 

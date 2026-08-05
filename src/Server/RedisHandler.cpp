@@ -2,6 +2,7 @@
 #include <optional>
 
 #include <Poco/Exception.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Columns/IColumn.h>
@@ -38,8 +39,8 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-RedisHandler::RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, RedisProtocol::ConfigPtr config_)
-    : Poco::Net::TCPServerConnection(socket_), server(server_), tcp_server(tcp_server_), config(config_)
+RedisHandler::RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_)
+    : Poco::Net::TCPServerConnection(socket_), server(server_), tcp_server(tcp_server_)
 {
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -83,7 +84,6 @@ void RedisHandler::authenticate(const String & user_name, const String & passwor
     {
         session = std::make_unique<Session>(server.context(), ClientInfo::Interface::REDIS);
         query_context.reset();
-        redis_clickhouse_mapping.clear();
         db = RedisProtocol::DB_MAX_NUM;
         authenticated = false;
     }
@@ -201,16 +201,16 @@ bool RedisHandler::processRequest()
             ensureAuthenticated();
 
             auto selected_db = select_request.getDB();
-            if (!redis_clickhouse_mapping.contains(selected_db))
+            auto mapping = RedisProtocol::parseDBDescription(server.config(), selected_db);
+            if (!mapping)
             {
-                if (!config->db_mapping.contains(selected_db))
-                {
-                    RedisProtocol::ErrorResponse resp(RedisProtocol::Message::NO_SUCH_DB);
-                    resp.serialize(*out);
-                    return true;
-                }
-                initDB(selected_db);
+                RedisProtocol::ErrorResponse resp(RedisProtocol::Message::NO_SUCH_DB);
+                resp.serialize(*out);
+                return true;
             }
+
+            /// Report a misconfigured mapping or an unusable table right away, not on the first lookup.
+            resolveTable(selected_db, *mapping);
 
             db = selected_db;
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
@@ -226,16 +226,16 @@ bool RedisHandler::processRequest()
             ensureAuthenticated();
             checkDBSet();
 
-            auto redis_db = redis_clickhouse_mapping[db];
-            if (redis_db->getType() != RedisProtocol::DBType::STRING)
+            auto mapping = getMapDescription(db);
+            if (mapping.db_type != RedisProtocol::DBType::STRING)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "GET command can only be applied to a database of type string");
 
-            auto table = resolveTable(db, redis_db);
-            auto value_column = std::static_pointer_cast<RedisProtocol::RedisStringMapping>(redis_db)->getValueColumnName();
-            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{redis_db->getKeyColumnName(), value_column});
-            auto result_block = table->getBlockByKeys({get_request.getKey()}, {value_column}, query_context);
+            auto table = resolveTable(db, mapping);
+            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, mapping.value_column});
+            std::vector<std::vector<Field>> keys{{get_request.getKey()}};
+            auto result_block = table->getBlockByKeys(keys, {mapping.value_column}, query_context);
 
-            RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0)));
+            RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0), 0));
             resp.serialize(*out);
             return true;
         }
@@ -248,21 +248,27 @@ bool RedisHandler::processRequest()
             ensureAuthenticated();
             checkDBSet();
 
-            auto redis_db = redis_clickhouse_mapping[db];
-            if (redis_db->getType() != RedisProtocol::DBType::STRING)
+            auto mapping = getMapDescription(db);
+            if (mapping.db_type != RedisProtocol::DBType::STRING)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MGET command can only be applied to a database of type string");
 
-            auto table = resolveTable(db, redis_db);
-            auto value_column = std::static_pointer_cast<RedisProtocol::RedisStringMapping>(redis_db)->getValueColumnName();
-            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{redis_db->getKeyColumnName(), value_column});
+            auto table = resolveTable(db, mapping);
+            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, mapping.value_column});
+
+            /// All the keys are looked up in one call, so that a single command cannot mix values
+            /// from different states of the table.
+            std::vector<std::vector<Field>> keys;
+            keys.reserve(mget_request.getKeys().size());
+            for (const auto & key : mget_request.getKeys())
+                keys.push_back({key});
+
+            auto result_block = table->getBlockByKeys(keys, {mapping.value_column}, query_context);
+            const auto & value_column = result_block.getByPosition(0);
 
             std::vector<std::optional<String>> result;
-            result.reserve(mget_request.getKeys().size());
-            for (const auto & key : mget_request.getKeys())
-            {
-                auto result_block = table->getBlockByKeys({key}, {value_column}, query_context);
-                result.push_back(serializeValue(result_block.getByPosition(0)));
-            }
+            result.reserve(keys.size());
+            for (size_t row = 0; row < keys.size(); ++row)
+                result.push_back(serializeValue(value_column, row));
 
             RedisProtocol::ArrayResponse resp(result);
             resp.serialize(*out);
@@ -277,15 +283,16 @@ bool RedisHandler::processRequest()
             ensureAuthenticated();
             checkDBSet();
 
-            auto redis_db = redis_clickhouse_mapping[db];
-            if (redis_db->getType() != RedisProtocol::DBType::HASH)
+            auto mapping = getMapDescription(db);
+            if (mapping.db_type != RedisProtocol::DBType::HASH)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HGET command can only be applied to a database of type hash");
 
-            auto table = resolveTable(db, redis_db);
-            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{redis_db->getKeyColumnName(), hget_request.getField()});
-            auto result_block = table->getBlockByKeys({hget_request.getKey()}, {hget_request.getField()}, query_context);
+            auto table = resolveTable(db, mapping);
+            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, hget_request.getField()});
+            std::vector<std::vector<Field>> keys{{hget_request.getKey()}};
+            auto result_block = table->getBlockByKeys(keys, {hget_request.getField()}, query_context);
 
-            RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0)));
+            RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0), 0));
             resp.serialize(*out);
             return true;
         }
@@ -298,20 +305,21 @@ bool RedisHandler::processRequest()
             ensureAuthenticated();
             checkDBSet();
 
-            auto redis_db = redis_clickhouse_mapping[db];
-            if (redis_db->getType() != RedisProtocol::DBType::HASH)
+            auto mapping = getMapDescription(db);
+            if (mapping.db_type != RedisProtocol::DBType::HASH)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HMGET command can only be applied to a database of type hash");
 
-            auto table = resolveTable(db, redis_db);
-            Strings columns_to_check{redis_db->getKeyColumnName()};
+            auto table = resolveTable(db, mapping);
+            Strings columns_to_check{mapping.key_column};
             columns_to_check.insert(columns_to_check.end(), hmget_request.getFields().begin(), hmget_request.getFields().end());
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), columns_to_check);
-            auto result_block = table->getBlockByKeys({hmget_request.getKey()}, hmget_request.getFields(), query_context);
+            std::vector<std::vector<Field>> keys{{hmget_request.getKey()}};
+            auto result_block = table->getBlockByKeys(keys, hmget_request.getFields(), query_context);
 
             std::vector<std::optional<String>> result;
             result.reserve(result_block.columns());
             for (size_t i = 0; i < result_block.columns(); ++i)
-                result.push_back(serializeValue(result_block.getByPosition(i)));
+                result.push_back(serializeValue(result_block.getByPosition(i), 0));
 
             RedisProtocol::ArrayResponse resp(result);
             resp.serialize(*out);
@@ -320,52 +328,37 @@ bool RedisHandler::processRequest()
     }
 }
 
-std::optional<String> RedisHandler::serializeValue(const ColumnWithTypeAndName & column)
+std::optional<String> RedisHandler::serializeValue(const ColumnWithTypeAndName & column, size_t row)
 {
-    if (column.column->isNullAt(0))
+    if (column.column->isNullAt(row))
         return std::nullopt;
 
     WriteBufferFromOwnString wb;
-    column.type->getDefaultSerialization()->serializeText(*column.column, 0, wb, FormatSettings{});
+    column.type->getDefaultSerialization()->serializeText(*column.column, row, wb, FormatSettings{});
     return wb.str();
 }
 
-void RedisHandler::initDB(UInt32 db_)
+RedisProtocol::MapDescription RedisHandler::getMapDescription(UInt32 db_) const
 {
-    const auto & mapping = config->db_mapping.at(db_);
-    StorageID table_id{mapping.clickhouse_db, mapping.clickhouse_table};
-
-    validateTable(db_, DatabaseCatalog::instance().getTable(table_id, query_context));
-
-    switch (mapping.db_type)
-    {
-        case RedisProtocol::DBType::STRING:
-        {
-            redis_clickhouse_mapping[db_]
-                = std::make_shared<RedisProtocol::RedisStringMapping>(mapping.db_type, table_id, mapping.key_column, mapping.value_column);
-            break;
-        }
-        case RedisProtocol::DBType::HASH:
-        {
-            redis_clickhouse_mapping[db_] = std::make_shared<RedisProtocol::RedisHashMapping>(mapping.db_type, table_id, mapping.key_column);
-            break;
-        }
-    }
+    /// Read the configuration again for every request: a session must not keep serving a mapping that
+    /// has been changed or removed by `SYSTEM RELOAD CONFIG`.
+    auto mapping = RedisProtocol::parseDBDescription(server.config(), db_);
+    if (!mapping)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Redis database {} is not configured", db_);
+    return *mapping;
 }
 
-StoragePtr RedisHandler::resolveTable(UInt32 db_, const RedisProtocol::MappingPtr & mapping) const
+StoragePtr RedisHandler::resolveTable(UInt32 db_, const RedisProtocol::MapDescription & mapping) const
 {
     /// Resolve the table again for every request: a session must not keep serving data from a table
     /// that has been dropped, renamed, or recreated in the meantime.
-    auto table = DatabaseCatalog::instance().getTable(mapping->getTableID(), query_context);
-    validateTable(db_, table);
+    auto table = DatabaseCatalog::instance().getTable(StorageID{mapping.clickhouse_db, mapping.clickhouse_table}, query_context);
+    validateTable(db_, mapping, table);
     return table;
 }
 
-void RedisHandler::validateTable(UInt32 db_, const StoragePtr & table_ptr) const
+void RedisHandler::validateTable(UInt32 db_, const RedisProtocol::MapDescription & mapping, const StoragePtr & table_ptr) const
 {
-    const auto & mapping = config->db_mapping.at(db_);
-
     if (!table_ptr->supportsGetRequests())
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,
