@@ -905,10 +905,14 @@ public:
             const auto & name = table_func_node->getTableFunctionName();
             if (name == "cluster" || name == "clusterAllReplicas" || name == "remote" || name == "remoteSecure")
                 storages.push_back(table_func_node->getStorage());
+            else
+                has_uncollected_table_function = true;
         }
     }
 
     std::vector<StoragePtr> storages;
+    /// Set when a table function was left out of `storages`, which on its own reads as "no storages".
+    bool has_uncollected_table_function = false;
 };
 
 class RewriteJoinToGlobalJoinVisitor : public InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>
@@ -916,17 +920,6 @@ class RewriteJoinToGlobalJoinVisitor : public InDepthQueryTreeVisitorWithContext
 public:
     using Base = InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>;
     using Base::Base;
-
-    static bool allStoragesAreMergeTree(QueryTreeNodePtr & node)
-    {
-        CollectStoragesVisitor collect_storages;
-        collect_storages.visit(node);
-        for (const auto & storage : collect_storages.storages)
-            if (!storage->isMergeTree())
-                return false;
-
-        return true;
-    }
 
     /// The side buildQueryTreeForShard materializes into a temporary table: the right one, except
     /// for a RIGHT JOIN, where it is the left one.
@@ -938,13 +931,30 @@ public:
         return join_node.getRightTableExpressionNode();
     }
 
+    /// Whether the materialized side may be left for each replica to read on its own.
+    static bool materializedSideCanStayLocal(JoinNode & join_node)
+    {
+        CollectStoragesVisitor collect_storages;
+        collect_storages.visit(getMaterializedTableExpressionNode(join_node));
+
+        /// An uncollected table function leaves `storages` empty, which the loop below would read
+        /// as all-MergeTree.
+        if (join_node.getKind() == JoinKind::Right && collect_storages.has_uncollected_table_function)
+            return false;
+
+        for (const auto & storage : collect_storages.storages)
+            if (!storage->isMergeTree())
+                return false;
+
+        return true;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * join_node = node->as<JoinNode>())
         {
             bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
-            bool should_use_global_join
-                = !prefer_local_join || !allStoragesAreMergeTree(getMaterializedTableExpressionNode(*join_node));
+            bool should_use_global_join = !prefer_local_join || !materializedSideCanStayLocal(*join_node);
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);
         }

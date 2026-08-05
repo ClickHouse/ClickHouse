@@ -131,3 +131,7 @@
 7
 8
 9
+-- table function left, right eligible: left is materialized into a temporary table
+1
+-- table function left, right eligible: the raw left read is not sent to the replicas
+0
