@@ -274,6 +274,42 @@ node_users_zk_include_from_removed = cluster_users_zk_include_from_removed.add_i
 )
 caught_users_zk_include_from_removed_exception = ""
 
+# Regression case: a single `users.d` fragment may carry several `<include_from>` siblings.
+# `mergeRecursive` walks them in document order, so `<include_from remove="remove"/>` followed by a
+# plain `<include_from>` drops the old node and appends the new one, which becomes the first - and
+# hence effective - node `processConfig` reads. The validator must replay every sibling, not just
+# the first one per file: the appended source lives under `config.d`, so losing it would reject its
+# top-level tag as unknown and fail a previously valid startup.
+cluster_users_include_from_remove_then_set = ClickHouseCluster(
+    __file__, name="users_include_from_remove_then_set"
+)
+node_users_include_from_remove_then_set = (
+    cluster_users_include_from_remove_then_set.add_instance(
+        "node_users_include_from_remove_then_set",
+        main_configs=["configs/config.d/users_new_include_source.xml"],
+        user_configs=[
+            "configs/users.d/a_set_stale_include_from.xml",
+            "configs/users.d/z_remove_then_set_include_from.xml",
+        ],
+    )
+)
+
+# Regression case: the reverse sibling order must NOT drop the source. `mergeRecursive` indexes the
+# tree's nodes once, at the start of each fragment, so an `<include_from remove="remove"/>` sibling
+# cannot pair with the `<include_from>` node its own fragment just appended - the `remove` is
+# dropped and the source stays effective. The validator must mirror that, keeping the source's
+# top-level tag exempted so startup still succeeds.
+cluster_users_include_from_set_then_remove = ClickHouseCluster(
+    __file__, name="users_include_from_set_then_remove"
+)
+node_users_include_from_set_then_remove = (
+    cluster_users_include_from_set_then_remove.add_instance(
+        "node_users_include_from_set_then_remove",
+        main_configs=["configs/config.d/users_stale_include_source.xml"],
+        user_configs=["configs/users.d/set_then_remove_include_from.xml"],
+    )
+)
+
 # Negative case: a non-static handler (e.g. `redirect`) ignores `response_content`. Only a
 # `static` handler consumes a `config://` reference, so the validator must NOT exempt a top-level
 # key referenced from `response_content` on a non-static handler — doing so would let a genuinely
@@ -671,6 +707,20 @@ def start_users_zk_include_from_removed_cluster():
                 caught_users_zk_include_from_removed_exception += "\n" + f.read()
     yield
     cluster_users_zk_include_from_removed.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_remove_then_set_cluster():
+    cluster_users_include_from_remove_then_set.start()
+    yield
+    cluster_users_include_from_remove_then_set.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_set_then_remove_cluster():
+    cluster_users_include_from_set_then_remove.start()
+    yield
+    cluster_users_include_from_set_then_remove.shutdown()
 
 
 @pytest.fixture
@@ -1187,6 +1237,32 @@ def test_users_zk_include_from_removed_does_not_skip_check(
     # unresolvable: the validator must still run and reject an unrelated unknown key.
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_users_zk_include_from_removed_exception
     assert "my_zk_latch_probe" in caught_users_zk_include_from_removed_exception
+
+
+def test_users_include_from_remove_then_set_source_exempted(
+    start_users_include_from_remove_then_set_cluster,
+):
+    # A `users.d` fragment removes the users-side `<include_from>` and re-declares it in a
+    # later sibling of the same fragment. The merger appends the new node after dropping the
+    # old one, so the new source is the effective one; the validator must replay every
+    # sibling (not just the first per file) and exempt the new source's top-level tag, or
+    # this previously valid startup fails with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    assert (
+        node_users_include_from_remove_then_set.query("SELECT 1").strip() == "1"
+    )
+
+
+def test_users_include_from_set_then_remove_source_still_exempted(
+    start_users_include_from_set_then_remove_cluster,
+):
+    # The reverse sibling order: a fragment declares the source and a later sibling of the
+    # SAME fragment carries `remove`. `mergeRecursive` indexes the tree once per fragment,
+    # so the `remove` cannot pair with the node its own fragment just appended - it is
+    # dropped and the source stays effective. The validator must mirror that and keep the
+    # source's top-level tag exempted, or this valid startup fails.
+    assert (
+        node_users_include_from_set_then_remove.query("SELECT 1").strip() == "1"
+    )
 
 
 def test_reload_rejects_unknown_then_accepts_config_ref(start_reload_cluster):
