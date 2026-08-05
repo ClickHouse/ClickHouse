@@ -29,7 +29,6 @@
 #include <base/scope_guard.h>
 #include <base/defines.h>
 #include <base/MemorySanitizer.h>
-#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/SipHash.h>
@@ -47,7 +46,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
-extern const int NOT_IMPLEMENTED;
 extern const int NO_ZOOKEEPER;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
@@ -151,23 +149,6 @@ DataLakeMetadataPtr PaimonMetadata::create(
     auto it = schema->options.find(PAIMON_DEFAULT_PARTITION_NAME);
     if (it != schema->options.end())
         partition_default_name = it->second;
-
-    /// A partition directory is named after the values of the partition keys, and the reader has to
-    /// reproduce that name to find the data files. `partition.legacy-name`, which defaults to true,
-    /// selects how Paimon renders a value: `toString` on the value as it is stored, or a cast of it
-    /// to a string. Only the former is implemented, and the two differ for several types - a `DATE`
-    /// is the number of days since the epoch one way and `2023-01-01` the other, a `TIMESTAMP` is
-    /// separated by `T` one way and by a space the other. Reading a table written with the option
-    /// turned off would silently look for directories that do not exist, so refuse it up front.
-    auto legacy_partition_name_it = schema->options.find(PAIMON_PARTITION_LEGACY_NAME);
-    if (!schema->partition_keys.empty() && legacy_partition_name_it != schema->options.end()
-        && Poco::toLower(legacy_partition_name_it->second) == "false")
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Paimon table sets `{}` to `{}`, which is not supported. Only the legacy naming of "
-            "partition directories can be read.",
-            PAIMON_PARTITION_LEGACY_NAME,
-            legacy_partition_name_it->second);
 
     /// Check if incremental read is enabled
     const auto & data_lake_settings = configuration_ptr->getDataLakeSettings();
