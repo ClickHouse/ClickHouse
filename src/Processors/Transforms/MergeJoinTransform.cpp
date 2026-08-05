@@ -445,6 +445,11 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         max_block_size_,
         join_ptr->getTableJoin().analyzeMode())
 {
+    /// This algorithm matches rows on the equality keys (plus the `ASOF` inequality) only, so a
+    /// mixed `ON` condition reaching here would be dropped instead of applied.
+    if (join_ptr->getTableJoin().getMixedJoinExpression())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm cannot evaluate a mixed JOIN ON condition");
+
     for (const auto & [left_key, right_key] : join_ptr->getTableJoin().leftToRightKeyRemap())
     {
         size_t left_idx = input_headers[0]->getPositionByName(left_key);
