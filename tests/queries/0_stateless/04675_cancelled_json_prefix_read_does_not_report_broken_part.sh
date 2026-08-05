@@ -106,7 +106,8 @@ for part_type in compact wide; do
         ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
         ${CLICKHOUSE_CLIENT} -q "
             SELECT toUInt64(max(query_duration_ms)) FROM system.query_log
-            WHERE query_id = '${qid}' AND type = 'QueryFinish'"
+            WHERE current_database = currentDatabase()
+              AND query_id = '${qid}' AND type = 'QueryFinish'"
     }
     read_ms=$(time_read_ms)
     echo "${part_type} read cost measured: $([ -n "${read_ms}" ] && [ "${read_ms}" -gt 0 ] 2>/dev/null && echo 1 || echo 0)"
