@@ -130,6 +130,14 @@ exec_query_pid=$!
 # The executor has no interruption point, so reaching the failpoint proves the opt-in made the
 # read fall back to the path that honors it.
 if timeout 120 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE" > /dev/null 2>&1; then
+    # WAIT FAILPOINT is global, so assert the pause belongs to this query: otherwise a query
+    # that already finished without the fallback would leave system.processes empty and be
+    # reported below as a success.
+    parked=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query_id = '$exec_query_id'")
+    if [ "$parked" != "1" ]; then
+        echo "FAIL: the paused read does not belong to the executor test query"
+    fi
+
     $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$exec_query_id' ASYNC FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT $FP"
 
