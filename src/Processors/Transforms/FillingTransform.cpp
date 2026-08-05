@@ -237,12 +237,19 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   *
   * An INTERVAL step is not a constant number of the column type units, so with FROM only the value right before TO
   * can be assumed, and without FROM nothing can be proven at all.
+  *
+  * STALENESS caps the sequence at the last data value plus the staleness, replacing TO as the effective bound in
+  * `FillingRow::updateConstraintsWithStalenessRow` whenever it comes first, so with STALENESS the sequence can stop
+  * arbitrarily far below TO and nothing can be proven about TO either.
   */
 static std::optional<Int64> fillValueRequiredToFitColumnType(const FillColumnDescription & descr, int direction)
 {
     /// Every column type reaching this point is filled through Int64: the wider Int128/Int256 columns are filled
     /// through their own type, so their bounds have already been accepted by the representability check.
     if (descr.fill_to.getType() != Field::Types::Int64)
+        return {};
+
+    if (!descr.fill_staleness.isNull())
         return {};
 
     const Int64 to = descr.fill_to.safeGet<Int64>();
