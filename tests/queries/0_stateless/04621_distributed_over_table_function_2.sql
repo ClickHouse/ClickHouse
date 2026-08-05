@@ -252,13 +252,15 @@ SELECT count() FROM dist_probe_missing_dict SETTINGS enable_analyzer = 0, prefer
 SELECT count() FROM dist_probe_missing_dict SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 0, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
 DROP TABLE dist_probe_missing_dict;
 
--- Same for `merge` with no matching tables: `merge(...)` reports "no tables match the regular expression"
--- as `UNKNOWN_TABLE` (the arguments are well-formed, the backing tables are missing), so a replica-local
--- miss is skipped or failed over instead of aborting the read.
+-- Same for `merge` with no matching tables: the table function's structure resolution reports "no tables
+-- match the regular expression" as `UNKNOWN_TABLE` (the arguments are well-formed, the backing tables are
+-- missing), so a replica-local miss is skipped or failed over instead of aborting the read.
 CREATE TABLE dist_probe_missing_merge (n UInt64) ENGINE = Distributed(test_shard_localhost, merge(currentDatabase(), '^probe_no_such_table$'));
 SELECT count() FROM dist_probe_missing_merge SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
 SELECT count() FROM dist_probe_missing_merge SETTINGS enable_analyzer = 0, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
-SELECT count() FROM dist_probe_missing_merge SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 0, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+-- Without `skip_unavailable_shards` the local read fails the usual way; for a local `merge(...)` execution
+-- that is the schema-inference error (`CANNOT_EXTRACT_TABLE_STRUCTURE`), same as a direct `FROM merge(...)`.
+SELECT count() FROM dist_probe_missing_merge SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 0, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
 DROP TABLE dist_probe_missing_merge;
 
 -- And for a nested target: the inner function's "backing object missing" error propagates through the
