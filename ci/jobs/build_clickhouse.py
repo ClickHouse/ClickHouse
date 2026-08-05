@@ -376,6 +376,8 @@ def main():
             targets = "fuzzers"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
+        elif build_type == BuildTypes.ARM_BINARY:
+            targets = "clickhouse-bundle"
         elif build_type in (
             BuildTypes.AMD_TIDY,
             BuildTypes.ARM_TIDY,
@@ -482,7 +484,7 @@ def main():
                 results.append(
                     Result.from_commands_run(
                         name="Rebuild self-extracting bundle after BOLT",
-                        command="ninja clickhouse-self-extracting",
+                        command=f"ninja clickhouse-self-extracting",
                         workdir=build_dir_normalized,
                     )
                 )
