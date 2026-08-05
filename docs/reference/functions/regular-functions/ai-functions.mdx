@@ -10,11 +10,15 @@ AI Functions are built-in functions in ClickHouse that you can use to call AI or
 
 <Note>
 AI functions are experimental. Set [`allow_experimental_ai_functions`](/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) to enable them.
-</Note>
 
-<Note>
 AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
 </Note>
+
+<Warning>
+**Prompt injection**
+
+The input text is sent to the model and can steer its output (prompt injection). Text from external, unverified, or unsanitized sources may contain instructions that make the model return attacker-controlled content, ignore the requested format, or emit malicious payloads. Treat AI function output as untrusted: validate or sanitize it before using it in downstream steps such as building SQL, shell commands, further queries, or access-control decisions.
+</Warning>
 
 All functions are sharing a common infrastructure that provides:
 
@@ -79,7 +83,7 @@ SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
 
 ### Parameter map {#parameter-map}
 
-Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default. The exception is `aiEmbed`, which takes `model` as a required positional argument (`aiEmbed(text, model[, params])`) and errors if it is instead set in the parameter map or named collection.
+Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default. The exception is `aiEmbed`, which takes `model` as a required positional argument (`aiEmbed(text, model[, params])`) and errors if it is instead set in the parameter map or named collection. This is in order to enforce reproducible embeddings.
 
 The following parameters are common to all the AI functions:
 
@@ -118,7 +122,7 @@ The transport is determined solely by the scheme of the `endpoint` URL. There is
 - `https://` — the connection uses TLS. The request body (input text, prompts) and the `api_key` in the request headers are encrypted in transit, and the provider's certificate is validated. Use this for any remote provider.
 - `http://` — the connection is **not encrypted**. The request body and the `api_key` are sent in cleartext. Only use this for a trusted provider on a private network (e.g. a local `vLLM` or `Ollama` instance).
 
-AI functions do not force HTTPS: an `http://` endpoint is accepted and sends data unencrypted. There is currently no server-side setting that rejects cleartext AI endpoints — [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) restricts the destination host only and does not inspect the URL scheme, so an `http://` endpoint to an allowed host still passes. To ensure encrypted transport, configure named collections with `https://` endpoints.
+By default, AI functions reject an `endpoint` that would send data in cleartext to a remote host: any non-HTTPS endpoint whose host is not loopback raises an exception. Loopback hosts (`localhost`, `127.0.0.0/8`, `::1`) are exempt, so a local `http://localhost` model server works out of the box. To allow a plaintext `http://` endpoint on a remote host, set [`ai_function_allow_insecure_endpoint`](/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) to `1`. This check is independent of [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): that setting is a host allowlist and does not inspect the URL scheme, so an `http://` endpoint pointed at an allowed host still passes it.
 
 Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
 
@@ -230,7 +234,7 @@ from a chat one.
 
 The `model` is a required positional argument (a constant `String`). Unlike the text functions,
 `aiEmbed` does not read `model` from the named collection or the parameter map. A named collection
-that defines `model` is rejected rather than silently ignored.
+that defines `model` is rejected.
 
 The optional `dimensions` parameter, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.
