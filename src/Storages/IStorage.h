@@ -16,6 +16,7 @@
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/ActionLock.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -236,6 +237,8 @@ public:
     /// any locks.
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
+        /// Table-lifetime state, so not charged to the query installing it; see `StorageFactory::get`.
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 

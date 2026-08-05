@@ -4,6 +4,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
@@ -235,7 +238,16 @@ StoragePtr StorageFactory::get(
 
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
-    auto res = storages.at(name).creator_fn(arguments);
+    /// The storage object and its metadata live until the table is detached or the server stops, and are
+    /// freed by whoever does that, which cannot uncharge the query that ran the CREATE. So do not charge it:
+    /// the charge would sit on the per-user tracker for good. `total_memory_tracker` still accounts them, in
+    /// the dedicated arena for table-lifetime state.
+    StoragePtr res;
+    {
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
+        ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        res = storages.at(name).creator_fn(arguments);
+    }
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query
