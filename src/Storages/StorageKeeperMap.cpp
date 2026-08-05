@@ -92,6 +92,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char keepermap_fail_drop_data[];
+    extern const char keeper_map_delete_pause_before_multi[];
 }
 
 namespace ErrorCodes
@@ -1647,6 +1648,18 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         auto primary_key_pos = header.getPositionByName(primary_key);
         auto version_position = header.getPositionByName(std::string{version_column_name});
 
+        const auto & settings = local_context->getSettingsRef();
+        ZooKeeperRetriesInfo retries_info{
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            local_context->getProcessListElement()};
+
+        /// In strict mode the delete has to be atomic with respect to the versions read by the mutation scan, so the
+        /// requests of every block are accumulated here and sent as a single `multi` request once the scan is over.
+        /// Committing block by block would leave the earlier blocks deleted when a later block hits a conflict.
+        Coordination::Requests strict_delete_requests;
+
         Block block;
         while (executor.pull(block))
         {
@@ -1673,19 +1686,23 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                 delete_requests.emplace_back(zkutil::makeRemoveRequest(fullPathForKey(base64Encode(wb_key.str(), true)), version));
             }
 
-            Coordination::Responses responses;
+            if (strict)
+            {
+                strict_delete_requests.insert(
+                    strict_delete_requests.end(),
+                    std::make_move_iterator(delete_requests.begin()),
+                    std::make_move_iterator(delete_requests.end()));
+                continue;
+            }
 
-            const auto & settings = local_context->getSettingsRef();
-            ZooKeeperRetriesControl zk_retry{
-                getName(),
-                getLogger(getName()),
-                ZooKeeperRetriesInfo{
-                    settings[Setting::keeper_max_retries],
-                    settings[Setting::keeper_retry_initial_backoff_ms],
-                    settings[Setting::keeper_retry_max_backoff_ms],
-                    local_context->getProcessListElement()}};
+            Coordination::Responses responses;
+            ZooKeeperRetriesControl zk_retry{getName(), getLogger(getName()), retries_info};
 
             Coordination::Error status = {};
+
+            /// Lets a test modify the keys behind our back after the block has been read.
+            FailPointInjection::pauseFailPoint(FailPoints::keeper_map_delete_pause_before_multi);
+
             zk_retry.retryLoop([&]
             {
                 auto client = getClient();
@@ -1693,7 +1710,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             });
 
             if (status == Coordination::Error::ZOK)
-                return;
+                continue;
 
             if (status != Coordination::Error::ZNONODE)
                 throw zkutil::KeeperMultiException(status, delete_requests, responses);
@@ -1711,6 +1728,29 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                 if (status != Coordination::Error::ZOK && status != Coordination::Error::ZNONODE)
                     throw zkutil::KeeperException::fromPath(status, delete_request->getPath());
             }
+        }
+
+        if (!strict_delete_requests.empty())
+        {
+            Coordination::Responses responses;
+            ZooKeeperRetriesControl zk_retry{getName(), getLogger(getName()), retries_info};
+
+            Coordination::Error status = {};
+
+            /// Lets a test modify the keys behind our back after every block (and its versions) has been read.
+            FailPointInjection::pauseFailPoint(FailPoints::keeper_map_delete_pause_before_multi);
+
+            zk_retry.retryLoop([&]
+            {
+                auto client = getClient();
+                status = client->tryMulti(strict_delete_requests, responses, /* check_session_valid */ true);
+            });
+
+            /// Any failure, including `ZNONODE`, is surfaced as is. Retrying key by key would drop the version checks
+            /// and could remove a row that another session has updated in the meantime, and skipping the failed keys
+            /// would apply the delete partially - both contradict the documented strict mode guarantee.
+            if (status != Coordination::Error::ZOK)
+                throw zkutil::KeeperMultiException(status, strict_delete_requests, responses);
         }
 
         return;
