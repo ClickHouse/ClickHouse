@@ -246,7 +246,7 @@ public:
     /// Get the description of a setting
     std::string_view getDescription(std::string_view name) const;
 
-    /// Get the tier (PRODUCTION/BETA/EXPERIMENTAL) of a setting
+    /// Get the tier (PRODUCTION/BETA/PRIVATE_PREVIEW/EXPERIMENTAL) of a setting
     SettingsTierType getTier(std::string_view name) const;
 
     // ========================================================================
