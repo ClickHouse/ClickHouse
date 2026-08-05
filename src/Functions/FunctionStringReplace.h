@@ -5,11 +5,10 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
-#include <Common/CurrentThread.h>
 
 #include <functional>
 #include <limits>
@@ -21,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
@@ -72,21 +70,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /// Resolved from the executing thread rather than captured: this instance can be stored in table
-        /// metadata and then run by any later query.
-        QueryStatusPtr process_list_element;
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            process_list_element = query_context->getProcessListElementSafe();
-
-        /// `checkTimeLimit` returns false rather than throwing under the `break` overflow mode, but a
-        /// partially rewritten string is a wrong value rather than a shorter one, so it becomes a throw.
-        std::function<void()> check_cancellation;
-        if (process_list_element)
-            check_cancellation = [&process_list_element]
-            {
-                if (!process_list_element->checkTimeLimit())
-                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
-            };
+        std::function<void()> check_cancellation = makeCancellationCheck(name);
 
         /// Before materialization: expanding a constant into a full column is itself unbounded.
         if (check_cancellation)
