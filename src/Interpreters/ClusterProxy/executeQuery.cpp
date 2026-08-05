@@ -513,6 +513,7 @@ void executeQuery(
             shards,
             query_info.storage_limits,
             not_optimized_cluster->getName(),
+            not_optimized_cluster->getShardScopeIdentity(),
             std::move(unavailable_shard_tracker));
 
         read_from_remote->setStepDescription("Read from remote replica");
@@ -539,14 +540,14 @@ void executeQuery(
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
-/// Second column of the `_shard_num` scalar block: the name of the cluster the shard number indexes.
+/// Second column of the `_shard_num` scalar block: which shard numbering the shard number belongs to.
 static constexpr auto SHARD_NUM_CLUSTER_COLUMN = "_cluster_for_parallel_replicas";
 
-Block makeShardNumScalar(UInt32 shard_num, const String & cluster_name)
+Block makeShardNumScalar(UInt32 shard_num, const String & shard_scope_identity)
 {
     return Block{
         {DataTypeUInt32().createColumnConst(1, shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"},
-        {DataTypeString().createColumnConst(1, cluster_name), std::make_shared<DataTypeString>(), SHARD_NUM_CLUSTER_COLUMN}};
+        {DataTypeString().createColumnConst(1, shard_scope_identity), std::make_shared<DataTypeString>(), SHARD_NUM_CLUSTER_COLUMN}};
 }
 
 /// The shipped `_shard_num` and the `cluster_for_parallel_replicas` setting are not necessarily about the
@@ -567,8 +568,9 @@ ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & c
         return scope;
 
     const std::string_view provenance = block.getByName(SHARD_NUM_CLUSTER_COLUMN).column->getDataAt(0);
-    /// An empty name authenticates nothing, so it must never compare equal.
-    if (provenance.empty() || provenance != cluster.getName())
+    /// Compare the numbering, not the name: a derived cluster keeps the name and may renumber the shards.
+    /// An empty identity authenticates nothing, so it must never compare equal.
+    if (provenance.empty() || provenance != cluster.getShardScopeIdentity())
         scope.kind = ShardScopeKind::Foreign;
 
     return scope;

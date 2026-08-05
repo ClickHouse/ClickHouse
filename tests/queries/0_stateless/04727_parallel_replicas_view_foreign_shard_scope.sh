@@ -94,6 +94,18 @@ SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
          log_comment = '04727_matching_${CLICKHOUSE_DATABASE}';
 "
 
+# `clusterAllReplicas` turns every replica into a shard of its own, so the cluster it reads through has 6
+# shards numbered 1..6 while carrying the same NAME as the 2-shard config cluster the view names. Comparing
+# names authenticated a derived shard number against the config cluster: 3..6 aborted, 1..2 read a wrong
+# shard. The scope must therefore identify the shard NUMBERING, not the cluster name.
+echo '-- renumbered derived cluster: declined, so no abort and no wrong shard'
+$CLICKHOUSE_CLIENT -q "
+SELECT sum(a) FROM clusterAllReplicas('test_cluster_two_shard_three_replicas_localhost', currentDatabase(), v_in_range_04727)
+SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
+         enable_analyzer = 1, parallel_replicas_only_with_analyzer = 0,
+         log_comment = '04727_derived_${CLICKHOUSE_DATABASE}';
+"
+
 # Without the analyzer the storage decides both the processing stage and whether to read through
 # parallel replicas, and the two decisions must agree. A stage of WithMergeableState above a plan that
 # was in fact built locally makes the initiator treat raw rows as partial aggregate states and skip the
@@ -116,10 +128,11 @@ SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-echo '-- parallel replicas used? out_of_range / in_range / matching / old analyzer filter, aggregate'
+echo '-- parallel replicas used? out_of_range / in_range / matching / derived / old analyzer filter, aggregate'
 parallel_replicas_used "04727_out_of_range_${CLICKHOUSE_DATABASE}"
 parallel_replicas_used "04727_in_range_${CLICKHOUSE_DATABASE}"
 parallel_replicas_used "04727_matching_${CLICKHOUSE_DATABASE}"
+parallel_replicas_used "04727_derived_${CLICKHOUSE_DATABASE}"
 parallel_replicas_used "04727_old_analyzer_filter_${CLICKHOUSE_DATABASE}"
 parallel_replicas_used "04727_old_analyzer_aggregate_${CLICKHOUSE_DATABASE}"
 

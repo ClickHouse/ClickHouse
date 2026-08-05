@@ -435,7 +435,7 @@ Clusters::Impl Clusters::getContainer() const
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
     const String & config_prefix_,
-    const String & cluster_name) : name(cluster_name)
+    const String & cluster_name) : name(cluster_name), shard_scope_identity(cluster_name)
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -582,7 +582,7 @@ Cluster::Cluster(
     const Settings & settings,
     const HostsByShard & names,
     const ClusterConnectionParameters & params)
-    : name(params.cluster_name)
+    : name(params.cluster_name), shard_scope_identity(params.cluster_name)
 {
     UInt32 current_shard_num = 1;
 
@@ -615,7 +615,7 @@ Cluster::Cluster(
     const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
     const ClusterConnectionParameters & params,
     bool internal_replication)
-    : name(params.cluster_name)
+    : name(params.cluster_name), shard_scope_identity(params.cluster_name)
 {
     UInt32 current_shard_num = 1;
 
@@ -875,6 +875,10 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     secret = from.secret;
     name = from.name;
+    /// Every replica became a shard of its own, so a shard number here denotes a different shard than the
+    /// same number does in `from`. Spell the identity so it cannot equal any cluster name (those come from
+    /// XML element names), and keep it non-empty so empty keeps meaning "identifies nothing".
+    shard_scope_identity = from.shard_scope_identity + " (replicas as shards)";
 
     initMisc();
 }
@@ -896,6 +900,9 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
 
     secret = from.secret;
     name = from.name;
+    /// `shards_info.emplace_back(from_shard)` above keeps each shard's `shard_num`, so a shard number
+    /// still denotes the same shard as in `from` and the identity carries over.
+    shard_scope_identity = from.shard_scope_identity;
 
     initMisc();
 }

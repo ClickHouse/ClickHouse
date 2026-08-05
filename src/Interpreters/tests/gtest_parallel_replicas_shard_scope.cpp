@@ -17,11 +17,19 @@ using namespace DB::ClusterProxy;
 namespace
 {
 
-ClusterPtr makeCluster(const Settings & settings, const String & name, size_t shards)
+/// `replicas_per_shard` replicas on distinct hosts, so that deriving replicas-as-shards is not collapsed by
+/// its duplicate-host skip and the derived cluster really is renumbered.
+ClusterPtr makeCluster(const Settings & settings, const String & name, size_t shards, size_t replicas_per_shard = 1)
 {
     HostsByShard hosts;
+    size_t host = 1;
     for (size_t i = 0; i < shards; ++i)
-        hosts.push_back({"127.0.0.1"});
+    {
+        Strings replicas;
+        for (size_t j = 0; j < replicas_per_shard; ++j)
+            replicas.push_back("127.0.0." + std::to_string(host++));
+        hosts.push_back(std::move(replicas));
+    }
 
     /// ClusterConnectionParameters holds references, so these must outlive the call.
     const String username = "default";
@@ -124,4 +132,40 @@ TEST(ParallelReplicasShardScope, NoScalarIsNone)
     const auto scope = getShardScopeForCluster(context, *cluster);
     EXPECT_EQ(scope.kind, ShardScopeKind::None);
     EXPECT_EQ(scope.shard_num, 0u);
+}
+
+/// `clusterAllReplicas` turns each replica into a shard of its own, so a shard number of the derived cluster
+/// denotes a different shard than the same number does in the original - while the name is copied unchanged.
+/// Comparing names would authenticate such a number against the original and index an unrelated shard.
+TEST(ParallelReplicasShardScope, RenumberedDerivedClusterIsForeign)
+{
+    auto original = makeCluster(getContext().context->getSettingsRef(), "some_cluster", 2, 3);
+    auto derived = original->getClusterWithReplicasAsShards(getContext().context->getSettingsRef());
+    ASSERT_EQ(original->getShardCount(), 2u);
+    ASSERT_EQ(derived->getShardCount(), 6u);
+    ASSERT_EQ(derived->getName(), original->getName());
+
+    /// A shard number produced against the derived numbering says nothing about the original's shards.
+    auto derived_context = makeContextWithScalar(makeShardNumScalar(6, derived->getShardScopeIdentity()));
+    const auto foreign = getShardScopeForCluster(derived_context, *original);
+    EXPECT_EQ(foreign.kind, ShardScopeKind::Foreign);
+    EXPECT_EQ(foreign.shard_num, 6u);
+
+    /// The converse must still hold, or the arm could pass by making every scope foreign.
+    auto original_context = makeContextWithScalar(makeShardNumScalar(2, original->getShardScopeIdentity()));
+    EXPECT_EQ(getShardScopeForCluster(original_context, *original).kind, ShardScopeKind::Scoped);
+    EXPECT_EQ(getShardScopeForCluster(derived_context, *derived).kind, ShardScopeKind::Scoped);
+}
+
+/// Taking a subset of shards preserves each shard's number, so a shard number keeps its meaning and the
+/// identity must carry over: `optimize_skip_unused_shards` reads through such a cluster.
+TEST(ParallelReplicasShardScope, ShardSubsetKeepsIdentity)
+{
+    auto original = makeCluster(getContext().context->getSettingsRef(), "some_cluster", 3);
+    auto subset = original->getClusterWithMultipleShards({1});
+    ASSERT_EQ(subset->getShardsInfo().at(0).shard_num, 2u);
+
+    auto context = makeContextWithScalar(makeShardNumScalar(2, original->getShardScopeIdentity()));
+    EXPECT_EQ(getShardScopeForCluster(context, *subset).kind, ShardScopeKind::Scoped);
+    EXPECT_EQ(subset->getShardScopeIdentity(), original->getShardScopeIdentity());
 }
