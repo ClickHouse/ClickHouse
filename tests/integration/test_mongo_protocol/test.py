@@ -901,3 +901,95 @@ def test_dollar_field_path_is_an_error(started_cluster):
 
     # The server is still healthy after the rejected pipelines.
     assert sorted(doc["id"] for doc in collection.find({})) == [1, 2]
+
+
+def test_insert_decimal_round_trip(started_cluster):
+    """A BSON decimal128 arrives as `{"$numberDecimal": ...}` and becomes a `Decimal128(10)`
+    column, and the reply encodes the column back as a BSON decimal128 - not as a double,
+    which could not hold all of its digits."""
+    from bson.decimal128 import Decimal128
+
+    client = make_client()
+    collection = client["db"]["decimals"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "price": Decimal128("12345678901234567890.1234567890")},
+            {"id": 2, "price": Decimal128("-0.0000000001")},
+        ]
+    )
+
+    found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
+    assert [type(doc["price"]) for doc in found] == [Decimal128, Decimal128]
+    assert found == [
+        {"id": 1, "price": Decimal128("12345678901234567890.1234567890")},
+        {"id": 2, "price": Decimal128("-0.0000000001")},
+    ]
+
+    distinct = collection.distinct("price")
+    assert all(type(value) is Decimal128 for value in distinct)
+    assert sorted(distinct, key=lambda value: value.to_decimal()) == [
+        Decimal128("-0.0000000001"),
+        Decimal128("12345678901234567890.1234567890"),
+    ]
+
+
+def test_insert_arrays_of_bson_scalars(started_cluster):
+    """An array of BSON-only scalars - dates, ObjectIds, decimals - is inserted through the same
+    wrapper conversion as a scalar field, and an array of subdocuments may contain them too."""
+    import datetime
+
+    from bson.decimal128 import Decimal128
+    from bson.objectid import ObjectId
+
+    client = make_client()
+    collection = client["db"]["wrapper_arrays"]
+
+    collection.drop()
+    oid = ObjectId("64c1f00000000000000000aa")
+    collection.insert_many(
+        [
+            {
+                "id": 1,
+                "dates": [datetime.datetime(2020, 5, 17, 10, 30, 0), datetime.datetime(2021, 6, 18, 11, 45, 30)],
+                "ids": [oid],
+                "prices": [Decimal128("1.5000000000"), Decimal128("-2.2500000000")],
+            }
+        ]
+    )
+
+    found = list(collection.find({}, {"_id": 0}))
+    assert found == [
+        {
+            "id": 1,
+            "dates": [datetime.datetime(2020, 5, 17, 10, 30, 0), datetime.datetime(2021, 6, 18, 11, 45, 30)],
+            "ids": [str(oid)],
+            "prices": [Decimal128("1.5000000000"), Decimal128("-2.2500000000")],
+        }
+    ]
+
+    # A subdocument inside an array keeps its shape; the wrapper inside it becomes the value it
+    # wraps, kept structurally by the `JSON` column the array of subdocuments lands in.
+    events = client["db"]["wrapper_array_subdocs"]
+    events.drop()
+    events.insert_many([{"id": 1, "events": [{"name": "start", "at": datetime.datetime(2020, 1, 1, 0, 0, 0)}]}])
+    found = list(events.find({}, {"_id": 0}))
+    assert found[0]["id"] == 1
+    assert found[0]["events"][0]["name"] == "start"
+
+
+def test_find_projection_excludes_id(started_cluster):
+    """`{"name": 1, "_id": 0}` is the usual way to ask for "only these fields", so an inclusion
+    projection accepts an exclusion of `_id` - and only of `_id`."""
+    client = make_client()
+    collection = client["db"]["projection_id"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "name": "alpha", "age": 30}, {"id": 2, "name": "beta", "age": 40}])
+
+    found = sorted((doc for doc in collection.find({}, {"name": 1, "_id": 0})), key=lambda x: x["name"])
+    assert found == [{"name": "alpha"}, {"name": "beta"}]
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        list(collection.find({}, {"name": 1, "age": 0}))
