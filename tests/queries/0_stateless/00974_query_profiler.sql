@@ -6,7 +6,10 @@ SET allow_introspection_functions = 1;
 SET trace_profile_events = 0; -- This can inhibit profiler from working, because it prevents sending samples from different profilers concurrently.
 
 SET query_profiler_cpu_time_period_ns = 0;
-SET query_profiler_real_time_period_ns = 1e8;
+-- Use a short period: a 100ms period gives only ~5 signals over sleep(0.5), and under a loaded
+-- sanitizer server (e.g. the flaky check running this test many times in parallel) a handful of
+-- samples can all be lost, leaving 0 rows in `system.trace_log`. 10ms gives ~50 chances.
+SET query_profiler_real_time_period_ns = 1e7;
 SET log_queries = 1;
 SELECT sleep(0.5), ignore('test real time query profiler');
 SET log_queries = 0;
