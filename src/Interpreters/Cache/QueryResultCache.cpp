@@ -405,7 +405,7 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
     /// actually read. The caller passes a throwaway copy of the AST, so in-place expansion is fine.
     try
     {
-        ApplyWithSubqueryVisitor(context).visit(ast);
+        ApplyWithSubqueryVisitor::visit(ast);
     }
     catch (...)
     {
