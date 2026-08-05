@@ -1528,12 +1528,10 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
-        /// In a query with the SECONDARY_QUERY kind (e.g. the fragment a parallel replica executes)
-        /// the planner tops the plan with a `BlocksMarshallingStep`, whose `ColumnBLOB` output only
-        /// the connection writer can consume. The plan built here is a child of `ReadFromMerge` and
-        /// its output goes through converting expressions, so the blocks must stay regular - the
-        /// whole fragment is marshalled above `ReadFromMerge` anyway.
-        modified_context->setSetting("enable_parallel_blocks_marshalling", false);
+        /// The child plan is united into this pipeline in the same process, where nothing
+        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+        auto child_select_query_options = SelectQueryOptions(processed_stage);
+        child_select_query_options.is_local_plan_for_distributed_query = true;
 
         if (use_analyzer)
         {
@@ -1542,7 +1540,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             auto ast = modified_query_info.query_tree->toAST();
             InterpreterSelectQueryAnalyzer interpreter(ast,
                 modified_context,
-                SelectQueryOptions(processed_stage));
+                child_select_query_options);
 
             auto & planner = interpreter.getPlanner();
             planner.buildQueryPlanIfNeeded();
@@ -1554,7 +1552,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             /// TODO: Find a way to support projections for StorageMerge
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
-                SelectQueryOptions(processed_stage)};
+                child_select_query_options};
 
             interpreter.buildQueryPlan(plan);
         }

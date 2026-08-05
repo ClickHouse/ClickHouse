@@ -103,7 +103,7 @@ ClickHouse services expose a Prometheus-compatible metrics endpoint that you can
 The metrics endpoint is available at `/metrics_all` on your ClickHouse service endpoint:
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **Sample Response:**
@@ -159,7 +159,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -169,7 +169,7 @@ scrape_configs:
 ```
 
 Replace:
-- `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` with your actual service endpoint
+- `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` with your actual service endpoint
 - `<username>` and `<password>` with your scraping user credentials
 
 ## ClickHouse Mixin {#clickhouse-mixin}
