@@ -113,6 +113,7 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
     /// Otherwise, compress into `dest` if it is free, else into a lazily allocated scratch buffer.
     /// After the pass the winner reaches `dest` in one of three ways: a measured-only winner is compressed into it,
     /// a winner already there needs nothing, and a winner in scratch is copied over.
+    chassert(dest != nullptr);
     PODArray<char> scratch;
     const ICompressionCodec * best_codec = nullptr;
     char * best_compressed = nullptr;
@@ -151,6 +152,7 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
 
     if (!best_compressed)
     {
+        chassert(best_codec);
         const UInt32 size = best_codec->compress(source, source_size, dest);
         chassert(size == best_size);
         return size;
