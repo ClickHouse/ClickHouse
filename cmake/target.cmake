@@ -68,6 +68,10 @@ if (OS_WASM)
     set (ENABLE_AMQPCPP OFF CACHE INTERNAL "")
     set (ENABLE_NATS OFF CACHE INTERNAL "")
     set (ENABLE_CASSANDRA OFF CACHE INTERNAL "")
+    # Raw sockets like the rest, and its `mlib` has an explicit #error for platforms
+    # it does not recognize (`mlib/time_point.h`: "We do not know how to get the
+    # current time on this platform").
+    set (USE_MONGODB OFF CACHE INTERNAL "")
     set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
     set (ENABLE_AWS_S3 OFF CACHE INTERNAL "")
     set (ENABLE_S3 OFF CACHE INTERNAL "")

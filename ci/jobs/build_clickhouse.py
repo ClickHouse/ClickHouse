@@ -379,10 +379,12 @@ def main():
         if build_type == BuildTypes.ARM_FUZZERS:
             targets = "fuzzers"
         elif build_type == BuildTypes.WASM64:
-            # Nothing above `clickhouse_common_io` links for WebAssembly yet, so pin
-            # exactly the layers that are known to build (see the `OS_WASM` arms in
-            # cmake/target.cmake) and let the target grow from here.
-            targets = "common clickhouse_common_io"
+            # The full binary does not link for WebAssembly yet, so pin exactly the
+            # layers that are known to build (see the `OS_WASM` arms in
+            # cmake/target.cmake) and let the target grow from here. `dbms` pulls in
+            # `common`, `clickhouse_common_io`, the parsers, the compression codecs
+            # and every contrib they need.
+            targets = "dbms"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
