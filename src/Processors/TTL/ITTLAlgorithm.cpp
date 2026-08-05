@@ -42,7 +42,7 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
 
     Block block_copy;
     for (const auto & column_name : expression->getRequiredColumns())
-        block_copy.insert(block.getColumnOrSubcolumnByName(column_name));
+        block_copy.insert(block.getByName(column_name));
 
     /// Keep number of rows for const expression.
     size_t num_rows = block.rows();

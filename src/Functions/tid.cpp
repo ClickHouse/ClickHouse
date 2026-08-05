@@ -9,7 +9,7 @@ namespace DB
 {
 namespace
 {
-    class FunctionTid final : public IFunction
+    class FunctionTid : public IFunction
     {
     public:
         static constexpr auto name = "tid";

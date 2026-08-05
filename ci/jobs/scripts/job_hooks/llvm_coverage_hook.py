@@ -25,18 +25,18 @@ def check():
         c_function_cov = d["c_function_cov"]
         b_branch_cov = d["b_branch_cov"]
         c_branch_cov = d["c_branch_cov"]
-        d.get("b_line_hit", 0)
-        d.get("b_line_total", 0)
-        d.get("c_line_hit", 0)
-        d.get("c_line_total", 0)
-        d.get("b_func_hit", 0)
-        d.get("b_func_total", 0)
-        d.get("c_func_hit", 0)
-        d.get("c_func_total", 0)
-        d.get("b_branch_hit", 0)
-        d.get("b_branch_total", 0)
-        d.get("c_branch_hit", 0)
-        d.get("c_branch_total", 0)
+        b_line_hit = d.get("b_line_hit", 0)
+        b_line_total = d.get("b_line_total", 0)
+        c_line_hit = d.get("c_line_hit", 0)
+        c_line_total = d.get("c_line_total", 0)
+        b_func_hit = d.get("b_func_hit", 0)
+        b_func_total = d.get("b_func_total", 0)
+        c_func_hit = d.get("c_func_hit", 0)
+        c_func_total = d.get("c_func_total", 0)
+        b_branch_hit = d.get("b_branch_hit", 0)
+        b_branch_total = d.get("b_branch_total", 0)
+        c_branch_hit = d.get("c_branch_hit", 0)
+        c_branch_total = d.get("c_branch_total", 0)
         pr_changed_lines_info = d.get("pr_changed_lines_info", "")
         diff_url = d.get("diff_url", "")
         uncovered_code_url = d.get("uncovered_code_url", "")
@@ -64,9 +64,7 @@ def check():
                 links.append(f"[Uncovered code]({uncovered_code_url})")
             if links:
                 body += "\n" + " · ".join(links)
-            GH.post_updateable_comment(
-                comment_tags_and_bodies={"coverage": body}, only_update=True
-            )
+            GH.post_fresh_comment(tag="llvm-coverage", body=body)
         else:
             print("Not a PR run, skipping GitHub coverage comment")
 
