@@ -119,18 +119,17 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(last_error_message);
     columns[column_idx++]->insert(last_error_query_id);
 
-    std::vector<uintptr_t> last_error_trace_array;
-    last_error_trace_array.reserve(last_error_trace.size());
-
-    for (auto * ptr : last_error_trace)
-        last_error_trace_array.emplace_back(reinterpret_cast<uintptr_t>(ptr));
-
-    columns[column_idx++]->insert(Array(last_error_trace_array.begin(), last_error_trace_array.end()));
+    columns[column_idx++]->insert(Array(last_error_trace.begin(), last_error_trace.end()));
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (!last_error_trace.empty())
     {
-        auto [symbols, lines] = symbolizeTrace(last_error_trace.data(), last_error_trace.size());
+        std::vector<const void *> frame_pointers;
+        frame_pointers.reserve(last_error_trace.size());
+        for (UInt64 addr : last_error_trace)
+            frame_pointers.push_back(reinterpret_cast<const void *>(addr));
+
+        auto [symbols, lines] = symbolizeTrace(frame_pointers.data(), frame_pointers.size());
         columns[column_idx++]->insert(Array(symbols.begin(), symbols.end()));
         columns[column_idx++]->insert(Array(lines.begin(), lines.end()));
     }
