@@ -38,6 +38,8 @@ ${CLICKHOUSE_CLIENT} --query "
         SETTINGS max_result_rows = 1, result_overflow_mode = 'throw';
     GRANT ALL ON ${CLICKHOUSE_DATABASE}.* TO ${USER_NAME};
     GRANT CREATE TEMPORARY TABLE, SELECT ON *.* TO ${USER_NAME};
+    -- The servers in CI require a grant for the table engine of a temporary table.
+    GRANT TABLE ENGINE ON Memory TO ${USER_NAME};
 "
 
 for _ in {1..300}; do
@@ -69,6 +71,16 @@ send -- "CREATE TEMPORARY TABLE t_04757 (x UInt8)\r"
 expect ":) "
 
 send -- "INSERT INTO t_04757 VALUES (1)\r"
+expect ":) "
+
+# The session state must really exist before the help command, otherwise the check at the end
+# would report a lost session for a reason that has nothing to do with the connection.
+send -- "SELECT x + 100 FROM t_04757\r"
+expect {
+    "101" { }
+    "UNKNOWN_TABLE" { puts "the temporary table has not been created"; exit 1 }
+    "Not enough privileges" { puts "the temporary table has not been created"; exit 1 }
+}
 expect ":) "
 
 send -- "help mergetre\r"

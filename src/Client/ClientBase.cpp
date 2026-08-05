@@ -1938,6 +1938,17 @@ void ClientBase::onTimezoneUpdate(const String & tz)
 
 void ClientBase::onEndOfStream()
 {
+    /// `EndOfStream` terminates the query exchange with the protocol in sync, whatever happens
+    /// below or afterwards. This also covers the failures that are recovered by draining the
+    /// exchange: a `LocalFormatError` in the middle of a result (`receiveResult` sends `Cancel`
+    /// and keeps receiving until the end of the stream) and a client-side failure while sending
+    /// the data of an `INSERT` (`processInsertQuery` sends `Cancel` and calls
+    /// `receiveEndOfQueryForInsert`). Such a session must not resynchronize the connection with
+    /// a round trip: a `Pong` that does not arrive within `sync_request_timeout` is
+    /// indistinguishable from a closed connection, and the client would silently reconnect,
+    /// losing its temporary tables, current database and session settings.
+    connection_needs_resynchronization = false;
+
     if (need_render_progress && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
