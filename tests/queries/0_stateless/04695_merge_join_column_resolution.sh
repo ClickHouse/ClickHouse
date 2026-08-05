@@ -30,7 +30,7 @@ done | $CLICKHOUSE_CLIENT
 # expands to a column for every column of every source table. The left side of the join produces a
 # constant, which makes the result independent of the order in which the source tables are read.
 # The old analyzer cannot resolve columns of a `Merge` table that are missing from some of the
-# source tables, so the new analyzer is enforced.
+# source tables, so the analyzer is enforced.
 $CLICKHOUSE_CLIENT --enable_analyzer 1 --query "
     SELECT count(), sum(sipHash64(*))
     FROM (SELECT 0 AS n FROM numbers(100)) AS t1
