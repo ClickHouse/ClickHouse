@@ -27,17 +27,6 @@ if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
     set_source_files_properties(AggregateFunctionUniq.cpp PROPERTIES COMPILE_FLAGS "-mno-bmi -mno-bmi2")
 endif()
 
-# The variance/stddev and avgWeighted hot loops are scalar reductions (`m[1] += x; m[2] += x*x`,
-# `num += x*w; den += w`) that do not vectorize - the per-element Decimal->Float64 conversion and
-# column access block it, and `-fassociative-math` is a measured no-op here. The realizable win is
-# scalar: `-ffp-contract=fast` fuses the `a*b + c` accumulations into FMA, and `-freciprocal-math`
-# turns the per-element divide-by-scale of the Decimal conversion into a multiply. Both override the
-# global `-ffp-contract=off`; the determinism cost (last-bit, non-bit-identical across platforms) is
-# acceptable for these already-approximate float statistics. `-fassociative-math` is deliberately NOT
-# added: it changes no codegen here and only adds reassociation non-determinism.
-set_source_files_properties(AggregateFunctionSecondMoment.cpp PROPERTIES COMPILE_FLAGS "-ffp-contract=fast -freciprocal-math")
-set_source_files_properties(AggregateFunctionAvgWeighted.cpp PROPERTIES COMPILE_FLAGS "-ffp-contract=fast -freciprocal-math")
-
 add_library(clickhouse_aggregate_functions ${clickhouse_aggregate_functions_headers} ${clickhouse_aggregate_functions_sources})
 target_link_libraries(clickhouse_aggregate_functions PRIVATE dbms PUBLIC ch_contrib::cityhash)
 
