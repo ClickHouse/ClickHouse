@@ -37,6 +37,7 @@ struct BaseSettingsHelpers
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
+    [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
 
@@ -61,8 +62,9 @@ struct BaseSettingsHelpers
 
 private:
     /// For logging the summary of unknown settings instead of logging each one separately.
-    inline static thread_local Strings unknown_settings;
-    inline static thread_local bool unknown_settings_warning_logged = false;
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static thread_local Strings unknown_settings;
+    static thread_local bool unknown_settings_warning_logged;
 };
 
 /// Maps a Traits type to its owning settings class (e.g. `SettingsTraits` -> `Settings`,
@@ -450,6 +452,16 @@ void BaseSettings<TTraits>::checkShorthandChange(const SettingChange & change) c
 
     if (std::string_view type = getTypeName(change.name); type != "Bool")
         BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
+
+    /// The type alone is not enough. The parser writes Bool `true` for the valueless form, but a
+    /// `SettingChange` can also arrive from the AST JSON dialect, which is free to pair the flag
+    /// with any other value - and for a `Bool` setting the check above lets that through. Such a
+    /// change would execute with the carried value while `ASTSetQuery::formatImpl` renders the bare
+    /// name, so `system.query_log` and every other formatter would under-report what ran. This is
+    /// the first point after deserialization where an exception is logged with the AST masked
+    /// rather than with the raw JSON text, so this is where it is rejected.
+    if (change.value != Field(true))
+        BaseSettingsHelpers::throwValuelessSettingHasValue(change.name);
 }
 
 template <typename TTraits>

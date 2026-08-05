@@ -66,6 +66,10 @@ std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & argum
         {
             params.push_back(col->getUInt(0));
         }
+        else if (which_type.isString())
+        {
+            params.push_back(String(col->getDataAt(0)));
+        }
         else
         {
             const ColumnArray * col_separators = checkAndGetColumn<ColumnArray>(col.get());
@@ -251,6 +255,8 @@ public:
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 else if (tokenizer == SplitByStringTokenizer::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
+                else if (tokenizer == IcuTokenizer::getExternalName())
+                    optional_args.emplace_back("locale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
             }
             else if (arguments.size() == 4 || arguments.size() == 5)
             {
@@ -299,6 +305,7 @@ Available tokenizers:
 - `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha)).
 - `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitByString)). The separators can be specified using an optional parameter, for example, `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Note that each string can consist of multiple characters (`', '` in the example). The default separator list, if not specified explicitly, is a single whitespace `[' ']`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens.
+- `icu(locale)` splits strings into word tokens using the ICU library's Unicode word segmentation (UAX #29). For scripts without whitespace between words (for example Chinese, Japanese, and Thai) ICU applies dictionary-based segmentation, so such text is split into meaningful words. `locale` is the ICU locale passed to the segmenter (segmentation is mainly script- and dictionary-driven; the locale selects ICU's locale-specific tailoring); it is mandatory and passed as a separate argument, for example `tokens(value, 'icu', 'ja')`.
 - `japanese` splits Japanese text into words using the MeCab morphological analyzer. Requires a dictionary configured in the server configuration (see the [text index](/engines/table-engines/mergetree-family/textindexes) documentation).
 - `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)). The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokens(value, 'ngrams', 3)`. The default ngram size, if not specified explicitly, is 3.
 - `sparseGrams(min_length, max_length, min_cutoff_length)` splits strings into variable-length n-grams of at least `min_length` and at most `max_length` (inclusive) characters (also see function [sparseGrams](/sql-reference/functions/string-functions#sparseGrams)). Unless specified explicitly, `min_length` and `max_length` default to 3 and 100. If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are returned. Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text. For example, `tokens(value, 'sparseGrams', 3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
@@ -313,6 +320,7 @@ tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'asciiCJK')
+tokens(value, 'icu', locale)
 tokens(value, 'japanese')
 tokens(value, 'ngrams'[, n])
 tokens(value, 'sparseGrams'[, min_length, max_length[, min_cutoff_length]])
@@ -320,7 +328,8 @@ tokens(value, 'array')
 )";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"locale", "Only relevant if argument `tokenizer` is `icu`: The mandatory locale, for example `'ja'`.", {"const String"}},
         {"n", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
         {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
         {"min_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum gram length, defaults to 3.", {"const UInt8"}},
@@ -364,7 +373,8 @@ Unlike the `tokens` function, this function is aware of LIKE pattern semantics
 (such as leading and trailing wildcard characters) and applies tokenizer-specific
 rules to extract meaningful tokens for pattern matching.
 
-It supports the same argument sets as the `tokens` function; additional
+It supports the same argument sets as the `tokens` function, except the `icu`
+tokenizer which does not implement LIKE-pattern tokenization; additional
 arguments after `tokenizer` are interpreted according to the selected
 tokenizer (for example, `n` for `ngrams`, `separators` for `splitByString`,
 and `min_length` / `max_length` [/ `min_cutoff_length`] for `sparseGrams`).
