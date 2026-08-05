@@ -146,6 +146,7 @@ def test_url_reconnect(started_cluster):
         )
 
         pm_rule = {
+            "instance": node1,
             "destination": node1.ip_address,
             "source_port": 50075,
             "action": "REJECT",

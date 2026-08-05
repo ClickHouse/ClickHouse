@@ -406,8 +406,10 @@ def test_write_files_with_spaces(started_cluster):
     node1.query(
         f"insert into function hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw) select 123 settings hdfs_truncate_on_insert=1"
     )
+    # The directory name looks like a hive partition (`itime=...`), so disable
+    # hive partitioning detection to read back only the data column.
     result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw)"
+        f"select * from hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw) settings use_hive_partitioning=0"
     )
     assert int(result) == 123
     fs.delete(dir, recursive=True)
@@ -1230,7 +1232,7 @@ def test_format_detection(started_cluster):
     result = node.query("show create table test_format_detection")
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
     )
 
     node.query("drop table test_format_detection")
@@ -1240,7 +1242,7 @@ def test_format_detection(started_cluster):
     result = node.query("show create table test_format_detection")
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
     )
 
     node.query("drop table test_format_detection")
@@ -1250,7 +1252,7 @@ def test_format_detection(started_cluster):
     result = node.query("show create table test_format_detection")
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
     )
 
     node.query("drop table test_format_detection")
