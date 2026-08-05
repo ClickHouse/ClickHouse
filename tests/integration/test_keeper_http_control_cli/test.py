@@ -178,6 +178,33 @@ def test_http_commands_complete(started_cluster):
     assert "create" in cmd_body["completions"]
     assert all(c.startswith("cre") for c in cmd_body["completions"])
 
+    # Leading whitespace must not break command-name completion: filter against the
+    # trimmed command prefix and keep indentation via replace_start.
+    indented_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": "  cre", "cwd": "/"},
+    )
+    assert indented_resp.status_code == 200
+    indented_body = indented_resp.json()
+    assert indented_body["replace_start"] == 2
+    assert "create" in indented_body["completions"]
+    assert all(c.startswith("cre") for c in indented_body["completions"])
+    assert "  cre"[: indented_body["replace_start"]] + "create" == "  create"
+
+    spaces_only_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": "  ", "cwd": "/"},
+    )
+    assert spaces_only_resp.status_code == 200
+    spaces_only_body = spaces_only_resp.json()
+    assert spaces_only_body["replace_start"] == 2
+    assert "ls" in spaces_only_body["completions"]
+    assert "create" in spaces_only_body["completions"]
+
     # Path completion for the argument at the end of the prefix (cursor position).
     # Dashboard sends only text up to the caret, then re-appends any suffix itself.
     multi_prefix = f"create /{dirname}/{prefix}_a"
@@ -190,14 +217,64 @@ def test_http_commands_complete(started_cluster):
     )
     assert multi_resp.status_code == 200
     multi_body = multi_resp.json()
-    assert multi_body["replace_start"] == len("create ")
+    assert multi_body["replace_start"] == len("create ".encode("utf-8"))
     multi_matches = [c for c in multi_body["completions"] if child_a in c]
     assert len(multi_matches) == 1
-    rewritten = (
-        multi_prefix[: multi_body["replace_start"]] + multi_matches[0] + multi_suffix
-    )
+    # replace_start is a UTF-8 byte offset into `complete`, not a Unicode index.
+    multi_head = multi_prefix.encode("utf-8")[: multi_body["replace_start"]].decode("utf-8")
+    rewritten = multi_head + multi_matches[0] + multi_suffix
     assert rewritten.endswith(" myvalue")
     assert f"/{dirname}/{child_a}" in rewritten
+
+    # Leading whitespace before the command must still allow path completion.
+    indented_path_prefix = f"  create /{dirname}/{prefix}_a"
+    indented_path_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": indented_path_prefix, "cwd": "/"},
+    )
+    assert indented_path_resp.status_code == 200
+    indented_path_body = indented_path_resp.json()
+    assert indented_path_body["replace_start"] == len("  create ".encode("utf-8"))
+    indented_path_matches = [
+        c for c in indented_path_body["completions"] if child_a in c
+    ]
+    assert len(indented_path_matches) == 1
+    indented_rewritten = (
+        indented_path_prefix.encode("utf-8")[: indented_path_body["replace_start"]].decode(
+            "utf-8"
+        )
+        + indented_path_matches[0]
+        + multi_suffix
+    )
+    assert indented_rewritten.startswith("  create ")
+    assert f"/{dirname}/{child_a}" in indented_rewritten
+
+    # Non-ASCII text before replace_start must keep the UTF-8 byte offset contract.
+    # Python/JS string indexes would land mid-argument if treated as code points.
+    unicode_head = "create '已有' "
+    unicode_prefix = f"{unicode_head}/{dirname}/{prefix}_a"
+    unicode_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": unicode_prefix, "cwd": "/"},
+    )
+    assert unicode_resp.status_code == 200
+    unicode_body = unicode_resp.json()
+    assert unicode_body["replace_start"] == len(unicode_head.encode("utf-8"))
+    assert unicode_body["replace_start"] != len(unicode_head)  # code points != bytes
+    unicode_matches = [c for c in unicode_body["completions"] if child_a in c]
+    assert len(unicode_matches) == 1
+    rewritten_unicode = (
+        unicode_prefix.encode("utf-8")[: unicode_body["replace_start"]].decode("utf-8")
+        + unicode_matches[0]
+        + multi_suffix
+    )
+    assert rewritten_unicode.startswith(unicode_head)
+    assert f"/{dirname}/{child_a}" in rewritten_unicode
+    assert rewritten_unicode.endswith(" myvalue")
 
     with keeper_utils.KeeperClient.from_cluster(
         cluster, keeper_ip=leader.ip_address, port=9181

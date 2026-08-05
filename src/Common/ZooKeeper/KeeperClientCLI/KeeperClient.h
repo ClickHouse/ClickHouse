@@ -34,7 +34,8 @@ String formatKeeperNodeName(const String & name);
 
 /// Result of `KeeperClientBase::completeQueryPrefix`.
 /// `completions` are texts that replace `prefix[replace_start:]` (same contract as
-/// replxx last-word completion). `replace_start` is an index into the prefix.
+/// replxx last-word completion). `replace_start` is a UTF-8 byte offset into `prefix`
+/// (C++ `String` index), not a Unicode code-point or UTF-16 index.
 struct KeeperCompletionResult
 {
     std::vector<String> completions;

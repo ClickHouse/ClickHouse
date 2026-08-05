@@ -1989,6 +1989,16 @@
         return common;
     }
 
+    /// Server `replace_start` is a UTF-8 byte offset into the `complete` prefix
+    /// (C++ `String`). Slice the JS string by that byte offset rather than using
+    /// it as a UTF-16 index — otherwise non-ASCII text before the replacement
+    /// point shifts the cut.
+    function sliceByUtf8ByteOffset(str, byteOffset) {
+        const bytes = new TextEncoder().encode(str);
+        const n = Math.max(0, Math.min(Number(byteOffset) || 0, bytes.length));
+        return new TextDecoder().decode(bytes.subarray(0, n));
+    }
+
     function formatColumns(items) {
         if (items.length === 0) return "";
         const maxLen = items.reduce((max, s) => Math.max(max, s.length), 0);
@@ -2062,7 +2072,7 @@
             if (matches.length === 0) return;
 
             const replaceStart = Number.isFinite(data.replace_start) ? data.replace_start : 0;
-            const head = prefix.substring(0, Math.min(replaceStart, prefix.length));
+            const head = sliceByUtf8ByteOffset(prefix, replaceStart);
 
             const applyCompletion = (inserted) => {
                 const completedPrefix = head + inserted;

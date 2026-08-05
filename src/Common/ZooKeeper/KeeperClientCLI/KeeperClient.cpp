@@ -200,17 +200,29 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
 {
     KeeperCompletionResult result;
 
-    /// Determine whether we are completing a command name or a path argument
-    /// by looking for the first whitespace (end of command word).
-    auto cmd_end = prefix.find_first_of(WORD_BREAK_CHARACTERS);
-
-    /// No whitespace → still typing the command name.
-    if (cmd_end == String::npos || cmd_end == 0)
+    /// Skip leading indentation so "  cre" still completes command names and
+    /// " ls /…" still reaches path completion. replace_start points at the first
+    /// non-word-break character so insertions keep any leading spaces.
+    auto cmd_start = prefix.find_first_not_of(WORD_BREAK_CHARACTERS);
+    if (cmd_start == String::npos)
     {
-        result.replace_start = 0;
+        result.replace_start = prefix.size();
+        for (const auto & name : getRegisteredCommandNames())
+            result.completions.push_back(name);
+        return result;
+    }
+
+    /// End of the command word (first whitespace after the command name).
+    auto cmd_end = prefix.find_first_of(WORD_BREAK_CHARACTERS, cmd_start);
+
+    /// No whitespace after the command → still typing the command name.
+    if (cmd_end == String::npos)
+    {
+        const String cmd_prefix = prefix.substr(cmd_start);
+        result.replace_start = cmd_start;
         for (const auto & name : getRegisteredCommandNames())
         {
-            if (prefix.empty() || name.starts_with(prefix))
+            if (cmd_prefix.empty() || name.starts_with(cmd_prefix))
                 result.completions.push_back(name);
         }
         return result;
