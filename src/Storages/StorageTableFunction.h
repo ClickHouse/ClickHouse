@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -83,6 +84,45 @@ public:
         std::lock_guard lock{nested_mutex};
         if (nested)
             nested->drop();
+    }
+
+    /// File-like table functions rebuild the nested storage from the current external schema and
+    /// ignore the columns cached at DDL time, while `read()` below hands PREWHERE to the nested
+    /// storage and only converts types afterwards. `StorageProxy`'s forward is by name, so it
+    /// cannot catch a column whose cached type drifted: drop those columns from the contract.
+    std::optional<NameSet> supportedPrewhereColumns() const override
+    {
+        auto storage = getNested();
+        auto query_context = CurrentThread::tryGetQueryContext();
+        auto supported = storage->supportedPrewhereColumns();
+
+        auto actual_metadata = storage->getInMemoryMetadataPtr(query_context, false);
+        auto cached_metadata = getInMemoryMetadataPtr(query_context, false);
+        const auto & actual_columns = actual_metadata->getColumns();
+        auto cached_columns = cached_metadata->getColumns().getAllPhysical();
+
+        NameSet drifted;
+        for (const auto & cached : cached_columns)
+        {
+            auto actual = actual_columns.tryGetPhysical(cached.name);
+            if (!actual || !actual->type->equals(*cached.type))
+                drifted.insert(cached.name);
+        }
+
+        if (drifted.empty())
+            return supported;
+
+        if (!supported)
+        {
+            NameSet result;
+            for (const auto & cached : cached_columns)
+                if (!drifted.contains(cached.name))
+                    result.insert(cached.name);
+            return result;
+        }
+
+        std::erase_if(*supported, [&](const auto & name) { return drifted.contains(name); });
+        return supported;
     }
 
     void read(

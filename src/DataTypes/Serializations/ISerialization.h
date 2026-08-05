@@ -276,6 +276,7 @@ public:
 
             Bucket,
             MapBucketsInfo,
+            MapBucketIndexes,
 
             QuantizedCodes,
             ProductQuantizationCodebook,
@@ -372,6 +373,13 @@ public:
         size_t map_buckets_min_avg_size = 0;
         /// Type of MergeTree data part we serialize/deserialize data from if any.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// Callback to check whether a specific substream exists in the current data part.
+        /// Used during enumeration to skip substreams that were introduced after the part
+        /// was written (e.g. MapBucketIndexes in old bucketed Map parts).
+        /// When not set, all substreams are enumerated unconditionally.
+        using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
+        CheckStreamExistsCallback check_stream_exists_callback;
 
         /// Current level of array. Needed to differentiate stream names of nested array offsets.
         size_t array_level = 0;
@@ -510,6 +518,13 @@ public:
 
         /// Callback used to mark a specific stream as unneeded indicating that it won't be used anymore.
         std::function<void(const SubstreamPath &)> release_stream_callback;
+
+        /// Callback to check whether a specific substream exists in the current data part.
+        /// Used during deserialization to handle backward compatibility: old parts written
+        /// before a new substream was introduced will not have it, and the getter may throw
+        /// (e.g. in compact parts) if called for a non-existent substream.
+        using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
+        CheckStreamExistsCallback check_stream_exists_callback;
 
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
@@ -750,6 +765,11 @@ public:
     /// Set by pooled() or manually for non-pooled objects.
     /// Throws LOGICAL_ERROR if the hash has not been set.
     UInt128 getHash() const;
+
+    /// Identity of a custom serialization (`IDataType::setCustomization`), which changes a column's
+    /// streams while being invisible to `IDataType::equals`. The class is enough while the serialization
+    /// follows from the type; override when it is configured elsewhere.
+    virtual String getCustomSerializationIdentity() const { return typeid(*this).name(); }
 
 protected:
     std::optional<UInt128> cached_hash;
