@@ -68,6 +68,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_with_totals);
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
+    hash_state.update(group_by_with_grouping_sets);
     hash_state.update(limit_with_ties);
     hash_state.update(group_by_all);
     hash_state.update(order_by_all);

@@ -80,3 +80,24 @@ TEST(TreeHashCompleteness, StreamSettingsAreSignificant)
     const std::string watermark_timeout = "SELECT * FROM t STREAM WATERMARK FOR a AS a - 1 IDLE TIMEOUT INTERVAL 5 SECOND";
     EXPECT_NE(hashOf(watermark_a), hashOf(watermark_timeout));
 }
+
+TEST(TreeHashCompleteness, GroupingSetsFlagIsSignificant)
+{
+    /// `group_by_with_grouping_sets` is not a child, and the SQL parser always pairs it with a
+    /// nested-list `GROUP BY`, so no pair of queries differs by the flag alone. `readJSON` accepts
+    /// the flag independently of that shape, so a JSON-built AST can.
+    const std::string query = "SELECT a FROM t GROUP BY GROUPING SETS ((a))";
+    const String json = serializeASTToJSON(*parse(query));
+
+    const String key = "\"group_by_with_grouping_sets\":true,";
+    const auto pos = json.find(key);
+    ASSERT_NE(pos, String::npos);
+    String without_flag = json;
+    without_flag.erase(pos, key.size());
+
+    auto restored = IAST::createFromJSON(without_flag, /*max_depth=*/ 1000, /*max_elements=*/ 100000);
+    EXPECT_NE(restored->formatWithSecretsOneLine(), parse(query)->formatWithSecretsOneLine());
+    EXPECT_NE(restored->getTreeHash(/*ignore_aliases=*/ false), hashOf(query));
+
+    EXPECT_EQ(hashOfJSONRoundTrip(query), hashOf(query));
+}
