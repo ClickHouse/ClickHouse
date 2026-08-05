@@ -195,6 +195,109 @@ def test_jbod_load_balancing_least_used_default_ttl(start_cluster):
         node.query("DROP TABLE IF EXISTS data_least_used_default_ttl SYNC")
 
 
+def test_jbod_load_balancing_least_used_blob_storage(start_cluster):
+    # Same cached-queue behaviour as the test above, but on disks that report no free space
+    # limit at all. Their reservations carry no free-space value either, so the refresh has
+    # to leave such a disk unlimited; an unlimited disk that starts reporting a concrete
+    # number sorts above every untouched sibling and wins every reservation from then on.
+    #
+    # No out-of-space assertion is possible here, since these disks never run out. What must
+    # hold is that the parts still get spread.
+    node.query("SYSTEM RELOAD CONFIG")
+    try:
+        node.query(
+            """
+            CREATE TABLE data_least_used_blob
+            (
+                s String CODEC(NONE)
+            )
+            ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy = 'blob_least_used';
+
+            SYSTEM STOP MERGES data_least_used_blob;
+            """
+        )
+
+        for _ in range(8):
+            node.query(
+                """
+                INSERT INTO data_least_used_blob
+                SELECT repeat('a', 100) FROM numbers(1e4) SETTINGS max_insert_threads = 1;
+                """
+            )
+
+        total, disks_used = (
+            node.query(
+                """
+                SELECT count(), uniqExact(disk_name)
+                FROM system.parts
+                WHERE table = 'data_least_used_blob' AND active
+                """
+            )
+            .strip()
+            .split("\t")
+        )
+        assert int(total) == 8
+        assert int(disks_used) >= 2
+    finally:
+        node.query("DROP TABLE IF EXISTS data_least_used_blob SYNC")
+
+
+def test_jbod_load_balancing_least_used_constraints(start_cluster):
+    # min_free_disk_bytes_to_perform_insert routes the insert through the constrained
+    # reservation path. The floor is above every disk's capacity, so no disk can satisfy it
+    # and the insert has to be rejected: a reservation that ignored the constraint would
+    # succeed on the largest disk instead.
+    node.query("SYSTEM RELOAD CONFIG")
+    try:
+        node.query(
+            """
+            CREATE TABLE data_least_used_constraints
+            (
+                s String CODEC(NONE)
+            )
+            ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy = 'jbod_least_used_default_ttl';
+
+            SYSTEM STOP MERGES data_least_used_constraints;
+            """
+        )
+
+        # The volume's largest disk is 300MiB, so a 400MiB floor is unsatisfiable everywhere.
+        with pytest.raises(Exception) as exc_info:
+            node.query(
+                """
+                INSERT INTO data_least_used_constraints
+                SELECT repeat('a', 100) FROM numbers(6e5)
+                SETTINGS max_insert_threads = 1, min_free_disk_bytes_to_perform_insert = 419430400;
+                """
+            )
+        assert "min_free_disk_bytes_to_perform_insert" in str(exc_info.value)
+
+        # Without the floor the same insert fits, so the rejection above is the constraint's
+        # doing and not the volume being out of space.
+        node.query(
+            """
+            INSERT INTO data_least_used_constraints
+            SELECT repeat('a', 100) FROM numbers(6e5) SETTINGS max_insert_threads = 1;
+            """
+        )
+        assert (
+            node.query(
+                """
+                SELECT count()
+                FROM system.parts
+                WHERE table = 'data_least_used_constraints' AND active
+                """
+            ).strip()
+            == "1"
+        )
+    finally:
+        node.query("DROP TABLE IF EXISTS data_least_used_constraints SYNC")
+
+
 def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster):
     def get_parts_on_disks():
         parts = node.query(

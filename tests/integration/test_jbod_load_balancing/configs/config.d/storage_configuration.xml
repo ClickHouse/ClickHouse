@@ -10,6 +10,15 @@
             <jbod3>
                 <path>/test_jbod_load_balancing_jbod3/</path>
             </jbod3>
+            <!-- Object storage disks report no free space limit, unlike the tmpfs disks above. -->
+            <blob1>
+                <type>local_blob_storage</type>
+                <path>/var/lib/clickhouse/test_jbod_load_balancing_blob1/</path>
+            </blob1>
+            <blob2>
+                <type>local_blob_storage</type>
+                <path>/var/lib/clickhouse/test_jbod_load_balancing_blob2/</path>
+            </blob2>
         </disks>
         <policies>
             <jbod_round_robin>
@@ -48,6 +57,17 @@
                     </disks>
                 </volumes>
             </jbod_least_used_default_ttl>
+            <blob_least_used>
+                <volumes>
+                    <disks>
+                        <disk>blob1</disk>
+                        <disk>blob2</disk>
+
+                        <load_balancing>least_used</load_balancing>
+                        <!-- Default least_used_ttl_ms, as in jbod_least_used_default_ttl. -->
+                    </disks>
+                </volumes>
+            </blob_least_used>
         </policies>
     </storage_configuration>
 </clickhouse>

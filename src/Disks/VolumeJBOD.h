@@ -104,7 +104,10 @@ private:
 
             /// Not just subtract bytes, but update the value,
             /// since some reservations may be done directly via IDisk, or not by ClickHouse.
-            free_size = reservation->getUnreservedSpace();
+            /// A disk reporting no free space limit stays unlimited: its reservation carries no
+            /// meaningful value, and an engaged 0 would outrank every unlimited sibling.
+            if (free_size.has_value())
+                free_size = reservation->getUnreservedSpace();
             return reservation;
         }
     };

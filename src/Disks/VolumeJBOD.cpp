@@ -1,5 +1,6 @@
 #include <Disks/VolumeJBOD.h>
 
+#include <base/scope_guard.h>
 #include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
@@ -172,9 +173,12 @@ ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<Reserva
 
                 DiskWithSize disk = disks_by_size.top();
                 disks_by_size.pop();
+                /// try_reserve may throw (e.g. statvfs failure), and losing the entry would
+                /// eventually make top() a call on an empty queue.
+                auto restore_entry = make_scope_guard(
+                    [&]() TSA_NO_THREAD_SAFETY_ANALYSIS { disks_by_size.push(disk); });
 
                 reservation = disk.reserve(try_reserve);
-                disks_by_size.push(disk);
             }
 
             return reservation;
