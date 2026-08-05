@@ -5,7 +5,7 @@
 -- The `max_rows_to_transfer` and `max_bytes_to_transfer` settings limit how many
 -- rows / bytes the initiator is allowed to materialize when sending an external
 -- table for `GLOBAL IN` / `GLOBAL JOIN`. Under the old analyzer they were
--- enforced inside `CreatingSetsTransform`. The new analyzer materialises the
+-- enforced inside `CreatingSetsTransform`. The analyzer materialises the
 -- subquery in `buildQueryTreeForShard` via `executeSubqueryNode` and used to
 -- skip that check, silently ignoring the limit. This test guards against the
 -- regression by asserting that the limit fires under both analyzers.
@@ -27,7 +27,7 @@ CREATE TABLE t2_dist  (a Int32, b Int32) ENGINE = Distributed('test_cluster_two_
 INSERT INTO t1_local SELECT number, number + 1 FROM numbers(10000);
 INSERT INTO t2_local SELECT number, number + 2 FROM numbers(100);
 
--- New analyzer (default) — must throw SET_SIZE_LIMIT_EXCEEDED (191).
+-- Analyzer (default) — must throw SET_SIZE_LIMIT_EXCEEDED (191).
 SELECT t1.a, t2.b FROM t1_dist AS t1 GLOBAL JOIN t2_dist AS t2 ON t1.a = t2.a
 SETTINGS max_rows_to_transfer = 10; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
@@ -43,11 +43,11 @@ SELECT count() FROM t1_dist WHERE a GLOBAL IN (SELECT a FROM t2_dist)
 SETTINGS max_rows_to_transfer = 10, enable_analyzer = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- `transfer_overflow_mode = break` must NOT throw; the result is allowed to be
--- truncated. We only check that the query completes under the new analyzer.
+-- truncated. We only check that the query completes under the analyzer.
 SELECT count() >= 0 FROM t1_dist WHERE a GLOBAL IN (SELECT a FROM t2_dist)
 SETTINGS max_rows_to_transfer = 10, transfer_overflow_mode = 'break';
 
--- Sanity: with the limit relaxed, the same queries succeed under the new
+-- Sanity: with the limit relaxed, the same queries succeed under the
 -- analyzer. This verifies that we haven't broken the happy path.
 SELECT count() FROM t1_dist AS t1 GLOBAL JOIN t2_dist AS t2 ON t1.a = t2.a
 SETTINGS max_rows_to_transfer = 0;
@@ -86,7 +86,7 @@ SETTINGS max_rows_to_transfer = 0, max_bytes_to_transfer = 100,
     enable_add_distinct_to_in_subqueries = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- And the same constant-column workload with the limit relaxed must still
--- succeed under the new analyzer.
+-- succeed under the analyzer.
 SELECT count() FROM t1_dist
 WHERE a GLOBAL IN (
     SELECT toInt32(42) AS x FROM numbers(1000)

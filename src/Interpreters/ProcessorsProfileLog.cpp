@@ -147,7 +147,7 @@ void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IPro
                 processor_elem.output_bytes = info.output_bytes;
                 processor_elem.memory_usage_delta = info.memory_usage_delta;
 
-                processors_profile_log->add(processor_elem);
+                processors_profile_log->add([&](ProcessorProfileLogElement & element) { element = processor_elem; });
             }
         }
         auto logger = ::getLogger("ProcessorProfileLog");
