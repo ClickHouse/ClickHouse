@@ -637,7 +637,7 @@ ExchangeLookupPtr createExchangeLookup(
         query_id, ExchangeConnections::instance(), sources_with_ports);
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
-    UNUSED(exchange_stream_sources);
+    UNUSED(exchange_stream_sources, context);
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "Streaming exchanges are only supported on Linux and macOS; "
         "use `distributed_plan_force_exchange_kind = 'Persisted'`");
