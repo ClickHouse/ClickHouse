@@ -1,0 +1,5 @@
+qualified column predicate with session analyzer off
+1	1
+2	0
+affected partitions
+['1']

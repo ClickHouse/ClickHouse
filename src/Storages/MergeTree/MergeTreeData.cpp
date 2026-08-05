@@ -8828,21 +8828,29 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 
     auto predicate_clone = predicate->clone();
 
+    /// The analysis must accept everything the mutation itself accepts. A mutation does not run
+    /// with the submitting session's context: the background worker builds a fresh context from
+    /// the background context (`MutatePlainMergeTreeTask::createTaskContext`,
+    /// `MutateFromLogEntryTask::prepare`), so session-only settings - most importantly the
+    /// analyzer selection consulted by `shouldUseAnalyzerForMutations` - do not propagate to the
+    /// execution. Derive the analysis context the same way, so that the pruning analysis and the
+    /// asynchronous execution cannot diverge.
+    auto execution_context = Context::createCopy(getContext()->getBackgroundContext());
+    execution_context->makeQueryContextForMutate(*getSettings());
+
     /// The predicate comes from a serialized mutation command that was re-parsed, so its set
     /// operations (`UNION`/`INTERSECT`/`EXCEPT`) are not normalized yet and the analyzer would
     /// reject them with "UNION mode UNION_DEFAULT must be normalized". Normalize them exactly as
     /// the mutation execution path does in `getPartitionAndPredicateExpressionForMutationCommand`.
-    normalizeSetOperations(predicate_clone, query_context);
+    normalizeSetOperations(predicate_clone, execution_context);
 
-    /// The analysis must accept everything the mutation itself accepts, so it has to follow
-    /// the same analyzer selection as the mutation execution (`MutationsInterpreter`). Some
-    /// predicate shapes (e.g. qualified column names) resolve only under the query-tree analyzer.
+    /// Some predicate shapes (e.g. qualified column names) resolve only under the query-tree
+    /// analyzer.
     std::optional<ActionsDAG> actions_dag;
     const ActionsDAG::Node * predicate_node = nullptr;
 
-    if (shouldUseAnalyzerForMutations(query_context))
+    if (shouldUseAnalyzerForMutations(execution_context))
     {
-        auto execution_context = Context::createCopy(query_context);
         auto expression = buildQueryTree(predicate_clone, execution_context);
 
         /// Resolve against the real storage, so that its columns (including `ALIAS` and
@@ -8913,9 +8921,9 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                 columns.emplace_back(column.name, column.type);
         }
 
-        TreeRewriter tree_rewriter(query_context);
+        TreeRewriter tree_rewriter(execution_context);
         auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
-        actions_dag.emplace(ExpressionAnalyzer(predicate_clone, syntax_result, query_context).getActionsDAG(false));
+        actions_dag.emplace(ExpressionAnalyzer(predicate_clone, syntax_result, execution_context).getActionsDAG(false));
 
         /// The predicate output is the node matching the predicate expression name.
         /// `getActionsDAG` may include input columns in the outputs list, so we need
@@ -8927,12 +8935,12 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (!predicate_node)
         return std::nullopt;
 
-    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, query_context, /* boolean_context */ true);
+    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, execution_context, /* boolean_context */ true);
 
     PartitionPruner partition_pruner(
         metadata_snapshot,
         inverted_dag,
-        query_context,
+        execution_context,
         false /* strict */);
 
     if (partition_pruner.isUseless())
