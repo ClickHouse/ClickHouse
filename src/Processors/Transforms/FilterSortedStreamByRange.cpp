@@ -47,6 +47,17 @@ void FilterSortedStreamByRange::transform(Chunk & chunk)
     }
     chunk.setColumns(std::move(quick_check_columns), 2);
     filter_transform.transform(chunk);
+
+    /// The query was killed while the probe was being evaluated: the inner transform returned
+    /// an empty chunk, which must not be mistaken for a failed quick check — that would re-run
+    /// the full expression on the whole chunk just to unwind. Return an empty chunk instead.
+    if (isCancelled())
+    {
+        chunk.clear();
+        stopReading();
+        return;
+    }
+
     const bool all_rows_will_pass_filter = chunk.getNumRows() == 2;
 
     chunk.setColumns(std::move(src_columns), rows_before_filtration);
