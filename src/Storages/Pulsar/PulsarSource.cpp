@@ -55,7 +55,9 @@ PulsarSource::~PulsarSource()
         /// redelivery instead of leaving them attached to the pooled consumer, where a later
         /// query could acknowledge messages it never returned.
         consumer->rollback();
-        storage.pushConsumer(consumer);
+        /// A consumer that hit a terminal receive error is dropped and recreated by the storage
+        /// instead of being returned to the pool, so the error does not poison later reads.
+        storage.returnConsumer(consumer);
     }
 }
 

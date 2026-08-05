@@ -51,8 +51,13 @@ ReadBufferPtr PulsarConsumer::consume()
     /// consumer (e.g. `ResultAlreadyClosed`, `ResultConsumerNotInitialized`) and must not be
     /// mistaken for an idle topic, otherwise background streaming would silently stall forever.
     if (result != pulsar::ResultOk)
+    {
+        /// The consumer must not be reused after a terminal error: the next poll would fail the
+        /// same way, so the storage drops it and recreates the slot (see `returnConsumer`).
+        usable = false;
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_PULSAR, "Failed to receive messages from Pulsar: {}", pulsar::strResult(result));
+    }
     if (new_messages.empty())
         return nullptr;
     LOG_TRACE(log, "Polled messages: {}", new_messages.size());

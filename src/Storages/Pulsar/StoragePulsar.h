@@ -63,6 +63,11 @@ public:
     PulsarConsumerPtr popConsumer();
     PulsarConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
+    /// Return a consumer taken with `popConsumer`. A usable consumer goes back to the pool;
+    /// one that hit a terminal receive error is dropped and its slot is recreated by the
+    /// background initialization task.
+    void returnConsumer(PulsarConsumerPtr consumer);
+
 
     size_t getPollTimeoutMilliseconds() const;
     size_t getPollMaxBatchSize() const;
@@ -84,13 +89,22 @@ private:
 
     std::vector<PulsarConsumerPtr> consumers;
     std::mutex consumers_mutex;
+    /// The number of live consumers, both pooled and popped by sources. When it is below
+    /// `num_consumers` (a subscribe failure on server startup, or a dropped poisoned consumer),
+    /// `init_task` keeps recreating the missing ones until the pool is complete again.
+    size_t created_consumers = 0;
     Poco::Semaphore semaphore;
     BackgroundSchedulePool::TaskHolder streamer;
+    BackgroundSchedulePool::TaskHolder init_task;
 
     /// Owned by the single streaming task; used by `stream_control.claimCycle`.
     UInt64 last_seen_refresh_epoch = 0;
 
     void createConsumer(pulsar::Consumer & consumer);
+    /// Create consumers until there are `num_consumers` of them. Throws on the first failure.
+    void createConsumers();
+    /// The body of `init_task`: retries `createConsumers` until it succeeds.
+    void initConsumersFunc();
     ProducerPtr createProducer();
 
     Names parseTopics(String topic_list) const;

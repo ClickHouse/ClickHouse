@@ -1,3 +1,4 @@
+import subprocess
 import time
 
 import pytest
@@ -50,6 +51,15 @@ def wait_query_result(expected, query, timeout=120):
             return
         time.sleep(1)
     assert TSV(instance.query(query)) == TSV(expected)
+
+
+def stop_pulsar(pulsar_cluster):
+    subprocess.check_call(["docker", "stop", pulsar_cluster.pulsar_docker_id])
+
+
+def start_pulsar(pulsar_cluster):
+    subprocess.check_call(["docker", "start", pulsar_cluster.pulsar_docker_id])
+    pulsar_cluster.wait_pulsar_is_available()
 
 
 def test_experimental_gate(pulsar_cluster):
@@ -205,6 +215,87 @@ def test_produce_consume_via_materialized_view(pulsar_cluster):
     )
 
     expected = "\n".join(f"{i}\t{i * i}" for i in range(num_rows))
+    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+
+def test_attach_while_broker_down_recovers(pulsar_cluster):
+    # A table attached while Pulsar is unreachable has no consumers; the background
+    # initialization task must keep retrying and pick up consumption automatically
+    # once the broker is available again, without a manual DETACH/ATTACH.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "outage_attach_topic", "outage_attach_group"))
+    instance.query(
+        pulsar_table("test.pulsar_writer", "outage_attach_topic", "outage_attach_writer_group")
+    )
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    instance.query("DETACH TABLE test.pulsar_reader")
+    stop_pulsar(pulsar_cluster)
+    try:
+        # ATTACH must succeed even though subscribing fails.
+        instance.query("ATTACH TABLE test.pulsar_reader")
+    finally:
+        start_pulsar(pulsar_cluster)
+
+    num_rows = 10
+    instance.query(
+        f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+    )
+
+    expected = "\n".join(f"{i}\t{i}" for i in range(num_rows))
+    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+
+def test_streaming_resumes_after_broker_restart(pulsar_cluster):
+    # A broker outage in the middle of streaming must not leave the table
+    # permanently stalled: consumption must resume once the broker is back.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "outage_stream_topic", "outage_stream_group"))
+    instance.query(
+        pulsar_table("test.pulsar_writer", "outage_stream_topic", "outage_stream_writer_group")
+    )
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    num_rows = 10
+    instance.query(
+        f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+    )
+    expected = "\n".join(f"{i}\t{i}" for i in range(num_rows))
+    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+    stop_pulsar(pulsar_cluster)
+    try:
+        # Let the streaming task observe the outage.
+        time.sleep(5)
+    finally:
+        start_pulsar(pulsar_cluster)
+
+    instance.query(
+        f"INSERT INTO test.pulsar_writer SELECT number + {num_rows}, number + {num_rows} FROM numbers({num_rows})"
+    )
+    expected = "\n".join(f"{i}\t{i}" for i in range(2 * num_rows))
     wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
 
 

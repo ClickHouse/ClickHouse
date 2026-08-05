@@ -155,33 +155,33 @@ StoragePulsar::StoragePulsar(
 
     try
     {
-        for (size_t i = 0; i < num_consumers; ++i)
-        {
-            auto consumer = std::make_shared<PulsarConsumer>(log);
-            createConsumer(consumer->consumer);
-            pushConsumer(consumer);
-        }
+        createConsumers();
     }
     catch (...)
     {
         /// A failure to subscribe must fail CREATE TABLE, but must not prevent the server
         /// from loading an already existing table when the broker is temporarily unreachable.
+        /// The missing consumers are then recreated by `init_task` once the broker is back.
         if (mode <= LoadingStrictnessLevel::CREATE)
             throw;
-        tryLogCurrentException(log, "Failed to subscribe to Pulsar topics on startup; the table will not consume anything until it is detached and attached again");
+        tryLogCurrentException(log, "Failed to subscribe to Pulsar topics on startup; will keep retrying in the background");
     }
     streamer = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "PulsarStreamingTask", [this]() { streaming(); });
     streamer->deactivate();
+    init_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "PulsarInitTask", [this]() { initConsumersFunc(); });
+    init_task->deactivate();
 }
 
 void StoragePulsar::startup()
 {
+    init_task->activateAndSchedule();
     streamer->activateAndSchedule();
 }
 
 void StoragePulsar::shutdown(bool /* is_drop */)
 {
     shutdown_called.store(true);
+    init_task->deactivate();
     streamer->deactivate();
 
     LOG_TRACE(log, "Closing Pulsar client");
@@ -230,6 +230,62 @@ PulsarConsumerPtr StoragePulsar::popConsumer(std::chrono::milliseconds timeout)
     consumers.pop_back();
 
     return consumer;
+}
+
+void StoragePulsar::returnConsumer(PulsarConsumerPtr consumer)
+{
+    if (consumer->isUsable())
+    {
+        pushConsumer(std::move(consumer));
+        return;
+    }
+
+    /// The consumer hit a terminal receive error: re-pooling it would make every later cycle pop
+    /// the same dead consumer and fail again. Drop it and let `init_task` recreate the slot.
+    {
+        std::lock_guard lock{consumers_mutex};
+        --created_consumers;
+    }
+    consumer->consumer.close();
+    LOG_WARNING(log, "Dropped a Pulsar consumer after a terminal receive error; a new one will be created");
+    if (!shutdown_called.load())
+        init_task->schedule();
+}
+
+void StoragePulsar::createConsumers()
+{
+    while (true)
+    {
+        {
+            std::lock_guard lock{consumers_mutex};
+            if (created_consumers >= num_consumers)
+                return;
+        }
+        auto consumer = std::make_shared<PulsarConsumer>(log);
+        createConsumer(consumer->consumer);
+        {
+            std::lock_guard lock{consumers_mutex};
+            ++created_consumers;
+        }
+        pushConsumer(std::move(consumer));
+    }
+}
+
+void StoragePulsar::initConsumersFunc()
+{
+    if (shutdown_called.load())
+        return;
+
+    try
+    {
+        createConsumers();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to create Pulsar consumers, will retry");
+        if (!shutdown_called.load())
+            init_task->scheduleAfter(PULSAR_RESCHEDULE_MS);
+    }
 }
 
 SinkToStoragePtr
