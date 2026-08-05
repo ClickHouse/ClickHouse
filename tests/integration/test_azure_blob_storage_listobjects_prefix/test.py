@@ -29,6 +29,7 @@ from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import AzureUploader
+from test_storage_azure_blob_storage.test import azure_query
 
 NODE_NAME = "node"
 ACCOUNT_NAME = "devstoreaccount1"
@@ -44,9 +45,12 @@ NUM_PARTS = 8
 
 
 def generate_cluster_def(port):
+    # Per-worker suffix so parallel xdist workers don't race on the generated file.
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/disk_storage_conf.xml",
+        f"./_gen/disk_storage_conf{suffix}.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -158,17 +162,19 @@ def test_listobjects_prefix_crosses_page(cluster):
 
     # 4. Attach the same UUID read-only from the plain-metadata Azure disk.
     node.query("CREATE DATABASE IF NOT EXISTS azure_db")
-    node.query(
+    azure_query(
+        node,
         f"ATTACH TABLE azure_db.dst UUID '{table_uuid}' (num UInt32, data String) "
         "ENGINE=MergeTree ORDER BY num "
-        "SETTINGS storage_policy='azure_plain_readonly'"
+        "SETTINGS storage_policy='azure_plain_readonly'",
+        query_on_retry="DROP TABLE IF EXISTS azure_db.dst SYNC",
     )
 
     # 5. Reading loads the parts via MetadataStorageFromPlainObjectStorage::listDirectory
     #    -> AzureObjectStorage::listObjects, which paginates. Pre-fix, pages 2..N keep the
     #    raw endpoint prefix, so the parts are garbled/broken and the read is wrong (or throws).
-    assert int(node.query("SELECT count() FROM azure_db.dst")) == expected_count
-    assert int(node.query("SELECT sum(num) FROM azure_db.dst")) == expected_sum
-    assert node.query(
-        "SELECT num, data FROM azure_db.dst ORDER BY num FORMAT Values"
+    assert int(azure_query(node, "SELECT count() FROM azure_db.dst")) == expected_count
+    assert int(azure_query(node, "SELECT sum(num) FROM azure_db.dst")) == expected_sum
+    assert azure_query(
+        node, "SELECT num, data FROM azure_db.dst ORDER BY num FORMAT Values"
     ) == ",".join(f"({i},'row{i}')" for i in range(NUM_PARTS))
