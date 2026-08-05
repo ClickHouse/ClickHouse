@@ -167,7 +167,7 @@ TEST(InsertDependenciesSnapshot, TargetSharedByTwoViewsKeepsFirstSnapshot)
 
     /// Restore afterwards: `DatabaseCatalog` is shared with every other test in this binary.
     auto original_handle = fixture.tgt->getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
-    StorageInMemoryMetadata original = *original_handle;
+    const StorageInMemoryMetadata & original = *original_handle;
     struct Restore
     {
         std::shared_ptr<DriftingStorage> tgt;
