@@ -93,8 +93,10 @@ private:
     ConcurrentBoundedQueue<Iceberg::ProcessedManifestFileEntryPtr> blocking_queue;
     std::unique_ptr<ThreadFromGlobalPool> producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
-    std::vector<Iceberg::ProcessedManifestFileEntryPtr> position_deletes_files;
+    std::vector<Iceberg::ProcessedManifestFileEntryPtr> deletion_vector_files;
+    std::vector<Iceberg::ProcessedManifestFileEntryPtr> parquet_position_deletes_files;
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> equality_deletes_files;
+    ContextPtr local_context;
     std::exception_ptr exception;
     std::mutex exception_mutex;
 };

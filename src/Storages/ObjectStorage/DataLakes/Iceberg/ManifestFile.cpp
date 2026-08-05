@@ -13,6 +13,7 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 namespace DB::Iceberg
@@ -30,6 +31,37 @@ String FileContentTypeToString(FileContentType type)
             return "equality_deletes";
     }
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported content type: {}", static_cast<int>(type));
+}
+
+PositionDeleteKindPresence getPositionDeleteKindPresence(
+    const std::vector<ProcessedManifestFileEntryPtr> & position_delete_files)
+{
+    PositionDeleteKindPresence presence;
+    for (const auto & file : position_delete_files)
+    {
+        if (file->parsed_entry->isDeletionVector())
+            presence.has_deletion_vectors = true;
+        else
+            presence.has_parquet_position_deletes = true;
+
+        if (presence.hasBoth())
+            break;
+    }
+    return presence;
+}
+
+void requireDirectReferencedDataFileForPuffinDeletionVector(
+    bool set_from_referenced_data_file_field,
+    const std::optional<IcebergPathFromMetadata> & referenced_path,
+    const IcebergPathFromMetadata & manifest_file_path)
+{
+    if (!set_from_referenced_data_file_field || !referenced_path.has_value() || referenced_path->empty())
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Puffin deletion vector entry in manifest file '{}' is missing referenced_data_file",
+            manifest_file_path);
+    }
 }
 
 static std::strong_ordering operator<=>(const PartitionSpecsEntry & lhs, const PartitionSpecsEntry & rhs)

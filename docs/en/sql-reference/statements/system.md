@@ -109,6 +109,10 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 
 Clears the parquet metadata cache.
 
+## SYSTEM DROP PUFFIN FILES CACHE {#drop-puffin-files-cache}
+
+Clears the Puffin files cache used for parsed Iceberg puffin file content such as deletion vectors.
+
 ## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
 Clears the text index's header, dictionary and postings caches.

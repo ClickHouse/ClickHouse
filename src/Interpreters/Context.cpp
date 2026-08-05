@@ -55,6 +55,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Storages/ObjectStorage/DataLakes/PuffinFilesCache.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -586,6 +587,7 @@ struct ContextSharedPart : boost::noncopyable
 #if USE_PARQUET
     mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
 #endif
+    mutable PuffinFilesCachePtr puffin_files_cache TSA_GUARDED_BY(mutex);   /// Cache of parsed puffin file content.
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
@@ -4754,6 +4756,52 @@ void Context::clearParquetMetadataCache() const
         cache->clear();
 }
 #endif
+
+void Context::setPuffinFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->puffin_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Puffin files cache has been already created.");
+
+    shared->puffin_files_cache = std::make_shared<PuffinFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updatePuffinFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->puffin_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Puffin files cache was not created yet.");
+
+    size_t size = config.getUInt64("puffin_files_cache_size", DEFAULT_PUFFIN_FILES_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("puffin_files_cache_max_entries", DEFAULT_PUFFIN_FILES_CACHE_MAX_ENTRIES);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered Puffin files cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->puffin_files_cache->setMaxSizeInBytes(size);
+    shared->puffin_files_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<PuffinFilesCache> Context::getPuffinFilesCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->puffin_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Puffin files cache was not created yet.");
+    return shared->puffin_files_cache;
+}
+
+void Context::clearPuffinFilesCache() const
+{
+    auto cache = getPuffinFilesCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
 
 void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {

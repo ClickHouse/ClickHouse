@@ -11,11 +11,17 @@
 #include <Core/Field.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
+#include <string_view>
+
 
 namespace DB::Iceberg
 {
 
 String computePartitionId(const Row & partition_key_value);
+
+/// Position deletes and deletion vectors need file-relative row numbers (`ChunkInfoRowNumbers`),
+/// which Parquet readers emit. Reject other data-file formats early with NOT_IMPLEMENTED.
+void requireParquetDataFileForRowDeletes(const String & file_format, std::string_view feature_name);
 
 
 struct IcebergObjectSerializableInfo
@@ -84,10 +90,18 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     void addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path);
 
     void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path);
+
+    ObjectInfoPtr clone() const override;
+
     Iceberg::IcebergObjectSerializableInfo info;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
+
+/// Equality deletes need real column values — disable need_only_count / count-from-files cache.
+bool hasIcebergEqualityDeletes(const ObjectInfoPtr & object_info);
+/// Position-delete attachment changes independently of data-file identity — skip count-from-files cache.
+bool hasIcebergPositionDeletes(const ObjectInfoPtr & object_info);
 }
 
 #endif

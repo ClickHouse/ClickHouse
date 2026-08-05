@@ -204,6 +204,11 @@ std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getBytesCo
     return result;
 }
 
+PositionDeleteKindPresence ManifestFileIterator::ManifestFileEntriesHandle::getPositionDeleteKindPresence() const
+{
+    return Iceberg::getPositionDeleteKindPresence(getFilesWithoutDeleted(FileContentType::POSITION_DELETE));
+}
+
 ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWithoutDeletedHandle() const
 {
     if (!isInitialized())

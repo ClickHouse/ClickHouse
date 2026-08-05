@@ -4,21 +4,10 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Storages/ObjectStorage/DataLakes/PuffinFile.h>
 
 namespace DB
 {
-
-struct PuffinBlob
-{
-    String type;
-    Int64 snapshot_id = 0;
-    Int64 sequence_number = 0;
-    std::vector<Int32> fields;
-    Int64 offset = 0;
-    Int64 length = 0;
-    String compression_codec;
-    std::map<String, String> properties;
-};
 
 struct PuffinFooter
 {

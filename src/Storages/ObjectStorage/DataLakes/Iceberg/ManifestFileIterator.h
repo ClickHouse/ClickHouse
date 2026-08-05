@@ -60,6 +60,8 @@ public:
 
         std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
+        PositionDeleteKindPresence getPositionDeleteKindPresence() const;
+
     private:
         friend class ManifestFileIterator;
 

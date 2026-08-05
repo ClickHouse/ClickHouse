@@ -7,6 +7,7 @@
 #include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
+#include <base/arithmeticOverflow.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
@@ -320,6 +321,46 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     }
 }
 
+std::vector<size_t> buildRowGroupGlobalOffsets(const parq::FileMetaData & file_metadata)
+{
+    if (file_metadata.num_rows < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file has negative row count: {}", file_metadata.num_rows);
+
+    const size_t num_row_groups = file_metadata.row_groups.size();
+    std::vector<size_t> global_offsets(num_row_groups + 1, 0);
+    UInt64 total_rows = 0;
+
+    for (size_t i = 0; i < num_row_groups; ++i)
+    {
+        const Int64 num_rows = file_metadata.row_groups[i].num_rows;
+        if (num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet row group {} has negative row count: {}", i, num_rows);
+
+        UInt64 next_total = 0;
+        if (common::addOverflow(total_rows, static_cast<UInt64>(num_rows), next_total))
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Parquet row group row counts overflow when computing global offsets (at row group {})",
+                i);
+        }
+
+        total_rows = next_total;
+        global_offsets[i + 1] = static_cast<size_t>(total_rows);
+    }
+
+    if (total_rows != static_cast<UInt64>(file_metadata.num_rows))
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Sum of Parquet row group row counts ({}) does not match FileMetaData.num_rows ({})",
+            total_rows,
+            file_metadata.num_rows);
+    }
+
+    return global_offsets;
+}
+
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
@@ -375,18 +416,14 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
-    size_t total_rows = 0;
+    const std::vector<size_t> global_offsets = buildRowGroupGlobalOffsets(file_metadata);
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
-        if (meta->num_rows < 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
         if (meta->num_rows == 0)
             continue; /// Empty row groups are valid in Parquet; skip them.
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
-
-        total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
@@ -401,7 +438,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         row_group.meta = meta;
         row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx);
         row_group.row_group_idx = row_group_idx;
-        row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
+        row_group.start_global_row_idx = global_offsets[row_group_idx];
         row_group.columns.resize(primitive_columns.size());
         row_group.hyperrectangle = std::move(hyperrectangle);
 

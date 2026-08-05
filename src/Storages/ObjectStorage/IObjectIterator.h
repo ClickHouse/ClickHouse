@@ -53,6 +53,10 @@ struct ObjectInfo
 
     FileBucketInfoPtr file_bucket_info;
 
+    /// Polymorphic copy. Used when splitting files into buckets so derived metadata
+    /// (e.g. Iceberg equality / position deletes) is not sliced away.
+    virtual ObjectInfoPtr clone() const { return std::make_shared<ObjectInfo>(*this); }
+
     String getIdentifier() const;
 };
 

@@ -15,6 +15,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/String.h>
 
 namespace DB::ErrorCodes
 {
@@ -24,6 +25,23 @@ extern const int UNKNOWN_PROTOCOL;
 
 
 using namespace DB::Iceberg;
+
+namespace DB::Iceberg
+{
+
+void requireParquetDataFileForRowDeletes(const String & file_format, std::string_view feature_name)
+{
+    if (Poco::toUpper(file_format) != "PARQUET")
+    {
+        throw Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "{} are only supported for data files of Parquet format in Iceberg, but got {}",
+            feature_name,
+            file_format);
+    }
+}
+
+}
 
 namespace DB
 {
@@ -97,13 +115,7 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
 
 void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path)
 {
-    if (Poco::toUpper(info.file_format) != "PARQUET")
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
-            info.file_format);
-    }
+    Iceberg::requireParquetDataFileForRowDeletes(info.file_format, "Position deletes");
     info.position_deletes_objects.emplace_back(
         resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt,
         position_delete_object->sequence_number);
@@ -116,6 +128,26 @@ void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedMani
         equality_delete_object->parsed_entry->file_format,
         equality_delete_object->parsed_entry->equality_ids,
         equality_delete_object->resolved_schema_id);
+}
+
+ObjectInfoPtr IcebergDataObjectInfo::clone() const
+{
+    auto result = std::make_shared<IcebergDataObjectInfo>(relative_path_with_metadata, info);
+    result->data_lake_metadata = data_lake_metadata;
+    result->file_bucket_info = file_bucket_info;
+    return result;
+}
+
+bool hasIcebergEqualityDeletes(const ObjectInfoPtr & object_info)
+{
+    const auto * iceberg = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+    return iceberg && !iceberg->info.equality_deletes_objects.empty();
+}
+
+bool hasIcebergPositionDeletes(const ObjectInfoPtr & object_info)
+{
+    const auto * iceberg = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+    return iceberg && !iceberg->info.position_deletes_objects.empty();
 }
 
 #endif

@@ -122,6 +122,39 @@ static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerP
 #endif
 }
 
+/// Whether reading this object goes through row-level delete transformers (Iceberg
+/// position/equality deletes, Delta Lake deletion vectors). The count-from-files cache
+/// is keyed only by the file path and its modification time, but delete files change the
+/// number of rows the file contributes WITHOUT touching the file itself, so both
+/// directions are unsafe: a count cached before a delete resurfaces deleted rows, and a
+/// count cached after it goes stale once the deletes are compacted away. Such files must
+/// neither use nor populate the cache.
+static bool hasAttachedDeletes(const ObjectInfo & object_info)
+{
+#if USE_AVRO
+    if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+    {
+        if (!iceberg_object->info.position_deletes_objects.empty() || !iceberg_object->info.equality_deletes_objects.empty())
+            return true;
+    }
+#endif
+    return object_info.data_lake_metadata && object_info.data_lake_metadata->excluded_rows
+        && object_info.data_lake_metadata->excluded_rows->size() > 0;
+}
+
+/// Count-from-files cache key is data-file identity only. Skip when row filtering can change
+/// independently (DVs / selection vectors, Iceberg eq/pos deletes) or when the task is a bucket subset.
+static bool canUseCountFromFilesCache(const ObjectInfoPtr & object_info)
+{
+    if (hasNonEmptyExcludedRows(object_info->data_lake_metadata) || object_info->file_bucket_info)
+        return false;
+#if USE_AVRO
+    if (hasIcebergEqualityDeletes(object_info) || hasIcebergPositionDeletes(object_info))
+        return false;
+#endif
+    return true;
+}
+
 StorageObjectStorageSource::StorageObjectStorageSource(
     const StorageID & storage_id_,
     String name_,
@@ -585,7 +618,8 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag
+            && canUseCountFromFilesCache(reader.getObjectInfo()))
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -747,8 +781,35 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
-    std::optional<size_t> num_rows_from_cache
-        = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
+    /// Row-level delete transformers need real row values: an equality-delete FilterTransform
+    /// evaluates its predicate against column values, but the count-only fast path
+    /// (`input_format->needOnlyCount()`) makes the format emit synthetic chunks filled with
+    /// default values, so the predicate would filter the wrong rows and count() would come
+    /// back wrong. Position deletes and deletion vectors filter by row index, which synthetic
+    /// chunks do preserve, but they would still build the huge synthetic chunks only to drop
+    /// rows from them, so the fast path is disabled for any attached deletes. This also
+    /// covers the count-from-cache shortcut below: a cached per-file row count is keyed only
+    /// by path + mtime, both untouched by delete files, so it must not be used either.
+    need_only_count = need_only_count && !hasAttachedDeletes(*object_info);
+
+    /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
+    /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
+    /// back to the metadata-probe headers (usually a `HEAD`), which can differ from the actual `GET`
+    /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
+    const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
+
+#if USE_AVRO
+    /// Equality deletes filter by column values; need_only_count emits default-filled chunks.
+    const bool effective_need_only_count = need_only_count && !hasIcebergEqualityDeletes(object_info);
+#else
+    const bool effective_need_only_count = need_only_count;
+#endif
+
+    const bool can_use_count_cache = effective_need_only_count && !headers_requested
+        && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        && canUseCountFromFilesCache(object_info);
+
+    std::optional<size_t> num_rows_from_cache = can_use_count_cache ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
     {
@@ -919,7 +980,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info,
                 true /* is_remote_fs */,
                 compression_method,
-                need_only_count,
+                effective_need_only_count,
                 std::nullopt /*min_block_size_bytes*/,
                 std::nullopt /*min_block_size_rows*/,
                 std::nullopt /*max_block_size_bytes*/);
@@ -937,28 +998,30 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             filter_info,
             true /* is_remote_fs */,
             compression_method,
-            need_only_count);
+            effective_need_only_count);
         }
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
-        if (need_only_count)
+        if (effective_need_only_count)
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
-
-        if (object_info->data_lake_metadata
-            && object_info->data_lake_metadata->excluded_rows
-            && object_info->data_lake_metadata->excluded_rows->size() > 0)
+        /// Deletion vectors (and selection vectors) address absolute file row numbers via
+        /// `ChunkInfoRowNumbers`. Iceberg equality deletes use a plain `FilterTransform` that
+        /// shrinks the chunk without maintaining `applied_filter`, so DV must run first —
+        /// otherwise later DV filtering maps dense post-equality indices to the wrong file rows.
+        if (hasNonEmptyExcludedRows(object_info->data_lake_metadata))
         {
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
             });
         }
+
+        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
         std::optional<ActionsDAG> schema_transform;
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)

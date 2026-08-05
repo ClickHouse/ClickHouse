@@ -1,6 +1,10 @@
 ---
 description: 'Documentation for the Puffin format'
+input_format: true
+output_format: false
 keywords: ['Puffin']
+sidebar_label: 'Puffin'
+sidebar_position: 1
 slug: /interfaces/formats/Puffin
 title: 'Puffin'
 doc_type: 'reference'
