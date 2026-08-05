@@ -1798,7 +1798,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 - Optional background refresh of metadata when configured.
 - Stable table UUID when using Atomic/Replicated databases, enabling `{uuid}` macros in Keeper paths.
 
-## Limitations {#limitations}
+## Primary-key tables {#primary-key-tables}
 
 Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
 snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
