@@ -1,24 +1,29 @@
 ---
-description: 'Документация по изменению ограничений'
+description: 'Документация по управлению ограничениями'
 sidebarTitle: 'CONSTRAINT'
 slug: /sql-reference/statements/alter/constraint
-title: 'Изменение ограничений'
+title: 'Управление ограничениями'
 doc_type: 'reference'
 ---
 
-Ограничения можно добавлять или удалять с помощью следующего синтаксиса:
+Ограничения можно добавлять, изменять и удалять с помощью следующего синтаксиса:
 
 ```sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```
 
-Подробнее см. в разделе [ограничения](/ru/reference/statements/create/table#constraints).
+Как и при создании таблицы, ограничение можно объявить либо как `CHECK` (проверяется при `INSERT`), либо как `ASSUME` (считается истинным оптимизатором без проверки). О разнице между ними см. [constraints](/ru/reference/statements/create/table#constraints).
 
-Запросы на добавление или удаление метаданных об ограничениях в таблице выполняются немедленно.
+`MODIFY CONSTRAINT` заменяет объявление существующего ограничения, сохраняя его положение в определении таблицы. Он также может изменить тип ограничения (например, с `CHECK` на `ASSUME`). Это эквивалентно удалению ограничения и его повторному добавлению с новым объявлением. Если ограничение не существует, запрос генерирует ошибку, если не указано `IF EXISTS`.
+
+Подробнее см. в разделе [constraints](/ru/reference/statements/create/table#constraints).
+
+Запросы добавляют, изменяют или удаляют метаданные об ограничениях таблицы, поэтому обрабатываются немедленно.
 
 <Tip>
-  Проверка ограничений **не будет выполняться** для существующих данных, если ограничение было добавлено.
+  Проверка ограничения **не будет выполняться** для существующих данных, если оно было добавлено или изменено.
 </Tip>
 
-Все изменения в реплицируемых таблицах передаются в ZooKeeper и также применяются на других репликах.
+Все изменения в реплицируемых таблицах передаются через ZooKeeper и будут применены также на других репликах.

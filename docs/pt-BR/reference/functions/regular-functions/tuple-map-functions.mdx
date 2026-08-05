@@ -35,10 +35,10 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 **Argumentos**
 
 * `data` - String da qual serão extraídos pares chave-valor. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
-  * `key_value_delimiter` - Caractere a ser usado como delimitador entre a chave e o valor. O padrão é `:`. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
-  * `pair_delimiters` - Conjunto de caracteres a ser usado como delimitadores entre pares. O padrão é `\space`, `,` e `;`. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
-  * `quoting_character` - Caractere a ser usado para delimitar aspas. O padrão é `"`. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
-  * `unexpected_quoting_character_strategy` - Estratégia para lidar com caracteres de aspas em posições inesperadas durante a fase `read_key` e `read_value`. Valores possíveis: `invalid`, `accept` e `promote`. `invalid` descartará a chave ou o valor e fará a transição de volta para o estado `WAITING_KEY`. `accept` o tratará como um caractere normal. `promote` fará a transição para o estado `READ_QUOTED_{KEY/VALUE}` e começará a partir do próximo caractere. O valor padrão é `INVALID`
+* `key_value_delimiter` - Caractere a ser usado como delimitador entre a chave e o valor. O padrão é `:`. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
+* `pair_delimiters` - Conjunto de caracteres a ser usado como delimitadores entre pares. O padrão é `\space`, `,` e `;`. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
+* `quoting_character` - Caractere a ser usado para delimitar aspas. O padrão é `"`. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
+* `unexpected_quoting_character_strategy` - Estratégia para lidar com caracteres de aspas em posições inesperadas durante a fase `read_key` e `read_value`. Valores possíveis: `invalid`, `accept` e `promote`. `invalid` descartará a chave ou o valor e fará a transição de volta para o estado `WAITING_KEY`. `accept` o tratará como um caractere normal. `promote` fará a transição para o estado `READ_QUOTED_{KEY/VALUE}` e começará a partir do próximo caractere. O valor padrão é `INVALID`
 
 **Valores retornados**
 
@@ -53,13 +53,13 @@ Consulta:
 ```sql
 arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
-            SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
-            Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
+Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
 
-            ┌─kv──────────────────────────────────────────────────────────────────────┐
-            │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
-            └─────────────────────────────────────────────────────────────────────────┘
+┌─kv──────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Aspas simples como caractere de aspas**
@@ -67,13 +67,13 @@ arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:
 ```sql
 arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
-            SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
-            Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
+Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
 
-            ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-            │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
-            └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 exemplos de unexpected&#95;quoting&#95;character&#95;strategy:
@@ -86,8 +86,8 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv────────────────┐
-            │ {'abc':'5'}  │
-            └───────────────────┘
+│ {'abc':'5'}       │
+└───────────────────┘
 ```
 
 ```sql
@@ -96,8 +96,8 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv──┐
-            │ {}  │
-            └─────┘
+│ {}  │
+└─────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy=accept
@@ -108,54 +108,54 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 
 ```text
 ┌─kv────────────────┐
-            │ {'name"abc':'5'}  │
-            └───────────────────┘
+│ {'name"abc':'5'}  │
+└───────────────────┘
 ```
 
 ```sql
-            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 ```
 
 ```text
-            ┌─kv─────────────────┐
-            │ {'name"abc"':'5'}  │
-            └────────────────────┘
+┌─kv─────────────────┐
+│ {'name"abc"':'5'}  │
+└────────────────────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy=promote
 
 ```sql
-            SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```text
-            ┌─kv──┐
-            │ {}  │
-            └─────┘
+┌─kv──┐
+│ {}  │
+└─────┘
 ```
 
 ```sql
-            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```text
-            ┌─kv───────────┐
-            │ {'abc':'5'}  │
-            └──────────────┘
+┌─kv───────────┐
+│ {'abc':'5'}  │
+└──────────────┘
 ```
 
 **Sequências de escape sem suporte a escapes**
 
 ```sql
-            arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
+arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
+SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
-            Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
+Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 
-            ┌─kv────────────────────┐
-            │ {'age':'a\\x0A\\n\\0'} │
-            └───────────────────────┘
+┌─kv─────────────────────┐
+│ {'age':'a\\x0A\\n\\0'} │
+└────────────────────────┘
 ```
 
 **Sintaxe**
@@ -190,22 +190,22 @@ Esta função atende ao caso de uso em que pre-escaping e post-escaping não sã
 string de entrada: `a: "aaaa\"bbb"`. A saída esperada é: `a: aaaa\"bbbb`.
 
 * Pre-escaping: ao aplicar pre-escaping, a saída será: `a: "aaaa"bbb"` e `extractKeyValuePairs` então produzirá: `a: aaaa`
-  * Post-escaping: `extractKeyValuePairs` produzirá `a: aaaa\` e o post-escaping o manterá como está.
+* Post-escaping: `extractKeyValuePairs` produzirá `a: aaaa\` e o post-escaping o manterá como está.
 
 As sequências de escape iniciais serão ignoradas nas chaves e consideradas inválidas nos valores.
 
 **Sequências de escape com suporte a sequências de escape habilitado**
 
 ```sql
-            arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
+arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
+SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
 
-            Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
+Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 
-            ┌─kv───────────────┐
-            │ {'age':'a\n\n\0'} │
-            └──────────────────┘
+┌─kv────────────────┐
+│ {'age':'a\n\n\0'} │
+└───────────────────┘
 ```
 
 **Sintaxe**

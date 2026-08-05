@@ -167,14 +167,14 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
 
 | Setting                              | Default value | Description                                                                                                                                         |
 | ------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB          | عدد البايتات التي ستتم معالجتها في دفعة insert واحدة.                                                                                               |
-| `Max file count`                     | 100           | الحد الأقصى لعدد الملفات التي ستتم معالجتها في دفعة insert واحدة.                                                                                   |
+| `Max insert bytes`                   | 10GB          | عدد البايتات التي ستتم معالجتها في دفعة إدراج واحدة.                                                                                               |
+| `Max file count`                     | 100           | الحد الأقصى لعدد الملفات التي ستتم معالجتها في دفعة إدراج واحدة.                                                                                   |
 | `Max threads`                        | auto(3)       | [الحد الأقصى لعدد سلاسل التنفيذ المتزامنة](/ar/reference/settings/session-settings#max_threads) لمعالجة الملفات.                                       |
-| `Max insert threads`                 | 1             | [الحد الأقصى لعدد سلاسل تنفيذ insert المتزامنة](/ar/reference/settings/session-settings#max_insert_threads) لمعالجة الملفات.                           |
+| `Max insert threads`                 | 1             | [الحد الأقصى لعدد سلاسل تنفيذ إدراج المتزامنة](/ar/reference/settings/session-settings#max_insert_threads) لمعالجة الملفات.                           |
 | `Min insert block size bytes`        | 1GB           | [الحد الأدنى لحجم البايتات في block](/ar/reference/settings/session-settings#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.                   |
 | `Max download threads`               | 4             | [الحد الأقصى لعدد سلاسل تنفيذ التنزيل المتزامنة](/ar/reference/settings/session-settings#max_download_threads).                                        |
 | `Object storage polling interval`    | 30s           | يضبط الحد الأقصى لفترة الانتظار قبل إدراج البيانات في مجموعة ClickHouse.                                                                            |
-| `Parallel distributed insert select` | 2             | [إعداد parallel distributed insert select](/ar/reference/settings/session-settings#parallel_distributed_insert_select).                                |
+| `Parallel distributed insert select` | 2             | [إعداد parallel distributed إدراج select](/ar/reference/settings/session-settings#parallel_distributed_insert_select).                                |
 | `Parallel view processing`           | false         | ما إذا كان سيتم تمكين تمرير البيانات إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings#parallel_view_processing). |
 | `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عقد.                                                                                                  |
 

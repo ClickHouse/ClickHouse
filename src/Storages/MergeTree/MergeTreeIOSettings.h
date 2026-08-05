@@ -45,6 +45,8 @@ struct MergeTreeReaderSettings
     bool is_low_cardinality_dictionary = false;
     /// True if we read stream that contains some metadata and will be read as a whole at once.
     bool is_metadata_file = false;
+    /// True if we read a stream that holds a single value for the whole part, which every granule reads.
+    bool is_single_value_per_part = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()
@@ -108,7 +110,8 @@ struct MergeTreeWriterSettings
         bool rewrite_primary_key_,
         bool save_marks_in_cache_,
         bool save_primary_index_in_memory_,
-        bool blocks_are_granules_size_);
+        bool blocks_are_granules_size_,
+        bool try_adaptive_codec_);
 
     /// Maximum allowed value for compression block size settings.
     /// Prevents absurd memory allocations from fuzzed or misconfigured settings.
@@ -154,6 +157,7 @@ struct MergeTreeWriterSettings
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
     bool compress_per_column_in_compact_parts{};
+    bool apply_adaptive_codec = false;
 };
 
 }

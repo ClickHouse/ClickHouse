@@ -102,7 +102,7 @@ spec:
 </Note>
 
 マルチディスク (JBOD) レイアウトでの追加ディスクの接続、永続
-ボリュームなしでの実行、容量の拡張、カスタムストレージポリシー、および作成後に何を
+ボリュームなしでの実行、容量の拡張、カスタムストレージポリシー、保存時暗号化、および作成後に何を
 変更できないかに関するルールについては、専用の
 [ストレージとボリュームのガイド](/ja/products/kubernetes-operator/guides/storage)で説明しています。
 
@@ -185,18 +185,18 @@ spec:
   ## クラスター ドメイン
 </div>
 
-`spec.clusterDomain` は、オペレーターが ClickHouse server の設定に書き込む
-ポッドの完全修飾ホスト名を構築する際に使用する Kubernetes の DNS 接尾辞を設定します。
-既定値は `cluster.local` で、`ClickHouseCluster` と `KeeperCluster` の両方にあります。
+`spec.clusterDomain` は、オペレーター が ClickHouse server の
+設定に書き込む完全修飾のポッドホスト名を生成する際に使用する、Kubernetes の DNS 接尾辞を設定します。既定値は `cluster.local` で、
+`ClickHouseCluster` と `KeeperCluster` の両方にあります。
 
 ```yaml
 spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-オペレーターは、ヘッドレス Service 経由で各ポッドを
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` として参照します。この接尾辞は、
-生成される設定の次の 2 か所で使われます。
+The オペレーターは、ヘッドレス Service を通じてすべてのポッドに
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` の形式でアクセスします。この接尾辞は、生成される構成の
+2 つの箇所で使われます。
 
 * `ClickHouseCluster` では、この値が `remote_servers` 内のレプリカのホスト名に使用されます
   (レプリカ間および `Distributed` クエリ用) 。
@@ -204,11 +204,11 @@ spec:
   Keeper ノードのホスト名が組み立てられます。
 
 <Note>
-  これを上書きするのは、クラスターの `キューブレット` が `cluster.local` 以外の
-  `--cluster-domain` で実行されている場合だけにしてください。値が実際のクラスター
-  ドメインと一致しないと、ClickHouse は Keeper とレプリカのホスト名を名前解決
-  できず、協調および `Distributed` クエリが DNS 名前解決エラーで失敗します。
-  参照先の `KeeperCluster` と `ClickHouseCluster` の両方に、**同じ**値を設定してください。
+  これを override するのは、クラスターの `キューブレット` が `cluster.local` 以外の `--cluster-domain`
+  で実行されている場合だけにしてください。値が実際のクラスター ドメインと一致しないと、
+  ClickHouse は Keeper とレプリカのホスト名を解決できず、協調と
+  `Distributed` クエリは DNS 名前解決エラーで失敗します。参照先の
+  `KeeperCluster` と `ClickHouseCluster` の両方に、**同じ**値を設定してください。
 </Note>
 
 <div id="pod-configuration">
@@ -517,13 +517,14 @@ spec:
 
 Secret には、次のキーが含まれている必要があります。
 
-| Key                     | Format                                          | When required               |
-| ----------------------- | ----------------------------------------------- | --------------------------- |
-| `interserver-password`  | 平文のパスワード                                        | 常に必須                        |
-| `management-password`   | 平文のパスワード                                        | 常に必須                        |
-| `keeper-identity`       | `clickhouse:<password>`                         | 常に必須                        |
-| `cluster-secret`        | 平文のパスワード                                        | 常に必須                        |
-| `named-collections-key` | 16 バイトの AES 秘密鍵を 16 進数でエンコードしたもの (32 文字の 16 進数) | ClickHouse `>= 25.12` の場合のみ |
+| Key                     | Format                                          | When required                      |
+| ----------------------- | ----------------------------------------------- | ---------------------------------- |
+| `interserver-password`  | 平文のパスワード                                        | 常に必須                               |
+| `management-password`   | 平文のパスワード                                        | 常に必須                               |
+| `keeper-identity`       | `clickhouse:<password>`                         | 常に必須                               |
+| `cluster-secret`        | 平文のパスワード                                        | 常に必須                               |
+| `named-collections-key` | 16 バイトの AES 秘密鍵を 16 進数でエンコードしたもの (32 文字の 16 進数) | ClickHouse `>= 25.12` の場合のみ        |
+| `disk-encryption-key`   | 16 バイトの AES 秘密鍵を 16 進数でエンコードしたもの (32 文字の 16 進数) | `settings.encryption` が設定されている場合のみ |
 
 完全な Secret は次のようになります。
 
@@ -540,6 +541,7 @@ stringData:
   keeper-identity: "clickhouse:keeper-auth-password"
   cluster-secret: "cluster-internal-secret"
   named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+  disk-encryption-key: "00112233445566778899aabbccddeeff"     # only when settings.encryption is set
 ```
 
 <div id="external-secret-policy">
@@ -582,12 +584,12 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 | ------------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `ExternalSecretNotFound` | 参照先の Secret がネームスペース内に存在しません。                                                         | Secret を作成するか、`spec.externalSecret.name` を修正してください。 |
 | `ExternalSecretInvalid`  | Secret は存在しますが、必要なキーが不足しています (`Observe` の場合のみ) 。メッセージには、不足している各キーと想定されるフォーマットが表示されます。 | 不足しているキーを追加するか、`policy: Manage` に切り替えてください。         |
-| `ExternalSecretValid`    | 必要なキーがすべてそろっており、オペレーター がその Secret を使用しています。                                         | —                                                   |
+| `ExternalSecretValid`    | 必要なキーがすべてそろっており、オペレーター がその Secret を使用しています。                                           | —                                                   |
 
 Secret が無効な間、オペレーター はリコンサイルを再キューするため、不足しているキーを追加すれば、次回のリコンサイルで自動的に反映されます。ポッドを再起動する必要はありません。
 
 <Note>
-  必要なキーのセットは、実行中の ClickHouse のバージョンによって異なります。`named-collections-key` が検証されるのは、オペレーター の version probe が ClickHouse `25.12` 以降を検出した場合のみです。古いバージョンでは、このキーが Secret に含まれていなくても問題ありません。
+  必要なキーのセットは、実行中の ClickHouse のバージョンによって異なります。`named-collections-key` が検証されるのは、オペレーター の version probe が ClickHouse `25.12` 以降を検出した場合のみです。古いバージョンでは、このキーが Secret に含まれていなくても問題ありません。`disk-encryption-key` が必要になるのは、`spec.settings.encryption` が設定されている場合のみです。
 </Note>
 
 <div id="additional-ports">

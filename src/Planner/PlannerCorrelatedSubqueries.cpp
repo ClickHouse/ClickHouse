@@ -146,9 +146,9 @@ struct DecorrelationContext
     /// Equivalence classes stack for subqueries. Equivalence classes should not be propagated
     /// to the subqueries of the JOIN or UNION steps.
     std::vector<EquivalenceClasses<String>> equivalence_class_stack;
-    /// Whether the input subplan is referenced during decorrelation.
-    /// This is necessary to identify if in-memory buffer would be used.
-    bool referenced_input_subplan = false;
+    /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
+    /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
+    bool uses_in_memory_buffer = false;
 };
 
 /// Correlated subquery is represented by implicit dependent join operator.
@@ -207,8 +207,16 @@ QueryPlan decorrelateQueryPlan(
                 return result_plan;
             }
         }
-        /// JOIN reordering might be disabled in such case.
-        context.referenced_input_subplan = true;
+        /// Either context can be the one that builds the QueryPlanOptimizationSettings and creates the
+        /// buffer, so neither alone is authoritative: keep the protection when either would buffer.
+        auto would_buffer = [](const Settings & settings_to_check)
+        {
+            return settings_to_check[Setting::correlated_subqueries_use_in_memory_buffer]
+                && settings_to_check[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
+        };
+        const auto top_level_context = context.planner_context->getQueryContext();
+        context.uses_in_memory_buffer = would_buffer(settings)
+            || (top_level_context->hasQueryContext() && would_buffer(top_level_context->getQueryContext()->getSettingsRef()));
 
         QueryPlan lhs_plan = context.correlated_query_plan.extractSubplan(node);
         QueryPlan rhs_plan;
@@ -236,8 +244,23 @@ QueryPlan decorrelateQueryPlan(
         context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
         auto buffer_header = std::make_shared<Block>();
+        const auto & input_header = context.query_plan.getCurrentHeader();
         for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
-            buffer_header->insert(context.query_plan.getCurrentHeader()->getByName(column));
+        {
+            /// A nested correlated subquery may reference a column from a scope beyond its immediate
+            /// outer query (it skips an intermediate scope). Such a column is not present in the outer
+            /// query plan yet at this point, because decorrelation runs inside-out while the correlated
+            /// inputs of the intermediate scope are injected later. Reject this shape with a clear error
+            /// instead of failing deep inside with NOT_FOUND_COLUMN_IN_BLOCK.
+            if (!input_header->has(column))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Correlated subquery is not supported yet, because it references column '{}' from a "
+                    "scope beyond the immediate outer query. Current outer query header: {}",
+                    column,
+                    input_header->dumpNames());
+            buffer_header->insert(input_header->getByName(column));
+        }
 
         rhs_plan.addStep(std::make_unique<CommonSubplanReferenceStep>(
             buffer_header,
@@ -519,7 +542,7 @@ QueryPlan buildLogicalJoin(
     QueryPlan input_stream_plan,
     QueryPlan decorrelated_plan,
     const CorrelatedSubquery & correlated_subquery,
-    bool referenced_input_subplan
+    bool uses_in_memory_buffer
 )
 {
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
@@ -542,7 +565,12 @@ QueryPlan buildLogicalJoin(
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT)
+    /// A buffered referenced input (SaveSubqueryResultToBuffer / ReadFromCommonBuffer) requires the
+    /// reader to run after the writer finished, which only JoinKind::Right guarantees, so force it when
+    /// a buffer is created (the join kind does not change the result). Whether a buffer is created is
+    /// decided in decorrelateQueryPlan and passed in here, so the layout always matches the actual
+    /// buffer decision (issue #108521).
+    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT && !uses_in_memory_buffer)
     {
         std::swap(lhs_plan, rhs_plan);
         std::swap(lhs_plan_header, rhs_plan_header);
@@ -563,7 +591,7 @@ QueryPlan buildLogicalJoin(
         predicates.push_back(std::move(eq_node));
     }
 
-    auto join_kind_to_use = settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT ? JoinKind::Right : JoinKind::Left;
+    auto join_kind_to_use = (uses_in_memory_buffer || settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT) ? JoinKind::Right : JoinKind::Left;
 
     /// Add ANY OUTER JOIN
     auto result_join = std::make_unique<JoinStepLogical>(
@@ -579,12 +607,8 @@ QueryPlan buildLogicalJoin(
     result_join->setStepDescription("JOIN to generate result stream");
     makeInternalDecorrelationJoinUnbounded(*result_join);
 
-    /// Depending on correlated_subqueries_use_in_memory_buffer setting,
-    /// the RHS input stream can be buffered in memory.
-    /// In this case, we cannot reorder JOIN to ensure correlated subquery input
-    /// is evaluated before the subquery itself.
-    /// Do not disable reordering if the input subplan is not referenced (expression substitution happened).
-    if (referenced_input_subplan && settings[Setting::correlated_subqueries_use_in_memory_buffer] && join_kind_to_use == JoinKind::Right)
+    /// Reordering protection for the buffered case whose layout was forced to JoinKind::Right above.
+    if (uses_in_memory_buffer)
     {
         auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
         /// Remove algorithms that are not compatible with in-memory buffering
@@ -592,6 +616,11 @@ QueryPlan buildLogicalJoin(
         /// We must be sure that the input stream is fully evaluated
         /// before the correlated subquery is executed.
         std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
+        /// This JOIN is an internal decorrelation detail, so the user-facing `join_algorithm` list must not
+        /// decide whether it can run at all: with `auto` or a merge-only list nothing would survive the filter
+        /// and `chooseJoinAlgorithm` would throw `NOT_IMPLEMENTED`. Force the compatible algorithms instead.
+        if (join_algorithms.empty())
+            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
@@ -739,7 +768,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery,
-                context.referenced_input_subplan);
+                context.uses_in_memory_buffer);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
@@ -789,7 +818,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery,
-                context.referenced_input_subplan);
+                context.uses_in_memory_buffer);
             break;
         }
     }

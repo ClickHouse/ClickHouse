@@ -317,6 +317,43 @@ public:
             || which == Types::Decimal256;
     }
 
+    /// Whether values of the type are single scalar values with a plain value comparison, as opposed
+    /// to composite values (Array, Tuple, Map, Object — compared element-wise, where elements of
+    /// different types are ordered by type index rather than by value) and opaque values
+    /// (AggregateFunctionState, CustomType).
+    static bool isScalar(Types::Which which)
+    {
+        switch (which)
+        {
+            case Types::Null:
+            case Types::UInt64:
+            case Types::Int64:
+            case Types::Float64:
+            case Types::UInt128:
+            case Types::Int128:
+            case Types::String:
+            case Types::Decimal32:
+            case Types::Decimal64:
+            case Types::Decimal128:
+            case Types::Decimal256:
+            case Types::UInt256:
+            case Types::Int256:
+            case Types::UUID:
+            case Types::Bool:
+            case Types::IPv4:
+            case Types::IPv6:
+                return true;
+            case Types::Array:
+            case Types::Tuple:
+            case Types::Map:
+            case Types::Object:
+            case Types::CustomType:
+            case Types::AggregateFunctionState:
+                return false;
+        }
+        UNREACHABLE();
+    }
+
     Field() : Field(Null{}) {}
 
     /** Despite the presence of a template constructor, this constructor is still needed,

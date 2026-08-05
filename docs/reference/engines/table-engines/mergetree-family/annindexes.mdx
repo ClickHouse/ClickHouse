@@ -7,6 +7,8 @@ title: 'Exact and Approximate Vector Search'
 doc_type: 'guide'
 ---
 
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, in short: vector search.
 Two general approaches exist for solving vector search:
 - Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
@@ -23,7 +25,8 @@ ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
 
-The points in the vector space are stored in a column `vectors` of array type, e.g. [Array(Float64)](/reference/data-types/array), [Array(Float32)](/reference/data-types/array), or [Array(BFloat16)](/reference/data-types/array).
+The points in the vector space are stored in a column `vectors` of type [Array(Float64)](/reference/data-types/array), [Array(Float32)](/reference/data-types/array), or [Array(BFloat16)](/reference/data-types/array).
+For practical usage, we generally recommend using [BFloat16](/reference/data-types/float) arrays.
 The reference vector is a constant array and given as a common table expression.
 `<DistanceFunction>` computes the distance between the reference point and all stored points.
 Any of the available [distance function](/reference/functions/regular-functions/distance-functions) can be used for that.
@@ -32,13 +35,19 @@ Any of the available [distance function](/reference/functions/regular-functions/
 ## Exact vector search {#exact-nearest-neighbor-search}
 
 An exact vector search can be performed using above SELECT query as is.
-The runtime of such queries is generally proportional to the number of stored vectors and their dimension, i.e. the number of array elements.
-Also, since ClickHouse performs a brute-force scan of all vectors, the runtime depends also on the number of threads by the query (see setting [max_threads](/reference/settings/session-settings#max_threads)).
+The runtime of such queries is generally proportional to the number of stored vectors, the number of vector elements (= the dimension), and the bit width of the vector elements.
+Also, since ClickHouse performs a brute-force scan of all vectors, the runtime depends also on the number of threads by the query (see setting [max_threads](/reference/settings/session-settings/max-threads#max_threads)).
 
 ### Example {#exact-nearest-neighbor-search-example}
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16)
+)
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
@@ -77,9 +86,9 @@ A vector similarity index can be created on a new table like this:
 ```sql
 CREATE TABLE table
 (
-  [...],
-  vectors Array(Float*),
-  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
+    [...],
+    vectors Array([Float64|Float32|BFloat16]),
+    INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -127,9 +136,9 @@ If HNSW is used as type, users may optionally specify further HNSW-specific para
 ```sql
 CREATE TABLE table
 (
-  [...],
-  vectors Array(Float*),
-  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
+    [...],
+    vectors Array([Float64|Float32|BFloat16]),
+    INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -194,7 +203,7 @@ Above formula does not account for additional memory required by vector similari
 #### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
 <Note>
-To use vector similarity indexes, setting [compatibility](/reference/settings/session-settings) has be `''` (the default value), or `'25.1'` or newer.
+To use vector similarity indexes, setting [compatibility](/reference/settings/session-settings/compatibility#compatibility) has be `''` (the default value), or `'25.1'` or newer.
 </Note>
 
 Vector similarity indexes support SELECT queries of this form:
@@ -211,12 +220,12 @@ LIMIT <N>
 ClickHouse's query optimizer tries to match above query template and make use of available vector similarity indexes.
 A query can only use a vector similarity index if the distance function in the SELECT query is the same as the distance function in the index definition.
 
-Advanced users may provide a custom value for setting [hnsw_candidate_list_size_for_search](/reference/settings/session-settings#hnsw_candidate_list_size_for_search) (also know as HNSW hyperparameter "ef_search") to tune the size of the candidate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+Advanced users may provide a custom value for setting [hnsw_candidate_list_size_for_search](/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (also know as HNSW hyperparameter "ef_search") to tune the size of the candidate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
 The default value of the setting 256 works well in the majority of use cases.
 Higher setting values mean better accuracy at the cost of slower performance.
 
 If the query can use a vector similarity index, ClickHouse checks that the LIMIT `<N>` provided in SELECT queries is within reasonable bounds.
-More specifically, an error is returned if `<N>` is bigger than the value of setting [max_limit_for_vector_search_queries](/reference/settings/session-settings#max_limit_for_vector_search_queries) with default value 100.
+More specifically, an error is returned if `<N>` is bigger than the value of setting [max_limit_for_vector_search_queries](/reference/settings/session-settings/max#max_limit_for_vector_search_queries) with default value 100.
 Too large LIMIT values can slow down searches and usually indicate a usage error.
 
 To check if a SELECT query uses a vector similarity index, you can prefix the query with `EXPLAIN indexes = 1`.
@@ -263,7 +272,7 @@ In this case, the vector similarity index dropped two of four granules, i.e. 50%
 The more granules can be dropped, the more effective index usage becomes.
 
 <Tip>
-To enforce index usage, you can run the SELECT query with setting [force_data_skipping_indexes](/reference/settings/session-settings#force_data_skipping_indices) (provide the index name as setting value).
+To enforce index usage, you can run the SELECT query with setting [force_data_skipping_indices](/reference/settings/session-settings/force#force_data_skipping_indices) (provide the index name as setting value).
 </Tip>
 
 **Post-filtering and Pre-filtering**
@@ -315,7 +324,7 @@ In such cases, the vector similarity index is evaluated first as it is expected 
 
 For finer control over post-filtering vs. pre-filtering, two settings can be used:
 
-Setting [vector_search_filter_strategy](/reference/settings/session-settings#vector_search_filter_strategy) (default: `auto` which implements above heuristics) may be set to `prefilter`.
+Setting [vector_search_filter_strategy](/reference/settings/session-settings/vector-search#vector_search_filter_strategy) (default: `auto` which implements above heuristics) may be set to `prefilter`.
 This is useful to force pre-filtering in cases where the additional filter conditions are extremely selective.
 As an example, the following query may benefit from pre-filtering:
 
@@ -330,7 +339,7 @@ LIMIT 10
 Assuming that only a very small number of books cost less than 2 dollar, post-filtering may return zero rows because the top 10 matches returned by the vector index could all be priced above 2 dollar.
 By forcing pre-filtering (add `SETTINGS vector_search_filter_strategy = 'prefilter'` to the query), ClickHouse first finds all books with a price of less than 2 dollar and then executes a brute-force vector search for the found books.
 
-As an alternative approach to resolve above issue, setting [vector_search_index_fetch_multiplier](/reference/settings/session-settings#vector_search_index_fetch_multiplier) (default: `1.0`, maximum: `1000.0`) may be configured to a value > `1.0` (for example, `2.0`).
+As an alternative approach to resolve above issue, setting [vector_search_index_fetch_multiplier](/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier) (default: `1.0`, maximum: `1000.0`) may be configured to a value > `1.0` (for example, `2.0`).
 The number of nearest neighbors fetched from the vector index is multiplied by the setting value and then the additional filter to be applied on those rows to return LIMIT-many rows.
 As an example, we can query again but with multiplier `3.0`:
 
@@ -358,7 +367,7 @@ This step is called rescoring and can improve accuracy, especially with quantize
 If additional filters remove too many candidates or more recall is needed, increase setting `vector_search_index_fetch_multiplier` so the vector index returns more candidate rows for rescoring.
 
 ClickHouse therefore provides an optimization which disables rescoring and returns the most similar vectors and their distances directly from the index.
-The optimization is enabled by default, see setting [vector_search_with_rescoring](/reference/settings/session-settings#vector_search_with_rescoring).
+The optimization is enabled by default, see setting [vector_search_with_rescoring](/reference/settings/session-settings/vector-search#vector_search_with_rescoring).
 The way it works at a high level is that ClickHouse makes the most similar vectors and their distances available as a virtual column `_distance`.
 To see this, run a vector search query with `EXPLAIN header = 1`:
 
@@ -375,22 +384,22 @@ SETTINGS vector_search_with_rescoring = 0
 ```result
 Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 
-    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────┐
- 1. │ Expression (Project names)                                                                              │
- 2. │ Header: id Int32                                                                                        │
- 3. │   Limit (preliminary LIMIT (without OFFSET))                                                            │
- 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64     │
- 5. │           __table1.id Int32                                                                             │
- 6. │     Sorting (Sorting for ORDER BY)                                                                      │
- 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64   │
- 8. │             __table1.id Int32                                                                           │
- 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))         │
-10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64 │
-11. │               __table1.id Int32                                                                         │
-12. │         ReadFromMergeTree (default.tab)                                                                 │
-13. │         Header: id Int32                                                                                │
-14. │                 _distance Float32                                                                       │
-    └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression (Project names)                                                                                 │
+ 2. │ Header: id Int32                                                                                           │
+ 3. │   Limit (preliminary LIMIT (without OFFSET))                                                               │
+ 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16     │
+ 5. │           __table1.id Int32                                                                                │
+ 6. │     Sorting (Sorting for ORDER BY)                                                                         │
+ 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16   │
+ 8. │             __table1.id Int32                                                                              │
+ 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))            │
+10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16 │
+11. │               __table1.id Int32                                                                            │
+12. │         ReadFromMergeTree (default.tab)                                                                    │
+13. │         Header: id Int32                                                                                   │
+14. │                 _distance BFloat16                                                                         │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <Note>
@@ -407,7 +416,13 @@ We therefore recommend to disable compression.
 To do that, specify `CODEC(NONE)` for the vector column like this:
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16) CODEC(NONE),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id;
 ```
 
 **Tuning index creation**
@@ -421,14 +436,14 @@ Vector similarity indexes are ideally only used if the data is immutable or rare
 To speed up index creation, the following techniques can be used:
 
 First, index creation can be parallelized.
-The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](/reference/settings/server-settings/settings#max_build_vector_similarity_index_thread_pool_size).
+The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size).
 For optimal performance, the setting value should be configured to the number of CPU cores.
 
-Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](/reference/settings/session-settings#materialize_skip_indexes_on_insert).
+Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert).
 SELECT queries on such parts will fall back to exact search.
 Since inserted parts tend to be small compared to the total table size, the performance impact of that is expected to be negligible.
 
-Third, to speed up merges, users may disable the creation of skipping indexes on merged parts using session setting [materialize_skip_indexes_on_merge](/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge).
+Third, to speed up merges, users may disable the creation of skipping indexes on merged parts using session setting [materialize_skip_indexes_on_merge](/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge).
 This, in conjunction with statement [ALTER TABLE \[...\] MATERIALIZE INDEX \[...\]](/reference/statements/alter/skipping-index#materialize-index), provides explicit control over the life cycle of vector similarity indexes.
 For example, index creation can be deferred until all data was ingested or until a period of low system load such as the weekend.
 
@@ -437,7 +452,7 @@ For example, index creation can be deferred until all data was ingested or until
 SELECT queries need to load vector similarity indexes into main memory to use them.
 To avoid that the same vector similarity index is loaded repeatedly into main memory, ClickHouse provides a dedicated in-memory cache for such indexes.
 The bigger this cache is, the fewer unnecessary loads will happen.
-The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](/reference/settings/server-settings/settings#vector_similarity_index_cache_size).
+The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
 By default, the cache can grow up to 5 GB in size.
 
 The following log messages (`system.text_log`) indicate that the vector similarity index is being loaded.
@@ -497,7 +512,7 @@ Quantization reduces the precision of vector searches compared to searching the 
 However, on most datasets, half-precision brain float quantization (`bf16`) results in a negligible precision loss, therefore vector similarity indexes use this quantization technique by default.
 Quarter precision (`i8`) and binary (`b1`) quantization causes appreciable precision loss in vector searches.
 We recommend both quantizations only if the size of the vector similarity index is significantly larger than the available DRAM size.
-In this case, we also suggest enabling rescoring ([vector_search_index_fetch_multiplier](/reference/settings/session-settings#vector_search_index_fetch_multiplier), [vector_search_with_rescoring](/reference/settings/session-settings#vector_search_with_rescoring)) to improve accuracy.
+In this case, we also suggest enabling rescoring ([vector_search_index_fetch_multiplier](/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier), [vector_search_with_rescoring](/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) to improve accuracy.
 Binary quantization is only recommended for 1) normalized embeddings (i.e. vector length = 1, OpenAI models are usually normalized), and 2) if the cosine distance is used as distance function.
 Binary quantization internally uses the Hamming distance to construct and search the proximity graph.
 The rescoring step uses the original full-precision vectors stored in the table to identify the nearest neighbours via cosine distance.
@@ -591,7 +606,14 @@ If no `GRANULARITY` was specified for vector similarity indexes, the default val
 Queries:
 
 ```sql title="Query"
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)
+)
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
@@ -618,31 +640,39 @@ Further example datasets that use approximate vector search:
 
 ### Vector search with quantized codecs {#vector-search-with-quantized-codecs}
 
-<Note>
-The `Quantized` codec is experimental. Enable it with `SET allow_experimental_codecs = 1`.
-If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
-</Note>
+<ExperimentalBadge/>
+
+To enable the `Quantized` codec, enable `SET allow_experimental_codecs = 1` first.
+In case you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 
 #### Introduction {#quantized-codecs-introduction}
 
 A [vector similarity index](#vector-similarity-index) answers a nearest-neighbor query by traversing a graph and performs very well when the graph can be held in memory.
 Two conditions limit its applicability:
 
-- **Scale.** The time to build the graph and the memory required to store it — in addition to the vectors themselves — become the dominant cost.
-- **Filtering.** Under a selective `WHERE` filter, graph traversal becomes ineffective, because it either cannot reach the small set of rows that satisfy the predicate or must inspect a disproportionate number of candidates to locate them.
+- **High construction costs.** Building vector similarity indexes is an expensive process.
+- **High memory consumption.** Vector similarity indexes consume a significant amount of memory which, in addition to the vectors themselves, become the dominant cost.
+- **Filtering.** With a selective `WHERE` filter, graph traversal becomes ineffective, because it either cannot reach the small set of rows that satisfy the predicate or must inspect a disproportionate number of candidates to locate them.
 
-An exhaustive scan is subject to neither limitation: it requires no auxiliary structure, parts merge by concatenation, and a filter simply reduces the number of rows to be scanned.
-Its single disadvantage is the volume of data it must read: a scan over vectors stored at full `Float32` precision is dominated by storage I/O, because the entire vector column has to be read from disk (or object storage) — for a dense embedding column that is the largest column in the table, and it compresses poorly.
+An exhaustive scan is subject to neither limitation: it requires no auxiliary data structure, parts merge naturally by concatenating them, and filtering simply reduces the number of rows to be scanned.
+The biggest disadvantage of exhaustive scans is that that large volume of data that must read: a scan over vectors stored at full `Float32` or `BFloat16` precision is dominated by storage I/O because the entire vector column has to be loaded from disk.
 
 The `Quantized` column codec addresses this disadvantage.
-Each vector is stored twice: the original full-precision values, unchanged, together with a compact *quantized code* in a companion stream.
-A vector-search query first scans the codes using an inexpensive, SIMD-friendly distance function to assemble a shortlist of the most promising candidates, and then re-ranks that shortlist against the full-precision vectors.
-Because a code is a fraction of the size of the raw vector, the shortlist scan reads far fewer bytes from storage — and touches the full-precision column only for the handful of shortlisted candidates — while the final ranking remains accurate.
+It stores each vector twice: the original full-precision values, as well as a compact quantized representation.
+A vector-search query then first scans the quantized codes using an inexpensive and SIMD-friendly distance function to build a shortlist of the most promising result candidates.
+In a second step, it re-ranks these candidates against the full-precision vectors.
+The initial scan over the quantized codes reads far fewer bytes from storage than a scan over the original vectors would do.
 
-#### Declaring the codec {#quantized-codecs-declaring}
+The codec is a good fit for ClickHouse because the expensive part (the scan) is exactly what the ClickHouse engine is built to do well:
 
-Attach a `Quantized(...)` codec to an `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)`) column.
-The codec is experimental, so enable `allow_experimental_codecs` first:
+- **Vectorized.** The scan kernels utilize SIMD instructions to reduce CPU consumption.
+- **Parallel across cores and parts.** A scan is parallel trivially: the distances are computed across all available threads and over all parts of a table at once.
+- **Distributed.** On a sharded cluster, the work fans out across machines - each shard scans its own slice in parallel and the coordinator merges the shortlists.
+- **No additional construction costs.** The quantized codes are produced as the vectors are written. There is no additional index to construct, tune, or rebuild, so a table is ready to search as soon as its data lands.
+
+#### Applying the codec {#quantized-codecs-declaring}
+
+Specify the `Quantized(...)` codec for the `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)`) column.
 
 ```sql
 SET allow_experimental_codecs = 1;
@@ -650,17 +680,18 @@ SET allow_experimental_codecs = 1;
 CREATE TABLE vectors
 (
     id UInt32,
-    vec Array(Float32) CODEC(Quantized('rabitq', 1536))
+    vec Array(BFloat16) CODEC(Quantized('rabitq', 1536))
 )
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree
+ORDER BY ...;
 ```
 
-The full-precision data is stored as usual; the codec only adds the companion code stream.
-The codec is fixed at table creation and cannot be added or changed with `ALTER TABLE`.
+The codec cannot be added or changed later using `ALTER TABLE`.
 
 #### Quantization methods {#quantized-codecs-methods}
 
-Each method is a different point on the size / accuracy / metric trade-off. The `dimensions` argument is the vector length.
+Each quantization method has different size/accuracy trade-offs.
+The `dimensions` argument is the vector length.
 
 - `Quantized('rabitq', dimensions)` — one sign bit per coordinate plus an unbiased cosine-correction factor (`dimensions/8 + 4` bytes). A small, `popcount`-cheap, strong default. `cosineDistance` only.
 - `Quantized('turboquant', dimensions)` — two bits per coordinate (a 1-bit MSE code and a 1-bit residual code) for higher-fidelity candidates (`dimensions/4 + 4` bytes). `cosineDistance` only.
@@ -670,12 +701,12 @@ Each method is a different point on the size / accuracy / metric trade-off. The 
 
 `rabitq` and `turboquant` require `dimensions` to be a multiple of 8.
 
-#### Searching transparently {#quantized-codecs-searching}
+#### Using the codec {#quantized-codecs-searching}
 
-There is no special query syntax — write the same top-`k` query you would use for [exact search](#exact-nearest-neighbor-search):
+The codec is automatically employed by the usual top-`k` query shape (see [exact search](#exact-nearest-neighbor-search)):
 
 ```sql
-WITH [/* reference vector of `dimensions` floats */] AS reference_vec
+WITH [...] AS reference_vec
 SELECT id
 FROM vectors
 ORDER BY cosineDistance(vec, reference_vec) ASC
@@ -683,27 +714,14 @@ LIMIT 10
 SETTINGS vector_search_use_quantized_codes = 1;
 ```
 
-With `vector_search_use_quantized_codes = 1`, the optimizer rewrites the query into the two-stage plan automatically: it scans the quantized codes to collect a shortlist, then rescores the shortlist against the full-precision `vec`.
-The setting is off by default, so without it the same query runs as a plain exact scan — the codec never changes results, it only offers a faster path when you opt in.
-Use a distance function the chosen method supports: `cosineDistance` for all methods, `L2Distance` additionally for `int8`, `prefix` and `product`.
+Setting `vector_search_use_quantized_codes = 1` lets the optimizer rewrite the query into a two-phase scan.
+The setting is off by default.
+Without it, the same query runs as a regular exact scan against the original vectors.
+All methods support distance function `cosineDistance`, methods `int8`, `prefix` and `product` additionally support `L2Distance` as distance function.
 
-#### Settings {#quantized-codecs-settings}
-
-- `allow_experimental_codecs` — must be enabled to declare a `Quantized` codec (default: `0`).
-- `vector_search_use_quantized_codes` — enable the two-stage shortlist-and-rescore rewrite (default: `0`). When off, matching queries scan the full-precision vectors exactly.
-- `vector_search_index_fetch_multiplier` — how many candidates to shortlist relative to the query's `LIMIT`: the scan keeps the top `LIMIT × multiplier` codes before rescoring. Larger values improve recall at the cost of more rescoring. The default is `1` (no oversampling), so raising it — for example to `10` or more — is usually needed for good recall.
-
-#### Built for scale {#quantized-codecs-built-for-scale}
-
-The codec is a good fit for ClickHouse because the expensive part — the scan — is exactly what the ClickHouse engine is built to do well:
-
-- **Vectorized.** The scan kernels are written for SIMD, with runtime dispatch to the widest instructions the CPU supports: a hardware `popcount` for the sign-code methods (`rabitq`, `turboquant`) and wide fused-multiply-add for the others.
-- **Parallel across cores and parts.** A flat scan is trivially parallel, and ClickHouse treats it as such: distances are computed across all available threads and over all parts of a table at once, with only the final top-`k` merge serialized.
-- **Distributed.** On a sharded cluster the work fans out across machines — each shard scans its own slice in parallel and the coordinator merges the shortlists.
-- **Columnar and filter-friendly.** The quantized codes occupy their own column, compressed and read through the same I/O path as every other column, so a selective `WHERE` simply leaves fewer codes to scan.
-- **No separate build step.** The codes are produced as the vectors are written and merge by concatenation — there is no index to construct, tune, or rebuild, so a table is ready to search as soon as its data lands.
-
-The codes are only ever a candidate generator; the full-precision column, retained in place, provides the final accurate ranking.
+Setting `vector_search_index_fetch_multiplier` specifies how many candidates are shortlisted relative to the query's `LIMIT`.
+Larger multipliers improve recall at the cost of more rescoring.
+The default is `1` (no oversampling), raising it (for example to `10`) is usually needed for good recall.
 
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 

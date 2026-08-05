@@ -225,7 +225,7 @@ struct PatternInfo
     bool allRegexpsHaveNoEmbeddedNul() const
     {
         for (const auto & p : patterns)
-            if (p.regexp.find('\0') != String::npos)
+            if (p.regexp.contains('\0'))
                 return false;
         return true;
     }

@@ -36,9 +36,7 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
 <Tabs>
   <Tab title="Docker">
     <Steps>
-      <Step>
-        ### 启动 ClickHouse
-
+      <Step title="启动 ClickHouse" id="start-clickhouse-docker">
         拉取并运行 ClickHouse 服务器镜像，并设置密码：
 
         ```shell
@@ -56,9 +54,7 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
         </Tip>
       </Step>
 
-      <Step>
-        ### 打开 ClickStack UI
-
+      <Step title="打开 ClickStack UI" id="open-clickstack-ui-docker">
         在浏览器中打开 [http://localhost:8123](http://localhost:8123)，然后点击 **ClickStack**。
 
         输入用户名 `default` 和密码 `password`，连接到本地实例。
@@ -66,9 +62,7 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
         <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="身份验证" size="lg" />
       </Step>
 
-      <Step>
-        ### 创建数据源
-
+      <Step title="创建数据源" id="create-a-source-docker">
         如果你已有 OpenTelemetry 表，ClickStack 会检测到它们并自动创建数据源。
 
         在全新安装中，系统会提示你创建数据源。请在 **Table** 字段中填写相应的表名 (例如 `otel_logs`) ，然后点击 **Save New Source**。
@@ -82,9 +76,7 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
 
   <Tab title="Binary">
     <Steps>
-      <Step>
-        ### 启动 ClickHouse
-
+      <Step title="启动 ClickHouse" id="start-clickhouse-binary">
         下载并启动 ClickHouse：
 
         ```shell
@@ -139,15 +131,11 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
         ```
       </Step>
 
-      <Step>
-        ### 打开 ClickStack UI
-
+      <Step title="打开 ClickStack UI" id="open-clickstack-ui-binary">
         在浏览器中打开 [http://localhost:8123](http://localhost:8123)，然后点击 **ClickStack**。系统会自动创建到本地实例的连接。
       </Step>
 
-      <Step>
-        ### 创建数据源
-
+      <Step title="创建数据源" id="create-a-source-binary">
         如果你已有 OpenTelemetry 表，ClickStack 会检测到它们并自动创建数据源。
 
         如果你还没有数据，请参阅 [摄取数据](/zh/clickstack/ingesting-data/index) 了解可用选项。
@@ -162,9 +150,9 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
   ## 后续步骤
 </div>
 
-如果你已准备好结束评估并进入下一阶段，可以考虑以下适用于生产环境的部署方式：
+如果你已准备好从评估转向正式使用，可以考虑以下适用于生产环境的部署方式：
 
 * [All-in-One](/zh/clickstack/deployment/all-in-one) — 单容器方案，包含所有组件，并支持持久化和身份验证
-* [Docker Compose](/zh/clickstack/deployment/docker-compose) — 各组件独立部署，便于进行更精细的控制
-* [Helm](/zh/clickstack/deployment/helm) — 推荐用于生产环境的 Kubernetes 部署
-* [托管 ClickStack](/zh/clickstack/getting-started/managed) — 在 ClickHouse Cloud 上完全托管
+* [Docker Compose](/zh/clickstack/deployment/docker-compose) — 各组件独立部署，便于获得更高的控制度
+* [Helm](/zh/clickstack/deployment/helm) — 推荐用于生产环境中的 Kubernetes 部署
+* [Managed ClickStack](/zh/clickstack/getting-started/managed) — 在 ClickHouse Cloud 上的全托管方案

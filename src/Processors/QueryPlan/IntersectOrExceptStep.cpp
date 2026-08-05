@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
@@ -19,6 +20,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+static bool containsAggregateStateColumn(const IColumn & column)
+{
+    if (typeid_cast<const ColumnAggregateFunction *>(&column))
+        return true;
+
+    bool found = false;
+    column.forEachSubcolumn([&](const auto & subcolumn) { found = found || containsAggregateStateColumn(*subcolumn); });
+    return found;
 }
 
 static SharedHeader checkHeaders(const SharedHeaders & input_headers)
@@ -58,6 +69,17 @@ static SharedHeader checkHeaders(const SharedHeaders & input_headers)
     {
         if (!common[col].column || !isColumnConst(*common[col].column))
             continue;
+
+        /// Aggregate-state values cannot be compared as `Field`: the comparison throws when the
+        /// aggregate function type names differ, and they may legitimately differ between branches
+        /// when the functions have the same state representation (e.g. `quantileState` and
+        /// `quantilesState(0.9)`). Don't keep constness for them, materialize instead.
+        if (containsAggregateStateColumn(assert_cast<const ColumnConst &>(*common[col].column).getDataColumn()))
+        {
+            common[col].column = common[col].column->convertToFullColumnIfConst();
+            materialized = true;
+            continue;
+        }
 
         const Field value = assert_cast<const ColumnConst &>(*common[col].column).getField();
         bool keep_const = true;

@@ -51,6 +51,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
+    extern const SettingsBool throw_on_hive_partitioning_resolution_failure;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -241,9 +242,12 @@ StorageObjectStorage::StorageObjectStorage(
     else
         validateSupportedColumns(columns, *configuration);
 
-    /// FIXME: We need to call getPathSample() lazily on select
-    /// in case it failed to be initialized in constructor.
-    if (updated_configuration && sample_path.empty() && need_resolve_sample_path && !configuration->partition_strategy)
+    /// Resolving the sample path requires listing the object storage. Defer it to the first use
+    /// of the table, so that CREATE, ATTACH and server startup do not depend on the endpoint.
+    hive_partitioning_sample_path_deferred = !is_table_function && need_resolve_sample_path && !need_resolve_columns_or_format;
+
+    if (updated_configuration && sample_path.empty() && need_resolve_sample_path
+        && !hive_partitioning_sample_path_deferred && !configuration->partition_strategy)
     {
         try
         {
@@ -334,14 +338,22 @@ StorageObjectStorage::StorageObjectStorage(
     if (configuration->partition_strategy)
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
 
+    metadata.setVirtuals(createVirtualColumns(metadata.columns, sample_path, context));
+
+    setInMemoryMetadata(metadata);
+}
+
+VirtualColumnsDescription StorageObjectStorage::createVirtualColumns(
+    ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const
+{
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        metadata.columns,
+        columns,
         context,
         format_settings,
         configuration->partition_strategy_type,
         sample_path);
 
-    if (configuration->getType() == ObjectStorageType::Web && !metadata.getColumns().has("_headers"))
+    if (configuration->getType() == ObjectStorageType::Web && !columns.has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
             "_headers",
@@ -352,9 +364,7 @@ StorageObjectStorage::StorageObjectStorage(
             VirtualsMaterializationPlace::Reader);
     }
 
-    metadata.setVirtuals(virtual_columns_desc);
-
-    setInMemoryMetadata(metadata);
+    return virtual_columns_desc;
 }
 
 String StorageObjectStorage::getName() const
@@ -432,10 +442,82 @@ configuration->update(object_storage, query_context);
     return configuration->getExternalMetadata();
 }
 
+void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context)
+{
+    if (!hive_partitioning_sample_path_deferred)
+        return;
+
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+    if (hive_partitioning_sample_path_resolved)
+        return;
+
+    /// Listing the storage happens on behalf of the triggering query, so it must use its context.
+    /// Rebuilding the client with any other one would ignore that session's credential restriction.
+    auto access_context = Context::createCopy(query_context);
+    access_context->setSetting("use_hive_partitioning", true);
+
+    /// The resulting column types are shared by every session, so infer them from the server
+    /// settings instead of the ones of whichever query happens to resolve the table first.
+    auto inference_context = Context::createCopy(Context::getGlobalContextInstance());
+    inference_context->setSetting("use_hive_partitioning", true);
+
+    std::string sample_path;
+    try
+    {
+        configuration->update(object_storage, access_context);
+        sample_path = getPathSample(access_context);
+    }
+    catch (...)
+    {
+        /// A query running without hive partitioning may silently return different results.
+        if (query_context->getSettingsRef()[Setting::throw_on_hive_partitioning_resolution_failure])
+            throw;
+
+        /// An endpoint failure degrades only the triggering query and is retried by the next one.
+        LOG_WARNING(
+            log,
+            "Failed to list object storage, cannot use hive partitioning. "
+            "Error: {}",
+            getCurrentExceptionMessage(true));
+        return;
+    }
+
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *current_metadata;
+
+    /// Errors thrown below stay unresolved on purpose, so they are reported until they go away.
+    auto [new_hive_partition_columns, new_file_columns] = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+        new_metadata.columns,
+        configuration,
+        sample_path,
+        /* inferred_schema */ false,
+        format_settings,
+        inference_context);
+
+    if (!new_metadata.columns.empty() && new_file_columns.empty())
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
+            sample_path);
+    }
+
+    hive_partition_columns_to_read_from_file_path = std::move(new_hive_partition_columns);
+    file_columns = std::move(new_file_columns);
+
+    new_metadata.setVirtuals(createVirtualColumns(new_metadata.columns, sample_path, inference_context));
+    setInMemoryMetadata(new_metadata);
+
+    hive_partitioning_sample_path_resolved = true;
+}
+
 void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
     if (!configuration->isDataLakeConfiguration())
+    {
+        /// Called before query analysis, so the hive virtual columns are visible to the triggering query.
+        resolveHivePartitioningSamplePathIfDeferred(query_context);
         return;
+    }
 
     /// Always force an update to pick up the latest snapshot version.
     /// Using if_not_updated_before=true would leave latest_snapshot_version
@@ -506,6 +588,9 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    /// Some paths bypass updateExternalDynamicMetadataIfExists and reach read with the resolution pending.
+    resolveHivePartitioningSamplePathIfDeferred(local_context);
+
     auto storage_snapshot = storage_snapshot_;
 
     /// Test-only: emulate a snapshot that reached the read step without the pinned
@@ -932,6 +1017,9 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
+    /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);

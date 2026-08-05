@@ -631,10 +631,14 @@ std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context,
 {
     auto settings = getRequestSettings(context->getSettingsRef());
 
+    settings->use_native_copy = use_native_copy;
+
+    /// A configured endpoint takes priority over the backup setting, ...
     auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
     if (endpoint_settings)
         settings->use_native_copy = endpoint_settings->use_native_copy;
 
+    /// ... except that the backup setting can always veto native copy.
     if (!use_native_copy)
         settings->use_native_copy = false;
 

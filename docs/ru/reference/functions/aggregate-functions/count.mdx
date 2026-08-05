@@ -37,7 +37,7 @@ ClickHouse поддерживает синтаксис `COUNT(DISTINCT ...)`.
 <Tip>
   **Повышение производительности COUNT(DISTINCT expr)**
 
-  Если запрос `COUNT(DISTINCT expr)` выполняется медленно, попробуйте добавить [`GROUP BY`](/ru/reference/statements/select/group-by), так как это улучшает распараллеливание.
+  Если запрос `COUNT(DISTINCT expr)` выполняется медленно, попробуйте добавить предложение [`GROUP BY`](/ru/reference/statements/select/group-by), так как это улучшает распараллеливание.
   Также можно использовать [projection](/ru/reference/statements/alter/projection), чтобы создать индекс для целевого столбца, используемого в `COUNT(DISTINCT target_col)`.
 </Tip>
 
@@ -72,7 +72,7 @@ SELECT count() FROM t
 **Пример COUNT(DISTINCT)**
 
 ```sql title=Query
--- В этом примере показано, что `count(DISTINCT num)` выполняется функцией `uniqExact` в соответствии со значением настройки `count_distinct_implementation`.
+-- This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation';
 SELECT count(DISTINCT num) FROM t
 ```

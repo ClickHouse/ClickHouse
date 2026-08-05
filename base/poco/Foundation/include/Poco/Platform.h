@@ -86,6 +86,10 @@
 #elif defined(sun) || defined(__sun)
 #    define POCO_OS_FAMILY_UNIX 1
 #    define POCO_OS POCO_OS_SOLARIS
+#elif defined(__wasi__) || defined(__wasm__)
+/// WebAssembly. Only the parts of Poco that do not touch the OS are expected to build.
+#    define POCO_OS_FAMILY_UNIX 1
+#    define POCO_OS POCO_OS_UNKNOWN_UNIX
 #elif defined(unix) || defined(__unix) || defined(__unix__)
 #    define POCO_OS_FAMILY_UNIX 1
 #    define POCO_OS POCO_OS_UNKNOWN_UNIX
@@ -122,6 +126,7 @@
 #define POCO_ARCH_RISCV64 0x10
 #define POCO_ARCH_LOONGARCH64 0x12
 #define POCO_ARCH_E2K 0x13
+#define POCO_ARCH_WASM 0x14
 
 
 #if defined(__ALPHA) || defined(__alpha) || defined(__alpha__) || defined(_M_ALPHA)
@@ -216,6 +221,9 @@
 #    define POCO_ARCH_LITTLE_ENDIAN 1
 #elif defined(__e2k__)
 #    define POCO_ARCH POCO_ARCH_E2K
+#    define POCO_ARCH_LITTLE_ENDIAN 1
+#elif defined(__wasm__)
+#    define POCO_ARCH POCO_ARCH_WASM
 #    define POCO_ARCH_LITTLE_ENDIAN 1
 #endif
 

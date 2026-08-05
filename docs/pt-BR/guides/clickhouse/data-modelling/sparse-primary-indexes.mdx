@@ -311,7 +311,7 @@ As linhas inseridas são armazenadas em disco em ordem lexicográfica (crescente
   O ClickHouse permite inserir várias linhas com valores idênticos nas colunas da chave primária. Nesse caso (veja a linha 1 e a linha 2 no diagrama abaixo), a ordem final é determinada pela chave de ordenação especificada e, portanto, pelo valor da coluna `EventTime`.
 </Note>
 
-O ClickHouse é um <a href="/pt-BR/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">sistema de gerenciamento de banco de dados orientado a colunas</a>. Como mostrado no diagrama abaixo
+O ClickHouse é um <a href="/pt-BR/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">sistema de gerenciamento de banco de dados orientado a colunas</a>. Como mostrado no diagrama abaixo
 
 * na representação em disco, há um único arquivo de dados (*.bin) por coluna da tabela, no qual todos os valores dessa coluna são armazenados em formato <a href="/pt-BR/get-started/about/distinctive-features#data-compression" target="_blank">compactado</a>, e
 * as 8,87 milhões de linhas são armazenadas em disco em ordem lexicográfica crescente pelas colunas da chave primária (e pelas colunas adicionais da chave de ordenação), ou seja, neste caso
@@ -368,7 +368,7 @@ As primeiras 8192 linhas (com base na ordem física em disco) (seus valores de c
   ### O índice primário tem uma entrada por grânulo
 </div>
 
-O índice primário é criado com base nos grânulos mostrados no diagrama acima. Esse índice é um arquivo de array linear não compactado (primary.idx), que contém as chamadas marcas numéricas do índice, começando em 0.
+O índice primário é criado com base nos grânulos mostrados no diagrama acima. Esse índice é um arquivo de array simples não compactado (primary.idx), que contém as chamadas marcas numéricas do índice, começando em 0.
 
 O diagrama abaixo mostra que o índice armazena os valores das colunas da chave primária (os valores marcados em laranja no diagrama acima) da primeira linha de cada grânulo.
 Em outras palavras: o índice primário armazena os valores das colunas da chave primária de cada 8192ª linha da tabela (com base na ordem física das linhas definida pelas colunas da chave primária).
@@ -390,67 +390,82 @@ No total, o índice tem 1083 entradas para nossa tabela com 8,87 milhões de lin
 </Note>
 
 <Accordion title="Inspecionando o conteúdo do índice primário">
-  <p>
-    Em um cluster ClickHouse autogerenciado, podemos usar a <a href="/pt-BR/reference/functions/table-functions/file" target="_blank">table function file</a> para inspecionar o conteúdo do índice primário da nossa tabela de exemplo.
+  Em um cluster ClickHouse autogerenciado, podemos usar a [função de tabela file](/pt-BR/reference/functions/table-functions/file) para inspecionar o conteúdo do índice primário da nossa tabela de exemplo.
 
-    Para isso, primeiro precisamos copiar o arquivo do índice primário para o <a href="/pt-BR/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a> de um nó do cluster ativo:
+  Para isso, primeiro precisamos copiar o arquivo do índice primário para o [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings#user_files_path) de um nó do cluster em execução:
 
-    <ul>
-      <li>Passo 1: Obter o caminho da parte que contém o arquivo do índice primário</li>
-      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
+  **Etapa 1: Obter o caminho da part que contém o arquivo do índice primário**
 
-      retorna `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` na máquina de teste.
+  ```sql
+  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
+  ```
 
-      <li>Passo 2: Obter user&#95;files&#95;path</li>
-      O <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">user&#95;files&#95;path padrão</a> no Linux é
-      `/var/lib/clickhouse/user_files/`
+  retorna `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` na máquina de teste.
 
-      e, no Linux, você pode verificar se ele foi alterado: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+  **Etapa 2: Obter o user&#95;files&#95;path**
 
-      Na máquina de teste, o caminho é `/Users/tomschreiber/Clickhouse/user_files/`
+  O [user&#95;files&#95;path padrão](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505) no Linux é `/var/lib/clickhouse/user_files/`
 
-      <li>Passo 3: Copiar o arquivo do índice primário para o user&#95;files&#95;path</li>
+  e, no Linux, você pode verificar se ele foi alterado: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
-    </ul>
+  Na máquina de teste, o caminho é `/Users/tomschreiber/Clickhouse/user_files/`
 
-    <br />
+  **Etapa 3: Copiar o arquivo do índice primário para o user&#95;files&#95;path**
 
-    Agora podemos inspecionar o conteúdo do índice primário via SQL:
+  ```bash
+  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  ```
 
-    <ul>
-      <li>Obter o número de entradas</li>
-      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
-      retorna `1083`
+  Agora podemos inspecionar o conteúdo do índice primário com SQL:
 
-      <li>Obter as duas primeiras marcas do índice</li>
-      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
+  **Obter o número de entradas**
 
-      retorna
+  ```sql
+  SELECT count()
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
+  ```
 
-      `240923, http://showtopics.html%3...<br/>
-            4073710, http://mk.ru&pos=3_0`
+  retorna `1083`
 
-      <li>Obter a última marca do índice</li>
-      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
-      retorna
-      `4292714039 │ http://sosyal-mansetleri...`
-    </ul>
+  **Obter as duas primeiras marcas de índice**
 
-    <br />
+  ```sql
+  SELECT UserID, URL
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 0, 2;
+  ```
 
-    Isso corresponde exatamente ao nosso diagrama do conteúdo do índice primário da nossa tabela de exemplo:
-  </p>
+  retorna
+
+  ```response
+  240923, http://showtopics.html%3...
+  4073710, http://mk.ru&pos=3_0
+  ```
+
+  **Obter a última marca de índice**
+
+  ```sql
+  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 1082, 1;
+  ```
+
+  retorna
+
+  ```response
+  4292714039 │ http://sosyal-mansetleri...
+  ```
+
+  Isso corresponde exatamente ao nosso diagrama do conteúdo do índice primário da nossa tabela de exemplo:
 </Accordion>
 
-As entradas da chave primária são chamadas de marcas do índice porque cada entrada do índice marca o início de um intervalo específico de dados. Especificamente para a tabela de exemplo:
+As entradas da chave primária são chamadas de marcas de índice porque cada entrada do índice marca o início de um intervalo de dados específico. Especificamente para a tabela de exemplo:
 
 * Marcas de índice de UserID:
 
-  Os valores `UserID` armazenados no índice primário estão em ordem crescente.<br />
-  Assim, a &#39;marca 1&#39; no diagrama acima indica que os valores de `UserID` de todas as linhas da tabela no grânulo 1 e em todos os grânulos seguintes são garantidamente maiores ou iguais a 4.073.710.
+  Os valores de `UserID` armazenados no índice primário estão ordenados em ordem crescente.<br />
+  Portanto, a &#39;marca 1&#39; no diagrama acima indica que os valores de `UserID` de todas as linhas da tabela no grânulo 1, e em todos os grânulos seguintes, são garantidamente maiores ou iguais a 4.073.710.
 
-[Como veremos mais adiante](#the-primary-index-is-used-for-selecting-granules), essa ordenação global permite que o ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">use um algoritmo de busca binária</a> sobre as marcas do índice da primeira coluna da chave quando uma consulta filtra pela primeira coluna da chave primária.
+[Como veremos mais adiante](#the-primary-index-is-used-for-selecting-granules), essa ordenação global permite que o ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">use um algoritmo de busca binária</a> sobre as marcas de índice da primeira coluna-chave quando uma consulta filtra pela primeira coluna da chave primária.
 
 * Marcas de índice de URL:
 
@@ -785,7 +800,7 @@ Quando o UserID tem alta cardinalidade, é improvável que o mesmo valor de User
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-08.webp" size="lg" alt="Sparse Primary Indices 06" />
 
-Como podemos ver no diagrama acima, todas as marcas mostradas cujos valores de URL são menores que W3 acabam sendo selecionadas para transmitir as linhas do grânulo associado ao engine do ClickHouse.
+Como podemos ver no diagrama acima, todas as marcas mostradas cujos valores de URL são menores que W3 acabam sendo selecionadas para transmitir as linhas do grânulo associado ao mecanismo do ClickHouse.
 
 Isso acontece porque, embora todas as marcas de índice no diagrama se enquadrem no cenário 1 descrito acima, elas não satisfazem a pré-condição de exclusão mencionada de que *a marca de índice imediatamente seguinte tem o mesmo valor de UserID da marca atual* e, portanto, não podem ser excluídas.
 
@@ -879,7 +894,7 @@ A seguir, discutimos essas três opções para criar e usar vários índices pri
 
 <a name="secondary-table" />
 
-Estamos criando uma nova tabela adicional em que invertimos a ordem das colunas da chave (em relação à tabela original) na chave primária:
+Estamos criando uma nova tabela adicional em que invertimos a ordem das colunas da chave primária (em relação à tabela original):
 
 ```sql highlight={8}
 CREATE TABLE hits_URL_UserID
@@ -1119,7 +1134,7 @@ O log de trace correspondente no arquivo de log do servidor ClickHouse confirma 
   ### Opção 3: Projeções
 </div>
 
-Crie uma projeção na tabela existente:
+Crie uma projeção na nossa tabela existente:
 
 ```sql
 ALTER TABLE hits_UserID_URL

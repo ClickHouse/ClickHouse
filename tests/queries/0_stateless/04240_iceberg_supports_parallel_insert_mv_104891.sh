@@ -43,22 +43,22 @@ SOURCE="mv_source_${RANDOM}"
 MV="mv_${RANDOM}"
 TARGET_PATH="${BASE_DIR}/${TARGET}/"
 
-# Step 1: create the data lake target with the deflate metadata format so the
-# next step can corrupt it.
+# Step 1: create the data lake target. This writes the initial metadata file.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TARGET} (c0 Int32)
     ENGINE = IcebergLocal('${TARGET_PATH}')
-    SETTINGS iceberg_metadata_compression_method = 'deflate'
 "
 
-# Step 2: corrupt the on-disk metadata via an INSERT with an out-of-range
-# compression level (13 exceeds the deflate max of 9 for zlib and 12 for
-# libdeflate). The INSERT itself must fail.
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
-                     --output_format_compression_level=13 \
-    --query "INSERT INTO ${TARGET} VALUES (2)" 2>&1 \
-    | grep -F 'INCORRECT_DATA' > /dev/null \
-    && echo "[mv_to_datalake] target INSERT failed as expected"
+# Step 2: corrupt every metadata file on disk. This is done directly rather than
+# by provoking a failed write: writes to `IcebergLocal` go through a temporary
+# file and `rename`, so a failed write leaves no partial file at the target path.
+corrupted=0
+for metadata_file in "${TARGET_PATH}"metadata/*.metadata.json; do
+    [ -f "${metadata_file}" ] || continue
+    echo 'not a json' > "${metadata_file}"
+    corrupted=1
+done
+[ "${corrupted}" = 1 ] && echo "[mv_to_datalake] target metadata corrupted"
 
 # Step 3: build the dependency chain - a plain `MergeTree` source plus a
 # `MATERIALIZED VIEW` that routes rows to the corrupted data lake target.

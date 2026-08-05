@@ -87,6 +87,8 @@ CREATE TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -121,6 +123,8 @@ ALTER TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -130,7 +134,7 @@ ALTER TABLE table
 
 ```
 
-如果你为现有表添加了索引，我们建议为现有表 parts 物化该索引 (否则，对没有索引的 parts 进行搜索时，将回退为较慢的暴力扫描) 。
+如果你为现有表添加了索引，我们建议为现有表分片物化该索引 (否则，对没有索引的分片进行搜索时，将回退为较慢的穷举扫描) 。
 
 ```sql title="Query"
 ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
@@ -187,7 +191,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 文本索引可基于任何语言和字符集的文本数据构建。
 对于非 ASCII 文本，建议使用 `asciiCJK` 分词器，因为它能正确处理 Unicode 的词边界，包括 CJK 字符。
 
-**预处理器参数 (可选)&#x20;**。预处理器是指在分词前应用于输入字符串的表达式。
+<a id="preprocessor-argument-optional" />**预处理器参数 (可选)**。预处理器是指在分词前应用于输入字符串的表达式。
 
 预处理器参数的典型用例包括
 
@@ -289,7 +293,195 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-**其他参数 (可选)&#x20;**。
+<a id="postprocessor-argument-optional" />**后处理器参数 (可选)**。后处理器是指在分词后应用于每个输出标记的表达式。
+
+与预处理器不同，预处理器会在分词器将整个输入字符串拆分为标记之前对其进行转换，而后处理器则是直接对标记本身逐个进行处理。
+因此，那些天然属于标记级别的转换，最适合放在这里完成。
+
+后处理器参数的典型用例包括：
+
+1. **过滤停用词 (极其频繁的标记)**。像 &quot;the&quot;、&quot;a&quot; 和 &quot;is&quot; 这样的常见标记几乎没有搜索相关性，还会使索引膨胀。
+   你可以使用后处理器通过将它们转换为空标记来丢弃它们——空标记会被忽略，也就是说，不会被添加到索引中。
+   示例：`if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
+2. **移除时间戳**。日志行通常以结构化时间戳开头，或包含结构化时间戳，例如 `2024-01-15T10:23:45`。
+   为时间戳标记建立索引会让索引充斥着不具备搜索相关性的字符串。
+   有两种互补的方法可用于忽略时间戳：
+   * **后处理器方法**：使用 `splitByString` 分词器 (按空白字符拆分) ，这样整个时间戳会成为一个单独的标记，然后使用 `parseDateTimeOrNull` 检测并丢弃它。
+     示例：`if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
+     对于带有时区偏移或秒以下小数部分的时间戳，使用 `parseDateTimeBestEffortOrNull(str)`，无需显式格式字符串。
+   * **预处理器方法**：在分词之前，使用正则表达式从完整日志行中去除时间戳。
+     示例：`replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
+     这种方式适用于任何分词器，而且效率更高，因为时间戳字符根本不会被分词。
+     这两种方法可以结合使用：预处理器去除时间戳，而后处理器对剩余标记进行规范化或过滤 (例如，转为小写 + 去掉像 `ERROR` 或 `INFO` 这样的严重级别词) 。
+3. **词干提取**。将每个标记映射为其词干，可以通过匹配共享相同词根的形态变体来提升搜索召回率。
+   例如，在英文词干提取中，&quot;running&quot;、&quot;runs&quot; 和 &quot;run&quot; 都会被提取为词干 &quot;run&quot;，因此对这些变体中的任意一个发起查询都能匹配到全部。
+   ClickHouse 为多种语言提供了内置的 [stem](/zh/reference/functions/regular-functions/nlp-functions#stem) 函数。
+   示例：`stem(str, 'en')`
+4. **大小写规范化**。将标记转换为小写或大写，以实现不区分大小写的匹配，例如 [lower](/zh/reference/functions/regular-functions/string-functions#lower)、[lowerUTF8](/zh/reference/functions/regular-functions/string-functions#lowerUTF8)。
+   对于大小写转换，我们建议使用预处理器而不是后处理器。
+
+后处理器表达式将 [String](/zh/reference/data-types/string) 类型的标记转换为相同类型的标记。
+此外，后处理器表达式只能引用定义文本索引所基于的列或表达式。
+当列的类型为 `Array(String)` 时，后处理器仍以普通 `String` 值的形式对各个标记进行操作。
+
+禁止使用非确定性函数。
+
+构建索引时，后处理器会应用于生成的每个标记 (对于 `array` 分词器，每个数组元素都是一个标记) 。在查询时，具体行为取决于所使用的函数：
+
+* 对于 `hasToken`、`hasAllTokens`、`hasAnyTokens` 和 `hasPhrase` (使用任意受支持的分词器) ：后处理器会同时应用于 haystack 标记和搜索 needle，从而实现完全归一化的匹配 (例如，不区分大小写的搜索) 。对于 `hasPhrase`，后处理后的标记位置会紧密排列，因此即使后处理器丢弃了某个标记，也不会留下位置空隙，短语仍然可以跨过该位置完成匹配——例如，使用会丢弃 `the` 的停用词后处理器时，`hasPhrase(col, 'see cat')` 也能匹配文档 `see the cat`。
+* 对于所有其他函数 (`=`、`IN`、`has`、`hasAny`、`hasAll`、`mapContains*`) ：仅对搜索 needle 应用后处理器以执行索引提示查找；行级谓词仍会与原始列值进行比较。
+
+示例：
+
+* 使用后处理器表达式移除停用词：
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+* 使用后处理器表达式删除时间戳：
+
+```sql
+-- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
+-- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
+-- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByString',
+        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Only message-level words are indexed; timestamp tokens are not stored.
+SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
+SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
+```
+
+* 使用预处理表达式移除时间戳：
+
+```sql
+-- The preprocessor strips the ISO timestamp prefix before tokenization.
+-- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer   = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+* 使用预处理器和后处理器的组合表达式移除时间戳：
+
+```sql
+-- Preprocessor strips the timestamp, then lowercases the remainder.
+-- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
+-- Result: only substantive message words are stored in the index.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByNonAlpha',
+        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
+        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
+-- After preprocessor:  'error connection failed'
+-- After tokenization:  ['error', 'connection', 'failed']
+-- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
+SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
+```
+
+* 使用后处理器表达式对标记进行词干化：
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = stem(str, 'en')
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+-- The query token 'running' is stemmed to 'run' before the lookup,
+-- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
+SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
+```
+
+**函数支持**。
+
+对于会查询文本索引的谓词，在进行粒度级检查之前，会先对搜索值应用预处理器和后处理器，以便索引查找使用与构建索引时存储的相同标记。
+对于大多数函数 (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`) ，文本索引仅用于跳过无关的数据块；ClickHouse 仍会针对原始列数据，使用原始谓词验证每一条保留下来的行。
+对于标记搜索函数 (`hasToken`, `hasAllTokens`, `hasAnyTokens`) ，文本索引是主要的求值路径：ClickHouse 会通过与索引构建时相同的预处理器、分词器和后处理器对 needle 进行归一化，并将这一规范化结果同时用于带索引和不带索引的 table 分片。使用后处理器时，haystack 标记也会在查询时被归一化 (适用于任何分词器，而不仅仅是 `array`) ，因此比较两侧都会以一致的方式进行转换，结果也不依赖于索引是通过直接读取 (设置 `query_plan_direct_read_from_text_index`) 访问，还是某个分片是否具有 materialized 索引——例如，配合 `lower` 后处理器，可为 `hasAllTokens(col, ['FOO'])` 启用不区分大小写的匹配。
+在未使用 `support_phrase_search` 时，`hasPhrase` 仅将索引用作提示，并使用原始谓词验证每一条保留下来的行；后处理器还会以相同方式对短语和 haystack 标记进行归一化，因此结果与读取路径无关，而且被后处理器丢弃的标记也不会破坏短语的相邻关系。在 `support_phrase_search = 1` 时，`hasPhrase` 会使用精确的直接读取 (如果有后处理器，仍会应用) 。
+被后处理器映射为空字符串的搜索标记会被忽略，也就是视为在搜索短语中不存在。
+
+| 函数                                                                                                      | 支持预处理器                  | 兼容的分词器                                                   | 支持后处理器 |
+| ------------------------------------------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------- | ------ |
+| `=`                                                                                                     | 是                       | 全部                                                       | 是      |
+| `IN`                                                                                                    | 是                       | 全部                                                       | 是      |
+| [hasToken](/zh/reference/functions/regular-functions/string-search-functions#hasToken)                     | 是                       | 全部 (专为 `splitByNonAlpha` 设计)                             | 是      |
+| [hasAnyTokens(col, str)](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 是                       | 全部                                                       | 是      |
+| [hasAllTokens(col, str)](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 是                       | 全部                                                       | 是      |
+| [hasAnyTokens(col, arr)](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 否 (数组元素会按原样作为标记)        | 全部                                                       | 是      |
+| [hasAllTokens(col, arr)](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 否 (数组元素会按原样作为标记)        | 全部                                                       | 是      |
+| [hasPhrase](/zh/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | 是                       | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | 是      |
+| [startsWith](/zh/reference/functions/regular-functions/string-functions#startsWith)                        | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | 是      |
+| [endsWith](/zh/reference/functions/regular-functions/string-functions#endsWith)                            | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | 是      |
+| [like](/zh/reference/functions/regular-functions/string-search-functions#like)                             | 是¹                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | 是¹     |
+| [match](/zh/reference/functions/regular-functions/string-search-functions#match)                           | 是¹                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | 是¹     |
+| [ilike](/zh/reference/functions/regular-functions/string-search-functions#like)                            | 是² (仅限 `lower`/`upper`) | `splitByNonAlpha`, `array`²                              | 否²     |
+| [mapContainsKey](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | 是                       | 全部                                                       | 是      |
+| [mapContainsValue](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | 是                       | 全部                                                       | 是      |
+| [mapContainsKeyLike](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | 是      |
+| [mapContainsValueLike](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | 是      |
+| [has](/zh/reference/functions/regular-functions/array-functions#has)                                       | 是                       | `array`                                                  | 是      |
+| [hasAny](/zh/reference/functions/regular-functions/array-functions#hasAny)                                 | 是                       | `array`                                                  | 是      |
+| [hasAll](/zh/reference/functions/regular-functions/array-functions#hasAll)                                 | 是                       | `array`                                                  | 是      |
+
+¹ 对于列出的分词器，`LIKE` 和 `match` 会将直接读取作为提示使用；否则会回退为穷举扫描。
+此外，对于不带预处理器或后处理器的 `splitByNonAlpha` 和 `array` 分词器，`LIKE` 还支持 *直接读取 (不使用提示)&#x20;*&#x20;(通过 `use_text_index_like_evaluation_by_dictionary_scan` 启用) 。
+
+² `ILIKE` 仅支持通过直接读取 (不使用提示) 来执行 (`use_text_index_like_evaluation_by_dictionary_scan = 1`，且分词器为 `splitByNonAlpha` 或 `array`) 。
+不会回退到将索引用作提示的方式：如果该设置被禁用，或分词器不在支持范围内，则不会对 `ILIKE` 使用索引。
+如果存在预处理器，则必须为 `lower` 或 `upper`；不支持后处理器。
+
+**Experimental：支持短语搜索参数 (可选)&#x20;**。
+
+实验性参数 `support_phrase_search` (默认值：`0`) 用于控制索引是否存储标记位置。
+设置为 `1` 时，索引会额外存储位置数据 (保存在 `.pos` 文件中) ，从而使 [`hasPhrase`](#functions-example-hasphrase) 函数能够通过直接读取实现精确短语匹配。
+存储位置会增加索引的磁盘占用和写入成本，因此该功能默认不启用。
+其磁盘格式目前尚未稳定，因此该参数属于实验性功能，未来版本中可能会发生变化。
+因此，使用 `support_phrase_search = 1` 创建索引时，需要启用 MergeTree 设置 [`allow_experimental_text_index_phrase_search`](/zh/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search)。
+将 `support_phrase_search = 0` (默认值) 可保持仅倒排列表存储；未使用此参数创建的文本索引将不包含位置信息。
+
+<Warning>
+  此参数为实验性功能，仅应用于测试。
+  设置 MergeTree [`allow_experimental_text_index_phrase_search`](/zh/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) 以启用位置存储。
+</Warning>
 
 <details markdown="1">
   <summary>可选高级参数</summary>
@@ -311,8 +503,8 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
   上述高级参数也可以通过对应的 MergeTree 设置在表级别进行设置：[`text_index_dictionary_block_size`](/zh/reference/settings/merge-tree-settings#text_index_dictionary_block_size)、[`text_index_dictionary_block_frontcoding_compression`](/zh/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression)、[`text_index_posting_list_block_size`](/zh/reference/settings/merge-tree-settings#text_index_posting_list_block_size) 和 [`text_index_posting_list_codec`](/zh/reference/settings/merge-tree-settings#text_index_posting_list_codec)。
   它们适用于该表中所有未显式指定该参数的文本索引。
 
-  这些表级设置的主要用例，是在不删除并重新创建所有表 parts 上的文本索引的情况下，更改现有表的索引参数。
-  更改表级设置后，新参数只会应用于为新 parts 构建的文本索引；现有 parts 会保留其当前布局。
+  这些表级设置的主要用例，是在不删除并重新创建所有表分片上的文本索引的情况下，更改现有表的索引参数。
+  更改表级设置后，新参数只会应用于为新分片构建的文本索引；现有分片会保留其当前布局。
 
   在索引定义中给出的参数优先于表设置，例如：
 
@@ -369,12 +561,12 @@ SHOW CREATE TABLE table;
 </div>
 
 在 SELECT 查询中使用文本索引非常直接，因为常见的字符串搜索函数会自动利用该索引。
-如果某一列或表分片上没有索引，字符串搜索函数就会回退为低效的暴力扫描。
+如果某一列或表分片上没有索引，字符串搜索函数就会回退为低效的穷举扫描。
 
 <Note>
   我们建议使用函数 `hasAnyTokens` 和 `hasAllTokens` 来搜索文本索引，请参见[下文](#functions-example-hasanytokens-hasalltokens)。
-  这些函数适用于所有可用的分词器以及所有可能的预处理表达式。
-  由于其他受支持的函数在历史上早于文本索引，因此在很多情况下必须保留其原有行为 (例如不支持预处理) 。
+  这些函数适用于所有可用的分词器以及所有可能的预处理和后处理表达式。
+  由于其他受支持的函数在历史上早于文本索引，因此在很多情况下必须保留其原有行为 (例如不支持预处理或后处理) 。
 </Note>
 
 <div id="functions-support">
@@ -489,6 +681,7 @@ SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' suppo
 
 与 `LIKE` 类似，[startsWith](/zh/reference/functions/regular-functions/string-functions#startsWith) 和 [endsWith](/zh/reference/functions/regular-functions/string-functions#endsWith) 函数只有在能够从搜索词中提取出完整标记时，才能使用文本索引。
 对于使用 `ngrams` 分词器的索引，如果通配符之间搜索字符串的长度等于或大于 ngram 长度，则满足这一条件。
+当文本索引使用后处理器时，如果提取出的提示标记在归一化后仍非空，这些函数仍可在 Hint 模式下使用该索引。如果归一化后所有提示标记都被移除，则该索引不会用于该谓词。
 
 使用 `splitByNonAlpha` 分词器的文本索引示例：
 
@@ -511,18 +704,20 @@ startsWith(comment, 'clickhouse supports ')`
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-<div id="functions-example-hastoken-hastokenornull">
-  #### `hasToken` 和 `hasTokenOrNull`
+<div id="functions-example-hastoken">
+  #### `hasToken`
 </div>
 
 <Note>
-  函数 `hasToken` 看起来很容易使用，但在使用非默认分词器和预处理表达式时存在一些陷阱。
+  当在文本索引中使用非 `splitByNonAlpha` 分词器和/或预处理器/后处理器表达式进行查找时，`hasToken` 存在一些陷阱。
   我们建议改用 `hasAnyTokens` 和 `hasAllTokens` 函数。
+
+  不区分大小写的变体 `hasTokenCaseInsensitive` 和 `hasTokenCaseInsensitiveOrNull` 无法识别文本索引——即使在建立了文本索引的列上，它们也始终会执行全行扫描。对于不区分大小写的匹配，请使用 `lower(...)` 预处理器或后处理器，并将其与 `hasToken` / `hasAllTokens` / `hasAnyTokens` 结合使用。
 </Note>
 
-函数 [hasToken](/zh/reference/functions/regular-functions/string-search-functions#hasToken) 和 [hasTokenOrNull](/zh/reference/functions/regular-functions/string-search-functions#hasTokenOrNull) 用于匹配单个给定标记。
+函数 [hasToken](/zh/reference/functions/regular-functions/string-search-functions#hasToken) 用于匹配单个给定标记。
 
-与前面提到的函数不同，它们不会对搜索词进行分词 (即假定输入为单个标记) 。
+与前面提到的函数不同，它不会对搜索词进行分词 (即假定输入为单个标记) 。
 
 示例：
 
@@ -559,16 +754,17 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 
 不同于 `hasAllTokens` 只要求所有标记出现在任意位置，`hasPhrase` 要求它们按连续序列出现。
 搜索短语会使用为索引列配置的同一个分词器进行分词。
+当文本索引使用后处理器时，搜索短语在索引查找之前也会先进行归一化。
 请注意，该函数要求使用 `splitByNonAlpha`、`splitByString`、`ngrams` 或 `asciiCJK` 分词器之一。
 
 示例：
 
 ```sql
--- 匹配：'clickhouse' 和 'olap' 必须按此顺序连续出现
+-- Matches: 'clickhouse' and 'olap' must appear consecutively in that order
 SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 
--- 不匹配含有 'olap clickhouse' 的行（顺序错误）
--- 不匹配含有 'clickhouse fast olap' 的行（不连续）
+-- Does NOT match a row containing 'olap clickhouse' (wrong order)
+-- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
 ```
 
 <div id="functions-example-has">
@@ -971,22 +1167,42 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
   ### 短语搜索
 </div>
 
-文本索引支持通过 `hasPhrase` 函数执行短语搜索。
-短语中的所有标记都必须在文档中按相同顺序连续出现。
+例如，普通的文本索引搜索
 
-文本索引会通过对短语中所有标记的倒排列表求交来找出候选粒度，从而加速短语搜索。
-在这些粒度内，ClickHouse 随后会验证标记是否确实彼此紧邻。
+```sql
+SELECT *
+FROM tab
+WHERE hasAllTokens(col, 'weather in Tokyo')
+```
 
-`hasPhrase` 支持分词器 `splitByNonAlpha`、`splitByString`、`ngrams` 和 `asciiCJK`。
+匹配所有以任意顺序包含给定标记的行。
+在此示例中，行 `While she stayed in Tokyo, the weather was great.` 符合该过滤器。
 
-短语字符串会使用索引配置的分词器进行分词。
-短语中的分词器分隔符字符会被忽略：对于 `splitByNonAlpha` 分词器，`hasPhrase(text, 'quick+brown')` 等同于 `hasPhrase(text, 'quick brown')`。
+相比之下，短语搜索是指按给定顺序匹配这些标记。
+例如，
+
+```sql
+SELECT *
+FROM tab
+WHERE hasPhrase(col, 'weather in Tokyo')
+```
+
+匹配任何包含标记序列 `weather in Tokyo` 的行，例如 `How is the weather in Tokyo?`？
+
+文本索引通过对短语中所有标记的倒排列表求交来确定候选粒度，从而加速短语搜索。
+在这些粒度内，ClickHouse 随后会验证这些标记是否确实彼此相邻。
+这一过程开销相对较高，也比常规文本搜索查询更慢。
+要加快短语搜索查询，请在文本索引中启用位置存储 (参见上文的 `Optional parameters`) 。
+
+`hasPhrase` 可与分词器 `splitByNonAlpha`、`splitByString`、`ngrams` 和 `asciiCJK` 搭配使用。
+给定的短语字符串会使用该索引的分词器进行分词。
+短语中的分隔符字符会被忽略：`hasPhrase(text, 'quick+brown')` 等同于 `hasPhrase(text, 'quick brown')`，前提是使用 `splitByNonAlpha` 作为分词器。
 
 <div id="text-index-phrase-search-example">
   #### 示例
 </div>
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1174,11 +1390,10 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
   ### 缓存
 </div>
 
-可以使用不同的缓存，将文本索引的部分内容缓存在内存中 (请参见[实现细节](#implementation)一节) ：
+存在不同的全服务器范围缓存，可将文本索引的部分内容缓存在内存中 (请参见[实现细节](#implementation)一节) ：
 目前提供了针对文本索引中反序列化后的头部信息、标记和倒排列表的缓存，以减少 I/O。
-可通过设置 [use&#95;text&#95;index&#95;header&#95;cache](/zh/reference/settings/session-settings#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/zh/reference/settings/session-settings#use_text_index_tokens_cache) 和 [use&#95;text&#95;index&#95;postings&#95;cache](/zh/reference/settings/session-settings#use_text_index_postings_cache) 启用这些缓存。
+使用设置 [use&#95;text&#95;index&#95;header&#95;cache](/zh/reference/settings/session-settings#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/zh/reference/settings/session-settings#use_text_index_tokens_cache) 和 [use&#95;text&#95;index&#95;postings&#95;cache](/zh/reference/settings/session-settings#use_text_index_postings_cache)，可按查询禁用各个缓存的读写。
 
-默认情况下，所有缓存均为禁用状态。
 如需清除缓存，请使用语句 [SYSTEM CLEAR TEXT INDEX CACHES](/zh/reference/statements/system#drop-text-index-caches)
 
 请参考以下服务器设置来配置这些缓存。
@@ -1269,7 +1484,7 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 * 一组倒排列表，每个倒排列表表示一组行号。
 
 文本索引是针对整个 分片 构建的。
-与其他跳过索引不同，文本索引在数据分区片段合并时可以直接合并，而不必在合并时重新构建 (见下文) 。
+与其他跳过索引不同，文本索引在数据分片合并时可以直接合并，而不必在合并时重新构建 (见下文) 。
 
 在创建索引期间，会创建三个文件 (每个 分片 一组) ：
 
@@ -1290,11 +1505,16 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 为了节省空间，同时仍支持快速的交集和并集操作，倒排列表以 [roaring bitmaps](https://roaringbitmap.org/) 的形式存储。
 如果倒排列表大于 `posting_list_block_size`，则会将其拆分为多个块，并按顺序写入倒排列表文件。
 
+**位置文件 (.pos)**
+
+可选，仅当索引参数 `support_phrase_search = 1` 时才会创建。
+用于存储标记在匹配行中的位置。
+
 **文本索引的合并**
 
-当数据分区片段合并时，文本索引无需从头重新构建；相反，它可以在合并过程中的独立步骤里高效完成合并。
+当数据分片合并时，文本索引无需从头重新构建；相反，它可以在合并过程中的独立步骤里高效完成合并。
 在这一步中，会读取每个输入 分片 的文本索引中已排序的字典，并将它们合并为一个新的统一字典。
-倒排列表中的行号也会重新计算，以反映它们在合并后数据分区片段中的新位置；这会用到初始合并阶段生成的旧行号到新行号映射。
+倒排列表中的行号也会重新计算，以反映它们在合并后数据分片中的新位置；这会用到初始合并阶段生成的旧行号到新行号映射。
 这种文本索引的合并方式，类似于带有 `_part_offset` 列的 [projections](/zh/reference/statements/alter/projection#projection-indexes) 的合并方式。
 如果索引在源 分片 中尚未 materialized，则会先构建该索引，将其写入临时文件，然后再与其他 分片 中的索引以及其他临时索引文件中的索引一并合并。
 

@@ -1,18 +1,52 @@
 ---
 slug: /data-modeling/overview
-title: "Aperçu de la modélisation des données"
-description: "Aperçu de la modélisation des données"
-keywords: ['modélisation des données', 'conception de schéma', 'dictionnaire', 'vue matérialisée', 'compression des données', 'dénormalisation des données']
+title: 'Vue d’ensemble de la modélisation des données'
+description: 'Vue d’ensemble de la modélisation des données'
+keywords: ['modélisation des données', 'conception du schéma', 'dictionnaire', 'vue matérialisée', 'compression des données', 'dénormalisation des données']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-Cette section présente la modélisation des données dans ClickHouse et couvre les sujets suivants :
+Cette section porte sur la modélisation des données dans ClickHouse et couvre les sujets suivants :
 
-| Page                                                                                               | Description                                                                                                                                                                                                                                                      |
-| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Conception de schéma](/fr/guides/clickhouse/data-modelling/schema-design)                            | Présente la conception de schéma dans ClickHouse pour des performances optimales, en tenant compte de facteurs tels que les requêtes, les mises à jour des données, la latence et le volume.                                                                     |
-| [Dictionnaire](/fr/concepts/features/dictionaries/index)                                              | Explique comment définir et utiliser des dictionnaires pour améliorer les performances des requêtes et enrichir les données.                                                                                                                                     |
-| [Vues matérialisées](/fr/concepts/features/materialized-views/index)                                  | Informations sur les vues matérialisées et les vues matérialisées actualisables dans ClickHouse.                                                                                                                                                                 |
-| [Projections](/fr/concepts/features/projections/projections)                                          | Informations sur les projections dans ClickHouse.                                                                                                                                                                                                                |
-| [Compression des données](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) | Présente les différents modes de compression dans ClickHouse et explique comment optimiser le stockage des données et les performances des requêtes en choisissant la méthode de compression la plus adaptée à vos types de données et à vos charges de travail. |
-| [Dénormalisation des données](/fr/guides/clickhouse/data-modelling/denormalization)                   | Présente l’approche de dénormalisation utilisée dans ClickHouse, qui vise à améliorer les performances des requêtes en stockant les données associées dans une seule table.                                                                                      |
+<CardGroup cols={2}>
+  <Card title="Conception du schéma" icon="pen-ruler" href="/fr/guides/clickhouse/data-modelling/schema-design">
+    Concevoir un schéma ClickHouse pour des performances optimales, en tenant compte de facteurs tels que les requêtes, les mises à jour des données, la latence et le volume.
+  </Card>
+
+  <Card title="Index primaires clairsemés" icon="key" href="/fr/guides/clickhouse/data-modelling/sparse-primary-indexes">
+    Une introduction pratique aux index primaires dans ClickHouse.
+  </Card>
+
+  <Card title="Dénormalisation des données" icon="table-list" href="/fr/guides/clickhouse/data-modelling/denormalization">
+    L’approche de dénormalisation, qui vise à améliorer les performances des requêtes en stockant les données associées dans une seule table.
+  </Card>
+
+  <Card title="Backfill des données" icon="clock-rotate-left" href="/fr/guides/clickhouse/data-modelling/backfilling">
+    Techniques pour réinjecter efficacement des données historiques dans les tables ClickHouse.
+  </Card>
+
+  <Card title="Fonction de table Merge" icon="code-merge" href="/fr/guides/clickhouse/data-modelling/merge-table-function">
+    Utiliser la fonction de table `merge` pour interroger plusieurs tables comme si elles n’en formaient qu’une.
+  </Card>
+
+  <Card title="Procédures stockées et instructions préparées" icon="database" href="/fr/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements">
+    Procédures stockées et paramètres de requête dans ClickHouse.
+  </Card>
+
+  <Card title="Génération de données de test" icon="flask" href="/fr/guides/clickhouse/data-modelling/generating-test-data">
+    Comment générer des données de test aléatoires dans ClickHouse.
+  </Card>
+
+  <Card title="Compression des données" icon="file-zipper" href="/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse">
+    La compression dans ClickHouse, les modes de compression disponibles et comment choisir celui qui convient le mieux à vos types de données et à vos charges de travail.
+  </Card>
+
+  <Card title="Travailler avec les tableaux" icon="list-ol" href="/fr/guides/clickhouse/working-with-arrays">
+    Travailler avec les tableaux dans ClickHouse.
+  </Card>
+
+  <Card title="Travailler avec les jointures" icon="link" href="/fr/guides/clickhouse/working-with-joins">
+    Travailler avec les JOIN dans ClickHouse.
+  </Card>
+</CardGroup>

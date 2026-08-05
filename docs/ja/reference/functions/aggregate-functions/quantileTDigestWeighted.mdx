@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 導入バージョン: v20.1.0
 
-[t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) アルゴリズムを使用して、数値データの[分位点](https://en.wikipedia.org/wiki/Quantile)を近似的に計算します。
+[t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) アルゴリズムを使用して、数値データ列の[近似分位点](https://en.wikipedia.org/wiki/Quantile)を近似的に計算します。
 この関数は、数列の各要素の重みを考慮します。
 
 最大誤差は 1% です。
@@ -42,20 +42,20 @@ quantileTDigestWeighted(level)(expr, weight)
 
 **パラメータ**
 
-* `level` — 任意。分位点のレベルを指定します。0 から 1 までの定数の浮動小数点数です。`level` には `[0.01, 0.99]` の範囲の値を使用することを推奨します。デフォルト値: 0.5。`level=0.5` の場合、この関数は中央値を計算します。[`Float*`](/ja/reference/data-types/float)
+* `level` — 任意。近似分位点のレベルを指定します。0 から 1 までの定数の浮動小数点数です。`level` には `[0.01, 0.99]` の範囲の値を使用することを推奨します。デフォルト値: 0.5。`level=0.5` の場合、この関数は中央値を計算します。[`Float*`](/ja/reference/data-types/float)
 
 **引数**
 
-* `expr` — カラムの値に対する式。結果のデータ型は数値型、Date、または DateTime です。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — カラムの値に対する式。結果のデータ型は数値型、`Date`、または `DateTime` です。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 * `weight` — 数列の各要素の重みを表すカラム。重みは値の出現回数です。[`UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-指定したレベルの近似分位点。[`Float64`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+指定したレベルの近似分位点。`Date` および `DateTime` の入力では、出力フォーマットは入力フォーマットと一致します。[`Float32`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 
-**t-digest を使用した重み付き分位点の計算**
+**t-digest を使用した重み付き近似分位点の計算**
 
 ```sql title=Query
 SELECT quantileTDigestWeighted(number, 1) FROM numbers(10);

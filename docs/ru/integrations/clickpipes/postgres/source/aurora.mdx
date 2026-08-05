@@ -97,7 +97,20 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-Публикация `clickpipes` будет содержать набор событий изменений, сгенерированных указанными таблицами, и впоследствии будет использоваться для приёма потока репликации.
+Публикация `clickpipes` определяет набор таблиц, события изменений из которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы действительно не планируете реплицировать все таблицы, поскольку включение лишних таблиц увеличивает объём WAL-трафика из Postgres в ClickPipes и снижает общую эффективность репликации.
+
+<div id="iam-authentication">
+  ### Использование аутентификации IAM (необязательно)
+</div>
+
+Вместо пароля можно использовать для пользователя ClickPipes аутентификацию через ролевой доступ AWS IAM. Для этого параметр `rds.iam_auth_for_replication` должен быть установлен в `1`. Создайте пользователя, как показано ниже, а затем назначьте ему те же привилегии на схему и репликацию, что указаны выше:
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+См. [AWS IAM DB authentication (RDS/Aurora)](/ru/integrations/clickpipes/postgres/auth), где описаны все шаги по настройке роли IAM и policy, необходимых ClickPipes для аутентификации таким способом.
 
 <div id="configure-network-access">
   ## Настройка сетевого доступа

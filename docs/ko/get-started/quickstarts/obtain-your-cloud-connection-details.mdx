@@ -40,17 +40,13 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 이 과정을 마치면 Cloud 콘솔에서 이러한 정보를 어디서 확인할 수 있는지와 간단한 `curl` 명령으로 연결을 검증하는 방법을 알게 되므로 `clickhouse-local`, `clickhouse-client` 또는 다른 ClickHouse 드라이버에서 연결할 준비를 마치게 됩니다.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Cloud 콘솔 열기
-
+  <Step title="Cloud 콘솔 열기" id="open-the-cloud-console">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud/)로 이동한 다음 계정에 로그인하십시오.
 
     기본 대시보드에서 연결하려는 서비스를 찾으십시오. 서비스가 유휴(idled) 상태이면 해당 서비스를 클릭한 뒤 다시 활성화될 때까지 기다렸다가 진행하십시오. 이후 단계에서 연결을 확인하려면 서비스가 실행 중이어야 합니다.
   </Step>
 
-  <Step>
-    ### 연결 정보 찾기
-
+  <Step title="연결 정보 찾기" id="find-your-connection-details">
     서비스를 클릭해 세부 정보 페이지를 연 다음, 왼쪽 사이드바에서 **Connect** 버튼을 클릭하십시오:
 
     <img className="block dark:hidden w-2/3 mx-auto" src="/images/get-started/quickstarts/connect-light.webp" alt="ClickHouse Cloud 콘솔의 Connect 버튼(라이트 모드)" />
@@ -77,9 +73,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     </Note>
   </Step>
 
-  <Step>
-    ### 연결 프로토콜 이해하기
-
+  <Step title="연결 프로토콜 이해하기" id="understand-the-connection-protocols">
     ClickHouse Cloud는 두 가지 주요 네트워크 프로토콜을 제공하며, 각각 별도의 포트를 사용합니다:
 
     * **네이티브 프로토콜(포트 9440)** - `clickhouse-client`, `clickhouse-local`, 그리고 대부분의 언어별 드라이버가 사용하는 바이너리 프로토콜입니다. 가장 빠른 옵션이며 ClickHouse의 모든 기능을 지원합니다. Cloud에서는 TLS가 필요합니다.
@@ -90,9 +84,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     이 시리즈의 대부분의 빠른 시작과 CLI 워크플로에서는 **포트 9440의 네이티브 프로토콜**을 사용합니다.
   </Step>
 
-  <Step>
-    ### 재사용할 수 있도록 연결 정보 저장하기
-
+  <Step title="재사용할 수 있도록 연결 정보 저장하기" id="save-your-connection-details-for-reuse">
     이러한 연결 정보는 빠른 시작 전반에서 자주 사용됩니다. 매번 다시 입력하지 않으려면 터미널 세션에서 환경 변수로 내보낼 수 있습니다:
 
     ```bash
@@ -111,7 +103,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 다음 단계
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 이제 외부 도구에서 ClickHouse Cloud 서비스에 연결하는 데 필요한 모든 연결 정보를 갖추었습니다. 여기서 확인한 호스트명, 포트, 사용자 이름, 비밀번호는 이후 빠른 시작 시리즈 전반에서 사용됩니다.
 

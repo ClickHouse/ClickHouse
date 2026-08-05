@@ -259,7 +259,7 @@ REGISTER_FUNCTION(Concat)
     FunctionDocumentation::Description description = R"(
 Concatenates the given arguments.
 
-Arguments which are not of types [`String`](../data-types/string.md) or [`FixedString`](../data-types/fixedstring.md) are converted to strings using their default serialization.
+Arguments which are not of types [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) are converted to strings using their default serialization.
 As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 )";
     FunctionDocumentation::Syntax syntax = "concat([s1, s2, ...])";

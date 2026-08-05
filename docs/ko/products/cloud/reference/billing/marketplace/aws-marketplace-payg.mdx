@@ -23,33 +23,25 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### ClickHouse Cloud - Pay as you go 검색
-
-    [AWS Marketplace](https://aws.amazon.com/marketplace)로 이동한 다음 &quot;ClickHouse Cloud - Pay As You Go&quot;를 검색합니다.
+  <Step title="ClickHouse Cloud - Pay as you go 검색" id="search-payg">
+    [AWS Marketplace](https://aws.amazon.com/marketplace)로 이동한 다음 “ClickHouse Cloud - Pay As You Go”를 검색합니다.
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-1.webp" alt="ClickHouse용 AWS Marketplace 검색" border />
   </Step>
 
-  <Step>
-    ### 구매 옵션 보기
-
+  <Step title="구매 옵션 보기" id="purchase-options">
     [listing](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu)을 클릭한 다음 **View purchase options**를 클릭합니다.
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-2.webp" alt="AWS Marketplace 구매 옵션 보기" border />
   </Step>
 
-  <Step>
-    ### 구독
-
+  <Step title="구독" id="subscribe">
     다음 화면에서 subscribe를 클릭합니다.
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-3.webp" alt="AWS Marketplace 구독" border />
   </Step>
 
-  <Step>
-    ### 계정 설정
-
+  <Step title="계정 설정" id="set-up-your-account">
     이 단계에서는 아직 설정이 완료되지 않았으며, ClickHouse Cloud 조직에도 아직 marketplace를 통한 청구가 적용되지 않습니다. 이제 설정을 완료하려면 marketplace subscription에서 Set up your account를 클릭해 ClickHouse Cloud로 이동해야 합니다.
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-4.webp" alt="계정 설정" border />
@@ -81,9 +73,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     기존 ClickHouse Cloud 사용자라면 자격 증명을 사용해 로그인하면 됩니다.
   </Step>
 
-  <Step>
-    ### marketplace subscription을 조직에 추가
-
+  <Step title="marketplace subscription을 조직에 추가" id="add-marketplace-subscription">
     로그인에 성공하면 이 marketplace subscription으로 청구할 새 조직을 만들거나, 이 subscription으로 청구할 기존 조직을 선택할 수 있습니다.
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="marketplace subscription 추가" border />

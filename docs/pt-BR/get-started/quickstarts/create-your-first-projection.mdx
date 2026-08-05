@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Introdução às projeções'
 title: 'Crie sua primeira projeção'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['analytics em tempo real', 'armazenamento de dados']
 products: ['Cloud']
 description: 'Saiba como usar projeções no ClickHouse para armazenar uma cópia adicional ordenada dos dados na mesma tabela, permitindo consultas rápidas em colunas não abrangidas pela chave primária.'
 ---
@@ -15,8 +15,8 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">Analytics em tempo real</Badge>
-  <Badge size="lg" color="blue">Armazenamento de dados</Badge>
+  <Badge size="lg" color="blue">Analytics em Tempo Real</Badge>
+  <Badge size="lg" color="blue">Armazenamento de Dados</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
 
@@ -42,9 +42,7 @@ Neste guia de início rápido, você resolverá esse problema criando uma **proj
 Ao final, você entenderá como adicionar e materializar uma projeção, como o ClickHouse a seleciona automaticamente e quando escolher projeções em vez de visões materializadas.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Entenda por que você precisa de uma projeção
-
+  <Step title="Entenda por que você precisa de uma projeção" id="understand-why-you-need-a-projection">
     Sua tabela `uk_price_paid` está ordenada por `(postcode, addr1, addr2)`. Isso significa que o ClickHouse pode pular grandes blocos de dados quando você filtra por `postcode`, `addr1` ou `addr2`, mas consultas que filtram por `town` precisam varrer todas as linhas — 30 milhões ao todo.
 
     Uma **projeção** armazena uma cópia adicional ordenada de (algumas ou todas as) colunas *dentro da mesma tabela*. Quando você consulta a tabela, o otimizador de consultas verifica automaticamente se ler da projeção exigiria acessar menos grânulos do que os dados base e, se for o caso, a utiliza de forma transparente.
@@ -58,9 +56,7 @@ Ao final, você entenderá como adicionar e materializar uma projeção, como o 
     Leia mais na [documentação de referência sobre projeções](/pt-BR/reference/statements/alter/projection).
   </Step>
 
-  <Step>
-    ### Adicione uma projeção à sua tabela
-
+  <Step title="Adicione uma projeção à sua tabela" id="add-a-projection-to-your-table">
     Defina uma projeção em `uk_price_paid` que armazene `town`, `date`, `price` e `type`, ordenada por `(town, date)`:
 
     ```sql
@@ -83,9 +79,7 @@ Ao final, você entenderá como adicionar e materializar uma projeção, como o 
     Você deverá ver o bloco `PROJECTION uk_price_paid_by_town` na saída.
   </Step>
 
-  <Step>
-    ### Materialize a projeção para os dados existentes
-
+  <Step title="Materialize a projeção para os dados existentes" id="materialize-the-projection-for-existing-data">
     Assim como as visões materializadas, uma projeção recém-adicionada só se aplica a inserções futuras. Para preenchê-la com os 30 milhões de linhas que já estão na tabela, materialize-a explicitamente:
 
     ```sql
@@ -121,9 +115,7 @@ Ao final, você entenderá como adicionar e materializar uma projeção, como o 
     ```
   </Step>
 
-  <Step>
-    ### Consulte a tabela e observe o uso automático da projeção
-
+  <Step title="Consulte a tabela e observe o uso automático da projeção" id="query-the-table-and-observe-automatic-projection-usage">
     Agora execute uma consulta com filtro por `town` — na **mesma tabela** que você sempre consultou:
 
     ```sql
@@ -170,15 +162,11 @@ Ao final, você entenderá como adicionar e materializar uma projeção, como o 
     Isso força uma varredura completa da tabela para que você possa ver a diferença no número de linhas lidas.
   </Step>
 
-  <Step>
-    ### Compare projeções com visões materializadas
-
+  <Step title="Compare projeções com visões materializadas" id="compare-projections-to-materialized-views">
     Projeções e visões materializadas resolvem o mesmo problema — leituras mais rápidas em padrões de acesso alternativos —, mas envolvem trade-offs diferentes. Em resumo, as projeções são melhores quando você só precisa de uma ordenação diferente sobre os mesmos dados; visões materializadas são mais flexíveis quando você precisa transformar, agregar ou direcionar dados para um schema diferente. Para uma comparação detalhada, consulte [Visões materializadas versus projeções](/pt-BR/concepts/features/projections/materialized-views-versus-projections).
   </Step>
 
-  <Step>
-    ### Observe a sobrecarga no armazenamento
-
+  <Step title="Observe a sobrecarga no armazenamento" id="observe-the-storage-overhead">
     As projeções armazenam uma segunda cópia das colunas selecionadas na mesma tabela, aumentando o uso de espaço em disco. Consulte `system.parts` para ver o tamanho total de `uk_price_paid` (que agora inclui os dados da projeção):
 
     ```sql
@@ -211,7 +199,9 @@ Ao final, você entenderá como adicionar e materializar uma projeção, como o 
   </Step>
 </Steps>
 
-## Próximos passos
+<div id="next-steps">
+  ## Próximos passos
+</div>
 
 Neste guia de início rápido, você adicionou uma projeção a `uk_price_paid` que armazena os dados ordenados por `(town, date)`, permitindo consultas rápidas por cidade sem criar uma tabela separada. Você aprendeu que as projeções são escolhidas automaticamente pelo otimizador de consultas, permanecem sincronizadas com as mutações e trocam espaço em disco por desempenho de leitura.
 

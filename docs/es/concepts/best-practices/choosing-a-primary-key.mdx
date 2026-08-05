@@ -104,7 +104,7 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 5 rows in set. Elapsed: 0.003 sec.
 ```
 
-Supongamos que una tabla `posts_ordered`, que contiene los mismos datos, se define con `ORDER BY` como `(PostTypeId, toDate(CreationDate))`, es decir:
+Supongamos que una tabla `posts_ordered`, que contiene los mismos datos, se define con un `ORDER BY` como `(PostTypeId, toDate(CreationDate))`, es decir.
 
 ```sql
 CREATE TABLE posts_ordered

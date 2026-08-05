@@ -29,9 +29,9 @@ namespace ErrorCodes
     DECLARE(String, aws_access_key_id, "", "AWS access key id used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0) \
     DECLARE(String, aws_secret_access_key, "", "AWS secret access key used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0) \
     DECLARE(String, region, "", "Region for Glue catalog", 0) \
-    DECLARE(String, aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
-    DECLARE(String, aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
-    DECLARE(String, aws_external_id, "", "External id for the AWS STS AssumeRole trust policy for Glue catalog", 0) \
+    DECLARE(String, aws_role_arn, "", "ARN of the IAM role to assume for AWS/Glue access. When set, ClickHouse uses AWS STS `AssumeRole` with base credentials from `aws_access_key_id` and `aws_secret_access_key` when both are provided, or from the default AWS credential chain otherwise (the role must trust the identity the server runs under)", 0) \
+    DECLARE(String, aws_role_session_name, "", "Session name used for the AWS STS `AssumeRole` call. Optional; defaults to `ClickHouseSession`", 0) \
+    DECLARE(String, aws_external_id, "", "External ID passed to AWS STS `AssumeRole`, matching the `sts:ExternalId` condition on the role's trust policy. Use this when the role is owned by a third party, such as ClickHouse Cloud", 0) \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(S3UriStyle, storage_uri_style, S3UriStyle::AUTO, "URL style used when constructing object storage URLs from catalog-provided table locations. Use 'virtual_hosted' when the object storage server requires the bucket in the hostname (e.g. https://bucket.endpoint.com/path/)", 0) \
     DECLARE(String, onelake_tenant_id, "", "Tenant id from azure", 0) \

@@ -1,0 +1,135 @@
+---
+description: 'Learn why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console and how to assign persistent per-user permissions.'
+sidebar_label: 'Why `SET ROLE` does not persist in SQL Console'
+sidebar_position: 6
+slug: /resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console
+title: 'Why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console'
+doc_type: 'guide'
+date: 2026-07-24
+tags: ['Security and Authentication', 'Managing Cloud', 'Troubleshooting']
+keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Access Control']
+---
+
+When you run `SET ROLE` in the ClickHouse Cloud SQL Console, the role might appear to change for one query and then revert for the next query. Use a per-user SQL Console role when permissions must persist across queries and sessions.
+
+## Symptoms {#symptoms}
+
+You might observe one or more of the following:
+
+- After you run `SET ROLE sql_console_developer`, later queries still run with `sql_console_read_only`.
+- The results of `currentRoles`, `enabledRoles`, and `defaultRoles` vary between queries.
+- Running `SET ROLE` and another query together does not consistently preserve the selected role.
+- `SHOW GRANTS` lists the expected roles, but their permissions are not active.
+
+You can inspect the current user and roles with:
+
+```sql
+SELECT
+    currentUser(),
+    currentRoles(),
+    enabledRoles(),
+    defaultRoles();
+```
+
+## Why this happens {#why-this-happens}
+
+The SQL Console sends queries over stateless HTTP connections to a multi-replica ClickHouse Cloud service. Consecutive queries are not guaranteed to use the same connection or replica.
+
+`SET ROLE` changes the roles enabled for the current session. It does not persist that session state for later SQL Console requests. A subsequent query can therefore run without the role that an earlier request enabled.
+
+For this reason, do not use `SET ROLE` as a persistent access-control mechanism in the SQL Console.
+
+## How SQL Console user roles work {#how-sql-console-user-roles-work}
+
+When a user opens the SQL Console, ClickHouse Cloud provisions a database user with the following naming convention:
+
+```text
+sql-console:user@example.com
+```
+
+ClickHouse Cloud also checks for a database role whose name uses the following convention:
+
+```text
+sql-console-role:user@example.com
+```
+
+When that role exists, ClickHouse Cloud assigns it to the matching SQL Console user. This is the supported way to grant persistent custom permissions to an individual SQL Console user.
+
+| Entity | Purpose | Persistent |
+| --- | --- | --- |
+| `sql-console:<email>` | Database user provisioned when the user opens the SQL Console | Yes, managed by ClickHouse Cloud |
+| `sql_console_admin` and `sql_console_read_only` | Built-in SQL Console roles | Yes, managed by ClickHouse Cloud |
+| `sql-console-role:<email>` | Custom per-user role created by an administrator | Yes, applied when the user signs in |
+
+## Configure persistent permissions {#configure-persistent-permissions}
+
+Run the following statements as a user with administrative privileges on the service, such as a SQL Console user with the `sql_console_admin` role or another user with the `ACCESS MANAGEMENT` privilege.
+
+<Steps>
+<Step title="Create the custom role" id="create-the-custom-role">
+
+The following example creates a custom `sql_console_developer` role and grants it permissions on `my_database`:
+
+```sql
+CREATE ROLE IF NOT EXISTS sql_console_developer;
+
+GRANT SELECT, INSERT, CREATE TABLE
+ON my_database.*
+TO sql_console_developer;
+```
+
+`sql_console_developer` is an example role, not a built-in ClickHouse Cloud role. You can instead use an existing custom role with the permissions that the user requires.
+
+</Step>
+<Step title="Create the per-user SQL Console role" id="create-the-per-user-sql-console-role">
+
+Create a role whose name contains the user's exact email address:
+
+```sql
+CREATE ROLE IF NOT EXISTS `sql-console-role:user@example.com`;
+```
+
+The backticks are required because the role name contains special characters.
+
+</Step>
+<Step title="Grant the custom role" id="grant-the-custom-role">
+
+Grant the desired role to the per-user SQL Console role:
+
+```sql
+GRANT sql_console_developer
+TO `sql-console-role:user@example.com`;
+```
+
+You can grant multiple roles when needed:
+
+```sql
+GRANT sql_console_developer, sql_console_read_only
+TO `sql-console-role:user@example.com`;
+```
+
+</Step>
+<Step title="Start a new SQL Console session" id="start-a-new-sql-console-session">
+
+Ask the user to sign out and sign back in to the SQL Console, or refresh the browser tab. In the new session, ClickHouse Cloud applies `sql-console-role:user@example.com` to `sql-console:user@example.com`; no `SET ROLE` statement is required.
+
+Verify the active roles:
+
+```sql
+SELECT
+    currentUser(),
+    currentRoles(),
+    enabledRoles(),
+    defaultRoles();
+```
+
+The results should include the permissions granted through `sql-console-role:user@example.com`.
+
+</Step>
+</Steps>
+
+## Avoid modifying managed roles {#avoid-modifying-managed-roles}
+
+Do not modify `sql_console_admin` or `sql_console_read_only` to grant custom permissions. ClickHouse Cloud manages these built-in roles. Use `sql-console-role:<email>` for per-user permissions instead.
+
+For general role-management examples, see [Common access management queries](/products/cloud/guides/security/cloud-access-management/common-access-management-queries).

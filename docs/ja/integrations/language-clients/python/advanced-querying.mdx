@@ -468,7 +468,7 @@ ClickHouseのクエリでは、任意のClickHouseフォーマットの外部デ
 | file&#95;path | str               | 外部データの読み取り元となる、ローカルシステム上のファイルへのパスです。`file_path`または`data`のいずれかが必要です               |
 | file&#95;name | str               | 外部データの&quot;ファイル&quot;名です。指定しない場合は、`file_path`から (拡張子を除いて) 決定されます                |
 | data          | bytes             | バイナリ形式の外部データです (ファイルから読み取る代わりに指定します) 。`data`または`file_path`のいずれかが必要です             |
-| fmt           | str               | データのClickHouse[入力フォーマット](/ja/reference/formats/index)です。デフォルトは`TSV`です               |
+| fmt           | str               | データのClickHouse[入力フォーマット](/ja/reference/formats)です。デフォルトは`TSV`です                     |
 | types         | str or seq of str | 外部データ内のカラムのデータ型の一覧です。文字列の場合、型はカンマ区切りで指定する必要があります。`types`または`structure`のいずれかが必要です |
 | structure     | str or seq of str | データ内のカラム名 + データ型の一覧です (例を参照) 。`structure`または`types`のいずれかが必要です                    |
 | mime&#95;type | str               | ファイルデータの省略可能なMIMEタイプです。現在、ClickHouseはこのHTTPサブヘッダーを無視します                          |

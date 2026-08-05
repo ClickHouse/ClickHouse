@@ -1,0 +1,56 @@
+---
+description: '현재 세션에 정의된 가상 인덱스를 나열하는 시스템 테이블'
+keywords: ['system table', 'hypothetical_indexes', 'what-if']
+sidebarTitle: 'hypothetical_indexes'
+slug: /operations/system-tables/hypothetical_indexes
+title: 'system.hypothetical_indexes'
+doc_type: 'reference'
+---
+
+현재 세션에 정의된 모든 가상(what-if) 스킵 인덱스를 나열합니다. [`CREATE HYPOTHETICAL INDEX`](/ko/reference/statements/hypothetical-index#create-hypothetical-index) 및 [`EXPLAIN WHATIF`](/ko/reference/statements/explain#explain-whatif)를 참조하십시오.
+
+이 테이블의 내용은 세션 범위로 제한됩니다. 각 연결은 자신이 정의한 가상 인덱스만 볼 수 있으며, 현재 세션에서 생성된 인덱스가 없으면 테이블은 비어 있습니다.
+
+현재 `(database, table)`는 쿼리 시점에 UUID를 기준으로 확인되므로 `RENAME TABLE`이 반영되며, 삭제된 테이블의 항목은 자동으로 숨겨집니다.
+
+<div id="columns">
+  ## 컬럼
+</div>
+
+| Column        | Type     | Description                                  |
+| ------------- | -------- | -------------------------------------------- |
+| `database`    | `String` | 대상 데이터베이스.                                   |
+| `table`       | `String` | 대상 테이블.                                      |
+| `name`        | `String` | 인덱스 이름.                                      |
+| `type`        | `String` | 인덱스 유형(`minmax`, `set`, `bloom_filter` 등).   |
+| `type_full`   | `String` | 인수를 포함한 인덱스 유형 표현식. 예: `bloom_filter(0.01)`. |
+| `expression`  | `String` | `CREATE HYPOTHETICAL INDEX`에 작성된 인덱스 표현식.    |
+| `granularity` | `UInt64` | 인덱스 그래뉼당 데이터 그래뉼 수.                          |
+
+<div id="example">
+  ## 예시
+</div>
+
+```sql
+CREATE HYPOTHETICAL INDEX i1 ON t (b) TYPE bloom_filter(0.01)  GRANULARITY 1;
+CREATE HYPOTHETICAL INDEX i2 ON t (b) TYPE bloom_filter(0.001) GRANULARITY 1;
+
+SELECT database, table, name, type, type_full, expression, granularity
+FROM system.hypothetical_indexes;
+```
+
+```text
+┌─database─┬─table─┬─name─┬─type─────────┬─type_full───────────┬─expression─┬─granularity─┐
+│ default  │ t     │ i1   │ bloom_filter │ bloom_filter(0.01)  │ b          │           1 │
+│ default  │ t     │ i2   │ bloom_filter │ bloom_filter(0.001) │ b          │           1 │
+└──────────┴───────┴──────┴──────────────┴─────────────────────┴────────────┴─────────────┘
+```
+
+`type`은 기본 타입 이름이고 `type_full`에는 인수가 포함되므로, 사용자는 `bloom_filter(0.01)`과 `bloom_filter(0.001)`처럼 매개변수가 있는 변형을 구분할 수 있습니다.
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`CREATE HYPOTHETICAL INDEX`](/ko/reference/statements/hypothetical-index#create-hypothetical-index)
+* [`EXPLAIN WHATIF`](/ko/reference/statements/explain#explain-whatif)

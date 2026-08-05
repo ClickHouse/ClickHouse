@@ -6,7 +6,7 @@ title: 'ALTER SETTINGS PROFILE'
 doc_type: 'reference'
 ---
 
-Modifica los perfiles de configuración.
+Modifica los perfiles de ajuste.
 
 Sintaxis:
 
@@ -15,6 +15,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
@@ -23,7 +24,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
 ```
 
-La cláusula `ON CLUSTER` permite modificar perfiles de configuración en un clúster; véase [DDL distribuido](/es/reference/statements/distributed-ddl).
+La cláusula `ON CLUSTER` permite modificar perfiles de ajuste en un clúster; véase [DDL distribuido](/es/reference/statements/distributed-ddl).
 
 <div id="replacing-vs-modifying">
   ## Reemplazar o modificar ajustes
@@ -60,13 +61,15 @@ Este es el mismo comportamiento que `SETTINGS` en [`CREATE SETTINGS PROFILE`](/e
 
 Las palabras clave `ADD`, `MODIFY` y `DROP` cambian entradas individuales y dejan intacto todo lo demás del perfil:
 
-* `ADD SETTINGS variable = value [constraints]` — añade una configuración que todavía no está presente.
-* `MODIFY SETTINGS variable = value [constraints]` — reemplaza la entrada de una sola configuración. Se sobrescribe la entrada completa (valor y restricciones), así que vuelve a especificar `MIN`/`MAX`/`READONLY`/etc. si quieres conservarlos.
-* `DROP SETTINGS variable [,...]` — elimina las configuraciones indicadas.
+* `ADD SETTINGS variable = value [constraints]` — añade un ajuste que todavía no está presente.
+* `MODIFY SETTINGS variable = value [constraints]` — reemplaza la entrada de un solo ajuste. Se sobrescribe la entrada completa (valor y restricciones), así que vuelve a especificar `MIN`/`MAX`/`READONLY`/etc. si quieres conservarlos.
+* `DROP SETTINGS variable [,...]` — elimina los ajustes indicados.
 * `ADD PROFILES 'profile_name' [,...]` / `DROP PROFILES 'profile_name' [,...]` — añade o elimina perfiles padre (heredados).
-* `DROP ALL SETTINGS` / `DROP ALL PROFILES` — elimina todas las configuraciones o todos los perfiles padre.
+* `DROP ALL SETTINGS` / `DROP ALL PROFILES` — elimina todos los ajustes o todos los perfiles padre.
 
 Varias de estas cláusulas pueden combinarse en una sola sentencia; por ejemplo, `DROP SETTINGS a ADD SETTINGS b = 1`.
+
+`SET variable = value` es un alias de `MODIFY SETTINGS variable = value`. Se ofrece porque `SET` resulta natural y porque escribir la cláusula `SETTINGS` de reemplazo cuando se pretendía hacer un cambio incremental es un error común.
 
 <div id="examples">
   ## Ejemplos

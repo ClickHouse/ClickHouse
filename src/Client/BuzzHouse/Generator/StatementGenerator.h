@@ -378,6 +378,7 @@ private:
         MergeProjectionUDF,
         MergeTextIndexUDF,
         MergeIndexAnalyzeUDF,
+        MergeCodecBlockCountsUDF,
         FilesystemUDF
     };
 

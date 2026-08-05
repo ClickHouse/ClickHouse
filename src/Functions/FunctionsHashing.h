@@ -236,7 +236,9 @@ struct HalfMD5Impl
     static constexpr auto name = "halfMD5";
     using ReturnType = UInt64;
 
-    static UInt64 apply(const char * begin, size_t size)
+    /// SHARED_ACROSS_DSO covers the thread-local context below. This is a per-row hash, so the
+    /// definition stays in the header to keep it inlinable rather than moving to a .cpp.
+    SHARED_ACROSS_DSO static UInt64 apply(const char * begin, size_t size)
     {
         union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {

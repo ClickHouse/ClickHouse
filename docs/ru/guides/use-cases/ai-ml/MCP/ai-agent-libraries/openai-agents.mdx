@@ -28,9 +28,7 @@ doc_type: 'guide'
 Вы можете выполнить следующие шаги либо в интерактивной оболочке Python (REPL), либо с помощью скрипта.
 
 <Steps>
-  <Step>
-    ## Установите библиотеки
-
+  <Step title="Установите библиотеки" id="install-libraries">
     Установите необходимые библиотеки, выполнив следующие команды:
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Настройка учетных данных
-
+  <Step title="Настройка учетных данных" id="setup-credentials">
     Далее вам потребуется указать свой ключ API OpenAI:
 
     ```python
@@ -54,9 +50,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Инициализация MCP Server и агента OpenAI
-
+  <Step title="Инициализация MCP Server и агента OpenAI" id="initialize-mcp-and-agent">
     Теперь настройте MCP-сервер ClickHouse на работу с Песочницей ClickHouse,
     инициализируйте агент OpenAI и задайте ему вопрос:
 
@@ -68,7 +62,7 @@ doc_type: 'guide'
     def simple_render_chunk(chunk):
         """Simple version that just filters important events"""
 
-        # Вызовы инструментов
+        # Tool calls
         if (hasattr(chunk, 'type') and
                 chunk.type == 'run_item_stream_event'):
 
@@ -79,13 +73,13 @@ doc_type: 'guide'
 
             elif chunk.name == 'tool_output':
                 try:
-                    # Обработка строкового и уже разобранного вывода
+                    # Handle both string and already-parsed output
                     if isinstance(chunk.item.output, str):
                         output = json.loads(chunk.item.output)
                     else:
                         output = chunk.item.output
 
-                    # Обработка форматов dict и list
+                    # Handle both dict and list formats
                     if isinstance(output, dict):
                         if output.get('type') == 'text':
                             text = output['text']
@@ -94,7 +88,7 @@ doc_type: 'guide'
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     elif isinstance(output, list) and len(output) > 0:
-                        # Обработка формата list
+                        # Handle list format
                         first_item = output[0]
                         if isinstance(first_item, dict) and first_item.get('type') == 'text':
                             text = first_item['text']
@@ -103,11 +97,11 @@ doc_type: 'guide'
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     else:
-                        # Запасной вариант — вывод необработанного результата
+                        # Fallback - just print the raw output
                         print(f"✅ Result: {str(output)[:100]}...")
 
                 except (json.JSONDecodeError, AttributeError, KeyError) as e:
-                    # Запасной вариант — необработанный вывод, если разбор завершился ошибкой
+                    # Fallback to raw output if parsing fails
                     print(f"✅ Result: {str(chunk.item.output)[:100]}...")
 
             elif chunk.name == 'message_output_created':
@@ -118,7 +112,7 @@ doc_type: 'guide'
                 except (AttributeError, IndexError):
                     print(f"💬 Response: {str(chunk.item)[:100]}...")
 
-        # Текстовые дельты для стриминга
+        # Text deltas for streaming
         elif (hasattr(chunk, 'type') and
               chunk.type == 'raw_response_event' and
               hasattr(chunk, 'data') and
@@ -154,7 +148,7 @@ doc_type: 'guide'
     ```
 
     ```response title="Response"
-    Running: Какой самый крупный проект на GitHub в 2025 году?
+    Running: What's the biggest GitHub project so far in 2025?
     🔧 Tool: list_databases({})
     ✅ Result: amazon
     bluesky
@@ -188,7 +182,7 @@ doc_type: 'guide'
       "repo_name": "sindresorhus/awesome",
       "stars": 402893
     }...
-    Самый крупный проект на GitHub в 2025 году по количеству звёзд — "[sindresorhus/awesome](https://github.com/sindresorhus/awesome)" с 402 893 звёздами.💬 Response: Самый крупный проект на GitHub в 2025 году по количеству звёзд — "[sindresorhus/awesome](https://github.com/sindresorhus/awesome)" с 402 893 звёздами.
+    The biggest GitHub project in 2025, based on stars, is "[sindresorhus/awesome](https://github.com/sindresorhus/awesome)" with 402,893 stars.💬 Response: The biggest GitHub project in 2025, based on stars, is "[sindresorhus/awesome](https://github.com/sindresorhus/awesome)" with 402,893 stars.
     ```
   </Step>
 </Steps>

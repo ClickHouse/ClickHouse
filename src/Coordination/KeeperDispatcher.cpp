@@ -185,7 +185,11 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
         if (new_dispatcher_response_thread_started && dispatcher)
-            dispatcher->shutdown(/*closed_all_connections=*/false);
+        {
+            /// Raft startup failed, so we can't join nuraft's commit thread here.
+            dispatcher->shutdownRequests();
+            dispatcher->drainAndCheckQueues(/*closed_all_connections=*/false);
+        }
 
         throw;
     }
@@ -244,11 +248,18 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
 
         if (dispatcher_old)
             dispatcher_old->shutdown();
+        /// Stop accepting requests and close the sessions first: that needs a live raft instance,
+        /// which server->shutdown destroys.
         if (dispatcher)
-            dispatcher->shutdown(closed_all_connections);
+            dispatcher->shutdownRequests();
 
         if (server)
             server->shutdown();
+
+        /// Only now is nuraft's commit thread joined, so no thread can produce responses anymore
+        /// and the queues can be drained and checked.
+        if (dispatcher)
+            dispatcher->drainAndCheckQueues(closed_all_connections);
 
         snapshot_s3.shutdown();
 

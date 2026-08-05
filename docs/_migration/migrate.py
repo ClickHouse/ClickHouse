@@ -1020,10 +1020,16 @@ def transform_imports(text: str, lk: Lookups, issues: list[str], source_docu_pat
             for n in candidates:
                 folder = THIS_REPO / "snippets" / "components" / n / f"{n}.jsx"
                 flat = THIS_REPO / "snippets" / "components" / f"{n}.jsx"
+                mintlify_spec = spec
+                if "/badges/" in src and re.fullmatch(r"\w+", spec):
+                    # Mintlify's MDX compiler requires page badges to use their
+                    # named exports. A default import can render the badge and
+                    # silently omit every sibling that follows it.
+                    mintlify_spec = f"{{ {n} }}" if spec == n else f"{{ {n} as {spec} }}"
                 if folder.exists():
-                    return f'import {spec} from "/snippets/components/{n}/{n}.jsx";'
+                    return f'import {mintlify_spec} from "/snippets/components/{n}/{n}.jsx";'
                 if flat.exists():
-                    return f'import {spec} from "/snippets/components/{n}.jsx";'
+                    return f'import {mintlify_spec} from "/snippets/components/{n}.jsx";'
             issues.append(f"unmapped @theme import: {src}")
             return f"{{/* MIGRATE: unmapped import {src!r} */}}"
 

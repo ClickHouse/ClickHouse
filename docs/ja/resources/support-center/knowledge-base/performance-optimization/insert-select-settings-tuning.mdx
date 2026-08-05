@@ -19,24 +19,24 @@ tags: ['設定', 'エラーと例外']
 
 以下は、このエラーを回避するために調整可能な設定の一部です。これらは ClickHouse の上級者向けチューニングであり、実際に使用する ClickHouse Cloud サービスまたはオンプレミスのクラスターの仕様を十分に理解したうえでのみ設定してください。したがって、これらの値を「どの環境にもそのまま当てはまる設定値」と考えないでください。
 
-[max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings#settings-max_insert_block_size) = `100_000_000` (default `1_048_576`)
+[max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings#max_insert_block_size) = `100_000_000` (default `1_048_576`)
 
 約 1M から 100M に増やすことで、より大きなブロックを形成できるようになります
 
 注: この設定は、サーバー側でブロックを形成する場合にのみ適用されます。つまり、HTTP インターフェイス経由の INSERT には適用されますが、clickhouse-client には適用されません
 
-[min&#95;insert&#95;block&#95;size&#95;rows](/ja/reference/settings/session-settings#min-insert-block-size-rows) = `100_000_000` (default `1_048_576`)
+[min&#95;insert&#95;block&#95;size&#95;rows](/ja/reference/settings/session-settings#min_insert_block_size_rows) = `100_000_000` (default `1_048_576`)
 
 約 1M から 100M に増やすことで、より大きなブロックを形成できるようになります。
 
-[min&#95;insert&#95;block&#95;size&#95;bytes](/ja/reference/settings/session-settings#min-insert-block-size-bytes) = `500_000_000` (default `268_435_456`)
+[min&#95;insert&#95;block&#95;size&#95;bytes](/ja/reference/settings/session-settings#min_insert_block_size_bytes) = `500_000_000` (default `268_435_456`)
 
 268.44 MB から 500 MB に増やすことで、より大きなブロックを形成できるようになります。
 
-[parts&#95;to&#95;delay&#95;insert](/ja/reference/settings/merge-tree-settings#parts-to-delay-insert) = `500` (default `150`)
+[parts&#95;to&#95;delay&#95;insert](/ja/reference/settings/merge-tree-settings#parts_to_delay_insert) = `500` (default `150`)
 
 単一パーティション内のアクティブなパーツ数がしきい値に達した際に、INSERT が不必要に遅くならないよう、この値を増やします。
 
-[parts&#95;to&#95;throw&#95;insert](/ja/reference/settings/merge-tree-settings#parts-to-throw-insert) = `1500` (default `3000`)
+[parts&#95;to&#95;throw&#95;insert](/ja/reference/settings/merge-tree-settings#parts_to_throw_insert) = `1500` (default `3000`)
 
 これを増やすと、一般にそのテーブルに対するクエリのパフォーマンスへ影響しますが、データ移行であれば問題ありません。

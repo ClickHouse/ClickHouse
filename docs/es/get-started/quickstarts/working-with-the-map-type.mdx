@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Uso del tipo Map'
 title: 'Uso del tipo Map en ClickHouse'
-useCases: ['Observability']
+useCases: ['Observabilidad']
 products: ['OSS']
 description: 'Aprenda a usar el tipo Map en ClickHouse para almacenar, consultar y agregar datos dinámicos de clave-valor, usando atributos de recurso de OTel como ejemplo práctico.'
 ---
@@ -35,9 +35,7 @@ En OpenTelemetry, cada span de traza lleva un conjunto de **atributos de recurso
 En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos reales de trazas de OTel desde un archivo CSV a una tabla con columnas `Map(LowCardinality(String), String)`, y aprenderás a consultar, filtrar, agregar y optimizar datos de tipo `Map`.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Descarga los datos de muestra
-
+  <Step title="Descarga los datos de muestra" id="download-the-sample-data">
     El conjunto de datos contiene 6.120 spans de trazas de OTel exportados de una aplicación de microservicios de demostración. Cada fila incluye las columnas `ResourceAttributes` y `SpanAttributes`, que contienen pares clave-valor dinámicos en forma de mapas JSON.
     Guarda el archivo en un directorio que puedas localizar fácilmente, por ejemplo `~/data/data-otel-traces.csv`.
 
@@ -66,9 +64,7 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
     ```
   </Step>
 
-  <Step>
-    ### Cree la tabla y cargue los datos
-
+  <Step title="Cree la tabla y cargue los datos" id="create-the-table-and-load-the-data">
     Inicie `clickhouse-local` y cree la siguiente tabla con un esquema que coincida con el del CSV.
     La columna clave es `ResourceAttributes Map(LowCardinality(String), String)`; se usa `LowCardinality` en el tipo de clave porque las claves de los atributos de OTel provienen de un conjunto relativamente pequeño y repetitivo.
 
@@ -107,9 +103,7 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
     Deberías ver 6.120 filas.
   </Step>
 
-  <Step>
-    ### Consultar los datos
-
+  <Step title="Consultar los datos" id="query-the-data">
     **Acceder a una clave específica** — usa la sintaxis de corchetes para obtener un valor del mapa. Si esa clave no existe en una fila concreta, obtendrás el valor predeterminado del tipo de valor (cadena vacía para `String`):
 
     ```sql
@@ -155,7 +149,7 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
     ORDER BY key;
     ```
 
-    **Desglosa un Map en filas con ARRAY JOIN** — convierte cada par clave-valor en una fila independiente, lo que resulta útil para crear inventarios de atributos o usarlos en paneles:
+    **Desglosa un Map en filas con ARRAY JOIN** â convierte cada par clave-valor en una fila independiente, lo que resulta útil para crear inventarios de atributos o usarlos en paneles:
 
     ```sql
     SELECT
@@ -197,9 +191,7 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
     ```
   </Step>
 
-  <Step>
-    ### Agregar en mapas con el combinador -Map
-
+  <Step title="Agregar en mapas con el combinador -Map" id="aggregate-across-maps-with-the--map-combinator">
     El combinador de agregación `-Map` de ClickHouse permite aplicar cualquier aggregate function a una columna `Map` y hacer que opere sobre cada clave de forma independiente. El resultado es también un `Map`: una entrada por clave, con el valor agregado. Esto resulta especialmente útil para las metrics de OTel, donde los counters o gauges se almacenan como valores de mapas.
 
     Para demostrarlo, crea una pequeña table de metrics en la que cada fila registre los recuentos de códigos de estado HTTP como un `Map(String, UInt64)`:
@@ -254,12 +246,10 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
     GROUP BY ServiceName;
     ```
 
-    **Por qué esto es importante para OTel:** Cuando tu OTel collector escribe en ClickHouse desgloses por minuto de los códigos de estado, `sumMap` te permite consolidarlos en totales por hora o por día en una sola consulta, sin `ARRAY JOIN`, sin despivotar y sin necesidad de conocer de antemano el conjunto completo de claves. Cualquier clave que aparezca en cualquier fila se incluye automáticamente en el resultado.
+    **Por qué esto es importante para OTel:** Cuando tu OTel Collector escribe en ClickHouse desgloses por minuto de códigos de estado, `sumMap` te permite consolidarlos en totales por hora o por día en una sola consulta — sin `ARRAY JOIN`, sin despivotar y sin necesidad de conocer de antemano el conjunto completo de claves. Cualquier clave que aparezca en cualquier fila se incluye automáticamente en el resultado.
   </Step>
 
-  <Step>
-    ### Optimiza para las claves que se consultan con frecuencia
-
+  <Step title="Optimiza para las claves que se consultan con frecuencia" id="optimise-for-frequently-queried-keys">
     Si ves que filtras constantemente por la misma clave del `map` — `host.name` es una de las más comunes — puedes extraerla como una columna materializada. Esto evita el escaneo lineal por el `map` en cada consulta:
 
     ```sql
@@ -278,7 +268,9 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
   </Step>
 </Steps>
 
-## Puntos clave
+<div id="key-takeaways">
+  ## Puntos clave
+</div>
 
 * **`Map(LowCardinality(String), String)`** es el tipo más idiomático para los atributos de OTel: ofrece la flexibilidad necesaria para manejar conjuntos de claves variables, y `LowCardinality` mantiene eficiente el almacenamiento de las claves.
 * **La sintaxis con corchetes** (`map['key']`) es la forma más habitual de acceder a los valores, pero recuerda que hace un escaneo lineal: funciona bien para mapas con decenas de claves, pero no es lo ideal para cientos.
@@ -286,7 +278,9 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
 * **`mapContains`, `mapKeys`, `mapValues`, `mapFilter`** y `ARRAY JOIN` te proporcionan un completo conjunto de herramientas para explorar y transformar datos de tipo Map sin salir de SQL.
 * **El combinador de agregación `-Map`** (`sumMap`, `avgMap`, `maxMap`, etc.) agrega cada clave de forma independiente en todas las filas: es ideal para consolidar contadores de métricas de OTel sin necesidad de conocer de antemano el conjunto de claves. También se puede combinar con otros combinadores (por ejemplo, `sumMapIf`).
 
-## Próximos pasos
+<div id="next-steps">
+  ## Próximos pasos
+</div>
 
 A continuación, consulta estas guías de inicio rápido:
 

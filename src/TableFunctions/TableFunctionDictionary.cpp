@@ -106,7 +106,7 @@ dictionary('dict')
 
 - `dict` — A dictionary name. [String](/reference/data-types/string).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A ClickHouse table.
 

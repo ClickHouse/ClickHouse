@@ -42,6 +42,7 @@ public:
         ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
+        bool supported_columns_include_subcolumns_,
         LoggerPtr log_);
 
     void optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const;
@@ -178,6 +179,7 @@ private:
     const NameSet table_columns;
     const Names queried_columns;
     const std::optional<NameSet> supported_columns;
+    const bool supported_columns_include_subcolumns;
     const NameSet sorting_key_names;
     const NameToIndexMap primary_key_names_positions;
     StorageMetadataPtr storage_metadata;

@@ -197,6 +197,8 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto select_query_options = SelectQueryOptions(processed_stage);
     select_query_options.is_local_shard_plan
         = processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+    /// The local replica's plan is united into the parent pipeline in this process.
+    select_query_options.is_local_plan_for_distributed_query = true;
 
     /// Positional arguments in the outer query were already resolved by the initiator.
     /// Use a context flag instead of disabling enable_positional_arguments so that
@@ -333,6 +335,11 @@ QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     for (auto * reading_node : reading_nodes)
     {
         auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
+
+        /// Only the coordinated read (marked for parallel reading) is split across replicas. A JOIN's other side is
+        /// left as a plain full local read (broadcast), matching how it is read on remote replicas.
+        if (!reading->isParallelReadingFromReplicas())
+            continue;
 
         MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
         { return coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };

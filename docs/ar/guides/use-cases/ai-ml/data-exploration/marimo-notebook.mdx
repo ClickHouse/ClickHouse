@@ -1,15 +1,15 @@
 ---
 slug: /use-cases/AI/marimo-notebook
-sidebarTitle: 'استكشاف البيانات باستخدام دفاتر Marimo وchDB'
-title: 'استكشاف البيانات باستخدام دفاتر Marimo وchDB'
-description: 'يشرح هذا الدليل كيفية إعداد chDB واستخدامه لاستكشاف البيانات من ClickHouse Cloud أو من الملفات المحلية داخل دفاتر Marimo'
+sidebarTitle: 'استكشاف البيانات باستخدام دفتر Marimo وchDB'
+title: 'استكشاف البيانات باستخدام دفتر Marimo وchDB'
+description: 'يشرح هذا الدليل كيفية إعداد chDB واستخدامه لاستكشاف البيانات من ClickHouse Cloud أو من الملفات المحلية داخل دفتر Marimo'
 keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-في هذا الدليل، ستتعلّم كيف تستكشف مجموعة بيانات من ClickHouse Cloud في دفتر ملاحظات Marimo بمساعدة [chDB](/ar/products/chdb/index) — وهو محرك SQL OLAP سريع يعمل داخل العملية ومدعوم من ClickHouse.
+في هذا الدليل، ستتعلّم كيف تستكشف مجموعة بيانات من ClickHouse Cloud في دفتر ملاحظات Marimo بمساعدة [chDB](/ar/chdb/index) — وهو محرك SQL OLAP سريع يعمل داخل العملية ومدعوم من ClickHouse.
 
 **المتطلبات الأساسية:**
 
@@ -24,8 +24,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 **ما ستتعلّمه:**
 
-* الاتصال بـ ClickHouse Cloud من Marimo notebooks باستخدام chDB
-* إجراء استعلامات على مجموعات البيانات البعيدة وتحويل النتائج إلى Pandas DataFrames
+* الاتصال بـ ClickHouse Cloud من دفتر Marimo باستخدام chDB
+* إجراء استعلامات على مجموعات البيانات البعيدة وتحويل النتائج إلى إطار بيانات Pandas
 * تصور البيانات باستخدام Plotly في Marimo
 * الاستفادة من نموذج التنفيذ التفاعلي في Marimo لاستكشاف البيانات بشكل تفاعلي
 
@@ -54,9 +54,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="استيراد مجموعة بيانات أسعار العقارات المباعة في المملكة المتحدة" />
 
-سينشئ ClickHouse تلقائيًا الجدول `pp_complete` في قاعدة البيانات `default` ويملأه بـ 28.92 مليون صف من بيانات نقاط الأسعار.
+سينشئ ClickHouse تلقائيًا الجدول `pp_complete` في قاعدة البيانات `default` ويملأ الجدول بـ 28.92 مليون صف من بيانات نقاط الأسعار.
 
-لتقليل احتمال كشف بيانات الاعتماد الخاصة بك، نوصي بإضافة اسم المستخدم وكلمة المرور الخاصَّين بك في Cloud كمتغيرات بيئة على جهازك المحلي.
+لتقليل احتمال كشف بيانات الاعتماد الخاصة بك، نوصي بإضافة اسم مستخدم Cloud وكلمة المرور كمتغيرات بيئة على جهازك المحلي.
 ومن الطرفية، شغّل الأمر التالي لإضافة اسم المستخدم وكلمة المرور كمتغيرات بيئة:
 
 <div id="setting-up-credentials">
@@ -214,7 +214,7 @@ fig
   ### اختيار البلدة تفاعليًا
 </div>
 
-في خلية جديدة، أنشئ قائمة منسدلة لاختيار بلدات متعددة:
+في خلية جديدة، أنشئ قائمة منسدلة لاختيار بلدات مختلفة:
 
 ```python
 town_selector = mo.ui.dropdown(

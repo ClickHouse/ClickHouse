@@ -1,0 +1,66 @@
+-- sum OVER (ORDER BY)
+0	0
+1	1
+2	3
+3	6
+4	10
+5	15
+6	21
+7	28
+8	36
+9	45
+10	55
+11	66
+12	78
+13	91
+14	105
+15	120
+16	136
+17	153
+18	171
+19	190
+-- row_number OVER (ORDER BY)
+0	1
+1	2
+2	3
+3	4
+4	5
+5	6
+6	7
+7	8
+8	9
+9	10
+10	11
+11	12
+12	13
+13	14
+14	15
+15	16
+16	17
+17	18
+18	19
+19	20
+-- rolling frame (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+0	0
+1	1
+2	3
+3	5
+4	7
+5	9
+6	11
+7	13
+8	15
+9	17
+10	19
+11	21
+12	23
+13	25
+14	27
+15	29
+16	31
+17	33
+18	35
+19	37
+-- PARTITION BY window is not serializable for remote execution yet -> fail closed
+-- theilsU window variant under make_distributed_plan
+0	1

@@ -8,6 +8,19 @@
 
 using namespace DB;
 
+/// Writes the archive of @writer into @file_name on @disk and returns its index.
+static PackedFilesIO::Index writeArchive(const DiskPtr & disk, const String & file_name, PackedFilesWriter & writer)
+{
+    auto buf = disk->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, writer.getWriteSettings());
+    auto [index, need_sync] = writer.finalize(*buf, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+
+    buf->finalize();
+    if (need_sync)
+        buf->sync();
+
+    return index;
+}
+
 TEST(PackedFilesWriter, Basics)
 {
     static constexpr auto data_filename = "data.packed";
@@ -36,14 +49,7 @@ TEST(PackedFilesWriter, Basics)
         out1->finalize();
     }
 
-    writer.finalize([&](String serialised_data, const auto & settings, bool need_sync)
-    {
-        auto buf = disk->writeFile(data_filename, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        buf->write(serialised_data.data(), serialised_data.size());
-        buf->finalize();
-        if (need_sync)
-            buf->sync();
-    }, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    writeArchive(disk, data_filename, writer);
 
     PackedFilesReader reader(disk, data_filename, getReadSettings());
 
@@ -85,15 +91,6 @@ TEST(PackedFilesWriter, Removes)
     fs::create_directory("tmp/");
     DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
 
-    auto write_callback = [&](String serialised_data, const auto & settings, bool need_sync)
-    {
-        auto buf = disk->writeFile(data_filename, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        buf->write(serialised_data.data(), serialised_data.size());
-        buf->finalize();
-        if (need_sync)
-            buf->sync();
-    };
-
     PackedFilesWriter writer1;
 
     {
@@ -106,7 +103,7 @@ TEST(PackedFilesWriter, Removes)
         out2->finalize();
     }
 
-    auto old_index = writer1.finalize(write_callback, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    auto old_index = writeArchive(disk, data_filename, writer1);
 
     PackedFilesWriter writer2;
 
@@ -125,7 +122,7 @@ TEST(PackedFilesWriter, Removes)
     }
 
     writer2.applyMetadataChanges(old_index);
-    auto new_index = writer2.finalize(write_callback, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    auto new_index = writeArchive(disk, data_filename, writer2);
 
     ASSERT_EQ(old_index.size(), 1);
     ASSERT_FALSE(old_index.contains("file1"));
@@ -134,4 +131,51 @@ TEST(PackedFilesWriter, Removes)
     PackedFilesReader reader(disk, data_filename, getReadSettings());
     auto in = reader.readFile(disk, data_filename, "file3", ReadSettings{}, {});
     assertString("101", *in);
+}
+
+/// `prepareFinalize` performs every check that can throw, so a caller can open the destination
+/// file only after it succeeded and never truncate an existing archive on a failed finalization.
+TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
+{
+    static constexpr auto data_filename = "data_prepare.packed";
+
+    fs::create_directory("tmp/");
+    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+
+    PackedFilesWriter writer1;
+
+    {
+        auto out1 = writer1.writeFile("file1");
+        writeString("123", *out1);
+        out1->finalize();
+    }
+
+    auto old_index = writeArchive(disk, data_filename, writer1);
+    const auto old_archive_size = disk->getFileSize(data_filename);
+
+    PackedFilesWriter writer2;
+
+    {
+        auto out2 = writer2.writeFile("file2");
+        writeString("456", *out2);
+        out2->finalize();
+
+        /// There is no such file, neither in the writer nor in the old index, so the change
+        /// remains unapplied and finalization must fail.
+        writer2.removeFile("file_that_does_not_exist");
+    }
+
+    writer2.applyMetadataChanges(old_index);
+
+    ASSERT_THROW(
+        writer2.prepareFinalize({}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE),
+        Exception);
+
+    /// The old archive is intact: it was never opened for writing.
+    ASSERT_EQ(disk->getFileSize(data_filename), old_archive_size);
+
+    PackedFilesReader reader(disk, data_filename, getReadSettings());
+    auto in = reader.readFile(disk, data_filename, "file1", ReadSettings{}, {});
+    assertString("123", *in);
+    assertEOF(*in);
 }

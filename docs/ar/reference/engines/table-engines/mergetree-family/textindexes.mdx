@@ -87,6 +87,8 @@ CREATE TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -121,6 +123,8 @@ ALTER TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -142,7 +146,7 @@ ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
 ALTER TABLE table DROP INDEX text_idx;
 ```
 
-**الوسيطة `tokenizer` (إلزامية)**. تحدد الوسيطة `tokenizer` المُجزِّئ:
+**الوسيطة `tokenizer` (إلزامية)**. تحدد الوسيطة `tokenizer` مُقسِّم الرموز:
 
 * `splitByNonAlpha` يقسم السلاسل النصية عند محارف ASCII غير الأبجدية الرقمية (راجع الدالة [splitByNonAlpha](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` يقسم السلاسل النصية باستخدام سلاسل فاصلة `S` يحددها المستخدم (راجع الدالة [splitByString](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByString)).
@@ -156,14 +160,14 @@ ALTER TABLE table DROP INDEX text_idx;
 * `sparseGrams(min_length, max_length, min_cutoff_length)` يقسم السلاسل النصية إلى n-grams متغيرة الطول، بحيث لا يقل طولها عن `min_length` ولا يزيد على `max_length` (شاملًا) من المحارف (راجع الدالة [sparseGrams](/ar/reference/functions/regular-functions/string-functions#sparseGrams)).
   ما لم يُحدَّد ذلك صراحةً، تكون القيم الافتراضية لـ `min_length` و`max_length` هي 3 و100.
   إذا تم توفير المعلمة `min_cutoff_length`، فلن تُعاد إلا n-grams التي يكون طولها أكبر من أو مساويًا لـ `min_cutoff_length`.
-  مقارنةً بـ `ngrams(N)`، يُنتج المُجزِّئ `sparseGrams` ‏N-grams متغيرة الطول، مما يتيح تمثيلًا أكثر مرونة للنص الأصلي.
+  مقارنةً بـ `ngrams(N)`، يُنتج مُقسِّم الرموز `sparseGrams` ‏N-grams متغيرة الطول، مما يتيح تمثيلًا أكثر مرونة للنص الأصلي.
   على سبيل المثال، `tokenizer = sparseGrams(3, 5, 4)` يُنشئ داخليًا 3- و4- و5-grams من سلسلة الإدخال، لكن لا تُعاد إلا 4- و5-grams.
-* `array` لا يُجري أي تجزئة، أي إن كل قيمة في row هي رمز (راجع الدالة [array](/ar/reference/functions/regular-functions/array-functions#array)).
+* `array` لا يُجري أي تقسيم إلى رموز، أي إن كل قيمة في row هي رمز (راجع الدالة [array](/ar/reference/functions/regular-functions/array-functions#array)).
 
-جميع المُجزِّئات المتاحة مُدرجة في [system.tokenizers](/ar/reference/system-tables/tokenizers).
+جميع مُقسِّمات الرموز المتاحة مُدرجة في [system.tokenizers](/ar/reference/system-tables/tokenizers).
 
 <Note>
-  يطبّق المُجزِّئ `splitByString` فواصل التقسيم من اليسار إلى اليمين.
+  يطبّق مُقسِّم الرموز `splitByString` فواصل التقسيم من اليسار إلى اليمين.
   وقد يؤدي ذلك إلى حدوث حالات التباس.
   على سبيل المثال، ستؤدي سلاسل الفواصل `['%21', '%']` إلى تجزئة `%21abc` على هيئة `['abc']`، بينما سيؤدي تبديل ترتيب سلسلتي الفواصل إلى `['%', '%21']` إلى إخراج `['21abc']`.
   في معظم الحالات، ستحتاج إلى أن تُفضِّل المطابقة الفواصل الأطول أولًا.
@@ -171,7 +175,7 @@ ALTER TABLE table DROP INDEX text_idx;
   وإذا كانت سلاسل الفواصل تُشكّل [prefix code](https://en.wikipedia.org/wiki/Prefix_code)، فيمكن تمريرها بأي ترتيب.
 </Note>
 
-لفهم كيفية قيام المُجزِّئ بتقسيم سلسلة الإدخال، يمكنك استخدام الدالتين [tokens](/ar/reference/functions/regular-functions/splitting-merging-functions#tokens) و[tokensForLikePattern](/ar/reference/functions/regular-functions/splitting-merging-functions#tokensForLikePattern):
+لفهم كيفية قيام مُقسِّم الرموز بتقسيم سلسلة الإدخال، يمكنك استخدام الدالتين [tokens](/ar/reference/functions/regular-functions/splitting-merging-functions#tokens) و[tokensForLikePattern](/ar/reference/functions/regular-functions/splitting-merging-functions#tokensForLikePattern):
 
 مثال:
 
@@ -185,9 +189,9 @@ SELECT tokens('abc def', 'ngrams', 3);
 
 *العمل مع مدخلات غير ASCII.*
 يمكن إنشاء فهرس نصي على بيانات نصية بأي لغة وبأي مجموعة محارف.
-بالنسبة إلى النصوص غير ASCII، يُوصى باستخدام المُجزِّئ `asciiCJK` لأنه يتعامل بشكل صحيح مع حدود الكلمات في Unicode، بما في ذلك محارف CJK.
+بالنسبة إلى النصوص غير ASCII، يُوصى باستخدام مُقسِّم الرموز `asciiCJK` لأنه يتعامل بشكل صحيح مع حدود الكلمات في Unicode، بما في ذلك محارف CJK.
 
-**وسيطة المعالج المسبق (اختيارية)**. يشير المعالج المسبق إلى تعبير يُطبَّق على سلسلة الإدخال قبل تقسيمها إلى رموز.
+<a id="preprocessor-argument-optional" />**وسيطة المعالج المسبق (اختيارية)**. يشير المعالج المسبق إلى تعبير يُطبَّق على سلسلة الإدخال قبل التقسيم إلى رموز.
 
 تشمل حالات الاستخدام الشائعة لوسيطة المعالج المسبق
 
@@ -254,7 +258,7 @@ ORDER BY tuple();
 SELECT count() FROM table WHERE hasToken(str, lower('Foo'));
 ```
 
-في هذه الحالة، يُحوِّل تعبير المعالجة المسبقة عناصر المصفوفة، كل عنصر على حدة.
+في هذه الحالة، يُحوِّل تعبير المعالج المسبق عناصر المصفوفة، كل عنصر على حدة.
 
 مثال:
 
@@ -273,7 +277,7 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(arr, 'foo');
 ```
 
-لتعريف معالج تمهيدي في فهرس نصي على أعمدة من النوع [Map](/ar/reference/data-types/map) عند الإنشاء، يجب على المستخدمين تحديد ما إذا كان الفهرس
+لتعريف معالج مسبق في فهرس نصي على أعمدة من النوع [Map](/ar/reference/data-types/map) عند الإنشاء، يجب على المستخدمين تحديد ما إذا كان الفهرس
 يُبنى على مفاتيح الـMap أم على قيمه.
 
 مثال:
@@ -290,7 +294,195 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-**وسائط أخرى (اختيارية)**.
+<a id="postprocessor-argument-optional" />**وسيطة المعالج اللاحق (اختيارية)**. يشير المعالج اللاحق إلى تعبير يُطبَّق على كل رمز ناتج بعد عملية tokenization.
+
+وعلى خلاف المعالج المسبق، الذي يُحوِّل سلسلة الإدخال بالكامل قبل أن يقسّمها الـمُجزِّئ إلى رموز، فإن المعالج اللاحق يعمل على الـرموز نفسها، واحدةً تلو الأخرى.
+وهذا هو الموضع الطبيعي للتحويلات التي تكون بطبيعتها على مستوى الـرمز.
+
+تشمل حالات الاستخدام الشائعة لوسيطة المعالج اللاحق ما يلي:
+
+1. **تصفية كلمات التوقف (رموز شديدة التكرار)**. فالـرموز الشائعة جدًا مثل &quot;the&quot; و&quot;a&quot; و&quot;is&quot; تحمل قيمة محدودة من حيث صلة البحث وتؤدي إلى تضخيم الفهرس.
+   يمكنك استخدام المعالج اللاحق لاستبعادها بتحويلها إلى رموز فارغة — وتُتجاهل الـرموز الفارغة، أي لا تُضاف إلى الفهرس.
+   مثال: `if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
+2. **إزالة الطابع الزمني**. كثيرًا ما تبدأ أسطر السجل بطابع زمني منظَّم مثل `2024-01-15T10:23:45` أو تتضمنه.
+   تؤدي فهرسة رموز الطابع الزمني إلى تضخيم الفهرس بسلاسل لا تحمل أي صلة بالبحث.
+   توجد طريقتان متكاملتان لتجاهل الطوابع الزمنية:
+   * **نهج المعالج اللاحق**: استخدم مُجزِّئ ‏`splitByString` (التقسيم حسب المسافات البيضاء) بحيث يصبح الطابع الزمني بالكامل رمزًا واحدًا، ثم استخدم `parseDateTimeOrNull` لاكتشافه واستبعاده.
+     مثال: `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
+     بالنسبة إلى الطوابع الزمنية التي تتضمن إزاحات timezone أو أجزاءً من الثانية، استخدم `parseDateTimeBestEffortOrNull(str)` من دون سلسلة format صريحة.
+   * **نهج المعالج المسبق**: أزل الطابع الزمني من سطر السجل الكامل *قبل* عملية tokenization باستخدام regular expression.
+     مثال: `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
+     ينجح هذا مع أي مُجزِّئ ويكون أكثر كفاءة لأن أحرف الطابع الزمني لا تخضع لعملية tokenization أصلًا.
+     ويمكن الجمع بين النهجين: إذ يزيل المعالج المسبق الطابع الزمني، بينما يُطبِّع المعالج اللاحق الـرموز المتبقية أو يصفّيها (مثل التحويل إلى أحرف صغيرة + حذف كلمات الشدة مثل `ERROR` أو `INFO`).
+3. **التجذير**. يؤدي ربط كل رمز بجذره إلى تحسين شمولية البحث عبر مطابقة المتغيرات الصرفية التي تشترك في الجذر نفسه.
+   على سبيل المثال، عند استخدام التجذير للغة الإنجليزية، فإن &quot;running&quot; و&quot;runs&quot; و&quot;run&quot; جميعها تُختزل إلى &quot;run&quot;، لذا فإن query عن أي من هذه المتغيرات يطابقها جميعًا.
+   يوفّر ClickHouse الدالة [stem](/ar/reference/functions/regular-functions/nlp-functions#stem) مدمجة لعدة لغات.
+   مثال: `stem(str, 'en')`
+4. **تطبيع حالة الأحرف**. تحويل الـرموز إلى أحرف صغيرة أو كبيرة لتمكين case-insensitive matching، مثل [lower](/ar/reference/functions/regular-functions/string-functions#lower) و[lowerUTF8](/ar/reference/functions/regular-functions/string-functions#lowerUTF8).
+   بالنسبة إلى التحويل إلى الأحرف الصغيرة أو الكبيرة، نوصي باستخدام معالج مسبق بدلًا من معالج لاحق.
+
+يُحوِّل تعبير المُعالج اللاحق الرموز المميزة من نوع [String](/ar/reference/data-types/string) إلى رموز مميزة من النوع ذاته.
+كما يجب أن يشير تعبير المُعالج اللاحق فقط إلى العمود أو التعبير الذي يُعرَّف فوقه فهرس النص.
+وعندما يكون العمود من نوع `Array(String)`، يظل المُعالج اللاحق يعمل على الرموز المميزة الفردية بوصفها قيمًا من نوع `String` العادي.
+
+يُحظر استخدام الدوال غير الحتمية.
+
+يُطبَّق المُعالج اللاحق على كل رمز مميّز يُولَّد أثناء إنشاء الفهرس (وبالنسبة إلى المُجزِّئ `array`، يُعدّ كل عنصر في المصفوفة رمزًا مميّزًا). وعند وقت تنفيذ الاستعلام، يعتمد السلوك على الدالة:
+
+* بالنسبة إلى `hasToken` و`hasAllTokens` و`hasAnyTokens` و`hasPhrase` (مع أي مُجزِّئ مدعوم): يُطبَّق المُعالج اللاحق على كلٍّ من الرموز المميزة في النص المراد البحث داخله وعبارة البحث، مما يتيح مطابقة مُطبَّعة بالكامل (مثل البحث غير الحسّاس لحالة الأحرف). وبالنسبة إلى `hasPhrase`، تُرتَّب الرموز المميزة بعد المعالجة اللاحقة بشكل متجاور، لذا فإن أي رمز مميّز يحذفه المُعالج اللاحق لا يترك فجوة موضعية، وتظل العبارة مطابقة عبره — على سبيل المثال، مع مُعالج لاحق لكلمات التوقف يحذف `the`، فإن `hasPhrase(col, 'see cat')` يطابق المستند `see the cat`.
+* بالنسبة إلى جميع الدوال الأخرى (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): لا تُطبَّق المعالجة اللاحقة إلا على عبارة البحث لأغراض lookup لتلميح الفهرس؛ بينما يظل المسند على مستوى الصف يقارن بقيم العمود الأصلية.
+
+أمثلة:
+
+* إزالة كلمات التوقف باستخدام تعبير مُعالج لاحق:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+* أزِل الطوابع الزمنية باستخدام تعبير المعالجة اللاحقة:
+
+```sql
+-- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
+-- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
+-- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByString',
+        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Only message-level words are indexed; timestamp tokens are not stored.
+SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
+SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
+```
+
+* أزِل الطوابع الزمنية باستخدام تعبير المعالجة المسبقة:
+
+```sql
+-- The preprocessor strips the ISO timestamp prefix before tokenization.
+-- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer   = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+* أزل الطوابع الزمنية باستخدام تعبير يجمع بين معالج مسبق ومعالج لاحق:
+
+```sql
+-- Preprocessor strips the timestamp, then lowercases the remainder.
+-- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
+-- Result: only substantive message words are stored in the index.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByNonAlpha',
+        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
+        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
+-- After preprocessor:  'error connection failed'
+-- After tokenization:  ['error', 'connection', 'failed']
+-- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
+SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
+```
+
+* اشتقاق جذور التوكنات باستخدام تعبير للمعالجة اللاحقة:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = stem(str, 'en')
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+-- The query token 'running' is stemmed to 'run' before the lookup,
+-- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
+SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
+```
+
+**دعم الدوال**.
+
+بالنسبة إلى الشروط التي تستعين بالفهرس النصي، تُطبَّق المعالجة المسبقة والمعالجة اللاحقة على قيمة البحث قبل الفحص على مستوى granule، بحيث يستخدم البحث في الفهرس الرموز نفسها التي خُزِّنت عند إنشاء الفهرس.
+في معظم الدوال (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`)، لا يُستخدم الفهرس النصي إلا لتخطي كتل البيانات غير ذات الصلة؛ ويظل ClickHouse يتحقق من كل صف متبقٍّ باستخدام الشرط الأصلي على بيانات العمود الأصلية.
+بالنسبة إلى دوال البحث عن الرموز (`hasToken`, `hasAllTokens`, `hasAnyTokens`)، يكون الفهرس النصي هو مسار التقييم الأساسي: يطبّع ClickHouse الـ needle باستخدام المعالجة المسبقة نفسها، ومُقسِّم الرموز، والمعالجة اللاحقة التي طُبِّقت عند إنشاء الفهرس، ويستخدم هذه الصيغة المُطبَّعة لكلٍّ من أجزاء الجدول المفهرسة وغير المفهرسة. ومع وجود معالجة لاحقة، تُطبَّع أيضًا رموز الـ haystack وقت الاستعلام (مع أي مُقسِّم رموز، وليس فقط `array`)، بحيث يخضع جانبا المقارنة للتحويل نفسه على نحو متسق، ولا تعتمد النتيجة على ما إذا كان الفهرس يُقرأ مباشرةً (الإعداد `query_plan_direct_read_from_text_index`) أو ما إذا كان جزء معيّن يحتوي على فهرس materialized — على سبيل المثال، تمكين المطابقة غير الحساسة لحالة الأحرف في `hasAllTokens(col, ['FOO'])` باستخدام معالجة لاحقة `lower`.
+من دون `support_phrase_search`، تستخدم `hasPhrase` الفهرس على سبيل الاستدلال فقط، وتتحقق من كل صف متبقٍّ باستخدام الشرط الأصلي؛ وتقوم المعالجة اللاحقة أيضًا بتطبيع كلٍّ من العبارة ورموز الـ haystack بالطريقة نفسها، بحيث تكون النتيجة مستقلة عن مسار القراءة، ولا تؤدي الرموز التي تُسقطها المعالجة اللاحقة إلى كسر تجاور العبارة. ومع `support_phrase_search = 1`، تستخدم `hasPhrase` قراءات مباشرة دقيقة (مع الاستمرار في تطبيق المعالجة اللاحقة، إن وُجدت).
+تُتجاهل رموز البحث التي تحوّلها المعالجة اللاحقة إلى سلسلة فارغة، أي تُعامَل على أنها غير موجودة في عبارة البحث.
+
+| الدالة                                                                                                  | يدعم معالجًا مسبقًا                      | مُقسِّمات الرموز المتوافقة                               | يدعم معالجًا لاحقًا |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------- | ------------------- |
+| `=`                                                                                                     | نعم                                      | جميعها                                                   | نعم                 |
+| `IN`                                                                                                    | نعم                                      | جميعها                                                   | نعم                 |
+| [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken)                     | نعم                                      | جميعها (مصمَّم لـ `splitByNonAlpha`)                     | نعم                 |
+| [hasAnyTokens(col, str)](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | نعم                                      | جميعها                                                   | نعم                 |
+| [hasAllTokens(col, str)](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | نعم                                      | جميعها                                                   | نعم                 |
+| [hasAnyTokens(col, arr)](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | لا (تُعامَل عناصر المصفوفة كرموز كما هي) | جميعها                                                   | نعم                 |
+| [hasAllTokens(col, arr)](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | لا (تُعامَل عناصر المصفوفة كرموز كما هي) | جميعها                                                   | نعم                 |
+| [hasPhrase](/ar/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | نعم                                      | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | نعم                 |
+| [startsWith](/ar/reference/functions/regular-functions/string-functions#startsWith)                        | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | نعم                 |
+| [endsWith](/ar/reference/functions/regular-functions/string-functions#endsWith)                            | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | نعم                 |
+| [like](/ar/reference/functions/regular-functions/string-search-functions#like)                             | نعم¹                                     | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | نعم¹                |
+| [match](/ar/reference/functions/regular-functions/string-search-functions#match)                           | نعم¹                                     | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | نعم¹                |
+| [ilike](/ar/reference/functions/regular-functions/string-search-functions#like)                            | نعم² (`lower`/`upper` فقط)               | `splitByNonAlpha`, `array`²                              | لا²                 |
+| [mapContainsKey](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | نعم                                      | جميعها                                                   | نعم                 |
+| [mapContainsValue](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | نعم                                      | جميعها                                                   | نعم                 |
+| [mapContainsKeyLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | نعم                 |
+| [mapContainsValueLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | نعم                                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | نعم                 |
+| [has](/ar/reference/functions/regular-functions/array-functions#has)                                       | نعم                                      | `array`                                                  | نعم                 |
+| [hasAny](/ar/reference/functions/regular-functions/array-functions#hasAny)                                 | نعم                                      | `array`                                                  | نعم                 |
+| [hasAll](/ar/reference/functions/regular-functions/array-functions#hasAll)                                 | نعم                                      | `array`                                                  | نعم                 |
+
+¹ يستخدم `LIKE` و`match` القراءة المباشرة كتلميح مع مُقسِّمات الرموز المذكورة، وإلا فيلجآن إلى المسح الشامل.
+ويدعم `LIKE` أيضًا *القراءة المباشرة (من دون تلميح)* (مفعّلة عبر `use_text_index_like_evaluation_by_dictionary_scan`) مع مُقسِّمَي الرموز `splitByNonAlpha` و`array` من دون معالج مسبق أو لاحق.
+
+² لا يدعم `ILIKE` إلا عبر القراءة المباشرة (من دون تلميح) (`use_text_index_like_evaluation_by_dictionary_scan = 1`، مع مُقسِّم الرموز `splitByNonAlpha` أو `array`).
+ولا يوجد مسار بديل لاستخدام الفهرس كتلميح: إذا كان هذا الإعداد معطّلًا أو لم يكن مُقسِّم الرموز ضمن المجموعة المدعومة، فلن يُستخدَم الفهرس مع `ILIKE`.
+ويجب أن يكون المعالج المسبق، إن وُجد، هو `lower` أو `upper`؛ أما المعالجات اللاحقة فغير مدعومة.
+
+**تجريبي: دعم وسيطة البحث عن العبارة (اختيارية)**.
+
+المعلمة التجريبية `support_phrase_search` (الافتراضي: `0`) تتحكم في ما إذا كان الفهرس يخزّن مواضع الـtoken.
+عند ضبطها على `1`، يخزّن الفهرس أيضًا بيانات المواضع (في ملف `.pos`)، مما يتيح المطابقة الدقيقة للعبارات عبر القراءات المباشرة للدالة [`hasPhrase`](#functions-example-hasphrase).
+يؤدي تخزين المواضع إلى زيادة حجم الفهرس على القرص ورفع تكلفة الكتابة، لذا فهو خيار اختياري.
+تنسيق التخزين على القرص ليس مستقرًا بعد، لذلك فهذه المعلمة تجريبية وقد تتغير في إصدار مستقبلي.
+لذلك، يتطلب إنشاء فهرس مع `support_phrase_search = 1` تمكين إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+اضبط `support_phrase_search = 0` (الافتراضي) للاحتفاظ بتخزين يعتمد على قائمة الترحيل فقط؛ وتبقى الفهارس النصية التي أُنشئت دون هذه الوسيطة بلا مواضع.
+
+<Warning>
+  هذه الوسيطة تجريبية ويجب استخدامها للاختبار فقط.
+  اضبط إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) لتمكين تخزين المواضع.
+</Warning>
 
 <details markdown="1">
   <summary>معلمات متقدمة اختيارية</summary>
@@ -374,8 +566,8 @@ SHOW CREATE TABLE table;
 
 <Note>
   نوصي باستخدام الدالتين `hasAnyTokens` و`hasAllTokens` للبحث في الفهرس النصي؛ يُرجى الاطلاع على [أدناه](#functions-example-hasanytokens-hasalltokens).
-  تعمل هاتان الدالتان مع جميع المجزئات المتاحة وجميع تعبيرات المعالجة المسبقة الممكنة.
-  ونظرًا إلى أن الدوال المدعومة الأخرى سبقت الفهرس النصي تاريخيًا، فقد كان عليها الاحتفاظ بسلوكها القديم في كثير من الحالات (مثلًا، عدم دعم المعالجة المسبقة).
+  تعمل هاتان الدالتان مع جميع المجزئات المتاحة وجميع تعبيرات المعالجة المسبقة واللاحقة الممكنة.
+  ونظرًا إلى أن الدوال المدعومة الأخرى سبقت الفهرس النصي تاريخيًا، فقد كان عليها الاحتفاظ بسلوكها القديم في كثير من الحالات (مثلًا، عدم دعم المعالجة المسبقة أو اللاحقة).
 </Note>
 
 <div id="functions-support">
@@ -490,6 +682,7 @@ SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' suppo
 
 على غرار `LIKE`، لا يمكن للدالتين [startsWith](/ar/reference/functions/regular-functions/string-functions#startsWith) و[endsWith](/ar/reference/functions/regular-functions/string-functions#endsWith) استخدام فهرس نصي إلا إذا أمكن استخراج رموز كاملة من عبارة البحث.
 وبالنسبة إلى الفهرس الذي يستخدم مجزئ `ngrams`، يتحقق ذلك إذا كان طول السلاسل النصية المطلوب البحث عنها بين أحرف البدل مساويًا لطول ngram أو أكبر منه.
+وعندما يستخدم الفهرس النصي معالجًا لاحقًا، يظل بإمكان هاتين الدالتين استخدام الفهرس في وضع Hint إذا بقيت رموز التلميح المستخرجة غير فارغة بعد التطبيع. وإذا أدى التطبيع إلى إسقاط جميع رموز التلميح، فلن يُستخدم الفهرس لهذا المسند.
 
 مثال على فهرس نصي يستخدم مجزئ `splitByNonAlpha`:
 
@@ -512,18 +705,20 @@ startsWith(comment, 'clickhouse supports ')`
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-<div id="functions-example-hastoken-hastokenornull">
-  #### `hasToken` و `hasTokenOrNull`
+<div id="functions-example-hastoken">
+  #### `hasToken`
 </div>
 
 <Note>
-  يبدو استخدام الدالة `hasToken` بسيطًا، لكنه ينطوي على بعض الجوانب التي قد تُسبب مشكلات عند استخدام مُجزِّئات غير افتراضية وتعبيرات المعالجة المسبقة.
-  نوصي باستخدام الدالتين `hasAnyTokens` و `hasAllTokens` بدلًا من ذلك.
+  يبدو استخدام الدالة `hasToken` بسيطًا، لكنه ينطوي على بعض الجوانب التي قد تُسبب مشكلات عند استخدامها في عمليات البحث في فهارس النص مع مُقسِّمات الرموز غير `splitByNonAlpha` و/أو تعبيرات المعالجة المسبقة/اللاحقة.
+  نوصي باستخدام `hasAnyTokens` و `hasAllTokens` بدلًا من ذلك.
+
+  الصيغ غير الحساسة لحالة الأحرف `hasTokenCaseInsensitive` و `hasTokenCaseInsensitiveOrNull` ليست مدركة لفهرس النص — فهي تعمل دائمًا على شكل فحص كامل للصفوف حتى على الأعمدة المفهرسة نصيًا. ولإجراء مطابقة غير حساسة لحالة الأحرف، استخدم معالجًا مسبقًا أو لاحقًا من نوع `lower(...)` واجمعه مع `hasToken` / `hasAllTokens` / `hasAnyTokens`.
 </Note>
 
-تُطابِق الدالتان [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken) و [hasTokenOrNull](/ar/reference/functions/regular-functions/string-search-functions#hasTokenOrNull) رمزًا واحدًا محددًا.
+تُطابِق الدالة [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken) رمزًا واحدًا محددًا.
 
-وعلى عكس الدوال المذكورة سابقًا، فإنهما لا تُجزِّئان مصطلح البحث إلى رموز (إذ تفترضان أن المُدخل عبارة عن رمز واحد).
+وعلى عكس الدوال المذكورة سابقًا، فإنها لا تُجزِّئ مصطلح البحث إلى رموز (إذ تفترض أن المُدخل عبارة عن رمز واحد).
 
 مثال:
 
@@ -560,6 +755,7 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 
 وعلى خلاف `hasAllTokens`، التي تشترط فقط وجود جميع الرموز في أي موضع، فإن `hasPhrase` تشترط أن تظهر كتسلسل متصل.
 تُجزَّأ عبارة البحث إلى رموز باستخدام المجزئ نفسه المُعدّ لعمود الفهرس.
+وعندما يستخدم فهرس النص معالجًا لاحقًا، تُطبَّع عبارة البحث أيضًا قبل البحث في الفهرس.
 لاحظ أن الدالة تتطلب أحد مجزئات `splitByNonAlpha` أو `splitByString` أو `ngrams` أو `asciiCJK`.
 
 مثال:
@@ -969,25 +1165,45 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
 ```
 
 <div id="text-index-phrase-search">
-  ### البحث عن العبارات
+  ### البحث بالعبارات
 </div>
 
-يدعم فهرس النص البحث عن العبارات عبر الدالة `hasPhrase`.
-يجب أن تظهر جميع الرموز في العبارة بشكل متتالٍ وبالترتيب نفسه داخل المستند.
+على سبيل المثال، بحث عادي باستخدام فهرس نصي
 
-يُسرّع فهرس النص البحث عن العبارات من خلال تقاطع قوائم الترحيل الخاصة بجميع الرموز في العبارة لتحديد الحبيبات المرشحة.
-وداخل تلك الحبيبات، يتحقق ClickHouse بعد ذلك من التجاور الدقيق بين الرموز.
+```sql
+SELECT *
+FROM tab
+WHERE hasAllTokens(col, 'weather in Tokyo')
+```
 
-تتوافق `hasPhrase` مع المُجزِّئات ‏`splitByNonAlpha` و`splitByString` و`ngrams` و`asciiCJK`.
+يطابق جميع الصفوف التي تحتوي على التوكنات المحددة بأي ترتيب.
+في المثال، يطابق الصف `While she stayed in Tokyo, the weather was great.` شرط التصفية.
 
-تُجزَّأ سلسلة العبارة إلى رموز باستخدام المُجزِّئ المُهيأ في الفهرس.
-ويتم تجاهل أحرف الفصل الخاصة بالـ المُجزِّئ في العبارة: ‏`hasPhrase(text, 'quick+brown')` تكافئ `hasPhrase(text, 'quick brown')` بالنسبة إلى الـ المُجزِّئ ‏`splitByNonAlpha`.
+في المقابل، يعني البحث بالعبارة مطابقة التوكنات بالترتيب المحدد.
+على سبيل المثال،
+
+```sql
+SELECT *
+FROM tab
+WHERE hasPhrase(col, 'weather in Tokyo')
+```
+
+يطابق أي صف يحتوي على تسلسل الرموز `weather in Tokyo`، مثل `How is the weather in Tokyo?`؟
+
+يُسرّع الفهرس النصي البحث عن العبارات من خلال تقاطع قوائم الإسناد لجميع الرموز في العبارة لتحديد الحبيبات المرشحة.
+ثم يتحقق ClickHouse داخل تلك الحبيبات من التجاور الدقيق بين الرموز.
+هذه العملية مكلفة نسبيًا وأبطأ من استعلامات البحث النصي العادية.
+لتسريع استعلامات البحث عن العبارات، يُرجى تمكين تخزين المواضع في الفهرس النصي (راجع `Optional parameters` أعلاه).
+
+يمكن استخدام `hasPhrase` مع مُقسِّمات الرموز `splitByNonAlpha` و`splitByString` و`ngrams` و`asciiCJK`.
+تُقسَّم سلسلة العبارة المعطاة إلى رموز باستخدام مُقسِّم الرموز الخاص بالفهرس.
+تُتجاهل أحرف الفصل في العبارة: `hasPhrase(text, 'quick+brown')` مكافئ لـ `hasPhrase(text, 'quick brown')`، بافتراض استخدام `splitByNonAlpha` كمُقسِّم للرموز.
 
 <div id="text-index-phrase-search-example">
   #### مثال
 </div>
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1175,11 +1391,10 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
   ### التخزين المؤقت
 </div>
 
-تتوفر ذاكرات تخزين مؤقت متعددة للاحتفاظ بأجزاء من الفهرس النصي في الذاكرة (انظر قسم [تفاصيل التنفيذ](#implementation)):
+توجد ذاكرات تخزين مؤقت مختلفة على مستوى الخادم للاحتفاظ بأجزاء من الفهرس النصي في الذاكرة (انظر قسم [تفاصيل التنفيذ](#implementation)):
 توجد حالياً ذاكرات تخزين مؤقت للترويسات بعد فك تسلسلها، والرموز، وقوائم الترحيل الخاصة بالفهرس النصي لتقليل عمليات الإدخال/الإخراج.
-يمكن تفعيلها عبر الإعدادات [use&#95;text&#95;index&#95;header&#95;cache](/ar/reference/settings/session-settings#use_text_index_header_cache) و[use&#95;text&#95;index&#95;tokens&#95;cache](/ar/reference/settings/session-settings#use_text_index_tokens_cache) و[use&#95;text&#95;index&#95;postings&#95;cache](/ar/reference/settings/session-settings#use_text_index_postings_cache).
+استخدم الإعدادات [use&#95;text&#95;index&#95;header&#95;cache](/ar/reference/settings/session-settings#use_text_index_header_cache) و[use&#95;text&#95;index&#95;tokens&#95;cache](/ar/reference/settings/session-settings#use_text_index_tokens_cache) و[use&#95;text&#95;index&#95;postings&#95;cache](/ar/reference/settings/session-settings#use_text_index_postings_cache) لتعطيل قراءة الاستعلامات من كل ذاكرة تخزين مؤقت على حدة والكتابة إليها.
 
-تكون جميع ذاكرات التخزين المؤقت معطلة افتراضياً.
 لمسح ذاكرات التخزين المؤقت، استخدم العبارة [SYSTEM CLEAR TEXT INDEX CACHES](/ar/reference/statements/system#drop-text-index-caches)
 
 يرجى الرجوع إلى إعدادات الخادم التالية لضبط ذاكرات التخزين المؤقت.
@@ -1290,6 +1505,11 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 تُرتَّب قوائم الترحيلات الخاصة بجميع الرموز ترتيبًا تسلسليًا في ملف قوائم الترحيلات.
 ولتوفير المساحة مع الحفاظ على سرعة عمليات التقاطع والاتحاد، تُخزَّن قوائم الترحيلات على هيئة [roaring bitmaps](https://roaringbitmap.org/).
 إذا كانت قائمة الترحيلات أكبر من `posting_list_block_size`، فتُقسَّم إلى عدة كتل تُخزَّن تسلسليًا في ملف قوائم الترحيلات.
+
+**ملف المواضع (.pos)**
+
+اختياري، فقط إذا كانت index argument ‏`support_phrase_search = 1`.
+يخزّن مواضع الرموز داخل الصفوف المطابقة.
 
 **دمج الفهارس النصية**
 

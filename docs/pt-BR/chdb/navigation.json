@@ -1,0 +1,85 @@
+{
+  "groups": [
+    {
+      "group": "Primeiros passos",
+      "pages": [
+        "pt-BR/chdb/getting-started"
+      ],
+      "root": "pt-BR/chdb/index"
+    },
+    {
+      "group": "Integrações por linguagem",
+      "pages": [
+        "pt-BR/chdb/install/python",
+        "pt-BR/chdb/install/nodejs",
+        "pt-BR/chdb/install/go",
+        "pt-BR/chdb/install/rust",
+        "pt-BR/chdb/install/bun",
+        "pt-BR/chdb/install/c"
+      ],
+      "root": "pt-BR/chdb/install/index"
+    },
+    {
+      "group": "DataStore",
+      "pages": [
+        "pt-BR/chdb/datastore/quickstart",
+        "pt-BR/chdb/datastore/factory-methods",
+        "pt-BR/chdb/datastore/query-building",
+        "pt-BR/chdb/datastore/aggregation",
+        "pt-BR/chdb/datastore/accessors",
+        "pt-BR/chdb/datastore/io",
+        "pt-BR/chdb/datastore/execution-model",
+        "pt-BR/chdb/datastore/pandas-compat",
+        "pt-BR/chdb/datastore/class-reference"
+      ],
+      "root": "pt-BR/chdb/datastore/index"
+    },
+    {
+      "group": "Configuração",
+      "pages": [
+        "pt-BR/chdb/configuration/execution-engine",
+        "pt-BR/chdb/configuration/function-config",
+        "pt-BR/chdb/configuration/performance-mode"
+      ],
+      "root": "pt-BR/chdb/configuration/index"
+    },
+    {
+      "group": "Depuração",
+      "pages": [
+        "pt-BR/chdb/debugging/explain",
+        "pt-BR/chdb/debugging/logging",
+        "pt-BR/chdb/debugging/profiling"
+      ],
+      "root": "pt-BR/chdb/debugging/index"
+    },
+    {
+      "group": "Guias para desenvolvedores",
+      "pages": [
+        "pt-BR/chdb/guides/jupysql",
+        "pt-BR/chdb/guides/querying-pandas",
+        "pt-BR/chdb/guides/querying-apache-arrow",
+        "pt-BR/chdb/guides/querying-s3-bucket",
+        "pt-BR/chdb/guides/querying-parquet",
+        "pt-BR/chdb/guides/query-remote-clickhouse",
+        "pt-BR/chdb/guides/clickhouse-local",
+        "pt-BR/chdb/guides/migration-from-pandas",
+        "pt-BR/chdb/guides/pandas-cookbook",
+        "pt-BR/chdb/guides/pandas-differences",
+        "pt-BR/chdb/guides/pandas-performance",
+        "pt-BR/chdb/guides/pandas-to-sql"
+      ],
+      "root": "pt-BR/chdb/guides/index"
+    },
+    {
+      "group": "Referência técnica",
+      "pages": [
+        "pt-BR/chdb/reference/data-formats",
+        "pt-BR/chdb/reference/sql-reference",
+        "pt-BR/chdb/api/python"
+      ],
+      "root": "pt-BR/chdb/reference/index"
+    }
+  ],
+  "icon": "/images/icons/icon-chdb.svg",
+  "item": "chDB"
+}

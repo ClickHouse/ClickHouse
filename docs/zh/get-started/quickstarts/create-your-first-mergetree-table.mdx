@@ -16,7 +16,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 
 <div className="mt-2 flex flex-wrap gap-2">
   <Badge size="lg" color="blue">实时分析</Badge>
-  <Badge size="lg" color="blue">数据仓储</Badge>
+  <Badge size="lg" color="blue">数据仓库</Badge>
   <Badge size="lg" color="blue">可观测性</Badge>
   <Badge size="lg" color="blue">AI/ML</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
@@ -39,9 +39,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 完成后，你将理解为什么 MergeTree 引擎几乎是所有 ClickHouse 表的基础，以及它的排序和分区方式如何直接影响查询性能。
 
 <Steps titleSize="h3">
-  <Step>
-    ### 了解 MergeTree 的工作原理
-
+  <Step title="了解 MergeTree 的工作原理" id="understand-how-mergetree-works">
     在开始编写 SQL 之前，先了解 MergeTree 与传统数据库表的不同之处会很有帮助。
 
     当你向 MergeTree 表插入数据时，ClickHouse 不会按行逐条写入。相反，它会将一个**数据分区片段**——一小块已经排序并压缩好的行数据——直接写入磁盘。随后，ClickHouse 会随着时间推移在后台将这些 parts 合并起来。这也正是这个名字的由来：*merge* + *tree*。
@@ -59,9 +57,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     现在，你应该已经能够解释 MergeTree 表中数据分区片段、主键与查询性能之间的关系。
   </Step>
 
-  <Step>
-    ### 预览源数据
-
+  <Step title="预览源数据" id="preview-the-source-data">
     在创建表之前，先使用 `s3` 表函数查看源文件。这样你就可以直接查询 S3，而无需先将任何数据写入 ClickHouse。
 
     在 SQL 控制台中运行以下内容：
@@ -89,9 +85,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     要验证这一点，请确认你能看到包含 `id`、`price`、`date`、`postcode`、`type`、`town` 和 `county` 等列的行。
   </Step>
 
-  <Step>
-    ### 设计并创建你的 MergeTree 表
-
+  <Step title="设计并创建你的 MergeTree 表" id="design-and-create-your-mergetree-table">
     现在创建一个具有合适 schema 的永久表。下面的列类型都是有意这样选择的：
 
     * `LowCardinality(String)` 用于唯一值较少的列 (邮编、城镇名称、郡名称) 。它在内部使用字典编码，可显著减少存储占用，并提升基于这些列进行分组和过滤时的性能。
@@ -130,9 +124,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     双击结果单元格以查看完整输出。请注意，虽然你指定了 `ENGINE = MergeTree`，但 ClickHouse Cloud 创建该表时实际使用的是 `SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')`。这是预期行为——Cloud 会自动将 `MergeTree` 转换为 `SharedMergeTree`，从而提供复制和共享存储支持。其行为和查询接口保持不变。
   </Step>
 
-  <Step>
-    ### 从 S3 加载数据
-
+  <Step title="从 S3 加载数据" id="load-data-from-s3">
     通过直接从 `s3()` 表函数查询，即可插入完整数据集。ClickHouse 会从 S3 流式读取压缩文件，并将其按排序后的 parts 写入表中。
 
     ```sql
@@ -170,9 +162,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     你应该能看到已加载约 3000 万行数据。
   </Step>
 
-  <Step>
-    ### 使用 system.parts 查看数据分区片段
-
+  <Step title="使用 system.parts 查看数据分区片段" id="inspect-parts-using-systemparts">
     这时就能看到 MergeTree 的内部机制。`system.parts` 表会记录你的服务中每个 MergeTree 表在磁盘上的每个数据分区片段。
 
     ```sql
@@ -211,9 +201,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     如果你过一段时间再次运行此查询，可能会发现 parts 数量减少了。这正是 MergeTree 中的 *merge* 在起作用——ClickHouse 会在后台持续将较小的 parts 合并为较大的 parts，从而减少 parts 的数量。`active = true` 过滤器可确保你只看到当前已合并的 parts，而不是那些仍在等待清理的旧 parts。
   </Step>
 
-  <Step>
-    ### 查询数据并观察主键行为
-
+  <Step title="查询数据并观察主键行为" id="query-the-data-and-observe-primary-key-behaviour">
     现在运行一些实际的分析查询。首先，找出有记录以来金额最高的一笔销售：
 
     ```sql
@@ -264,7 +252,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 后续步骤
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
 在本快速入门中，你从零开始构建了一个 MergeTree 表，从 S3 加载了 3000 万条英国房产交易记录，了解了 ClickHouse 如何将数据组织为已排序的 parts 和分区，并通过查询演示了主键索引的强大能力。
 

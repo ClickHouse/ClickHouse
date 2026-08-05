@@ -4,6 +4,7 @@
 #include <Common/Documentation.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
@@ -18,6 +19,7 @@ namespace DB
 {
 
 class IDataPartStorage;
+class IMergeTreeDataPart;
 
 namespace Internal
 {
@@ -269,7 +271,13 @@ struct IMergeTreeIndex
     /// Returns substreams and version for deserialization. @storage is consulted so that packed
     /// substreams (whose virtual filenames are not in @checksums) can still be discovered via
     /// the skp_idx.packed overlay. Passing null disables the archive check.
-    virtual MergeTreeIndexFormat getDeserializedFormat(
+    virtual MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+
+    /// Union of every checksummed or packed on-disk version present (unlike
+    /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
+    /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
+    /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
+    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & relative_path_prefix,
         const IDataPartStorage * storage) const;
@@ -307,6 +315,7 @@ struct IMergeTreeIndex
     virtual bool isInert() const { return false; }
 
     Names getColumnsRequiredForIndexCalc() const;
+    const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;

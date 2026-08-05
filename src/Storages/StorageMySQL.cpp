@@ -188,7 +188,7 @@ void StorageMySQL::readImpl(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
+    MySQLStreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
             (*mysql_settings)[MySQLSetting::connection_auto_close]);
     query_plan.addStep(std::make_unique<ReadFromMySQLStep>(
         sample_block,
@@ -436,7 +436,7 @@ ReadFromMySQLStep::ReadFromMySQLStep(
     const Block & sample_block_,
     mysqlxx::PoolWithFailoverPtr pool_,
     const std::string & query_str_,
-    const StreamSettings & mysql_input_stream_settings_
+    const MySQLStreamSettings & mysql_input_stream_settings_
 )
     : ISourceStep(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , pool(std::move(pool_))
@@ -522,8 +522,8 @@ See a detailed description of the [CREATE TABLE](/sql-reference/statements/creat
 The table structure can differ from the original MySQL table structure:
 
 - Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](/reference/engines/database-engines/mysql#data_types-support) values to the ClickHouse data types.
+- The [external_table_functions_use_nulls](/reference/settings/session-settings/external-table#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
@@ -557,7 +557,7 @@ This is useful to push down joins, aggregations or any other processing to MySQL
 :::note
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
 
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
 :::
 
 Supports multiple replicas that must be listed by `|`. For example:
@@ -728,7 +728,7 @@ SETTINGS enable_compression = 1;
 
 ## See also {#see-also}
 
-- [The mysql table function](../../../sql-reference/table-functions/mysql.md)
+- [The mysql table function](/reference/functions/table-functions/mysql)
 - [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
 )DOCS_MD",
         .syntax = "ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, on_duplicate_clause])",

@@ -1,8 +1,8 @@
 ---
 slug: /integrations/s3/performance
 sidebarTitle: 'Optimisation des performances'
-title: 'Optimisation des performances de lecture et d’insert S3'
-description: 'Optimisation des performances de lecture et d’insert S3'
+title: 'Optimisation des performances de lecture et d’insertion S3'
+description: 'Optimisation des performances de lecture et d’insertion S3'
 doc_type: 'guide'
 keywords: ['s3', 'performance', 'optimisation', 'stockage d’objets', 'chargement des données']
 ---
@@ -12,8 +12,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 Cette section porte sur l’optimisation des performances lors de la lecture et de l’insertion de données depuis S3 à l’aide des [fonctions de table S3](/fr/reference/functions/table-functions/s3).
 
 <Info>
-  **Les enseignements de ce guide peuvent être appliqués à d’autres implémentations de stockage objet disposant de leurs propres fonctions de table dédiées, telles que [GCS](/fr/reference/functions/table-functions/gcs) et [Azure Blob storage](/fr/reference/functions/table-functions/azureBlobStorage).**
-
+  **Les enseignements de ce guide peuvent être appliqués à d’autres implémentations de stockage d’objets disposant de leurs propres fonctions de table dédiées, telles que [GCS](/fr/reference/functions/table-functions/gcs) et [Azure Blob storage](/fr/reference/functions/table-functions/azureBlobStorage).**
 </Info>
 
 Avant d’ajuster les threads et la taille des blocs pour améliorer les performances d’insertion, nous recommandons aux utilisateurs de bien comprendre le fonctionnement des insertions dans S3. Si vous connaissez déjà ce mécanisme, ou si vous voulez simplement quelques conseils rapides, passez directement à notre exemple [ci-dessous](/fr/integrations/connectors/data-ingestion/AWS/performance#example-dataset).
@@ -53,7 +52,7 @@ En ①, la taille dépend de la taille du bloc d’insertion, qui peut être con
 * [`min_insert_block_size_rows`](/fr/reference/settings/session-settings#min_insert_block_size_rows) (par défaut : `1048545` lignes)
 * [`min_insert_block_size_bytes`](/fr/reference/settings/session-settings#min_insert_block_size_bytes) (par défaut : `256 MiB`)
 
-Dès que le nombre spécifié de lignes est accumulé dans le bloc d’insert, ou que le volume de données configuré est atteint (selon la première éventualité), cela déclenche l’écriture du bloc dans une nouvelle part. La boucle d’insert reprend à l’étape ①.
+Dès que le nombre spécifié de lignes est accumulé dans le bloc d’insertion, ou que le volume de données configuré est atteint (selon la première éventualité), cela déclenche l’écriture du bloc dans une nouvelle part. La boucle d’insertion reprend à l’étape ①.
 
 Notez que la valeur `min_insert_block_size_bytes` désigne la taille du bloc en mémoire non compressé (et non la taille de la part compressée sur disque). Notez également que les blocs et parts créés contiennent rarement exactement le nombre configuré de lignes ou d’octets, car ClickHouse traite les données sous forme de flux et [les traite](https://clickhouse.com/company/events/query-performance-introspection) [bloc](/fr/reference/settings/session-settings#max_block_size) par bloc de lignes. Par conséquent, ces paramètres définissent des seuils minimums.
 
@@ -111,9 +110,9 @@ Go to ①.
 
 Le nombre de ces threads d’insertion parallèles peut être configuré avec le paramètre [`max_insert_threads`](/fr/reference/settings/session-settings#max_insert_threads). La valeur par défaut est de `1` pour ClickHouse open-source et de 4 pour [ClickHouse Cloud](https://clickhouse.com/cloud).
 
-Avec un grand nombre de fichiers, le traitement en parallèle par plusieurs threads d’insertion fonctionne bien. Il peut saturer complètement à la fois les CPU cores disponibles et la bande passante réseau (pour les téléchargements parallèles de fichiers). Dans les scénarios où seules quelques gros fichiers sont chargés dans une table, ClickHouse met automatiquement en place un niveau élevé de parallélisme pour le traitement des données et optimise l’utilisation de la bande passante réseau en lançant des threads de lecture supplémentaires par thread d’insertion afin de lire (télécharger) davantage de plages distinctes au sein des gros fichiers en parallèle.
+Avec un grand nombre de fichiers, le traitement en parallèle par plusieurs threads d’insertion fonctionne bien. Il peut saturer complètement à la fois les cœurs CPU disponibles et la bande passante réseau (pour les téléchargements parallèles de fichiers). Dans les scénarios où seules quelques gros fichiers sont chargés dans une table, ClickHouse met automatiquement en place un niveau élevé de parallélisme pour le traitement des données et optimise l’utilisation de la bande passante réseau en lançant des threads de lecture supplémentaires par thread d’insertion afin de lire (télécharger) davantage de plages distinctes au sein des gros fichiers en parallèle.
 
-Pour la fonction et la table s3, le téléchargement en parallèle d’un fichier individuel est déterminé par les valeurs [max&#95;download&#95;threads](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_threads) et [max&#95;download&#95;buffer&#95;size](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_buffer_size). Les fichiers ne sont téléchargés en parallèle que si leur taille est supérieure à `2 * max_download_buffer_size`. Par défaut, `max_download_buffer_size` est défini sur 10MiB. Dans certains cas, vous pouvez sans risque augmenter cette taille de tampon à 50 MB (`max_download_buffer_size=52428800`) afin de garantir que chaque fichier soit téléchargé par un seul thread. Cela peut réduire le temps que chaque thread consacre aux appels S3 et donc aussi diminuer le temps d’attente sur S3. En outre, pour les fichiers trop petits pour une lecture en parallèle, afin d’augmenter le throughput, ClickHouse précharge automatiquement les données en lisant ces fichiers à l’avance de manière asynchrone.
+Pour la fonction et la table s3, le téléchargement en parallèle d’un fichier individuel est déterminé par les valeurs [max&#95;download&#95;threads](/operations/settings/settings#max_download_threads) et [max&#95;download&#95;buffer&#95;size](/operations/settings/settings#max_download_buffer_size). Les fichiers ne sont téléchargés en parallèle que si leur taille est supérieure à `2 * max_download_buffer_size`. Par défaut, `max_download_buffer_size` est défini sur 10MiB. Dans certains cas, vous pouvez sans risque augmenter cette taille de tampon à 50 MB (`max_download_buffer_size=52428800`) afin de garantir que chaque fichier soit téléchargé par un seul thread. Cela peut réduire le temps que chaque thread consacre aux appels S3 et donc aussi diminuer le temps d’attente sur S3. En outre, pour les fichiers trop petits pour une lecture en parallèle, afin d’augmenter le débit, ClickHouse précharge automatiquement les données en lisant ces fichiers à l’avance de manière asynchrone.
 
 <div id="measuring-performance">
   ## Mesurer les performances

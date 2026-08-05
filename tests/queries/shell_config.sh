@@ -259,7 +259,10 @@ function with_lock()
 
 # BASH_XTRACEFD is supported only since 4.1
 if [[ -n "${CLICKHOUSE_BASH_TRACING_FILE+x}" ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
-    exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
+    # Append, not truncate: an expect test spawns bash several times and each spawn sources this
+    # file, so truncating here would keep only the last spawn's trace. clickhouse-test removes the
+    # file once before starting the test, and this redirection re-creates it.
+    exec 3>>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3
     #

@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'materialized view 介绍'
 title: '创建你的第一个 materialized view'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['实时分析', '数据仓储']
 products: ['Cloud']
 description: '了解如何在 ClickHouse 中使用 materialized view，以不同的排序顺序预先计算并存储查询结果，从而支持对主键未覆盖列进行快速查找。'
 ---
@@ -39,9 +39,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 完成后，你将了解 materialized view 如何作为插入触发器工作、如何回填现有数据，以及将数据存储两次带来的磁盘空间权衡。
 
 <Steps titleSize="h3">
-  <Step>
-    ### 理解为什么需要 materialized view
-
+  <Step title="理解为什么需要 materialized view" id="understand-why-you-need-a-materialized-view">
     你的 `uk_price_paid` 表按 `(postcode, addr1, addr2)` 排序。这意味着，当你按 `postcode`、`addr1` 或 `addr2` 过滤时，ClickHouse 可以跳过大量数据块；但按 `town` 过滤的查询则必须扫描每一行——整整 3000 万行。
 
     你可以再创建一张使用不同 `ORDER BY` 的表，但这样一来，每次有新数据到达时，你都得记得同时向两张表插入数据。**materialized view** 可以将这个过程自动化：它会监视源表中的插入操作，对这些行进行转换，并自动将结果写入目标表。
@@ -49,9 +47,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     可以把 materialized view 看作一种**插入触发器**——每当有行被插入源表时，MV 的 `SELECT` 查询都会针对新插入的数据块运行，并将结果插入目标表。
   </Step>
 
-  <Step>
-    ### 创建目标表
-
+  <Step title="创建目标表" id="create-the-destination-table">
     materialized view 需要一个地方来存储其输出。这只是一个普通的 MergeTree 表——你可以完全控制它的 schema、`ORDER BY` 和 `PARTITION BY`。
 
     创建一个按 `(town, date)` 排序、只包含按 town 查询所需列的表：
@@ -78,9 +74,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ```
   </Step>
 
-  <Step>
-    ### 创建 materialized view
-
+  <Step title="创建 materialized view" id="create-the-materialized-view">
     现在创建一个 materialized view，将源表 (`uk_price_paid`) 连接到目标表 (`uk_price_paid_by_town`) ：
 
     ```sql
@@ -99,9 +93,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     这里有一个重要的注意事项：materialized views 只会在 **inserts** 时触发。如果你删除或更新源表中的行，目标表并不会感知到——MV 不会与删除或更新保持同步。如果你需要这种同步机制，请考虑改用 [projections](/zh/reference/statements/alter/projection)。
   </Step>
 
-  <Step>
-    ### 回填现有数据
-
+  <Step title="回填现有数据" id="backfill-existing-data">
     materialized view 只会处理*后续的*插入操作。`uk_price_paid` 中现有的 3000 万行是在 MV 创建之前插入的，因此目标表目前还是空的。
 
     请手动回填：
@@ -133,9 +125,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     两个表的行数应当相同。
   </Step>
 
-  <Step>
-    ### 查询 materialized view 的目标表
-
+  <Step title="查询 materialized view 的目标表" id="query-the-materialized-view-destination-table">
     现在，在目标表上运行一个按 `town` 过滤的查询，并将其与直接查询源表的结果进行比较。
 
     首先，查询源表：
@@ -178,9 +168,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     因此，建议在创建 materialized view 时使用 `TO` 子句。
   </Step>
 
-  <Step>
-    ### 观察数据被存储了两遍
-
+  <Step title="观察数据被存储了两遍" id="observe-the-data-is-stored-twice">
     materialized views 以占用额外磁盘空间为代价，换来更快的读取速度。查询 `system.parts`，查看每个表占用了多少空间：
 
     ```sql
@@ -201,7 +189,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 后续步骤
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
 在本快速入门中，你创建了一个 materialized view，以不同的排序顺序存储英国房产交易数据，因此无需修改原始表，就能按城镇快速查找。你还了解到，MV 会充当插入触发器，现有数据必须手动回填，而代价是需要额外的磁盘空间。
 

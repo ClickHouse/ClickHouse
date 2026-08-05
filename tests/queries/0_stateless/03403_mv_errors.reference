@@ -10,13 +10,13 @@ insert into src select number as key, number as value
 from numbers(100)
 settings
     parallel_view_processing=0,
-    max_insert_threads=0,
+    max_insert_threads=1,
     materialized_views_ignore_errors=0; -- { serverError ILLEGAL_DIVISION }
 insert into src select number as key, number as value
 from numbers(100)
 settings
     parallel_view_processing=0,
-    max_insert_threads=0,
+    max_insert_threads=1,
     materialized_views_ignore_errors=1;
 insert into src select number as key, number as value
 from numbers(100)
@@ -34,13 +34,13 @@ insert into src select number as key, number as value
 from numbers(100)
 settings
     parallel_view_processing=1,
-    max_insert_threads=0,
+    max_insert_threads=1,
     materialized_views_ignore_errors=0; -- { serverError ILLEGAL_DIVISION }
 insert into src select number as key, number as value
 from numbers(100)
 settings
     parallel_view_processing=1,
-    max_insert_threads=0,
+    max_insert_threads=1,
     materialized_views_ignore_errors=1;
 insert into src select number as key, number as value
 from numbers(100)
@@ -96,7 +96,7 @@ format Vertical;
 Row 1:
 ──────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_1
 written_rows:                     partial
@@ -106,7 +106,7 @@ query_exception_code:             153
 Row 2:
 ──────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_2_1
 written_rows:                     partial
@@ -116,7 +116,7 @@ query_exception_code:             153
 Row 3:
 ──────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_2_2
 written_rows:                     partial
@@ -126,7 +126,7 @@ query_exception_code:             153
 Row 4:
 ──────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_2_3
 written_rows:                     partial
@@ -136,7 +136,7 @@ query_exception_code:             153
 Row 5:
 ──────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_3_1
 written_rows:                     partial
@@ -146,7 +146,7 @@ query_exception_code:             153
 Row 6:
 ──────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_3_2
 written_rows:                     partial
@@ -156,7 +156,7 @@ query_exception_code:             153
 Row 7:
 ──────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_3_3
 written_rows:                     partial
@@ -166,7 +166,7 @@ query_exception_code:             153
 Row 8:
 ──────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_3_4
 written_rows:                     partial
@@ -176,7 +176,7 @@ query_exception_code:             153
 Row 9:
 ───────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_1
 written_rows:                     100
@@ -186,7 +186,7 @@ query_exception_code:             0
 Row 10:
 ───────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_2_1
 written_rows:                     100
@@ -196,7 +196,7 @@ query_exception_code:             0
 Row 11:
 ───────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_2_2
 written_rows:                     partial
@@ -206,7 +206,7 @@ query_exception_code:             0
 Row 12:
 ───────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_2_3
 written_rows:                     100
@@ -216,7 +216,7 @@ query_exception_code:             0
 Row 13:
 ───────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_3_1
 written_rows:                     100
@@ -226,7 +226,7 @@ query_exception_code:             0
 Row 14:
 ───────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_3_2
 written_rows:                     partial
@@ -236,7 +236,7 @@ query_exception_code:             0
 Row 15:
 ───────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_3_3
 written_rows:                     partial
@@ -246,7 +246,7 @@ query_exception_code:             0
 Row 16:
 ───────
 parallel_view_processing:         0
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_3_4
 written_rows:                     100
@@ -416,7 +416,7 @@ query_exception_code:             0
 Row 33:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_1
 written_rows:                     partial
@@ -426,7 +426,7 @@ query_exception_code:             153
 Row 34:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_2_1
 written_rows:                     partial
@@ -436,7 +436,7 @@ query_exception_code:             153
 Row 35:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_2_2
 written_rows:                     partial
@@ -446,7 +446,7 @@ query_exception_code:             153
 Row 36:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_2_3
 written_rows:                     partial
@@ -456,7 +456,7 @@ query_exception_code:             153
 Row 37:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_3_1
 written_rows:                     partial
@@ -466,7 +466,7 @@ query_exception_code:             153
 Row 38:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_3_2
 written_rows:                     partial
@@ -476,7 +476,7 @@ query_exception_code:             153
 Row 39:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_3_3
 written_rows:                     partial
@@ -486,7 +486,7 @@ query_exception_code:             153
 Row 40:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 0
 view_name:                        default.mv_3_4
 written_rows:                     partial
@@ -496,7 +496,7 @@ query_exception_code:             153
 Row 41:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_1
 written_rows:                     100
@@ -506,7 +506,7 @@ query_exception_code:             0
 Row 42:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_2_1
 written_rows:                     100
@@ -516,7 +516,7 @@ query_exception_code:             0
 Row 43:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_2_2
 written_rows:                     partial
@@ -526,7 +526,7 @@ query_exception_code:             0
 Row 44:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_2_3
 written_rows:                     100
@@ -536,7 +536,7 @@ query_exception_code:             0
 Row 45:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_3_1
 written_rows:                     100
@@ -546,7 +546,7 @@ query_exception_code:             0
 Row 46:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_3_2
 written_rows:                     partial
@@ -556,7 +556,7 @@ query_exception_code:             0
 Row 47:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_3_3
 written_rows:                     partial
@@ -566,7 +566,7 @@ query_exception_code:             0
 Row 48:
 ───────
 parallel_view_processing:         1
-max_insert_threads:               0
+max_insert_threads:               1
 materialized_views_ignore_errors: 1
 view_name:                        default.mv_3_4
 written_rows:                     100

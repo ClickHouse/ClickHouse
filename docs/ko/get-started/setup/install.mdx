@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import {galaxyOnClick} from "/snippets/ko/lib/galaxy.jsx";
 
-<Card title="ClickHouse Cloud" icon="cloud" href="https://console.clickhouse.cloud/signUp?loc=docs-install-page-banner" cta="무료로 시작하기">
+<Card title="ClickHouse Cloud" icon="cloud" href="/ko/get-started/setup/cloud" cta="가이드 보기">
   클러스터의 용량을 산정하거나 스케일링할 필요 없이 즉시 시작할 수 있습니다. ClickHouse Cloud가 용량 산정, 스케일링
   , 보안, 안정성 및 업그레이드를 처리합니다.
 </Card>
@@ -28,23 +28,15 @@ import {galaxyOnClick} from "/snippets/ko/lib/galaxy.jsx";
   로컬 버전과 서버를 설치하고 관리할 수 있습니다.
 </p>
 
-<div className="installContainer">
-  <a href="/ko/install/quick-install" style={{textDecoration: 'none'}}>
-    <Card title="빠른 설치" />
-  </a>
+<Columns cols={4}>
+  <Card title="빠른 설치" icon="/images/install/linux.svg" href="/ko/get-started/setup/self-managed/quick-install" />
 
-  <a href="/ko/install/clickhousectl" style={{textDecoration: 'none'}}>
-    <Card title="clickhousectl (CLI)" icon="console" />
-  </a>
+  <Card title="clickhousectl (CLI)" icon="terminal" href="/ko/get-started/setup/self-managed/clickhousectl" />
 
-  <a href="/ko/install/docker" style={{textDecoration: 'none'}}>
-    <Card title="Docker" />
-  </a>
+  <Card title="Docker" icon="/images/install/docker.svg" href="/ko/get-started/setup/self-managed/docker" />
 
-  <a href="/ko/install/advanced" style={{textDecoration: 'none'}}>
-    <Card title="소스 빌드" icon="code" />
-  </a>
-</div>
+  <Card title="소스 빌드" icon="code" href="/ko/get-started/setup/self-managed/advanced" />
+</Columns>
 
 <h3 className="install-group-heading">프로덕션 서버</h3>
 
@@ -53,20 +45,12 @@ import {galaxyOnClick} from "/snippets/ko/lib/galaxy.jsx";
   설치하십시오.
 </p>
 
-<div className="installContainer">
-  <a href="/ko/install/debian_ubuntu" style={{textDecoration: 'none'}}>
-    <Card title="Debian/Ubuntu" />
-  </a>
+<Columns cols={4}>
+  <Card title="Debian/Ubuntu" icon="/images/install/DebianUbuntu.svg" href="/ko/get-started/setup/self-managed/debian-ubuntu" />
 
-  <a href="/ko/install/redhat" style={{textDecoration: 'none'}}>
-    <Card title="Redhat" />
-  </a>
+  <Card title="Redhat" icon="/images/install/redhat.svg" href="/ko/get-started/setup/self-managed/redhat" />
 
-  <a href="/ko/install/nixos" style={{textDecoration: 'none'}}>
-    <Card title="NixOS" />
-  </a>
+  <Card title="NixOS" icon="/images/install/nixos.svg" href="/ko/get-started/setup/self-managed/nixos" />
 
-  <a href="/ko/install/linux_other" style={{textDecoration: 'none'}}>
-    <Card title="기타 Linux" />
-  </a>
-</div>
+  <Card title="기타 Linux" icon="/images/install/linux.svg" href="/ko/get-started/setup/self-managed/other-linux" />
+</Columns>

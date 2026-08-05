@@ -12,12 +12,9 @@
 
 #include <cotp.h>
 
-constexpr int TOTP_SHA512 = SHA512;
-constexpr int TOTP_SHA256 = SHA256;
-constexpr int TOTP_SHA1 = SHA1;
-#undef SHA512
-#undef SHA256
-#undef SHA1
+constexpr int TOTP_SHA512 = COTP_SHA512;
+constexpr int TOTP_SHA256 = COTP_SHA256;
+constexpr int TOTP_SHA1 = COTP_SHA1;
 
 #endif
 

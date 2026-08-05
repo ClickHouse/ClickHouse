@@ -988,8 +988,10 @@ def test_mysql_geometry(started_cluster):
             `pg` polygon NOT NULL,
             `mls` multilinestring NOT NULL,
             `mpg` multipolygon NOT NULL,
+            `mp` multipoint NOT NULL,
             `geo` geometry NOT NULL,
             `geo_mp` geometry NOT NULL,
+            `geo_gc` geometry NOT NULL,
             PRIMARY KEY (`id`)) ENGINE=InnoDB;
         """
         )
@@ -1001,8 +1003,10 @@ def test_mysql_geometry(started_cluster):
                 pg = ST_GeomFromText('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'),
                 mls = ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
                 mpg = ST_GeomFromText('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'),
+                mp = ST_GeomFromText('MULTIPOINT(7 7, 8 8)'),
                 geo = ST_GeomFromText('LINESTRING(5 5, 6 6)'),
-                geo_mp = ST_GeomFromText('MULTIPOINT(0 0, 1 1)')
+                geo_mp = ST_GeomFromText('MULTIPOINT(0 0, 1 1)'),
+                geo_gc = ST_GeomFromText('GEOMETRYCOLLECTION(POINT(1 1))')
         """
         )
         assert 1 == cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
@@ -1016,15 +1020,16 @@ def test_mysql_geometry(started_cluster):
     # The concrete spatial column types are mapped to the corresponding ClickHouse geometric types,
     # because their subtype is fixed by the column type. The generic `geometry` column type can hold
     # a value of any subtype, so it maps to the umbrella `Geometry` type (a `Variant` over the
-    # concrete geometric types). A value whose subtype has no ClickHouse counterpart (`MULTIPOINT`,
-    # `GEOMETRYCOLLECTION`) then throws at read time (checked below); this incompatibility is accepted
-    # in exchange for a proper geometric type.
+    # concrete geometric types). A value whose subtype has no ClickHouse counterpart
+    # (`GEOMETRYCOLLECTION`) then throws at read time (checked below); this incompatibility is
+    # accepted in exchange for a proper geometric type.
     assert (
         node1.query(
-            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(geo), toTypeName(geo_mp) "
+            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(mp), "
+            "toTypeName(geo), toTypeName(geo_mp), toTypeName(geo_gc) "
             f"FROM {table_function} LIMIT 1"
         ).strip()
-        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tGeometry\tGeometry"
+        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tMultiPoint\tGeometry\tGeometry\tGeometry"
     )
 
     assert (
@@ -1043,17 +1048,23 @@ def test_mysql_geometry(started_cluster):
         node1.query(f"SELECT mpg FROM {table_function}").strip()
         == "[[[(0,0),(2,0),(2,2),(0,2),(0,0)]]]"
     )
+    assert node1.query(f"SELECT mp FROM {table_function}").strip() == "[(7,7),(8,8)]"
     # A generic `geometry` column holding a representable subtype reads back as the geometric value:
-    # `geo` stores a LINESTRING, so it is read through the `Geometry` Variant's `LineString` alternative.
+    # `geo` stores a LINESTRING, so it is read through the `Geometry` Variant's `LineString`
+    # alternative, and `geo_mp` stores a MULTIPOINT, read through the `MultiPoint` alternative.
     assert (
         node1.query(f"SELECT geo FROM {table_function}").strip()
         == "[(5,5),(6,6)]"
     )
+    assert (
+        node1.query(f"SELECT geo_mp FROM {table_function}").strip()
+        == "[(0,0),(1,1)]"
+    )
     # Regression test for the accepted incompatibility: a generic `geometry` column holding a subtype
-    # with no ClickHouse counterpart (`MULTIPOINT` here) throws at read time, because `MULTIPOINT` is
-    # not representable by the `Geometry` Variant.
+    # with no ClickHouse counterpart (`GEOMETRYCOLLECTION` here) throws at read time, because
+    # `GEOMETRYCOLLECTION` is not representable by the `Geometry` Variant.
     assert "Incorrect geometry type" in node1.query_and_get_error(
-        f"SELECT geo_mp FROM {table_function}"
+        f"SELECT geo_gc FROM {table_function}"
     )
 
     # Regression test: the WKB parsing of spatial values read from MySQL honors the

@@ -9,6 +9,10 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
+#if ENABLE_DISTRIBUTED_CACHE
+#include <DistributedCache/Utils.h>
+#endif
+
 #include <Databases/IDatabase.h>
 
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
@@ -251,6 +255,10 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
             "Current limit on the size of userspace page cache, in bytes." };
     }
+
+#if ENABLE_DISTRIBUTED_CACHE
+    DistributedCache::updateDistributedCacheMetrics(new_values);
+#endif
 
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
         "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };

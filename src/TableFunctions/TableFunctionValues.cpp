@@ -1,6 +1,8 @@
 #include <Columns/IColumn.h>
+#include <Columns/ColumnTuple.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/Exception.h>
 
 #include <Core/Block.h>
@@ -14,7 +16,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
-#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -36,37 +38,41 @@ namespace
 
 void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
 {
-    if (res_columns.size() == 1) /// Parsing arguments as Fields
+    if (res_columns.size() == 1) /// Parsing arguments as single values
     {
         for (size_t i = start; i < args.size(); ++i)
         {
-            const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
+            const auto [value_column, value_type] = evaluateConstantExpressionAsColumn(args[i], context);
 
-            Field value = convertFieldToTypeOrThrow(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get(), {}, /*convert_inexact_floats=*/true);
-            res_columns[0]->insert(value);
+            ColumnPtr converted = convertColumnToTypeOrThrow(
+                *value_column, value_type, sample_block.getByPosition(0).type, {}, /*convert_inexact_floats=*/true);
+            res_columns[0]->insertRangeFrom(*converted, 0, 1);
         }
     }
     else /// Parsing arguments as Tuples
     {
         for (size_t i = start; i < args.size(); ++i)
         {
-            const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
+            const auto [value_column, value_type] = evaluateConstantExpressionAsColumn(args[i], context);
 
-            const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get());
+            const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type.get());
             if (!type_tuple)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Table function VALUES requires all but the first argument (rows specification) to be either tuples or single values");
 
-            const Tuple & value_tuple = value_field.safeGet<Tuple>();
+            const DataTypes & value_types_tuple = type_tuple->getElements();
 
-            if (value_tuple.size() != sample_block.columns())
+            if (value_types_tuple.size() != sample_block.columns())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Values size should match with the number of columns");
 
-            const DataTypes & value_types_tuple = type_tuple->getElements();
-            for (size_t j = 0; j < value_tuple.size(); ++j)
+            /// Convert each tuple element to the corresponding column's type independently (same
+            /// per-element semantics as the previous `Field` path), without materializing a `Field`.
+            const ColumnTuple & value_tuple = assert_cast<const ColumnTuple &>(*value_column->convertToFullColumnIfConst());
+            for (size_t j = 0; j < value_types_tuple.size(); ++j)
             {
-                Field value = convertFieldToTypeOrThrow(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get(), {}, /*convert_inexact_floats=*/true);
-                res_columns[j]->insert(value);
+                ColumnPtr converted = convertColumnToTypeOrThrow(
+                    value_tuple.getColumn(j), value_types_tuple[j], sample_block.getByPosition(j).type, {}, /*convert_inexact_floats=*/true);
+                res_columns[j]->insertRangeFrom(*converted, 0, 1);
             }
         }
     }
@@ -74,11 +80,11 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
 
 DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context)
 {
-    const auto & [value_field, value_type_ptr] = evaluateConstantExpression(arg, context);
-    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get()))
+    const auto value_type = evaluateConstantExpressionAsColumn(arg, context).second;
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type.get()))
         return type_tuple->getElements();
 
-    return {value_type_ptr};
+    return {value_type};
 }
 
 /* values(structure, values...) - creates a temporary storage filling columns with values

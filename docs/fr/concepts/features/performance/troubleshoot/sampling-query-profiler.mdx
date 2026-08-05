@@ -58,9 +58,7 @@ La requête d&#39;exemple suivante trouve les traces de pile les plus fréquente
 Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suivez les étapes ci-dessous :
 
 <Steps>
-  <Step>
-    ### Installer ClickHouse avec les informations de débogage
-
+  <Step title="Installer ClickHouse avec les informations de débogage" id="debug-info">
     Installez le package `clickhouse-common-static-dbg` :
 
     1. Suivez les instructions de l’étape [« Configurer le dépôt Debian »](/fr/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
@@ -69,9 +67,7 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
     4. Exécutez `clickhouse-client`. Les symboles de débogage de `clickhouse-common-static-dbg` seront automatiquement pris en compte par le serveur ; vous n’avez rien de particulier à faire pour les activer
   </Step>
 
-  <Step>
-    ### Vérifier la configuration du serveur
-
+  <Step title="Vérifier la configuration du serveur" id="server-config">
     Assurez-vous que la section [`trace_log`](/fr/reference/settings/server-settings/settings#trace_log) de votre [fichier de configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files) est configurée. Elle est activée par défaut :
 
     ```xml
@@ -97,9 +93,7 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
     Après le redémarrage du serveur, ClickHouse ne nettoie pas la table, et toutes les adresses de mémoire virtuelle stockées peuvent devenir invalides.
   </Step>
 
-  <Step>
-    ### Configurer les temporisateurs de profilage
-
+  <Step title="Configurer les temporisateurs de profilage" id="configure-profile-timers">
     Configurez les paramètres [`query_profiler_cpu_time_period_ns`](/fr/reference/settings/session-settings#query_profiler_cpu_time_period_ns) ou [`query_profiler_real_time_period_ns`](/fr/reference/settings/session-settings#query_profiler_real_time_period_ns).
     Les deux paramètres peuvent être utilisés simultanément.
 
@@ -111,9 +105,7 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
     Si vous devez profiler chaque requête individuellement, utilisez une fréquence d’échantillonnage plus élevée.
   </Step>
 
-  <Step>
-    ### Analyser la table système `trace_log`
-
+  <Step title={<>Analyser la table système <code>trace_log</code></>} id="analyze-trace-log-system-table">
     Pour analyser la table système `trace_log`, activez les fonctions d’introspection avec le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings#allow_introspection_functions) :
 
     ```sql

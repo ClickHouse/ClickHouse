@@ -27,9 +27,7 @@ doc_type: 'guide'
 你可以在 Python REPL 中或通过脚本运行以下步骤。
 
 <Steps>
-  <Step>
-    ## 安装库
-
+  <Step title="安装库" id="install-libraries">
     运行以下命令安装 Agno 库：
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 设置凭证
-
+  <Step title="设置凭证" id="setup-credentials">
     接下来，您需要提供您的 Anthropic API 密钥：
 
     ```python
@@ -57,7 +53,7 @@ doc_type: 'guide'
       **使用其他 LLM 提供商**
 
       如果你没有 Anthropic API 密钥，但想使用其他 LLM 提供商，
-      可以在 [Agno 文档](https://docs.agno.com/concepts/models/introduction)中查看设置凭据的说明。
+      可以在 [Agno 文档](https://docs.agno.com/models/overview)中查看设置凭据的说明。
     </Info>
 
     接下来，定义连接 ClickHouse SQL playground 所需的凭据：
@@ -73,9 +69,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 初始化 MCP 服务器和 Agno agent
-
+  <Step title="初始化 MCP 服务器和 Agno agent" id="initialize-mcp-and-agent">
     现在将 ClickHouse MCP 服务器配置为指向 ClickHouse SQL playground，
     并初始化 Agno agent，然后向它提一个问题：
 

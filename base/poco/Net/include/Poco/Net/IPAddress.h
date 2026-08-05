@@ -18,7 +18,7 @@
 #define Net_IPAddress_INCLUDED
 
 
-#include <ostream>
+#include <iosfwd>
 #include <vector>
 #include "Poco/AutoPtr.h"
 #include "Poco/Exception.h"

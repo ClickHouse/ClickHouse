@@ -18,7 +18,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` 和 `type` 都是字符串字面量。支持的压缩类型包括：`'none'`、`'gzip'`、`'deflate'`、`'br'`、`'xz'`、`'zstd'`、`'lz4'`、`'bz2'`。
 
-`level` 是数值字面量。支持以下范围内的正整数：`lz4` 类型为 `1-12`，`zstd` 类型为 `1-22`，其他压缩类型为 `1-9`。
+`level` 是数值字面量。支持以下范围内的正整数：`gzip`、`deflate` 和 `lz4` 类型为 `1-12`，`zstd` 类型为 `1-22`，其他压缩类型为 `1-9`。对于 `gzip` 和 `deflate`，高于 `9` 的级别需要使用带有 `libdeflate` 的默认构建；不带 `libdeflate` 的构建仅支持 `1-9` 级别。
 
 <div id="implementation-details">
   ## 实现细节

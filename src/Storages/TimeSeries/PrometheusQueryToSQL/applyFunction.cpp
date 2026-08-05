@@ -21,7 +21,8 @@ namespace DB::ErrorCodes
 namespace DB::PrometheusQueryToSQL
 {
 
-SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyFunction(
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     std::string_view function_name = function_node->function_name;
 

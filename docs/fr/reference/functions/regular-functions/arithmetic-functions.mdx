@@ -404,7 +404,7 @@ Introduit dans : v1.1.0
 
 Renvoie le plus grand commun diviseur de deux valeurs, a et b.
 
-Une exception est levée en cas de division par zéro ou lorsqu&#39;un nombre négatif minimal est divisé par moins un.
+Une exception est levée en cas de division par zéro ou lorsqu&#39;un plus petit nombre négatif est divisé par moins un.
 
 **Syntaxe**
 
@@ -775,8 +775,8 @@ max2(x, y)
 
 **Arguments**
 
-* `x` — Première valeur [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint), [`Float*`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
-* `y` — Deuxième valeur [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint), [`Float*`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
+* `x` — Première valeur [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint), [`Float*`](/fr/reference/data-types/float), [`BFloat16`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
+* `y` — Deuxième valeur [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint), [`Float*`](/fr/reference/data-types/float), [`BFloat16`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
 
 **Valeur renvoyée**
 
@@ -896,8 +896,8 @@ min2(x, y)
 
 **Arguments**
 
-* `x` — Première valeur [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
-* `y` — Deuxième valeur [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
+* `x` — Première valeur [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`BFloat16`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
+* `y` — Deuxième valeur [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`BFloat16`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
 
 **Valeur renvoyée**
 
@@ -1047,8 +1047,9 @@ SELECT moduloLegacy(10, 3)
 
 Introduit dans : v25.5.0
 
-Calcule le reste de la division de `a` par `b`. Comme la fonction `modulo`, sauf que `moduloOrNull` renvoie NULL
-si l&#39;argument de droite est 0.
+Calcule le reste de la division de `a` par `b`. Comme la fonction `modulo`, sauf que `moduloOrNull` renvoie `NULL`
+lorsque l&#39;opération lèverait sinon une exception en virgule flottante. Pour les arguments en virgule flottante, cela se produit uniquement lorsque le
+diviseur est `0` ; pour les arguments entiers, cela couvre également la valeur négative minimale modulo `-1` (par ex. `-128 % -1` pour `Int8`).
 
 **Syntaxe**
 
@@ -1065,7 +1066,8 @@ moduloOrNull(x, y)
 
 **Valeur renvoyée**
 
-Renvoie le reste de la division de `x` par `y`, ou `NULL` si le diviseur est égal à zéro.
+Renvoie le reste de la division de `x` par `y`, ou `NULL` lorsque l&#39;opération entraînerait une exception en virgule flottante :
+lorsque le diviseur est égal à zéro, ou, pour des arguments entiers, lors du calcul de la valeur négative minimale modulo `-1`.
 
 **Exemples**
 
@@ -1073,6 +1075,16 @@ Renvoie le reste de la division de `x` par `y`, ou `NULL` si le diviseur est ég
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**moduloOrNull de l’entier négatif minimal par -1**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1195,7 +1207,8 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 **Différence avec la multiplication standard**
 
 ```sql title=Query
-SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
+SELECT multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
+SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 ```
 
 ```response title=Response
@@ -1368,8 +1381,9 @@ SELECT positiveModulo(-1, 10)
 
 Introduit dans : v25.5.0
 
-Calcule le reste de la division de `a` par `b`. Similaire à la fonction `positiveModulo`, à ceci près que `positiveModuloOrNull` renvoie NULL
-si l&#39;argument de droite est 0.
+Calcule le reste de la division de `a` par `b`. Similaire à la fonction `positiveModulo`, à ceci près que `positiveModuloOrNull` renvoie `NULL`
+lorsque l&#39;opération provoquerait autrement une exception en virgule flottante. Pour les arguments à virgule flottante, cela se produit uniquement lorsque le
+diviseur est `0` ; pour les arguments entiers, cela couvre également la valeur négative minimale modulo `-1` (par exemple `-128 % -1` pour `Int8`).
 
 **Syntaxe**
 
@@ -1386,11 +1400,12 @@ positiveModuloOrNull(x, y)
 **Valeur renvoyée**
 
 Renvoie la différence entre `x` et le plus grand entier inférieur ou égal à
-`x` divisible par `y`, `null` si le diviseur est égal à zéro.
+`x` divisible par `y`, ou `NULL` lorsque l’opération lèverait une exception en virgule flottante : lorsque le diviseur est égal à zéro ou,
+pour les arguments entiers, lors du calcul de la valeur négative minimale modulo `-1`.
 
 **Exemples**
 
-**positiveModuloOrNull**
+**positiveModuloOrNull par zéro**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
@@ -1398,6 +1413,50 @@ SELECT positiveModuloOrNull(5, 0)
 
 ```response title=Response
 \N
+```
+
+**positiveModuloOrNull du plus petit entier négatif par -1**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
+```
+
+```response title=Response
+\N
+```
+
+<div id="sqr">
+  ## sqr
+</div>
+
+Introduit dans : v26.7.0
+
+Calcule le carré d’une valeur `x`.
+
+**Syntaxe**
+
+```sql
+sqr(x)
+```
+
+**Arguments**
+
+* `x` — Valeur à mettre au carré. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
+
+**Valeur renvoyée**
+
+Renvoie le produit de `x` par lui-même.
+
+**Exemples**
+
+**Mise au carré d’un nombre**
+
+```sql title=Query
+SELECT sqr(5)
+```
+
+```response title=Response
+25
 ```
 
 {/*AUTOGENERATED_END*/}

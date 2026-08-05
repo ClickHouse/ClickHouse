@@ -111,7 +111,7 @@ The returned point is the centre of the referenced grid square, so the precision
         "Returns a named tuple `(longitude, latitude)` in degrees.", {"Tuple(Float64, Float64)"}};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", "SELECT MGRSToGeo('31UDQ4825111935')", "(2.294495618908297,48.85822536113692)"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

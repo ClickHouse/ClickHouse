@@ -633,7 +633,7 @@ void StorageRunner::runBenchmark()
     Stopwatch period_watch;
     size_t period_idx = 0;
     bool period_had_snapshot = false;
-    std::unique_ptr<DB::KeeperNodeStreamForSnapshot> stream_for_snapshot;
+    std::unique_ptr<DB::KeeperNodesReadView> view_for_snapshot;
     while (!shutdown.load(std::memory_order_relaxed))
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -653,12 +653,12 @@ void StorageRunner::runBenchmark()
                 std::lock_guard lock(state_machine_storage_mutex);
                 if (snapshot_enabled.load())
                 {
-                    storage->nodes_storage->finishWritingSnapshot(std::move(stream_for_snapshot));
+                    view_for_snapshot.reset();
                     snapshot_enabled.store(false);
                 }
                 else
                 {
-                    stream_for_snapshot = storage->nodes_storage->beginWritingSnapshot();
+                    view_for_snapshot = storage->issueReadView();
                     snapshot_enabled.store(true);
                 }
             }
@@ -680,11 +680,11 @@ void StorageRunner::runBenchmark()
     if (commit_thread_handle->joinable())
         commit_thread_handle->join();
 
-    /// Disable snapshot mode before the storage is destroyed: SnapshotableHashTable's
-    /// destructor asserts !snapshot_mode via clearOutdatedNodes.
+    /// Retire the read view before the storage is destroyed: SnapshotableHashTable's
+    /// destructor asserts that no read views are outstanding.
     if (snapshot_enabled.load())
     {
-        storage->nodes_storage->finishWritingSnapshot(std::move(stream_for_snapshot));
+        view_for_snapshot.reset();
         snapshot_enabled.store(false);
     }
 

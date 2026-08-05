@@ -107,6 +107,10 @@ public:
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
         bool is_deterministic_constant = true;
+        /// Display-only: this constant holds a secret (e.g. an `encrypt` key). The value stays in
+        /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
+        /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
+        bool is_masked_secret = false;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 
@@ -167,7 +171,7 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant = true);
+    const Node & addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant = true, bool is_masked_secret = false);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -222,6 +226,10 @@ public:
     /// Remove unused actions after that.
     /// Do not remove any inputs.
     void removeFromOutputs(const std::string & node_name);
+
+    /// Remove all outputs whose result name is in `node_names`. Unlike the single-name overload above,
+    /// names not present among the outputs are ignored (no throw), and unused actions are not pruned.
+    void removeFromOutputs(const NameSet & node_names);
 
     /// Remove actions that are not needed to compute output nodes.
     /// Returns true if any of the actions were removed.

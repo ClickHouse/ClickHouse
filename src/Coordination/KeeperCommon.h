@@ -120,11 +120,11 @@ struct KeeperNodeStats
 {
     /// Flags packed into ctime_and_flags.
     static constexpr uint64_t NUM_FLAGS = 3;
-    static constexpr uint64_t EPHEMERAL = 1ul << 63;
-    static constexpr uint64_t TTL = 1ul << 62;
-    static constexpr uint64_t CONTAINER = 1ul << 61;
+    static constexpr uint64_t EPHEMERAL = 1ull << 63;
+    static constexpr uint64_t TTL = 1ull << 62;
+    static constexpr uint64_t CONTAINER = 1ull << 61;
     static constexpr uint64_t FLAGS_MASK = EPHEMERAL | TTL | CONTAINER;
-    static_assert(FLAGS_MASK == ~(~0ul >> NUM_FLAGS));
+    static_assert(FLAGS_MASK == ~(~0ull >> NUM_FLAGS));
 
     /// ephemeralOwner value for container nodes (matches `CONTAINER_EPHEMERAL_OWNER` in ZooKeeper).
     static constexpr int64_t CONTAINER_EPHEMERAL_OWNER = INT64_MIN;

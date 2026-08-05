@@ -7,6 +7,8 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
+#include <fmt/ranges.h>
+
 
 namespace
 {
@@ -45,6 +47,15 @@ namespace Setting
 {
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
+    extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
+    extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsBool compile_expressions;
+    extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
@@ -84,6 +95,59 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
         }
     }
+}
+
+/// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override once
+/// distributed plans support the corresponding feature - e.g. for the text index direct read,
+/// let the worker re-run the rewrite over its pinned part list instead of disabling it.
+void adjustSettingsForMakeDistributedPlan(Settings & settings)
+{
+    if (!settings[Setting::make_distributed_plan])
+        return;
+
+    Strings adjusted;
+
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
+    {
+        settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+        adjusted.emplace_back("enable_parallel_replicas = 0");
+    }
+    if (settings[Setting::automatic_parallel_replicas_mode] != 0)
+    {
+        settings[Setting::automatic_parallel_replicas_mode] = 0;
+        adjusted.emplace_back("automatic_parallel_replicas_mode = 0");
+    }
+    if (!settings[Setting::rewrite_in_to_join] && settings[Setting::allow_experimental_correlated_subqueries])
+    {
+        settings[Setting::rewrite_in_to_join] = true;
+        adjusted.emplace_back("rewrite_in_to_join = 1");
+    }
+    if (settings[Setting::correlated_subqueries_use_in_memory_buffer])
+    {
+        settings[Setting::correlated_subqueries_use_in_memory_buffer] = false;
+        adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
+    }
+    if (settings[Setting::use_skip_indexes_on_data_read])
+    {
+        settings[Setting::use_skip_indexes_on_data_read] = false;
+        adjusted.emplace_back("use_skip_indexes_on_data_read = 0");
+    }
+    if (settings[Setting::compile_expressions])
+    {
+        settings[Setting::compile_expressions] = false;
+        adjusted.emplace_back("compile_expressions = 0");
+    }
+    if (settings[Setting::query_plan_direct_read_from_text_index])
+    {
+        settings[Setting::query_plan_direct_read_from_text_index] = false;
+        adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
+    }
+
+    if (!adjusted.empty())
+        LOG_DEBUG(
+            getLogger("adjustSettingsForMakeDistributedPlan"),
+            "Adjusted settings not supported by distributed query plans (make_distributed_plan is enabled): {}",
+            fmt::join(adjusted, ", "));
 }
 
 void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)

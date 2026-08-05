@@ -18,8 +18,8 @@ ClickHouse está diseñado para ser rápido a la hora de insertar datos. Los arc
 * Tus consultas deben contemplar la posibilidad de que existan duplicados
 
 <div class="transparent-table">
-  |                                                                                                       |                                                                                                                                                                                                                                                                          |
-  | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  |                                                                                                        |                                                                                                                                                                                                                                                                          |
+  | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
   | <Image img="/images/guides/developer/de_duplication.webp" alt="Logotipo de deduplicación" size="sm" /> | ClickHouse ofrece formación gratuita sobre deduplicación y muchos otros temas. El [módulo de formación Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) es un buen punto de partida. |
 </div>
 
@@ -345,9 +345,9 @@ FROM hackernews_views_vcmt
 Una tabla `VersionedCollapsingMergeTree` resulta muy útil cuando se quiere implementar la deduplicación al insertar filas desde varios clientes y/o hilos.
 
 <div id="why-arent-my-rows-being-deduplicated">
-  ## ¿Por qué mis filas no se deduplican?
+  ## ¿Por qué no se están deduplicando mis filas?
 </div>
 
-Una de las razones por las que las filas insertadas pueden no deduplicarse es que estés usando una función o expresión no idempotente en tu sentencia `INSERT`. Por ejemplo, si estás insertando filas con la columna `createdAt DateTime64(3) DEFAULT now()`, se garantiza que tus filas serán únicas porque cada fila tendrá un valor por defecto único para la columna `createdAt`. El motor de tabla MergeTree / ReplicatedMergeTree no sabrá que debe deduplicar las filas, ya que cada fila insertada generará un checksum único.
+Una de las razones por las que las filas insertadas pueden no deduplicarse es que estés usando una función o expresión no idempotente en tu sentencia `INSERT`. Por ejemplo, si estás insertando filas con la columna `createdAt DateTime64(3) DEFAULT now()`, tus filas serán necesariamente únicas, ya que cada fila tendrá un valor predeterminado distinto para la columna `createdAt`. El motor de tabla MergeTree / ReplicatedMergeTree no sabrá que debe deduplicar las filas, porque cada fila insertada generará una suma de comprobación única.
 
-En este caso, puedes especificar tu propio `insert_deduplication_token` para cada lote de filas a fin de garantizar que varias inserciones del mismo lote no den lugar a que se vuelvan a insertar las mismas filas. Consulta la [documentación sobre `insert_deduplication_token`](/es/reference/settings/session-settings#insert_deduplication_token) para obtener más información sobre cómo usar esta configuración.
+En este caso, puedes especificar tu propio `insert_deduplication_token` para cada lote de filas a fin de garantizar que varias inserciones del mismo lote no hagan que se vuelvan a insertar las mismas filas. Consulta la [documentación sobre `insert_deduplication_token`](/es/reference/settings/session-settings#insert_deduplication_token) para obtener más información sobre cómo usar esta configuración.

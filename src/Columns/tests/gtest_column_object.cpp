@@ -492,3 +492,35 @@ TEST(ColumnObject, TryInsertRestoresSortedDynamicPaths)
     ASSERT_EQ(col_object.size(), 2u);
     ASSERT_EQ(col_object[1], col_object[0]);
 }
+
+TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
+{
+    /// `factor` declares how many source-sized batches will be appended, so it must reach the
+    /// dynamic paths' discriminators/offsets too, not only their variants. Regression:
+    /// reserve(total_size) instead of reserve(total_size * factor) left them sized for one batch.
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=10)");
+
+    auto source = type->createColumn();
+    auto & source_object = assert_cast<ColumnObject &>(*source);
+    for (size_t i = 0; i != 100; ++i)
+        source_object.insert(Object{{"a", Field{UInt64(i)}}});
+    /// Load-bearing precondition: if "a" landed in shared data the assertions below would be vacuous.
+    ASSERT_EQ(source_object.getDynamicPaths().size(), 1u);
+    ASSERT_TRUE(source_object.getDynamicPaths().contains("a"));
+
+    auto target = type->createColumn();
+    auto & target_object = assert_cast<ColumnObject &>(*target);
+
+    VectorWithMemoryTracking<ColumnPtr> sources;
+    sources.push_back(std::move(source));
+
+    static constexpr size_t factor = 8;
+    target_object.prepareForSquashing(sources, factor);
+
+    /// Control, asserted first so it is reached even while the regression below still fails:
+    /// shared_data already scales by `factor`, and must keep doing so.
+    ASSERT_GE(target_object.getSharedDataPtr()->capacity(), 100u * factor);
+
+    ASSERT_TRUE(target_object.getDynamicPathsPtrs().contains("a"));
+    ASSERT_GE(target_object.getDynamicPathsPtrs().at("a")->capacity(), 100u * factor);
+}

@@ -82,9 +82,9 @@ Postgres 12 以降
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication には、指定したテーブルから生成された変更イベントのセットが含まれ、後でレプリケーションストリームを取り込む際に使用されます。
+`clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケーションするつもりでない限り、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
-[//]: # "TODO Add SSH Tunneling"
+[//]: # "TODO SSH トンネリングを追加"
 
 <div id="add-clickpipes-ips-to-firewall">
   ## ClickPipes の IP アドレスをファイアウォールに追加する

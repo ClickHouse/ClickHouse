@@ -21,7 +21,7 @@ Ce jeu de données peut être utilisé pour modéliser les aspects liés à la c
   ## Détails du jeu de données
 </div>
 
-Le jeu de données complet est disponible sous forme d’un mélange de fichiers `npy` et `Parquet` sur [the-eye.eu](https://the-eye.eu/public/AI/cah/laion5b/)
+Le jeu de données complet peut être téléchargé à l’aide de [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
 
 ClickHouse a mis à disposition un sous-ensemble de 100 millions de vecteurs dans un bucket `S3`.
 Le bucket `S3` contient 10 fichiers `Parquet`, chacun contenant 10 millions de lignes.
@@ -33,9 +33,7 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
 </div>
 
 <Steps>
-  <Step>
-    ### Créer la table
-
+  <Step title="Créer la table" id="create-table">
     Créez la table `laion_5b_100m` pour stocker les embeddings et les attributs associés :
 
     ```sql
@@ -64,9 +62,7 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
     la recherche de similarité vectorielle combinée au post-filtrage/pré-filtrage, comme expliqué dans la [documentation](/fr/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step>
-    ### Charger les données
-
+  <Step title="Charger les données" id="load-table">
     Pour charger le jeu de données à partir de tous les fichiers `Parquet`, exécutez l’instruction SQL suivante :
 
     ```sql
@@ -84,9 +80,7 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
     ```
   </Step>
 
-  <Step>
-    ### Exécuter une recherche de similarité vectorielle par force brute
-
+  <Step title="Exécuter une recherche de similarité vectorielle par force brute" id="run-a-brute-force-vector-similarity-search">
     La recherche KNN (k - Nearest Neighbours) ou recherche par force brute consiste à calculer la distance de chaque vecteur du jeu de données
     par rapport au vecteur d&#39;embedding de recherche, puis à trier ces distances pour obtenir les voisins les plus proches. Il est possible d&#39;utiliser l&#39;un des vecteurs
     du jeu de données lui-même comme vecteur de recherche. Par exemple :
@@ -131,9 +125,7 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
     Avec 100 millions de lignes, la requête ci-dessus sans index vectoriel peut prendre quelques secondes, voire quelques minutes, pour s&#39;exécuter.
   </Step>
 
-  <Step>
-    ### Créer un index de similarité vectorielle
-
+  <Step title="Créer un index de similarité vectorielle" id="build-vector-similarity-index">
     Exécutez la requête SQL suivante pour définir et créer un index de similarité vectorielle sur la colonne `vector` de la table `laion_5b_100m` :
 
     ```sql
@@ -150,9 +142,7 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
     La construction et l’enregistrement de l’index peuvent même prendre quelques heures pour l’ensemble du jeu de données de l00 millions, selon le nombre de cœurs CPU disponibles et la bande passante du stockage.
   </Step>
 
-  <Step>
-    ### Effectuer une recherche ANN
-
+  <Step title="Effectuer une recherche ANN" id="perform-ann-search">
     Une fois l’index de similarité vectorielle créé, les requêtes de recherche vectorielle utiliseront automatiquement l’index :
 
     ```sql title="Query"
@@ -166,9 +156,7 @@ Nous recommandons aux utilisateurs d’effectuer d’abord un exercice de dimens
     Le chargement initial de l’index vectoriel en mémoire peut prendre quelques secondes ou quelques minutes.
   </Step>
 
-  <Step>
-    ### Générer des embeddings pour la requête de recherche
-
+  <Step title="Générer des embeddings pour la requête de recherche" id="generating-embeddings-for-search-query">
     Les vecteurs d&#39;embedding du jeu de données `LAION 5b` ont été générés à l&#39;aide du modèle `OpenAI CLIP` `ViT-L/14`.
 
     Un exemple de script Python est fourni ci-dessous pour illustrer comment générer par programmation des

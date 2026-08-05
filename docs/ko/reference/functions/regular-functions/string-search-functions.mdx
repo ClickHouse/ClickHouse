@@ -75,8 +75,8 @@ SELECT countMatches('hello 123 world 456 test', '[0-9]+')
 
 ```response title=Response
 ┌─countMatches('hello 123 world 456 test', '[0-9]+')─┐
-│                                                   2 │
-└─────────────────────────────────────────────────────┘
+│                                                  2 │
+└────────────────────────────────────────────────────┘
 ```
 
 <div id="countMatchesCaseInsensitive">
@@ -302,8 +302,8 @@ SELECT extract('test@clickhouse.com', '.*@(.*)$')
 
 ```response title=Response
 ┌─extract('test@clickhouse.com', '.*@(.*)$')─┐
-│ clickhouse.com                            │
-└───────────────────────────────────────────┘
+│ clickhouse.com                             │
+└────────────────────────────────────────────┘
 ```
 
 **일치하는 항목이 없으면 빈 문자열을 반환합니다**
@@ -470,9 +470,11 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   텍스트 인덱스에 지정된 토크나이저를 사용해 처리됩니다.
   컬럼에 텍스트 인덱스가 정의되어 있지 않으면 대신 `splitByNonAlpha` 토크나이저가 사용됩니다.
   `needle` 인수가 [Array(String)](/ko/reference/data-types/array) 타입이면 각 배열 요소가 토큰으로 간주되며, 추가 토큰화는 수행되지 않습니다.
+  텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 표현식이 구성되어 있으면, `needle`이 `String`으로 지정된 경우 토큰화 전에 전처리기가 적용됩니다.
+  텍스트 인덱스에 [후처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 표현식이 구성되어 있으면, 후처리기는 `needle` 토큰과 `input` 토큰 모두에 적용됩니다(즉, 둘 다 토큰화 이후에 적용됩니다).
 
 중복된 토큰(token)은 무시됩니다.
-예시: needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
+예시: 검색 패턴 = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
 
 <Note>
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)(예: `lowerUTF8`)가 정의되어 있으면, `hasAllTokens`는 이를 `input`에 적용하고, `needles`가 [String](/ko/reference/data-types/string)인 경우에는 토큰화 전에 `needles`에도 적용합니다. `needles`가 [Array(String)](/ko/reference/data-types/array)인 경우에는 그 요소가 있는 그대로 전달되며 전처리기는 적용되지 않습니다.
@@ -486,7 +488,7 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 hasAllTokens(input, needles)
 ```
 
-**별칭(Aliases)**: `hasAllToken`
+**별칭**: `hasAllToken`
 
 **인수**
 
@@ -503,7 +505,7 @@ hasAllTokens(input, needles)
 **문자열 needle을 사용한 기본 사용법**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -511,9 +513,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -525,7 +527,17 @@ SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
 **배열에서 있는 그대로(토큰화 없이) 검색할 needle을 지정합니다**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -534,10 +546,20 @@ SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**`tokens` 함수를 사용하여 needle 생성**
+**`tokens` 함수를 사용해 검색 패턴 생성하기**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -546,16 +568,16 @@ SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString'
 └─────────┘
 ```
 
-**3번째 인수로 사용자 정의 토크나이저 사용**
+**세 번째 인수로 사용자 지정 토크나이저 사용하기**
 
 ```sql title=Query
 SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
-│                                            1 │
-└──────────────────────────────────────────────┘
+┌─hasAllTokens⋯ngrams(3)')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 **배열 및 맵 컬럼의 사용 예시**
@@ -577,12 +599,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
-**배열 컬럼 사용 예시**
+**배열 컬럼 예시**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 ```
 
@@ -595,6 +629,21 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 **mapKeys 사용 예시**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -607,6 +656,21 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **mapValues 사용 예시**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -636,6 +700,8 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
   텍스트 인덱스에 지정된 토크나이저를 사용해 처리합니다.
   컬럼에 텍스트 인덱스가 정의되어 있지 않으면 `splitByNonAlpha` 토크나이저를 대신 사용합니다.
   `needle` 인수가 [Array(String)](/ko/reference/data-types/array) 타입이면 각 배열 요소를 토큰으로 간주하며, 추가 토큰화는 수행되지 않습니다.
+  텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 표현식이 구성되어 있으면, 전처리기는 토큰화 전에 `needle`(`String`으로 지정된 경우)에 적용됩니다.
+  텍스트 인덱스에 [후처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 표현식이 구성되어 있으면, 후처리기는 `needle` 토큰과 `input` 토큰 모두에 적용됩니다(즉, 둘 다 토큰화 후에 적용됨).
 
 중복된 토큰은 무시됩니다.
 예시: [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
@@ -652,7 +718,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 hasAnyTokens(input, needles)
 ```
 
-**별칭(Aliases)**: `hasAnyToken`
+**별칭**: `hasAnyToken`
 
 **인수**
 
@@ -669,7 +735,7 @@ hasAnyTokens(input, needles)
 **문자열 needle을 사용한 기본 사용법**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -677,9 +743,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -691,7 +757,17 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
 **배열에서 검색할 needle을 토큰화 없이 있는 그대로 지정합니다**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -700,10 +776,20 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**`tokens` 함수를 사용하여 needle 생성**
+**`tokens` 함수를 사용해 검색 패턴 생성하기**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -712,7 +798,7 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 └─────────┘
 ```
 
-**배열 및 맵 컬럼의 사용 예시**
+**배열 및 맵 컬럼 사용 예시**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -731,12 +817,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
 **배열 컬럼을 사용한 예시**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 ```
 
@@ -749,6 +847,21 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **mapKeys를 사용한 예시**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -761,6 +874,21 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **mapValues를 사용한 예시**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -779,7 +907,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 `input`에 `phrase`의 모든 토큰이 연속된 순서로 포함되어 있는지 확인합니다.
 
 <Note>
-  최적의 성능을 위해 컬럼 `input`에는 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)가 정의되어 있어야 합니다.
+  컬럼 `input`에는 최적의 성능을 위해 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)가 정의되어 있어야 합니다.
   텍스트 인덱스가 정의되어 있지 않으면 이 함수는 브루트 포스(전체 스캔) 컬럼 스캔을 수행하며, 이는 인덱스 조회보다 훨씬 느립니다.
 </Note>
 
@@ -825,8 +953,8 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick brown')
 
 ```response title=Response
 ┌─hasPhrase('the quick brown fox jumps', 'quick brown')─┐
-│                                                      1 │
-└────────────────────────────────────────────────────────┘
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
 ```
 
 **연속되지 않는 토큰**
@@ -837,8 +965,8 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 
 ```response title=Response
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
-│                                                    0 │
-└──────────────────────────────────────────────────────┘
+│                                                   0 │
+└─────────────────────────────────────────────────────┘
 ```
 
 <div id="hasSubsequence">
@@ -1061,6 +1189,11 @@ SELECT hasToken('clickhouse test', 'test')
 
 tokenbf&#95;v1 인덱스를 사용하여 검색 대상 문자열에서 needle을 대소문자를 구분하지 않고 조회합니다.
 
+<Note>
+  이 함수는 기본이 아닌 토크나이저와 전처리기 또는 후처리기 표현식을 사용할 때 몇 가지 주의할 점이 있습니다.
+  대신 [`hasAnyTokens`](#hasAnyTokens) 및 [`hasAllTokens`](#hasAllTokens)를 사용하는 것을 권장합니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -1082,6 +1215,11 @@ hasTokenCaseInsensitive(haystack, needle)
 도입 버전: v23.1.0
 
 tokenbf&#95;v1 인덱스를 사용해 검색 대상 문자열에서 needle을 대소문자를 구분하지 않고 검색합니다. needle 형식이 올바르지 않으면 NULL을 반환합니다.
+
+<Note>
+  이 함수는 기본이 아닌 토크나이저와 전처리기 또는 후처리기 표현식을 사용할 때 몇 가지 주의할 점이 있습니다.
+  대신 [`hasAnyTokens`](#hasAnyTokens) 및 [`hasAllTokens`](#hasAllTokens)를 사용하는 것이 좋습니다.
+</Note>
 
 **구문**
 
@@ -1412,7 +1550,7 @@ match(haystack, pattern)
 
 **인수**
 
-* `haystack` — 패턴을 검색할 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `haystack` — 패턴을 검색할 검색 대상 문자열입니다. [`String`](/ko/reference/data-types/string)
 * `pattern` — 정규식 패턴입니다. 상수이거나 컬럼에서 가져올 수 있습니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
@@ -1453,8 +1591,8 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 
 ```response title=Response
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
-│                       1 │                         0 │
-└─────────────────────────┴───────────────────────────┘
+│                      1 │                        0 │
+└────────────────────────┴──────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAllIndices">
@@ -1518,7 +1656,7 @@ multiFuzzyMatchAny(haystack, distance, [pattern1, pattern2, ..., patternN])
 **인수**
 
 * `haystack` — 검색 대상 문자열입니다. [`String`](/ko/reference/data-types/string)
-* `distance` — fuzzy matching의 최대 편집 거리입니다. [`UInt8`](/ko/reference/data-types/int-uint)
+* `distance` — 퍼지 매칭의 최대 편집 거리입니다. [`UInt8`](/ko/reference/data-types/int-uint)
 * `pattern` — 선택 사항입니다. 일치 여부를 확인할 패턴 배열입니다. [`Array(String)`](/ko/reference/data-types/array)
 
 **반환 값**
@@ -1971,7 +2109,7 @@ SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])
 
 도입 버전: v20.1.0
 
-[multiSearchAny](#multiSearchAny)와 비슷하지만 `haystack`과 `needle` 부분 문자열은 UTF-8로 인코딩된 문자열이라고 가정합니다.
+[multiSearchAny](#multiSearchAny)와 비슷하지만 `haystack`과 `needle` 부분 문자열은 UTF-8 인코딩 문자열이라고 가정합니다.
 
 **구문**
 
@@ -1993,13 +2131,13 @@ multiSearchAnyUTF8(haystack, [needle1, needle2, ..., needleN])
 **UTF-8 문자열 &#39;你好，世界&#39; (&#39;Hello, world&#39;)가 주어졌을 때, 문자열에 你 또는 界 문자가 포함되어 있는지 확인합니다**
 
 ```sql title=Query
-SELECT multiSearchAnyUTF8('你好，世界', ['你', '界'])
+SELECT multiSearchAnyUTF8('你好，世界', ['你', '界']) AS result
 ```
 
 ```response title=Response
-┌─multiSearchA⋯你', '界'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─result─┐
+│      1 │
+└────────┘
 ```
 
 <div id="multiSearchFirstIndex">
@@ -2505,7 +2643,7 @@ SELECT ngramDistanceUTF8('abcde','cde')
 ```
 
 ```response title=Response
-┌─ngramDistanceUTF8('abcde','cde')─┐
+┌─ngramDistanceUTF8('abcde', 'cde')─┐
 │                               0.5 │
 └───────────────────────────────────┘
 ```
@@ -2583,7 +2721,7 @@ SELECT ngramSearchCaseInsensitive('Hello World','hello')
 ```
 
 ```response title=Response
-┌─ngramSearchCaseInsensitive('Hello World','hello')─┐
+┌─ngramSearchCaseInsensitive('Hello World', 'hello')─┐
 │                                                  1 │
 └────────────────────────────────────────────────────┘
 ```

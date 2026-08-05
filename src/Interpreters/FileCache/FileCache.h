@@ -328,6 +328,7 @@ private:
     // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
     const bool use_split_cache;
     const double split_cache_ratio;
+    const std::set<std::string> system_cache_extensions;
 
     const bool skip_cache_on_disk_failure;
     std::atomic<bool> expose_eviction_metrics;

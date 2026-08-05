@@ -47,6 +47,20 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
     return Range(min_value, true, max_value, true);
 }
 
+/// Returns true when a column's statistics description is expected to produce numeric
+/// min/max values. Either an explicit `MinMax` statistic is declared, or a `Basic`
+/// statistic on a numeric/temporal column (the only types for which `Basic` populates
+/// min/max). Used before part statistics are loaded to decide whether part pruning can
+/// be beneficial at all.
+bool statisticsHasMinMax(const ColumnStatisticsDescription & stats_desc)
+{
+    if (stats_desc.types_to_desc.contains(StatisticsType::MinMax))
+        return true;
+    if (stats_desc.types_to_desc.contains(StatisticsType::Basic))
+        return removeLowCardinalityAndNullable(stats_desc.data_type)->isValueRepresentedByNumber();
+    return false;
+}
+
 } /// anonymous namespace
 
 StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_, const ActionsDAG::Node & filter_node_, ContextPtr context_)
@@ -63,8 +77,7 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
     {
         if (const auto * col = columns.tryGet(name))
         {
-            if (col->statistics.types_to_desc.contains(StatisticsType::MinMax)
-                || col->statistics.types_to_desc.contains(StatisticsType::Basic))
+            if (statisticsHasMinMax(col->statistics))
             {
                 stats_column_name_to_type_map[col->name] = col->type;
                 useless = false;
@@ -106,12 +119,14 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
 
 BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 {
-    /// Filter to estimates that carry numeric min/max — either the legacy `MinMax` type or
-    /// `Basic` (which exposes the same min/max via `Estimate::estimated_min/max`).
+    /// Filter to estimates that actually carry numeric min/max values. Both `MinMax` and
+    /// `Basic` (on numeric/temporal types) populate `estimated_min`/`estimated_max`; for
+    /// other types (Array, Tuple, Map, ...) `Basic` leaves them as `nullopt`. Checking
+    /// `estimated_min.has_value()` is the authoritative gate regardless of statistic type.
     Estimates minmax_estimates;
     for (const auto & [col_name, estimate] : estimates)
     {
-        if (estimate.types.contains(StatisticsType::MinMax) || estimate.types.contains(StatisticsType::Basic))
+        if (estimate.estimated_min.has_value())
             minmax_estimates[col_name] = estimate;
     }
 

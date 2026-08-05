@@ -98,25 +98,14 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
         cmd_args.push_back(config.getString("logger." + configPrefix() + "_level"));
     }
 
-    std::string allowed_paths;
-    for (const auto * allowed_path_config : {"dictionaries_lib_path", "catboost_lib_path"})
+    if (auto libraries_sandbox_path = getLibrariesSandboxPath())
     {
-        if (config.has(allowed_path_config))
-        {
-            std::string allowed_path = config.getString(allowed_path_config);
-            if (allowed_path.contains(':'))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`{}` cannot contain the colon (:) symbol: {}", allowed_path_config, allowed_path);
+        if (libraries_sandbox_path->contains(':'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The libraries path of {} cannot contain the colon (:) symbol: {}", serviceAlias(), *libraries_sandbox_path);
 
-            if (!allowed_paths.empty())
-                allowed_paths += ":";
-            allowed_paths += allowed_path;
-        }
-    }
-
-    if (!allowed_paths.empty())
-    {
         cmd_args.push_back("--libraries-path");
-        cmd_args.push_back(allowed_paths);
+        cmd_args.push_back(*libraries_sandbox_path);
     }
 
     LOG_TRACE(getLog(), "Starting {}", serviceAlias());

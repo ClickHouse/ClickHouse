@@ -283,6 +283,37 @@ para executar os exemplos das funções descritas abaixo.
   ```
 </Accordion>
 
+<div id="passing-keys">
+  ## Passando chaves para funções de dicionário
+</div>
+
+O argumento de chave (`id_expr`) de funções como `dictGet`, `dictGetOrDefault`, `dictGetOrNull` e `dictHas` depende da chave do dicionário:
+
+* Para um dicionário com uma **chave simples** (`UInt64`), passe o valor da chave diretamente:
+
+```sql
+SELECT dictGet('simple_key_dictionary', 'attr_name', toUInt64(1));
+```
+
+* Para um dicionário com uma **chave composta (complexa)** de mais de um atributo, passe os valores da chave como uma tupla:
+
+```sql
+SELECT dictGet('complex_key_dictionary', 'attr_name', ('value_for_field1', 42));
+```
+
+* Quando a **chave composta consiste em um único atributo**, o valor da chave pode ser passado diretamente, sem precisar envolvê-lo em `tuple`. Ambos os exemplos a seguir são válidos e equivalentes:
+
+```sql
+SELECT dictGet('complex_key_dictionary', 'attr_name', 'key');
+SELECT dictGet('complex_key_dictionary', 'attr_name', tuple('key'));
+```
+
+Isso também se aplica a dicionários `ip_trie`, cuja chave é um único atributo. O endereço IP a ser pesquisado pode ser passado diretamente:
+
+```sql
+SELECT dictGet('ip_trie_dictionary', 'attr_name', toIPv4('202.79.32.10'));
+```
+
 {/* 
   O conteúdo interno das tags abaixo é substituído, no momento da compilação do framework de documentação, por 
   documentação gerada a partir de system.functions. Não modifique nem remova as tags.
@@ -299,6 +330,10 @@ Introduzido em: v18.16.0
 
 Recupera valores de um dicionário.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -309,7 +344,7 @@ dictGet('dict_name', attr_names, id_expr)
 
 * `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
 * `attr_names` — Nome da coluna do dicionário ou tupla de nomes de colunas. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
-* `id_expr` — Valor da chave. Uma expressão que retorna UInt64/Tuple(T). [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Para um dicionário com chave simples, uma expressão que retorna um valor `UInt64`. Para um dicionário com chave composta (complexa), uma expressão que retorna uma tupla dos valores da chave. Se a chave composta consistir em um único atributo, seu valor pode ser passado diretamente, sem envolvê-lo em `tuple`. [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
 
 **Valor retornado**
 
@@ -321,6 +356,9 @@ Se a chave não for encontrada, retorna o conteúdo do elemento `<null_value>` e
 **Obter um único atributo**
 
 ```sql title=Query
+CREATE TABLE ext_dict_test_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
+INSERT INTO ext_dict_test_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
+CREATE DICTIONARY ext_dict_test (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'ext_dict_test_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
 ```
 
@@ -331,6 +369,9 @@ SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
 **Vários atributos**
 
 ```sql title=Query
+CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
+INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
+CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT
     dictGet('ext_dict_mult', ('c1','c2'), number + 1) AS val,
     toTypeName(val) AS type
@@ -362,6 +403,10 @@ Recupera os valores do atributo de todos os nós que corresponderam a cada chave
 
 Além de retornar valores do tipo `Array(T)` em vez de `T`, esta função se comporta de forma semelhante a [`dictGet`](#dictGet).
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -391,6 +436,13 @@ Se não houver nenhuma chave correspondente a `id_expr` no dicionário, um array
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE regexp_os (id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)) ENGINE = Memory;
+INSERT INTO regexp_os VALUES
+    (1, 0, 'Linux',      ['os_replacement'], ['Linux']),
+    (2, 1, 'Android',    ['os_replacement'], ['Android']),
+    (3, 2, 'Android 1',  ['os_replacement'], ['Android']),
+    (4, 3, 'Android 12', ['os_replacement'], ['Android']);
+CREATE DICTIONARY regexp_tree (regexp String, os_replacement String DEFAULT 'Other') PRIMARY KEY regexp SOURCE(CLICKHOUSE(TABLE 'regexp_os' DB currentDatabase())) LIFETIME(MIN 0 MAX 0) LAYOUT(REGEXP_TREE);
 SELECT
     'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36' AS user_agent,
 
@@ -415,6 +467,10 @@ Introduzido na versão: v21.4.0
 
 Retorna os filhos de primeiro nível como um Array de índices. É a transformação inversa de [dictGetHierarchy](#dictGetHierarchy).
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -435,6 +491,9 @@ Retorna os filhos de primeiro nível da chave. [`Array(UInt64)`](/pt-BR/referenc
 **Obter os filhos de primeiro nível de um dicionário**
 
 ```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetChildren('hierarchical_dictionary', 2);
 ```
 
@@ -451,6 +510,10 @@ SELECT dictGetChildren('hierarchical_dictionary', 2);
 Introduzido na versão: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `Date`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -478,6 +541,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2020-01-01');
+CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetDate('all_types_dict', 'Date_value', 1)
 ```
 
@@ -495,6 +561,10 @@ Introduzido em: v1.1.0
 
 Converte um valor de atributo de dicionário para o tipo de dados `Date`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -510,7 +580,7 @@ dictGetDateOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 
 <Note>
@@ -522,10 +592,13 @@ caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2024-01-15');
+CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetDate('all_types_dict', 'Date_value', 1);
 
--- para a chave que não existe, retorna o valor padrão informado
+-- for key which does not exist, returns the provided default value
 SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01-01'));
 ```
 
@@ -545,6 +618,10 @@ SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01
 Introduzido na: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `DateTime`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -572,6 +649,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
+CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
 ```
 
@@ -589,6 +669,10 @@ Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `DateTime`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -604,7 +688,7 @@ dictGetDateTimeOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
 
 <Note>
@@ -616,10 +700,13 @@ caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
+CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1);
 
--- para a chave inexistente, retorna o valor padrão fornecido
+-- for key which does not exist, returns the provided default value
 SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateTime('1970-01-01 00:00:00'));
 ```
 
@@ -639,6 +726,10 @@ SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateT
 Introduzido em: v21.4.0
 
 Retorna todos os descendentes como se a função [`dictGetChildren`](#dictGetChildren) fosse aplicada recursivamente `level` vezes.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -661,14 +752,17 @@ Retorna os descendentes da chave. [`Array(UInt64)`](/pt-BR/reference/data-types/
 **Obter os filhos de primeiro nível de um dicionário**
 
 ```sql title=Query
--- considere o seguinte dicionário hierárquico:
--- 0 (Raiz)
--- └── 1 (Nível 1 - Nó 1)
---     ├── 2 (Nível 2 - Nó 2)
---     │   ├── 4 (Nível 3 - Nó 4)
---     │   └── 5 (Nível 3 - Nó 5)
---     └── 3 (Nível 2 - Nó 3)
---         └── 6 (Nível 3 - Nó 6)
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- consider the following hierarchical dictionary:
+-- 0 (Root)
+-- └── 1 (Level 1 - Node 1)
+--     ├── 2 (Level 2 - Node 2)
+--     │   ├── 4 (Level 3 - Node 4)
+--     │   └── 5 (Level 3 - Node 5)
+--     └── 3 (Level 2 - Node 3)
+--         └── 6 (Level 3 - Node 6)
 
 SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
 ```
@@ -685,7 +779,11 @@ SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
 
 Introduzido em: v1.1.0
 
-Converte o valor de um atributo de dicionário para o tipo de dado `Float32`, independentemente da configuração do dicionário.
+Converte o valor de um atributo do dicionário para o tipo de dado `Float32`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -713,6 +811,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -123.123);
+CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
 ```
 
@@ -729,6 +830,10 @@ SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
 Introduzido em: v1.1.0
 
 Converte o valor de um atributo do dicionário para o tipo de dado `Float32`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -757,20 +862,23 @@ caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 123.45);
+CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1);
 
--- para a chave inexistente, retorna o valor padrão informado (-1.0)
+-- for key which does not exist, returns the provided default value (-1.0)
 SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
 ```
 
 ```response title=Response
-┌─dictGetFloat⋯_value', 1)─┐
-│                   123.45 │
-└──────────────────────────┘
-┌─dictGetFloat⋯e', 999, -1)─┐
-│                       -1  │
-└───────────────────────────┘
+┌─dictGetFloat32('all_types_dict', 'Float32_value', 1)─┐
+│                                               123.45 │
+└──────────────────────────────────────────────────────┘
+┌─dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.)─┐
+│                                                                   -1 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetFloat64">
@@ -780,6 +888,10 @@ SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
 Introduzido em: v1.1.0
 
 Converte o valor de um atributo do dicionário para o tipo de dado `Float64`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -807,6 +919,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -123.123);
+CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
 ```
 
@@ -824,6 +939,10 @@ Introduzido em: v1.1.0
 
 Converte o valor de um atributo do dicionário para o tipo de dado `Float64`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -839,7 +958,7 @@ dictGetFloat64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 
 <Note>
@@ -851,10 +970,13 @@ caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para chave que existe
+CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 987654.123456);
+CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1);
 
--- para chave que não existe, retorna o valor padrão fornecido (nan)
+-- for key which does not exist, returns the provided default value (nan)
 SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
 ```
 
@@ -874,6 +996,10 @@ SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
 Introduzido em: v1.1.0
 
 Cria um array contendo todos os ancestrais de uma chave no [dicionário hierárquico](/pt-BR/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -895,6 +1021,9 @@ Retorna os ancestrais da chave. [`Array(UInt64)`](/pt-BR/reference/data-types/ar
 **Obter a hierarquia de uma chave**
 
 ```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 ```
 
@@ -911,6 +1040,10 @@ SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 Introduzido em: v1.1.0
 
 Converte o valor de um atributo do dicionário para o tipo de dado `IPv4`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -938,6 +1071,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '192.168.0.1');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
 ```
 
@@ -954,6 +1090,10 @@ SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
 Introduzido em: v23.1.0
 
 Converte o valor de um atributo do dicionário para o tipo de dado `IPv4`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -982,20 +1122,23 @@ caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '192.168.0.1');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1);
 
--- para a chave inexistente, retorna o valor padrão fornecido
+-- for key which does not exist, returns the provided default value
 SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'));
 ```
 
 ```response title=Response
-┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
-│ 192.168.0.1                         │
-└─────────────────────────────────────┘
-┌─dictGetIPv4OrDefa⋯0.0.0.0'))─┐
-│ 0.0.0.0                      │
-└──────────────────────────────┘
+┌─dictGetIPv4('all_types_dict', 'IPv4_value', 1)─┐
+│ 192.168.0.1                                    │
+└────────────────────────────────────────────────┘
+┌─dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'))─┐
+│ 0.0.0.0                                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetIPv6">
@@ -1005,6 +1148,10 @@ SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0
 Introduzido em: v23.1.0
 
 Converte o valor de um atributo do dicionário para o tipo de dado `IPv6`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1032,6 +1179,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
 ```
 
@@ -1049,6 +1199,10 @@ Introduzido em: v23.1.0
 
 Converte um valor de atributo do dicionário para o tipo de dado `IPv6`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1064,7 +1218,7 @@ dictGetIPv6OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
 
 <Note>
@@ -1076,20 +1230,23 @@ caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1);
 
--- para a chave inexistente, retorna o valor padrão informado
+-- for key which does not exist, returns the provided default value
 SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
 ```
 
 ```response title=Response
-┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
-│ 2001:db8:85a3::8a2e:370:7334        │
-└─────────────────────────────────────┘
-┌─dictGetIPv6OrDefa⋯:1'::IPv6)─┐
-│ ::1                          │
-└──────────────────────────────┘
+┌─dictGetIPv6('all_types_dict', 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334                   │
+└────────────────────────────────────────────────┘
+┌─dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, CAST('::1', 'IPv6'))─┐
+│ ::1                                                                            │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetInt16">
@@ -1099,6 +1256,10 @@ SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
 Introduzido em: v1.1.0
 
 Converte o valor de um atributo do dicionário para o tipo de dado `Int16`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1114,7 +1275,7 @@ dictGetInt16(dict_name, attr_name, id_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
 
 <Note>
@@ -1126,6 +1287,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -5000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
 ```
 
@@ -1143,6 +1307,10 @@ Introduzido em: v1.1.0
 
 Converte o valor de um atributo do dicionário para o tipo de dado `Int16`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1158,7 +1326,7 @@ dictGetInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 
 <Note>
@@ -1170,10 +1338,13 @@ caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave que existe
+CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -5000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1);
 
--- para a chave que não existe, retorna o valor padrão fornecido (-1)
+-- for key which does not exist, returns the provided default value (-1)
 SELECT dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1);
 ```
 
@@ -1194,6 +1365,10 @@ Introduzido em: v1.1.0
 
 Converte o valor de um atributo do dicionário para o tipo de dado `Int32`, independentemente da configuração do dicionário.
 
+<Note>
+  Esta função não é determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1212,7 +1387,7 @@ Retorna o valor do atributo do dicionário correspondente a `id_expr`;
 caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
 
 <Note>
-  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+  ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -1220,6 +1395,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
 ```
 
@@ -1236,6 +1414,10 @@ SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
 Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `Int32`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1256,7 +1438,7 @@ Retorna o valor do atributo do dicionário correspondente a `id_expr`;
 caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 
 <Note>
-  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -1264,10 +1446,13 @@ caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave que existe
+CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1);
 
--- para a chave que não existe, retorna o valor padrão fornecido (-1)
+-- for key which does not exist, returns the provided default value (-1)
 SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
 ```
 
@@ -1286,12 +1471,124 @@ SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
 
 Introduzido em: v1.1.0
 
-Converte o valor de um atributo do dicionário para o tipo de dados `Int64`, independentemente da configuração do dicionário.
+Converte o valor de um atributo do dicionário para o tipo de dado `Int64`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
 ```sql
 dictGetInt64(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -9223372036854775807);
+CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
+```
+
+```response title=Response
+┌─dictGetInt64⋯_value', 1)───┐
+│       -9223372036854775807 │
+└────────────────────────────┘
+```
+
+<div id="dictGetInt64OrDefault">
+  ## dictGetInt64OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `Int64`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
+**Sintaxe**
+
+```sql
+dictGetInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -9223372036854775808);
+CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
+SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
+
+-- for key which does not exist, returns the provided default value (-1)
+SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
+```
+
+```response title=Response
+┌─dictGetInt64⋯_value', 1)─┐
+│     -9223372036854775808 │
+└──────────────────────────┘
+┌─dictGetInt64⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt8">
+  ## dictGetInt8
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `Int8`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
+**Sintaxe**
+
+```sql
+dictGetInt8(dict_name, attr_name, id_expr)
 ```
 
 **Argumentos**
@@ -1314,100 +1611,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
-```
-
-```response title=Response
-┌─dictGetInt64⋯_value', 1)───┐
-│       -9223372036854775807 │
-└────────────────────────────┘
-```
-
-<div id="dictGetInt64OrDefault">
-  ## dictGetInt64OrDefault
-</div>
-
-Introduzido em: v1.1.0
-
-Converte o valor de um atributo do dicionário para o tipo de dado `Int64`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
-
-**Sintaxe**
-
-```sql
-dictGetInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
-```
-
-**Argumentos**
-
-* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
-* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
-* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
-* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
-
-**Valor retornado**
-
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
-caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
-
-<Note>
-  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
-</Note>
-
-**Exemplos**
-
-**Exemplo de uso**
-
-```sql title=Query
--- para a chave que existe
-SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
-
--- para a chave que não existe, retorna o valor padrão fornecido (-1)
-SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
-```
-
-```response title=Response
-┌─dictGetInt64⋯_value', 1)─┐
-│     -9223372036854775808 │
-└──────────────────────────┘
-┌─dictGetInt64⋯', 999, -1)─┐
-│                       -1 │
-└──────────────────────────┘
-```
-
-<div id="dictGetInt8">
-  ## dictGetInt8
-</div>
-
-Introduzido em: v1.1.0
-
-Converte o valor de um atributo de dicionário para o tipo de dados `Int8`, independentemente da configuração do dicionário.
-
-**Sintaxe**
-
-```sql
-dictGetInt8(dict_name, attr_name, id_expr)
-```
-
-**Argumentos**
-
-* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
-* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
-* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
-
-**Valor retornado**
-
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
-caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
-
-<Note>
-  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
-</Note>
-
-**Exemplos**
-
-**Exemplo de uso**
-
-```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -100);
+CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
 ```
 
@@ -1424,6 +1630,10 @@ SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
 Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `Int8`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1444,7 +1654,7 @@ Retorna o valor do atributo do dicionário correspondente a `id_expr`;
 caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 
 <Note>
-  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -1452,10 +1662,13 @@ caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave que existe
+CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -100);
+CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1);
 
--- para a chave que não existe, retorna o valor padrão fornecido (-1)
+-- for key which does not exist, returns the provided default value (-1)
 SELECT dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1);
 ```
 
@@ -1481,6 +1694,10 @@ O cache armazena tuplas de chaves serializadas para cada valor de atributo, evit
 O cache não é persistente entre consultas. Quando o limite é atingido, as entradas são removidas com LRU.
 Isso é mais eficaz com dicionários grandes quando a entrada tem baixa cardinalidade e o conjunto de trabalho cabe no cache. Defina como `0` para desabilitar o cache.
 
+<Note>
+  Esta função não é determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1495,19 +1712,22 @@ dictGetKeys('dict_name', 'attr_name', value_expr)
 
 **Valor retornado**
 
-Para dicionários de chave única: um array de chaves cujo atributo é igual a `value_expr`. Para dicionários com múltiplas chaves: um array de tuplas de chaves cujo atributo é igual a `value_expr`. Se não houver nenhum atributo correspondente a `value_expr` no dicionário, será retornado um array vazio. O ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não puder ser convertido para o tipo de dado do atributo.
+Para dicionários de chave única: um array de chaves cujo atributo é igual a `value_expr`. Para dicionários com múltiplas chaves: um array de tuplas de chaves cujo atributo é igual a `value_expr`. Se não houver nenhum atributo correspondente a `value_expr` no dicionário, será retornado um array vazio. O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não puder ser convertido para o tipo de dado do atributo.
 
 **Exemplos**
 
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
+CREATE TABLE task_priority_source (task_id UInt64, priority_level String) ENGINE = Memory;
+INSERT INTO task_priority_source VALUES (1, 'low'), (2, 'high'), (3, 'medium'), (4, 'high');
+CREATE DICTIONARY task_id_to_priority_dictionary (task_id UInt64, priority_level String) PRIMARY KEY task_id SOURCE(CLICKHOUSE(TABLE 'task_priority_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 0);
+SELECT arraySort(dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high')) AS ids;
 ```
 
 ```response title=Response
 ┌─ids───┐
-│ [4,2] │
+│ [2,4] │
 └───────┘
 ```
 
@@ -1519,6 +1739,10 @@ Introduzido em: v18.16.0
 
 Recupera valores de um dicionário, com um valor padrão caso a chave não seja encontrada.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1529,7 +1753,7 @@ dictGetOrDefault('dict_name', attr_names, id_expr, default_value)
 
 * `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
 * `attr_names` — Nome da coluna do dicionário ou tupla de nomes de colunas. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
-* `id_expr` — Valor da chave. Uma expressão que retorna UInt64/Tuple(T). [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Para um dicionário com uma chave simples, uma expressão que retorna um valor `UInt64`. Para um dicionário com uma chave composta (complexa), uma expressão que retorna uma tupla com os valores da chave. Se a chave composta consistir em um único atributo, seu valor pode ser passado diretamente, sem envolvê-lo em `tuple`. [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
 * `default_value` — Valor padrão retornado se a chave não for encontrada. O tipo deve corresponder ao tipo de dado do atributo.
 
 **Valor retornado**
@@ -1542,6 +1766,9 @@ Se a chave não for encontrada, retorna o `default_value` fornecido.
 **Obter valor com valor padrão**
 
 ```sql title=Query
+CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
+INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
+CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val
 ```
 
@@ -1557,6 +1784,10 @@ Introduzido em: v21.4.0
 
 Obtém valores de um Dicionário, retornando NULL se a chave não for encontrada.
 
+<Note>
+  Esta função não é determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1565,7 +1796,7 @@ dictGetOrNull('dict_name', 'attr_name', id_expr)
 
 **Argumentos**
 
-* `dict_name` — Nome do dicionário. Literal de String. - `attr_name` — Nome da coluna a ser obtida. Literal de String. - `id_expr` — Valor da chave. Expression que retorna um valor do tipo de chave do dicionário.
+* `dict_name` — Nome do dicionário. Literal de String. - `attr_name` — Nome da coluna a ser obtida. Literal de String. - `id_expr` — Valor da chave. expressão que retorna um valor do tipo de chave do dicionário.
 
 **Valor retornado**
 
@@ -1577,6 +1808,11 @@ Se a chave não for encontrada, retorna `NULL`.
 **Exemplo usando o dicionário com chave de intervalo**
 
 ```sql title=Query
+CREATE TABLE range_key_dictionary_source_table (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) ENGINE = TinyLog();
+INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
+INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
+INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
+CREATE DICTIONARY range_key_dictionary (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE 'range_key_dictionary_source_table' DB currentDatabase())) LIFETIME(MIN 1 MAX 1000) LAYOUT(RANGE_HASHED()) RANGE(MIN start_date MAX end_date);
 SELECT
     (number, toDate('2019-05-20')),
     dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
@@ -1591,13 +1827,65 @@ FROM system.numbers LIMIT 5 FORMAT TabSeparated;
 (4,'2019-05-20')  \N
 ```
 
+<div id="dictGetRoot">
+  ## dictGetRoot
+</div>
+
+Introduzido em: v26.7.0
+
+Retorna o ancestral mais alto (a raiz) de uma chave em um [dicionário hierárquico](/pt-BR/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+
+Este é um equivalente prático a obter o último elemento do array retornado por [dictGetHierarchy](#dictGetHierarchy), ou seja, `dictGetHierarchy(dict_name, key)[-1]`.
+
+Se a chave for ela própria um nó de nível superior da hierarquia, a própria chave será retornada. Se a chave não existir no dicionário, `0` será retornado.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
+**Sintaxe**
+
+```sql
+dictGetRoot(dict_name, key)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `key` — Valor da chave. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+
+**Valor retornado**
+
+Retorna o ancestral de nível mais alto (a raiz) da chave. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+
+**Exemplos**
+
+**Obter a raiz de uma chave**
+
+```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+SELECT dictGetRoot('hierarchical_dictionary', 5)
+```
+
+```response title=Response
+┌─dictGetRoot(⋯ionary', 5)─┐
+│                        1 │
+└──────────────────────────┘
+```
+
 <div id="dictGetString">
   ## dictGetString
 </div>
 
 Introduzido em: v1.1.0
 
-Converte o valor de um atributo de Dicionário para o tipo de dado `String`, independentemente da configuração do dicionário.
+Converte o valor de um atributo do dicionário para o tipo de dado `String`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1625,6 +1913,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 'test string');
+CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetString('all_types_dict', 'String_value', 1)
 ```
 
@@ -1640,7 +1931,11 @@ SELECT dictGetString('all_types_dict', 'String_value', 1)
 
 Introduzido em: v1.1.0
 
-Converte o valor de um atributo do dicionário para o tipo de dados `String`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+Converte o valor de um atributo do dicionário para o tipo de dado `String`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1657,7 +1952,7 @@ dictGetStringOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
 
 <Note>
@@ -1669,20 +1964,23 @@ caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 'test string');
+CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetString('all_types_dict', 'String_value', 1);
 
--- para a chave inexistente, retorna o valor padrão fornecido
+-- for key which does not exist, returns the provided default value
 SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
 ```
 
 ```response title=Response
-┌─dictGetString(⋯_value', 1)─┐
-│ test string                │
-└────────────────────────────┘
-┌─dictGetStringO⋯ 999, 'default')─┐
-│ default                         │
-└─────────────────────────────────┘
+┌─dictGetString('all_types_dict', 'String_value', 1)─┐
+│ test string                                        │
+└────────────────────────────────────────────────────┘
+┌─dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default')─┐
+│ default                                                                  │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUInt16">
@@ -1692,6 +1990,10 @@ SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
 Introduzido em: v1.1.0
 
 Converte um valor de atributo do dicionário para o tipo de dado `UInt16`, independentemente da configuração do dicionário.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1707,11 +2009,11 @@ dictGetUInt16(dict_name, attr_name, id_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
 
 <Note>
-  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -1719,6 +2021,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 5000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
 ```
 
@@ -1734,7 +2039,11 @@ SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
 
 Introduzido em: v1.1.0
 
-Converte um valor de atributo de dicionário para o tipo de dados `UInt16`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+Converte um valor de atributo de dicionário para o tipo de dado `UInt16`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1755,7 +2064,7 @@ Retorna o valor do atributo do dicionário correspondente a `id_expr`;
 caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 
 <Note>
-  ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -1763,10 +2072,13 @@ caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 5000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1);
 
--- para a chave inexistente, retorna o valor padrão fornecido (0)
+-- for key which does not exist, returns the provided default value (0)
 SELECT dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0);
 ```
 
@@ -1787,6 +2099,10 @@ Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `UInt32`, independentemente da configuração do dicionário.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1805,7 +2121,7 @@ Retorna o valor do atributo do dicionário correspondente a `id_expr`;
 caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
 
 <Note>
-  ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -1813,6 +2129,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
 ```
 
@@ -1830,6 +2149,10 @@ Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `UInt32`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1845,7 +2168,7 @@ dictGetUInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 do contrário, retorna o valor passado no parâmetro `default_value_expr`.
 
 <Note>
@@ -1857,10 +2180,13 @@ do contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1);
 
--- para a chave inexistente, retorna o valor padrão fornecido (0)
+-- for key which does not exist, returns the provided default value (0)
 SELECT dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0);
 ```
 
@@ -1881,6 +2207,10 @@ Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `UInt64`, independentemente da configuração do dicionário.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1899,7 +2229,7 @@ Retorna o valor do atributo do dicionário correspondente a `id_expr`;
 caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
 
 <Note>
-  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -1907,6 +2237,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 9223372036854775807);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 ```
 
@@ -1923,6 +2256,10 @@ SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `UInt64`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1951,10 +2288,13 @@ caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 9223372036854775807);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 
--- para a chave inexistente, retorna o valor padrão fornecido (0)
+-- for key which does not exist, returns the provideddefault value (0)
 SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 ```
 
@@ -1975,6 +2315,10 @@ Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `UInt8`, independentemente da configuração do dicionário.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1989,11 +2333,11 @@ dictGetUInt8(dict_name, attr_name, id_expr)
 
 **Valor retornado**
 
-Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+Retorna o valor do atributo do dicionário correspondente a `id_expr`,
 caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
 
 <Note>
-  O ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dados do atributo.
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -2001,6 +2345,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 100);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
 ```
 
@@ -2017,6 +2364,10 @@ SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
 Introduzido em: v1.1.0
 
 Converte um valor de atributo do dicionário para o tipo de dado `UInt8`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2037,7 +2388,7 @@ Retorna o valor do atributo do dicionário correspondente a `id_expr`;
 caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
 
 <Note>
-  O ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -2045,10 +2396,13 @@ caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 100);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1);
 
--- para a chave inexistente, retorna o valor padrão fornecido (0)
+-- for key which does not exist, returns the provided default value (0)
 SELECT dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0);
 ```
 
@@ -2069,6 +2423,10 @@ Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `UUID`, independentemente da configuração do dicionário.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -2087,7 +2445,7 @@ Retorna o valor do atributo do dicionário correspondente a `id_expr`;
 caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
 
 <Note>
-  O ClickHouse gera uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
 </Note>
 
 **Exemplos**
@@ -2095,6 +2453,9 @@ caso contrário, retorna o conteúdo do elemento `<null_value>` especificado par
 **Exemplo de uso**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '123e4567-e89b-12d3-a456-426614174000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 ```
 
@@ -2111,6 +2472,10 @@ SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 Introduzido em: v1.1.0
 
 Converte o valor de um atributo de dicionário para o tipo de dado `UUID`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2139,20 +2504,23 @@ caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
 **Exemplo de uso**
 
 ```sql title=Query
--- para a chave existente
+CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '550e8400-e29b-41d4-a716-446655440000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1);
 
--- para a chave inexistente, retorna o valor padrão fornecido
+-- for key which does not exist, returns the provided default value
 SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-0000-0000-000000000000'::UUID);
 ```
 
 ```response title=Response
-┌─dictGetUUID('all_t⋯ 'UUID_value', 1)─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │
-└──────────────────────────────────────┘
-┌─dictGetUUIDOrDefa⋯000000000000'::UUID)─┐
-│ 00000000-0000-0000-0000-000000000000   │
-└────────────────────────────────────────┘
+┌─dictGetUUID('all_types_dict', 'UUID_value', 1)─┐
+│ 550e8400-e29b-41d4-a716-446655440000           │
+└────────────────────────────────────────────────┘
+┌─dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, CAST('00000000-0000-0000-0000-000000000000', 'UUID'))─┐
+│ 00000000-0000-0000-0000-000000000000                                                                            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictHas">
@@ -2162,6 +2530,10 @@ SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-
 Introduzido em: v1.1.0
 
 Verifica se uma chave está presente em um dicionário.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2183,14 +2555,17 @@ Retorna `1` se a chave existir; caso contrário, `0`. [`UInt8`](/pt-BR/reference
 **Verificar a existência de uma chave em um dicionário**
 
 ```sql title=Query
--- considere o seguinte dicionário hierárquico:
--- 0 (Raiz)
--- └── 1 (Nível 1 - Nó 1)
---     ├── 2 (Nível 2 - Nó 2)
---     │   ├── 4 (Nível 3 - Nó 4)
---     │   └── 5 (Nível 3 - Nó 5)
---     └── 3 (Nível 2 - Nó 3)
---         └── 6 (Nível 3 - Nó 6)
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- consider the following hierarchical dictionary:
+-- 0 (Root)
+-- └── 1 (Level 1 - Node 1)
+--     ├── 2 (Level 2 - Node 2)
+--     │   ├── 4 (Level 3 - Node 4)
+--     │   └── 5 (Level 3 - Node 5)
+--     └── 3 (Level 2 - Node 3)
+--         └── 6 (Level 3 - Node 6)
 
 SELECT dictHas('hierarchical_dictionary', 2);
 SELECT dictHas('hierarchical_dictionary', 7);
@@ -2213,6 +2588,10 @@ Introduzido em: v1.1.0
 
 Verifica o ancestral de uma chave ao longo de toda a cadeia hierárquica do dicionário.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -2234,11 +2613,14 @@ Retorna `0` se `child_id_expr` não for filho de `ancestor_id_expr` e `1` se `ch
 **Verificar a relação hierárquica**
 
 ```sql title=Query
--- hierarquia válida
-SELECT dictIsIn('hierarchical_dictionary', 6, 3)
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- valid hierarchy
+SELECT dictIsIn('hierarchical_dictionary', 6, 3);
 
--- hierarquia inválida
-SELECT dictIsIn('hierarchical_dictionary', 3, 5)
+-- invalid hierarchy
+SELECT dictIsIn('hierarchical_dictionary', 3, 5);
 ```
 
 ```response title=Response

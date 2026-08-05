@@ -38,8 +38,10 @@ struct WriteSettings
 
     bool is_initial_access_check = false;
 
-    std::string object_storage_write_if_none_match; /// Supported only for S3-like object storages.
-    std::string object_storage_write_if_match;     /// Supported only for S3-like object storages.
+    /// A requested compare-and-swap. Honoured only by S3-like object storages; a storage that cannot
+    /// express the condition must refuse the write, never perform it unconditionally.
+    std::string object_storage_write_if_none_match;
+    std::string object_storage_write_if_match;
 
     bool operator==(const WriteSettings & other) const = default;
 };

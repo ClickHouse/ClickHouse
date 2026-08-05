@@ -1,8 +1,8 @@
 ---
 slug: /use-cases/AI/MCP/anythingllm
-sidebarTitle: 'Integre o AnythingLLM'
-title: Usando o servidor MCP do ClickHouse com o AnythingLLM
-description: 'Este guia explica como configurar o AnythingLLM com o servidor MCP do ClickHouse usando Docker.'
+sidebarTitle: 'Integrar o AnythingLLM'
+title: 'Usando o servidor MCP do ClickHouse com o AnythingLLM'
+description: 'Este guia explica como configurar o AnythingLLM com um servidor MCP do ClickHouse usando Docker.'
 keywords: ['AI', 'AnythingLLM', 'MCP']
 show_related_blogs: true
 doc_type: 'guide'
@@ -11,17 +11,15 @@ doc_type: 'guide'
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 > Este guia explica como configurar o [AnythingLLM](https://anythingllm.com/) com um servidor MCP do ClickHouse usando Docker
-> e conectá-lo aos datasets de exemplo do ClickHouse.
+> e conectá-lo aos conjuntos de dados de exemplo do ClickHouse.
 
 <Steps>
-  <Step>
-    ## Instale o Docker
-
+  <Step title="Instalar o Docker" id="install-docker">
     Você precisará do Docker para executar o LibreChat e o servidor MCP. Para obter o Docker:
 
     1. Acesse [docker.com](https://www.docker.com/products/docker-desktop)
     2. Baixe o Docker Desktop para o seu sistema operacional
-    3. Instale o Docker seguindo as instruções para o seu sistema operacional
+    3. Instale o Docker seguindo as instruções do seu sistema operacional
     4. Abra o Docker Desktop e verifique se ele está em execução
 
     <br />
@@ -29,9 +27,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
     Para mais informações, consulte a [documentação do Docker](https://docs.docker.com/get-docker/).
   </Step>
 
-  <Step>
-    ## Baixe a imagem Docker do AnythingLLM
-
+  <Step title="Baixar a imagem Docker do AnythingLLM" id="pull-anythingllm-docker-image">
     Execute o comando a seguir para baixar a imagem Docker do AnythingLLM para a sua máquina:
 
     ```bash
@@ -39,9 +35,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Configure o local de armazenamento
-
+  <Step title="Configurar o local de armazenamento" id="setup-storage-location">
     Crie um diretório para armazenamento e inicialize o arquivo de ambiente:
 
     ```bash
@@ -51,9 +45,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Configure o arquivo de configuração do servidor MCP
-
+  <Step title="Configurar o arquivo de configuração do servidor MCP" id="configure-mcp-server-config-file">
     Crie o diretório `plugins`:
 
     ```bash
@@ -87,12 +79,10 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
     Se você quiser explorar seus próprios dados, pode fazer isso
     usando o [host, nome de usuário e senha](/pt-BR/get-started/setup/cloud#connect-with-your-app)
-    do seu próprio ClickHouse Cloud service.
+    do seu próprio serviço do ClickHouse Cloud.
   </Step>
 
-  <Step>
-    ## Inicie o contêiner Docker do AnythingLLM
-
+  <Step title="Iniciar o contêiner Docker do AnythingLLM" id="start-anythingllm-docker-container">
     Execute o comando a seguir para iniciar o contêiner Docker do AnythingLLM:
 
     ```bash
@@ -104,28 +94,24 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
     mintplexlabs/anythingllm
     ```
 
-    Quando ele iniciar, acesse `http://localhost:3001` no navegador.
-    Selecione o modelo que deseja usar e forneça sua API key.
+    Depois que ele iniciar, acesse `http://localhost:3001` no navegador.
+    Selecione o modelo que deseja usar e forneça sua chave de API.
   </Step>
 
-  <Step>
-    ## Aguarde a inicialização dos servidores MCP
-
-    Clique no ícone de ferramenta no canto inferior esquerdo da UI:
+  <Step title="Aguardar a inicialização dos MCP servers" id="wait-for-mcp-servers-to-start-up">
+    Clique no ícone de ferramenta no canto inferior esquerdo da interface:
 
     <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="Ícone de ferramenta" size="md" />
 
-    Clique em `Agent Skills` e procure a seção `MCP servers`.
+    Clique em `Agent Skills` e procure na seção `MCP servers`.
     Aguarde até ver `Mcp ClickHouse` definido como `On`
 
-    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="Servidores MCP prontos" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="MCP servers prontos" size="md" />
   </Step>
 
-  <Step>
-    ## Converse com o servidor MCP do ClickHouse no AnythingLLM
-
-    Agora estamos prontos para iniciar um chat.
-    Para disponibilizar os servidores MCP em um chat, você precisará adicionar o prefixo `@agent` à primeira mensagem da conversa.
+  <Step title="Conversar com o servidor MCP do ClickHouse usando o AnythingLLM" id="chat-with-clickhouse-mcp-server-with-anythingllm">
+    Agora estamos prontos para iniciar uma conversa.
+    Para disponibilizar os MCP servers em uma conversa, você precisará prefixar a primeira mensagem com `@agent`.
 
     <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="Conversa" size="md" />
   </Step>

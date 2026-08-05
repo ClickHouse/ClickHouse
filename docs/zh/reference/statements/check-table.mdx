@@ -163,6 +163,8 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
+要检查整个数据库的健康状况，而非单个表的完整性，请使用 [`CHECK DATABASE`](/zh/reference/statements/check-database) 查询。它主要用于采用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 引擎的数据库，以验证外部 catalog 是否可访问。
+
 <div id="if-the-data-is-corrupted">
   ## 如果数据已损坏
 </div>

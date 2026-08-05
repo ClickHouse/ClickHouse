@@ -45,6 +45,12 @@ Ambas as APIs compartilham o mesmo pool de conexões HTTP subjacente e podem ser
 * .NET 9.0
 * .NET 10.0
 
+<div id="supported-clickhouse-versions">
+  ## Versões compatíveis do ClickHouse
+</div>
+
+O cliente oferece suporte oficial aos 3 lançamentos mais recentes, além dos 2 lançamentos LTS mais recentes.
+
 <div id="installation">
   ## Instalação
 </div>
@@ -106,15 +112,18 @@ Abaixo está a lista completa de todas as configurações, seus valores padrão 
   ### Formato e serialização de dados
 </div>
 
-| Propriedade             | Tipo                     | Padrão   | Chave da string de conexão | Descrição                                                                                                                                                    |
-| ----------------------- | ------------------------ | -------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| UseCompression          | `bool`                   | `true`   | `Compression`              | Ativa a compactação gzip para a transferência de dados                                                                                                       |
-| UseCustomDecimals       | `bool`                   | `true`   | `UseCustomDecimals`        | Usa `ClickHouseDecimal` para precisão arbitrária; se `false`, usa o `decimal` do .NET (limite de 128 bits)                                                   |
-| ReadStringsAsByteArrays | `bool`                   | `false`  | `ReadStringsAsByteArrays`  | Lê colunas `String` e `FixedString` como `byte[]` em vez de `string`; útil para dados binários                                                               |
-| UseFormDataParameters   | `bool`                   | `false`  | `UseFormDataParameters`    | Envia parâmetros como form data em vez de string de consulta da URL                                                                                          |
-| ParameterTypeResolver   | `IParameterTypeResolver` | `null`   | —                          | Resolver personalizado para mapeamento de tipo de parâmetro no estilo `@`; consulte [Mapeamento personalizado de tipo de parâmetro](#parameter-type-mapping) |
-| JsonReadMode            | `JsonReadMode`           | `Binary` | `JsonReadMode`             | Como os dados JSON são retornados: `Binary` (retorna `JsonObject`) ou `String` (retorna a string JSON bruta)                                                 |
-| JsonWriteMode           | `JsonWriteMode`          | `String` | `JsonWriteMode`            | Como os dados JSON são enviados: `String` (serializa via `JsonSerializer`, aceita todas as entradas) ou `Binary` (somente POCOs registrados com type hints)  |
+| Propriedade             | Tipo                     | Padrão         | Chave da string de conexão | Descrição                                                                                                                                                                                                                                                                                          |
+| ----------------------- | ------------------------ | -------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UseCompression          | `bool`                   | `true`         | `Compression`              | Ativa a compactação gzip para a transferência de dados                                                                                                                                                                                                                                             |
+| UseCustomDecimals       | `bool`                   | `true`         | `UseCustomDecimals`        | Usa `ClickHouseDecimal` para precisão arbitrária; se `false`, usa o `decimal` do .NET (limite de 128 bits)                                                                                                                                                                                         |
+| ReadStringsAsByteArrays | `bool`                   | `false`        | `ReadStringsAsByteArrays`  | Lê colunas `String` e `FixedString` como `byte[]` em vez de `string`; útil para dados binários                                                                                                                                                                                                     |
+| UseFormDataParameters   | `bool`                   | `false`        | `UseFormDataParameters`    | Envia parâmetros como form data em vez de string de consulta da URL                                                                                                                                                                                                                                |
+| ReadBufferSize          | `int`                    | `8192` (8 KiB) | `ReadBufferSize`           | Tamanho em bytes do buffer usado para ler respostas HTTP de consultas. Aumente-o para reduzir o reabastecimento do buffer em grandes result sets. Valores iguais ou superiores a 85.000 bytes são alocados no Large Object Heap, o que pode causar fragmentação do LOH e pausas mais longas do GC. |
+| ParameterTypeResolver   | `IParameterTypeResolver` | `null`         | —                          | Resolver personalizado para mapeamento de tipo de parâmetro no estilo `@`; consulte [Mapeamento personalizado de tipo de parâmetro](#parameter-type-mapping)                                                                                                                                       |
+| ParameterFormatter      | `IParameterFormatter`    | `null`         | —                          | Formatador personalizado para serialização de valores de parâmetros; consulte [Formatação personalizada de valores de parâmetros](#parameter-value-formatting)                                                                                                                                      |
+| ReadValueConverter      | `IReadValueConverter`    | `null`         | —                          | Transformação personalizada aplicada aos valores retornados pelo leitor de dados; consulte [Conversão personalizada de valores lidos](#read-value-conversion)                                                                                                                                      |
+| JsonReadMode            | `JsonReadMode`           | `Binary`       | `JsonReadMode`             | Como os dados JSON são retornados: `Binary` (retorna `JsonObject`) ou `String` (retorna a string JSON bruta)                                                                                                                                                                                       |
+| JsonWriteMode           | `JsonWriteMode`          | `String`       | `JsonWriteMode`            | Como os dados JSON são enviados: `String` (serializa via `JsonSerializer`, aceita todas as entradas) ou `Binary` (somente POCOs registrados com type hints)                                                                                                                                        |
 
 <div id="session-management">
   ### Gerenciamento de sessão
@@ -162,10 +171,11 @@ Abaixo está a lista completa de todas as configurações, seus valores padrão 
   ### Configurações personalizadas e roles
 </div>
 
-| Propriedade    | Tipo                          | Padrão | Chave da string de conexão | Descrição                                                                      |
-| -------------- | ----------------------------- | ------ | -------------------------- | ------------------------------------------------------------------------------ |
-| CustomSettings | `IDictionary<string, object>` | Vazio  | prefixo `set_*`            | Configurações do servidor ClickHouse; veja a observação abaixo                 |
-| Roles          | `IReadOnlyList<string>`       | Vazio  | `Roles`                    | Roles do ClickHouse separadas por vírgulas (por exemplo, `Roles=admin,reader`) |
+| Propriedade     | Tipo                                  | Padrão | Chave da string de conexão | Descrição                                                                                                 |
+| --------------- | ------------------------------------- | ------ | -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| CustomSettings  | `IDictionary<string, object>`         | Vazio  | prefixo `set_*`            | Configurações do servidor ClickHouse; veja a observação abaixo                                            |
+| Roles           | `IReadOnlyList<string>`               | Vazio  | `Roles`                    | Roles do ClickHouse separadas por vírgulas (por exemplo, `Roles=admin,reader`)                            |
+| ApplicationInfo | `IReadOnlyDictionary<string, string>` | Vazio  | —                          | Tags de formato livre anexadas ao cabeçalho HTTP `User-Agent` para atribuição de consultas por aplicação. |
 
 <Note>
   Ao usar uma string de conexão para definir configurações personalizadas, use o prefixo `set_`, por exemplo, &quot;set&#95;max&#95;threads=4&quot;. Ao usar um objeto ClickHouseClientSettings, não use o prefixo `set_`.
@@ -203,18 +213,21 @@ Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
 
 `QueryOptions` permite substituir configurações do cliente individualmente para cada consulta. Todas as propriedades são opcionais e só substituem os padrões do cliente quando especificadas.
 
-| Propriedade           | Tipo                          | Descrição                                                                                                                                                               |
-| --------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| QueryId               | `string`                      | Identificador personalizado da consulta para rastreamento em `system.query_log` ou cancelamento                                                                         |
-| Database              | `string`                      | Substitui o banco de dados padrão desta consulta                                                                                                                        |
-| Roles                 | `IReadOnlyList<string>`       | Substitui os roles do cliente para esta consulta                                                                                                                        |
-| CustomSettings        | `IDictionary<string, object>` | Configurações do servidor ClickHouse para esta consulta (por exemplo, `max_threads`)                                                                                    |
-| CustomHeaders         | `IDictionary<string, string>` | Cabeçalhos HTTP adicionais para esta consulta                                                                                                                           |
-| UseSession            | `bool?`                       | Substitui o comportamento da sessão para esta consulta                                                                                                                  |
-| SessionId             | `string`                      | ID da sessão para esta consulta (requer `UseSession = true`)                                                                                                            |
-| BearerToken           | `string`                      | Substitui o token de autenticação para esta consulta                                                                                                                    |
-| ParameterTypeResolver | `IParameterTypeResolver`      | Substitui o resolver do cliente para o mapeamento de tipo de parâmetro no estilo `@`; consulte [Mapeamento personalizado de tipo de parâmetro](#parameter-type-mapping) |
-| MaxExecutionTime      | `TimeSpan?`                   | Timeout da consulta no servidor (passado como configuração `max_execution_time`); o servidor cancela a consulta se esse limite for excedido                             |
+| Propriedade           | Tipo                          | Descrição                                                                                                                                                                                                                               |
+| --------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QueryId               | `string`                      | Identificador personalizado da consulta para rastreamento em `system.query_log` ou cancelamento                                                                                                                                         |
+| Database              | `string`                      | Substitui o banco de dados padrão desta consulta                                                                                                                                                                                        |
+| Roles                 | `IReadOnlyList<string>`       | Substitui os roles do cliente para esta consulta                                                                                                                                                                                        |
+| CustomSettings        | `IDictionary<string, object>` | Configurações do servidor ClickHouse para esta consulta (por exemplo, `max_threads`)                                                                                                                                                    |
+| CustomHeaders         | `IDictionary<string, string>` | Cabeçalhos HTTP adicionais para esta consulta                                                                                                                                                                                           |
+| UseSession            | `bool?`                       | Substitui o comportamento da sessão para esta consulta                                                                                                                                                                                  |
+| SessionId             | `string`                      | ID da sessão para esta consulta (requer `UseSession = true`)                                                                                                                                                                            |
+| BearerToken           | `string`                      | Substitui o token de autenticação para esta consulta                                                                                                                                                                                    |
+| ParameterTypeResolver | `IParameterTypeResolver`      | Substitui o resolver do cliente para o mapeamento de tipo de parâmetro no estilo `@`; consulte [Mapeamento personalizado de tipo de parâmetro](#parameter-type-mapping)                                                                 |
+| ParameterFormatter    | `IParameterFormatter`         | Substitui o formatador do cliente para a serialização do valor do parâmetro no estilo `@`; consulte [Formatação personalizada do valor do parâmetro](#parameter-value-formatting)                                                       |
+| ReadValueConverter    | `IReadValueConverter`         | Substitui a transformação no nível do cliente aplicada aos valores retornados pelo leitor de dados; consulte [Conversão personalizada de valor lido](#read-value-conversion)                                                            |
+| MaxExecutionTime      | `TimeSpan?`                   | Timeout da consulta no servidor (passado como configuração `max_execution_time`); o servidor cancela a consulta se esse limite for excedido                                                                                             |
+| AcceptEncoding        | `string`                      | Substituição do cabeçalho `Accept-Encoding` por consulta (por exemplo, `"zstd"`, `"zstd, gzip;q=0.5"`); também força `enable_http_compression=1` na URL. Consulte [Compactação de transporte por consulta](#per-query-accept-encoding). |
 
 **Exemplo:**
 
@@ -367,7 +380,7 @@ using var client = new ClickHouseClient(settings);
 Para cenários com injeção de dependência, use `IHttpClientFactory`:
 
 ```csharp
-// Na sua configuração de DI
+// In your DI configuration
 services.AddHttpClient("ClickHouse", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
@@ -376,7 +389,7 @@ services.AddHttpClient("ClickHouse", client =>
     AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
 });
 
-// Criar o cliente com factory
+// Create client with factory
 var factory = serviceProvider.GetRequiredService<IHttpClientFactory>();
 var client = new ClickHouseClient("Host=localhost", factory, "ClickHouse");
 ```
@@ -574,6 +587,77 @@ while (reader.Read())
 }
 ```
 
+<div id="poco-read">
+  #### Leitura com POCO
+</div>
+
+Em vez de ler colunas por índice ou nome, você pode direcionar os resultados da consulta diretamente para suas próprias classes. Registre o tipo uma vez no cliente e, em seguida, use `QueryAsync<T>`:
+
+```csharp
+// Define a POCO matching your result columns
+public class SensorReading
+{
+    public ulong Id { get; set; }
+    public DateTime Timestamp { get; set; }
+
+    [ClickHouseColumn(Name = "sensor_name")]
+    public string SensorName { get; set; }
+    public double Value { get; set; }
+
+}
+
+// Register the type (once per client lifetime)
+client.RegisterPocoType<SensorReading>();
+
+// Stream results as typed objects
+await foreach (var reading in client.QueryAsync<SensorReading>(
+    "SELECT Id, sensor_name, Value, Timestamp FROM sensors"))
+{
+    Console.WriteLine($"{reading.SensorName}: {reading.Value}");
+}
+```
+
+<div id="poco-read-registration">
+  ##### Registro
+</div>
+
+`RegisterPocoType<T>()` configura os mapeamentos de inserção e de leitura e valida ambos de antemão. `RegisterBinaryInsertType<T>()` permanece inalterado e continua sendo exclusivo para inserção por compatibilidade com versões anteriores.
+
+Um tipo registrado deve ter:
+
+* Um construtor público sem parâmetros.
+* Pelo menos uma propriedade pública com um setter público que não seja `init`. Propriedades `required` são compatíveis.
+
+<div id="poco-read-column-matching">
+  ##### Correspondência de colunas
+</div>
+
+A correspondência de colunas diferencia maiúsculas de minúsculas. Colunas de resultado ausentes mantêm as propriedades com seu valor padrão; colunas de resultado adicionais são ignoradas.
+
+Não há conversões automáticas, e uma incompatibilidade de tipo lança `InvalidOperationException`.
+
+<div id="poco-read-mapto">
+  ##### Materializando uma única linha
+</div>
+
+Ao iterar manualmente sobre um reader, use `ClickHouseDataReader.MapTo<T>()` para materializar a linha atual em um POCO registrado sem avançar o reader:
+
+```csharp
+var reader = await client.ExecuteReaderAsync("SELECT Id, SensorName, Value, Timestamp FROM sensors");
+
+while (reader.Read())
+{
+    SensorReading reading = reader.MapTo<SensorReading>();
+    Console.WriteLine($"{reading.SensorName}: {reading.Value}");
+}
+```
+
+<div id="poco-read-diagnostics">
+  ##### Diagnósticos de registro
+</div>
+
+Quando uma `LoggerFactory` está configurada, `RegisterPocoType<T>()` e `RegisterBinaryInsertType<T>()` geram um log no nível `Debug` (categoria `ClickHouse.Driver.Client`) informando quais propriedades foram mapeadas para quais colunas e quais foram ignoradas, bem como o motivo. Consulte [Logging e diagnósticos](#logging-and-diagnostics).
+
 ***
 
 <div id="sql-parameters">
@@ -599,6 +683,28 @@ INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
 <Note>
   Os parâmetros SQL de &#39;bind&#39; são passados como parâmetros de consulta do URI HTTP, portanto o uso excessivo deles pode resultar em uma exceção de &quot;URL too long&quot;. Use `InsertBinaryAsync` para inserção de dados em massa e evitar essa limitação.
 </Note>
+
+<div id="identifier-parameters">
+  #### Parâmetros do tipo Identifier
+</div>
+
+O tipo de parâmetro `Identifier` permite vincular com segurança o nome de um banco de dados, tabela ou coluna, em vez de um literal de string entre aspas. Use-o com a sintaxe `{name:Identifier}` em SQL ou definindo `ClickHouseDbParameter.ClickHouseType = "Identifier"`:
+
+```csharp
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("name", "my_database");
+
+await client.ExecuteNonQueryAsync("CREATE DATABASE {name:Identifier}", parameters);
+```
+
+```csharp
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("col", "user_id");
+
+var reader = await client.ExecuteReaderAsync("SELECT {col:Identifier} FROM t", parameters);
+```
+
+O valor é enviado literalmente, e o servidor o substitui como um identificador SQL não entre aspas, aplicando seu próprio uso de backticks e escape. Identificadores que contêm caracteres especiais (inclusive backticks) podem fazer o percurso de ida e volta com segurança.
 
 ***
 
@@ -631,7 +737,15 @@ var reader = await client.ExecuteReaderAsync(
   ### Mapeamento personalizado de tipos de parâmetro
 </div>
 
-Ao usar parâmetros no estilo `@` (por exemplo, `WHERE id = @id`), o driver infere automaticamente o tipo do ClickHouse com base no tipo de valor do .NET. Por exemplo, `int` é mapeado para `Int32`, e `DateTime` é mapeado para `DateTime`.
+Ao usar parâmetros no estilo `@` (por exemplo, `WHERE id = @id`), o driver infere automaticamente o tipo do ClickHouse com base no tipo de valor do .NET. Por exemplo, `int` é mapeado para `Int32`.
+
+<Warning>
+  **Comportamento de parâmetros `DateTime` inferidos**
+
+  Para parâmetros no estilo `@` sem hint `{name:Type}` no SQL e sem `ClickHouseType` definido, valores que representam um instante são inferidos como `DateTime('UTC')` em vez de um `DateTime` simples. `DateTime` com `Kind` igual a `Utc` ou `Local`, e todos os valores `DateTimeOffset`, são enviados como `DateTime('UTC')`, preservando o instante em qualquer fuso horário do servidor.
+
+  Hints explícitos (`{name:DateTime}`) têm precedência sobre a inferência e são a forma recomendada de criar consultas.
+</Warning>
 
 Para substituir esses padrões, defina `ParameterTypeResolver` em `ClickHouseClientSettings`. Isso é útil quando você quer que todos os parâmetros `DateTime` usem `DateTime64(3)` para precisão de milissegundos ou que todos os decimais usem uma escala específica, sem precisar definir `ClickHouseType` em cada parâmetro individualmente.
 
@@ -651,8 +765,8 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 using var client = new ClickHouseClient(settings);
 
 var parameters = new ClickHouseParameterCollection();
-parameters.AddParameter("dt", DateTime.UtcNow);     // Mapeado para DateTime64(3)
-parameters.AddParameter("amount", 99.1234m);         // Mapeado para Decimal64(4)
+parameters.AddParameter("dt", DateTime.UtcNow);     // Mapped to DateTime64(3)
+parameters.AddParameter("amount", 99.1234m);         // Mapped to Decimal64(4)
 
 await client.ExecuteReaderAsync("SELECT @dt, @amount", parameters);
 ```
@@ -667,7 +781,7 @@ public class SmartDecimalResolver : IParameterTypeResolver
     public string ResolveType(Type clrType, object value, string parameterName)
     {
         if (clrType != typeof(decimal))
-            return null; // Passa para a inferência padrão
+            return null; // Fall through to default
 
         var scale = (decimal.GetBits((decimal)value)[3] >> 16) & 0x7F;
         return scale <= 4 ? $"Decimal64({scale})" : $"Decimal128({scale})";
@@ -690,6 +804,128 @@ O resolver também funciona com o caminho do ADO.NET `ClickHouseConnection` — 
 
 ***
 
+<div id="parameter-value-formatting">
+  ### Formatação personalizada de valores de parâmetros
+</div>
+
+`IParameterFormatter` é um hook que define como os valores dos parâmetros são serializados. Use-o quando a formatação padrão (por exemplo, precisão de DateTime, convenção decimal, escaping de strings, representação de números) não corresponder ao que seu esquema ou suas ferramentas downstream esperam.
+
+Defina `ParameterFormatter` em `ClickHouseClientSettings` para instalar um formatador para todas as consultas parametrizadas. O formatador recebe o valor, o nome do tipo ClickHouse resolvido e o nome do parâmetro, e retorna a representação em string que é enviada ao servidor. Retorne `null` para deixar o processamento seguir para o formatador padrão.
+
+**Usando `DictionaryParameterFormatter` para formatação simples por tipo CLR:**
+
+```csharp
+using ClickHouse.Driver.ADO.Parameters;
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ParameterFormatter = new DictionaryParameterFormatter(new Dictionary<Type, Func<object, string>>
+    {
+        [typeof(DateTime)] = v => ((DateTime)v).ToString("yyyy-MM-ddTHH:mm:ss.ffffff",
+            System.Globalization.CultureInfo.InvariantCulture),
+        [typeof(decimal)] = v => ((decimal)v).ToString("F4",
+            System.Globalization.CultureInfo.InvariantCulture),
+    }),
+};
+using var client = new ClickHouseClient(settings);
+```
+
+**`IParameterFormatter` personalizado para casos avançados:**
+
+```csharp
+public class FixedDecimalFormatter : IParameterFormatter
+{
+    public string Format(object value, string typeName, string parameterName)
+    {
+        if (value is decimal d)
+            return d.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+        return null; // Fall through for anything else
+    }
+}
+```
+
+Você também pode definir um formatador por consulta via `QueryOptions.ParameterFormatter`. Quando definido, ele tem precedência sobre o formatador em nível de cliente.
+
+**Valores compostos:**
+
+O formatador é executado tanto para parâmetros de collection de nível superior quanto para cada elemento dentro de valores compostos (`Array`, `Tuple`, `Map`, `Nullable`, `LowCardinality`, `Variant`). Por exemplo, um mapeamento `typeof(int)` formata individualmente cada elemento `Int32` de um `Array(Int32)`.
+
+**Uso de aspas simples em contextos compostos:**
+
+Para types do ClickHouse semelhantes a string (`String`, `FixedString`, `Enum8`, `Enum16`, `IPv4`, `IPv6`, `UUID`) embutidos em um literal composto, o driver envolve a saída do formatador em aspas simples, mas não escapa seu conteúdo. Se a string retornada contiver uma aspa simples ou barra invertida sem escape, o literal composto ficará malformado e o servidor rejeitará a consulta.
+
+Parâmetros de string de nível superior (não embutidos em um composto) são usados literalmente, sem aspas, portanto não é necessário escaping nesse caso.
+
+**Precedência do formatador:**
+
+1. `IParameterFormatter` (de `QueryOptions.ParameterFormatter`, com fallback para `ClickHouseClientSettings.ParameterFormatter`). Se ele retornar um valor não nulo, esse valor será usado.
+2. Formatação interna específica de cada tipo em `HttpParameterFormatter`.
+
+O formatador não é consultado para valores `null` ou `DBNull`; eles são sempre serializados como a sentinela nula do ClickHouse (`\N`).
+
+***
+
+<div id="read-value-conversion">
+  ### Conversão personalizada de valores lidos
+</div>
+
+`IReadValueConverter` permite transformar os valores retornados pelo leitor de dados após a desserialização, sem alterar o tipo CLR deles. Usos típicos: definir `DateTime.Kind = Utc` em uma coluna `DateTime` sem timezone, aparar ou normalizar strings, ou fazer o pós-processamento de uma coluna JSON antes que ela chegue ao código da aplicação.
+
+Defina `ReadValueConverter` em `ClickHouseClientSettings` para instalar um conversor para todas as leituras. O conversor é invocado uma vez por coluna por linha, tanto no caminho com boxing (`GetValue`) quanto no genérico (`GetFieldValue<T>`). Quando nenhum conversor é definido, a sobrecarga é zero — o leitor retorna os valores diretamente.
+
+**Usando `DictionaryReadValueConverter` para conversão simples por tipo CLR:**
+
+```csharp
+using ClickHouse.Driver.ADO.Readers;
+
+var converter = new DictionaryReadValueConverter()
+    .For<DateTime>(dt => DateTime.SpecifyKind(dt, DateTimeKind.Utc))
+    .For<string>(s => s.Trim());
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ReadValueConverter = converter,
+};
+using var client = new ClickHouseClient(settings);
+```
+
+Valores cujo tipo CLR em runtime não está registrado com `For<T>` passam inalterados. O despacho é feito pelo tipo CLR exato, portanto registre o tipo real produzido pelo leitor (por exemplo, `For<JsonObject>` para uma coluna JSON em `JsonReadMode.Binary`).
+
+**`IReadValueConverter` personalizado para cenários avançados:**
+
+Se você precisar despachar com base na string de tipo do lado do ClickHouse (por exemplo, para distinguir `DateTime` de `DateTime('UTC')` — ambos aparecem como o mesmo tipo CLR), implemente `IReadValueConverter` diretamente:
+
+```csharp
+public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
+{
+    public object ConvertValue(object value, string columnName, string clickHouseType)
+    {
+        if (value is DateTime dt && clickHouseType == "DateTime")
+            return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return value;
+    }
+
+    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
+    {
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
+            return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return value;
+    }
+}
+```
+
+O conversor deve preservar o tipo CLR de runtime; os metadados da coluna (`GetFieldType`, `GetSchemaTable`) não passam por ele e devem permanecer consistentes com o valor retornado.
+
+Você também pode definir um conversor por consulta via `QueryOptions.ReadValueConverter`; quando definido, ele tem precedência sobre o conversor no nível do cliente.
+
+**Limite do despacho:**
+
+O conversor é invocado uma vez por coluna com o valor completo da célula desserializada; ele **não** processa recursivamente contêineres compostos. Para uma coluna `Array(Int32)`, o valor passado é um `int[]`; para `Tuple(Int32, String)`, é um `ITuple`.
+
+O conversor funciona com o caminho `ClickHouseConnection` do ADO.NET — as configurações são herdadas pelas conexões criadas a partir do cliente.
+
+***
+
 <div id="raw-streaming">
   ### Fluxo bruto
 </div>
@@ -707,6 +943,43 @@ var json = await reader.ReadToEndAsync();
 ```
 
 Formatos comuns: `JSONEachRow`, `CSV`, `TSV`, `Parquet`, `Native`. Consulte a [documentação sobre formatos](/pt-BR/reference/formats/index) para ver todas as opções.
+
+***
+
+<div id="per-query-accept-encoding">
+  ### Compressão de transporte por consulta
+</div>
+
+Por padrão, o cliente negocia `gzip, deflate` quando `Compression=true` (o padrão da string de conexão), e o cliente HTTP descomprime o fluxo de forma transparente.
+
+Para exportações brutas (por exemplo, Parquet, Arrow, Native), talvez você queira negociar um codec diferente (por exemplo, `zstd` ou `lz4`) para trocar CPU por largura de banda sem alterar a configuração da conexão como um todo. `QueryOptions.AcceptEncoding` e `ClickHouseCommand.AcceptEncoding` definem o cabeçalho HTTP `Accept-Encoding` para uma única solicitação, substituindo qualquer valor padrão definido anteriormente, e forçam `enable_http_compression=1` na URL (o que o ClickHouse exige antes de respeitar `Accept-Encoding`).
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM events FORMAT Parquet",
+    options: new QueryOptions { AcceptEncoding = "zstd" });
+
+// Decode yourself or write to a file
+await using var body = await result.ReadAsStreamAsync();
+```
+
+<div id="per-query-accept-encoding-httpclient">
+  #### Configuração do HttpClient
+</div>
+
+O `HttpClient` padrão que o driver cria tem `AutomaticDecompression = GZip | Deflate`, o que descomprime esses algoritmos de forma transparente e remove `Content-Encoding` da resposta. Isso é o ideal para consultas normais, mas não se você quiser processar por conta própria os dados brutos e comprimidos.
+
+Nesse caso, passe um `HttpClient` ou `HttpClientFactory` para o ClickHouseClient com `AutomaticDecompression = DecompressionMethods.None`
+
+<Warning>
+  Se `AcceptEncoding` solicitar um codec que o `HttpClient` configurado não consegue descomprimir automaticamente, somente `ExecuteRawResultAsync` é seguro. Chamar `ExecuteReaderAsync`, `ExecuteScalarAsync` ou `ExecuteNonQueryAsync` nesse mesmo fluxo de consulta fará com que o sistema tente analisar os bytes comprimidos como se fossem o formato normal do resultado, produzindo dados sem sentido.
+</Warning>
+
+<div id="per-query-accept-encoding-errors">
+  #### Corpos de erro
+</div>
+
+Quando o servidor responde com um 4xx/5xx e `enable_http_compression=1` foi definido, ele compacta o corpo do erro com o mesmo codec que usaria em uma resposta bem-sucedida. O driver descompacta esses corpos para os codecs incluídos na BCL (`gzip`, `deflate`, `br`/`brotli`), para que a mensagem exibida em `ClickHouseServerException` seja legível. Para codecs que ele não consegue decodificar (`zstd`, `lz4`, …), o driver retorna uma mensagem substituta que informa o codec e aponta para `system.query_log`, onde está o texto original do erro.
 
 ***
 
@@ -1174,24 +1447,24 @@ var settings = new ClickHouseClientSettings("Host=localhost")
   #### Outros tipos
 </div>
 
-| Tipo do ClickHouse      | Tipo .NET                           |
-| ----------------------- | ----------------------------------- |
-| UUID                    | `Guid`                              |
-| IPv4                    | `IPAddress`                         |
-| IPv6                    | `IPAddress`                         |
-| Nothing                 | `DBNull`                            |
-| Dynamic                 | Consulte a nota                     |
-| Array(T)                | `T[]`                               |
-| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple` |
-| Map(K, V)               | `Dictionary<K, V>`                  |
-| Nullable(T)             | `T?`                                |
-| Enum8                   | `string`                            |
-| Enum16                  | `string`                            |
-| LowCardinality(T)       | O mesmo que T                       |
-| SimpleAggregateFunction | O mesmo que o tipo subjacente       |
-| Nested(...)             | `Tuple[]`                           |
-| Variant(T1, T2, ...)    | Consulte a nota                     |
-| QBit(T, dimension)      | `T[]`                               |
+| Tipo do ClickHouse      | Tipo .NET                                                                                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`                                                                                                                                                                                |
+| IPv4                    | `IPAddress`                                                                                                                                                                           |
+| IPv6                    | `IPAddress`                                                                                                                                                                           |
+| Nothing                 | `DBNull`                                                                                                                                                                              |
+| Dynamic                 | Consulte a nota                                                                                                                                                                       |
+| Array(T)                | `T[]` (`Array(Array(T))` aninhado é lido como `T[][]` irregular; use `reader.GetFieldValue<T[,]>(ordinal)` para materializar dados retangulares como uma matriz CLR multidimensional) |
+| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple`                                                                                                                                                   |
+| Map(K, V)               | `Dictionary<K, V>`                                                                                                                                                                    |
+| Nullable(T)             | `T?`                                                                                                                                                                                  |
+| Enum8                   | `string`                                                                                                                                                                              |
+| Enum16                  | `string`                                                                                                                                                                              |
+| LowCardinality(T)       | O mesmo que T                                                                                                                                                                         |
+| SimpleAggregateFunction | O mesmo que o tipo subjacente                                                                                                                                                         |
+| Nested(...)             | `Tuple[]`                                                                                                                                                                             |
+| Variant(T1, T2, ...)    | Consulte a nota                                                                                                                                                                       |
+| QBit(T, dimension)      | `T[]`                                                                                                                                                                                 |
 
 <Note>
   Os tipos Dynamic e Variant serão convertidos para o tipo correspondente ao tipo subjacente real de cada linha.
@@ -1285,21 +1558,27 @@ Ao inserir dados, o driver converte tipos .NET nos tipos correspondentes do Clic
 
 | Tipo do ClickHouse | Tipos .NET aceitos                                                | Observações                                                                             |
 | ------------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Date               | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Convertido em dias Unix como UInt16                                                     |
-| Date32             | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Convertido em dias Unix como Int32                                                      |
-| DateTime           | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Veja abaixo mais detalhes                                                               |
+| Date               | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Convertido em dias Unix como UInt16; intervalo suportado `[1970-01-01, 2149-06-06]`     |
+| Date32             | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Convertido em dias Unix como Int32; intervalo suportado `[1900-01-01, 2299-12-31]`      |
+| DateTime           | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Veja abaixo mais detalhes; intervalo suportado `[1970-01-01, 2106-02-07 06:28:15]` UTC  |
 | DateTime32         | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Igual a DateTime                                                                        |
 | DateTime64         | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Precisão baseada no parâmetro de escala                                                 |
 | Time               | `TimeSpan`, `int`                                                 | Limitado a ±999:59:59; `int` é tratado como segundos                                    |
 | Time64             | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | `string` é interpretada como `[-]HHH:MM:SS[.fraction]`; limitado a ±999:59:59.999999999 |
 
+<Note>
+  **Valores fora do intervalo**
+
+  No caminho de gravação binária, valores de `Date`, `Date32`, `DateTime` e `DateTime32` fora do intervalo suportado lançam `ArgumentOutOfRangeException` no momento de `Write`, indicando o tipo da coluna e o intervalo suportado. Anteriormente, valores fora do intervalo podiam ser truncados silenciosamente por meio de um inteiro de 32 bits e reinterpretados pelo servidor, produzindo timestamps reais, mas incorretos.
+</Note>
+
 O driver respeita `DateTime.Kind` ao gravar valores:
 
-| DateTime.Kind | Parâmetros HTTP                                                                  | Em massa                                             |
-| ------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Utc           | Instante preservado                                                              | Instante preservado                                  |
-| Local         | Instante preservado                                                              | Instante preservado                                  |
-| Unspecified   | Tratado como horário local no fuso horário do tipo do parâmetro (o padrão é UTC) | Tratado como horário local no fuso horário da coluna |
+| DateTime.Kind | Parâmetros HTTP                                                               | Em massa                                          |
+| ------------- | ----------------------------------------------------------------------------- | ------------------------------------------------- |
+| Utc           | Instante preservado                                                           | Instante preservado                               |
+| Local         | Instante preservado                                                           | Instante preservado                               |
+| Unspecified   | Tratado como hora local no fuso horário do tipo do parâmetro (o padrão é UTC) | Tratado como hora local no fuso horário da coluna |
 
 Os valores de `DateTimeOffset` sempre preservam o instante exato.
 
@@ -1307,17 +1586,17 @@ Os valores de `DateTimeOffset` sempre preservam o instante exato.
 
 ```csharp
 var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
-// Armazenado como 12:00 UTC
-// Lido da coluna DateTime('Europe/Amsterdam'): 13:00 (UTC+1)
-// Lido da coluna DateTime('UTC'): 12:00 UTC
+// Stored as 12:00 UTC
+// Read from DateTime('Europe/Amsterdam') column: 13:00 (UTC+1)
+// Read from DateTime('UTC') column: 12:00 UTC
 ```
 
-**Exemplo: DateTime não especificado (horário local)**
+**Exemplo: DateTime não especificado (hora local)**
 
 ```csharp
 var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
-// Gravado na coluna DateTime('Europe/Amsterdam'): armazenado como 14:30 no horário de Amsterdã
-// Lido da coluna DateTime('Europe/Amsterdam'): 14:30
+// Written to DateTime('Europe/Amsterdam') column: stored as 14:30 Amsterdam time
+// Read back from DateTime('Europe/Amsterdam') column: 14:30
 ```
 
 **Recomendação:** para obter o comportamento mais simples e previsível, use `DateTimeKind.Utc` ou `DateTimeOffset` em todas as operações com DateTime. Isso garante que seu código funcione de forma consistente, independentemente do fuso horário do servidor, do cliente ou da coluna.
@@ -1479,24 +1758,24 @@ A correspondência entre o nome da propriedade e as dicas de tipo da coluna dife
   #### Outros tipos
 </div>
 
-| ClickHouse Type         | Accepted .NET Types                      | Notas                                                              |
-| ----------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
-| UUID                    | `Guid`, `string`                         | `string` é analisada como `Guid`                                   |
-| IPv4                    | `IPAddress`, `string`                    | Deve ser IPv4; `string` é analisada via `IPAddress.Parse()`        |
-| IPv6                    | `IPAddress`, `string`                    | Deve ser IPv6; `string` é analisada via `IPAddress.Parse()`        |
-| Nothing                 | Qualquer                                 | Não grava nada (no-op)                                             |
-| Dynamic                 | —                                        | **Sem suporte** (lança `NotImplementedException`)                  |
-| Array(T)                | `IList`, `null`                          | `null` grava um array vazio                                        |
-| Tuple(T1, T2, ...)      | `ITuple`, `IList`                        | A quantidade de elementos deve corresponder à aridade da tupla     |
-| Map(K, V)               | `IDictionary`                            |                                                                    |
-| Nullable(T)             | `null`, `DBNull`, ou tipos aceitos por T | Grava o byte indicador de null antes do valor                      |
-| Enum8                   | `string`, `sbyte`, tipos numéricos       | `string` é procurada no dicionário do enum                         |
-| Enum16                  | `string`, `short`, tipos numéricos       | `string` é procurada no dicionário do enum                         |
-| LowCardinality(T)       | Tipos aceitos por T                      | Delega ao tipo subjacente                                          |
-| SimpleAggregateFunction | Tipos aceitos pelo tipo subjacente       | Delega ao tipo subjacente                                          |
-| Nested(...)             | `IList` de tuplas                        | A quantidade de elementos deve corresponder à quantidade de campos |
-| Variant(T1, T2, ...)    | Valor correspondente a um de T1, T2, ... | Lança `ArgumentException` se não houver correspondência de tipo    |
-| QBit(T, dim)            | `IList`                                  | Delega a Array; a dimensão é apenas metadado                       |
+| ClickHouse Type         | Accepted .NET Types                      | Notas                                                                                                                                                                                                                                                                                                      |
+| ----------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`, `string`                         | `string` é analisada como `Guid`                                                                                                                                                                                                                                                                           |
+| IPv4                    | `IPAddress`, `string`                    | Deve ser IPv4; `string` é analisada via `IPAddress.Parse()`                                                                                                                                                                                                                                                |
+| IPv6                    | `IPAddress`, `string`                    | Deve ser IPv6; `string` é analisada via `IPAddress.Parse()`                                                                                                                                                                                                                                                |
+| Nothing                 | Qualquer                                 | Não grava nada (no-op)                                                                                                                                                                                                                                                                                     |
+| Dynamic                 | —                                        | **Sem suporte** (lança `NotImplementedException`)                                                                                                                                                                                                                                                          |
+| Array(T)                | `IList`, `null`                          | `null` grava um array vazio. Para tipos Nested (`Array(Array(T))` e mais profundos), são aceitos tanto formatos irregulares (`T[][]`, `List<List<T>>`) quanto arrays CLR multidimensionais retangulares (`T[,]`, `T[,,]`, …); o rank do CLR deve corresponder à profundidade de aninhamento no ClickHouse. |
+| Tuple(T1, T2, ...)      | `ITuple`, `IList`                        | A quantidade de elementos deve corresponder à aridade da tupla. Veja a [ressalva sobre ValueTuple](#valuetuple-caveat) para mais de 7 elementos.                                                                                                                                                           |
+| Map(K, V)               | `IDictionary`                            |                                                                                                                                                                                                                                                                                                            |
+| Nullable(T)             | `null`, `DBNull`, ou tipos aceitos por T | Grava o byte indicador de null antes do valor                                                                                                                                                                                                                                                              |
+| Enum8                   | `string`, `sbyte`, tipos numéricos       | `string` é procurada no dicionário do enum                                                                                                                                                                                                                                                                 |
+| Enum16                  | `string`, `short`, tipos numéricos       | `string` é procurada no dicionário do enum                                                                                                                                                                                                                                                                 |
+| LowCardinality(T)       | Tipos aceitos por T                      | Delega ao tipo subjacente                                                                                                                                                                                                                                                                                  |
+| SimpleAggregateFunction | Tipos aceitos pelo tipo subjacente       | Delega ao tipo subjacente                                                                                                                                                                                                                                                                                  |
+| Nested(...)             | `IList` de tuplas                        | A quantidade de elementos deve corresponder à quantidade de campos                                                                                                                                                                                                                                         |
+| Variant(T1, T2, ...)    | Valor correspondente a um de T1, T2, ... | Lança `ArgumentException` se não houver correspondência de tipo                                                                                                                                                                                                                                            |
+| QBit(T, dim)            | `IList`                                  | Delega a Array; a dimensão é apenas metadado                                                                                                                                                                                                                                                               |
 
 ***
 
@@ -2547,6 +2826,35 @@ Além das migrações, o provedor também ainda não oferece suporte a:
 <div id="limitations">
   ## Limitações
 </div>
+
+<div id="valuetuple-caveat">
+  ### Tuple com 8+ elementos e uma tupla aninhada na última posição
+</div>
+
+Tipos `ValueTuple` de C# com mais de 7 elementos usam um esquema de aninhamento gerado pelo compilador: o 8º argumento genérico (`TRest`) é, ele próprio, um `ValueTuple` que contém os elementos restantes. Por exemplo, `(int, int, int, int, int, int, int, string, string)` é compilado como `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>`.
+
+Isso cria uma ambiguidade quando a coluna do ClickHouse é uma tupla de 8 elementos em que o último elemento também é uma tupla — por exemplo, `Tuple(Int32, Int32, Int32, Int32, Int32, Int32, Int32, Tuple(String, String))`. O driver não consegue distinguir entre:
+
+* Uma **tupla plana de 9 elementos** (aninhamento TRest gerado pelo compilador)
+* Uma **tupla de 8 elementos** em que o último elemento é um `Tuple(String, String)` aninhado
+
+Ambos produzem o mesmo tipo .NET: `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>`.
+
+O driver trata o 8º argumento como TRest (ou seja, o expande), o que significa que o caso de 8 elementos com tupla aninhada será serializado incorretamente.
+
+Isso afeta tanto `System.Tuple` quanto `ValueTuple`, já que ambos usam aninhamento TRest para &gt;7 elementos. Tuple com 7 ou menos elementos, ou Tuple em que o último elemento não é uma tupla, não são afetadas.
+
+**Solução alternativa:** Envolva a tupla interna em uma camada extra para que o driver consiga distingui-la do aninhamento TRest:
+
+```csharp
+// Instead of this (ambiguous — is it 8 elements or 9 flat?):
+Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create("a", "b"))
+
+// Do this (unambiguous — inner tuple is wrapped):
+Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create(Tuple.Create("a", "b")))
+```
+
+***
 
 <div id="aggregatefunction-columns">
   ### Colunas do tipo AggregateFunction

@@ -194,7 +194,13 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
     const SharedHeader & out_header,
     size_t parallel_marshalling_threads)
 {
-    const bool add_agg_info = false;
+    /// A fragment ending in a partial AggregatingStep emits intermediate aggregate state that a
+    /// MergingAggregated merges, so its chunks must carry AggregatedChunkInfo.
+    bool add_agg_info = false;
+    if (const auto * root = query_plan->getRootNode())
+        if (const auto * agg = typeid_cast<const AggregatingStep *>(root->step.get()))
+            add_agg_info = !agg->getFinal();
+
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];

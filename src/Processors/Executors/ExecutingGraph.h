@@ -164,7 +164,7 @@ private:
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
     Node & addNode(ProcessorPtr processor);
     Node & addNode(Processors::iterator processor_iter);
-    Node * removeNode(ProcessorPtr processor);
+    std::pair<const Node *, std::unordered_set<const void *>> removeNode(ProcessorPtr processor);
 
     /// Add single edge to edges list. Check processor is known.
     Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
@@ -177,11 +177,17 @@ private:
         bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
-    bool removeAffectedEdges(Node & node, const std::unordered_set<Node *> & removed_nodes);
+    std::unordered_set<const void *> removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes);
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    UpdateNodeStatus updatePipeline(boost::container::devector<Node *> & stack, Node & node, Processors & delayed_destruction);
+    struct UpdatePipelineResult
+    {
+        UpdateNodeStatus status;
+        std::unordered_set<const Node *> removed_nodes;
+        std::unordered_set<const void *> removed_edges;
+    };
+    UpdatePipelineResult updatePipeline(boost::container::devector<Node *> & stack, Node & node, Processors & delayed_destruction);
 
     /// Shared with QueryPipeline.
     std::shared_ptr<Processors> processors;

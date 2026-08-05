@@ -49,6 +49,7 @@ from copy import copy
 from pathlib import Path
 from typing import Iterator, List
 
+from ci.jobs.scripts import release_packages
 from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
     CHVersion,
@@ -613,7 +614,10 @@ class ReleaseInfo:
                     else:
                         Shell.check(
                             f"gh pr create --repo {GITHUB_REPOSITORY} --title 'Update version after release' "
-                            f"--head {branch_upd} --base master --body \"{body}\" --assignee {actor}",
+                            f"--head {branch_upd} --base master --body \"{body}\" --assignee {actor}"
+                            # 'do not test': this bot PR is auto-enqueued to the
+                            # merge queue, so it must not run the full PR CI.
+                            f" --label 'do not test'",
                             strict=True,
                             dry_run=dry_run,
                             verbose=True,
@@ -733,73 +737,87 @@ class ReleaseInfo:
             self.release_url = "dry-run"
         self.dump()
 
+    def _enqueue_release_pr(self, pr_url: str, label: str, dry_run: bool) -> bool:
+        """Add a release bot PR to `master`'s merge queue so it actually merges.
+
+        `master` is behind a merge queue, and `gh pr merge --auto`
+        (`enablePullRequestAutoMerge`) is disabled there, so the PR is added via
+        `enqueuePullRequest` - GitHub merges it from the queue once its required
+        checks pass. The PR is opened before the long package export / docker
+        publish, so its `CH Inc sync` check has time to run before this enqueue at
+        the end of the release; the retries ride out any short remaining wait.
+        Best-effort: it never raises, so a PR that is not yet mergeable does not
+        fail the already-published release (merge_prs then only warns; a later
+        rerun re-enqueues it).
+        """
+        pr_num = 23456 if dry_run else int(pr_url.rsplit("/", 1)[-1])
+        if not dry_run:
+            # Idempotent for recovery / reruns: only an open PR needs enqueuing.
+            # Non-strict read: a transient gh failure must not fail the release.
+            state = Shell.get_output(
+                f"gh pr view {pr_num} --repo {GITHUB_REPOSITORY}"
+                f" --json state --jq .state"
+            ).strip()
+            if not state:
+                print(f"ERROR: could not fetch state for {label} PR #{pr_num}")
+                return False
+            if state != "OPEN":
+                print(f"{label} PR #{pr_num} is {state}, nothing to merge")
+                return True
+        print(f"Enqueuing {label} PR to the merge queue")
+        return Git.enqueue_pull_request(
+            pr_num, GITHUB_REPOSITORY, dry_run=dry_run, retries=10, delay=30
+        )
+
     def merge_prs(self, dry_run: bool) -> None:
         res = True
+        # A recovery / rerun may find no PR (it was already merged and the branch
+        # lookup returned nothing) - that is a no-op, not a failure.
         if self.release_type == "patch":
-            assert self.changelog_pr
-            print("Merging ChangeLog PR")
-            changelog_pr_num = 23456 if dry_run else int(self.changelog_pr.rsplit("/", 1)[-1])
-            res = Shell.check(
-                f"gh pr merge {changelog_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
-                verbose=True,
-                dry_run=dry_run,
-                strict=True,
-            )
+            if self.changelog_pr:
+                res = self._enqueue_release_pr(self.changelog_pr, "ChangeLog", dry_run)
+            else:
+                print("No ChangeLog PR to merge")
         if self.release_type == "new":
-            assert self.version_bump_pr
-            print("Merging Version Bump PR")
-            version_bump_pr_num = 23456 if dry_run else int(self.version_bump_pr.rsplit("/", 1)[-1])
-            res = res and Shell.check(
-                f"gh pr merge {version_bump_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
-                verbose=True,
-                dry_run=dry_run,
-                strict=True,
-            )
+            if self.version_bump_pr:
+                res = res and self._enqueue_release_pr(
+                    self.version_bump_pr, "Version Bump", dry_run
+                )
+            else:
+                print("No Version Bump PR to merge")
         else:
             if not dry_run:
                 assert not self.version_bump_pr
         self.prs_merged = res
-
-
-class RepoTypes:
-    RPM = "rpm"
-    DEBIAN = "deb"
-    TGZ = "tgz"
+        if not res:
+            # Best-effort: by the time this runs the release itself (tag, GitHub
+            # release, packages) is already published, so a failed PR enqueue must
+            # not fail the release. Leave the PR open to be landed separately and
+            # only warn - do not raise.
+            print(
+                "WARNING: could not enqueue the release PR(s) to the merge queue; "
+                "they must be landed separately. The release itself is unaffected."
+            )
 
 
 class PackageDownloader:
-    PACKAGES = (
-        "clickhouse-client",
-        "clickhouse-common-static",
-        "clickhouse-common-static-dbg",
-        "clickhouse-keeper",
-        "clickhouse-keeper-dbg",
-        "clickhouse-server",
-    )
-
-    PACKAGE_ARCHS = ("amd", "arm")
+    # The package/build-job/filename contract lives in `release_packages`, the
+    # single source of truth shared with the `AutoReleases` gate
+    # (`tests/ci/auto_release.py`), so the producer here and the checker there
+    # cannot drift. Re-export the two constants callers read off the class.
+    PACKAGES = release_packages.PACKAGES
+    PACKAGE_ARCHS = release_packages.PACKAGE_ARCHS
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
         "amd": "macos",
         "arm": "macos-aarch64",
     }
     LOCAL_DIR = "/tmp/packages"
 
-    @classmethod
-    def _get_arch_suffix(cls, package_arch, repo_type):
-        if package_arch == "amd":
-            return "amd64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "x86_64"
-        if package_arch == "arm":
-            return "arm64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "aarch64"
-        assert False, "BUG"
-
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
         self.package_names = list(self.PACKAGES)
         self.release = release
-        major_version = int(release.split(".")[0])
-        minor_version = int(release.split(".")[1])
-        self.is_new_ci = (major_version >= 25 and minor_version >= 3) or major_version > 25
-        self.s3_release_prefix = f"REFs/{release}" if self.is_new_ci else release
+        self.s3_release_prefix = release_packages.s3_release_prefix(release)
         self.commit_sha = commit_sha
         self.version = version
         self.s3 = S3Helper()
@@ -812,36 +830,21 @@ class PackageDownloader:
 
         Shell.check(f"mkdir -p {self.LOCAL_DIR}")
 
-        for package_arch in self.PACKAGE_ARCHS:
-            if not self.is_new_ci:
-                job_name = "package_release" if package_arch == "amd" else "package_aarch64"
-                job_name_darwin = "binary_darwin" if package_arch == "amd" else "binary_darwin_aarch64"
-            else:
-                job_name = "build_amd_release" if package_arch == "amd" else "build_arm_release"
-                job_name_darwin = "build_amd_darwin" if package_arch == "amd" else "build_arm_darwin"
+        files_by_repo_type = {
+            "deb": self.deb_package_files,
+            "rpm": self.rpm_package_files,
+            "tgz": self.tgz_package_files,
+        }
+        for repo_type, package_file, job_name in release_packages.iter_package_objects(
+            version
+        ):
+            files_by_repo_type[repo_type].append(package_file)
+            self.file_to_job_name[package_file] = job_name
 
-            for package in self.package_names:
-                arch = self._get_arch_suffix(package_arch, RepoTypes.DEBIAN)
-                deb = f"{package}_{self.version}_{arch}.deb"
-                self.deb_package_files.append(deb)
-                self.file_to_job_name[deb] = job_name
-
-                arch = self._get_arch_suffix(package_arch, RepoTypes.RPM)
-                rpm = f"{package}-{self.version}.{arch}.rpm"
-                self.rpm_package_files.append(rpm)
-                self.file_to_job_name[rpm] = job_name
-
-                arch = self._get_arch_suffix(package_arch, RepoTypes.TGZ)
-                tgz = f"{package}-{self.version}-{arch}.tgz"
-                self.tgz_package_files.append(tgz)
-                self.file_to_job_name[tgz] = job_name
-                tgz_sha = tgz + ".sha512"
-                self.tgz_package_files.append(tgz_sha)
-                self.file_to_job_name[tgz_sha] = job_name
-
-                dest_bin = f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}"
-                assert dest_bin in self.macos_package_files
-                self.macos_binary_to_job_name[dest_bin] = job_name_darwin
+        for package_arch, job_name_darwin in release_packages.iter_macos_objects():
+            dest_bin = f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}"
+            assert dest_bin in self.macos_package_files
+            self.macos_binary_to_job_name[dest_bin] = job_name_darwin
 
     def get_deb_packages_files(self):
         return self.deb_package_files
@@ -1010,11 +1013,6 @@ def parse_args() -> argparse.Namespace:
         help="Create GH Release object and attach all packages",
     )
     parser.add_argument(
-        "--merge-prs",
-        action="store_true",
-        help="Merge PRs with version, changelog updates",
-    )
-    parser.add_argument(
         "--post-status",
         action="store_true",
         help="Post release status (prints summary; Slack integration removed)",
@@ -1111,13 +1109,6 @@ if __name__ == "__main__":
         # fail is conveyed by the workflow job result, not re-derived here.
         print(f"{title}: {release_info.release_tag}")
         print(json.dumps(dataclasses.asdict(release_info), indent=2))
-
-    if args.merge_prs:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.MERGE_CREATED_PRS
-        ) as release_info:
-            release_info.update_release_info(dry_run=args.dry_run)
-            release_info.merge_prs(dry_run=args.dry_run)
 
     if _ssh_agent and _key_pub:
         _ssh_agent.remove(_key_pub)

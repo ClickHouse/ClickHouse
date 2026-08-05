@@ -2,21 +2,61 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <base/MemorySanitizer.h>
 #include <Common/FramePointers.h>
 
 #include <string>
 #include <array>
+#include <exception>
 #include <optional>
 #include <functional>
+#include <span>
+/** A standalone build of the parser (see `utils/wasm-parser`) has no signals, no `setjmp` and no
+  * way to walk its own stack, and it does not link `StackTrace.cpp`. Everything below that needs
+  * those is left out rather than making the whole header unavailable, since `Common/Exception.h`
+  * includes it and so does most of the tree.
+  */
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 #include <csignal>
 #include <csetjmp>
+#endif
 
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 #ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE
 #   pragma clang diagnostic ignored "-Wreserved-id-macro"
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
+#endif
+
+/** The stack trace of the throw that created an exception, recorded inside the `std::exception`
+  * itself by ClickHouse's patched libc++. See `STD_EXCEPTION_HAS_STACK_TRACE` in `base/defines.h`:
+  * these two functions are the only place that copes with a C++ standard library which records
+  * nothing, where they report an empty trace and do nothing respectively.
+  *
+  * The frames are un-poisoned for MSan, which does not see libc++ writing them.
+  */
+inline std::span<void *> getStackTraceOfThrow([[maybe_unused]] const std::exception & e)
+{
+#if STD_EXCEPTION_HAS_STACK_TRACE
+    void ** frames = e.get_stack_trace_frames();
+    const size_t size = e.get_stack_trace_size();
+    __msan_unpoison(frames, size * sizeof(frames[0]));
+    return {frames, size};
+#else
+    return {};
+#endif
+}
+
+/// Make the throw-site stack trace of `from` the throw-site stack trace of `to`.
+inline void copyStackTraceOfThrow([[maybe_unused]] const std::exception & from, [[maybe_unused]] std::exception & to)
+{
+#if STD_EXCEPTION_HAS_STACK_TRACE
+    const auto trace = getStackTraceOfThrow(from);
+    to.set_stack_trace(trace.data(), static_cast<int>(trace.size()));
+#endif
+}
 
 struct NoCapture
 {
@@ -46,7 +86,9 @@ public:
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     explicit StackTrace(const ucontext_t & signal_context);
+#endif
 
     /// Creates empty object for deferred initialization
     explicit StackTrace(NoCapture) {}
@@ -86,13 +128,17 @@ protected:
     FramePointers frame_pointers{};
 };
 
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
 
 std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info);
 std::string getFaultMemoryAccessType(int sig, const ucontext_t & context);
+#endif
 std::string getSignalCodeDescription(int sig, int si_code);
 
 /// Special handling for errors during asynchronous stack unwinding,
 /// Which is used in Query Profiler
 extern thread_local bool asynchronous_stack_unwinding;
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 extern thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
+#endif

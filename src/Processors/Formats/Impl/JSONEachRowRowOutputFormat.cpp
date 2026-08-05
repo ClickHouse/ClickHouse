@@ -143,7 +143,7 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
 
 ## Description {#description}
 
-Differs from [JSONEachRow](./JSONEachRow.md) only in that JSON is pretty formatted with new line delimiters and 4 space indents.
+Differs from [JSONEachRow](/reference/formats/JSON/JSONEachRow) only in that JSON is pretty formatted with new line delimiters and 4 space indents.
 
 ## Example usage {#example-usage}
 ### Reading data {#reading-data}

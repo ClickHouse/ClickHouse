@@ -733,27 +733,22 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeDryRunImpl(
 
 FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
-    ColumnsWithTypeAndName arguments_with_type_)
+    ColumnsWithTypeAndName arguments_with_type_,
+    size_t variant_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
+    , variant_argument_index(variant_argument_index_)
 {
     arguments.reserve(arguments_with_type_.size());
     for (const auto & arg : arguments_with_type_)
         arguments.push_back(arg.type);
 
-    std::optional<size_t> first_variant_index;
-    for (size_t i = 0; i != arguments.size(); ++i)
-    {
-        if (isVariant(arguments[i]))
-        {
-            first_variant_index = i;
-            break;
-        }
-    }
-
-    if (!first_variant_index.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No variant argument found for {}", function_overload_resolver->getName());
-
-    variant_argument_index = *first_variant_index;
+    if (variant_argument_index >= arguments.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Variant argument index {} is out of range for {} with {} arguments",
+            variant_argument_index,
+            function_overload_resolver->getName(),
+            arguments.size());
 
     /// Get the Variant argument type and its alternatives.
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(arguments[variant_argument_index].get());

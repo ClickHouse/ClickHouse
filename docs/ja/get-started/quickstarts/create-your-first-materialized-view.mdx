@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'materialized view の概要'
 title: '初めての materialized view を作成する'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['リアルタイムアナリティクス', 'データウェアハウジング']
 products: ['Cloud']
 description: 'ClickHouse の materialized view を使って、別のソート順でクエリ結果を事前計算して保存し、主キーに含まれないカラムに対する高速なルックアップを可能にする方法を学びます。'
 ---
@@ -39,9 +39,7 @@ MergeTree の クイックスタート では、テーブルが `(postcode, addr
 最後には、materialized view が insert trigger としてどのように機能するか、既存データをどのようにバックフィルするか、そしてデータを 2 回保存することによるディスク容量のトレードオフを理解できるようになります。
 
 <Steps titleSize="h3">
-  <Step>
-    ### materialized view が必要な理由を理解する
-
+  <Step title="materialized view が必要な理由を理解する" id="understand-why-you-need-a-materialized-view">
     `uk_price_paid` テーブルは `(postcode, addr1, addr2)` でソートされています。つまり、`postcode`、`addr1`、`addr2` で絞り込む場合、ClickHouse は大きなデータ block を読み飛ばせますが、`town` で絞り込むクエリでは、3,000 万行すべてをスキャンしなければなりません。
 
     別の `ORDER BY` を持つ 2 つ目のテーブルを作成することもできますが、その場合は新しいデータが届くたびに、両方のテーブルに insert する必要があります。**materialized view** を使えば、これを自動化できます。source table への insert を監視し、行を変換して、宛先テーブルへ自動的に書き込みます。
@@ -49,9 +47,7 @@ MergeTree の クイックスタート では、テーブルが `(postcode, addr
     materialized view は **insert trigger** のようなものと考えてください。source table に行が insert されるたびに、MV の `SELECT` クエリが新しい block に対して実行され、その結果が宛先テーブルに insert されます。
   </Step>
 
-  <Step>
-    ### 宛先テーブルを作成する
-
+  <Step title="宛先テーブルを作成する" id="create-the-destination-table">
     materialized view では、出力の保存先が必要です。これは通常の MergeTree テーブルであり、スキーマ、`ORDER BY`、`PARTITION BY` を完全に自由に制御できます。
 
     町単位のクエリに必要なカラムだけを含む、`(town, date)` でソートされたテーブルを作成します:
@@ -78,9 +74,7 @@ MergeTree の クイックスタート では、テーブルが `(postcode, addr
     ```
   </Step>
 
-  <Step>
-    ### materialized view を作成する
-
+  <Step title="materialized view を作成する" id="create-the-materialized-view">
     次に、ソーステーブル (`uk_price_paid`) と宛先テーブル (`uk_price_paid_by_town`) を結び付ける materialized view を作成します。
 
     ```sql
@@ -99,9 +93,7 @@ MergeTree の クイックスタート では、テーブルが `(postcode, addr
     重要な注意点があります。materialized view がトリガーされるのは **inserts** のときだけです。ソーステーブルの行を削除または更新しても、宛先テーブルはそれを認識しません。つまり、MV は削除や更新とは同期されません。そのような同期が必要な場合は、代わりに [projections](/ja/reference/statements/alter/projection) の使用を検討してください。
   </Step>
 
-  <Step>
-    ### 既存データをバックフィルする
-
+  <Step title="既存データをバックフィルする" id="backfill-existing-data">
     materialized view が処理するのは *今後の* 挿入のみです。`uk_price_paid` にすでに存在する 3,000 万行は、MV が作成される前に挿入されていたため、宛先テーブルは現在空のままです。
 
     手動でバックフィルします:
@@ -133,9 +125,7 @@ MergeTree の クイックスタート では、テーブルが `(postcode, addr
     どちらのテーブルも、行数は同じである必要があります。
   </Step>
 
-  <Step>
-    ### materialized viewの宛先テーブルをクエリする
-
+  <Step title="materialized viewの宛先テーブルをクエリする" id="query-the-materialized-view-destination-table">
     次に、宛先テーブルに対して `town` で絞り込むクエリを実行し、ソーステーブルを直接クエリした結果と比較します。
 
     まず、ソーステーブルをクエリします。
@@ -178,9 +168,7 @@ MergeTree の クイックスタート では、テーブルが `(postcode, addr
     そのため、materialized view は `TO` 句を使って作成することを推奨します。
   </Step>
 
-  <Step>
-    ### データが二重に保存されていることを確認する
-
+  <Step title="データが二重に保存されていることを確認する" id="observe-the-data-is-stored-twice">
     materialized view を使うと、追加のディスク容量と引き換えに、より高速に読み取れます。各テーブルがどれだけの容量を使用しているかを確認するには、`system.parts` をクエリします。
 
     ```sql
@@ -201,7 +189,9 @@ MergeTree の クイックスタート では、テーブルが `(postcode, addr
   </Step>
 </Steps>
 
-## 次のステップ
+<div id="next-steps">
+  ## 次のステップ
+</div>
 
 このクイックスタートでは、元のテーブルを変更することなく、異なるソート順で英国の不動産売買データを保存する materialized view を作成し、町ごとの高速なルックアップを可能にしました。また、MV は insert trigger として機能すること、既存データは手動でバックフィルする必要があること、そしてそのトレードオフとして追加のディスク容量が必要になることも学びました。
 

@@ -21,10 +21,14 @@ doc_type: 'guide'
 데이터를 수집하는 과정에서 다양한 유형의 장애가 발생할 수 있으며, 이로 인해 일부만 삽입되거나 중복 데이터가 생길 수 있습니다. 객체 스토리지 ClickPipes는 삽입 실패에 탄력적으로 대응하며, 임시 스테이징 테이블을 사용해 정확히 한 번 처리 의미 체계를 제공합니다. 데이터는 먼저 스테이징 테이블에 삽입되며, 문제가 발생하면 스테이징 테이블을 TRUNCATE한 후 깨끗한 상태에서 삽입을 다시 시도합니다. 삽입이 성공적으로 완료된 경우에만 파티션이 대상 테이블로 이동됩니다.
 
 <Steps>
-  <Step>
-    ## Google Cloud Pub/Sub 토픽 만들기
-
+  <Step title="Google Cloud Pub/Sub 토픽 만들기" id="create-pubsub-topic">
     **1.** Google Cloud Console에서 **Pub/Sub &gt; Topics &gt; Create topic**으로 이동합니다. 기본 subscription이 포함된 새 토픽을 만들고 **Topic Name**을 기록합니다.
+
+    <Warning>
+      **ClickPipe당 하나의 subscription**
+
+      각 ClickPipe에는 전용 Pub/Sub subscription이 필요합니다. 단일 subscription에서는 Pub/Sub가 각 메시지를 하나의 subscriber에게만 전달합니다. 즉, 2개 이상의 ClickPipe(또는 다른 애플리케이션)가 동일한 subscription을 소비하면 각 알림은 그중 하나만 수신하며, 이를 받지 못한 파이프에서는 파일이 아무런 경고 없이 건너뛰어집니다. 이는 ClickPipes가 서로 다른 경로 패턴을 사용하는 경우에도 적용됩니다. 일치하지 않는 파일에 대한 알림을 받은 파이프는 이를 버리며, 다른 어떤 파이프도 해당 알림을 다시 볼 수 없습니다. 동일한 버킷에서 여러 ClickPipes로 수집하려면 각 ClickPipe마다 토픽에 별도의 subscription을 생성하십시오.
+    </Warning>
 
     **2.** 위에서 만든 Pub/Sub 토픽으로 [`OBJECT_FINALIZE` 이벤트](https://docs.cloud.google.com/storage/docs/pubsub-notifications)를 게시하도록 GCS 버킷 알림을 구성합니다.
 
@@ -42,9 +46,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 서비스 계정 구성
-
+  <Step title="서비스 계정 구성" id="configure-service-account">
     **1.** 지정된 버킷에서 ClickPipes가 객체를 나열하고 가져올 수 있으며, Pub/Sub subscription의 알림을 소비하고 모니터링할 수 있도록 [필요한 권한](/ko/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions)이 있는 [서비스 계정](http://docs.cloud.google.com/iam/docs/keys-create-delete)을 구성합니다.
 
     **1.1.** 이 단계는 Google Cloud Console, `gcloud` 클라이언트 또는 Google Cloud용 선호하는 프로그래밍 인터페이스를 사용해 수행할 수 있습니다. 예를 들어 `gcloud`를 사용하면 다음과 같습니다.
@@ -67,12 +69,10 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 비순차 모드로 ClickPipe 만들기
-
+  <Step title="비순차 모드로 ClickPipe 만들기" id="create-clickpipe">
     **1.** ClickHouse Cloud 콘솔에서 **Data Sources &gt; Create ClickPipe**로 이동한 다음 **Google Cloud Storage**를 선택합니다. GCS 버킷에 연결하는 데 필요한 세부 정보를 입력합니다. **Authentication method**에서 **Service Account**를 선택하고 `.json` 서비스 계정 키를 제공합니다.
 
-    **2.** **Continuous ingestion**을 켠 다음, 수집 모드로 **Any order**를 선택하고 버킷에 연결된 subscription의 **Pub/Sub subscription** 이름을 입력합니다. subscription 이름은 다음 형식을 따라야 합니다.
+    **2.** **Continuous ingestion**을 켠 다음, 수집 모드로 **Any order**를 선택하고 버킷에 연결된 subscription의 **Pub/Sub subscription** 이름을 입력합니다. 이 subscription은 이 ClickPipe에서만 단독으로 사용해야 합니다. [Google Cloud Pub/Sub 토픽 만들기](#create-pubsub-topic)를 참조하십시오. subscription 이름은 다음 형식을 따라야 합니다.
 
     ```text
     projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}

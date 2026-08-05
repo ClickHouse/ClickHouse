@@ -3,7 +3,7 @@ sidebarTitle: 'Introdução à tabela MergeTree'
 title: 'Crie sua primeira tabela MergeTree'
 useCases: ['All']
 products: ['Cloud']
-description: 'Aprenda como funciona o principal engine de tabela do ClickHouse criando uma tabela MergeTree, carregando dados de preços de imóveis do Reino Unido e observando como as partes e os merges afetam o armazenamento e o desempenho das consultas.'
+description: 'Aprenda como funciona o principal motor de tabela do ClickHouse criando uma tabela MergeTree, carregando dados de preços de imóveis do Reino Unido e observando como as partes e os merges afetam o armazenamento e o desempenho das consultas.'
 ---
 
 import BackToQuickstarts from '/get-started/quickstarts/_back-to-quickstarts.mdx'
@@ -39,9 +39,7 @@ Você definirá um esquema com tipos de coluna adequados, escolherá um `ORDER B
 Ao final, você entenderá por que o motor MergeTree é a base de quase todas as tabelas do ClickHouse e como suas decisões de ordenação e particionamento moldam diretamente o desempenho das consultas.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Entenda como o MergeTree funciona
-
+  <Step title="Entenda como o MergeTree funciona" id="understand-how-mergetree-works">
     Antes de escrever qualquer SQL, é útil entender o que torna o MergeTree diferente de uma tabela de banco de dados tradicional.
 
     Quando você insere dados em uma tabela MergeTree, o ClickHouse não grava as linhas uma a uma. Em vez disso, ele grava uma **parte de dados** — um pequeno bloco de linhas, ordenado e comprimido — diretamente no disco. Depois, o ClickHouse mescla essas partes em segundo plano ao longo do tempo. É daí que vem o nome: *merge* + *tree*.
@@ -59,9 +57,7 @@ Ao final, você entenderá por que o motor MergeTree é a base de quase todas as
     Agora você já deve conseguir explicar a relação entre partes de dados, a chave primária e o desempenho das consultas em uma tabela MergeTree.
   </Step>
 
-  <Step>
-    ### Visualize os dados de origem
-
+  <Step title="Visualize os dados de origem" id="preview-the-source-data">
     Antes de criar sua tabela, inspecione o arquivo de origem usando a função de tabela `s3`. Isso permite consultar o S3 diretamente, sem antes gravar nenhum dado no ClickHouse.
 
     Execute o seguinte no Console SQL:
@@ -89,9 +85,7 @@ Ao final, você entenderá por que o motor MergeTree é a base de quase todas as
     Verifique isso confirmando que você consegue ver linhas com colunas como `id`, `price`, `date`, `postcode`, `type`, `town` e `county`.
   </Step>
 
-  <Step>
-    ### Defina e crie sua tabela MergeTree
-
+  <Step title="Defina e crie sua tabela MergeTree" id="design-and-create-your-mergetree-table">
     Agora crie uma tabela permanente com um esquema apropriado. Os tipos de coluna abaixo foram escolhidos deliberadamente:
 
     * `LowCardinality(String)` é usado para colunas com poucos valores distintos (códigos postais, nomes de cidades, nomes de condados). Ele usa codificação por dicionário internamente, reduz drasticamente o armazenamento e melhora o desempenho de agrupamento e filtragem nessas colunas.
@@ -130,9 +124,7 @@ Ao final, você entenderá por que o motor MergeTree é a base de quase todas as
     Clique duas vezes na célula de resultado para inspecionar a saída completa. Observe que, embora você tenha especificado `ENGINE = MergeTree`, o ClickHouse Cloud criou a tabela com `SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')`. Isso é esperado — o Cloud converte automaticamente `MergeTree` em `SharedMergeTree`, adicionando suporte à replicação e ao armazenamento compartilhado. O comportamento e a interface de consulta permanecem os mesmos.
   </Step>
 
-  <Step>
-    ### Carregar dados do S3
-
+  <Step title="Carregar dados do S3" id="load-data-from-s3">
     Insira o conjunto de dados completo selecionando diretamente da função de tabela `s3()`. O ClickHouse transmite o arquivo comprimido do S3 e o grava na sua tabela em partes ordenadas.
 
     ```sql
@@ -170,9 +162,7 @@ Ao final, você entenderá por que o motor MergeTree é a base de quase todas as
     Você deverá ver cerca de 30 milhões de linhas carregadas.
   </Step>
 
-  <Step>
-    ### Inspecione as partes usando system.parts
-
+  <Step title="Inspecione as partes usando system.parts" id="inspect-parts-using-systemparts">
     É aqui que os componentes internos do MergeTree ficam visíveis. A tabela `system.parts` rastreia cada parte de dados no disco de cada tabela MergeTree no seu serviço.
 
     ```sql
@@ -211,9 +201,7 @@ Ao final, você entenderá por que o motor MergeTree é a base de quase todas as
     Se você executar esta consulta novamente daqui a algum tempo, poderá notar que a contagem de partes diminuiu. Esse é o *merge* do MergeTree em ação — o ClickHouse mescla continuamente partes menores em partes maiores em segundo plano, reduzindo o número de partes. O filtro `active = true` garante que você veja apenas as partes atuais, já mescladas, em vez de partes mais antigas que ainda estejam aguardando limpeza.
   </Step>
 
-  <Step>
-    ### Consulte os dados e observe o comportamento da chave primária
-
+  <Step title="Consulte os dados e observe o comportamento da chave primária" id="query-the-data-and-observe-primary-key-behaviour">
     Agora execute algumas consultas analíticas reais. Primeiro, encontre as vendas de maior valor já registradas:
 
     ```sql
@@ -264,7 +252,9 @@ Ao final, você entenderá por que o motor MergeTree é a base de quase todas as
   </Step>
 </Steps>
 
-## Próximos passos
+<div id="next-steps">
+  ## Próximos passos
+</div>
 
 Neste guia de início rápido, você criou uma tabela MergeTree do zero, carregou 30 milhões de registros de venda de imóveis do Reino Unido no S3, explorou como o ClickHouse organiza os dados em partes e partições ordenadas e executou consultas que demonstram o poder do índice de chave primária.
 

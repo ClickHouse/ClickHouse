@@ -105,6 +105,12 @@ struct FormatSettings
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
+    /// Read an unquoted number for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
+    /// `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
+    /// Restores the pre-26.8 behavior (see the `input_format_read_datetime_number_as_raw_value` setting). Also
+    /// set by the `YTsaurus` reader, whose `timestamp` types are stored as raw ticks, not seconds.
+    bool read_datetime_number_as_raw_value = false;
+
     enum class IntervalOutputFormat : uint8_t
     {
         Kusto,
@@ -190,8 +196,6 @@ struct FormatSettings
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
         bool output_unsupported_types_as_binary = true;
-        bool input_use_native_reader = true;
-        bool output_use_native_writer = true;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -357,6 +361,7 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
+        size_t dictionary_filter_push_down = 1024 * 1024;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
 
@@ -392,6 +397,7 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
+        bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
     } parquet{};
@@ -538,7 +544,6 @@ struct FormatSettings
         std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
-        bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";

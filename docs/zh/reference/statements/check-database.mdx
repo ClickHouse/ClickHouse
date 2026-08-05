@@ -1,0 +1,60 @@
+---
+description: 'CHECK DATABASE 文档'
+sidebarTitle: 'CHECK DATABASE'
+slug: /sql-reference/statements/check-database
+title: 'CHECK DATABASE 语句'
+doc_type: 'reference'
+---
+
+`CHECK DATABASE` 查询用于检查数据库的健康状况。
+
+它主要与 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎配合使用，用于检查作为该数据库后端的外部元数据目录是否可访问，以及是否能够获取其表列表。这是一种轻量级探测：它无需读取任何表数据，即可确认连接性和身份验证是否正常。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+查询的基本语法如下：
+
+```sql
+CHECK DATABASE database_name
+```
+
+* `database_name`：指定要检查的数据库名称。
+
+该查询不会返回结果集。如果检查成功，查询会正常完成且不会产生任何行。如果检查失败——例如，无法访问目录，或凭据已失效——查询会抛出一个描述失败原因的异常。
+
+<div id="behavior">
+  ## 行为
+</div>
+
+对于使用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 引擎的数据库，`CHECK DATABASE`：
+
+* 连接到外部目录 (例如 AWS Glue、Databricks Unity、Hive Metastore 或 Iceberg REST 目录) ，并获取其表列表。
+* 如果目录可访问且身份验证有效，则报告成功。
+* 不要求目录中必须包含任何表：即使目录为空，只要可访问，仍会被视为健康。
+
+对于未实现专用健康检查的数据库引擎，`CHECK DATABASE` 会直接成功完成，而不执行任何实际操作。
+
+执行 `CHECK DATABASE` 需要具备该 database 上的 `CHECK` 权限 (参见 [`GRANT`](/zh/reference/statements/grant)) 。
+
+<div id="examples">
+  ## 示例
+</div>
+
+查看名为 `datalake` 的 `DataLakeCatalog` 数据库：
+
+```sql title="Query"
+CHECK DATABASE datalake;
+```
+
+如果目录可访问且凭据有效，则查询会成功完成，并且不返回任何行。
+
+如果无法访问目录，则查询会抛出异常。具体消息取决于目录的类型以及底层故障 (例如，连接错误、`401 Unauthorized` 这类 HTTP 状态，或 DNS 解析失败) 。
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [`CHECK TABLE`](/zh/reference/statements/check-table)
+* [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake)

@@ -416,6 +416,17 @@ void ColumnArray::insertDefault()
 }
 
 
+void ColumnArray::insertManyDefaults(size_t length)
+{
+    /// Not IColumn::insertManyDefaults: its reserve(size() + length) would size the nested column for elements
+    /// that default arrays never hold, and ColumnArray::reserve passes that count down unchanged. Appending the
+    /// offsets grows them geometrically instead, so repeated calls stay amortized without reserving nested data.
+    auto last_offset = getOffsets().back();
+    for (size_t i = 0; i < length; ++i)
+        getOffsets().push_back(last_offset);
+}
+
+
 void ColumnArray::popBack(size_t n)
 {
     if (n > size())

@@ -35,7 +35,7 @@ title: データ型の対応
 **  [Variant 型](/ja/reference/data-types/variant) は `null` をフィールドの値として暗黙的に受け入れるため、たとえば Avro の `union(T1, T2, null)` は `Variant(T1, T2)` に変換されます。
 そのため、ClickHouse から Avro を生成する際は、スキーマ推論の段階では実際にどれかの値が `null` になるかどうか分からないため、Avro の `union` 型セットには常に `null` 型を含める必要があります。
 
-*** [Avro 論理型](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [Avro 論理型](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 サポートされていない Avro の論理データ型:
 

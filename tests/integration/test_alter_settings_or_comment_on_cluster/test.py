@@ -23,13 +23,22 @@ ch2 = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
 )
+ch3 = cluster.add_instance(
+    "ch3",
+    main_configs=[
+        "configs/config.d/clusters.xml",
+        "configs/config.d/distributed_ddl.xml",
+    ],
+    with_zookeeper=True,
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-        ch1.query("CREATE DATABASE test_db ON CLUSTER 'cluster'")
+        ch1.query("CREATE DATABASE test_db ON CLUSTER 'cluster_three'")
         yield cluster
     finally:
         cluster.shutdown()
@@ -61,6 +70,43 @@ def list_part_index_files(node, database, table, part_name):
     # The skip-index data file is .idx or .idx2 depending on the part format version;
     # the basename before the extension carries the escaping we care about.
     return sorted(f for f in files.splitlines() if f.endswith((".idx", ".idx2")))
+
+
+def get_latest_ddl_entry_with_query(zk, needle):
+    entries = sorted(
+        entry
+        for entry in zk.get_children("/clickhouse/task_queue/ddl")
+        if entry.startswith("query-")
+    )
+    for entry in reversed(entries):
+        value = zk.get(f"/clickhouse/task_queue/ddl/{entry}")[0]
+        if needle.encode() in value:
+            return entry
+    raise AssertionError(f"Could not find DDL entry containing {needle}")
+
+
+def wait_for_ddl_entry_failed_on_hosts(node, entry_path, expected_hosts):
+    node.query_with_retry(
+        f"""
+        SELECT count()
+        FROM system.zookeeper
+        WHERE path = '{entry_path}/finished'
+          AND position(value, 'Cannot execute replicated DDL query, maximum retries exceeded') > 0
+        """,
+        check_callback=lambda result: int(result.strip()) == expected_hosts,
+    )
+
+
+def wait_for_ddl_shard_max_tries_exceeded(node, shard_path):
+    node.query_with_retry(
+        f"""
+        SELECT count()
+        FROM system.zookeeper
+        WHERE path = '{shard_path}'
+          AND name = 'max_tries_exceeded'
+        """,
+        check_callback=lambda result: int(result.strip()) == 1,
+    )
 
 
 def wait_show_create(
@@ -300,10 +346,12 @@ def test_mixed_setting_escape_index_filenames_on_cluster(started_cluster):
     # PARTITION BY x so each replica writes its own part in its own partition; a part
     # keeps the index filenames of whoever wrote it, even after replication fetches it,
     # so inspecting a node's own partition isolates that node's in-memory policy.
+    # packed_skip_index_max_bytes = 0 keeps the index in its own skp_idx_<name>.idx2 file
+    # instead of the skp_idx.packed archive, which is what makes the filename observable.
     create_sql = (
         "CREATE TABLE escape_mixed (x UInt64, INDEX `idx-esc` x TYPE minmax GRANULARITY 1) "
         "ENGINE=ReplicatedMergeTree('{zk}', '{replica}') ORDER BY x PARTITION BY x "
-        "SETTINGS escape_index_filenames = 1, min_bytes_for_wide_part = 0"
+        "SETTINGS escape_index_filenames = 1, min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 0"
     )
     ch1.query(database="test_db", sql=create_sql.format(zk=zookeeper_path, replica="r1"))
     ch2.query(database="test_db", sql=create_sql.format(zk=zookeeper_path, replica="r2"))
@@ -343,3 +391,90 @@ def test_mixed_setting_escape_index_filenames_on_cluster(started_cluster):
         database="test_db",
         sql="DROP TABLE escape_mixed ON CLUSTER 'cluster' SYNC",
     )
+
+
+def test_exhausted_replicated_ddl_retries_allow_queue_to_continue(started_cluster):
+    zookeeper_path = "/clickhouse/tables/ddl_retry_poison"
+    create_sql = (
+        "CREATE TABLE ddl_retry_poison (id UInt64) "
+        "ENGINE=ReplicatedMergeTree('{zk}', '{replica}') ORDER BY id"
+    )
+    nodes = [(ch1, "r1"), (ch2, "r2"), (ch3, "r3")]
+    for node, replica in nodes:
+        node.query(
+            database="test_db",
+            sql=create_sql.format(zk=zookeeper_path, replica=replica),
+        )
+
+    seed_column = "seed_for_retry_poison"
+    poison_column = "poisoned_retry_column"
+    later_column = "after_poison_column"
+
+    ch1.query(
+        database="test_db",
+        sql=f"ALTER TABLE ddl_retry_poison ON CLUSTER 'cluster_three' ADD COLUMN {seed_column} UInt8",
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    seed_entry = get_latest_ddl_entry_with_query(zk, seed_column)
+    seed_path = f"/clickhouse/task_queue/ddl/{seed_entry}"
+    seed_data = zk.get(seed_path)[0]
+    shard_names = zk.get_children(f"{seed_path}/shards")
+    assert len(shard_names) == 1, shard_names
+
+    poison_path = None
+    stopped_nodes = []
+    try:
+        for node, _ in nodes:
+            if node.stop_clickhouse():
+                stopped_nodes.append(node)
+
+        poison_path = zk.create(
+            "/clickhouse/task_queue/ddl/query-",
+            seed_data.replace(seed_column.encode(), poison_column.encode()),
+            sequence=True,
+        )
+        zk.ensure_path(f"{poison_path}/active")
+        zk.ensure_path(f"{poison_path}/finished")
+        shard_path = f"{poison_path}/shards/{shard_names[0]}"
+        zk.ensure_path(shard_path)
+        tries_to_execute_path = f"{shard_path}/tries_to_execute"
+        max_tries_exceeded_path = f"{shard_path}/max_tries_exceeded"
+        zk.create(tries_to_execute_path, b"4")
+
+        for node, _ in nodes:
+            node.start_clickhouse()
+        stopped_nodes.clear()
+
+        wait_for_ddl_shard_max_tries_exceeded(ch1, shard_path)
+        assert zk.get(tries_to_execute_path)[0] == b"4"
+        assert zk.exists(max_tries_exceeded_path) is not None
+        assert zk.exists(poison_path) is not None
+
+        ch1.query(
+            f"ALTER TABLE test_db.ddl_retry_poison ON CLUSTER 'cluster_three' ADD COLUMN {later_column} UInt8",
+            settings={"distributed_ddl_task_timeout": 10},
+        )
+
+        wait_for_ddl_entry_failed_on_hosts(ch1, poison_path, expected_hosts=len(nodes))
+
+        for node, _ in nodes:
+            node.query_with_retry(
+                f"""
+                SELECT count()
+                FROM system.columns
+                WHERE database = 'test_db'
+                  AND table = 'ddl_retry_poison'
+                  AND name = '{later_column}'
+                """,
+                check_callback=lambda result: int(result.strip()) == 1,
+            )
+    finally:
+        for node in stopped_nodes:
+            node.start_clickhouse()
+        if poison_path is not None and zk.exists(poison_path):
+            zk.delete(poison_path, recursive=True)
+        ch1.query(
+            database="test_db",
+            sql="DROP TABLE IF EXISTS ddl_retry_poison ON CLUSTER 'cluster_three' SYNC",
+        )

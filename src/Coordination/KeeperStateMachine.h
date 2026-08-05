@@ -121,6 +121,9 @@ public:
         return *storage;
     }
 
+    /// Issues a lock-free MVCC-style read view of the storage container.
+    std::unique_ptr<KeeperNodesReadView> getStorageReadView() const;
+
     void shutdownStorage();
 
     ClusterConfigPtr getClusterConfig() const;

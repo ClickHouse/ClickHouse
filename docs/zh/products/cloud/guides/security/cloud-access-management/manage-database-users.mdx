@@ -26,9 +26,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 要为 SQL 控制台用户创建自定义角色并为其授予一个通用角色，请运行以下命令。电子邮件地址必须与用户在控制台中的电子邮件地址一致。
 
 <Steps>
-  <Step>
-    #### 创建 `database_developer` 并授予权限
-
+  <Step title={<>创建 <code>database_developer</code> 并授予权限</>} id="create-role-grant-permissions">
     创建 `database_developer` 角色，并授予 `SHOW`、`CREATE`、`ALTER` 和 `DELETE` 权限。
 
     ```sql
@@ -40,9 +38,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### 创建 SQL 控制台用户角色
-
+  <Step title="创建 SQL 控制台用户角色" id="create-sql-console-user-role">
     为 SQL 控制台用户 my.user@domain.com 创建一个角色，并为其分配 database&#95;developer 角色。
 
     ```sql
@@ -51,9 +47,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### 用户使用 SQL 控制台时会被分配该新角色
-
+  <Step title="用户使用 SQL 控制台时会被分配该新角色" id="use-assigned-new-role">
     用户每次使用 SQL 控制台时，都会被分配与其电子邮件地址关联的角色。
   </Step>
 </Steps>
@@ -98,9 +92,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 使用 SQL [GRANT](/zh/reference/statements/grant) 语句在服务和数据库中配置以下权限。
 
-| Role    | Description                                          |
-| :------ | :--------------------------------------------------- |
-| Default | 对服务具有完全管理权限                                          |
+| Role    | Description                                             |
+| :------ | :------------------------------------------------------ |
+| Default | 对服务具有完全管理权限                                             |
 | Custom  | 使用 SQL [`GRANT`](/zh/reference/statements/grant) 语句进行配置 |
 
 * 数据库角色的权限是累加的。这意味着，如果某个用户同时属于两个角色，那么该用户将拥有这两个角色中级别更高的访问权限。添加角色不会导致其失去现有访问权限。
@@ -137,9 +131,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 以下流程可用于生成组织内 SQL 控制台和数据库的完整访问权限清单。
 
 <Steps>
-  <Step>
-    #### 获取所有数据库授权列表
-
+  <Step title="获取所有数据库授权列表" id="get-a-list-of-all-database-grants">
     运行以下查询，获取数据库中所有授权的列表。
 
     ```sql
@@ -165,9 +157,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
     ```
   </Step>
 
-  <Step>
-    #### 将授权列表与有权访问 SQL 控制台的 控制台 用户对应起来
-
+  <Step title="将授权列表与有权访问 SQL 控制台的 控制台 用户对应起来" id="associate-grant-list-to-console-users-with-access-to-sql-console">
     将此列表与有权访问 SQL 控制台的 控制台 用户对应起来。
 
     a. 前往 控制台。
@@ -186,4 +176,4 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   ## 仓库用户
 </div>
 
-同一仓库中的各个服务共享同一组仓库用户。更多信息，请参阅[仓库访问控制](/zh/products/cloud/features/infrastructure/warehouses#access-controls)。
+仓库用户在同一仓库内的各个服务之间共享。更多信息，请参阅[仓库访问控制](/zh/products/cloud/features/infrastructure/warehouses#access-controls)。

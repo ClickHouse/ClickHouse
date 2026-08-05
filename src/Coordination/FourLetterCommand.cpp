@@ -333,12 +333,14 @@ String MonitorCommand::run()
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    auto max_file_descriptor_count = getMaxFileDescriptorCount();
-    if (max_file_descriptor_count.has_value())
-        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
-    else
-        print(ret, "max_file_descriptor_count", -1);
+    /// An undetermined value is reported as the textual `-1`, as ZooKeeper does.
+    /// It must not go through the `uint64_t` overload of `print`: `-1` would wrap around
+    /// to 2^64 - 1, which is indistinguishable from an unlimited `RLIMIT_NOFILE` (`RLIM_INFINITY`).
+    const Int64 open_file_descriptor_count = getCurrentProcessFDCount();
+    print(ret, "open_file_descriptor_count", toString(open_file_descriptor_count));
+
+    const auto max_file_descriptor_count = getMaxFileDescriptorCount();
+    print(ret, "max_file_descriptor_count", max_file_descriptor_count.has_value() ? toString(*max_file_descriptor_count) : String("-1"));
 #endif
 
     if (keeper_info.is_leader)

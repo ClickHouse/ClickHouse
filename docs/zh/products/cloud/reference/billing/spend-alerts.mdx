@@ -35,23 +35,19 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 打开支出告警对话框
-
+  <Step title="打开支出告警对话框" id="open-spend-alerts-dialog">
     1. 在 ClickHouse Cloud 控制台中前往 **Organization &gt; Billing**。
     2. 点击 **Actions &gt; Add spend alerts**。
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" size="lg" alt="Billing 页面中已打开 Actions 菜单，并高亮显示 Add spend alerts" />
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Billing 页面中已打开 Actions 菜单，并高亮显示 Add spend alerts" size="lg" />
   </Step>
 
-  <Step>
-    ### 配置并保存告警
-
+  <Step title="配置并保存告警" id="configure-and-save">
     1. 输入每个计费周期的支出告警金额，单位可以是美元或 credits。
     2. 选择通知渠道：**Email**、**UI** 和/或 **Slack**。
     3. 点击 **Save**。
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" size="md" alt="组织支出告警对话框，包含支出上限、自动阈值告警和通知渠道" />
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="组织支出告警对话框，包含支出上限、自动阈值告警和通知渠道" size="md" />
   </Step>
 </Steps>
 
@@ -61,12 +57,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 系统会根据你配置的支出告警金额，自动创建并触发四条告警：
 
-| 阈值       | 触发条件     | 示例 ($10 告警) |
-| -------- | -------- | ----------- |
-| **50%**  | 支出达到一半   | $5          |
-| **75%**  | 支出达到四分之三 | $8          |
-| **90%**  | 支出达到 90% | $9          |
-| **100%** | 支出达到全部金额 | $10         |
+| 阈值       | 触发条件      | 示例 ($10 告警) |
+| -------- | --------- | ----------- |
+| **50%**  | 支出达到一半    | $5          |
+| **75%**  | 支出达到四分之三  | $8          |
+| **90%**  | 支出达到百分之九十 | $9          |
+| **100%** | 支出达到全部金额  | $10         |
 
 <div id="notification-channels">
   ## 通知渠道

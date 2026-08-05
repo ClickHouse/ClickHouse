@@ -67,7 +67,7 @@ TEST(BitPackedUInt64Array, BlockBoundaries)
 TEST(BitPackedUInt64Array, IncreasingOffsets)
 {
     /// Emulates offsets in a file: steadily increasing with variable steps.
-    std::mt19937_64 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
+    std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
     std::vector<UInt64> values;
     UInt64 current = 0;
 
@@ -82,7 +82,7 @@ TEST(BitPackedUInt64Array, IncreasingOffsets)
 
 TEST(BitPackedUInt64Array, RandomValues)
 {
-    std::mt19937_64 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
+    std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
     std::vector<UInt64> values;
 
     for (size_t i = 0; i < 10000; ++i)

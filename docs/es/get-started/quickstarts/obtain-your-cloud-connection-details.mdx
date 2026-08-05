@@ -15,10 +15,10 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">Analítica en tiempo real</Badge>
+  <Badge size="lg" color="blue">Análisis en tiempo real</Badge>
   <Badge size="lg" color="blue">Data warehousing</Badge>
   <Badge size="lg" color="blue">Observabilidad</Badge>
-  <Badge size="lg" color="blue">AI/ML</Badge>
+  <Badge size="lg" color="blue">IA/ML</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
 
@@ -40,17 +40,13 @@ En esta guía de inicio rápido aprenderás a localizar los detalles de conexió
 Al final, sabrás dónde encontrar estos datos en la consola de Cloud y cómo verificar la conectividad con un sencillo comando `curl`, para que puedas conectarte desde herramientas como `clickhouse-local`, `clickhouse-client` o cualquier driver de ClickHouse.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Abre la consola de Cloud
-
+  <Step title="Abre la consola de Cloud" id="open-the-cloud-console">
     Ve a la [consola de ClickHouse Cloud](https://console.clickhouse.cloud/) e inicia sesión en tu cuenta.
 
     En el panel principal, localiza el servicio al que quieres conectarte. Si el servicio está inactivo, haz clic en él y espera a que se reactive antes de continuar; necesitarás que esté en ejecución para verificar la conectividad en un paso posterior.
   </Step>
 
-  <Step>
-    ### Encuentra tus detalles de conexión
-
+  <Step title="Encuentra tus detalles de conexión" id="find-your-connection-details">
     Haz clic en tu servicio para abrir su página de detalles y, a continuación, haz clic en el botón **Connect** de la barra lateral izquierda:
 
     <img className="block dark:hidden w-2/3 mx-auto" src="/images/get-started/quickstarts/connect-light.webp" alt="Botón Connect en la consola de ClickHouse Cloud (modo claro)" />
@@ -77,9 +73,7 @@ Al final, sabrás dónde encontrar estos datos en la consola de Cloud y cómo ve
     </Note>
   </Step>
 
-  <Step>
-    ### Comprende los protocolos de conexión
-
+  <Step title="Comprende los protocolos de conexión" id="understand-the-connection-protocols">
     ClickHouse Cloud expone dos protocolos de red principales, cada uno en su propio puerto:
 
     * **Protocolo nativo (puerto 9440)** - Un protocolo binario utilizado por `clickhouse-client`, `clickhouse-local` y la mayoría de los drivers específicos de cada lenguaje. Es la opción más rápida y admite todas las funcionalidades de ClickHouse. TLS es obligatorio en Cloud.
@@ -90,9 +84,7 @@ Al final, sabrás dónde encontrar estos datos en la consola de Cloud y cómo ve
     Para la mayoría de las guías de inicio rápido y los flujos de trabajo de CLI de esta serie, usarás el **protocolo nativo en el puerto 9440**.
   </Step>
 
-  <Step>
-    ### Guarda tus detalles de conexión para reutilizarlos
-
+  <Step title="Guarda tus detalles de conexión para reutilizarlos" id="save-your-connection-details-for-reuse">
     Usarás estos detalles de conexión con frecuencia en las guías de inicio rápido. Para no tener que volver a escribirlos cada vez, puedes exportarlos como variables de entorno en tu sesión de terminal:
 
     ```bash
@@ -111,7 +103,9 @@ Al final, sabrás dónde encontrar estos datos en la consola de Cloud y cómo ve
   </Step>
 </Steps>
 
-## Siguientes pasos
+<div id="next-steps">
+  ## Siguientes pasos
+</div>
 
 Ahora ya tienes todos los detalles de conexión necesarios para conectarte a tu servicio de ClickHouse Cloud desde cualquier herramienta externa. El hostname, el puerto, el nombre de usuario y la contraseña que encontraste aquí se usarán en el resto de la serie de guías de inicio rápido.
 

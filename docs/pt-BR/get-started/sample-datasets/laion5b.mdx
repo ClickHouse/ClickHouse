@@ -24,7 +24,7 @@ busca vetorial em grande escala. Ele pode ser usado tanto para buscas de texto p
   ## Detalhes do conjunto de dados
 </div>
 
-O conjunto de dados completo está disponível como uma combinação de arquivos `npy` e `Parquet` em [the-eye.eu](https://the-eye.eu/public/AI/cah/laion5b/)
+O conjunto de dados completo pode ser baixado usando [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
 
 O ClickHouse disponibilizou um subconjunto de 100 milhões de vetores em um bucket `S3`.
 O bucket `S3` contém 10 arquivos `Parquet`, cada um com 10 milhões de linhas.
@@ -36,9 +36,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
 </div>
 
 <Steps>
-  <Step>
-    ### Criar tabela
-
+  <Step title="Criar tabela" id="create-table">
     Crie a tabela `laion_5b_100m` para armazenar os embeddings e os atributos associados:
 
     ```sql
@@ -67,9 +65,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     a busca por similaridade vetorial combinada com pós-filtragem/pré-filtragem, conforme explicado na [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step>
-    ### Carregue os dados
-
+  <Step title="Carregue os dados" id="load-table">
     Para carregar os dados de todos os arquivos `Parquet`, execute a seguinte instrução SQL:
 
     ```sql
@@ -87,9 +83,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     ```
   </Step>
 
-  <Step>
-    ### Executar uma busca de similaridade vetorial por força bruta
-
+  <Step title="Executar uma busca de similaridade vetorial por força bruta" id="run-a-brute-force-vector-similarity-search">
     A busca KNN (k - Nearest Neighbours) ou busca por força bruta consiste em calcular a distância de cada vetor no conjunto de dados
     em relação ao embedding de busca e, em seguida, ordenar as distâncias para obter os vizinhos mais próximos. Podemos usar um dos vetores
     do próprio conjunto de dados como vetor de busca. Por exemplo:
@@ -100,11 +94,11 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
     LIMIT 20
 
-    O vetor na linha com id = 9999 é o embedding de uma imagem de um restaurante Deli.
+    The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
     ```
 
     ```response title="Response" highlight={24}
-    ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+        ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
      1. │     9999 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts.jpg                                                                                                                                  │
      2. │ 60180509 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts-686x353.jpg                                                                                                                          │
      3. │  1986089 │ https://www.gannett-cdn.com/-mm-/ceefab710d945bb3432c840e61dce6c3712a7c0a/c=30-0-4392-3280/local/-/media/2017/02/14/FortMyers/FortMyers/636226855169587730-McAlister-s-Exterior-Signage.jpg?width=534&amp;height=401&amp;fit=crop │
@@ -134,9 +128,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     Com 100 milhões de linhas, a consulta acima sem um índice vetorial pode levar alguns segundos ou minutos para ser concluída.
   </Step>
 
-  <Step>
-    ### Criar um índice de similaridade vetorial
-
+  <Step title="Criar um índice de similaridade vetorial" id="build-vector-similarity-index">
     Execute a instrução SQL a seguir para definir e criar um índice de similaridade vetorial na coluna `vector` da tabela `laion_5b_100m`:
 
     ```sql
@@ -153,9 +145,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     A compilação e o salvamento do índice podem até levar algumas horas para o conjunto de dados completo de 100 milhões, dependendo do número de núcleos de CPU disponíveis e da largura de banda do armazenamento.
   </Step>
 
-  <Step>
-    ### Execute a busca ANN
-
+  <Step title="Execute a busca ANN" id="perform-ann-search">
     Depois que o índice de similaridade vetorial tiver sido criado, as consultas de busca vetorial usarão automaticamente o índice:
 
     ```sql title="Query"
@@ -169,9 +159,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     O primeiro carregamento do índice vetorial na memória pode levar alguns segundos/minutos.
   </Step>
 
-  <Step>
-    ### Gerar embeddings para consulta de Busca
-
+  <Step title="Gerar embeddings para consulta de Busca" id="generating-embeddings-for-search-query">
     Os vetores de embedding do dataset `LAION 5b` foram gerados com o modelo `OpenAI CLIP` `ViT-L/14`.
 
     Um script Python de exemplo é fornecido abaixo para demonstrar como gerar programaticamente
@@ -190,21 +178,21 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = clip.load("ViT-L/14", device=device)
 
-    # Buscar imagens que contenham tanto um cachorro quanto um gato
+    # Search for images that contain both a dog and a cat
     text = clip.tokenize(["a dog and a cat"]).to(device)
 
     with torch.no_grad():
         text_features = model.encode_text(text)
         np_arr = text_features.detach().cpu().numpy()
 
-        # Insira as credenciais do ClickHouse aqui
+        # Pass ClickHouse credentials here
         chclient = clickhouse_connect.get_client()
 
         params = {'v1': list(np_arr[0])}
         result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
                                 parameters=params)
 
-        # Escrever os resultados em uma página HTML simples que pode ser aberta no navegador. Alguns URLs podem ter se tornado obsoletos.
+        # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
         print("<html>")
         for r in result.result_rows:
             print("<img src = ", r[1], 'width="200" height="200">')

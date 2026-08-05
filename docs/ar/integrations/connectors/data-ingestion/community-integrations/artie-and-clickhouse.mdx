@@ -26,32 +26,26 @@ Artie هي طبقة البنية التحتية الحديثة للبيانات 
 تستخدم شركات رائدة مثل ClickUp وSubstack وAlloy منصة Artie ليس فقط لمعالجة مشكلات مسارات البيانات الحالية، بل أيضًا لتهيئة مكدس البيانات لديها للمستقبل مع تسارع استراتيجية الذكاء الاصطناعي الخاصة بها.
 
 <Steps>
-  <Step>
-    ## أنشئ حسابًا على Artie
-
+  <Step title="أنشئ حسابًا على Artie" id="1-create-an-artie-account">
     انتقل إلى <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a> وأكمل النموذج لطلب الوصول.
 
     <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="صفحة التسجيل في Artie" />
   </Step>
 
-  <Step>
-    ## اعثر على بيانات اعتماد ClickHouse الخاصة بك
-
+  <Step title="اعثر على بيانات اعتماد ClickHouse الخاصة بك" id="2-find-your-clickhouse-credentials">
     بعد إنشاء خدمة في ClickHouse Cloud، اعثر على الإعدادات المطلوبة التالية:
 
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ## أنشئ مسار بيانات جديدًا في Artie
-
+  <Step title="أنشئ مسار بيانات جديدًا في Artie" id="3-create-a-new-pipeline-in-artie">
     انتقل إلى Artie باستخدام المعلومات التي جمعتها من الخطوات السابقة، وأنشئ مسار بيانات جديدًا باتباع عملية من 3 خطوات.
 
     1. **صِل مصدرك** - قم بإعداد قاعدة البيانات المصدر الخاصة بك (Postgres أو MySQL أو Events API، وما إلى ذلك)
     2. **اختر الجداول التي تريد نسخها** - حدّد الجداول التي تريد مزامنتها مع ClickHouse
     3. **صِل وجهتك** - أدخل بيانات اعتماد ClickHouse الخاصة بك
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="واجهة Edit Pipeline في Artie" />
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="واجهة Edit مسار بيانات في Artie" />
   </Step>
 </Steps>
 

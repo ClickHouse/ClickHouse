@@ -22,9 +22,7 @@ Esta guía ofrece una configuración sencilla y mínima para que ClickHouse use 
 </Note>
 
 <Steps>
-  <Step>
-    ## Crear una implementación de ClickHouse
-
+  <Step title="Crear una implementación de ClickHouse" id="1-create-a-clickhouse-deployment">
     Esta guía se redactó con Ubuntu 20.04 y con ClickHouse instalado en los siguientes hosts mediante el paquete DEB (con apt). El dominio es `marsnet.local`:
 
     | Host      | Dirección IP  |
@@ -38,9 +36,7 @@ Esta guía ofrece una configuración sencilla y mínima para que ClickHouse use 
     </Note>
   </Step>
 
-  <Step>
-    ## Crear certificados TLS
-
+  <Step title="Crear certificados TLS" id="2-create-tls-certificates">
     <Note>
       El uso de certificados autofirmados es solo con fines de demostración y no debería usarse en producción. Las solicitudes de certificados deben crearse para que las firme la organización y validarse mediante la cadena de la CA que se configurará en la configuración. No obstante, estos pasos pueden usarse para configurar y probar la configuración, y luego reemplazarse por los certificados reales que se vayan a utilizar.
     </Note>
@@ -90,9 +86,7 @@ Esta guía ofrece una configuración sencilla y mínima para que ClickHouse use 
        ```
   </Step>
 
-  <Step>
-    ## Cree y configure un directorio para almacenar certificados y claves.
-
+  <Step title="Cree y configure un directorio para almacenar certificados y claves." id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
     <Note>
       Esto debe hacerse en cada nodo. Use los certificados y las claves apropiados en cada host.
     </Note>
@@ -123,9 +117,7 @@ Esta guía ofrece una configuración sencilla y mínima para que ClickHouse use 
        ```
   </Step>
 
-  <Step>
-    ## Configurar el entorno con clústeres básicos mediante ClickHouse Keeper
-
+  <Step title="Configurar el entorno con clústeres básicos mediante ClickHouse Keeper" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
     Para este entorno de implementación, se utilizan las siguientes configuraciones de ClickHouse Keeper en cada nodo. Cada servidor tendrá su propio `<server_id>`. (Por ejemplo, `<server_id>1</server_id>` para el nodo `chnode1`, y así sucesivamente.)
 
     <Note>
@@ -250,9 +242,7 @@ Esta guía ofrece una configuración sencilla y mínima para que ClickHouse use 
        ```
   </Step>
 
-  <Step>
-    ## Configurar interfaces TLS en nodos de ClickHouse
-
+  <Step title="Configurar interfaces TLS en nodos de ClickHouse" id="5-configure-tls-interfaces-on-clickhouse-nodes">
     Los ajustes que aparecen a continuación se configuran en el `config.xml` del servidor ClickHouse
 
     1. Establezca el nombre para mostrar de la implementación (opcional):
@@ -359,9 +349,7 @@ Esta guía ofrece una configuración sencilla y mínima para que ClickHouse use 
        ```
   </Step>
 
-  <Step>
-    ## Pruebas
-
+  <Step title="Pruebas" id="6-testing">
     1. Inicie todos los nodos, uno por uno:
        ```bash
        service clickhouse-server start
@@ -400,7 +388,7 @@ Esta guía ofrece una configuración sencilla y mínima para que ClickHouse use 
        | 9444                 | puerto Raft de ClickHouse Keeper   |
 
     3. Verifique el estado de ClickHouse Keeper
-       Los comandos típicos de [4 letter word (4lW)](/es/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) no funcionarán con `echo` sin TLS. A continuación se explica cómo usar estos comandos con `openssl`.
+       Los comandos típicos de [4 letter word (4lW)](/es/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) no funcionan con `echo` sin TLS. A continuación se explica cómo usar estos comandos con `openssl`.
        * Inicie una sesión interactiva con `openssl`
 
     ```bash

@@ -1,7 +1,10 @@
 -- Regression test: a backquoted lambda argument whose name contains a dot
--- (e.g. `__table1.`) used to abort the server with Logical error '!part.empty()'
+-- (e.g. `__table1.`) used to abort the server on the failed assertion `!part.empty()`
 -- when the query tree was converted back to AST for an error message.
 -- The lambda argument name is atomic, so it must not be split on '.'.
+-- NOTE: the comments here deliberately avoid the literal wording of the assertion-failure
+-- log message: the expected errors below echo the query text (comments included) into the
+-- server log, and the CI log checker would report that wording as a genuine failure.
 
 -- A type mismatch forces the analyzer to format the offending expression as AST,
 -- which is where the abort happened. Now it must be a clean exception, server stays up.

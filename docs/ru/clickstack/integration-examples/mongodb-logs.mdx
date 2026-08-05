@@ -33,9 +33,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Доступ к файлам журналов MongoDB
 
 <Steps>
-  <Step>
-    #### Проверьте конфигурацию логирования MongoDB
-
+  <Step title="Проверьте конфигурацию логирования MongoDB" id="verify-mongodb">
     MongoDB 4.4+ по умолчанию выводит структурированные логи в формате JSON. Проверьте путь к файлу журнала:
 
     ```bash
@@ -60,17 +58,15 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     После изменения конфигурации перезапустите MongoDB:
 
     ```bash
-    # Для systemd
+    # For systemd
     sudo systemctl restart mongod
 
-    # Для Docker
+    # For Docker
     docker restart <mongodb-container>
     ```
   </Step>
 
-  <Step>
-    #### Создайте пользовательскую конфигурацию OTel collector для MongoDB
-
+  <Step title="Создайте пользовательскую конфигурацию OTel collector для MongoDB" id="custom-otel">
     ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, смонтировав пользовательский файл конфигурации и задав переменную окружения. Пользовательская конфигурация объединяется с базовой конфигурацией, которой HyperDX управляет через OpAMP.
 
     Создайте файл с именем `mongodb-monitoring.yaml` со следующей конфигурацией:
@@ -134,9 +130,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Настройка ClickStack для загрузки пользовательской конфигурации
-
+  <Step title="Настройка ClickStack для загрузки пользовательской конфигурации" id="load-custom">
     Чтобы включить пользовательскую конфигурацию коллектора в существующем развертывании ClickStack, необходимо:
 
     1. Смонтировать пользовательский файл конфигурации в `/etc/otelcol-contrib/custom.config.yaml`
@@ -180,9 +174,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Проверьте журналы в HyperDX
-
+  <Step title="Проверьте журналы в HyperDX" id="verifying-logs">
     После настройки войдите в HyperDX и убедитесь, что журналы поступают:
 
     <Image img="/images/clickstack/mongodb/search-view.webp" alt="Экран поиска журналов MongoDB" />
@@ -198,9 +190,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Протестируйте интеграцию MongoDB с заранее подготовленным демо-набором данных, прежде чем настраивать свои промышленные системы.
 
 <Steps>
-  <Step>
-    #### Скачайте демо-набор данных
-
+  <Step title="Скачайте демо-набор данных" id="download-sample">
     Скачайте пример файла журнала:
 
     ```bash
@@ -208,9 +198,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Создайте тестовую конфигурацию коллектора
-
+  <Step title="Создайте тестовую конфигурацию коллектора" id="test-config">
     Создайте файл `mongodb-demo.yaml` со следующей конфигурацией:
 
     ```yaml
@@ -269,9 +257,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Запустите ClickStack с демо-конфигурацией
-
+  <Step title="Запустите ClickStack с демо-конфигурацией" id="run-demo">
     Запустите ClickStack с демо-журналами и этой конфигурацией:
 
     ```bash
@@ -302,13 +288,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
+  <Step title="Скачать конфигурацию панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Импорт преднастроенной панели мониторинга
-
+  <Step title="Импорт преднастроенной панели мониторинга" id="import-dashboard">
     1. Откройте HyperDX и перейдите в раздел Dashboards.
     2. Нажмите &quot;Import Dashboard&quot; в правом верхнем углу в меню с многоточием.
 
@@ -319,9 +303,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Завершение импорта панели мониторинга журналов MongoDB" />
   </Step>
 
-  <Step>
-    #### Панель мониторинга будет создана со всеми преднастроенными визуализациями
-
+  <Step title="Панель мониторинга будет создана со всеми преднастроенными визуализациями" id="created-dashboard">
     Для демо-набора данных установите временной диапазон **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="Панель мониторинга журналов MongoDB" />
@@ -368,7 +350,7 @@ tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
 * Создайте дополнительные [панели мониторинга](/ru/clickstack/features/dashboards/overview) для конкретных сценариев использования (мониторинг наборов реплик, отслеживание подключений)
 
 <div id="going-to-production">
-  ## Переход к продакшену
+  ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для продакшен-развертываний мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), чтобы настроить конфигурацию для продакшена.
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) для настройки продакшна.

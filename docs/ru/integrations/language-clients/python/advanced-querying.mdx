@@ -468,7 +468,7 @@ client.query('SELECT device_id, dev_address, gw_address from devices', column_fo
 | file&#95;path | str               | Путь к файлу в локальной файловой системе, из которого считываются внешние данные. Необходимо указать либо `file_path`, либо `data`                          |
 | file&#95;name | str               | Имя &quot;файла&quot; внешних данных. Если не указано, будет определено по `file_path` (без расширения)                                                      |
 | data          | bytes             | Внешние данные в двоичной форме (вместо чтения из файла). Необходимо указать либо `data`, либо `file_path`                                                   |
-| fmt           | str               | [Входной формат](/ru/reference/formats/index) ClickHouse для данных. По умолчанию используется `TSV`                                                            |
+| fmt           | str               | [Входной формат](/ru/reference/formats) ClickHouse для данных. По умолчанию используется `TSV`                                                                  |
 | types         | str or seq of str | Список типов данных столбцов во внешних данных. Если передана строка, типы должны быть разделены запятыми. Необходимо указать либо `types`, либо `structure` |
 | structure     | str or seq of str | Список имен столбцов и типов данных в данных (см. примеры). Необходимо указать либо `structure`, либо `types`                                                |
 | mime&#95;type | str               | Необязательный MIME-тип данных файла. В настоящее время ClickHouse игнорирует этот HTTP-подзаголовок                                                         |

@@ -21,7 +21,7 @@ Los S3 ClickPipes pueden desplegarse y gestionarse manualmente mediante la UI de
 | **Amazon S3**                                      | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="logo de Amazon S3" width="32" />  | La ingestión continua requiere [orden lexicográfico](#continuous-ingestion-lexicographical-order) de forma predeterminada, pero puede configurarse para [ingestar archivos en cualquier orden](#continuous-ingestion-any-order). |
 | **Cloudflare R2** <br /> *Compatible con S3*       | <img src="/images/integrations/logos/cloudflare.svg" alt="logo de Cloudflare R2" width="32" />  | La ingestión continua requiere [orden lexicográfico](#continuous-ingestion-lexicographical-order). El modo no ordenado no es compatible.                                                                                         |
 | **DigitalOcean Spaces** <br /> *Compatible con S3* | <img src="/images/integrations/logos/digitalocean.svg" alt="logo de DigitalOcean" width="32" /> | La ingestión continua requiere [orden lexicográfico](#continuous-ingestion-lexicographical-order). El modo no ordenado no es compatible.                                                                                         |
-| **OVH Object Storage** <br /> *Compatible con S3*  | <img src="/images/integrations/logos/ovh.webp" alt="logo de Cloud Storage" width="32" />         | La ingestión continua requiere [orden lexicográfico](#continuous-ingestion-lexicographical-order). El modo no ordenado no es compatible.                                                                                         |
+| **OVH Object Storage** <br /> *Compatible con S3*  | <img src="/images/integrations/logos/ovh.webp" alt="logo de Cloud Storage" width="32" />        | La ingestión continua requiere [orden lexicográfico](#continuous-ingestion-lexicographical-order). El modo no ordenado no es compatible.                                                                                         |
 
 <Tip>
   Debido a las diferencias en los formatos de URL y las implementaciones de API entre los proveedores de servicios de almacenamiento de objetos, no todos los servicios compatibles con S3 son compatibles de inmediato. Si tienes problemas con un servicio que no aparece en la lista anterior, [ponte en contacto con nuestro equipo](https://clickhouse.com/company/contact?loc=clickpipes).
@@ -189,7 +189,7 @@ Al usar el [modo no ordenado](#continuous-ingestion-any-order), SQS debe permiti
 
 Para usar [claves de acceso](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) para autenticarse, selecciona `Credentials` en **Método de autenticación** al configurar tu conexión de ClickPipe. Luego, introduce el ID de la clave de acceso (por ejemplo, `AKIAIOSFODNN7EXAMPLE`) y la clave de acceso secreta (por ejemplo, `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) en `Access key` y `Secret key`, respectivamente.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="Credenciales de IAM para ClickPipes de S3" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="Credenciales de IAM para S3 ClickPipes" size="lg" border />
 
 <div id="iam-role">
   #### IAM role
@@ -227,18 +227,18 @@ Los ClickPipes de S3 usan dos rutas de red distintas para el descubrimiento de m
 
 ClickPipes ofrece valores predeterminados adecuados para cubrir los requisitos de la mayoría de los casos de uso. Si su caso de uso requiere un ajuste más fino, puede modificar la siguiente configuración:
 
-| Configuración                        | Valor predeterminado | Descripción                                                                                                                                                    |
-| ------------------------------------ | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB                 | Número de bytes que se procesan en un único lote de inserción.                                                                                                 |
-| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                       |
+| Configuración                        | Valor predeterminado | Descripción                                                                                                                                                       |
+| ------------------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB                 | Número de bytes que se procesan en un único lote de inserción.                                                                                                    |
+| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                          |
 | `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings#max_threads) para el procesamiento de archivos.                                     |
 | `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings#max_insert_threads) para el procesamiento de archivos.                 |
 | `Min insert block size bytes`        | 1GB                  | [Tamaño mínimo, en bytes, del bloque](/es/reference/settings/session-settings#min_insert_block_size_bytes) que se puede insertar en una tabla.                    |
 | `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings#max_download_threads).                                                  |
-| `Object storage polling interval`    | 30s                  | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                     |
+| `Object storage polling interval`    | 30s                  | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                        |
 | `Parallel distributed insert select` | 2                    | [Configuración de inserción distribuida paralela con select](/es/reference/settings/session-settings#parallel_distributed_insert_select).                         |
 | `Parallel view processing`           | false                | Indica si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true                 | Indica si los archivos se procesan en paralelo en varios nodos.                                                                                                |
+| `Use cluster function`               | true                 | Indica si los archivos se procesan en paralelo en varios nodos.                                                                                                   |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
 

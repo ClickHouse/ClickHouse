@@ -8,7 +8,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-Начиная с ClickHouse 25.7, в [ClickHouse Client](/ru/concepts/features/interfaces/cli) и [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) доступна [функциональность на базе ИИ](/ru/concepts/features/interfaces/cli#ai-sql-generation), которая преобразует описания на естественном языке в SQL-запросы. Эта возможность позволяет описывать требования к данным обычным текстом, после чего система преобразует их в соответствующие SQL-операторы.
+Начиная с ClickHouse 25.7, в [ClickHouse Client](/ru/concepts/features/interfaces/cli) и [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) доступна [функциональность на базе ИИ](/ru/concepts/features/interfaces/client#ai-sql-generation), которая преобразует описания на естественном языке в SQL-запросы. Эта возможность позволяет описывать требования к данным обычным текстом, после чего система преобразует их в соответствующие SQL-операторы.
 
 Эта возможность особенно полезна, если вы не знакомы со сложным синтаксисом SQL или вам нужно быстро создавать запросы для исследовательского анализа данных. Функция работает со стандартными таблицами ClickHouse и поддерживает распространённые шаблоны запросов, включая фильтрацию, агрегацию и JOIN.
 
@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY=your_api_key
 export OPENAI_API_KEY=your_api_key
 ```
 
-Либо вы можете [указать файл конфигурации](/ru/concepts/features/interfaces/cli#ai-sql-generation-configuration).
+Либо вы можете [указать файл конфигурации](/ru/concepts/features/interfaces/client#ai-sql-generation-configuration).
 
 <div id="connecting-to-the-clickhouse-sql-playground">
   ## Подключение к Песочнице ClickHouse

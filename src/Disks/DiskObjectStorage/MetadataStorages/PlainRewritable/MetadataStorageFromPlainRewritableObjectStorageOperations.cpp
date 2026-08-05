@@ -341,8 +341,10 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}', size: {}", path, object.bytes_size);
 
-    if (!fs_tree->existsFile(path))
-        fs_tree->recordFile(path, {object.bytes_size, std::time(nullptr)});
+    if (fs_tree->existsFile(path))
+        fs_tree->removeFile(path);
+
+    fs_tree->recordFile(path, {object.bytes_size, std::time(nullptr)});
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(

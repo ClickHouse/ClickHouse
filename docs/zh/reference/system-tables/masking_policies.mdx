@@ -6,15 +6,13 @@ title: 'system.masking_policies'
 doc_type: 'reference'
 ---
 
-import CloudOnlyBadge from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
-<CloudOnlyBadge />
-
 <div id="description">
   ## 说明
 </div>
 
 包含系统中定义的所有脱敏策略相关信息。
+
+脱敏策略只能在 ClickHouse Cloud 中创建和应用。在开源构建中，`system.masking_policies` 表始终为空，但该表仍然存在，以便 `SHOW MASKING POLICIES` 这类内部信息查询能够正常工作，并返回空结果而不是抛出异常。
 
 <div id="columns">
   ## 列

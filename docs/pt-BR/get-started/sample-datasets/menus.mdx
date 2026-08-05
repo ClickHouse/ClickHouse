@@ -1,35 +1,35 @@
 ---
-description: 'Conjunto de dados com 1,3 milhão de registros de dados históricos sobre os cardápios
+description: 'dataset com 1,3 milhão de registros de dados históricos sobre os cardápios
   de hotéis, restaurantes e cafés, com os pratos e seus respectivos preços.'
-sidebarTitle: 'Conjunto de dados "what''s on the menu?" da New York Public Library'
+sidebarTitle: 'dataset "what''s on the menu?" da New York Public Library'
 slug: /getting-started/example-datasets/menus
-title: 'Conjunto de dados "What''s on the Menu?" da New York Public Library'
+title: 'dataset "What''s on the Menu?" da New York Public Library'
 doc_type: 'guide'
-keywords: ['conjunto de dados de exemplo', 'cardápios', 'dados históricos', 'dados de amostra', 'nypl']
+keywords: ['dataset de exemplo', 'cardápios', 'dados históricos', 'dados de amostra', 'nypl']
 ---
 
-Este conjunto de dados foi criado pela New York Public Library. Ele contém dados históricos sobre os cardápios de hotéis, restaurantes e cafés, com os pratos e seus respectivos preços.
+Este dataset foi criado pela New York Public Library. Ele contém dados históricos sobre os cardápios de hotéis, restaurantes e cafés, com os pratos e seus respectivos preços.
 
-Fonte: http://menus.nypl.org/data
+Fonte: https://www.nypl.org/research/support/whats-on-the-menu
 Os dados são de domínio público.
 
 Os dados vêm do acervo da biblioteca e podem estar incompletos, além de serem difíceis de usar em análises estatísticas. Ainda assim, também dão água na boca.
 São apenas 1,3 milhão de registros sobre pratos em cardápios — um volume de dados muito pequeno para o ClickHouse, mas ainda assim um bom exemplo.
 
 <div id="download-dataset">
-  ## Baixe o conjunto de dados
+  ## Baixe o dataset
 </div>
 
 Execute o comando:
 
 ```bash
 wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
-# Opção: Validar o checksum
+# Option: Validate the checksum
 md5sum 2021_08_01_07_01_17_data.tgz
-# O checksum deve ser igual a: db6126724de939a5481e3160a2d67d15
+# Checksum should be equal to: db6126724de939a5481e3160a2d67d15
 ```
 
-Substitua o link pelo link atualizado de http://menus.nypl.org/data, se necessário.
+Substitua o link pelo link atualizado de https://www.nypl.org/research/support/whats-on-the-menu, se necessário.
 O download tem cerca de 35 MB.
 
 <div id="unpack-dataset">

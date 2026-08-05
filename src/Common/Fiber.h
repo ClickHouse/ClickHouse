@@ -45,11 +45,9 @@ public:
         current_fiber = parent_fiber;
     }
 
-    static FiberPtr & getCurrentFiber()
-    {
-        thread_local static FiberPtr current_fiber;
-        return current_fiber;
-    }
+    /// Defined in `Fiber.cpp`: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static FiberPtr & getCurrentFiber();
 
 private:
     template <typename Fn>

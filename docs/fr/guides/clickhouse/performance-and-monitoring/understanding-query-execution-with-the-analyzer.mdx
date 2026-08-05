@@ -72,10 +72,10 @@ Chaque nœud a des nœuds enfants, et l’ensemble de l’arbre représente la s
   ## Analyseur
 </div>
 
-ClickHouse dispose actuellement de deux architectures pour l’analyseur. Vous pouvez utiliser l’ancienne architecture en définissant : `enable_analyzer=0`. La nouvelle architecture est activée par défaut. Nous ne décrirons ici que la nouvelle architecture, puisque l’ancienne sera dépréciée lorsque le nouvel analyseur sera officiellement disponible.
+ClickHouse dispose actuellement de deux architectures pour l’analyseur. Vous pouvez utiliser l’ancienne architecture en définissant : `enable_analyzer=0`. L’architecture actuelle est activée par défaut depuis ClickHouse `24.3`. Nous ne décrirons ici que l’architecture actuelle, puisque l’ancienne est dépréciée et n’est conservée que pour la compatibilité descendante.
 
 <Note>
-  La nouvelle architecture devrait nous offrir un meilleur cadre pour améliorer les performances de ClickHouse. Cependant, comme il s’agit d’un composant fondamental du traitement des requêtes, elle peut aussi avoir un impact négatif sur certaines requêtes, et il existe des [incompatibilités connues](/fr/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). Vous pouvez revenir à l’ancien analyseur en modifiant le paramètre `enable_analyzer` au niveau de la requête ou de l’utilisateur.
+  L’architecture actuelle devrait nous offrir un meilleur cadre pour améliorer les performances de ClickHouse. Cependant, comme il s’agit d’un composant fondamental du traitement des requêtes, elle peut aussi avoir un impact négatif sur certaines requêtes, et il existe des [incompatibilités connues](/fr/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). Vous pouvez revenir à l’ancienne architecture en modifiant le paramètre `enable_analyzer` au niveau de la requête ou de l’utilisateur.
 </Note>
 
 L’analyseur est une étape importante de l’exécution des requêtes. Il prend un AST et le transforme en arbre de requête. Le principal avantage d’un arbre de requête par rapport à un AST est que de nombreux composants y sont résolus, comme le stockage, par exemple. On sait également dans quelle table lire, les alias sont aussi résolus, et l’arbre connaît les différents types de données utilisés. Grâce à tout cela, l’analyseur peut appliquer des optimisations. Ces optimisations fonctionnent au moyen de « passes ». Chaque passe recherche différents types d’optimisation. Vous pouvez voir toutes les passes [ici](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249) ; voyons cela en pratique avec notre requête précédente :
@@ -347,9 +347,9 @@ digraph
 }
 ```
 
-Vous pouvez ensuite copier cette sortie et la coller [ici](https://dreampuf.github.io/GraphvizOnline), ce qui générera le graph suivant :
+Vous pouvez ensuite copier cette sortie et la coller [ici](https://dreampuf.github.io/GraphvizOnline), ce qui générera le graphe suivant :
 
-<Image img="/images/guides/developer/analyzer3.webp" alt="Sortie du graph" size="md" />
+<Image img="/images/guides/developer/analyzer3.webp" alt="Sortie du graphe" size="md" />
 
 Un rectangle blanc correspond à un nœud du pipeline, le rectangle gris aux étapes du plan de requête, et le `x` suivi d’un nombre indique le nombre d’entrées/sorties utilisées. Si vous ne souhaitez pas les afficher sous une forme compacte, vous pouvez toujours ajouter `compact=0` :
 

@@ -83,7 +83,6 @@ CREATE TABLE git.commits
   * https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line&#95;changes.tsv.xz - 127.4 MB
 * Linux (8 ноября 2022 г.)
   * https://datasets-documentation.s3.amazonaws.com/github/commits/linux/commits.tsv.xz - 44 MB
-  * https://datasets-documentation.s3.amazonaws.com/github/commits/linux/file&#95;changes.tsv.xz - 467MB
   * https://datasets-documentation.s3.amazonaws.com/github/commits/linux/line&#95;changes.tsv.xz - 1.1G
 
 Чтобы выполнить вставку этих данных, подготовьте базу данных, выполнив следующие запросы:
@@ -1360,7 +1359,7 @@ LIMIT 100
 │ Anton Popov          │ Amos Bird        │  2127 │
 └──────────────────────┴──────────────────┴───────┘
 
-20 строк в наборе. Прошло: 0.098 сек. Обработано 7.54 миллиона строк, 42.16 МБ (76.67 миллиона строк/с., 428.99 МБ/с.)
+20 строка в наборе. прошлый: 0.098 sec. обработанный 7.54 million rows, 42.16 MB (76.67 million rows/s., 428.99 MB/s.)
 ```
 
 Диаграмма Санки (SuperSet) позволяет наглядно это показать. Обратите внимание: мы увеличиваем `LIMIT BY` до 3, чтобы получить трёх основных удаляющих код для каждого автора и сделать визуализацию более разнообразной.

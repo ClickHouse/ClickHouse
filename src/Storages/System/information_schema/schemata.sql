@@ -13,7 +13,11 @@ ATTACH VIEW schemata
     `DEFAULT_CHARACTER_SET_CATALOG` Nullable(String),
     `DEFAULT_CHARACTER_SET_SCHEMA` Nullable(String),
     `DEFAULT_CHARACTER_SET_NAME` Nullable(String),
-    `SQL_PATH` Nullable(String)
+    `SQL_PATH` Nullable(String),
+    `default_collation_name` String,
+    `default_encryption` String,
+    `DEFAULT_COLLATION_NAME` String,
+    `DEFAULT_ENCRYPTION` String
 )
 SQL SECURITY INVOKER
 AS SELECT
@@ -30,5 +34,10 @@ AS SELECT
     default_character_set_catalog AS DEFAULT_CHARACTER_SET_CATALOG,
     default_character_set_schema  AS DEFAULT_CHARACTER_SET_SCHEMA,
     default_character_set_name    AS DEFAULT_CHARACTER_SET_NAME,
-    sql_path                      AS SQL_PATH
+    sql_path                      AS SQL_PATH,
+    -- MySQL-compatibility columns, appended after the standard columns to preserve their ordinal positions
+    'utf8mb4_0900_ai_ci'          AS default_collation_name, -- MySQL-specific; must match the collation advertised in the MySQL handshake (`CharacterSet::utf8mb4_0900_ai_ci` in `MySQLHandler`)
+    'NO'                          AS default_encryption,      -- MySQL-specific
+    default_collation_name        AS DEFAULT_COLLATION_NAME,
+    default_encryption            AS DEFAULT_ENCRYPTION
 FROM system.databases

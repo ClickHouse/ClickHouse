@@ -1523,7 +1523,7 @@ This comparison is case-sensitive and unused fields are skipped.
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the corresponding column type.
 
-While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/reference/settings/formats#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
+While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 
 ### Writing Avro data {#writing-avro-data}
 
@@ -1538,7 +1538,7 @@ Column names must:
 - Start with `[A-Za-z_]`
 - Be followed by only `[A-Za-z0-9_]`
 
-The output compression and sync interval for Avro files can be configured using the [`output_format_avro_codec`](/reference/settings/formats#output_format_avro_codec) and [`output_format_avro_sync_interval`](/reference/settings/formats#output_format_avro_sync_interval) settings, respectively.
+The output compression and sync interval for Avro files can be configured using the [`output_format_avro_codec`](/reference/settings/formats/output-format#output_format_avro_codec) and [`output_format_avro_sync_interval`](/reference/settings/formats/output-format#output_format_avro_sync_interval) settings, respectively.
 
 ### Inferring the Avro schema {#inferring-the-avro-schema}
 

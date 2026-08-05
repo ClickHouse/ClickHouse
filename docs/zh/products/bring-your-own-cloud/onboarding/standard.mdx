@@ -42,16 +42,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 在您的组织下准备一个全新的 AWS 账户、GCP 项目或 Azure 订阅。
 
 <Steps>
-  <Step>
-    ### 选择云提供商
-
+  <Step title="选择云提供商" id="choose-cloud-provider">
     <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
   </Step>
 
-  <Step>
-    ### 账户/项目/订阅设置
-
-    初始 BYOC 设置既可通过 [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)，也可通过 [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) 或 [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) 完成。该步骤会创建一个高权限身份 (IAM 角色/服务账号/服务主体) ，使 ClickHouse Cloud 的 BYOC 控制器能够管理您的基础设施。
+  <Step title="账户/项目/订阅设置" id="account-setup">
+    初始 BYOC 设置既可通过 [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)，也可通过 [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) 或 [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) 完成。该步骤会创建一个高权限身份 (IAM 角色/服务账号/服务主体)，使 ClickHouse Cloud 的 BYOC 控制器能够管理您的基础设施。
 
     <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
 
@@ -73,16 +69,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### 设置 BYOC 基础设施
-
+  <Step title="设置 BYOC 基础设施" id="setup-byoc-infrastructure">
     系统会提示您在 ClickHouse Cloud 控制台中设置基础设施，包括对象存储桶、VPC/VNet 和 Kubernetes 集群。某些配置必须在此阶段确定，因为后续无法更改。具体包括：
 
-    * **区域**：我们的 [supported regions](/zh/products/cloud/reference/supported-regions) 文档中列出的所有**公共区域**均可用于 BYOC 部署。目前暂不支持私有区域。
+    * **区域**：我们的 [supported regions](/zh/products/cloud/reference/supported-regions) 文档中列出的所有**公网区域**均可用于 BYOC 部署。目前暂不支持私有区域。
 
-    * **VPC/VNet CIDR 范围**：默认情况下，我们使用 `10.0.0.0/16` 作为 BYOC 的 VPC (AWS/GCP) 或 VNet (Azure) CIDR 范围。如果您计划与另一个账户建立 VPC/VNet peering，请确保 CIDR 范围不重叠。请为 BYOC 分配合适的 CIDR 范围，最小为 `/23`，以容纳所需的工作负载。
+    * **VPC/VNet CIDR 范围**：默认情况下，我们使用 `10.0.0.0/16` 作为 BYOC VPC (AWS/GCP) 或 VNet (Azure) 的 CIDR 范围。如果您计划与另一个账户建立 VPC/VNet peering，请确保 CIDR 范围不重叠。请为 BYOC 分配合适的 CIDR 范围，最小为 `/23`，以容纳所需的工作负载。
 
-    * **Availability Zones**：如果您计划使用 VPC peering，使源账户与 BYOC 账户的可用区对齐，有助于降低跨可用区流量成本。例如，在 AWS 中，可用区后缀 (`a`、`b`、`c`) 在不同账户之间可能对应不同的物理可用区 ID。详情请参阅 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
+    * **Availability Zones**：如果您计划使用 VPC peering，使源账户与 BYOC 账户的可用区保持一致，有助于降低跨可用区流量成本。例如，在 AWS 中，可用区后缀 (`a`、`b`、`c`) 在不同账户之间可能对应不同的物理可用区 ID。详情请参阅 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background="black" />
   </Step>

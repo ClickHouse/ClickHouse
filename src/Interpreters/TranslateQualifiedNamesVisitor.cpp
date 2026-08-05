@@ -1,3 +1,4 @@
+#include <Interpreters/applyColumnsTransformer.h>
 #include <Poco/String.h>
 
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -308,7 +309,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (asterisk->transformers)
             {
                 for (const auto & transformer : asterisk->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                    applyColumnsTransformer(transformer, columns);
             }
         }
         else if (auto * asterisk_column_list = child->as<ASTColumnsListMatcher>())
@@ -319,7 +320,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (asterisk_column_list->transformers)
             {
                 for (const auto & transformer : asterisk_column_list->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                    applyColumnsTransformer(transformer, columns);
             }
         }
         else if (const auto * asterisk_regexp_pattern = child->as<ASTColumnsRegexpMatcher>())
@@ -347,7 +348,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (asterisk_regexp_pattern->transformers)
             {
                 for (const auto & transformer : asterisk_regexp_pattern->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                    applyColumnsTransformer(transformer, columns);
             }
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
@@ -367,7 +368,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (qualified_asterisk->transformers)
             {
                 for (const auto & transformer : qualified_asterisk->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                    applyColumnsTransformer(transformer, columns);
             }
         }
         else if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
@@ -396,7 +397,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (qualified_columns_regexp_matcher->transformers)
             {
                 for (const auto & transformer : qualified_columns_regexp_matcher->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                    applyColumnsTransformer(transformer, columns);
             }
         }
         else

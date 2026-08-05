@@ -142,12 +142,12 @@ LIMIT 5
 O ponto principal aqui é que estatísticas agregadas de votos para cada post seriam suficientes para a maioria das análises - não precisamos desnormalizar todas as informações de votos. Por exemplo, a coluna `Score` atual representa esse tipo de estatística, ou seja, o total de votos positivos menos os votos negativos. Idealmente, poderíamos simplesmente recuperar essas estatísticas no momento da consulta com um simples lookup (consulte [dicionários](/pt-BR/concepts/features/dictionaries/index)).
 
 <div id="users-and-badges">
-  ### Users e Badges
+  ### Users e Insígnias
 </div>
 
 Agora vamos considerar `Users` e `Badges`:
 
-<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Esquema de Users e Badges" />
+<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Esquema de Users e Insígnias" />
 
 <p />
 
@@ -221,7 +221,7 @@ SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
 
 Provavelmente não é realista desnormalizar 19 mil objetos em uma única linha. Talvez seja melhor manter essa relação em tabelas separadas ou acrescentar estatísticas.
 
-> Talvez queiramos desnormalizar estatísticas de medalhas para usuários, por exemplo, o número de medalhas. Consideramos esse exemplo ao usar dicionários para esse conjunto de dados no momento da inserção.
+> Talvez queiramos desnormalizar estatísticas de insígnias para usuários, por exemplo, o número de insígnias. Consideramos esse exemplo ao usar dicionários para esse conjunto de dados no momento da inserção.
 
 <div id="posts-and-postlinks">
   ### Posts e PostLinks
@@ -417,4 +417,4 @@ Os usuários têm várias opções para orquestrar isso no ClickHouse, desde que
   ### Streaming
 </div>
 
-Como alternativa, você pode fazer isso fora do ClickHouse, antes da inserção, usando tecnologias de streaming, como [Apache Flink](/pt-BR/integrations/connectors/data-ingestion/apache-flink). Outra opção é usar [visões materializadas](/pt-BR/concepts/features/materialized-views/cascading-materialized-views) incrementais para realizar esse processo à medida que os dados são inseridos.
+Como alternativa, talvez você prefira fazer isso fora do ClickHouse, antes da inserção, usando tecnologias de streaming como [Apache Flink](/pt-BR/integrations/connectors/data-ingestion/apache-flink). Também é possível usar [visões materializadas](/pt-BR/concepts/features/materialized-views/cascading-materialized-views) incrementais para executar esse processo à medida que os dados são inseridos.

@@ -24,9 +24,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 クエリ API エンドポイントを呼び出せるクライアントを制限するには、次の手順に従います。
 
 <Steps>
-  <Step>
-    #### API キーの設定を開く
-
+  <Step title="API キーの設定を開く" id="open-settings">
     1. ClickHouse Cloud Console → **Organization** → **API Keys** に移動します
 
     <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API Keys" />
@@ -36,9 +34,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Edit" />
   </Step>
 
-  <Step>
-    #### 許可する IP アドレスを追加する
-
+  <Step title="許可する IP アドレスを追加する" id="add-ips">
     1. **Allow access to this API Key** セクションで、**Specific locations** を選択します
     2. IP アドレスまたは CIDR 範囲 (例: `203.0.113.1` または `203.0.113.0/24`) を入力します
     3. 必要に応じて複数のエントリを追加します

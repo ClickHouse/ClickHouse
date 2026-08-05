@@ -507,7 +507,7 @@ SYSTEM STOP MERGES;
 
 4. 선택 사항이지만 권장됩니다. ZooKeeper 리더 노드를 찾은 다음, 시작했다가 다시 중지합니다. 이렇게 하면 변환 전에 ZooKeeper가 일관된 스냅샷을 디스크에 기록하도록 할 수 있습니다.
 
-5. 리더 노드에서 `clickhouse-keeper-converter`를 실행합니다. 전체 ClickHouse 실행 파일이 설치되어 있다면 대신 `keeper-converter` 하위 명령(`clickhouse keeper-converter`)을 사용합니다. 둘 다 사용할 수 없으면 [실행 파일을 다운로드](/ko/getting-started/quick-start/oss#install-clickhouse)합니다.
+5. 리더 노드에서 `clickhouse-keeper-converter`를 실행합니다. 전체 ClickHouse 실행 파일이 설치되어 있다면 대신 `keeper-converter` 하위 명령(`clickhouse keeper-converter`)을 사용합니다. 둘 다 사용할 수 없으면 [실행 파일을 다운로드](/ko/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl)합니다.
 
 ```bash
 clickhouse-keeper-converter \
@@ -779,270 +779,266 @@ ClickHouse Cloud의 [Prometheus 통합](/ko/products/cloud/features/monitoring/p
 
 이 가이드는 분산 작업을 테스트하는 방법에 대한 예시와 함께 ClickHouse Keeper를 구성하는 데 필요한 간단한 최소 설정을 제공합니다. 이 예시는 Linux에서 3개의 노드를 사용해 수행합니다.
 
-<div id="1-configure-nodes-with-keeper-settings">
-  ### 1. Keeper 설정으로 노드 구성하기
-</div>
+<Steps>
+  <Step title="Keeper 설정으로 노드 구성하기" id="1-configure-nodes-with-keeper-settings">
+    1. 3개의 호스트(`chnode1`, `chnode2`, `chnode3`)에 ClickHouse 인스턴스 3개를 설치합니다. (ClickHouse 설치에 관한 자세한 내용은 [Quick Start](/ko/get-started/setup/install)를 참조하십시오.)
 
-1. 3개의 호스트(`chnode1`, `chnode2`, `chnode3`)에 ClickHouse 인스턴스 3개를 설치합니다. (ClickHouse 설치에 관한 자세한 내용은 [Quick Start](/ko/get-started/setup/install)를 참조하십시오.)
+    2. 각 노드에 네트워크 인터페이스를 통해 외부와 통신할 수 있도록 다음 항목을 추가합니다.
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
 
-2. 각 노드에 네트워크 인터페이스를 통해 외부와 통신할 수 있도록 다음 항목을 추가합니다.
-   ```xml
-   <listen_host>0.0.0.0</listen_host>
-   ```
+    3. 다음 ClickHouse Keeper 구성을 3대의 서버 모두에 추가하고, 각 서버의 `<server_id>` 설정값을 서버에 맞게 업데이트하십시오. 예를 들어 `chnode1`은 `1`, `chnode2`는 `2`로 설정합니다.
 
-3. 다음 ClickHouse Keeper 구성을 3대의 서버 모두에 추가하고, 각 서버의 `<server_id>` 설정값을 서버에 맞게 업데이트하십시오. 예를 들어 `chnode1`은 `1`, `chnode2`는 `2`로 설정합니다.
+       ```xml
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
-   ```xml
-   <keeper_server>
-       <tcp_port>9181</tcp_port>
-       <server_id>1</server_id>
-       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
-       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <coordination_settings>
+               <operation_timeout_ms>10000</operation_timeout_ms>
+               <session_timeout_ms>30000</session_timeout_ms>
+               <raft_logs_level>warning</raft_logs_level>
+           </coordination_settings>
 
-       <coordination_settings>
-           <operation_timeout_ms>10000</operation_timeout_ms>
-           <session_timeout_ms>30000</session_timeout_ms>
-           <raft_logs_level>warning</raft_logs_level>
-       </coordination_settings>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>chnode1.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>2</id>
+                   <hostname>chnode2.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>3</id>
+                   <hostname>chnode3.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       ```
 
-       <raft_configuration>
-           <server>
-               <id>1</id>
-               <hostname>chnode1.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>2</id>
-               <hostname>chnode2.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>3</id>
-               <hostname>chnode3.domain.com</hostname>
-               <port>9234</port>
-           </server>
-       </raft_configuration>
-   </keeper_server>
-   ```
+       위에서 사용한 기본 설정은 다음과 같습니다:
 
-   위에서 사용한 기본 설정은 다음과 같습니다:
+       | 매개변수                      | 설명                                         | 예시                                |
+       | ------------------------- | ------------------------------------------ | --------------------------------- |
+       | tcp&#95;port              | ClickHouse Keeper 클라이언트가 사용할 포트            | ZooKeeper의 2181에 해당하는 기본 포트 9181  |
+       | server&#95;id             | raft 구성에서 사용하는 각 ClickHouse Keeper 서버의 식별자 | 1                                 |
+       | coordination&#95;settings | timeout 등의 매개변수를 지정하는 섹션                   | timeouts: 10000, log level: trace |
+       | server                    | 참여하는 서버의 정의                                | 각 서버 정의 목록                        |
+       | raft&#95;configuration    | keeper cluster의 각 서버에 대한 설정                | 각 서버의 server 및 settings           |
+       | id                        | Keeper 서비스용 서버의 숫자 ID                      | 1                                 |
+       | hostname                  | keeper cluster에 있는 각 서버의 호스트명, IP 또는 FQDN  | `chnode1.domain.com`              |
+       | port                      | 서버 간 Keeper 연결에 사용할 수신 포트                  | 9234                              |
 
-   | 매개변수                      | 설명                                         | 예시                                |
-   | ------------------------- | ------------------------------------------ | --------------------------------- |
-   | tcp&#95;port              | ClickHouse Keeper 클라이언트가 사용할 포트            | ZooKeeper의 2181에 해당하는 기본 포트 9181  |
-   | server&#95;id             | raft 구성에서 사용하는 각 ClickHouse Keeper 서버의 식별자 | 1                                 |
-   | coordination&#95;settings | timeout 등의 매개변수를 지정하는 섹션                   | timeouts: 10000, log level: trace |
-   | server                    | 참여하는 서버의 정의                                | 각 서버 정의 목록                        |
-   | raft&#95;configuration    | keeper cluster의 각 서버에 대한 설정                | 각 서버의 server 및 settings           |
-   | id                        | Keeper 서비스용 서버의 숫자 ID                      | 1                                 |
-   | hostname                  | keeper cluster에 있는 각 서버의 호스트명, IP 또는 FQDN  | `chnode1.domain.com`              |
-   | port                      | 서버 간 Keeper 연결에 사용할 수신 포트                  | 9234                              |
+    4. Zookeeper 컴포넌트를 활성화합니다. ClickHouse Keeper 엔진을 사용합니다:
 
-4. Zookeeper 컴포넌트를 활성화합니다. ClickHouse Keeper 엔진을 사용합니다:
+       ```xml
+           <zookeeper>
+               <node>
+                   <host>chnode1.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode2.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode3.domain.com</host>
+                   <port>9181</port>
+               </node>
+           </zookeeper>
+       ```
 
-   ```xml
-       <zookeeper>
-           <node>
-               <host>chnode1.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode2.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode3.domain.com</host>
-               <port>9181</port>
-           </node>
-       </zookeeper>
-   ```
+       위에서 사용한 기본 설정은 다음과 같습니다:
 
-   다음은 위에서 사용한 기본 설정입니다:
+       | 매개변수 | 설명                                       | 예시                   |
+       | ---- | ---------------------------------------- | -------------------- |
+       | node | ClickHouse Keeper 연결을 위한 노드 목록           | 각 서버별 설정 항목          |
+       | host | 각 ClickHouse Keeper 노드의 호스트명, IP 또는 FQDN | `chnode1.domain.com` |
+       | port | ClickHouse Keeper 클라이언트 포트               | 9181                 |
 
-   | 매개변수 | 설명                                       | 예시                   |
-   | ---- | ---------------------------------------- | -------------------- |
-   | node | ClickHouse Keeper 연결을 위한 노드 목록           | 각 서버별 설정 항목          |
-   | host | 각 ClickHouse Keeper 노드의 호스트명, IP 또는 FQDN | `chnode1.domain.com` |
-   | port | ClickHouse Keeper 클라이언트 포트               | 9181                 |
+    5. ClickHouse를 다시 시작하고 각 Keeper 인스턴스가 실행 중인지 확인합니다. 각 서버에서 다음 명령을 실행하십시오. `ruok` 명령은 Keeper가 실행 중이며 정상 상태이면 `imok`를 반환합니다:
+       ```bash
+       # echo ruok | nc localhost 9181; echo
+       imok
+       ```
 
-5. ClickHouse를 다시 시작하고 각 Keeper 인스턴스가 실행 중인지 확인합니다. 각 서버에서 다음 명령을 실행하십시오. `ruok` 명령은 Keeper가 실행 중이며 정상 상태이면 `imok`를 반환합니다:
-   ```bash
-   # echo ruok | nc localhost 9181; echo
-   imok
-   ```
+    6. `system` 데이터베이스에는 ClickHouse Keeper 인스턴스의 세부 정보가 들어 있는 `zookeeper`라는 테이블(table)이 있습니다. 이 테이블을 살펴보겠습니다:
 
-6. `system` 데이터베이스에는 ClickHouse Keeper 인스턴스의 세부 정보가 들어 있는 `zookeeper`라는 테이블(table)이 있습니다. 이 테이블을 살펴보겠습니다:
+       ```sql
+       SELECT *
+       FROM system.zookeeper
+       WHERE path IN ('/', '/clickhouse')
+       ```
 
-   ```sql
-   SELECT *
-   FROM system.zookeeper
-   WHERE path IN ('/', '/clickhouse')
-   ```
+       테이블은 다음과 같습니다:
 
-   테이블은 다음과 같습니다:
+       ```response
+       ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+       │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+       │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+       │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+       └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+       ```
+  </Step>
 
-   ```response
-   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
-   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
-   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
-   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
-   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
-   ```
+  <Step title="ClickHouse에서 클러스터 구성하기" id="2--configure-a-cluster-in-clickhouse">
+    1. 2개의 세그먼트와 각 세그먼트당 1개의 레플리카로 구성된 단순한 cluster를 2개의 노드에 구성해 보겠습니다. 세 번째 노드는 ClickHouse Keeper의 요구 사항에서 quorum을 충족하는 데 사용됩니다. `chnode1` 및 `chnode2`의 구성을 업데이트합니다. 다음 cluster는 각 노드에 1개의 세그먼트를 정의하므로 총 2개의 세그먼트가 되며 복제는 없습니다. 이 예시에서는 일부 데이터는 한 노드에 저장되고, 나머지는 다른 노드에 저장됩니다:
 
-<div id="2--configure-a-cluster-in-clickhouse">
-  ### 2.  ClickHouse에서 클러스터 구성하기
-</div>
+       ```xml
+           <remote_servers>
+               <cluster_2S_1R>
+                   <shard>
+                       <replica>
+                           <host>chnode1.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+                   <shard>
+                       <replica>
+                           <host>chnode2.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+               </cluster_2S_1R>
+           </remote_servers>
+       ```
 
-1. 2개의 세그먼트와 2개 노드에 각각 레플리카 1개만 있는 단순한 클러스터를 구성해 보겠습니다. 세 번째 노드는 ClickHouse Keeper 요구 사항의 쿼럼을 충족하는 데 사용됩니다. `chnode1` 및 `chnode2`의 구성을 업데이트하십시오. 다음 클러스터는 각 노드에 1개의 세그먼트를 정의하므로 총 2개의 세그먼트가 되며 복제는 없습니다. 이 예시에서는 일부 데이터는 한 노드에, 나머지 데이터는 다른 노드에 저장됩니다:
+       | Parameter | Description                              | Example              |
+       | --------- | ---------------------------------------- | -------------------- |
+       | shard     | cluster 정의에 포함된 레플리카 목록                  | 각 세그먼트의 레플리카 목록      |
+       | replica   | 각 레플리카에 대한 설정 목록                         | 각 레플리카의 설정 항목        |
+       | host      | 레플리카 세그먼트를 호스팅할 서버의 호스트명, IP 또는 FQDN     | `chnode1.domain.com` |
+       | port      | 네이티브 TCP protocol을 사용해 통신할 때 사용하는 포트     | 9000                 |
+       | user      | cluster 인스턴스에 인증할 때 사용할 username         | default              |
+       | password  | cluster 인스턴스 연결을 허용하도록 정의된 사용자의 password | `ClickHouse123!`     |
 
-   ```xml
-       <remote_servers>
-           <cluster_2S_1R>
-               <shard>
-                   <replica>
-                       <host>chnode1.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-               <shard>
-                   <replica>
-                       <host>chnode2.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-           </cluster_2S_1R>
-       </remote_servers>
-   ```
+    2. ClickHouse를 다시 시작하고 cluster가 생성되었는지 확인합니다:
 
-   | 매개변수     | 설명                                   | 예시                   |
-   | -------- | ------------------------------------ | -------------------- |
-   | shard    | 클러스터 정의에 포함된 레플리카 목록                 | 각 세그먼트의 레플리카 목록      |
-   | replica  | 각 레플리카에 대한 설정 목록                     | 각 레플리카의 설정 항목        |
-   | host     | 레플리카 세그먼트를 호스팅할 서버의 호스트명, IP 또는 FQDN | `chnode1.domain.com` |
-   | port     | 네이티브 TCP 프로토콜로 통신할 때 사용하는 포트         | 9000                 |
-   | user     | 클러스터 인스턴스에 인증할 때 사용할 사용자 이름          | default              |
-   | password | 클러스터 인스턴스 연결을 허용하도록 정의된 사용자의 비밀번호    | `ClickHouse123!`     |
+       ```sql
+       SHOW clusters;
+       ```
 
-2. ClickHouse를 다시 시작하고 클러스터가 생성되었는지 확인하십시오:
+       cluster가 표시되어야 합니다:
 
-   ```sql
-   SHOW clusters;
-   ```
+       ```response
+       ┌─cluster───────┐
+       │ cluster_2S_1R │
+       └───────────────┘
+       ```
+  </Step>
 
-   다음과 같이 클러스터가 표시되어야 합니다:
+  <Step title="분산 테이블 생성 및 테스트" id="3-create-and-test-distributed-table">
+    1. `chnode1`에서 clickhouse client를 사용해 새 cluster에 새 데이터베이스를 생성합니다. `ON CLUSTER` 절은 두 노드에 데이터베이스를 자동으로 생성합니다.
+       ```sql
+       CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+       ```
 
-   ```response
-   ┌─cluster───────┐
-   │ cluster_2S_1R │
-   └───────────────┘
-   ```
+    2. `db1` 데이터베이스에 새 테이블을 생성합니다. 다시 한 번, `ON CLUSTER`는 두 노드에 테이블을 생성합니다.
+       ```sql
+       CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+       (
+           `id` UInt64,
+           `column1` String
+       )
+       ENGINE = MergeTree
+       ORDER BY column1
+       ```
 
-<div id="3-create-and-test-distributed-table">
-  ### 3. 분산 테이블 생성 및 테스트
-</div>
+    3. `chnode1` 노드에 행 2개를 추가합니다:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (1, 'abc'),
+           (2, 'def')
+       ```
 
-1. `chnode1`에서 ClickHouse client를 사용해 새 클러스터에 새 데이터베이스를 생성합니다. `ON CLUSTER` 절을 사용하면 두 노드 모두에 데이터베이스가 자동으로 생성됩니다.
-   ```sql
-   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
-   ```
+    4. `chnode2` 노드에도 행 2개를 추가합니다:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (3, 'ghi'),
+           (4, 'jkl')
+       ```
 
-2. `db1` 데이터베이스에 새 테이블을 생성합니다. 여기서도 `ON CLUSTER`를 사용하면 두 노드 모두에 테이블이 생성됩니다.
-   ```sql
-   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
-   (
-       `id` UInt64,
-       `column1` String
-   )
-   ENGINE = MergeTree
-   ORDER BY column1
-   ```
+    5. 각 노드에서 `SELECT` 문을 실행하면 해당 노드의 데이터만 표시된다는 점에 유의하십시오. 예를 들어 `chnode1`에서는 다음과 같습니다:
 
-3. `chnode1` 노드에 행 2개를 추가합니다:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (1, 'abc'),
-       (2, 'def')
-   ```
+       ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-4. `chnode2` 노드에도 행 2개를 추가합니다:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (3, 'ghi'),
-       (4, 'jkl')
-   ```
+       ```response
+       Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
 
-5. 각 노드에서 `SELECT` 문을 실행하면 해당 노드에 있는 데이터만 표시됩니다. 예를 들어 `chnode1`에서는 다음과 같습니다:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+       2 rows in set. Elapsed: 0.006 sec.
+       ```
 
-   ```response
-   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+       `chnode2`에서는 다음과 같습니다:
 
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
+    6. ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-   2 rows in set. Elapsed: 0.006 sec.
-   ```
+       ```response
+       Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
 
-   `chnode2`에서는 다음과 같습니다:
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
+       ```
 
-6. ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+    7. 두 세그먼트의 데이터를 나타내는 `Distributed` 테이블을 생성할 수 있습니다. `Distributed` 테이블 엔진을 사용하는 테이블은 자체 데이터를 저장하지 않지만, 여러 서버에서 분산 쿼리 처리를 수행할 수 있게 해줍니다. 읽기는 모든 세그먼트로 전달되고, 쓰기는 세그먼트 전체에 분산될 수 있습니다. `chnode1`에서 다음 쿼리를 실행하십시오:
+       ```sql
+       CREATE TABLE db1.dist_table (
+           id UInt64,
+           column1 String
+       )
+       ENGINE = Distributed(cluster_2S_1R,db1,table1)
+       ```
 
-   ```response
-   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+    8. `dist_table`을 쿼리하면 두 세그먼트의 데이터 4개 행이 모두 반환된다는 점에 유의하십시오:
 
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-   ```
+       ```sql
+       SELECT *
+       FROM db1.dist_table
+       ```
 
-7. 두 세그먼트의 데이터를 나타내는 `Distributed` 테이블을 생성할 수 있습니다. `Distributed` 테이블 엔진을 사용하는 테이블은 자체 데이터를 저장하지 않지만, 여러 서버에 대해 분산 쿼리 처리를 수행할 수 있게 해줍니다. 읽기는 모든 세그먼트로 전송되며, 쓰기는 여러 세그먼트에 분산할 수 있습니다. `chnode1`에서 다음 쿼리를 실행합니다:
-   ```sql
-   CREATE TABLE db1.dist_table (
-       id UInt64,
-       column1 String
-   )
-   ENGINE = Distributed(cluster_2S_1R,db1,table1)
-   ```
+       ```response
+       Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
 
-8. `dist_table`을 쿼리하면 두 세그먼트의 데이터 4개 행이 모두 반환됩니다:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.dist_table
-   ```
-
-   ```response
-   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
-
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-
-   4 rows in set. Elapsed: 0.018 sec.
-   ```
+       4 rows in set. Elapsed: 0.018 sec.
+       ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### 요약

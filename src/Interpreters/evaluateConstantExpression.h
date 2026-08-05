@@ -2,6 +2,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Core/Field.h>
+#include <Columns/IColumn_fwd.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -20,6 +21,14 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 using EvaluateConstantExpressionResult = std::pair<Field, std::shared_ptr<const IDataType>>;
 
+/** The value of a constant expression as a single-row column plus its exact type.
+  * Unlike `EvaluateConstantExpressionResult`, this keeps the precise SQL type (`UInt8`, `Float32`,
+  * `DateTime64`, ...) instead of collapsing it through `Field`'s `NearestFieldType` mapping, and it
+  * avoids materializing a `Field` at all. `column` is a size-1 (const) column; read it with the typed
+  * `IColumn` accessors (`getUInt`, `getDataAt`, ...) or a `ValueRef`.
+  */
+using EvaluateConstantExpressionColumnResult = std::pair<ColumnPtr, std::shared_ptr<const IDataType>>;
+
 /** Evaluate constant expression and its type.
   * Used in rare cases - for elements of set for IN, for data to INSERT.
   * Throws exception if it's not a constant expression.
@@ -28,6 +37,14 @@ using EvaluateConstantExpressionResult = std::pair<Field, std::shared_ptr<const 
 EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context);
 
 std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context);
+
+/** Same as `evaluateConstantExpression`, but returns the value as a single-row column + exact type,
+  * without collapsing the type through `Field`. Prefer this on paths that only need to read a scalar
+  * (via `IColumn` typed getters) — it avoids a `Field` materialization and preserves the SQL type.
+  */
+EvaluateConstantExpressionColumnResult evaluateConstantExpressionAsColumn(const ASTPtr & node, const ContextPtr & context);
+
+std::optional<EvaluateConstantExpressionColumnResult> tryEvaluateConstantExpressionAsColumn(const ASTPtr & node, const ContextPtr & context);
 
 /** Evaluate constant expression and returns ASTLiteral with its value.
   */

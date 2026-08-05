@@ -20,6 +20,8 @@ second time. The navigation subtree is written as a single fragment
 (`docs/products/cloud/api-reference/navigation.json`), and the consuming file
 (`products/cloud/navigation.json`, itself `$ref`-ed by `docs.json`) references
 that one definition via `$ref` so the navigation is never duplicated.
+Localized navigation fragments receive the same endpoint structure while
+retaining their translated group names.
 
 The navigation grouping mirrors the spec's `x-tagGroups`/`tags` (the same
 hierarchy the hosted Swagger view shows): each tag group is a top-level group;
@@ -43,6 +45,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import sys
@@ -56,6 +59,7 @@ API_REF_GROUP = "API reference"
 # single navigation fragment that defines the whole "API reference" group.
 API_REF_DIR = "products/cloud/api-reference"
 FRAGMENT_REL = f"{API_REF_DIR}/navigation.json"
+LOCALE_DIRS = ("ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh")
 
 # Pinned copy of the spec, committed to the repo. The navigation and the
 # generated pages reference this file rather than the live URL so that page
@@ -248,7 +252,7 @@ def page_content(entry: dict) -> str:
     return "\n".join(lines)
 
 
-def build_fragment(spec: dict, entries_by_tag: dict) -> dict:
+def build_fragment(spec: dict, entries_by_tag: dict) -> list:
     """Build the "API reference" group object stored as the navigation fragment.
 
     Each x-tagGroup becomes a top-level group. A group with more than one tag
@@ -290,6 +294,107 @@ def build_fragment(spec: dict, entries_by_tag: dict) -> dict:
     # consumer, `$ref`-ing this array — the same pattern docs.json uses for
     # `redirects`.
     return groups
+
+
+def operation_ref_keys(spec: dict) -> dict[str, str]:
+    """Map both navigation forms of an operation to its stable method/path key."""
+    keys = {}
+    for entry in iter_operations(spec):
+        operation_key = f"{entry['method']} {entry['path']}"
+        badge_ref = (
+            f"{API_REF_DIR}/{dir_slug(entry['tag'])}/{file_slug(entry['operation_id'])}"
+        )
+        for ref in (operation_key, badge_ref):
+            previous = keys.get(ref)
+            if previous is not None and previous != operation_key:
+                raise SystemExit(
+                    f"Navigation reference {ref!r} maps to multiple operations: "
+                    f"{previous!r} and {operation_key!r}"
+                )
+            keys[ref] = operation_key
+    return keys
+
+
+def group_page_refs(group: dict, ref_keys: dict[str, str]) -> set[str]:
+    """Return normalized leaf page references below one navigation group."""
+    pages = group.get("pages")
+    if not isinstance(pages, list):
+        raise SystemExit(f"Navigation group has no pages list: {group.get('group', group)!r}")
+
+    refs = set()
+    for page in pages:
+        if isinstance(page, str):
+            refs.add(ref_keys.get(page, page))
+        elif isinstance(page, dict):
+            refs.update(group_page_refs(page, ref_keys))
+        else:
+            raise SystemExit(f"Unexpected navigation page entry: {page!r}")
+    return refs
+
+
+def localize_fragment(
+    generated_groups: list, current_groups: list, ref_keys: dict[str, str]
+) -> list:
+    """Copy generated navigation while preserving existing translated group names.
+
+    Groups are matched by their shared operations instead of by position or
+    rendered reference. This preserves translated names across reordering and
+    across maturity changes that switch a navigation leaf between `METHOD /path`
+    and a generated badge-page path. A group containing only new
+    endpoints keeps the name supplied by the OpenAPI spec until translation
+    catches up.
+    """
+    if not isinstance(generated_groups, list) or not isinstance(current_groups, list):
+        raise SystemExit("Cloud API navigation fragments must contain a list of groups")
+    if not all(isinstance(group, dict) for group in generated_groups + current_groups):
+        raise SystemExit("Cloud API navigation fragments contain a non-group entry")
+
+    current_refs = [group_page_refs(group, ref_keys) for group in current_groups]
+    used_current_groups = set()
+    localized_groups = []
+
+    for generated_group in generated_groups:
+        generated_refs = group_page_refs(generated_group, ref_keys)
+        candidates = []
+        for index, refs in enumerate(current_refs):
+            if index in used_current_groups:
+                continue
+            overlap = len(generated_refs & refs)
+            if overlap:
+                candidates.append((overlap, index))
+
+        current_group = None
+        if candidates:
+            best_overlap = max(overlap for overlap, _ in candidates)
+            best_matches = [index for overlap, index in candidates if overlap == best_overlap]
+            # A tie means groups were merged or rebucketed. Do not guess which
+            # translation to keep; leaving `current_group` unset retains the
+            # generated English name.
+            if len(best_matches) == 1:
+                current_index = best_matches[0]
+                used_current_groups.add(current_index)
+                current_group = current_groups[current_index]
+
+        localized_group = copy.deepcopy(generated_group)
+        if current_group is not None:
+            localized_group["group"] = current_group["group"]
+
+        generated_children = [
+            page for page in generated_group["pages"] if isinstance(page, dict)
+        ]
+        if generated_children:
+            current_children = []
+            if current_group is not None:
+                current_children = [
+                    page for page in current_group["pages"] if isinstance(page, dict)
+                ]
+            localized_group["pages"] = localize_fragment(
+                generated_children, current_children, ref_keys
+            )
+
+        localized_groups.append(localized_group)
+
+    return localized_groups
 
 
 def match_object_span(text: str, open_brace: int) -> int:
@@ -400,9 +505,18 @@ def main() -> int:
             raise SystemExit(f"Duplicate generated page path: {rel}")
         expected_files[rel] = page_content(entry)
 
-    # The navigation fragment is the single source of truth for the group.
+    # The English navigation fragment is the single source of truth for the
+    # endpoint structure. Locale fragments reuse that structure while keeping
+    # their translated group names.
     fragment = build_fragment(spec, entries_by_tag)
+    ref_keys = operation_ref_keys(spec)
     expected_files[Path(FRAGMENT_REL)] = json.dumps(fragment, indent=2, ensure_ascii=False) + "\n"
+    for locale in LOCALE_DIRS:
+        rel = Path(locale) / FRAGMENT_REL
+        path = docs_dir / rel
+        current_fragment = json.loads(path.read_text(encoding="utf-8"))
+        localized_fragment = localize_fragment(fragment, current_fragment, ref_keys)
+        expected_files[rel] = json.dumps(localized_fragment, indent=2, ensure_ascii=False) + "\n"
 
     # Pin the spec the navigation and pages were generated from, so that page
     # resolution never falls back to a translated locale copy and API changes
@@ -456,7 +570,7 @@ def main() -> int:
             consumer_updates[path] = new_text
             changes.append(("rewire", rel))
 
-    total_pages = len(expected_files) - 2  # minus the fragment and the pinned spec
+    total_pages = sum(rel.suffix == ".mdx" for rel in expected_files)
     print(
         f"{total_operations} operations ({total_pages} badge pages) | "
         f"Beta {badge_counts['Beta']} | "

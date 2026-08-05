@@ -1,70 +1,90 @@
 ---
 sidebarTitle: '管理 API Key'
 slug: /cloud/manage/openapi
-title: 管理 API Key
-description: 'ClickHouse Cloud 提供基于 OpenAPI 的 API，您可以通过编程方式管理账户及各项服务。'
+title: '管理 API Key'
+description: 'ClickHouse Cloud 提供了基于 OpenAPI 的 API，您可以通过编程方式管理您的账户以及服务的各个方面。'
 doc_type: 'guide'
-keywords: ['api', 'openapi', 'rest api', '文档', 'Cloud 管理']
+keywords: ['api', 'openapi', 'rest api', 'documentation', 'Cloud 管理']
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-ClickHouse Cloud 提供基于 OpenAPI 的 API，您可以通过编程方式管理账户及各项服务。
+ClickHouse Cloud 提供基于 OpenAPI 的 API，便于您以编程方式管理账户及服务的各个方面。
 
 <Note>
-  本文档介绍的是 ClickHouse Cloud API。有关数据库 API 端点，请参见 [Cloud Endpoints API](/zh/products/cloud/guides/sql-console/query-endpoints)
+  本文档介绍的是 ClickHouse Cloud API。有关数据库 API 端点，请参阅 [Cloud Endpoints API](/zh/products/cloud/guides/sql-console/query-endpoints)
 </Note>
 
-1. 您可以使用左侧菜单中的 **API Key** 选项卡来创建和管理 API Key。
+<Steps>
+  <Step title="打开 API Keys 页面">
+    您可以使用左侧菜单中的 **API Keys** 选项卡创建和管理 API Key。
 
-<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="API Key 选项卡" border />
+    <Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="API Keys 选项卡" border />
+  </Step>
 
-2. **API Key** 页面初始会显示一个提示，指导您创建第一个 API Key，如下所示。创建第一个密钥后，您可以使用右上角出现的 `New API Key` 按钮创建新的密钥。
+  <Step title="开始创建 API Key">
+    **API Keys** 页面最初会显示提示，指导您创建第一个 API Key，如下所示。创建第一个密钥后，您可以使用右上角显示的 `New API Key` 按钮创建新密钥。
 
-<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="API Key 页面" border />
+    <Image img="/images/cloud/manage/openapi2.webp" size="md" alt="API Keys 页面" border />
+  </Step>
 
-3. 要创建 API Key，请指定密钥名称、密钥权限和过期时间，然后点击 `Generate API Key`。
+  <Step title="配置 API Key">
+    指定密钥名称、密钥权限和过期时间。
 
-<br />
+    <Note>
+      权限与 ClickHouse Cloud 的[预定义角色](/zh/products/cloud/reference/security/console-roles)一致。developer 角色对已分配的服务具有只读权限，admin 角色具有完整的读写权限。
+    </Note>
 
-<Note>
-  权限与 ClickHouse Cloud 的[预定义角色](/zh/products/cloud/reference/security/console-roles)一致。`Developer` 角色对已分配的服务具有只读权限，`Admin` 角色具有完整的读写权限。
-</Note>
+    <Tip>
+      **查询 API 端点**
 
-<Tip>
-  **查询 API 端点**
+      要将 API Key 用于 [Query API Endpoints](/zh/products/cloud/guides/sql-console/query-endpoints)，请将 Organization Role 设置为 `Member` (最低要求) ，并为 Service Role 授予 `Query Endpoints` 的访问权限。
+    </Tip>
 
-  要将 API Key 用于[查询 API 端点](/zh/products/cloud/guides/sql-console/query-endpoints)，请将 Organization Role 设置为 `Member` (最低要求) ，并为 `Query Endpoints` 授予 Service Role 访问权限。
-</Tip>
+    <Image img="/images/cloud/manage/openapi3.png" size="md" alt="创建 API Key 表单" border />
+  </Step>
 
-<Image img="/images/cloud/manage/openapi3.png" size="md" alt="创建 API Key 表单" border />
+  <Step title="添加允许的 IP 地址">
+    要限制哪些客户端可以使用该 API Key，请在 **Allow access to this API Key** 部分中选择 **Specific locations**。输入一个 IP 地址或 CIDR 范围，例如 `203.0.113.1` 或 `203.0.113.0/24`，并根据需要添加更多条目。
 
-4. 下一页将显示您的 Key ID 和 Key secret。请复制这些值并将其保存在安全的地方，例如密钥保管库。离开此页面后，这些值将不会再次显示。
+    查询 API 端点遵循 API Key 级别的 IP 允许列表。由于请求是从 ClickHouse 基础设施内部代理的，因此服务级别的 IP 允许列表不适用。详情请参阅 [IP Access Control](/zh/cloud/features/query-api-endpoints#ip-access-control)。
 
-<Image img="/images/cloud/manage/openapi4.webp" size="md" alt="API Key 详细信息" border />
+    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="为 API Key 配置的允许 IP 地址" border />
 
-5. ClickHouse Cloud API 使用 [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) 验证您的 API Key。以下示例展示了如何使用 `curl` 和您的 API Key 向 ClickHouse Cloud API 发送请求：
+    完成密钥配置后，点击 **Generate API Key**。
+  </Step>
 
-```bash
-$ KEY_ID=mykeyid
-$ KEY_SECRET=mykeysecret
+  <Step title="保存 API Key 凭据">
+    下一个界面将显示您的 Key ID 和 Key secret。请复制这些值并妥善保存在安全的位置，例如密钥保管库。离开此界面后，这些值将不会再次显示。
 
-$ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
-```
+    <Image img="/images/cloud/manage/openapi4.webp" size="md" alt="API Key 详细信息" border />
+  </Step>
 
-6. 返回 **API Key** 页面后，你会看到密钥名称、Key ID 的后四位字符、权限、状态、到期日期和创建者。你可以在此页面编辑密钥名称、权限和到期日期，也可以在此页面禁用或删除密钥。
+  <Step title="对 API 请求进行身份验证">
+    ClickHouse Cloud API 使用 [HTTP 基本身份验证](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) 来验证您的 API Key 是否有效。以下示例展示了如何使用 API Key 通过 `curl` 向 ClickHouse Cloud API 发送请求：
 
-<br />
+    ```bash
+    $ KEY_ID=mykeyid
+    $ KEY_SECRET=mykeysecret
 
-<Note>
-  删除 API Key 是不可恢复的永久操作。任何使用该密钥的服务都将立即失去对 ClickHouse Cloud 的访问权限。
-</Note>
+    $ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
+    ```
+  </Step>
 
-<Image img="/images/cloud/manage/openapi5.webp" size="md" alt="API Key 管理页面" border />
+  <Step title="管理现有 API Key">
+    返回 **API Keys** 页面后，您将看到密钥名称、Key ID 的后四位字符、权限、状态、到期日期以及创建者。您可以在此界面编辑密钥名称、权限和过期时间，也可以在此界面禁用或删除密钥。
+
+    <Note>
+      删除 API Key 是永久性操作。任何使用该密钥的服务都将立即失去对 ClickHouse Cloud 的访问权限。
+    </Note>
+
+    <Image img="/images/cloud/manage/openapi5.webp" size="md" alt="API Keys 管理页面" border />
+  </Step>
+</Steps>
 
 <div id="endpoints">
   ## 端点
 </div>
 
-有关端点的详细信息，请参阅 [API 参考文档](/zh/api-reference/organization/get-list-of-available-organizations)。
+有关端点的详细信息，请参阅 [API 参考文档](/zh/products/cloud/api-reference/organization/get-list-of-available-organizations)。
 请使用您的 API Key 和 API Secret，base URL 为 `https://api.clickhouse.cloud/v1`。

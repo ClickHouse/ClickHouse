@@ -11,13 +11,11 @@ Ajustez les ressources CPU et mémoire d&#39;un cluster ClickHouse à l&#39;aide
   ## Prérequis
 </div>
 
-* API privée ClickHouse installée et accessible (par exemple via un transfert de port vers `http://localhost:8080/`)
+* API ClickHouse Private installée et accessible (par exemple via un transfert de port vers `http://localhost:8080/`)
 * Au moins un cluster ClickHouse déployé (ce guide utilise `default-xx-01`)
 
 <Steps>
-  <Step>
-    ## 1. Créer la demande de mise à l’échelle
-
+  <Step title="1. Créer la demande de mise à l’échelle" id="1-create-the-scale-request">
     Créez un fichier JSON avec l’allocation de ressources souhaitée :
 
     ```json
@@ -34,9 +32,7 @@ Ajustez les ressources CPU et mémoire d&#39;un cluster ClickHouse à l&#39;aide
     Enregistrez-le sous `scale.json`.
   </Step>
 
-  <Step>
-    ## 2. Envoyer la demande
-
+  <Step title="2. Envoyer la demande" id="2-send-the-request">
     ```bash
     curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
         -H "Content-Type: application/json" \
@@ -44,9 +40,7 @@ Ajustez les ressources CPU et mémoire d&#39;un cluster ClickHouse à l&#39;aide
     ```
   </Step>
 
-  <Step>
-    ## 3. Application du ratio CPU:mémoire
-
+  <Step title="3. Application du ratio CPU:mémoire" id="3-cpumemory-ratio-enforcement">
     L’API applique un **ratio CPU/mémoire de 1:4** (1 cœur de CPU pour 4 GiB de mémoire), avec une marge de 5 %.
 
     Si vous ne fournissez qu’un seul type de ressource, l’API déduit automatiquement l’autre. Par exemple, si vous indiquez uniquement `"memory": "16Gi"`, le CPU est automatiquement défini sur 4 cœurs.
@@ -61,9 +55,7 @@ Ajustez les ressources CPU et mémoire d&#39;un cluster ClickHouse à l&#39;aide
     Les unités binaires (Ki, Mi, Gi) sont recommandées pour la mémoire.
   </Step>
 
-  <Step>
-    ## 4. Suivre la progression de la mise à l’échelle
-
+  <Step title="4. Suivre la progression de la mise à l’échelle" id="4-monitor-scaling-progress">
     Vérifiez l’état du cluster pour suivre l’opération de mise à l’échelle :
 
     ```bash

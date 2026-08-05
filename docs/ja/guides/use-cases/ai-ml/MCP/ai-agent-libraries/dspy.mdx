@@ -28,9 +28,7 @@ doc_type: 'guide'
 </Info>
 
 <Steps>
-  <Step>
-    ## ライブラリをインストールする
-
+  <Step title="ライブラリをインストールする" id="install-libraries">
     必要なライブラリをインストールするには、`pip` を使って次のコマンドを実行します。
 
     ```shell
@@ -40,9 +38,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 認証情報を設定する
-
+  <Step title="認証情報を設定する" id="setup-credentials">
     次に、Anthropic APIキーを指定する必要があります。
 
     ```python
@@ -70,9 +66,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## MCPサーバーを初期化する
-
+  <Step title="MCPサーバーを初期化する" id="initialize-mcp">
     次に、ClickHouse MCPサーバーの接続先としてClickHouse SQL playgroundを設定します。
 
     ```python
@@ -93,9 +87,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## LLM を初期化する
-
+  <Step title="LLM を初期化する" id="initialize-llm">
     次に、以下の行で LLM を初期化します。
 
     ```python
@@ -103,9 +95,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## エージェントの実行
-
+  <Step title="エージェントの実行" id="run-the-agent">
     最後に、エージェントを初期化して起動します：
 
     ```python
@@ -137,16 +127,16 @@ doc_type: 'guide'
 
     ```response title="Response"
     ================================================================================
-    🤖 DSPy ReAct 結果
+    🤖 DSPy ReAct Result
     ================================================================================
 
-    📍 ステップ 1
+    📍 STEP 1
     ----------------------------------------
-    🧠 思考中: Amazonの商品カテゴリに関する情報を調べ、最も人気のあるカテゴリを特定する必要があります。まず、Amazon関連のデータが存在するかどうかを確認するため、利用可能なデータベースを確認します。
+    🧠 THINKING: I need to find information about Amazon product categories and determine which one is most popular. First, I should explore what databases are available to see if there's any Amazon-related data.
 
-    🔧 ツール: list_databases
+    🔧 TOOL: list_databases
 
-    📊 結果:
+    📊 RESULT:
        amazon
     bluesky
     country
@@ -178,14 +168,14 @@ doc_type: 'guide'
     rubygems
     sta...
 
-    📍 ステップ 2
+    📍 STEP 2
     ----------------------------------------
-    🧠 思考中: 「amazon」データベースが利用可能であることを確認できました。Amazonの商品カテゴリ情報を調べるのに必要なものです。amazonデータベース内のテーブルを確認して、どのようなデータが利用できるかを調べます。
+    🧠 THINKING: Great! I can see there's an "amazon" database available. This is exactly what I need to find information about Amazon product categories. Let me explore the tables in the amazon database to see what data is available.
 
-    🔧 ツール: list_tables
+    🔧 TOOL: list_tables
        Args: {'database': 'amazon'}
 
-    📊 結果:
+    📊 RESULT:
        {
       "database": "amazon",
       "name": "amazon_reviews",
@@ -197,52 +187,52 @@ doc_type: 'guide'
           "default_type": "",
           "default_expression": "",...
 
-    📍 ステップ 3
+    📍 STEP 3
     ----------------------------------------
-    🧠 思考中: product_categoryカラムを含むamazon_reviewsテーブルが見つかりました。このテーブルには1億5000万行を超えるAmazonレビューデータが含まれており、商品の人気度を把握するには十分なデータ量です。最も人気のあるAmazon商品カテゴリを特定するには、カテゴリごとのレビュー数を集計し、降順に並べ替える必要があります。レビュー数が最も多いカテゴリが最も人気があると判断します。
+    🧠 THINKING: Perfect! I found the amazon_reviews table which contains a product_category column. This table has over 150 million rows of Amazon review data, which should give me a good representation of product popularity. To find the most popular Amazon product category, I need to count the number of reviews per category and order them by count in descending order. The category with the most reviews would be considered the most popular.
 
-    🔧 ツール: run_select_query
+    🔧 TOOL: run_select_query
        Args: {'query': 'SELECT product_category, COUNT(*) as review_count FROM amazon.amazon_reviews GROUP BY product_category ORDER BY review_count DESC LIMIT 10'}
 
-    📊 結果:
-       1. Books: 19,530,930 件のレビュー
-       2. Digital_Ebook_Purchase: 17,622,107 件のレビュー
-       3. Wireless: 9,001,567 件のレビュー
-       4. PC: 6,908,245 件のレビュー
-       5. Home: 6,221,321 件のレビュー
-       ... 他 5 件
+    📊 RESULT:
+       1. Books: 19,530,930 reviews
+       2. Digital_Ebook_Purchase: 17,622,107 reviews
+       3. Wireless: 9,001,567 reviews
+       4. PC: 6,908,245 reviews
+       5. Home: 6,221,321 reviews
+       ... and 5 more
 
-    📍 ステップ 4
+    📍 STEP 4
     ----------------------------------------
-    🧠 思考中: ユーザーの質問に対する回答が得られました。Amazonレビューデータによると、「Books」が19,530,930件のレビューで最も人気のあるAmazon商品カテゴリであり、次いで「Digital_Ebook_Purchase」が17,622,107件で続いています。データは、各カテゴリのレビュー数に基づく明確な人気ランキングを示しています。ユーザーの質問に回答するために必要な情報がすべて揃いました。
+    🧠 THINKING: Perfect! I have found the answer to the user's question. Based on the Amazon reviews data, I can clearly see that "Books" is the most popular Amazon product category with 19,530,930 reviews, followed by "Digital_Ebook_Purchase" with 17,622,107 reviews. The data shows a clear ranking of product categories by popularity based on the number of reviews each category has received. I now have all the information needed to answer the user's question.
 
-    🔧 ツール: finish
+    🔧 TOOL: finish
 
-    📊 結果:
-       完了。
+    📊 RESULT:
+       Completed.
 
-    🎯 推論
+    🎯 REASONING
     ----------------------------------------
-    最も人気のあるAmazon商品カテゴリに関する質問に回答するため、Amazonデータベースにアクセスし、1億5000万件を超えるレビューレコードを持つ「amazon_reviews」テーブルを見つけました。このテーブルには「product_category」カラムが含まれており、レビュー数をもとに商品の人気度を分析できます。商品カテゴリごとのレビュー数を集計するクエリを実行し、降順に並べ替えました。ここでの前提は、レビュー数が多いカテゴリほど人気が高いというものです。レビュー数の多さは、購入数や顧客エンゲージメントの高さと相関する傾向があるためです。
+    To answer the question about the most popular Amazon product category, I accessed the Amazon database and found a table called "amazon_reviews" with over 150 million review records. This table contains a "product_category" column that allows me to analyze product popularity based on review volume. I ran a query to count the number of reviews per product category and ordered them by count in descending order. The assumption here is that categories with more reviews indicate higher popularity, as more reviews typically correlate with more purchases and customer engagement.
 
-    ✅ 最終結果
+    ✅ FINAL RESULT
     ----------------------------------------
-    1億5000万件を超えるレコードを含むAmazonレビューデータによると、最も人気のあるAmazon商品カテゴリは **Books** で、19,530,930件のレビューを獲得しています。
+    Based on Amazon review data containing over 150 million records, the most popular Amazon product category is **Books** with 19,530,930 reviews. 
 
-    レビュー数による上位10のAmazon商品カテゴリは以下のとおりです：
+    Here are the top 10 most popular Amazon product categories by review count:
 
-    1. **Books** - 19,530,930 件のレビュー
-    2. **Digital_Ebook_Purchase** - 17,622,107 件のレビュー
-    3. **Wireless** - 9,001,567 件のレビュー
-    4. **PC** - 6,908,245 件のレビュー
-    5. **Home** - 6,221,321 件のレビュー
-    6. **Apparel** - 5,906,085 件のレビュー
-    7. **Health & Personal Care** - 5,331,239 件のレビュー
-    8. **Beauty** - 5,115,462 件のレビュー
-    9. **Video DVD** - 5,069,014 件のレビュー
-    10. **Mobile_Apps** - 5,033,164 件のレビュー
+    1. **Books** - 19,530,930 reviews
+    2. **Digital_Ebook_Purchase** - 17,622,107 reviews  
+    3. **Wireless** - 9,001,567 reviews
+    4. **PC** - 6,908,245 reviews
+    5. **Home** - 6,221,321 reviews
+    6. **Apparel** - 5,906,085 reviews
+    7. **Health & Personal Care** - 5,331,239 reviews
+    8. **Beauty** - 5,115,462 reviews
+    9. **Video DVD** - 5,069,014 reviews
+    10. **Mobile_Apps** - 5,033,164 reviews
 
-    注目すべき点として、BooksとDigital Ebook Purchase（いずれも関連カテゴリ）を合わせると3700万件を超えるレビューとなり、Amazonプラットフォームにおける読書関連コンテンツの根強い人気がうかがえます。
+    It's interesting to note that Books and Digital Ebook Purchase (which are related categories) together account for over 37 million reviews, showing the strong popularity of reading materials on Amazon's platform.
     ================================================================================
     ```
   </Step>

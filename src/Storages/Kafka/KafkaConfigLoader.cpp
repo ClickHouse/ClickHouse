@@ -580,7 +580,7 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 
     for (auto & property : conf.get_all())
     {
-        if (property.first.find("password") != std::string::npos)
+        if (property.first.contains("password"))
             continue;
         LOG_TRACE(params.log, "Consumer set property {}:{}", property.first, property.second);
     }

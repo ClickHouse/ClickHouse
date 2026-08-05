@@ -443,7 +443,7 @@ RequestPage:    /filter/27|13 ,27|  5 ,p53
 SeverityText:   INFO
 SeverityNumber:  9
 
-1 行，共 1 行。耗时：0.010 秒。
+1 row in set. Elapsed: 0.010 sec.
 ```
 
 下面展示了一个等效的 Materialized view，它通过 JSON 函数从 `Body` 列中提取各列：
@@ -1454,7 +1454,7 @@ LIMIT 1000
 同样的方法也适用于类似的访问模式。我们在数据建模的[这里](/zh/concepts/features/materialized-views/incremental-materialized-view#lookup-table)探讨了一个类似的示例。
 
 <div id="using-projections">
-  ### 使用 PROJECTION
+  ### 使用投影
 </div>
 
 ClickHouse 投影允许你为一张表指定多个 `ORDER BY` 子句。
@@ -1463,14 +1463,14 @@ ClickHouse 投影允许你为一张表指定多个 `ORDER BY` 子句。
 
 我们给出了一个示例：materialized view 会将行写入目标表，而该目标表使用的排序键与接收 insert 的原始表不同，从而优化按 trace id 进行的查找。
 
-PROJECTION 也可以用来解决同样的问题，让用户能够针对不属于主键的列优化查询。
+投影也可以用来解决同样的问题，让用户能够针对不属于主键的列优化查询。
 
-理论上，这种能力可以让一张表拥有多个排序键，但有一个明显的缺点：数据重复。具体来说，除了需要按主键的主要排序顺序写入数据外，还必须额外按照每个 PROJECTION 指定的顺序再写入一次。这会降低 insert 速度，并占用更多磁盘空间。
+理论上，这种能力可以让一张表拥有多个排序键，但有一个明显的缺点：数据重复。具体来说，除了需要按主键的主要排序顺序写入数据外，还必须额外按照每个投影指定的顺序再写入一次。这会降低 insert 速度，并占用更多磁盘空间。
 
 <Info>
-  **PROJECTION 与 Materialized Views**
+  **投影 与 Materialized Views**
 
-  PROJECTION 具备许多与 materialized view 相同的能力，但应谨慎使用，通常更推荐后者。你需要了解它们的缺点以及适用场景。比如，虽然 PROJECTION 可用于预计算聚合，但我们更建议用户为此使用 Materialized views。
+  投影具备许多与 materialized view 相同的能力，但应谨慎使用，通常更推荐后者。你需要了解它们的缺点以及适用场景。比如，虽然 投影 可用于预计算聚合，但我们更建议用户为此使用 Materialized views。
 </Info>
 
 <Image img="/images/use-cases/observability/observability-13.webp" alt="可观测性与投影" size="md" />
@@ -1497,7 +1497,7 @@ Peak memory usage: 56.54 MiB.
   这里我们使用 `FORMAT Null`，不输出结果。这会强制读取所有结果但不返回，从而避免查询因 LIMIT 而提前终止。这样做只是为了展示扫描全部 1000 万行所花费的时间。
 </Info>
 
-在所选排序键 `(ServiceName, Timestamp)`` 下，上述查询需要进行线性扫描。虽然我们可以将 `Status&#96; 添加到排序键末尾，以提升上述查询的性能，但也可以添加 PROJECTION。
+在所选排序键 `(ServiceName, Timestamp)`` 下，上述查询需要进行线性扫描。虽然我们可以将 `Status&#96; 添加到排序键末尾，以提升上述查询的性能，但也可以添加投影。
 
 ```sql
 ALTER TABLE otel_logs_v2 (
@@ -1510,7 +1510,7 @@ ALTER TABLE otel_logs_v2 (
 ALTER TABLE otel_logs_v2 MATERIALIZE PROJECTION status
 ```
 
-请注意，我们必须先创建 PROJECTION，然后再将其物化。后一条命令会使数据以两种不同的顺序在磁盘上各存储一份。PROJECTION 也可以在创建数据时一并定义，如下所示，并且会在数据插入时自动维护。
+请注意，我们必须先创建投影，然后再将其物化。后一条命令会使数据以两种不同的顺序在磁盘上各存储一份。投影也可以在创建数据时一并定义，如下所示，并且会在数据插入时自动维护。
 
 ```sql
 CREATE TABLE otel_logs_v2
@@ -1542,7 +1542,7 @@ ENGINE = MergeTree
 ORDER BY (ServiceName, Timestamp)
 ```
 
-需要注意的是，如果 PROJECTION 是通过 `ALTER` 创建的，那么在发出 `MATERIALIZE PROJECTION` 命令后，其创建过程是异步进行的。你可以使用以下查询确认此操作的进度，并等待 `is_done=1`。
+需要注意的是，如果 投影 是通过 `ALTER` 创建的，那么在发出 `MATERIALIZE PROJECTION` 命令后，其创建过程是异步进行的。你可以使用以下查询确认此操作的进度，并等待 `is_done=1`。
 
 ```sql
 SELECT parts_to_do, is_done, latest_fail_reason
@@ -1555,7 +1555,7 @@ WHERE (`table` = 'otel_logs_v2') AND (command LIKE '%MATERIALIZE%')
 │           0 │     1   │                    │
 └─────────────┴─────────┴────────────────────┘
 
-1 行数据。Elapsed: 0.008 sec.
+1 row in set. Elapsed: 0.008 sec.
 ```
 
 如果再次执行上述查询，可以看到性能已显著提升，但代价是会占用更多存储空间 (关于如何衡量这一点，请参见[&quot;测量表大小和压缩&quot;](#measuring-table-size--compression)) 。
@@ -1989,11 +1989,11 @@ Map 类型在 OTel schema 中很常见。该类型要求键和值具有相同的
 如果你经常查询某个特定键，建议考虑将其移到根级别的独立专用列中。这通常是在部署后根据常见访问模式进行的调整，在生产环境上线前往往很难预判。有关如何在部署后修改 schema，请参阅[“管理 schema 变更”](/zh/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes)。
 
 <div id="measuring-table-size--compression">
-  ## 测量表大小与压缩
+  ## 衡量表大小与压缩
 </div>
 
-压缩是 ClickHouse 用于可观测性场景的主要原因之一。
+压缩是使用 ClickHouse 实现可观测性的主要原因之一。
 
-除了能显著降低存储成本，磁盘上的数据更少还意味着更低的 I/O 开销，以及更快的查询和插入。对于 CPU 而言，I/O 的减少所带来的收益会超过压缩算法本身的开销。因此，在确保 ClickHouse 查询性能时，首先应关注如何提升数据的压缩效果。
+除了能大幅降低存储成本之外，磁盘上的数据更少也意味着更少的 I/O，以及更快的查询和插入操作。相较于压缩算法带来的 CPU 开销，I/O 减少所带来的收益通常要大得多。因此，要确保 ClickHouse 查询足够快，首先应关注提升数据的压缩率。
 
-有关如何测量压缩效果的详细信息，请参见[此处](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。
+有关如何衡量压缩效果的详细信息，请参见[这里](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。

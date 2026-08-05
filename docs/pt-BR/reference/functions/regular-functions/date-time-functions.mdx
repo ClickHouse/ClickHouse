@@ -46,6 +46,10 @@ Retorna a data e a hora atuais no momento da análise da consulta. A função é
 
 Esta função retorna o mesmo resultado que `now('UTC')`. Ela foi adicionada apenas para oferecer suporte ao MySQL. [`now`](#now) é a forma de uso preferida.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1648,8 +1652,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 ```response title=Response
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromDaysSinceYearZero">
@@ -1843,9 +1847,9 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 ```
 
 ```response title=Response
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
-│                                                 2023-03-16 18:00:00.000 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
+│                                                   2023-03-16 18:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromUnixTimestamp">
@@ -1960,6 +1964,10 @@ Introduzido em: v26.7.0
 
 Retorna a hora atual do dia no fuso horário do servidor (ou da sessão), no momento da análise da consulta.
 A função é uma expressão constante. É o `LOCALTIME` padrão do SQL/PostgreSQL e equivale a `CAST(now() AS Time)`.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2230,13 +2238,17 @@ Introduzido em: v1.1.0
 
 Retorna a data e hora atuais no momento da análise da consulta. A função é uma expressão constante.
 
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
 now([timezone])
 ```
 
-**Aliases**: `localtimestamp`, `current_timestamp`
+**Aliases**: `current_timestamp`, `localtimestamp`
 
 **Argumentos**
 
@@ -2292,6 +2304,10 @@ Introduzido em: v20.1.0
 
 Retorna a data e a hora atuais com precisão inferior a segundos no momento da análise da consulta. A função é uma expressão constante.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -2330,6 +2346,10 @@ Introduzido em: v22.8.0
 Retorna a data e a hora atuais no momento em que cada bloco de dados é processado. Ao contrário da função [`now`](#now), não é uma expressão constante, e o valor retornado será diferente entre os blocos em consultas de longa duração.
 
 Faz sentido usar essa função para gerar a hora atual em consultas `INSERT SELECT` de longa duração.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2377,6 +2397,10 @@ Retorna a data e a hora atuais no momento do processamento de cada bloco de dado
 
 Faz sentido usar essa função para gerar a hora atual em consultas `INSERT SELECT` de longa duração.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -2422,6 +2446,10 @@ Introduzido em: v23.6.0
 
 Retorna o fuso horário do servidor, ou seja, o valor da configuração [`timezone`](/pt-BR/reference/settings/server-settings/settings#timezone).
 Se a função for executada no contexto de uma tabela distribuída, ela gerará uma coluna comum com valores correspondentes a cada shard. Caso contrário, produzirá um valor constante.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2931,7 +2959,7 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 nanosecond)
 
 Introduzido em: v20.1.0
 
-Subtrai um número especificado de trimestres de uma data, uma data e hora ou uma data, ou data e hora, codificada em string.
+Subtrai um número especificado de trimestres de uma data, uma data e hora ou uma data ou data e hora codificada como string.
 
 **Sintaxe**
 
@@ -2976,9 +3004,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯Quarter(10))─┐
-│                1996-09-16 │
-└───────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                               1995-12-16 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractSeconds">
@@ -3404,6 +3432,10 @@ Introduzido em: v21.4.0
 
 Retorna o nome do fuso horário da sessão atual ou converte um offset
 ou nome de fuso horário em um nome canônico de fuso horário.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -3933,15 +3965,15 @@ Retorna a data do sábado ou domingo mais próximo, na data especificada ou apó
 
 ```sql title=Query
 SELECT
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* uma sexta-feira */
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* uma sexta-feira */
-    toLastDayOfWeek(toDate('2023-04-23')), /* um domingo */
-    toLastDayOfWeek(toDate('2023-04-23'), 1) /* um domingo */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+    toLastDayOfWeek(toDate('2023-04-23')), /* a Sunday */
+    toLastDayOfWeek(toDate('2023-04-23'), 1) /* a Sunday */
 FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
@@ -4171,8 +4203,8 @@ Retorna a data da segunda-feira da mesma semana para a data ou data com hora for
 
 ```sql title=Query
 SELECT
-toMonday(toDateTime('2023-04-21 10:20:30')), -- Uma sexta-feira
-toMonday(toDate('2023-04-24'));              -- Já é uma segunda-feira
+toMonday(toDateTime('2023-04-21 10:20:30')), -- A Friday
+toMonday(toDate('2023-04-24'));              -- Already a Monday
 ```
 
 ```response title=Response
@@ -4677,7 +4709,7 @@ SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
 
 Introduzido em: v1.1.0
 
-Arredonda para baixo uma data e hora até o início do dia.
+Arredonda para baixo uma data com horário até o início do dia.
 
 <Note>
   O tipo de retorno pode ser configurado por meio da configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4691,11 +4723,11 @@ toStartOfDay(datetime)
 
 **Argumentos**
 
-* `datetime` — Uma data ou data com hora para arredondar. [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
+* `datetime` — Uma data ou data com horário para arredondar. [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
 
 **Valor retornado**
 
-Retorna a data com hora arredondada para baixo até o início do dia. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna a data com horário arredondada para baixo até o início do dia. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -4717,7 +4749,7 @@ SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))
 
 Introduzido em: v1.1.0
 
-Arredonda a data com hora para baixo até o início do intervalo de quinze minutos.
+Arredonda a data com horário para baixo até o início do intervalo de quinze minutos.
 
 <Note>
   O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4731,11 +4763,11 @@ toStartOfFifteenMinutes(datetime)
 
 **Argumentos**
 
-* `datetime` — Uma data ou data e hora para arredondar. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Uma data ou data com horário para arredondar. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna a data e hora arredondada para o início do intervalo de quinze minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna a data com horário arredondada para o início do intervalo de quinze minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -4750,7 +4782,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:15:00
@@ -4763,7 +4795,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 
 Introduzido em: v22.6.0
 
-Arredonda uma data com hora para baixo até o início do intervalo de cinco minutos mais próximo.
+Arredonda uma data com horário para baixo até o início do intervalo de cinco minutos mais próximo.
 
 <Note>
   O tipo de retorno pode ser configurado definindo [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4779,11 +4811,11 @@ toStartOfFiveMinutes(datetime)
 
 **Argumentos**
 
-* `datetime` — Uma data e hora para arredondar. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Uma data com horário para arredondar. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna a data e hora arredondada para o início do intervalo de cinco minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna a data com horário arredondada para o início do intervalo de cinco minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -4798,7 +4830,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -4811,7 +4843,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 
 Introduzido em: v1.1.0
 
-Arredonda uma data com hora para baixo até o início da hora.
+Arredonda uma data com horário para baixo até o início da hora.
 
 <Note>
   O tipo de retorno pode ser configurado por meio da definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4825,11 +4857,11 @@ toStartOfHour(datetime)
 
 **Argumentos**
 
-* `datetime` — Uma data com hora a ser arredondada. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Uma data com horário a ser arredondada. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna a data com hora arredondada para baixo para o início da hora. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna a data com horário arredondada para baixo para o início da hora. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -4852,7 +4884,7 @@ SELECT
 
 Introduzido em: v1.1.0
 
-Arredonda uma data ou data com hora para o primeiro dia do ano ISO, que pode ser diferente do ano civil. Veja [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
+Arredonda uma data ou data com horário para o primeiro dia do ano ISO, que pode ser diferente do ano civil. Veja [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
 
 <Note>
   O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4866,11 +4898,11 @@ toStartOfISOYear(value)
 
 **Argumentos**
 
-* `value` — A data ou data com hora a ser arredondada para o primeiro dia do ano ISO. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `value` — A data ou data com horário a ser arredondada para o primeiro dia do ano ISO. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna o primeiro dia do ano ISO para a data ou data com hora informada. [`Date`](/pt-BR/reference/data-types/date)
+Retorna o primeiro dia do ano ISO para a data ou data com horário informada. [`Date`](/pt-BR/reference/data-types/date)
 
 **Exemplos**
 
@@ -4930,7 +4962,7 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**Aliases**: `time_bucket`, `date_bin`
+**Aliases**: `date_bin`, `time_bucket`
 
 **Argumentos**
 
@@ -5075,7 +5107,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 
 Introduzido em: v1.1.0
 
-Arredonda uma data com hora para o início do minuto.
+Arredonda uma data com horário para o início do minuto.
 
 <Note>
   O tipo de retorno pode ser configurado com a definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -5089,11 +5121,11 @@ toStartOfMinute(datetime)
 
 **Argumentos**
 
-* `datetime` — Uma data com hora a ser arredondada. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Uma data com horário a ser arredondada. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna a data com hora arredondada para baixo, até o início do minuto. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna a data com horário arredondada para baixo, até o início do minuto. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -5107,7 +5139,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toStartOfMinute(toDateTime('2023-04-21 10:20:30')):           2023-04-21 10:20:00
 toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:00
@@ -5119,7 +5151,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 
 Introduzido em: v1.1.0
 
-Arredonda uma data ou data com hora para baixo, até o primeiro dia do mês.
+Arredonda uma data ou data com horário para baixo, até o primeiro dia do mês.
 
 <Note>
   O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -5133,11 +5165,11 @@ toStartOfMonth(value)
 
 **Argumentos**
 
-* `value` — A data ou data com hora a ser arredondada para baixo para o primeiro dia do mês. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `value` — A data ou data com horário a ser arredondada para baixo para o primeiro dia do mês. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna o primeiro dia do mês para a data ou data com hora fornecida. [`Date`](/pt-BR/reference/data-types/date)
+Retorna o primeiro dia do mês para a data ou data com horário fornecida. [`Date`](/pt-BR/reference/data-types/date)
 
 **Exemplos**
 
@@ -5210,7 +5242,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 
 Introduzido em: v1.1.0
 
-Arredonda uma data ou data com hora para o primeiro dia do trimestre. O primeiro dia do trimestre é 1º de janeiro, 1º de abril, 1º de julho ou 1º de outubro.
+Arredonda uma data ou data com horário para o primeiro dia do trimestre. O primeiro dia do trimestre é 1º de janeiro, 1º de abril, 1º de julho ou 1º de outubro.
 
 <Note>
   O tipo de retorno pode ser configurado por meio da configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -5224,11 +5256,11 @@ toStartOfQuarter(value)
 
 **Argumentos**
 
-* `value` — A data ou data com hora a ser arredondada para baixo até o primeiro dia do trimestre. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `value` — A data ou data com horário a ser arredondada para baixo até o primeiro dia do trimestre. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna o primeiro dia do trimestre da data ou data com hora fornecida. [`Date`](/pt-BR/reference/data-types/date)
+Retorna o primeiro dia do trimestre da data ou data com horário fornecida. [`Date`](/pt-BR/reference/data-types/date)
 
 **Exemplos**
 
@@ -5315,11 +5347,11 @@ toStartOfTenMinutes(datetime)
 
 **Argumentos**
 
-* `datetime` — Uma data e hora. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Uma data com hora. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna a data e hora arredondada para o início do intervalo de dez minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna a data com hora arredondada para o início do intervalo de dez minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -5334,7 +5366,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-linha 1:
+Linha 1:
 ──────
 toStartOfTenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:10:00
 toStartOfTenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -5375,10 +5407,10 @@ Retorna a data do domingo ou da segunda-feira mais próximos, na data informada 
 
 ```sql title=Query
 SELECT
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* uma sexta-feira */
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* uma sexta-feira */
-        toStartOfWeek(toDate('2023-04-24')), /* uma segunda-feira */
-        toStartOfWeek(toDate('2023-04-24'), 1) /* uma segunda-feira */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+        toStartOfWeek(toDate('2023-04-24')), /* a Monday */
+        toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
     FORMAT Vertical
 ```
 
@@ -5566,8 +5598,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
 
 ```response title=Response
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                     2023-03-15 16:00:00 │
-└─────────────────────────────────────────────────────────┘
+│                                       2023-03-15 16:00:00 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp">
@@ -5929,13 +5961,17 @@ Introduzido em: v1.1.0
 
 Retorna a data atual no momento da análise da consulta. O mesmo que `toDate(now())`.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
 today()
 ```
 
-**Aliases**: `curdate`, `current_date`
+**Aliases**: `current_date`, `curdate`
 
 **Argumentos**
 
@@ -5982,6 +6018,10 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 Introduzido em: v1.1.0
 
 Aceita zero argumentos e retorna a data de ontem em um dos estágios da análise da consulta.
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 

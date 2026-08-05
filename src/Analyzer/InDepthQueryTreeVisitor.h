@@ -4,7 +4,6 @@
 
 #include <Common/Exception.h>
 
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/UnionNode.h>

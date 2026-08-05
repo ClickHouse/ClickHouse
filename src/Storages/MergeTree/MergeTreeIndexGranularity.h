@@ -12,6 +12,8 @@ class MergeTreeIndexGranularity
 {
 public:
     MergeTreeIndexGranularity() = default;
+    MergeTreeIndexGranularity(const MergeTreeIndexGranularity &) = default;
+    MergeTreeIndexGranularity & operator=(const MergeTreeIndexGranularity &) = default;
     virtual ~MergeTreeIndexGranularity() = default;
 
     /// Returns granularity if it is constant for whole part (except last granule).
@@ -75,6 +77,9 @@ public:
     /// Returns new optimized index granularity structure or nullptr if no optimization is not applicable.
     virtual std::shared_ptr<MergeTreeIndexGranularity> optimize() = 0;
     virtual std::string describe() const = 0;
+
+    /// Deep-copy, so a written part's granularity can be re-homed into the dedicated MergeTree arena.
+    virtual std::shared_ptr<MergeTreeIndexGranularity> clone() const = 0;
 };
 
 using MergeTreeIndexGranularityPtr = std::shared_ptr<MergeTreeIndexGranularity>;

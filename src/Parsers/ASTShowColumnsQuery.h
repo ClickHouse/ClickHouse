@@ -3,6 +3,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTQueryWithOutput.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -26,6 +28,8 @@ public:
     String getID(char) const override { return "ShowColumns"; }
     ASTPtr clone() const override;
     QueryKind getQueryKind() const override { return QueryKind::Show; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

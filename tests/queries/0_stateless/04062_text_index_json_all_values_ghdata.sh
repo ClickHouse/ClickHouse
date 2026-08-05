@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, no-fasttest, no-object-storage, long, no-flaky-check
+# Tags: no-parallel-replicas, no-fasttest, no-object-storage, long, no-flaky-check, no-msan
 
 # Tests that text indexes built on JSONAllValues work correctly on a real-world
 # GitHub Events dataset (ghdata_sample.json) with various query patterns.

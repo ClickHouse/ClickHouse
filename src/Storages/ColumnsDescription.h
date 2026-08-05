@@ -323,6 +323,9 @@ struct DefaultExpressionsInfo
 {
     ASTPtr expr_list = nullptr;
     bool has_columns_with_default_without_type = false;
+    /// Names of columns whose stored value is computed from a default expression (DEFAULT,
+    /// MATERIALIZED). ALIAS (read-time) and EPHEMERAL (a non-stored insert input) are not included.
+    NameSet insert_time_default_columns;
 };
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
@@ -331,7 +334,17 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 /// default expression result can be cast to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
-void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
+/// insert_time_default_columns lists the DEFAULT/MATERIALIZED columns whose stored value is computed
+/// from the expression; their expressions must not reference virtual columns.
+void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
+
+/// Whether a PREWHERE contract (`IStorage::supportedPrewhereColumns`, a set of top-level names)
+/// admits `column_name`: directly, or - when `include_subcolumns` is set
+/// (`IStorage::supportedPrewhereColumnsIncludeSubcolumns`) - as a subcolumn riding its origin
+/// column: a read of `json.a` is delegated exactly like a read of `json`, and subcolumn sets
+/// (JSON paths) are open-ended, so the contract can only ever enumerate origins.
+bool prewhereSupportedColumnsContain(
+    const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name);
 
 }

@@ -11,9 +11,7 @@ doc_type: 'guide'
 本番環境用に ClickHouse をインストールする必要がない場合は、curl を使用してインストールスクリプトを実行できます。このスクリプトは、お使いの OS に適したバイナリを判別します。
 
 <Steps>
-  <Step>
-    ## curl を使用して ClickHouse をインストールする
-
+  <Step title="curl を使用して ClickHouse をインストールする" id="install-clickhouse-using-curl">
     次のコマンドを実行して、お使いのオペレーティングシステム向けの単一バイナリをダウンロードします。
 
     ```bash
@@ -36,9 +34,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## clickhouse-local を起動する
-
+  <Step title="clickhouse-local を起動する" id="start-clickhouse-local">
     `clickhouse-local` を使用すると、設定なしで ClickHouse の
     強力な SQL 構文を使ってローカルおよびリモートのファイルを処理できます。テーブルデータは
     一時的な場所に保存されるため、`clickhouse-local` を再起動すると
@@ -51,9 +47,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## clickhouse-server を起動する
-
+  <Step title="clickhouse-server を起動する" id="start-clickhouse-server">
     データを永続化したい場合は、`clickhouse-server` を実行します。次のコマンドで
     ClickHouse サーバーを起動できます。
 
@@ -62,9 +56,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## clickhouse-client を起動する
-
+  <Step title="clickhouse-client を起動する" id="start-clickhouse-client">
     サーバーが起動したら、新しいターミナルウィンドウを開いて次のコマンドを実行し、
     `clickhouse-client` を起動します。
 

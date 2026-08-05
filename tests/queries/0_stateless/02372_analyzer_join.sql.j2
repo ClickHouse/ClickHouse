@@ -62,7 +62,12 @@ SELECT '--';
 SELECT t1.value, t2.value
 FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id ORDER BY ALL;
 
+{% if join_type == 'INNER' -%}
+-- An equated key of an INNER JOIN carries the same value on both sides, so an unqualified reference is not ambiguous.
+SELECT id FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id ORDER BY ALL;
+{% else -%}
 SELECT id FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id ORDER BY ALL; -- { serverError AMBIGUOUS_IDENTIFIER }
+{% endif -%}
 
 SELECT value FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id ORDER BY ALL; -- { serverError AMBIGUOUS_IDENTIFIER }
 

@@ -48,17 +48,13 @@ ClickStack の Helm チャートは [こちら](https://github.com/ClickHouse/Cl
 <br />
 
 <Steps>
-  <Step>
-    ### 前提条件
-
+  <Step title="前提条件" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * Kubernetes クラスター (v1.20+ 推奨)
     * ご利用のクラスターとやり取りできるように `kubectl` が設定されていること
   </Step>
 
-  <Step>
-    ### ClickStack の Helm リポジトリを追加する
-
+  <Step title="ClickStack の Helm リポジトリを追加する" id="add-the-clickstack-helm-repository">
     ClickStack の Helm リポジトリを追加します：
 
     ```shell
@@ -67,9 +63,7 @@ ClickStack の Helm チャートは [こちら](https://github.com/ClickHouse/Cl
     ```
   </Step>
 
-  <Step>
-    ### ClickStack のインストール
-
+  <Step title="ClickStack のインストール" id="installing-clickstack">
     デフォルト値で ClickStack チャートをインストールするには:
 
     ```shell
@@ -77,9 +71,7 @@ ClickStack の Helm チャートは [こちら](https://github.com/ClickHouse/Cl
     ```
   </Step>
 
-  <Step>
-    ### インストールを確認する
-
+  <Step title="インストールを確認する" id="verify-the-installation">
     インストールを確認します。
 
     ```shell
@@ -89,9 +81,7 @@ ClickStack の Helm チャートは [こちら](https://github.com/ClickHouse/Cl
     すべてのポッドの準備ができたら、次に進んでください。
   </Step>
 
-  <Step>
-    ### ポートフォワーディング
-
+  <Step title="ポートフォワーディング" id="forward-ports">
     ポートフォワーディングを使用すると、HyperDX にアクセスしてセットアップを行えます。本番環境にデプロイする場合は、適切なネットワークアクセス、TLS 終端、スケーラビリティを確保するため、代わりにイングレスまたはロードバランサー経由でサービスを公開してください。ポートフォワーディングは、ローカルでの開発や一時的な管理作業には適していますが、長期運用や高可用性が求められる環境には適していません。
 
     ```shell
@@ -107,9 +97,7 @@ ClickStack の Helm チャートは [こちら](https://github.com/ClickHouse/Cl
     </Tip>
   </Step>
 
-  <Step>
-    ### UI にアクセスする
-
+  <Step title="UI にアクセスする" id="navigate-to-the-ui">
     HyperDX UI にアクセスするには、[http://localhost:8080](http://localhost:8080) を開きます。
 
     要件を満たすユーザー名とパスワードを指定して、ユーザーを作成します。
@@ -125,9 +113,7 @@ ClickStack の Helm チャートは [こちら](https://github.com/ClickHouse/Cl
     </Info>
   </Step>
 
-  <Step>
-    ### values のカスタマイズ (任意)
-
+  <Step title="values のカスタマイズ (任意)" id="customizing-values">
     `--set` フラグを使って設定をカスタマイズできます。たとえば、次のように指定します。
 
     ```shell
@@ -167,9 +153,7 @@ ClickStack の Helm チャートは [こちら](https://github.com/ClickHouse/Cl
     ```
   </Step>
 
-  <Step>
-    ### シークレットの使用 (任意)
-
+  <Step title="シークレットの使用 (任意)" id="using-secrets">
     API キーやデータベース認証情報などの機密データを扱うには、Kubernetes のシークレットを使用します。HyperDX の Helm チャートには、変更してクラスターに適用できるデフォルトのシークレットファイルが用意されています。
 
     #### 事前設定済みシークレットの使用

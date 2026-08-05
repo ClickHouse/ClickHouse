@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Introduction aux projections'
 title: 'Créez votre première projection'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['Analytique en temps réel', 'Data warehousing']
 products: ['Cloud']
 description: 'Apprenez à utiliser les projections dans ClickHouse pour stocker une copie supplémentaire triée de vos données dans la même table, afin de permettre des recherches rapides sur des colonnes non couvertes par votre clé primaire.'
 ---
@@ -42,9 +42,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
 À la fin, vous saurez comment ajouter et matérialiser une projection, comment ClickHouse la sélectionne automatiquement et dans quels cas privilégier les projections aux vues matérialisées.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Comprendre pourquoi vous avez besoin d’une projection
-
+  <Step title="Comprendre pourquoi vous avez besoin d’une projection" id="understand-why-you-need-a-projection">
     Votre table `uk_price_paid` est triée selon `(postcode, addr1, addr2)`. Cela signifie que ClickHouse peut ignorer de grands blocs de données lorsque vous filtrez sur `postcode`, `addr1` ou `addr2`, mais les requêtes qui filtrent sur `town` doivent parcourir chaque ligne - soit la totalité des 30 millions.
 
     Une **projection** stocke une copie triée supplémentaire de (certaines ou de toutes les) colonnes *dans la même table*. Lorsque vous interrogez la table, l’optimiseur de requêtes vérifie automatiquement si la lecture depuis la projection nécessiterait moins de granules que les données de base, et l’utilise de façon transparente si c’est le cas.
@@ -58,9 +56,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
     Pour en savoir plus, consultez la [documentation de référence sur les projections](/fr/reference/statements/alter/projection).
   </Step>
 
-  <Step>
-    ### Ajouter une projection à votre table
-
+  <Step title="Ajouter une projection à votre table" id="add-a-projection-to-your-table">
     Définissez une projection sur `uk_price_paid` qui stocke `town`, `date`, `price` et `type`, triés selon `(town, date)` :
 
     ```sql
@@ -83,9 +79,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
     Vous devriez voir le bloc `PROJECTION uk_price_paid_by_town` dans le résultat.
   </Step>
 
-  <Step>
-    ### Matérialiser la projection pour les données existantes
-
+  <Step title="Matérialiser la projection pour les données existantes" id="materialize-the-projection-for-existing-data">
     Comme les vues matérialisées, une projection ajoutée récemment ne s&#39;applique qu&#39;aux futures insertions. Pour l&#39;alimenter avec les 30 millions de lignes déjà présentes dans la table, matérialisez-la explicitement :
 
     ```sql
@@ -121,9 +115,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
     ```
   </Step>
 
-  <Step>
-    ### Interroger la table et observer l’utilisation automatique des projections
-
+  <Step title="Interroger la table et observer l’utilisation automatique des projections" id="query-the-table-and-observe-automatic-projection-usage">
     Exécutez maintenant une requête en filtrant sur `town` — sur la **même table** que précédemment :
 
     ```sql
@@ -167,18 +159,14 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
     SETTINGS optimize_use_projections = 0;
     ```
 
-    Cela force un parcours complet de la table, ce qui vous permet de voir la différence du nombre de lignes lues.
+    Cela force un parcours complet de la table, ce qui vous permet de voir la différence de nombre de lignes lues.
   </Step>
 
-  <Step>
-    ### Comparer les projections et les vues matérialisées
-
+  <Step title="Comparer les projections et les vues matérialisées" id="compare-projections-to-materialized-views">
     Les projections et les vues matérialisées résolvent toutes deux le même problème — accélérer les lectures pour d’autres modes d’accès — mais elles impliquent des compromis différents. En bref, les projections sont les mieux adaptées lorsque vous avez simplement besoin d’un ordre de tri différent sur les mêmes données ; les vues matérialisées sont plus flexibles lorsque vous devez transformer, agréger ou acheminer des données vers un schéma différent. Pour une comparaison détaillée, consultez [Vues matérialisées et projections](/fr/concepts/features/projections/materialized-views-versus-projections).
   </Step>
 
-  <Step>
-    ### Observez le surcoût de stockage
-
+  <Step title="Observez le surcoût de stockage" id="observe-the-storage-overhead">
     Les projections stockent une seconde copie des colonnes sélectionnées dans la même table, ce qui augmente l’espace disque utilisé. Interrogez `system.parts` pour voir la taille totale de `uk_price_paid` (qui inclut désormais les données des projections) :
 
     ```sql
@@ -211,7 +199,9 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
   </Step>
 </Steps>
 
-## Étapes suivantes
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
 
 Dans ce guide de démarrage rapide, vous avez ajouté une projection à `uk_price_paid` qui stocke les données triées par `(town, date)`, ce qui permet d’effectuer rapidement des recherches par ville sans créer de table distincte. Vous avez appris que les projections sont sélectionnées de manière transparente par l’optimiseur de requêtes, restent synchronisées avec les mutations et utilisent davantage d’espace disque pour améliorer les performances en lecture.
 

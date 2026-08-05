@@ -28,7 +28,7 @@ ClickPipes prend en charge Postgres à partir de la version 12.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp" alt="Définir wal_level sur logical dans Azure Flexible Server for Postgres" size="lg" border />
 
-3. Cette modification nécessite un redémarrage du serveur. Redémarrez-le donc lorsqu&#39;on vous le demande.
+3. Cette modification nécessite un redémarrage du serveur. Redémarrez-le donc lorsque cela vous est demandé.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp" alt="Redémarrer le serveur après avoir modifié wal_level" size="lg" border />
 
@@ -76,7 +76,7 @@ Connectez-vous à votre Azure Flexible Server Postgres avec l&#39;utilisateur ad
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publication `clickpipes` contiendra l&#39;ensemble des événements de modification générés à partir des tables spécifiées, et sera ensuite utilisée pour l&#39;ingestion du flux de réplication.
+La publication `clickpipes` définit l&#39;ensemble des tables dont les événements de modification seront transmis à ClickPipes. Nous déconseillons d&#39;utiliser `FOR ALL TABLES` sauf si vous avez l&#39;intention de répliquer chaque table, car l&#39;inclusion de tables inutiles augmente le trafic WAL de Postgres vers ClickPipes et réduit l&#39;efficacité globale de la réplication.
 
 <div id="add-clickpipes-ips-to-firewall">
   ## Ajouter les adresses IP de ClickPipes au pare-feu
@@ -85,7 +85,7 @@ La publication `clickpipes` contiendra l&#39;ensemble des événements de modifi
 Veuillez suivre les étapes ci-dessous pour ajouter les [adresses IP de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips) à votre réseau.
 
 1. Accédez à l’onglet **Networking** et ajoutez les [adresses IP de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips) au pare-feu
-   de votre Azure Flexible Server Postgres, ou du Jump Server/Bastion si vous utilisez un tunnel SSH.
+   de votre Azure Flexible Server Postgres ou du Jump Server/Bastion si vous utilisez un tunnel SSH.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Ajouter les adresses IP de ClickPipes au pare-feu dans Azure Flexible Server for Postgres" size="lg" />
 

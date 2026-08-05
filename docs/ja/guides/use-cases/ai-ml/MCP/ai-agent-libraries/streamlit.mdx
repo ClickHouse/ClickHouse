@@ -28,9 +28,7 @@ doc_type: 'guide'
 以下の手順を実行して、Streamlit アプリケーションを作成できます。
 
 <Steps>
-  <Step>
-    ## ライブラリのインストール
-
+  <Step title="ライブラリのインストール" id="install-libraries">
     以下のコマンドを実行して、必要なライブラリをインストールします。
 
     ```bash
@@ -38,9 +36,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## ユーティリティファイルを作成する
-
+  <Step title="ユーティリティファイルを作成する" id="create-utilities">
     2 つのユーティリティ関数を含む `utils.py` ファイルを作成します。1 つ目は、
     Agno エージェントからのストリーム応答を処理するための非同期ジェネレーター関数です。
     2 つ目は、Streamlit
@@ -68,9 +64,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 認証情報の設定
-
+  <Step title="認証情報の設定" id="setup-credentials">
     Anthropic APIキーを環境変数として設定します。
 
     ```bash
@@ -85,9 +79,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## 必要なライブラリをインポートする
-
+  <Step title="必要なライブラリをインポートする" id="import-libraries">
     まず、メインのStreamlitアプリケーションファイル (例: `app.py`) を作成し、必要なライブラリをインポートします。
 
     ```python
@@ -111,9 +103,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## agent のストリーミング関数を定義する
-
+  <Step title="agent のストリーミング関数を定義する" id="define-agent-function">
     [ClickHouse&#39;s SQL Playground](https://sql.clickhouse.com/) に接続し、レスポンスをストリーミングするメインの agent 関数を追加します。
 
     ```python
@@ -163,9 +153,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 同期ラッパー関数を追加する
-
+  <Step title="同期ラッパー関数を追加する" id="add-wrapper-functions">
     Streamlit での非同期ストリーミングを処理するためのヘルパー関数を追加します。
 
     ```python
@@ -173,7 +161,7 @@ doc_type: 'guide'
         queue = Queue()
         def run():
             asyncio.run(_agent_stream_to_queue(message, queue))
-            queue.put(None)  # ストリーム終了を示すセンチネル値
+            queue.put(None)  # Sentinel to end stream
         threading.Thread(target=run, daemon=True).start()
         while True:
             chunk = queue.get()
@@ -187,9 +175,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Streamlit インターフェイスを作成する
-
+  <Step title="Streamlit インターフェイスを作成する" id="create-interface">
     Streamlit の UI コンポーネントとチャット機能を追加します。
 
     ```python
@@ -218,9 +204,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## アプリケーションを実行する
-
+  <Step title="アプリケーションを実行する" id="run-application">
     ClickHouse AI agent のWebアプリケーションを起動するには、ターミナルで
     次のコマンドを実行します。
 

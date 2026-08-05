@@ -79,7 +79,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     prebuilt_cursors.resize(columns_.size());
 
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
+    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state
@@ -384,7 +384,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 {
     const auto & data_part = getDataPart();
 
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
+    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
     if (index_format.version != 2)
         return;
 
@@ -660,7 +660,7 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
         else if (query.getSearchMode() == TextSearchMode::Any)
             *result |= large_postings;
 
-        if (query.getSearchMode() == TextSearchMode::All && result && result->cardinality() == 0)
+        if (query.getSearchMode() == TextSearchMode::All && result && result->isEmpty())
             return {};
     }
 

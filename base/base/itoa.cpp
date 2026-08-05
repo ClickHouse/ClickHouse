@@ -547,7 +547,8 @@ char * itoa(Int256 i, char * p)
 
 FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
 
-#if defined(OS_DARWIN)
+/// `long` is not covered by the list above where it is a distinct type.
+#if defined(LONG_IS_A_DISTINCT_TYPE)
 DEFAULT_ITOA(unsigned long)
 DEFAULT_ITOA(long)
 #endif
