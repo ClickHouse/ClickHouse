@@ -2171,6 +2171,10 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
     chassert(std::has_single_bit(num_partitions));
     const size_t partition_mask = num_partitions - 1;
 
+    /// Set methods (GROUP BY without aggregate functions) have no aggregate states, so merging a source
+    /// cell into the destination is just inserting its key - there is nothing to adopt, merge or destroy.
+    static constexpr bool is_void_mapped = std::is_void_v<typename Method::Mapped>;
+
     PaddedPODArray<AggregateDataPtr> dst_places;
     PaddedPODArray<AggregateDataPtr> src_places;
 
@@ -2193,16 +2197,25 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
         src_data = nullptr;
     };
 
-    auto merge_cell = [&](const auto & key, AggregateDataPtr & src_data, size_t hash_value)
+    auto merge_cell = [&](const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
     {
-        /// A source state can be null if its creation once failed mid-way (see `destroyImpl`).
-        if (!src_data)
-            return;
-
         typename Method::Data::LookupResult it;
         bool inserted = false;
-        dst_method.data.emplace(key, it, inserted, hash_value);
-        adopt_or_collect(inserted, it->getMapped(), src_data);
+
+        if constexpr (is_void_mapped)
+        {
+            /// `src_data` is the cell's `VoidMapped` placeholder - the key union is the whole merge.
+            dst_method.data.emplace(key, it, inserted, hash_value);
+        }
+        else
+        {
+            /// A source state can be null if its creation once failed mid-way (see `destroyImpl`).
+            if (!src_data)
+                return;
+
+            dst_method.data.emplace(key, it, inserted, hash_value);
+            adopt_or_collect(inserted, it->getMapped(), src_data);
+        }
     };
 
     auto flush_merges = [&]
@@ -2230,6 +2243,10 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
             {
                 dst_table.hasNullKeyData() = true;
                 dst_table.getNullKeyData() = src_table.getNullKeyData();
+            }
+            else if constexpr (is_void_mapped)
+            {
+                /// The null group carries no state: its presence in the destination is all there is.
             }
             else if (is_simple_count)
             {
