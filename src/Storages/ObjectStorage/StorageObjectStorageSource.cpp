@@ -464,6 +464,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else
     {
         Strings paths;
+        ExpressionActionsPtr deferred_filter_actions;
 
         auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context, hive_columns);
         if (filter_dag)
@@ -488,13 +489,20 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             /// of `globalIn` / `globalNotIn` alone so that `ReadFromRemote` can attach an external table
             /// to them first, and plan optimization has since moved the subquery plan of such a set into
             /// `CreatingSetsStep`, so `buildSetsForDAG` cannot build it here either - it only becomes
-            /// ready when the pipeline runs. Pruning is an optimization (the same predicate is applied by
-            /// the `Filter` step above this source), so skip it rather than execute a not-ready set,
-            /// which throws "Not-ready Set is passed as the second argument".
+            /// ready when the pipeline runs. Executing a not-ready set here throws "Not-ready Set is
+            /// passed as the second argument", so defer the filter to `KeysIterator::next` instead: it
+            /// runs when the pipeline runs, after `CreatingSetsStep` has built the set. The filter must
+            /// still be applied before the metadata probe in `next` (not merely left to the `Filter`
+            /// step above this source), because probing a filtered-out nonexistent key would throw
+            /// FILE_DOESNT_EXIST.
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
                 VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, hive_columns, local_context);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             }
 
             paths = keys;
@@ -512,7 +520,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
-            file_progress_callback);
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context);
     }
 
     if (is_archive)
@@ -1784,7 +1792,11 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     bool ignore_non_existent_files_,
     bool skip_object_metadata_,
     bool with_tags_,
-    std::function<void(FileProgress)> file_progress_callback_)
+    std::function<void(FileProgress)> file_progress_callback_,
+    ExpressionActionsPtr deferred_filter_actions_,
+    NamesAndTypesList hive_columns_,
+    String object_namespace_,
+    ContextPtr context_)
     : object_storage(object_storage_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
@@ -1792,6 +1804,10 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , ignore_non_existent_files(ignore_non_existent_files_)
     , skip_object_metadata(skip_object_metadata_)
     , with_tags(with_tags_)
+    , deferred_filter_actions(std::move(deferred_filter_actions_))
+    , hive_columns(std::move(hive_columns_))
+    , object_namespace(std::move(object_namespace_))
+    , context(std::move(context_))
 {
     if (read_keys_)
     {
@@ -1813,6 +1829,22 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             return nullptr;
 
         auto key = keys[current_index];
+
+        /// The filter could not be applied when the iterator was created, because a set in it was not
+        /// ready yet (see `createFileIterator`); it is ready now, when the pipeline runs. Filter before
+        /// fetching the metadata: probing a filtered-out nonexistent key would throw FILE_DOESNT_EXIST.
+        if (deferred_filter_actions)
+        {
+            std::vector<String> filtered_keys({key});
+            const std::vector<String> filter_paths({fs::path(object_namespace) / key});
+            VirtualColumnUtils::filterByPathOrFile(filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context);
+            if (filtered_keys.empty())
+            {
+                if (emit_profile_events)
+                    ProfileEvents::increment(ProfileEvents::ObjectStoragePredicateFilteredObjects);
+                continue;
+            }
+        }
 
         ObjectMetadata object_metadata{};
         if (!skip_object_metadata)

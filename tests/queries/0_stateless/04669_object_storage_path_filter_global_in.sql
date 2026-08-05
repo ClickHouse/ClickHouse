@@ -25,6 +25,16 @@ WHERE _file GLOBAL IN (SELECT concat('04669_path_filter_global_in_', currentData
 SELECT * FROM s3(s3_conn, filename = concat('04669_path_filter_global_in_', currentDatabase()), format = CSV, structure = 'x UInt64')
 WHERE globalNotIn(_file, (SELECT 'no such file'));
 
+-- A nonexistent key that the predicate excludes must return no rows, not throw FILE_DOESNT_EXIST:
+-- the filter has to be applied before the key's metadata is probed. With a not-ready set the pruning
+-- cannot happen while the pipeline is built, so `KeysIterator` applies the filter lazily, when the
+-- pipeline runs and the set is ready.
+SELECT * FROM s3(s3_conn, filename = concat('04669_path_filter_global_in_no_such_file_', currentDatabase()), format = CSV, structure = 'x UInt64')
+WHERE _path GLOBAL IN (SELECT 'no such path');
+
+SELECT * FROM s3(s3_conn, filename = concat('04669_path_filter_global_in_no_such_file_', currentDatabase()), format = CSV, structure = 'x UInt64')
+WHERE _file GLOBAL NOT IN (SELECT concat('04669_path_filter_global_in_no_such_file_', currentDatabase()));
+
 -- A glob applies the same filter lazily, while listing objects; it must keep working too.
 SELECT * FROM s3(s3_conn, filename = concat('04669_path_filter_global_in_', currentDatabase(), '*'), format = CSV, structure = 'x UInt64')
 WHERE _file GLOBAL IN (SELECT concat('04669_path_filter_global_in_', currentDatabase()));
