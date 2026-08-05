@@ -113,14 +113,23 @@ bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription &
 
 bool ColumnStatisticsDescription::hasSameExplicitStatistics(const ColumnStatisticsDescription & other) const
 {
-    /// The declaration AST is compared as well, because a statistics type can be parameterized
-    /// (`STATISTICS(tdigest(1))`) and the parameters are a part of the stored definition.
+    /// Parameters are a part of the declaration, so the AST is compared; the type name is not,
+    /// because it is stored as written while `stringToStatisticsType` is case-insensitive.
     auto explicit_declarations = [](const ColumnStatisticsDescription & desc)
     {
         std::map<StatisticsType, ASTPtr> declarations;
         for (const auto & [type, single_description] : desc.types_to_desc)
-            if (!single_description.is_implicit)
-                declarations.emplace(type, single_description.ast);
+        {
+            if (single_description.is_implicit)
+                continue;
+
+            ASTPtr ast = single_description.ast ? single_description.ast->clone() : nullptr;
+            if (auto * function = ast ? ast->as<ASTFunction>() : nullptr)
+                function->name = statisticsTypeToString(type);
+            else if (auto * identifier = ast ? ast->as<ASTIdentifier>() : nullptr)
+                *identifier = ASTIdentifier(statisticsTypeToString(type));
+            declarations.emplace(type, std::move(ast));
+        }
         return declarations;
     };
 
