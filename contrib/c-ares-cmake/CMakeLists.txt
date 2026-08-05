@@ -131,6 +131,12 @@ elseif (OS_WINDOWS)
     # the configured DNS servers and the search domain list - the job `/etc/resolv.conf` does
     # elsewhere. `ws2_32` is Winsock.
     target_link_libraries(_c-ares PRIVATE iphlpapi ws2_32)
+elseif (OS_WASM)
+    # Emscripten's libc is musl-derived, so the Linux configuration is the closest fit. There are
+    # no sockets in a WebAssembly sandbox, so none of this resolver is ever reached at run time -
+    # it only has to compile, because gRPC and the rest of the tree link it unconditionally.
+    target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/linux")
+    target_compile_definitions(_c-ares PRIVATE -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600)
 endif()
 
 add_library(ch_contrib::c-ares ALIAS _c-ares)

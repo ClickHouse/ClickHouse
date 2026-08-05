@@ -152,7 +152,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
 Timer::Timer()
     : log(getLogger("Timer"))
 {}
@@ -525,7 +525,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 
     try
     {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
         timer.createIfNecessary(thread_id, clock_type, pause_signal);
         timer.set(period);
 #else
@@ -536,7 +536,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     }
     catch (...)
     {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
         timer.cleanup();
 #else
         ProfilerSampler::instance().removeThread(pthread_self(), pause_signal);
@@ -552,7 +552,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt64 period_)
 {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
     timer.set(period_);
 #elif defined(OS_DARWIN)
     ProfilerSampler::instance().setThreadPeriod(pthread_self(), pause_signal, period_);
@@ -577,7 +577,7 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::cleanup()
 {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
     timer.stop();
     signal_handler_disarmed = true;
 #elif defined(OS_DARWIN)

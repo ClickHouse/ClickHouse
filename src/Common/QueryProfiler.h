@@ -28,7 +28,10 @@ namespace Poco
 /// wakeup and deadlock the process (Apple FB24027930). Other Darwin builds link the replacement
 /// in `base/darwin-compatibility`, but TSan builds cannot, because TSan interposes those same
 /// functions to track lock order.
-#if (defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)) && !(defined(THREAD_SANITIZER) && defined(OS_DARWIN))
+/// Emscripten declares `SIGEV_THREAD_ID` but its `sigevent` has no `_sigev_un`, and a
+/// WebAssembly sandbox has no signals to deliver a timer expiry with in the first place.
+#if (defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)) && !(defined(THREAD_SANITIZER) && defined(OS_DARWIN)) \
+    && defined(OS_HAS_SIGNAL_HANDLERS)
 #    define QUERY_PROFILER_SUPPORTED 1
 #endif
 
@@ -47,7 +50,7 @@ namespace DB
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
 
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
 class Timer
 {
 public:
@@ -65,7 +68,7 @@ private:
     LoggerPtr log;
     std::optional<timer_t> timer_id;
 };
-#endif // defined(SIGEV_THREAD_ID)
+#endif // defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
 
 template <typename ProfilerImpl>
 class QueryProfilerBase
@@ -83,7 +86,7 @@ private:
 
     LoggerPtr log;
 
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
     inline static thread_local Timer timer = Timer();
 #endif
 
