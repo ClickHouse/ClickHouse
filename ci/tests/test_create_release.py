@@ -409,7 +409,11 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert info["is_branch_release"] is True  # gates the deferred version bump
 
     step("--push-release-tag", "--dry-run")
-    step("--create-bump-version-pr", "--dry-run")
+    # The dry-run bump writes the file, prints its diff, then reverts it. The diff
+    # must show the patch advancing 26.6.2 -> 26.6.3 (post-release bump).
+    bump = step("--create-bump-version-pr", "--dry-run")
+    assert "SET(VERSION_PATCH 3)" in bump.stdout
+    assert "26.6.3.1" in bump.stdout
     final = step("--post-status", "--dry-run")
     assert "New release" in final.stdout
 
@@ -500,6 +504,89 @@ def test_prepare_recovers_from_tag(tmp_path):
     assert info["create_new_release"] is False
     # Branch tip still describes this release, so recovery must complete the bump.
     assert info["is_branch_release"] is True
+
+
+def test_recovery_of_unbumped_branch_bumps_version(tmp_path):
+    """Heal: recovering an un-bumped branch must still advance the version file.
+
+    The tag sits at the branch tip with no post-release bump commit, so this is a
+    recovery (``create_new_release=false``) but ``is_branch_release=true``. The
+    bump must run and move 26.6.2 -> 26.6.3, so the patch number stops being
+    pinned. The dry-run bump writes the file, prints its diff, then reverts it.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit (previous release)")
+    anchor = _head_sha(repo)
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, anchor), encoding="utf-8"
+    )
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit (un-bumped tip)")
+    # Tag at the tip, no post-release bump commit — the stuck state.
+    git("tag", "-a", "v26.6.2.1-stable", "-m", "Release v26.6.2.1-stable")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    def step(*flags):
+        result = subprocess.run(
+            [sys.executable, script, *flags], cwd=repo, env=env,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"step {flags} failed (rc={result.returncode})\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+        return result
+
+    step("--prepare-release-info", "--ref", "v26.6.2.1-stable",
+         "--release-type", "patch", "--dry-run")
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["create_new_release"] is False  # recovery
+    assert info["is_branch_release"] is True  # branch not advanced -> gates the bump
+
+    bump = step("--create-bump-version-pr", "--dry-run")
+    assert "SET(VERSION_PATCH 3)" in bump.stdout  # 26.6.2 -> 26.6.3
+    assert "26.6.3.1" in bump.stdout
 
 
 def test_prepare_recovers_already_released_commit(tmp_path):
