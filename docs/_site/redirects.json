@@ -60,6 +60,10 @@
     "destination": "/products/bring-your-own-cloud/reference/faq"
   },
   {
+    "source": "/products/bring-your-own-cloud/reference/cost-model-aws",
+    "destination": "/products/bring-your-own-cloud/reference/cost-model"
+  },
+  {
     "source": "/concepts/features/operations/delete/delete-mutations",
     "destination": "/reference/statements/alter/delete"
   },
@@ -2064,8 +2068,12 @@
     "source": "/cloud/reference/byoc/connect"
   },
   {
-    "destination": "/products/bring-your-own-cloud/reference/cost-model-aws",
+    "destination": "/products/bring-your-own-cloud/reference/cost-model",
     "source": "/cloud/reference/byoc/cost-model-aws"
+  },
+  {
+    "destination": "/products/bring-your-own-cloud/reference/cost-model",
+    "source": "/cloud/reference/byoc/cost-model"
   },
   {
     "destination": "/products/bring-your-own-cloud/reference/faq",

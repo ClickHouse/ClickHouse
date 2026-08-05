@@ -1,0 +1,116 @@
+---
+title: 'Managing GCP service limits and quotas'
+slug: /cloud/reference/byoc/gcp-service-limits
+sidebarTitle: 'GCP service limits and quotas'
+keywords: ['BYOC', 'bring your own cloud', 'GCP', 'service quotas', 'service limits', 'Compute Engine', 'GKE', 'VPC', 'Persistent Disk', 'compute classes']
+description: 'GCP quotas to verify before BYOC onboarding, how machine family quotas interact with GKE compute classes, and what to monitor as services scale'
+doc_type: 'reference'
+---
+
+A successful BYOC deployment depends on having sufficient Google Cloud quotas in the project and region where the data plane is deployed. Unlike AWS, most Compute Engine quotas have no single published default value: Google grants them per project, per region, and *per machine family*, based on your project's age, billing history, and prior usage. A project that has never run a given machine family often has little or no quota for it, even when the overall CPU quota looks generous.
+
+This page provides a pre-deployment quota checklist. Please monitor your usage and work directly with the cloud service provider to request quota increases.
+
+## Pre-deployment quota checklist {#pre-deployment-quota-checklist}
+
+Before initiating BYOC onboarding, verify the following quotas in the GCP project and region where you plan to deploy. Compute Engine quotas are per project and per region; IAM and Cloud Storage quotas are per project.
+
+### Required quotas {#required-quotas}
+
+| Service | Quota name | BYOC requirement | Typical default | Action |
+|---------|------------|------------------|-----------------|--------|
+| **Compute Engine** | CPUs (region-wide, all families) | ≥ peak vCPU of your service tier × 1.5 (headroom for autoscaling and make-before-break upgrades) + 16 vCPU for the system node pool + 12 vCPU per service for ClickHouse Keeper | Project-dependent | **Request increase** to match the BYOC requirement |
+| **Compute Engine** | Per-family CPU quotas (`C4A_CPUS`, `N2D_CPUS`, `N2_CPUS`, …) | The region-wide CPU quota is not sufficient on its own — every machine family a compute class can select from needs its own quota. See [Machine family quotas and compute classes](#machine-family-quotas). | Project-dependent, and frequently unset for families you have never used | **Request increase** for every family listed below |
+| **Compute Engine** | Persistent Disk SSD (GB) | ≥ (100 GB boot disk × peak node count) + ClickHouse Keeper data volumes + ClickHouse cache volumes on node pools without local SSD | Project-dependent | **Request increase** to match the BYOC requirement |
+| **Compute Engine** | Local SSD (GB) | ≥ bundled Titanium SSD capacity of each `c4a-*-lssd` node × peak node count of the Axion node pools | Project-dependent | **Request increase** if you deploy the Axion (`c4a`) node pools |
+| **Compute Engine** | In-use IP addresses (regional, external) | ≥ 2 (one for Cloud NAT, one for the shared public ingress load balancer) | 8 | Verify available. Request an increase if running multiple BYOC deployments in the same region. |
+| **Compute Engine** | Static IP addresses (regional) | ≥ 2 (the NAT and ingress addresses are reserved, not ephemeral) | 8 | Verify available |
+| **Compute Engine** | Instance groups / managed instance groups per region | ≥ 45 (GKE creates one managed instance group per node pool per zone; a production deployment uses 15 node pools across 3 zones) | Project-dependent | Verify available |
+| **VPC** | VPC networks per project | ≥ 1 (BYOC creates 1 dedicated VPC unless you bring your own) | 15 | Verify available |
+| **VPC** | Subnets per VPC network | ≥ 2 (1 private for GKE nodes, 1 public) plus 1 secondary IPv4 range on the private subnet for pods | Not a constraint | No action |
+| **VPC** | Firewall rules per project | ≥ 20 (GKE creates and maintains its own rules for node, control plane, and load balancer traffic) | Project-dependent | Verify headroom |
+| **VPC** | Routes per project | ≥ 1 static route (default internet route via the default internet gateway) plus GKE-managed routes | Project-dependent | No action |
+| **Cloud Router** | Cloud Routers per region per network | ≥ 1 | Project-dependent | Verify available |
+| **Cloud NAT** | Cloud NAT gateways per region per network | ≥ 1 (outbound egress for private GKE nodes) | Project-dependent | Verify available |
+| **GKE** | Clusters per region | ≥ 1 (BYOC creates 1 regional GKE cluster spanning the zones of the region) | See [GKE quotas and limits](https://cloud.google.com/kubernetes-engine/quotas) | Verify available |
+| **GKE** | Node pools per cluster | ≥ 15 (system, Keeper x86, Keeper fallback, ClickHouse server per size class, Axion server per size class) | See [GKE quotas and limits](https://cloud.google.com/kubernetes-engine/quotas) | No action |
+| **GKE** | Nodes per node pool | ≥ peak node count for your service tier (each node pool is configured with a maximum of 100 nodes) | See [GKE quotas and limits](https://cloud.google.com/kubernetes-engine/quotas) | No action |
+| **Cloud Load Balancing** | Forwarding rules (internal and external, per region) | ≥ 3 (shared public ingress, shared private ingress, PSC ingress). The ingress gateway is shared across all ClickHouse services in the infrastructure, so forwarding rules do **not** scale per service. | Project-dependent | Verify available |
+| **Cloud Storage** | Buckets | 2 buckets per ClickHouse service (data + backup) plus 1 monitoring bucket per BYOC infrastructure | No limit on bucket count; bucket creation and deletion is rate-limited to roughly 1 operation per 2 seconds per project | No action |
+| **IAM** | Service accounts per project | ≥ 5 per BYOC infrastructure (ClickHouse server, metrics scraper, GKE nodes, monitoring, data plane management) | 100 | Verify headroom for other workloads |
+| **IAM** | Custom roles per project | ≥ 2 per BYOC infrastructure (data plane management, GKE connect) | 300 | No action |
+
+### Machine family quotas and compute classes {#machine-family-quotas}
+
+ClickHouse BYOC on GCP uses [GKE custom compute classes](https://cloud.google.com/kubernetes-engine/docs/concepts/about-custom-compute-classes) to express an ordered machine family preference for each workload, so that node provisioning can fall back to an alternative family when the preferred one is unavailable. Two compute classes are configured:
+
+| Compute class | Workload | Machine family priority order |
+|---------------|----------|-------------------------------|
+| `keeper` | ClickHouse Keeper | `n2d` → `n2` |
+| `server-arm` | ClickHouse server | `c4a` (Axion) → `c4d` → `c4` → `c3d` → `c3` → `n2` → `n2d` |
+
+Two consequences for quota planning:
+
+- **Quota exhaustion in one family does not silently spill over into the next one for free.** GKE only falls back to the next family in the priority list if there is a node pool of that family *and* enough quota in it. Granting quota only for `c4a` means the fallback path is unusable when Axion capacity is tight in the region.
+- **Both compute classes are configured with `whenUnsatisfiable: DoNotScaleUp`.** When no priority in the list can be satisfied, GKE does not fall back to an arbitrary machine type — the pods stay `Pending`. A missing per-family quota therefore surfaces as a ClickHouse service that cannot start, scale up, or complete an upgrade, not as a slower or more expensive node.
+
+Request per-family CPU quota (`C4A_CPUS`, `C4D_CPUS`, `C4_CPUS`, `C3D_CPUS`, `C3_CPUS`, `N2_CPUS`, `N2D_CPUS`) in your deployment region for every family in the priority list of the compute classes your deployment uses. At minimum, cover the families that are actually provisioned as node pools in your region:
+
+| Node pool group | Machine types | Purpose |
+|-----------------|---------------|---------|
+| `system` | `n2d-standard-8` (minimum 2 nodes) | Platform add-ons: ingress, monitoring agents, controllers, autoscaler |
+| `keeper` | `n2d-highmem-4`, `n2-highmem-4` | ClickHouse Keeper (3 nodes per ClickHouse service) |
+| `server` | `n2d-standard-{16,32,48,64}` | ClickHouse server, x86 |
+| `server-arm` | `c4a-standard-{16,32,48,64}-lssd` | ClickHouse server, Arm (Axion), with bundled Titanium SSD for the ClickHouse cache |
+
+<Note>
+BYOC never provisions Spot or preemptible instances. `PREEMPTIBLE_CPUS` and Spot-specific quotas are not relevant to a BYOC deployment; all node pools run on-demand instances.
+</Note>
+
+### Quotas to verify if optional features are enabled {#optional-feature-quotas}
+
+| Feature enabled | Service | Quota |
+|-----------------|---------|-------|
+| Private Service Connect | Compute Engine | Service attachments per region, and a dedicated `/24` subnet with purpose `PRIVATE_SERVICE_CONNECT` for PSC NAT. Consumer-side quotas (PSC endpoints and forwarding rules) apply in the project where you create the endpoint, which may be a different project. |
+| VPC Peering | VPC | VPC Network Peering connections per network. Peering also consumes the peer network's route and subnet range limits, since peered ranges count against both networks. |
+| Customer-managed VPC (BYO-VPC) | VPC | Secondary IPv4 range capacity on the subnet you provide — see [GCP customized setup](/products/bring-your-own-cloud/onboarding/customization-gcp). Under Shared VPC, also verify service projects per host project. |
+
+## IP address planning {#ip-address-planning}
+
+GKE consumes IP addresses from the VPC rather than from an adjustable quota, so subnet sizing acts as a hard limit on how far a deployment can scale:
+
+- **Node addresses** come from the primary range of the private subnet — one address per node.
+- **Pod addresses** come from a secondary IPv4 range on the private subnet. GKE assigns each node a slice of that range sized to twice the node pool's maximum pods per node. BYOC configures 16 pods per node for the ClickHouse server pools (a `/27` per node), 32 for the Keeper pools (a `/26`), and 64 for the system pool (a `/25`).
+
+A ClickHouse-provisioned VPC is sized with a `/20` private subnet (roughly 4,000 node addresses) and a `/17` pod range (roughly 1,000 server nodes at 16 pods per node). If you bring your own VPC, size the secondary range for your target node count rather than for the documented minimum, because a secondary range cannot be resized in place once nodes are running.
+
+## Check your current quotas {#check-current-quotas}
+
+In the Google Cloud console, quotas are under **IAM & Admin → Quotas & System Limits**, filtered by service and region. From the command line:
+
+```bash
+# Region-wide and per-family Compute Engine quotas, including disk and IP quotas
+gcloud compute regions describe REGION --project PROJECT_ID \
+  --format="table(quotas.metric, quotas.limit, quotas.usage)"
+
+# Project-wide (global) Compute Engine quotas
+gcloud compute project-info describe --project PROJECT_ID \
+  --format="table(quotas.metric, quotas.limit, quotas.usage)"
+```
+
+GKE, IAM, and Cloud Storage quotas are not exposed by the `gcloud compute` commands above — read those from the console page.
+
+Increases are requested per quota, per region, from **Quotas & System Limits → Edit quotas**, or through your Google Cloud account team. Requests for a machine family that is new to the project are the most common cause of an onboarding delay — raise them before the onboarding window, not during it.
+
+## What to monitor as services scale {#what-to-monitor}
+
+- **Per-family CPU quota utilization** in the deployment region. Autoscaling and make-before-break upgrades both need headroom above steady-state usage: during an upgrade or a resize, the replacement nodes are provisioned before the old ones are drained, so peak vCPU consumption temporarily exceeds the steady-state figure.
+- **Persistent Disk SSD (GB)** utilization, which grows with node count (boot disks), with Keeper node count, and with the cache volumes of ClickHouse server pods scheduled onto node pools that have no local SSD.
+- **Services that stall while starting, resizing, or upgrading.** With `whenUnsatisfiable: DoNotScaleUp`, a family-level quota shortage does not degrade performance gracefully — the nodes are never created, so the operation does not complete. Raise a support case with the region and machine family involved.
+- **In-use external IP addresses**, if you run more than one BYOC infrastructure or other workloads in the same region.
+
+## Related {#related}
+
+- [BYOC cost model](/products/bring-your-own-cloud/reference/cost-model) — how ClickHouse Cloud and Google Cloud charges combine
+- [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) — components ClickHouse Cloud deploys in your project
+- [AWS service limits and quotas](/products/bring-your-own-cloud/reference/aws-service-limits) — the equivalent checklist for AWS
