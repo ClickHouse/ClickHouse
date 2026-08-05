@@ -622,15 +622,13 @@ SortingInputOrder buildInputOrderFromSortDescription(
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-                // A key column fixed by WHERE is skipped here without emitting a MatchInfo, so the
-                // matched columns after it become non-contiguous in the key. The virtual row builder
-                // and pk_header both assume the required key columns are a contiguous prefix and index
-                // them densely, so a skipped key shifts every later column onto the wrong key column
-                // (wrong value -> boundary violation, wrong type -> "Virtual row has different type").
-                // Disable virtual rows whenever a key column is skipped, e.g. pk (a,b) a=1 order by b:
+                // The skipped key column is constant after filtering, but the index entry at a
+                // mark boundary may hold a filtered-out value for it, e.g. for pk (a, b), a = 1,
+                // order by b:
                 // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
                 // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
-                can_optimize_virtual_row = false;
+                // So the index entry does not bound the later key columns anymore.
+                key_index_values_usable = false;
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
