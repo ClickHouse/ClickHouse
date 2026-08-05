@@ -263,6 +263,7 @@ namespace FailPoints
     extern const char libcxx_hardening_out_of_bounds_assertion[];
     extern const char trigger_sanitizer_error[];
     extern const char query_plan_cache_pause_after_logical_plan[];
+    extern const char query_plan_cache_pause_before_resolve_storages[];
 }
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
@@ -1318,13 +1319,12 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
         }
     }
 
+    QueryPlanCacheEntry entry;
     try
     {
-        QueryPlanCacheEntry entry;
         entry.serialized_plan = serializeQueryPlanForCache(logical_plan);
         entry.dependencies = std::move(*dependencies);
         entry.used_row_policies = analyzer_interpreter->getPlanner().getUsedRowPolicies();
-        query_plan_cache->set(*key, std::move(entry), settings[Setting::query_plan_cache_size_in_bytes_quota]);
     }
     catch (const Exception & e)
     {
@@ -1347,6 +1347,10 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
         return nullptr;
     }
 
+    /// Lets a test replace a table between building the cache entry and resolving the plan's reads,
+    /// which is otherwise a narrow race; see 04811_query_plan_cache_table_replaced_before_resolve.
+    FailPointInjection::pauseFailPoint(FailPoints::query_plan_cache_pause_before_resolve_storages);
+
     /// Execute the logical plan by resolving storage reads against current snapshots -
     /// the same path a cache hit takes, so hit and miss behave identically. The reads are bound to
     /// the analyzed identities, so a table replaced since analysis cannot be executed with this
@@ -1367,6 +1371,12 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
             "A table was replaced while the plan was being built, falling back to normal planning: {}", e.message());
         return nullptr;
     }
+
+    /// Store only now, after `resolveStorages` proved the plan still binds to the analyzed
+    /// storages. Storing before it would leave a known-dead entry resident when the resolution
+    /// loses a race with concurrent DDL: the entry is guaranteed to validation-miss on the next
+    /// identical query, yet until then it consumes cache size and the user's quota.
+    query_plan_cache->set(*key, std::move(entry), settings[Setting::query_plan_cache_size_in_bytes_quota]);
     return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
 }
 
