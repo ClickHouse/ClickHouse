@@ -236,9 +236,14 @@ def test_selector_admits_gated_fork_runs():
     # `--workflow`, or another `--repo` all leave the whole static test green while the job
     # retries the wrong runs. Asserted against the normalized invocation, so a re-wrap or a
     # flag reorder is not a false refusal. `--limit` is deliberately not pinned: it is a
-    # tuning knob, and the 6 hour cutoff bounds the window independently.
+    # tuning knob, and the 6 hour cutoff bounds the window independently. Matched
+    # token-bounded because substring membership is satisfied by any EXTENSION of the value:
+    # `pull_request.yml.bak` and `failurefoo` repoint the query while containing the
+    # expected text. The invocation is whitespace-normalized, so `\s` is an exact boundary.
     for flag in ('--repo "$GH_REPO"', "--workflow pull_request.yml", "--status failure"):
-        assert flag in listing_invocation, (flag, listing_invocation)
+        assert re.search(
+            r"(?:^|\s)" + re.escape(flag) + r"(?=\s|$)", listing_invocation
+        ), (flag, listing_invocation)
     assert 'attempt1_conclusion" != "action_required"' in step, "missing attempt-1 probe"
     # The probe must interrogate attempt 1: reading any other attempt makes it meaningless.
     # Against `normalized` (hoisted above), so a re-wrap is not a false refusal.
@@ -369,10 +374,20 @@ def test_selector_admits_gated_fork_runs():
         and not re.match(r"^run_attempt=", s)
         and re.search(r"\brun_attempt\b", s)
     ]
+    # The keywords fire at any COMMAND position -- line start or after a separator or
+    # grouping character -- because anchoring them at line start alone misses a branch
+    # introduced after one: `echo x; if [ "$run_attempt" ...` read as non-branching, as did
+    # a `{ ... }` group, a `( ... )` subshell and `: ; case ...`. `[` is included: a `test`
+    # reading $run_attempt is a branch in every practical form.
     branching = [
         s
         for s in attempt_reads
-        if re.search(r"^(if|while|until|case|elif)\b|&&|\|\||\bcontinue\b|\bbreak\b|\breturn\b", s)
+        if re.search(
+            r"(?:^|[;&|(){}]\s*)"
+            r"(if|while|until|case|elif|then|else|continue|break|return)\b"
+            r"|&&|\|\||\bcontinue\b|\bbreak\b|\breturn\b|\[",
+            s,
+        )
     ]
     assert branching == [GUARD], (
         "exactly one line may branch on run_attempt (the gate); a second one makes it inert",
