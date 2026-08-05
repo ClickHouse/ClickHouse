@@ -133,10 +133,11 @@ SELECT ll.Date FROM remote('127.0.0.{1,2}', view(SELECT * FROM (SELECT 1 AS k, '
 
 -- ============================================================
 -- `COLUMNS` matcher: the identifier-list form `COLUMNS(col1, col2)` is not a
--- matcher expansion (it is resolved as a plain list of column references), so it
--- keeps column names exactly as written, unqualified, even with the setting ON.
--- The old analyzer never qualified this form either, only the regexp form
--- `COLUMNS('<regexp>')` (which goes through the same expansion as `*`).
+-- matcher expansion (it is resolved as a plain list of column references), so
+-- each column keeps the name exactly as its identifier was written. The setting
+-- never adds a qualifier here, unlike the regexp form `COLUMNS('<regexp>')`,
+-- which goes through the same expansion as `*`. An item written without a
+-- qualifier therefore stays bare, on the old analyzer as well.
 -- ============================================================
 
 SET analyzer_compatibility_multiple_joins_qualify_column_names = 1;
@@ -205,3 +206,41 @@ SELECT k FROM (SELECT * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELEC
 
 SELECT '=== two USING chains: merged key is not qualified, setting ON ===';
 SELECT ll.k FROM (SELECT * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 USING (k) LEFT JOIN (SELECT 1 AS k) AS t2 USING (k)); -- { serverError UNKNOWN_IDENTIFIER }
+
+-- ============================================================
+-- Identifier-list `COLUMNS`: a qualified item keeps the written qualifier.
+-- The old analyzer's rewrite left such items spelled as written, so
+-- `COLUMNS(a.x)` produced a column named `a.x` once there were two or more
+-- `JOIN`s. Unqualified items are unaffected.
+-- ============================================================
+
+SET analyzer_compatibility_multiple_joins_qualify_column_names = 1;
+
+SELECT '=== describe: COLUMNS(qualified) keeps the written name, setting ON ===';
+DESCRIBE (SELECT COLUMNS(ll.Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== family2: outer ref into a COLUMNS(qualified) derived table, setting ON ===';
+SELECT ll.Date FROM (SELECT COLUMNS(ll.Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== describe: COLUMNS(qualified, qualified) keeps both written names, setting ON ===';
+DESCRIBE (SELECT COLUMNS(ll.Date, t1.k) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== describe: EXCEPT still matches the bare column name, setting ON ===';
+DESCRIBE (SELECT COLUMNS(ll.k, ll.Date) EXCEPT (k) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== describe: COLUMNS(qualified) is untouched with the setting OFF ===';
+DESCRIBE (SELECT COLUMNS(ll.Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k) SETTINGS analyzer_compatibility_multiple_joins_qualify_column_names = 0;
+
+SELECT '=== describe: COLUMNS(qualified) is untouched at a single JOIN, setting ON ===';
+DESCRIBE (SELECT COLUMNS(ll.Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k);
+
+-- The old analyzer gives `toString(x)`/`toString(y)` here; the star and regexp
+-- matcher forms already produce `toString(a.x)` under the setting, so this keeps
+-- the list form consistent with them rather than adding a new deviation.
+SELECT '=== describe: COLUMNS(qualified, qualified) APPLY(toString), setting ON ===';
+DESCRIBE (SELECT COLUMNS(a.x, a.y) APPLY(toString) FROM (SELECT 1 AS k, 'X' AS x, 'Y' AS y) AS a LEFT JOIN (SELECT 1 AS k) AS b ON a.k = b.k LEFT JOIN (SELECT 1 AS k) AS c ON a.k = c.k);
+
+-- The matcher must not leak its written qualifier into an unrelated sibling
+-- expression referencing the same column.
+SELECT '=== describe: COLUMNS(qualified), unrelated toString(qualified) does not leak the qualifier, setting ON ===';
+DESCRIBE (SELECT COLUMNS(ll.Date), toString(ll.Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);

@@ -2170,6 +2170,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
         auto identifiers = matcher_node_typed.getColumnsIdentifiers();
         result.reserve(identifiers.size());
 
+        /// Old-analyzer parity: under two or more JOINs a list-form `COLUMNS` item keeps the written
+        /// identifier. It goes into `node_to_projection_name` because the name returned below is
+        /// what `EXCEPT`/`REPLACE` transformers match against. Clone the node first: `tryResolveIdentifier`
+        /// returns a shared `ColumnNode` also used by unrelated expressions referencing the same column
+        /// (e.g. a sibling `toString(a.x)`), and those must keep their own, ambiguity-driven name.
+        bool keep_written_names = nearest_query_scope->joins_count >= 2
+            && scope.context->getSettingsRef()[Setting::analyzer_compatibility_multiple_joins_qualify_column_names];
+
         for (const auto & identifier : identifiers)
         {
             auto resolve_result = tryResolveIdentifier(IdentifierLookup{identifier, IdentifierLookupContext::EXPRESSION}, scope);
@@ -2186,7 +2194,15 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         identifier.getFullName(),
                         resolve_result.resolved_identifier->getNodeTypeName(),
                         scope.scope_node->formatASTForErrorMessage());
-            result.emplace_back(resolve_result.resolved_identifier, resolved_column->getColumnName());
+
+            auto column_node = resolve_result.resolved_identifier;
+            if (keep_written_names)
+            {
+                column_node = column_node->clone();
+                node_to_projection_name.emplace(column_node, identifier.getFullName());
+            }
+
+            result.emplace_back(column_node, resolved_column->getColumnName());
         }
         return result;
     }

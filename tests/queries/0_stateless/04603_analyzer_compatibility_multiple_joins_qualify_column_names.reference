@@ -113,3 +113,22 @@ D
 === two USING chains: merged key is referenced bare, setting ON ===
 1
 === two USING chains: merged key is not qualified, setting ON ===
+=== describe: COLUMNS(qualified) keeps the written name, setting ON ===
+ll.Date	String					
+=== family2: outer ref into a COLUMNS(qualified) derived table, setting ON ===
+D
+=== describe: COLUMNS(qualified, qualified) keeps both written names, setting ON ===
+ll.Date	String					
+t1.k	UInt8					
+=== describe: EXCEPT still matches the bare column name, setting ON ===
+ll.Date	String					
+=== describe: COLUMNS(qualified) is untouched with the setting OFF ===
+Date	String					
+=== describe: COLUMNS(qualified) is untouched at a single JOIN, setting ON ===
+Date	String					
+=== describe: COLUMNS(qualified, qualified) APPLY(toString), setting ON ===
+toString(a.x)	String					
+toString(a.y)	String					
+=== describe: COLUMNS(qualified), unrelated toString(qualified) does not leak the qualifier, setting ON ===
+ll.Date	String					
+toString(Date)	String					
