@@ -3049,9 +3049,13 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// not registered as a dependent of the source, so future inserts would silently never populate it.
         /// Drop the just-created view instead, so the failed CREATE leaves nothing behind and can simply be
         /// retried (the same no-orphan contract as the temporary-table path of CREATE TABLE ... AS SELECT).
-        /// A failure after the subscription (e.g. while building the population pipeline) is rolled back the
-        /// same way: the DROP also removes the registered dependencies. The drop runs under the global
-        /// context, like the internal drop of a view's inner table: the user needed only CREATE to get here.
+        /// A failure after the subscription is rolled back the same way - the DROP also removes the
+        /// registered dependencies. That covers both building the population pipeline and running it: the
+        /// population executes eagerly inside the `try` (see fillMaterializedViewAtomicallyImpl), so a
+        /// runtime failure of the view's SELECT or of the target write - or a KILL of the CREATE - lands
+        /// here too, after `executeTrivialBlockIO` has already torn the failed pipeline down and released
+        /// its table locks. The drop runs under the global context, like the internal drop of a view's
+        /// inner table: the user needed only CREATE to get here.
         ///
         /// The drop is asynchronous. Everything the rollback needs - unsubscribing the view from the source,
         /// removing it from the catalog and renaming away its metadata, so that the name is free again for a
@@ -3207,14 +3211,32 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     /// the live pushes, which are not bound to a pinned snapshot) keeps them.
     removeSettingsFromQuery(insert->select, settings_incompatible_with_pinned_snapshot);
 
-    return InterpreterInsertQuery(
-               insert,
-               populate_context,
-               populate_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
-               /* no_squash */ false,
-               /* no_destination */ false,
-               /* async_insert */ false)
-        .execute();
+    auto populate_io = InterpreterInsertQuery(
+                           insert,
+                           populate_context,
+                           populate_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
+                           /* no_squash */ false,
+                           /* no_destination */ false,
+                           /* async_insert */ false)
+                           .execute();
+
+    /// Run the population right here, eagerly, like `doCreateOrReplaceTable` runs its populating insert.
+    /// `InterpreterInsertQuery::execute` only builds the pipeline; returning the lazy `BlockIO` to the
+    /// caller would let the outer `executeQuery` drive it after the rollback scope of
+    /// `fillMaterializedViewAtomically` has already exited, so a runtime failure of the population (the
+    /// view's SELECT or the target write) would escape the rollback and leave the failed CREATE with the
+    /// view published and subscribed - breaking the no-orphan contract. Executing here, an execution-time
+    /// exception (including a KILL of the CREATE) first tears the pipeline down - `executeTrivialBlockIO`
+    /// calls `onException`, releasing the pipeline's table locks, so the rollback's DROP cannot contend
+    /// with them - and then unwinds into the rollback, which drops the just-created view.
+    ///
+    /// The interactive-cancel callback keeps TCP sessions sending progress and able to cancel the
+    /// (potentially long) population, and prevents socket timeouts, exactly as for `CREATE ... AS SELECT`.
+    /// The process-list element makes `KILL QUERY` cancel the population: on the lazy path the outer
+    /// `executeQuery` attached it to the returned pipeline, so it has to be attached by hand here.
+    populate_io.pipeline.setProcessListElement(getContext()->getProcessListElement());
+    executeTrivialBlockIO(populate_io, getContext(), /*with_interactive_cancel=*/true);
+    return BlockIO{};
 }
 
 void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr local_context, const String & cluster_name)

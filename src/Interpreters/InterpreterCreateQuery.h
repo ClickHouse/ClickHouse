@@ -147,9 +147,11 @@ private:
     /// getValidatedAtomicPopulateSource); the caller then falls back to the regular, non-atomic path.
     ///
     /// The view itself was already created and started by doCreateTable before this runs, so on any failure
-    /// here - most realistically an exclusive-lock timeout on a busy source - the just-created view is
-    /// dropped before the exception is rethrown. Otherwise the failed CREATE would leave behind a view that
-    /// is not registered as a dependent of its source, which future inserts would silently never populate.
+    /// here - an exclusive-lock timeout on a busy source, or a runtime failure of the population itself,
+    /// which executes eagerly inside this scope - the just-created view is dropped before the exception is
+    /// rethrown. Otherwise the failed CREATE would leave behind a view that is not registered as a dependent
+    /// of its source, which future inserts would silently never populate - or, for an execution-time
+    /// failure, a subscribed view with partial data that a retry would refuse to re-create.
     ///
     /// `ddl_guard` is the guard of the view being created, still held by the caller. It is kept until the
     /// view is subscribed to its source and released before the (potentially long) population runs, so that
