@@ -1,0 +1,167 @@
+-- unshredded variant: schema inference gives Dynamic --
+v	Dynamic
+-- unshredded variant: values --
+(1,[1,'x'],NULL)	Tuple(a Int64, b Array(Dynamic), c Nullable(String))
+42	Int64
+\N	None
+hello	String
+[1,'two',NULL]	Array(Dynamic)
+\N	None
+-- unshredded variant: JSON text via explicit String type --
+{"a":1,"b":[1,"x"],"c":null}
+42
+null
+"hello"
+[1,"two",null]
+null
+-- unshredded variant: raw group via explicit Tuple type --
+\0abc	35
+\0abc	9
+\0abc	1
+\0abc	6
+\0abc	20
+	0
+-- unshredded variant: legacy tuple reading with enable_json_parsing = 0 --
+\0abc	35
+\0abc	9
+\0abc	1
+\0abc	6
+\0abc	20
+\N	\N
+-- shredded primitive: values --
+34	Int64
+\N	None
+n/a	String
+100	Int64
+-- shredded object: values (spec shredding examples) --
+{"event_type":"noop","event_ts":"2024-10-24 18:21:54.937000"}
+{"event_type":"login","event_ts":"2024-10-24 18:22:26.402000","email":"user@example.com"}
+{"error_msg":"malformed: ..."}
+"malformed: not an object"
+{"event_ts":"2024-10-24 18:24:00.241000","click":"_button"}
+{"event_type":null,"event_ts":"2024-10-24 18:35:54.163000"}
+{"event_type":"noop","event_ts":"2024-10-24"}
+null
+null
+null
+null
+-- shredded object: values as Dynamic --
+('2024-10-24 18:21:54.937000','noop')	Tuple(event_ts DateTime64(6, \'UTC\'), event_type String)
+('user@example.com','2024-10-24 18:22:26.402000','login')	Tuple(email String, event_ts DateTime64(6, \'UTC\'), event_type String)
+('malformed: ...')	Tuple(error_msg String)
+malformed: not an object	String
+('_button','2024-10-24 18:24:00.241000')	Tuple(click String, event_ts DateTime64(6, \'UTC\'))
+('2024-10-24 18:35:54.163000',NULL)	Tuple(event_ts DateTime64(6, \'UTC\'), event_type Nullable(String))
+('2024-10-24','noop')	Tuple(event_ts String, event_type String)
+\N	None
+\N	None
+\N	None
+\N	None
+-- shredded object: JSON subcolumns read shredded fields --
+{"event_ts":"2024-10-24 18:21:54.937000000","event_type":"noop"}	noop	2024-10-24 18:21:54.937000000
+{"email":"user@example.com","event_ts":"2024-10-24 18:22:26.402000000","event_type":"login"}	login	2024-10-24 18:22:26.402000000
+{"event_ts":"2024-10-24 18:35:54.163000000"}	\N	2024-10-24 18:35:54.163000000
+{"click":"_button","event_type":"hover"}	hover	\N
+-- shredded object: JSON type rejects non-object top-level values --
+1
+-- shredded array: values --
+["comedy","drama"]
+["horror",null]
+["comedy","drama","romance"]
+null
+"not an array"
+[]
+null
+-- shredded array: values as Dynamic --
+['comedy','drama']	Array(String)
+['horror',NULL]	Array(Nullable(String))
+['comedy','drama','romance']	Array(String)
+\N	None
+not an array	String
+[]	Array(Dynamic)
+\N	None
+-- duckdb-written variant (typed_value String holds JSON text) --
+(30,'alice',1.5,['a','b'])	Tuple(age Int64, name String, score Float64, tags Array(String))
+42	Int64
+\N	None
+hello	String
+[1,2.5,'three',NULL,true]	Array(Dynamic)
+([(1),(0)],([1,2],NULL),NULL)	Tuple(list Array(Tuple(k Int64)), nested Tuple(x Array(Int64), y Nullable(String)), nothing Nullable(String))
+3.14	Float64
+true	Bool
+-- fully-shredded variant: subcolumn requests read only the shredded leaf --
+login	2024-10-24 18:21:54.937000
+click	2024-10-24 18:22:26.402000
+error	\N
+	\N
+-- fully-shredded variant: full column read assembles from typed_value only --
+('login','2024-10-24 18:21:54.937000')	Tuple(event_type String, ts DateTime64(6, \'UTC\'))
+('click','2024-10-24 18:22:26.402000')	Tuple(event_type String, ts DateTime64(6, \'UTC\'))
+('error')	Tuple(event_type String)
+\N	None
+-- variant write path: Dynamic written as VARIANT group, read back losslessly --
+(1,[1,'x'],NULL)	Tuple(a Int64, b Array(Dynamic), c Nullable(String))
+42	Int64
+\N	None
+hello	String
+[1,'two',NULL]	Array(Dynamic)
+\N	None
+-- engine-level subcolumn pushdown: prunable shredded subcolumns read only the shredded leaf --
+click	1
+error	1
+login	1
+\N	1
+1
+-- engine-level subcolumn fallback: partially-shredded subcolumns assemble the whole variant --
+hover	1
+login	1
+noop	1
+\N	1
+-- selective subcolumns: unshredded fields extracted from the value binary --
+\N	\N
+user@example.com	\N
+\N	\N
+\N	_button
+-- selective subcolumns: shredded field, timestamp leaf and value-resident field together --
+noop	2024-10-24 18:21:54.937000	\N
+login	2024-10-24 18:22:26.402000	user@example.com
+\N	2024-10-24 18:35:54.163000	\N
+hover	\N	\N
+-- selective subcolumns: missing path --
+0
+-- selective subcolumns: DuckDB JSON-document variant, top-level and nested paths --
+alice	30	\N
+\N	\N	\N
+\N	\N	\N
+\N	\N	\N
+\N	\N	\N
+\N	\N	\N
+\N	\N	\N
+\N	\N	\N
+-- selective subcolumns: nested shredded groups (path descent) --
+x	1	foo
+y	2	\N
+\N	\N	bar
+\N	\N	\N
+x	1	foo
+y	2	\N
+\N	\N	bar
+\N	\N	\N
+-- selective subcolumns: whole nested subtree as Dynamic --
+(1,'x')	Tuple(a Int32, b String)
+(2,'y')	Tuple(a Int32, b String)
+\N	None
+\N	None
+(1,'x')	Tuple(a Int32, b String)
+(2,'y')	Tuple(a Int32, b String)
+\N	None
+\N	None
+-- selective subcolumns: whole nested group and a deeper path in one query --
+(1,'x')	x
+(2,'y')	y
+\N	\N
+\N	\N
+(1,'x')	x
+(2,'y')	y
+\N	\N
+\N	\N

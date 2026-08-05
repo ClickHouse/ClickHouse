@@ -442,6 +442,19 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `MultiLineString` (GeoParquet) | [MultiLineString](/reference/data-types/geo#multilinestring) |
 | `MultiPolygon` (GeoParquet) | [MultiPolygon](/reference/data-types/geo#multipolygon) |
 | mixed/unknown geometry (GeoParquet) | [Geometry](/reference/data-types/geo#geometry) |
+| `VARIANT` | [Dynamic](/reference/data-types/dynamic) |
+
+## Parquet VARIANT columns {#parquet-variant-columns}
+
+Groups annotated with the [`VARIANT` logical type](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md) are decoded into [`Dynamic`](/reference/data-types/dynamic), including columns that are [shredded](https://github.com/apache/parquet-format/blob/master/VariantShredding.md). The variant-encoded `value` binaries and shredded `typed_value` columns are reconstructed according to the shredding specification. Each row's value preserves its type: objects become `Tuple`s, arrays become `Array(Dynamic)`, and scalars keep their primitive type. A missing or explicitly null Variant is read as a `Dynamic` null value.
+
+Requesting a `Tuple` type explicitly falls back to reading the raw group structure, such as `Tuple(metadata String, value String)`. Requesting `String` produces the JSON text of each value. Requesting [`JSON`](/reference/data-types/newjson) also works when every top-level value is an object, because `JSON` cannot hold top-level scalars or arrays. Setting `input_format_parquet_enable_json_parsing` to `0` restores reading `VARIANT` groups as plain tuples during schema inference.
+
+DuckDB writes `VARIANT` columns with a top-level `typed_value (String)` that contains the whole value as JSON rather than using specification-compliant shredding. ClickHouse embeds such a value directly when the string contains a complete JSON document.
+
+When the requested schema declares the column as [`JSON`](/reference/data-types/newjson) and only subcolumns are read, such as `payload.event_type` or `` payload.event_type.:`String` ``, the reader pushes the path down to the leaf level. If the path maps to a fully shredded field, only that leaf is read. Otherwise, ClickHouse reads only the `metadata` leaf, the leaves of the shredded field group covering the path, or the root `value` leaf for unshredded fields, and extracts the requested value without assembling the whole column.
+
+On write, [`Dynamic`](/reference/data-types/dynamic) columns are encoded as unshredded Parquet `VARIANT` groups consisting of `required binary metadata` and `required binary value`. Each row uses the Variant binary encoding: named tuples and maps become objects, arrays and unnamed tuples become arrays, scalars use their corresponding Variant primitive, and `Dynamic` nulls become Variant nulls. Reading the resulting file produces a `Dynamic` column with the same per-row values and types.
 
 When writing Parquet file, data types that don't have a matching Parquet type are converted to the nearest available type:
 

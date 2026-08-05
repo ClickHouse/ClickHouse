@@ -1,6 +1,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
@@ -10,6 +11,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
@@ -18,11 +20,14 @@
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Processors/Formats/Impl/Parquet/VariantDecoding.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/scope_guard.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -585,6 +590,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         add_prewhere_outputs(prewhere_info->prewhere_actions);
     schemer.column_mapper = format_filter_info->column_mapper.get();
     schemer.prepareForReading();
+    /// Schema conversion may have appended fallback whole-columns for Object subcolumn requests.
+    extended_sample_block_data_types = extended_sample_block.getDataTypes();
     primitive_columns = std::move(schemer.primitive_columns);
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
@@ -3163,6 +3170,36 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         }
         subchunk.null_map.reset();
     }
+    else if (output_info.variant)
+    {
+        res = formVariantColumn(row_subgroup, output_info, num_rows);
+    }
+    else if (output_info.json_subcolumn)
+    {
+        /// Object subcolumn synthesized from a whole JSON-typed column (a Variant assembly or a
+        /// plain JSON-annotated leaf): extract the path and cast to the requested type.
+        if (!output_info.idx_in_output_block.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object subcolumn output {} has no output position", output_info.name);
+        if (!output_info.json_subcolumn_source.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object subcolumn output {} has no source", output_info.name);
+        if (!output_columns.at(output_info.json_subcolumn_source.value()).idx_in_output_block.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object subcolumn source of {} has no output position", output_info.name);
+        ColumnPtr & whole = getOrFormOutputColumn(row_subgroup, output_columns.at(output_info.json_subcolumn_source.value()).idx_in_output_block.value());
+        DataTypePtr whole_type = output_columns.at(output_info.json_subcolumn_source.value()).output_type;
+        ColumnPtr extracted = whole_type->tryGetSubcolumn(output_info.json_subcolumn_path, whole);
+        if (!extracted)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot extract subcolumn {} from column {} of type {}", output_info.json_subcolumn_path, output_info.name, whole_type->getName());
+        DataTypePtr extracted_type = whole_type->tryGetSubcolumnType(output_info.json_subcolumn_path);
+        if (!extracted_type || !extracted_type->equals(*output_info.output_type))
+        {
+            auto casted = castColumn({extracted, extracted_type ? extracted_type : output_info.output_type, output_info.name}, output_info.output_type);
+            res = IColumn::mutate(std::move(casted));
+        }
+        else
+        {
+            res = IColumn::mutate(std::move(extracted));
+        }
+    }
     else if (kind == TypeIndex::Array)
     {
         chassert(output_info.nested_columns.size() == 1);
@@ -3222,6 +3259,125 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     }
 
     return res;
+}
+
+static std::string_view getPossiblyNullableStringAt(const IColumn & column, size_t row)
+{
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+        return nullable->getNestedColumn().getDataAt(row);
+    return column.getDataAt(row);
+}
+
+MutableColumnPtr Reader::formVariantColumn(RowSubgroup & row_subgroup, const OutputColumnInfo & output_info, size_t num_rows)
+{
+    bool group_nullable = output_info.input_type->isNullable();
+
+    /// Piece columns (metadata/value/typed_value subtrees) are formed once per row subgroup and
+    /// cached: selective Variant subcolumn outputs (variant_select_path) of the same Variant
+    /// column share them, and formOutputColumn moves the data out of the subchunks.
+    auto get_piece = [&](std::optional<size_t> piece_idx) -> ColumnPtr
+    {
+        if (!piece_idx.has_value())
+            return nullptr;
+        ColumnPtr & cached = row_subgroup.variant_piece_cache[*piece_idx];
+        if (!cached)
+            cached = formOutputColumn(row_subgroup, *piece_idx, num_rows);
+        return cached;
+    };
+
+    ColumnPtr metadata_column = get_piece(output_info.variant_metadata_column);
+    ColumnPtr value_column = get_piece(output_info.variant_value_column);
+    ColumnPtr typed_value_column = get_piece(output_info.variant_typed_value_column);
+
+    ShreddedValueColumns columns;
+    columns.value = value_column.get();
+    columns.typed_value = typed_value_column.get();
+    if (typed_value_column)
+        columns.typed_value_type = output_columns.at(output_info.variant_typed_value_column.value()).output_type.get();
+
+    auto strings = ColumnString::create();
+    ColumnUInt8::MutablePtr null_map;
+    if (group_nullable)
+        null_map = ColumnUInt8::create(num_rows, UInt8(0));
+
+    /// When the assembled type is Dynamic, decode each value directly into the ColumnDynamic,
+    /// skipping the JSON text round-trip. (The assembly always produces input_type; needs_cast
+    /// then converts to output_type.)
+    const bool output_dynamic = output_info.input_type->getTypeId() == TypeIndex::Dynamic;
+    MutableColumnPtr dynamic_column;
+    if (output_dynamic)
+        dynamic_column = output_info.input_type->createColumn();
+
+    /// Selective subcolumn read: extract only the value at this path from each Variant value.
+    const bool selective = output_info.variant_select_path.has_value();
+    chassert(!selective || output_dynamic);
+    VariantExtractPath extract_path;
+    if (selective)
+        extract_path.names = *output_info.variant_select_path;
+
+    /// The metadata binary is usually identical for the whole file; reparse only when it changes.
+    VariantMetadata metadata;
+    std::string_view parsed_metadata_raw;
+    bool metadata_parsed = false;
+
+    ColumnDynamic * dynamic_column_mutable = output_dynamic ? assert_cast<ColumnDynamic *>(dynamic_column.get()) : nullptr;
+
+    SerializationMemo serialization_memo;
+    WriteBufferFromOwnString buf;
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        if (metadata_column->isNullAt(row))
+        {
+            /// The Variant group itself is null.
+            if (output_dynamic)
+            {
+                dynamic_column->insertDefault();
+                continue;
+            }
+            if (group_nullable)
+            {
+                null_map->getData()[row] = 1;
+                strings->insertData("", 0);
+                continue;
+            }
+            /// Non-nullable output: emit the JSON text 'null'.
+            strings->insertData("null", 4);
+            continue;
+        }
+
+        std::string_view metadata_raw = getPossiblyNullableStringAt(*metadata_column, row);
+        if (!metadata_parsed || metadata_raw.data() != parsed_metadata_raw.data() || metadata_raw.size() != parsed_metadata_raw.size())
+        {
+            parseVariantMetadata(metadata_raw, metadata);
+            parsed_metadata_raw = metadata_raw;
+            metadata_parsed = true;
+            if (selective)
+                resolveVariantExtractPath(extract_path, metadata);
+        }
+
+        if (output_dynamic)
+        {
+            DecodedVariantValue decoded = selective
+                ? shreddedValueExtractPath(columns, row, metadata, extract_path, options.format)
+                : shreddedValueToDecoded(columns, row, metadata, options.format);
+            if (!decoded.type)
+                dynamic_column_mutable->insertDefault();
+            else
+                insertDecodedIntoDynamic(*dynamic_column_mutable, decoded);
+            continue;
+        }
+
+        shreddedValueToJSON(columns, row, metadata, buf, options.format, &serialization_memo);
+        std::string_view text = buf.stringView();
+        strings->insertData(text.data(), text.size());
+        buf.restart();
+    }
+
+    if (output_dynamic)
+        return dynamic_column;
+    if (group_nullable)
+        return ColumnNullable::create(std::move(strings), std::move(null_map));
+    return strings;
 }
 
 ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block)
