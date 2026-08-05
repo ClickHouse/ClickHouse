@@ -67,7 +67,8 @@ fetch() {
             echo "header: $header"
             rows=$(cat)
             echo "rows: $(printf '%s\n' "$rows" | grep -c .)"
-            printf '%s\n' "$rows" | sort -u | head -4
+            # LC_ALL=C: the values are negative, and a UTF-8 collation ignores the leading `-`.
+            printf '%s\n' "$rows" | LC_ALL=C sort -u | head -4
         }
 }
 
