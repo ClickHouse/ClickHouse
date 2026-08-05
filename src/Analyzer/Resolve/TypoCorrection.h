@@ -29,7 +29,7 @@ struct TypoCorrection
 
     static void collectTableExpressionValidIdentifiers(
         const Identifier & unresolved_identifier,
-        const QueryTreeNodePtr & table_expression,
+        const ITableExpressionNode & table_expression,
         const AnalysisTableExpressionData & table_expression_data,
         std::unordered_set<Identifier> & valid_identifiers_result);
 
