@@ -436,9 +436,11 @@ void optimizeJoinByShards(QueryPlan::Node & root, bool only_parallel_sorted_merg
                 // std::cerr << frame.results.front()->dag.dumpDAG() << std::endl;
                 // std::cerr << frame.results.back()->dag.dumpDAG() << std::endl;
 
-                /// Note: join_use_nulls is not supported.
-                /// This is because we append toNullable function.
-                /// We can remove this function from the DAG or mark is as identity later.
+                /// Note: `join_use_nulls` does not defeat the matcher on the analyzer plan (the only
+                /// one reaching this pass): the `toNullable` conversion of the visible output columns
+                /// belongs to the actions after the join step, not to the source-side DAGs inspected
+                /// here, and the sharding applies for the OUTER kinds and for `USING` alike (covered
+                /// by 04760_sorted_merge_join_use_nulls).
 
                 sharding = findCommonPrimaryKeyPrefixByJoinKey(
                     frame.results.front()->joins.sources.front(), frame.results.front()->dag,
