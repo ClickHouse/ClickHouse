@@ -60,14 +60,16 @@ SETTINGS allow_introspection_functions=1;
 # Check that symbols and lines are populated.
 # `last_error_symbols` is resolved from the symbol table, present on all our builds. `last_error_lines`
 # additionally needs DWARF debug info - read from the binary on Linux, or from a co-located .dSYM
-# bundle on macOS. The macOS CI runner ships without a .dSYM, so file:line is unavailable there (the
-# same limitation as 02420_stracktrace_debug_symbols); assert its real absence on macOS rather than
-# skipping or faking the result.
-if [ "$($CLICKHOUSE_CLIENT -q "SELECT value = 'Darwin' FROM system.build_options WHERE name = 'SYSTEM'")" = "1" ]; then
+# bundle on macOS. Probe the actual availability of line info instead of assuming it from the OS:
+# if the server's own printed stack trace contains 'file:line:column' frames, then debug info is
+# usable - the text stack trace and `last_error_lines` resolve source locations through the same
+# DWARF machinery. Then assert that `last_error_lines` is populated exactly when line info is
+# available, rather than skipping or faking the result.
+if $CLICKHOUSE_CLIENT --stacktrace -q "SELECT throwIf(true, '03172_probe')" 2>&1 | grep -q -P ':[0-9]+:[0-9]+: '; then
     $CLICKHOUSE_CLIENT -m -q "
     SELECT
         arrayExists(x -> (x LIKE '%Exception%'), last_error_symbols),
-        NOT arrayExists(x -> (x LIKE '%:%:%'), last_error_lines)
+        arrayExists(x -> (x LIKE '%:%:%'), last_error_lines)
     FROM system.error_log
     WHERE code = 333 AND event_date >= yesterday() AND event_time >= (now() - 600)
     ORDER BY last_error_time DESC
@@ -78,7 +80,7 @@ else
     $CLICKHOUSE_CLIENT -m -q "
     SELECT
         arrayExists(x -> (x LIKE '%Exception%'), last_error_symbols),
-        arrayExists(x -> (x LIKE '%:%:%'), last_error_lines)
+        NOT arrayExists(x -> (x LIKE '%:%:%'), last_error_lines)
     FROM system.error_log
     WHERE code = 333 AND event_date >= yesterday() AND event_time >= (now() - 600)
     ORDER BY last_error_time DESC
