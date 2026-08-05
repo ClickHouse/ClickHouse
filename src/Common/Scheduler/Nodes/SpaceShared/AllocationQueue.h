@@ -29,6 +29,7 @@ public:
     void insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size) override;
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
+    bool trySuspendMemoryGrowth(ResourceAllocation & allocation) override;
     void removeAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
@@ -50,6 +51,7 @@ private:
     bool setIncrease();
     bool setDecrease();
     void ensureUsable() const;
+    void clearMemoryGrowthSuspension();
 
     /// Protects all the following fields
     mutable std::mutex mutex;
@@ -65,8 +67,15 @@ private:
     ResourceAllocation::DecreasingList decreasing_allocations; /// Allocations with pending decrease request
     ResourceAllocation::RemovingList removing_allocations; /// Allocations to remove
 
+    /// A running allocation whose growth is parked at a hard limit. Allocations admitted while it is
+    /// parked become beneficiaries; subsequent releases may make the parked growth runnable again.
+    ResourceAllocation * suspended_growth = nullptr;
+    size_t memory_growth_suspension_beneficiaries = 0;
+
     size_t last_unique_id = 0;
     ResourceCost pending_allocations_size = 0;
+    /// Scheduler-thread only; forces parent re-evaluation even if the same increase is restored.
+    bool memory_growth_suspension_changed = false;
 
     UInt64 rejects = 0; /// Number of rejected allocations
 };

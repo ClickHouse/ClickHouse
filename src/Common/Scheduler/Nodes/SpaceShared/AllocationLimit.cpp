@@ -194,19 +194,32 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
             // the releases prove insufficient and no decrease is pending, the eviction fires.
             if (!allocation_to_kill && decrease == nullptr)
             {
-                String details;
-                allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);
-                if (allocation_to_kill)
+                /// Before evicting a running query for asking for more memory, park that growth once.
+                /// The child can then expose other work hidden behind running-query growth. Memory releases
+                /// retry the parked growth, so independent work can continue while pressure drains. If
+                /// nothing can make progress, the existing kill policy remains the fallback.
+                if (new_increase->kind == IncreaseRequest::Kind::Regular
+                    && new_increase->allocation.queue.trySuspendMemoryGrowth(new_increase->allocation))
                 {
-                    SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
-                        getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id, allocation_to_kill->id);
-                    allocation_to_kill->killAllocation(std::make_exception_ptr(
-                        Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
-                            "Workload '{}' limit is hit for resource '{}': {}", getWorkloadName(), getResourceName(), details)));
+                    SCHED_DBG("{} -- suspending memory growth(allocated={}, increase_size={}, max={}, allocation={})",
+                        getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id);
+                }
+                else
+                {
+                    String details;
+                    allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);
+                    if (allocation_to_kill)
+                    {
+                        SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
+                            getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id, allocation_to_kill->id);
+                        allocation_to_kill->killAllocation(std::make_exception_ptr(
+                            Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
+                                "Workload '{}' limit is hit for resource '{}': {}", getWorkloadName(), getResourceName(), details)));
 
-                    // Introspection
-                    new_increase->allocation.queue.countKiller(*this);
-                    allocation_to_kill->queue.countVictim(*this);
+                        // Introspection
+                        new_increase->allocation.queue.countKiller(*this);
+                        allocation_to_kill->queue.countVictim(*this);
+                    }
                 }
             }
             // Block until there is enough resource to process child's increase request

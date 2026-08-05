@@ -497,13 +497,13 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 /// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
 struct ManualAllocation : public ResourceAllocation
 {
-    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size)
+    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, bool wait_for_admission = true)
         : ResourceAllocation(*queue_, name_)
     {
         if (initial_size > 0)
             increase_enqueued = true;
         queue.insertAllocation(*this, initial_size); // scheduler thread may call back after this
-        if (initial_size > 0) // Block until admitted, like MemoryReservation with reserve_memory > 0
+        if (initial_size > 0 && wait_for_admission) // Block until admitted, like MemoryReservation with reserve_memory > 0
         {
             std::unique_lock lock(mutex);
             cv.wait(lock, [this] { return !increase_enqueued || fail_reason; });
@@ -557,6 +557,12 @@ struct ManualAllocation : public ResourceAllocation
     {
         std::unique_lock lock(mutex);
         return kills;
+    }
+
+    void waitKills(size_t count)
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return kills >= count; });
     }
 
     ResourceCost size()
@@ -649,4 +655,163 @@ TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
     ASSERT_EQ(b.killCount(), 0u);
     EXPECT_EQ(a.size(), 9000);
     EXPECT_EQ(b.size(), 0);
+}
+
+
+/// A running query asking for an increase that cannot fit must not hide smaller new reservations that
+/// still fit in the remaining budget. The large growth stays parked while the beneficiaries run and is
+/// reconsidered only after they finish. This is suspension before eviction, not just admission reordering.
+TEST(SchedulerSpaceShared, PendingAllocationsRunWhileBlockedGrowthIsSuspended)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+
+    /// Park the scheduler so both requests are visible in the queue at once. `AllocationQueue` normally
+    /// presents running-query increases before pending new allocations, so `heavy` is head-of-line.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(5000); // Cannot fit: 8000 + 5000 > 10000.
+    auto small = std::make_unique<ManualAllocation>(queue, "small", 1000, /* wait_for_admission = */ false);
+    auto next_small = std::make_unique<ManualAllocation>(queue, "next_small", 1000, /* wait_for_admission = */ false);
+    release.set_value();
+
+    /// Admission proves both smaller reservations bypassed the blocked growth. They remain beneficiaries
+    /// until removal, so merely admitting them must not cause `heavy` to be killed.
+    small->waitSynced();
+    next_small->waitSynced();
+    EXPECT_EQ(heavy.size(), 8000);
+    EXPECT_EQ(small->size(), 1000);
+    EXPECT_EQ(next_small->size(), 1000);
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    /// Finishing one beneficiary is not enough while another is still making progress.
+    small.reset();
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    /// Once the last beneficiary finishes, the blocked +5000 growth is reconsidered. It still cannot fit
+    /// with `heavy` holding 8000, so suspension has exhausted its useful work and the existing kill path runs.
+    next_small.reset();
+    heavy.waitKills(1);
+    EXPECT_EQ(heavy.killCount(), 1u);
+}
+
+
+/// Suspension does not serialize work unnecessarily. Any memory release is a progress checkpoint: if it
+/// creates enough headroom for the parked growth, that growth resumes while its beneficiary is still alive.
+TEST(SchedulerSpaceShared, MemoryReleaseLetsSuspendedGrowthResume)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 6000);
+    ManualAllocation releaser(queue, "releaser", 3000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(2000); // 9000 + 2000 > 10000, so growth is suspended.
+    auto small = std::make_unique<ManualAllocation>(queue, "small", 500, /* wait_for_admission = */ false);
+    release.set_value();
+
+    small->waitSynced(); // Total is now 9500; `heavy` remains parked and `small` keeps running.
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    releaser.decreaseAsync(2000); // Total becomes 7500, enough to satisfy `heavy`'s parked +2000.
+    releaser.waitSynced();
+    heavy.waitSynced();
+
+    EXPECT_EQ(heavy.killCount(), 0u);
+    EXPECT_EQ(heavy.size(), 8000);
+    EXPECT_EQ(releaser.size(), 1000);
+    EXPECT_EQ(small->size(), 500);
+}
+
+
+/// If the work admitted ahead of suspended growth later needs memory that cannot fit, suspension has not
+/// restored flow. The existing eviction policy may then kill the suspended heavy allocation so the winner
+/// can continue; killing remains a last resort reached by resource state, not by elapsed wait time.
+TEST(SchedulerSpaceShared, BeneficiaryBlockedOnGrowthCanEvictSuspendedAllocation)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(5000);
+    auto small = std::make_unique<ManualAllocation>(queue, "small", 1000, /* wait_for_admission = */ false);
+    release.set_value();
+
+    small->waitSynced();
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    small->increaseAsync(2000); // 8000 + 1000 + 2000 > 10000: the winner itself can no longer progress.
+    heavy.waitKills(1);
+    EXPECT_EQ(heavy.killCount(), 1u);
+}
+
+
+/// If even the first alternative request cannot fit, there is no beneficiary that can make progress.
+/// The suspended growth therefore falls through to the existing eviction path immediately.
+TEST(SchedulerSpaceShared, BlockedAlternativeFallsBackToEviction)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(5000);
+    auto blocked = std::make_unique<ManualAllocation>(queue, "blocked", 3000, /* wait_for_admission = */ false);
+    release.set_value();
+
+    heavy.waitKills(1);
+    EXPECT_EQ(heavy.killCount(), 1u);
+    EXPECT_EQ(blocked->size(), 0);
+}
+
+
+/// Parking is only a step before eviction. If a blocked regular increase has no request behind it, it is
+/// immediately restored and the next evaluation follows the existing hard-limit kill policy.
+TEST(SchedulerSpaceShared, BlockedGrowthWithoutBeneficiaryStillKills)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+    heavy.increaseAsync(5000);
+    heavy.waitKills(1);
+
+    EXPECT_EQ(heavy.killCount(), 1u);
+    EXPECT_EQ(heavy.size(), 8000);
 }

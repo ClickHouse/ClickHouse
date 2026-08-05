@@ -52,6 +52,12 @@ private:
 
     ResourceCost allocated = 0; /// Currently allocated.
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
+    /// A hard-limit constraint may temporarily park a running allocation's pending growth so another
+    /// request can be considered. The allocation can still decrease or be removed while growth is parked.
+    bool memory_growth_suspended = false; /// Scheduler-thread only.
+    bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
+    /// True while this allocation is running after being admitted ahead of suspended memory growth.
+    bool memory_growth_suspension_beneficiary = false; /// Scheduler-thread only.
 
     IncreaseRequest increase;
     DecreaseRequest decrease;

@@ -36,6 +36,12 @@ public:
     /// `decrease_size` must be positive.
     virtual void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) = 0;
 
+    /// Temporarily parks an over-limit regular increase before eviction. A memory release may make the
+    /// same growth eligible for another attempt. Returns true when the request was parked, false when the
+    /// current attempt has already yielded without progress. Deliberately non-blocking because
+    /// a parent constraint may call it while an `AllocationQueue` mutex is held during decrease propagation.
+    virtual bool trySuspendMemoryGrowth(ResourceAllocation & allocation) = 0;
+
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.
     /// For pending allocations, `ResourceAllocation::allocationFailed` will be called.
