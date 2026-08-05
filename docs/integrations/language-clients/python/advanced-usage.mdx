@@ -135,7 +135,7 @@ Unlike the synchronous factory, `get_async_client` disables automatic session ID
 
 Each ClickHouse query occurs within the context of a ClickHouse "session". Sessions are currently used for two purposes:
 - To associate specific ClickHouse settings with multiple queries (see the [user settings](/reference/settings/session-settings)). The ClickHouse `SET` command is used to change the settings for the scope of a user session.
-- To track [temporary tables.](/reference/statements/create/table#temporary-tables)
+- To track [temporary tables.](/reference/statements/create/table/temporary-table)
 
 By default, a synchronous `Client` uses a generated session ID. `SET` statements and temporary tables therefore persist across requests from that client. The async factory does not generate a session ID by default. ClickHouse doesn't allow concurrent queries in the same session, and the client raises a `ProgrammingError` if this is attempted, so use one of the following patterns:
 

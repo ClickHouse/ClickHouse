@@ -190,7 +190,7 @@ If you want to merge the substituting content with the existing configuration in
 ## Encrypting and hiding configuration {#encryption}
 
 You can use symmetric encryption to encrypt a configuration element, for example, a plaintext password or private key.
-To do so, first configure the [encryption codec](/reference/statements/create/table#encryption-codecs), then add the attribute `encrypted_by` with the name of the encryption codec as the value to the element to encrypt.
+To do so, first configure the [encryption codec](/reference/statements/create/table/codec#encryption-codecs), then add the attribute `encrypted_by` with the name of the encryption codec as the value to the element to encrypt.
 
 Unlike attributes `from_zk`, `from_env` and `incl`, or element `include`, no substitution (i.e. decryption of the encrypted value) is performed in the preprocessed file.
 Decryption happens only at runtime in the server process.
