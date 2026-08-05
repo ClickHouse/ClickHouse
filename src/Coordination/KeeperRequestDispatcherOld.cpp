@@ -181,9 +181,11 @@ KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_)
         /// free slot for a long-running job). The destructor is not called for an object whose constructor
         /// threw, and destroying a still joinable `ThreadFromGlobalPool` aborts the process, so the
         /// workers started so far have to be stopped and joined before the exception leaves the constructor.
-        /// The worker loops exit only when the context is marked as shut down; Keeper cannot serve without
-        /// the dispatcher anyway.
-        keeper_context->setShutdownCalled();
+        /// The worker loops exit when their queue is finished. Note that the context-wide shutdown flag
+        /// must not be consumed here: `KeeperDispatcher::shutdown` joins its own threads only on the
+        /// first transition of that flag, so setting it during this unwind would leave the threads
+        /// `KeeperDispatcher::initialize` started earlier (e.g. `snapshot_thread`) never joined,
+        /// aborting on their still joinable destructors.
         requests_queue->finish();
         responses_queue.finish();
         if (request_thread.joinable())
@@ -370,6 +372,11 @@ void KeeperRequestDispatcherOld::requestThread()
             }
             else
             {
+                /// The queue is finished when the dispatcher is shutting down, in particular when its
+                /// constructor failed to start a worker thread and joins the ones already started
+                /// (the context-wide shutdown flag is not set on that path).
+                if (requests_queue->isFinished())
+                    break;
                 continue;
             }
 
@@ -720,6 +727,13 @@ void KeeperRequestDispatcherOld::responseThread()
                     "",
                     dequeue_time_us);
             }
+        }
+        else if (responses_queue.isFinished())
+        {
+            /// The queue is finished when the dispatcher is shutting down, in particular when its
+            /// constructor failed to start a worker thread and joins the ones already started
+            /// (the context-wide shutdown flag is not set on that path).
+            break;
         }
     }
 }
