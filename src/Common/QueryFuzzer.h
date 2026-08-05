@@ -210,7 +210,13 @@ private:
 
     // Some debug fields for detecting problematic ASTs with loops.
     // These are reset for each fuzzMain call.
-    std::unordered_set<const IAST *> debug_visited_nodes;
+    // The map keeps a reference to every visited node instead of only its address: fuzzing
+    // legitimately drops parts of the query (a column list replaced by an inferred one, a dropped
+    // constraint or projection, a key clause removed from a storage definition), and once a visited
+    // node is destroyed the allocator is free to hand its address to a node created later, which
+    // would look exactly like a loop. Holding the node alive makes the address unique for the whole
+    // fuzzMain call, so pointer identity is a valid answer to "have I visited this node before".
+    std::unordered_map<const IAST *, ASTPtr> debug_visited_nodes;
     ASTPtr * debug_top_ast = nullptr;
 
     std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
