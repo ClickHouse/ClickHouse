@@ -146,7 +146,7 @@ public:
         bool skip_partial_sort = false,
         TopKThresholdTrackerPtr threshold_tracker = nullptr);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
 

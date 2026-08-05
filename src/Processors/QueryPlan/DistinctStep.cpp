@@ -135,7 +135,7 @@ void DistinctStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     settings[QueryPlanSerializationSetting::max_rows_in_distinct] = set_size_limits.max_rows;
     settings[QueryPlanSerializationSetting::max_bytes_in_distinct] = set_size_limits.max_bytes;

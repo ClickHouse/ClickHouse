@@ -697,7 +697,7 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     sort_settings.updatePlanSettings(settings);
 }

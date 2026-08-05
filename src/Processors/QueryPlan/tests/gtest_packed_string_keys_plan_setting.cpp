@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -13,13 +14,20 @@
 
 using namespace DB;
 
-/// `enable_packed_string_keys_in_aggregation` must reach the wire only for the steps it can actually change.
+/// `enable_packed_string_keys_in_aggregation` must reach the wire whenever it can take effect on a peer that knows
+/// it, and only when correctness demands it on a peer that does not.
 ///
 /// `QueryPlanSerializationSettings` is a strict named schema: `readBinary` throws on a name it does not know, so a
-/// peer that predates the setting rejects any plan carrying it. Emitting it for a `count()` or `GROUP BY UInt64`
-/// aggregation - where the single-`String` method is unreachable - would break such a peer for nothing.
+/// peer that predates the setting rejects any plan carrying it. Towards such a peer (a query-plan serialization
+/// version below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING`), emitting it for a
+/// `count()` or `GROUP BY UInt64` aggregation - where the single-`String` method is unreachable - would break the
+/// peer for nothing. A peer at that version or above always receives the value when the legacy method is requested,
+/// so the setting cannot silently stop taking effect on remote aggregation.
 namespace
 {
+
+constexpr UInt64 current_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+constexpr UInt64 pre_setting_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING - 1;
 
 Aggregator::Params makeParams(const Names & keys, bool enable_packed_string_keys, size_t group_by_two_level_threshold = 100000)
 {
@@ -45,7 +53,11 @@ bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 }
 
 bool aggregatingStepCarriesSetting(
-    const Block & header, const Names & keys, bool enable_packed_string_keys, size_t group_by_two_level_threshold = 100000)
+    const Block & header,
+    const Names & keys,
+    bool enable_packed_string_keys,
+    UInt64 version,
+    size_t group_by_two_level_threshold = 100000)
 {
     AggregatingStep step(
         std::make_shared<const Block>(header),
@@ -66,11 +78,11 @@ bool aggregatingStepCarriesSetting(
         /*enable_sharding_aggregator=*/false);
 
     QueryPlanSerializationSettings settings;
-    step.serializeSettings(settings);
+    step.serializeSettings(settings, version);
     return wireCarriesSetting(settings);
 }
 
-bool mergingAggregatedStepCarriesSetting(const Block & header, const Names & keys, bool enable_packed_string_keys)
+bool mergingAggregatedStepCarriesSetting(const Block & header, const Names & keys, bool enable_packed_string_keys, UInt64 version)
 {
     MergingAggregatedStep step(
         std::make_shared<const Block>(header),
@@ -87,7 +99,7 @@ bool mergingAggregatedStepCarriesSetting(const Block & header, const Names & key
         /*memory_bound_merging_of_aggregation_results_enabled=*/false);
 
     QueryPlanSerializationSettings settings;
-    step.serializeSettings(settings);
+    step.serializeSettings(settings, version);
     return wireCarriesSetting(settings);
 }
 
@@ -98,55 +110,72 @@ Block headerWithKey(const DataTypePtr & type)
 
 }
 
-TEST(PackedStringKeysPlanSetting, EmittedOnlyForSingleStringKey)
+TEST(PackedStringKeysPlanSetting, EmittedOnlyForSingleStringKeyTowardsOldPeers)
 {
     const Block string_key = headerWithKey(std::make_shared<DataTypeString>());
 
-    /// The only case that has to be communicated: the initiator asks for the legacy method for a key the packed
-    /// method would otherwise be chosen for.
-    EXPECT_TRUE(aggregatingStepCarriesSetting(string_key, {"k"}, false));
-    EXPECT_TRUE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, false));
+    /// The only case that has to be communicated to a peer that does not know the name: the initiator asks for the
+    /// legacy method for a key the packed method would otherwise be chosen for, and the plan can go two-level.
+    EXPECT_TRUE(aggregatingStepCarriesSetting(string_key, {"k"}, false, pre_setting_version));
+    EXPECT_TRUE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, false, pre_setting_version));
 
     /// The default needs nothing on the wire - the receiver's default is the packed method already.
-    EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, true));
-    EXPECT_FALSE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, true));
+    EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, true, pre_setting_version));
+    EXPECT_FALSE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, true, pre_setting_version));
+    EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, true, current_version));
+    EXPECT_FALSE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, true, current_version));
 }
 
-TEST(PackedStringKeysPlanSetting, NotEmittedWhenTwoLevelAggregationIsImpossible)
+TEST(PackedStringKeysPlanSetting, AlwaysEmittedWhenDisabledTowardsCurrentPeers)
+{
+    const Block string_key = headerWithKey(std::make_shared<DataTypeString>());
+
+    /// A peer at the current version knows the name, so the value is written whenever the legacy method is
+    /// requested - even for plans where it changes nothing - and the setting always takes effect remotely.
+    EXPECT_TRUE(aggregatingStepCarriesSetting(string_key, {"k"}, false, current_version));
+    EXPECT_TRUE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, false, current_version));
+
+    /// In particular with both two-level thresholds at `0`, where an old peer would not receive it.
+    EXPECT_TRUE(aggregatingStepCarriesSetting(string_key, {"k"}, false, current_version, /*group_by_two_level_threshold=*/0));
+    EXPECT_TRUE(aggregatingStepCarriesSetting(
+        headerWithKey(std::make_shared<DataTypeUInt64>()), {"k"}, false, current_version));
+}
+
+TEST(PackedStringKeysPlanSetting, NotEmittedTowardsOldPeersWhenTwoLevelAggregationIsImpossible)
 {
     const Block string_key = headerWithKey(std::make_shared<DataTypeString>());
 
     /// With both serialized two-level thresholds at `0` the receiver can never produce a two-level state, so a method
     /// mismatch is unobservable and an old peer may safely run the plan with its default method.
-    EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, false, /*group_by_two_level_threshold=*/0));
+    EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, false, pre_setting_version, /*group_by_two_level_threshold=*/0));
 
     /// `MergingAggregatedStep` has no such narrowing: whether its *input* is bucketed is a property of the producing
     /// steps' thresholds, which its own merge params do not carry (see `MergingAggregatedStep::serializeSettings`).
-    EXPECT_TRUE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, false));
+    EXPECT_TRUE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, false, pre_setting_version));
 }
 
-TEST(PackedStringKeysPlanSetting, NotEmittedWhenTheMethodIsUnreachable)
+TEST(PackedStringKeysPlanSetting, NotEmittedTowardsOldPeersWhenTheMethodIsUnreachable)
 {
     /// `count()`: no keys at all.
-    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(std::make_shared<DataTypeUInt64>()), {}, false));
+    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(std::make_shared<DataTypeUInt64>()), {}, false, pre_setting_version));
 
     /// A single non-`String` key.
-    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(std::make_shared<DataTypeUInt64>()), {"k"}, false));
-    EXPECT_FALSE(mergingAggregatedStepCarriesSetting(headerWithKey(std::make_shared<DataTypeUInt64>()), {"k"}, false));
+    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(std::make_shared<DataTypeUInt64>()), {"k"}, false, pre_setting_version));
+    EXPECT_FALSE(mergingAggregatedStepCarriesSetting(headerWithKey(std::make_shared<DataTypeUInt64>()), {"k"}, false, pre_setting_version));
 
     /// `Nullable(String)` and `LowCardinality(String)` get their own methods.
     const auto nullable_string = makeNullable(std::make_shared<DataTypeString>());
-    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(nullable_string), {"k"}, false));
+    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(nullable_string), {"k"}, false, pre_setting_version));
 
     const auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(low_cardinality_string), {"k"}, false));
+    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(low_cardinality_string), {"k"}, false, pre_setting_version));
 
     /// More than one key - the packed method is single-key only.
     auto string_type = std::make_shared<DataTypeString>();
     Block two_keys({
         ColumnWithTypeAndName(string_type->createColumn(), string_type, "k"),
         ColumnWithTypeAndName(string_type->createColumn(), string_type, "k2")});
-    EXPECT_FALSE(aggregatingStepCarriesSetting(two_keys, {"k", "k2"}, false));
+    EXPECT_FALSE(aggregatingStepCarriesSetting(two_keys, {"k", "k2"}, false, pre_setting_version));
 }
 
 TEST(PackedStringKeysPlanSetting, EmittedWhenAnyGroupingSetUsesASingleStringKey)

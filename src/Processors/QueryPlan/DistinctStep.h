@@ -32,7 +32,7 @@ public:
     UInt64 getLimitHint() const { return limit_hint; }
     void updateLimitHint(UInt64 hint);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
