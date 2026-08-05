@@ -1720,6 +1720,11 @@ def test_listing_tolerates_missing_namespace(started_cluster):
         ).strip()
     )
 
+    # T1 is only meaningful if the absent namespace really was listed. Without the pushdown the query
+    # degrades to listing the namespaces Glue reports, which excludes this one, so nothing would reach
+    # the code under test and T1 would pass unpatched.
+    assert node.contains_in_log(f"Getting tables for database '{missing_namespace}'")
+
     # T2: the same pushdown still resolves a table in a namespace that does exist.
     assert (
         f"{namespace}.{table_name}"
@@ -1732,3 +1737,34 @@ def test_listing_tolerates_missing_namespace(started_cluster):
 
     # T3: the unfiltered listing still reports the table.
     assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_listing_propagates_non_not_found_error(started_cluster):
+    # The tolerance above must stay narrow: only Glue's `EntityNotFoundException` may be read as "this
+    # database contributes no tables". Any other failure -- here an endpoint whose host does not resolve
+    # -- must still fail the listing loudly, so a misconfigured or unreachable catalog is never silently
+    # reported as empty.
+    node = started_cluster.instances["node1"]
+
+    db_name = f"glue_unreachable_{uuid.uuid4().hex}"
+    # ATTACH is lazy, so the unreachable endpoint is only contacted by the listing below.
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
+                 aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
+        """
+    )
+    try:
+        # `name = 'ns.table'` is pushed down, so the failing call is the single-namespace listing -- the
+        # same code path the previous test exercises -- rather than the enclosing database enumeration.
+        # A low retry count keeps the unreachable endpoint from retrying for minutes.
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{db_name}' "
+            f"AND name = 'some_namespace.some_table' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true, s3_retry_attempts = 1"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        assert "Exception calling GetTables" in error, error
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
