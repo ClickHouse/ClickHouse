@@ -180,14 +180,19 @@ namespace
 ///
 /// `MetadataStorageType::Local` and `Memory` keep metadata per node, so a plain `MergeTree` on them
 /// is node-local: two members can each mint an `all_1_1_0` holding different rows.
-bool partNameIsClusterWideIdentity(const MergeTreeData & storage)
+///
+/// Deriving this inspects the table's storage policy, which takes a global lock, so callers that
+/// describe many parts of the same table should derive it once and pass it down as a hint.
+RangesInDataPartDescription::PartNameIdentity partNameIdentityOf(const MergeTreeData & storage)
 {
+    using PartNameIdentity = RangesInDataPartDescription::PartNameIdentity;
+
     if (storage.supportsReplication())
-        return true;
+        return PartNameIdentity::ClusterWide;
 
     const auto disks = storage.getDisks();
     if (disks.empty())
-        return false;
+        return PartNameIdentity::NodeLocal;
 
     for (const auto & disk : disks)
     {
@@ -202,15 +207,16 @@ bool partNameIsClusterWideIdentity(const MergeTreeData & storage)
             case MetadataStorageType::None:
             case MetadataStorageType::Local:
             case MetadataStorageType::Memory:
-                return false;
+                return PartNameIdentity::NodeLocal;
         }
     }
-    return true;
+    return PartNameIdentity::ClusterWide;
 }
 
 }
 
-RangesInDataPartDescription RangesInDataPart::getDescription() const
+RangesInDataPartDescription RangesInDataPart::getDescription(
+    std::optional<RangesInDataPartDescription::PartNameIdentity> part_name_identity_hint) const
 {
     chassert(!data_part->isProjectionPart() || parent_part);
 
@@ -242,9 +248,7 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
         /// Tells the coordinator whether a part name is a content identity here (replicated engines
         /// and shared-metadata storage) or same-named parts must be verified by fingerprint (a plain
         /// `MergeTree` on node-local storage).
-        .part_name_identity = partNameIsClusterWideIdentity(data_part->storage)
-            ? RangesInDataPartDescription::PartNameIdentity::ClusterWide
-            : RangesInDataPartDescription::PartNameIdentity::NodeLocal,
+        .part_name_identity = part_name_identity_hint.value_or(partNameIdentityOf(data_part->storage)),
     };
 }
 
@@ -274,8 +278,14 @@ RangesInDataParts::RangesInDataParts(const DataPartsVector & parts)
 RangesInDataPartsDescription RangesInDataParts::getDescriptions() const
 {
     RangesInDataPartsDescription result;
+    if (empty())
+        return result;
+
+    /// Every part here belongs to the same table, so derive the identity class once - it inspects the
+    /// storage policy under a global lock, which we do not want to do per part.
+    const auto part_name_identity = partNameIdentityOf(front().data_part->storage);
     for (const auto & part : *this)
-        result.emplace_back(part.getDescription());
+        result.emplace_back(part.getDescription(part_name_identity));
     return result;
 }
 

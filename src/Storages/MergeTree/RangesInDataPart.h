@@ -9,6 +9,7 @@
 
 #include <deque>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -188,7 +189,11 @@ struct RangesInDataPart
         size_t part_index_in_query_ = 0,
         size_t part_starting_offset_in_query_ = 0);
 
-    RangesInDataPartDescription getDescription() const;
+    /// `part_name_identity_hint` lets a caller that describes many parts of the same table compute
+    /// the identity class once instead of per part - deriving it inspects the table's storage policy,
+    /// which takes a global lock. When not given, it is derived here.
+    RangesInDataPartDescription getDescription(
+        std::optional<RangesInDataPartDescription::PartNameIdentity> part_name_identity_hint = {}) const;
 
     size_t getMarksCount() const;
     size_t getRowsCount() const;
