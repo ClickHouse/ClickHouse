@@ -1,4 +1,5 @@
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 
@@ -128,7 +129,8 @@ public:
 
         auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
         UInt64 new_total_rows = storage.total_size_rows.load(std::memory_order_relaxed) + inserted_rows;
-        UInt64 new_total_bytes = storage.total_size_bytes.load(std::memory_order_relaxed) + inserted_bytes;
+        const UInt64 old_total_bytes = storage.total_size_bytes.load(std::memory_order_relaxed);
+        UInt64 new_total_bytes = old_total_bytes + inserted_bytes;
         const auto & memory_settings = storage.getMemorySettingsRef();
         while (!new_data->empty()
                && ((memory_settings[MemorySetting::max_bytes_to_keep] && new_total_bytes > memory_settings[MemorySetting::max_bytes_to_keep])
@@ -155,6 +157,13 @@ public:
         storage.data.set(std::move(new_data));
         storage.total_size_rows.store(new_total_rows, std::memory_order_relaxed);
         storage.total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
+
+        /// The blocks now belong to the table, which outlives the query, so hand their charge to the global
+        /// tracker: the insert had to be accounted while it ran, but keeping the charge would leave it on the
+        /// per-user tracker for good. The table's accounted growth is an estimate of what the query was
+        /// charged (and nets out any blocks evicted above), so a fraction of a percent can be left over.
+        if (auto * thread_memory_tracker = CurrentThread::getMemoryTracker())
+            thread_memory_tracker->transferToGlobal(new_total_bytes - old_total_bytes);
     }
 
 private:
@@ -226,6 +235,9 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
 
 void StorageMemory::drop()
 {
+    /// Charged to the global tracker on insert (see `MemorySink::onFinish`), so release it without crediting
+    /// this query. A `User`-level blocker still uncharges `total_memory_tracker`, which holds it.
+    MemoryTrackerBlockerInThread not_credited_to_the_query;
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
@@ -404,6 +416,9 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
+    /// Charged to the global tracker on insert (see `MemorySink::onFinish`), so release it without crediting
+    /// this query. A `User`-level blocker still uncharges `total_memory_tracker`, which holds it.
+    MemoryTrackerBlockerInThread not_credited_to_the_query;
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
