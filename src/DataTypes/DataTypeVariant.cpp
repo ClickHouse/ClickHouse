@@ -867,7 +867,7 @@ The rest — the arithmetic and order-based aggregates such as `sum`, `avg`, `mi
 f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
 ```
 
-If the alternatives have no lossless common supertype, the function reports `ILLEGAL_TYPE_OF_ARGUMENT`, as before. For an aggregate whose result is a floating-point value computed by arithmetic over its input (the `sum`/`avg`/variance families), a mix of numeric alternatives can be promoted to `Float64` instead, if the `allow_lossy_numeric_supertype` setting is enabled:
+This works only when the common supertype can be wrapped in `Nullable`, which carries the implicit NULLs of the `Variant`. A `Variant` whose common supertype is a container type (`Array`, `Tuple`, `Map`) is therefore still rejected with `ILLEGAL_TYPE_OF_ARGUMENT`, even for an order-based aggregate over alternatives with a valid supertype, such as `min` over `Variant(Array(UInt8), Array(UInt16))`. The same error is reported, as before, when the alternatives have no lossless common supertype. For an aggregate whose result is a floating-point value computed by arithmetic over its input (the `sum`/`avg`/variance families), a mix of numeric alternatives can be promoted to `Float64` instead, if the `allow_lossy_numeric_supertype` setting is enabled:
 
 ```sql
 SET allow_lossy_numeric_supertype = 1;
