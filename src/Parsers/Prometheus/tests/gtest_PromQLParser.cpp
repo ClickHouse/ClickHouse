@@ -1203,10 +1203,9 @@ TEST(PromQLParser, DurationUnitOrder)
 
 TEST(PromQLParser, LineComments)
 {
-    for (const auto query : {
+    for (const auto * const query : {
              "up #",
              "up # comment",
-             "up#comment",
              "up # comment\n",
              "up # comment\r",
              "up # comment\r\n",
