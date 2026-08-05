@@ -349,6 +349,20 @@ namespace
     using TimestampType = PrometheusQueryParsingUtil::TimestampType;
     using DurationType = PrometheusQueryParsingUtil::DurationType;
 
+    bool hasNonZeroDecimalDigit(std::string_view input)
+    {
+        size_t exponent_pos = input.find_first_of("eE");
+        input = input.substr(0, exponent_pos);
+
+        for (char c : input)
+        {
+            if (c >= '1' && c <= '9')
+                return true;
+        }
+
+        return false;
+    }
+
     template <typename T>
     std::string_view getTypeName()
     {
@@ -363,7 +377,8 @@ namespace
     /// Parses an unsigned scalar in number format, for example "1000" or "1_000" or "5.67" or "2e10" or "Inf" or "Nan".
     /// Underscores between digits are ignored.
     template <typename T>
-    bool tryParseNumberFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseNumberFormat(
+        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool * is_nonzero = nullptr)
     {
         /// Remove underscores between digits if necessary.
         String str = removeUnderscoresBetweenDigits</* is_hex = */ false>(input);
@@ -400,6 +415,9 @@ namespace
             }
         }
 
+        if (is_nonzero)
+            *is_nonzero = hasNonZeroDecimalDigit(str);
+
         return true;
     }
 
@@ -415,7 +433,8 @@ namespace
     /// If it succeeds the function returns true and sets `result`.
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
     template <typename T>
-    bool tryParseHexFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseHexFormat(
+        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool * is_nonzero = nullptr)
     {
         bool has_hex_prefix = (input.length() >= 2) && (input[0] == '0') && (std::tolower(input[1]) == 'x');
         if (!has_hex_prefix)
@@ -453,6 +472,9 @@ namespace
             result = static_cast<T>(value);
         }
 
+        if (is_nonzero)
+            *is_nonzero = value != 0;
+
         return true;
     }
 
@@ -467,9 +489,11 @@ namespace
     /// If it succeeds the function returns true and sets `result`.
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
     template <typename T>
-    bool tryParseDurationFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseDurationFormat(
+        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool * is_nonzero = nullptr)
     {
         bool has_time_units = false;
+        bool has_nonzero_value = false;
         Int64 seconds = 0;
         Int64 milliseconds = 0;
         size_t last_unit_order = 0;
@@ -501,6 +525,8 @@ namespace
                 setErrorPos(error_pos, number_start_pos);
                 return false;
             }
+
+            has_nonzero_value |= number != 0;
 
             size_t unit_start_pos = pos;
             while (pos != input.length() && !std::isdigit(input[pos]))
@@ -640,11 +666,15 @@ namespace
             result = static_cast<ScalarType>(seconds) + static_cast<ScalarType>(milliseconds) / 1000;
         }
 
+        if (is_nonzero)
+            *is_nonzero = has_nonzero_value;
+
         return true;
     }
 
     template <typename T>
-    bool tryParseNumber(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseNumber(
+        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool * is_positive = nullptr)
     {
         size_t pos = 0;
 
@@ -671,19 +701,20 @@ namespace
         std::string_view unsigned_input = input.substr(pos, end_pos - pos);
 
         bool ok = false;
+        bool is_nonzero = false;
 
         /// Parse an unsigned number in one of three formats.
         if (isHexFormat(unsigned_input))
         {
-            ok = tryParseHexFormat(unsigned_input, scale, result, error_message, error_pos);
+            ok = tryParseHexFormat(unsigned_input, scale, result, error_message, error_pos, &is_nonzero);
         }
         else if (isDurationFormat(unsigned_input))
         {
-            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos);
+            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos, &is_nonzero);
         }
         else
         {
-            ok = tryParseNumberFormat(unsigned_input, scale, result, error_message, error_pos);
+            ok = tryParseNumberFormat(unsigned_input, scale, result, error_message, error_pos, &is_nonzero);
         }
 
         if (!ok)
@@ -693,10 +724,24 @@ namespace
             return false;
         }
 
+        if (is_positive)
+            *is_positive = !negative && is_nonzero;
+
         if (negative)
             result = -result;
 
         return true;
+    }
+
+    bool tryParseDurationWithPositivity(
+        std::string_view input,
+        UInt32 timestamp_scale,
+        DurationType & res_duration,
+        bool & is_positive,
+        String * error_message,
+        size_t * error_pos)
+    {
+        return tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, &is_positive);
     }
 }
 
@@ -758,14 +803,16 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
         return false;
     }
 
-    if (!tryParseDuration(input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, error_message, error_pos))
+    bool is_positive = false;
+    if (!tryParseDurationWithPositivity(
+            input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, is_positive, error_message, error_pos))
     {
         if (error_pos)
             *error_pos += start_pos;
         return false;
     }
 
-    if (res_range <= 0)
+    if (!is_positive)
     {
         setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
         setErrorPos(error_pos, start_pos);
@@ -837,14 +884,16 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         return false;
     }
 
-    if (!tryParseDuration(input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, error_message, error_pos))
+    bool is_positive = false;
+    if (!tryParseDurationWithPositivity(
+            input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, is_positive, error_message, error_pos))
     {
         if (error_pos)
             *error_pos += range_start_pos;
         return false;
     }
 
-    if (res_range <= 0)
+    if (!is_positive)
     {
         setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
         setErrorPos(error_pos, range_start_pos);
@@ -855,14 +904,16 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
 
     if (step_start_pos != step_end_pos)
     {
-        if (!tryParseDuration(input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), error_message, error_pos))
+        bool is_positive_step = false;
+        if (!tryParseDurationWithPositivity(
+                input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), is_positive_step, error_message, error_pos))
         {
             if (error_pos)
                 *error_pos += step_start_pos;
             return false;
         }
 
-        if (*res_step <= 0)
+        if (!is_positive_step)
         {
             setErrorMessage(error_message, "Cannot parse time range {}: Expected a step greater than zero", quoteString(input));
             setErrorPos(error_pos, step_start_pos);

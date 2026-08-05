@@ -1599,6 +1599,28 @@ TEST(PromQLParser, RejectZeroDurationRanges)
 }
 
 
+TEST(PromQLParser, PreservePositiveDurationRangesAtSecondPrecision)
+{
+    for (const auto query : {"up[1ms]", "up[5m:1ms]", "up[5m:]"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_TRUE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query << ": " << error_message;
+    }
+
+    for (const auto query : {"up[0ms]", "up[5m:0ms]"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
+    }
+}
+
+
 TEST(PromQLParser, ErrorPosition)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
