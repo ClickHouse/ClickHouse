@@ -279,7 +279,11 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
-    schema_processor.addIcebergTableSchema(schema_object);
+    /// Partition prune keys must use UTC timestamptz types (Iceberg physical), not the
+    /// presentation timezone from iceberg_timezone_for_timestamptz.
+    auto physical_context = createIcebergPhysicalContext(context_);
+    schema_processor.addIcebergTableSchema(schema_object, physical_context);
+    schema_processor.addIcebergTableSchema(schema_object, context_);
 
     PartitionSpecification partition_spec_vec;
     for (size_t i = 0; i != partition_specification->size(); ++i)
@@ -291,7 +295,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
         std::optional<DB::NameAndTypePair> manifest_file_column_characteristics
-            = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id);
+            = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id, physical_context);
         if (!manifest_file_column_characteristics.has_value())
             continue;
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
@@ -312,8 +316,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
     std::optional<DB::KeyDescription> partition_key_description;
     if (!partition_columns_description.empty())
-        partition_key_description.emplace(
-            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context_));
+        partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(
+            std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, physical_context));
 
     size_t total_rows = manifest_file_deserializer_->rows();
 
@@ -461,9 +465,13 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         std::unordered_map<Int32, DB::Range> hyperrectangles;
         if (parsed_entry->content_type == FileContentType::DATA)
         {
+            /// Bounds typing must match UTC timestamptz semantics used when writing partitions.
+            auto physical_context = createIcebergPhysicalContext(context);
+            schema_processor_ptr->getClickhouseTableSchemaById(resolved_schema_id, physical_context);
             for (const auto & [column_id, bounds] : parsed_entry->value_bounds)
             {
-                auto field_characteristics = schema_processor_ptr->tryGetFieldCharacteristics(resolved_schema_id, column_id);
+                auto field_characteristics
+                    = schema_processor_ptr->tryGetFieldCharacteristics(resolved_schema_id, column_id, physical_context);
                 /// If we don't have column characteristics, bounds don't have any sense.
                 /// This happens if the subfield is inside map or array, because we don't support
                 /// name generation for such subfields (we support names of nested subfields in structs only).
@@ -542,6 +550,13 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
     auto it = pruners_by_schema_id.find(schema_id);
     if (it != pruners_by_schema_id.end())
         return it->second.get();
+
+    /// Materialize ClickHouse types (presentation + UTC) before lookup-only tryGet* inside the pruner.
+    auto physical_context = createIcebergPhysicalContext(context);
+    schema_processor_ptr->getClickhouseTableSchemaById(table_snapshot_schema_id, context);
+    schema_processor_ptr->getClickhouseTableSchemaById(schema_id, context);
+    schema_processor_ptr->getClickhouseTableSchemaById(table_snapshot_schema_id, physical_context);
+    schema_processor_ptr->getClickhouseTableSchemaById(schema_id, physical_context);
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
         *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), *this, context);

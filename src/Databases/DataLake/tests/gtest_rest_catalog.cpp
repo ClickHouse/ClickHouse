@@ -323,15 +323,15 @@ TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
         context);
 
     TableMetadata existing;
-    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", existing));
+    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", getContext().context, existing));
     EXPECT_TRUE(catalog.existsTable("namespace", "table_a"));
 
     TableMetadata missing;
-    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", missing));
+    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", getContext().context, missing));
     EXPECT_FALSE(catalog.existsTable("namespace", "missing_table"));
 
     TableMetadata unauthorized;
-    EXPECT_THROW(catalog.tryGetTableMetadata("namespace", "unauthorized_table", unauthorized), DB::HTTPException);
+    EXPECT_THROW(catalog.tryGetTableMetadata("namespace", "unauthorized_table", getContext().context, unauthorized), DB::HTTPException);
     EXPECT_THROW(catalog.existsTable("namespace", "unauthorized_table"), DB::HTTPException);
 }
 

@@ -16,6 +16,8 @@
 #include <Poco/JSON/Parser.h>
 #include <Common/SharedMutex.h>
 
+#include <map>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 namespace DB::Iceberg
@@ -81,26 +83,32 @@ ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
  *     }
  * }
  */
-class IcebergSchemaProcessor
+class IcebergSchemaProcessor : private WithContext
 {
     static std::string default_link;
 
     using Node = ActionsDAG::Node;
 
-public:
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
+    /// ClickHouse DateTime64 timezone for timestamptz depends on `iceberg_timezone_for_timestamptz`.
+    /// Empty means "use session timezone" (non-explicit DateTime64), distinct from explicit `"UTC"`.
+    using SchemaTimezoneKey = std::pair<Int32, String>;
+    using FieldTimezoneKey = std::tuple<Int32, String, Int32>; /// schema_id, timezone, source_id
+    using TransformDagKey = std::tuple<Int32, Int32, String>; /// old_id, new_id, timezone
 
-    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
-    std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
-    std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
-    NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
-    std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
-    NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const;
+public:
+    explicit IcebergSchemaProcessor(ContextPtr context_, bool allow_geo_parser_ = false) : WithContext(context_), allow_geo_parser(allow_geo_parser_) {}
+
+    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_);
+    std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id, ContextPtr context_);
+    std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(ContextPtr context_, Int32 old_id, Int32 new_id);
+    NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id, ContextPtr context_);
+    std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id, ContextPtr context_) const;
+    NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids, ContextPtr context_) const;
     std::optional<Int32> tryGetColumnIDByName(Int32 schema_id, const std::string & name) const;
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
-    bool hasClickhouseTableSchemaById(Int32 id) const;
+    bool hasClickhouseTableSchemaById(Int32 id, ContextPtr context_) const;
 
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
+    static DataTypePtr getSimpleType(const String & type_name, ContextPtr context_, bool allow_geo_parser = true);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 
@@ -119,18 +127,24 @@ public:
 
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
-    std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
-    std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
-    mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
+    std::map<SchemaTimezoneKey, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
+    std::map<TransformDagKey, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
+    mutable std::map<FieldTimezoneKey, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
+    std::optional<String> current_materialization_timezone TSA_GUARDED_BY(mutex);
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
-    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);
+    DataTypePtr getComplexTypeFromObject(
+        const Poco::JSON::Object::Ptr & type,
+        String & current_full_name,
+        ContextPtr context_,
+        bool is_subfield_of_root);
     DataTypePtr getFieldType(
         const Poco::JSON::Object::Ptr & field,
         const String & type_key,
+        ContextPtr context_,
         bool required,
         String & current_full_name = default_link,
         bool is_subfield_of_root = false);
@@ -139,7 +153,17 @@ private:
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
-        const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id);
+        const Poco::JSON::Object::Ptr & old_schema,
+        const Poco::JSON::Object::Ptr & new_schema,
+        ContextPtr context_,
+        Int32 old_id,
+        Int32 new_id);
+
+    /// Must be called under exclusive `mutex`. Materializes ClickHouse types for `(schema_id, timezone)`.
+    /// Callers must only invoke this when `(schema_id, timezone)` is not already present.
+    void materializeClickhouseSchemaLocked(Int32 schema_id, Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_) TSA_REQUIRES(mutex);
+    /// Must be called under exclusive `mutex`. Ensures `(schema_id, timezone)` is materialized.
+    void ensureClickhouseSchemaMaterializedLocked(Int32 schema_id, ContextPtr context_) TSA_REQUIRES(mutex);
 
     mutable SharedMutex mutex;
     bool allow_geo_parser = true;

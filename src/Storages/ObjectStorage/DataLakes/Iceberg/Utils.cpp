@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <config.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
@@ -90,6 +91,7 @@ namespace DB::DataLakeStorageSetting
 namespace DB::Setting
 {
 extern const SettingsString iceberg_metadata_compression_method;
+extern const SettingsTimezone iceberg_timezone_for_timestamptz;
 }
 
 namespace ProfileEvents
@@ -482,6 +484,37 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
         }
     }
     return std::nullopt;
+}
+
+void checkIcebergTimezoneSettingForWrite(const ContextPtr & context)
+{
+    const String timezone = context->getSettingsRef()[Setting::iceberg_timezone_for_timestamptz];
+    if (timezone != "UTC")
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Iceberg writes require setting iceberg_timezone_for_timestamptz = 'UTC' (got '{}'). "
+            "This setting only affects how timestamptz is presented on reads",
+            timezone.empty() ? String("<empty>") : timezone);
+}
+
+ContextPtr createIcebergPhysicalContext(ContextPtr query_context)
+{
+    auto physical_context = Context::createCopy(query_context);
+    physical_context->setSetting("iceberg_timezone_for_timestamptz", String("UTC"));
+    return physical_context;
+}
+
+SharedHeader createIcebergPhysicalSampleBlock(
+    IcebergSchemaProcessor & schema_processor,
+    Int32 schema_id,
+    ContextPtr query_context)
+{
+    auto physical_context = createIcebergPhysicalContext(query_context);
+    auto names_and_types = schema_processor.getClickhouseTableSchemaById(schema_id, physical_context);
+    Block block;
+    for (const auto & name_and_type : *names_and_types)
+        block.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
+    return std::make_shared<const Block>(std::move(block));
 }
 
 enum class MostRecentMetadataFileSelectionWay
@@ -1370,7 +1403,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     DataLake::TableMetadata table_metadata;
     table_metadata.withDataLakeSpecificProperties().withLocation();
     const auto & [namespace_name, table_name] = DataLake::parseTableName(table_identifier);
-    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+    catalog->getTableMetadata(namespace_name, table_name, local_context, table_metadata);
 
     auto specific_properties = table_metadata.getDataLakeSpecificProperties();
     if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())

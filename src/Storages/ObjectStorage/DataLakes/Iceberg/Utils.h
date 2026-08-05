@@ -19,6 +19,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
+#include <Core/Block_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -70,6 +71,21 @@ struct TransformAndArgument
 };
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
+
+/// Iceberg partition transforms and timestamptz Avro typing are UTC-based. Non-default
+/// `iceberg_timezone_for_timestamptz` is presentation-only and must not be used on write paths.
+void checkIcebergTimezoneSettingForWrite(const ContextPtr & context);
+
+/// Copy of `query_context` with `iceberg_timezone_for_timestamptz` forced to `UTC`.
+/// Use for partition prune / min-max typing so transforms match UTC-written partitions.
+ContextPtr createIcebergPhysicalContext(ContextPtr query_context);
+
+/// Sample block with UTC `timestamptz` types for compaction / manifest Avro typing.
+/// Does not reuse a possibly stale presentation sample from in-memory metadata.
+SharedHeader createIcebergPhysicalSampleBlock(
+    IcebergSchemaProcessor & schema_processor,
+    Int32 schema_id,
+    ContextPtr query_context);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
