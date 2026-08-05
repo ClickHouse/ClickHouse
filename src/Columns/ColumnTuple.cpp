@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -177,50 +177,6 @@ bool ColumnTuple::isDefaultAt(size_t n) const
         if (!columns[i]->isDefaultAt(n))
             return false;
     return true;
-}
-
-UInt64 ColumnTuple::getNumberOfDefaultRows() const
-{
-    /// Avoid the O(rows * tuple_size) per-row virtual `isDefaultAt` calls of the
-    /// IColumnHelper default: query each element's non-default rows once and union them
-    /// in a bitmap.
-    const size_t num_rows = size();
-    if (num_rows == 0)
-        return 0;
-    if (columns.empty())
-        return num_rows;
-
-    PaddedPODArray<UInt8> non_default_anywhere;
-    non_default_anywhere.resize_fill(num_rows);
-    size_t num_non_default = 0;
-
-    for (const auto & column : columns)
-    {
-        if (num_non_default == num_rows)
-            break;
-
-        const size_t num_defaults_in_column = column->getNumberOfDefaultRows();
-        if (num_defaults_in_column == num_rows)
-            continue;
-        if (num_defaults_in_column == 0)
-        {
-            std::memset(non_default_anywhere.data(), 1, num_rows);
-            num_non_default = num_rows;
-            break;
-        }
-
-        IColumn::Offsets non_default_indices;
-        column->getIndicesOfNonDefaultRows(non_default_indices, /*from=*/0, /*limit=*/0);
-        for (UInt64 idx : non_default_indices)
-        {
-            if (!non_default_anywhere[idx])
-            {
-                non_default_anywhere[idx] = 1;
-                ++num_non_default;
-            }
-        }
-    }
-    return num_rows - num_non_default;
 }
 
 std::string_view ColumnTuple::getDataAt(size_t) const
@@ -474,40 +430,15 @@ void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
         column->updateHashWithValueRange(begin, end, hash);
 }
 
-void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnTuple::getWeakHash32() const
 {
-    const size_t n = row_end - row_begin;
+    auto s = size();
+    WeakHash32 hash(s);
 
-    if (columns.empty())
-    {
-        /// Empty tuple: a single fixed per-row hash (all bits set).
-        if (initial)
-            for (size_t i = 0; i < n; ++i)
-                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
-        else
-            for (size_t i = 0; i < n; ++i)
-                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
-        return;
-    }
-
-    if (initial)
-    {
-        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and chain every child.
-        for (size_t i = 0; i < n; ++i)
-            hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
-        for (const auto & column : columns)
-            column->computeHashInto(row_begin, row_end, hash_out, false);
-        return;
-    }
-
-    /// Non-initial: build the finalized composite row hash in a scratch buffer, then combine that
-    /// single value into the prior key columns' hash (rather than streaming elements straight into
-    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
-    PaddedPODArray<UInt32> tuple_hash(n, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & column : columns)
-        column->computeHashInto(row_begin, row_end, tuple_hash.data(), false);
-    for (size_t i = 0; i < n; ++i)
-        hash_out[i] = combineWeakHash32(tuple_hash[i], hash_out[i]);
+        hash.update(column->getWeakHash32());
+
+    return hash;
 }
 
 void ColumnTuple::updateHashFast(SipHash & hash) const
@@ -676,7 +607,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        int res = 0;
+        int res;
         if (collator && columns[i]->isCollationSupported())
             res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
         else
@@ -717,7 +648,7 @@ struct ColumnTuple::Less
     {
         for (const auto & column : columns)
         {
-            int res = 0;
+            int res;
             if (collator && column->isCollationSupported())
                 res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
             else

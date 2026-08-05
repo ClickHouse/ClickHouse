@@ -28,7 +28,7 @@ template <
     NullSafeCmpMode cmp_mode,                                   // Null-safe mode (Equal or NotEqual)
     template <typename, typename > class CompareOp,             // EqualsOp / NotEqualsOp
     typename CompareName>                                       // NameEquals / NameNotEquals
-class FunctionsNullSafeCmp final : public IFunction
+class FunctionsNullSafeCmp : public IFunction
 {
 private:
     const ComparisonParams params;
@@ -141,15 +141,13 @@ public:
         // To address:
         //   1. Map vs null or
         //   2. Array vs null
-        // `isNotDistinctFrom` (`<=>`): value and NULL are never the same -> 0.
-        // `isDistinctFrom`: value and NULL are always distinct -> 1.
+        // The results will be always set to 0
         if (((isMap(type_and_name_left_col.type) || isArray(type_and_name_left_col.type))
                 && type_and_name_right_col.type->onlyNull())
             || ((isMap(type_and_name_right_col.type) || isArray(type_and_name_right_col.type))
                 && type_and_name_left_col.type->onlyNull()))
         {
-            return result_type->createColumnConst(
-                input_rows_count, UInt8(is_equal_mode ? 0 : 1));
+            return result_type->createColumnConst(input_rows_count, UInt8(0));
         }
 
         // To address:

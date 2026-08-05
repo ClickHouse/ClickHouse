@@ -81,7 +81,7 @@ struct TransactionID
 
     bool isEmpty() const
     {
-        chassert((local_tid == 0) == (start_csn == 0 && host_id == UUIDHelpers::Nil));
+        assert((local_tid == 0) == (start_csn == 0 && host_id == UUIDHelpers::Nil));
         return local_tid == 0;
     }
 
@@ -94,7 +94,7 @@ struct TransactionID
         /// `wasInvolvedInTransaction` and `validateInfo` can safely inspect such parts during
         /// part loading. Any other combination — including a `DummyLocalTID` with a non-`Nil`
         /// `host_id` — indicates corrupted on-disk metadata and must still trip the assertion.
-        chassert(
+        assert(
             (local_tid == Tx::NonTransactionalLocalTID) == (start_csn == Tx::NonTransactionalCSN)
             || (local_tid == Tx::DummyLocalTID
                 && start_csn == Tx::NonTransactionalCSN

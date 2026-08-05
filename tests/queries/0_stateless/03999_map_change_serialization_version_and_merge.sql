@@ -1,5 +1,3 @@
--- Tags: long
-
 -- Test: Changing map_serialization_version and bucket settings on existing table.
 -- Exercises merging parts with different serialization modes and bucket counts.
 

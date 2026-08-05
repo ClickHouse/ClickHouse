@@ -20,7 +20,7 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
     }
 }
 
-static Range getExtremeRangeFromColumn(const ColumnPtr & column)
+Range getExtremeRangeFromColumn(const ColumnPtr & column)
 {
     Field min_val;
     Field max_val;

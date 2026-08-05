@@ -15,7 +15,7 @@ namespace
 /// Implements the function nullIf which takes 2 arguments and returns
 /// NULL if both arguments have the same value. Otherwise it returns the
 /// value of the first argument.
-class FunctionNullIf final : public IFunction
+class FunctionNullIf : public IFunction
 {
 public:
     static constexpr auto name = "nullIf";
