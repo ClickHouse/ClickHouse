@@ -179,6 +179,13 @@ public:
     // of total_memory_tracker.
     void adjustOnBackgroundTaskEnd(const MemoryTracker * child);
 
+    /// Hand `size` bytes over from the query to the server: the memory stays allocated and the global tracker
+    /// keeps accounting it, while this tracker and its parents below the global one stop counting it. For data
+    /// a query allocates and leaves in a table, which must be checked against the limits while the query runs
+    /// but must not stay charged to the user, since nothing would ever uncharge it there.
+    /// NOTE: as in `adjustOnBackgroundTaskEnd`, alloc/free cannot be used, they would change the total too.
+    void transferToGlobal(Int64 size);
+
     Int64 getPeak() const
     {
         return peak.load(std::memory_order_relaxed);

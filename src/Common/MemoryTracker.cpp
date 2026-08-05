@@ -552,6 +552,20 @@ void MemoryTracker::adjustOnBackgroundTaskEnd(const MemoryTracker * child)
 }
 
 
+void MemoryTracker::transferToGlobal(Int64 size)
+{
+    for (auto * tracker = this; tracker && tracker->level != VariableContext::Global;
+         tracker = tracker->parent.load(std::memory_order_relaxed))
+    {
+        tracker->amount.fetch_sub(size, std::memory_order_relaxed);
+
+        auto metric_loaded = tracker->metric.load(std::memory_order_relaxed);
+        if (metric_loaded != CurrentMetrics::end())
+            CurrentMetrics::sub(metric_loaded, size);
+    }
+}
+
+
 bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 {
     auto peak_old = peak.load(std::memory_order_relaxed);
