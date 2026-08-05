@@ -28,6 +28,9 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
+#if USE_AWS_S3 && USE_SSL
+#include <Databases/DataLake/S3TablesCatalog.h>
+#endif
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -104,8 +107,6 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
-
 }
 
 namespace DataLakeStorageSetting
@@ -134,7 +135,6 @@ namespace FailPoints
     extern const char lightweight_show_tables[];
     extern const char datalake_try_get_table_return_nullptr[];
     extern const char datalake_try_get_table_throw[];
-    extern const char datalake_get_tables_throw[];
 }
 
 namespace
@@ -199,8 +199,20 @@ void DatabaseDataLake::validateSettings()
     {
         if (settings[DatabaseDataLakeSetting::region].value.empty())
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for Glue Catalog. "
+                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for Glue catalog. "
                 "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
+    }
+    else if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::S3_TABLES)
+    {
+        if (settings[DatabaseDataLakeSetting::region].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for S3 Tables catalog. "
+                "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
+
+        if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty for S3 Tables catalog. "
+                "Please specify 'SETTINGS warehouse=<table_bucket_arn>' in the CREATE DATABASE query");
     }
     else if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
     {
@@ -375,6 +387,23 @@ void DatabaseDataLake::initialize() const
             }
             break;
         }
+        case DB::DatabaseDataLakeCatalogType::S3_TABLES:
+        {
+#if USE_AWS_S3 && USE_SSL
+            catalog_impl = std::make_shared<DataLake::S3TablesCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                settings[DatabaseDataLakeSetting::region].value,
+                catalog_parameters,
+                Context::getGlobalContextInstance(),
+                allow_server_credentials_in_user_queries);
+#else
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Amazon S3 Tables catalog requires ClickHouse built with USE_AWS_S3 and USE_SSL");
+#endif
+            break;
+        }
     }
 }
 
@@ -458,6 +487,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        case DatabaseDataLakeCatalogType::S3_TABLES:
         case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
         {
             switch (type)
@@ -974,17 +1004,10 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     /// It must not fail on case of some datalake error.
     try
     {
-        fiu_do_on(FailPoints::datalake_get_tables_throw,
-        {
-            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
-        });
-
         catalog_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
-        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
-            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -1111,7 +1134,7 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
 }
 
 std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIteratorWithHint(
-    ContextPtr context_,
+    ContextPtr /*context_*/,
     const FilterByNameFunction & filter_by_table_name,
     bool /*skip_not_loaded*/,
     const TablesFilter & tables_filter) const
@@ -1123,17 +1146,10 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     /// It must not fail on case of some datalake error.
     try
     {
-        fiu_do_on(FailPoints::datalake_get_tables_throw,
-        {
-            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
-        });
-
         catalog_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
-        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
-            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -1407,6 +1423,16 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
         }
 
+        if (database_engine_name == "Iceberg"
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_REST
+            && catalog_type != DatabaseDataLakeCatalogType::S3_TABLES
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Engine `Iceberg` must use `rest`, `s3tables`, `biglake`, or `onelake` catalog type only");
+        }
+
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
 
@@ -1508,6 +1534,19 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 engine_func->name = "Paimon";
                 break;
             }
+            case DatabaseDataLakeCatalogType::S3_TABLES:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DatabaseDataLake with S3 Tables catalog (Iceberg REST) is beta. "
+                                    "To allow its usage, enable setting allow_database_iceberg");
+                }
+
+                engine_func->name = "Iceberg";
+                break;
+            }
             case DatabaseDataLakeCatalogType::NONE:
                 break;
         }
@@ -1595,9 +1634,6 @@ The following settings are supported:
 | `vended_credentials`    | Boolean indicating whether to use vended credentials from the catalog (supports AWS S3 and Azure ADLS Gen2) |
 | `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
 | `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)              |
-| `aws_role_arn`          | ARN of the IAM role to assume for AWS/Glue access. When set, ClickHouse uses AWS STS `AssumeRole` with base credentials from `aws_access_key_id` and `aws_secret_access_key` when both are provided. If they are omitted, ClickHouse can use the default AWS credential chain only when `s3_allow_server_credentials_in_user_queries` is enabled; otherwise the request is rejected. |
-| `aws_role_session_name` | Session name used for the AWS STS `AssumeRole` call. Optional; defaults to `ClickHouseSession`. |
-| `aws_external_id`       | External ID passed to AWS STS `AssumeRole`, matching the `sts:ExternalId` condition on the role's trust policy. Use this when the role is owned by a third party, such as ClickHouse Cloud. |
 | `region`                | AWS region for the service (e.g., `us-east-1`)                                          |
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |

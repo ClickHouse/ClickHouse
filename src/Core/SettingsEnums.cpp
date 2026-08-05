@@ -58,6 +58,7 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
+     {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
 
@@ -206,7 +207,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
      {"promql", Dialect::promql},
-     {"polyglot", Dialect::polyglot}})
+     {"polyglot", Dialect::polyglot},
+     {"clickhouse_json", Dialect::clickhouse_json}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -374,6 +376,7 @@ IMPLEMENT_SETTING_ENUM(
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(

@@ -323,6 +323,7 @@ enum class Dialect : uint8_t
     prql,
     promql,
     polyglot,
+    clickhouse_json,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -463,6 +464,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
+    S3_TABLES,
     ICEBERG_DELTA_SHARING,
 };
 

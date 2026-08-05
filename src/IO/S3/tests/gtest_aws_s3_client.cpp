@@ -726,6 +726,28 @@ TEST(IOTestAwsS3Client, ClientCacheRegistryRefcount)
     EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
 }
 
+TEST(IOTestAwsS3Client, ClientCacheRegistryRetainsCacheWithoutClients)
+{
+    /// Clients for table functions and DataLake catalog tables are rebuilt for every query, so a
+    /// cache which lives only as long as its clients means re-detecting the bucket region every
+    /// time. The registry must keep the contents for the next client of the same bucket.
+    auto & registry = DB::S3::ClientCacheRegistry::instance();
+    const std::string endpoint = "https://s3.amazonaws.com";
+    const std::string bucket = "test-retained-bucket";
+
+    {
+        auto shared_cache = registry.getOrCreateCacheForKey(endpoint, bucket);
+        std::lock_guard lock(shared_cache->region_cache_mutex);
+        shared_cache->region_for_bucket_cache.emplace(bucket, "eu-west-3");
+    }
+
+    auto shared_cache = registry.getOrCreateCacheForKey(endpoint, bucket);
+    std::lock_guard lock(shared_cache->region_cache_mutex);
+    auto it = shared_cache->region_for_bucket_cache.find(bucket);
+    ASSERT_NE(it, shared_cache->region_for_bucket_cache.end()) << "Detected region must survive the client which detected it";
+    EXPECT_EQ(it->second, "eu-west-3");
+}
+
 TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)
 {
     constexpr const char * k_role = "AWS_ROLE_ARN";
