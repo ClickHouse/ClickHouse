@@ -615,7 +615,11 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     /// `ClearableHashMap` only advances its version), so the arena is recreated at every row
     /// boundary - otherwise the keys inserted for every previous row would stay resident until the
     /// end of the block, and the memory would grow with the whole column instead of being bounded
-    /// by one row of the argument that seeds the map.
+    /// by one row of the argument that seeds the map. The guard is on `allocatedBytes`, not
+    /// `usedBytes`: probe-side keys are rolled back after the lookup, which returns `usedBytes` to
+    /// zero but keeps the grown chunks resident, and a freshly constructed `Arena` allocates its
+    /// first chunk lazily, so `allocatedBytes` is non-zero exactly when the previous rows left
+    /// anything behind.
     std::optional<Arena> arena;
     if constexpr (serialized_keys)
         arena.emplace();
@@ -661,7 +665,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         map.clear();
         if constexpr (serialized_keys)
         {
-            if (arena->usedBytes())
+            if (arena->allocatedBytes())
                 arena.emplace();
         }
 
