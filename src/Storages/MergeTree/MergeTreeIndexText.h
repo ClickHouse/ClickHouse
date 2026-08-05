@@ -34,10 +34,11 @@ namespace DB
   * Granules are aggregated the same way as for other skip indexes
   * Unlike other skip indexes, text index can be merged instead of rebuilt on merge of the data parts.
   *
-  * Text index has three streams (files with data and marks for them):
+  * Text index has three streams (files with data and marks for them), plus a fourth with 'support_phrase_search':
   * - File with index granules (.idx)
   * - File with dictionary blocks (.dct)
   * - File with posting lists (.pst)
+  * - File with token positions (.pos), one blob per token (see TextIndexBlockedPositionsCodec)
   *
   * Index granule accumulates tokens from all documents and collects the posting lists
   * (positions in the granule of documents that contain the token) for each token.
@@ -66,7 +67,8 @@ namespace DB
   * - Information about posting lists for each token:
   *    1. Header of posting list (VarUInt) (see PostingsSerialization::Flags).
   *    2. Cardinality of token (VarUInt).
-  *    3. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
+  *    3. If HasPositions flag is set, the token's offset, document count and byte length in .pos (VarUInt each).
+  *    4. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
   *       b) Otherwise, number of blocks of the posting list (VarUInt), if SingleBlock flag is not set.
   *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
   *
@@ -228,8 +230,10 @@ struct TokenPostingsInfo
 
     /// Position data offset in the .pos file
     UInt64 position_offset = 0;
-    /// Number of Roaringish UInt64 entries in position data.
+    /// Number of documents that have positions for this token.
     UInt32 position_cardinality = 0;
+    /// Byte length of the position blob, so readers bound it by the token's extent, not the file's.
+    UInt64 position_bytes = 0;
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;

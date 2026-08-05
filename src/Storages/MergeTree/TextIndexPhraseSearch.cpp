@@ -15,9 +15,8 @@ void TextIndexPhraseSearch::matchCandidatePositions(
 
     /// Per candidate: keep the positions of term k that continue a phrase started k terms back,
     /// advancing with a two-pointer over each next term's sorted positions. A candidate matches
-    /// at the first position that survives to the last term. The chain starts as a view of the
-    /// first term's positions, so a two-term phrase copies nothing; longer phrases alternate
-    /// between two buffers, since the chain being read must outlive the one being written.
+    /// at the first position that survives to the last term. The chain views the first term's positions;
+    /// longer phrases alternate buffers so the one being read is never the one being written.
     std::vector<UInt32> buffers[2];
     for (size_t i = 0; i < candidates.size(); ++i)
     {
@@ -38,9 +37,7 @@ void TextIndexPhraseSearch::matchCandidatePositions(
             continuing.clear();
             for (UInt32 position : chain)
             {
-                /// Phrased without `position + 1`, which would wrap at the maximum position and make it
-                /// falsely adjacent to 0. Past the advance `*next_position > position`, so the difference
-                /// is exact and the maximum position simply has no successor.
+                /// Avoid `position + 1`, which wraps at the maximum position; past the advance the difference is exact.
                 while (next_position != end && *next_position <= position)
                     ++next_position;
                 if (next_position == end)

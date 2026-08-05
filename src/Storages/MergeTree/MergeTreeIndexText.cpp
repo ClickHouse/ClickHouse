@@ -1103,6 +1103,7 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     {
         writeVarUInt(token_info.position_offset, ostr);
         writeVarUInt(token_info.position_cardinality, ostr);
+        writeVarUInt(token_info.position_bytes, ostr);
     }
 
     /// Embedded postings will be serialized later into the dictionary block.
@@ -1220,6 +1221,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         UInt64 position_cardinality = 0;
         readVarUInt(position_cardinality, istr);
         info.position_cardinality = static_cast<UInt32>(position_cardinality);
+        readVarUInt(info.position_bytes, istr);
     }
 
     bool skip_postings = !postings_serialization;
@@ -1284,9 +1286,10 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     readVarUInt(header, istr);
     readVarUInt(cardinality, istr);
 
-    /// Position metadata is right after (header, cardinality), before posting data.
+    /// Position metadata (offset, cardinality, bytes) is right after (header, cardinality).
     if (header & HasPositions)
     {
+        ignoreVarUInt(istr);
         ignoreVarUInt(istr);
         ignoreVarUInt(istr);
     }
@@ -1441,10 +1444,10 @@ DictionarySparseIndex serializeTokensAndPostings(
 
                 token_info.header |= PostingsSerialization::Flags::HasPositions;
                 token_info.position_offset = positions_stream->plain_hashing.count();
-                /// Blocked cardinality is the document count, not roaringish bucket count.
                 token_info.position_cardinality = static_cast<UInt32>(TextIndexBlockedPositionsCodec::countDocuments(position_entries));
 
                 TextIndexBlockedPositionsCodec::encode(position_entries, positions_stream->plain_hashing);
+                token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
             }
 
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);

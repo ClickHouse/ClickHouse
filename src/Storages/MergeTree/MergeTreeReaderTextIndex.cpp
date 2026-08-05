@@ -981,7 +981,9 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
         {
             const auto & token_info = *unique_infos[u];
             positions_stream->seekToMark({token_info.position_offset, 0});
-            const size_t available = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
+            /// Bound by this token's blob so a corrupt directory cannot read into the next token's bytes.
+            const size_t in_file = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
+            const size_t available = std::min<size_t>(token_info.position_bytes, in_file);
             dirs[u] = TextIndexBlockedPositionsCodec::readDirectory(
                 *data_buffer, token_info.position_offset, token_info.position_cardinality, available);
             blocks_total += dirs[u].numBlocks();

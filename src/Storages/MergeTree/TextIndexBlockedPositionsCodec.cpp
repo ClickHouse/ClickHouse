@@ -52,9 +52,7 @@ UInt64 readVarUIntFrom(const uint8_t *& pos, const uint8_t * end)
     }
 }
 
-/// Parse a block payload into per-rank value-lane bounds (`doc_offsets`, size docs_in_block + 1) and the
-/// within-document delta value lane. Frequencies are accumulated in place into exclusive prefix sums, so a
-/// rank's slice of the lane is [doc_offsets[rank], doc_offsets[rank + 1]).
+/// Parse a block payload into the delta value lane and per-rank bounds: rank r spans [doc_offsets[r], doc_offsets[r + 1]).
 void parseBlock(
     const uint8_t * payload,
     size_t payload_bytes,

@@ -466,10 +466,10 @@ void MergeTextIndexesTask::flushPostingList()
 
         token_info.header |= PostingsSerialization::Flags::HasPositions;
         token_info.position_offset = positions_stream->plain_hashing.count();
-        /// Blocked cardinality is the document count, not roaringish bucket count.
         token_info.position_cardinality = static_cast<UInt32>(TextIndexBlockedPositionsCodec::countDocuments(output_positions));
 
         TextIndexBlockedPositionsCodec::encode(output_positions, positions_stream->plain_hashing);
+        token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
     }
 
     output_infos.push_back(token_info);
@@ -591,7 +591,9 @@ bool MergeTextIndexesTask::executeStep()
 
                 /// Bytes left for this token; decode rejects a larger declared size.
                 const size_t pos_file_size = pos_stream->getFileSize();
-                const size_t pos_available = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
+                /// Bound by this token's own blob, as in the phrase reader.
+                const size_t pos_in_file = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
+                const size_t pos_available = std::min<size_t>(token_info.position_bytes, pos_in_file);
 
                 position_entries = decodeBlockedPositions(
                     *pos_data_buffer, read_postings, token_info.position_cardinality, pos_available, blocked_decode_scratch);
