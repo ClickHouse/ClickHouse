@@ -194,7 +194,7 @@ def test_deletion_vectors_puffin_files_cache(started_cluster_iceberg_with_spark,
         table_function=True,
     )
 
-    instance.query("SYSTEM DROP PUFFIN_FILES_CACHE")
+    instance.query("SYSTEM DROP PUFFIN FILES CACHE")
 
     query_id1 = f"{table_name}-{uuid.uuid4()}"
     query_id2 = f"{table_name}-{uuid.uuid4()}"
@@ -242,7 +242,7 @@ def test_deletion_vectors_puffin_files_cache(started_cluster_iceberg_with_spark,
     assert puffin_reads_first > 0
     assert puffin_reads_second == 0
 
-    instance.query("SYSTEM DROP PUFFIN_FILES_CACHE")
+    instance.query("SYSTEM DROP PUFFIN FILES CACHE")
 
     assert int(
         instance.query(
