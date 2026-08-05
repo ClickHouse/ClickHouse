@@ -112,6 +112,60 @@ FROM ( EXPLAIN actions = 0
              max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 );
 
+-- Plan gates for a descending sorting key, where the reading direction is the sort description's
+-- direction flipped by the key's reverse flag. Counting the Sort + Limit pairs alone cannot tell
+-- a sound deferral from one where the second pass rejects the read afterwards (both leave only
+-- the outer pair), so these also count the reading types: the deferral is only correct when it
+-- ends in an in-order or reverse-order read of the left table.
+SELECT 'plan_desc_key_asc_sort_on' AS label,
+       countIf(explain LIKE '%Sorting%') AS sort_count,
+       countIf(explain LIKE '%InReverseOrder%') AS reverse_reads,
+       countIf(explain LIKE '%: InOrder%') AS direct_reads
+FROM ( EXPLAIN actions = 1
+    SELECT l.k, r.v FROM t_desc_key AS l FINAL LEFT JOIN t_right AS r ON r.k = l.k
+    ORDER BY l.k ASC LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_read_in_reverse_order_final = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
+             query_plan_optimize_lazy_materialization = 0, enable_parallel_replicas = 0,
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
+-- The same shape with the optimization off: the second pass would reject the reverse read, so
+-- `topKThroughJoin` must fire instead of deferring into a plan with no optimization at all.
+SELECT 'plan_desc_key_asc_sort_off' AS label,
+       countIf(explain LIKE '%Sorting%') AS sort_count,
+       countIf(explain LIKE '%InReverseOrder%') AS reverse_reads,
+       countIf(explain LIKE '%: InOrder%') AS direct_reads
+FROM ( EXPLAIN actions = 1
+    SELECT l.k, r.v FROM t_desc_key AS l FINAL LEFT JOIN t_right AS r ON r.k = l.k
+    ORDER BY l.k ASC LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_read_in_reverse_order_final = 0,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
+             query_plan_optimize_lazy_materialization = 0, enable_parallel_replicas = 0,
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
+-- A descending sort description of a descending sorting key is the direct reading direction, so
+-- the deferral is sound even with the optimization off.
+SELECT 'plan_desc_key_desc_sort_off' AS label,
+       countIf(explain LIKE '%Sorting%') AS sort_count,
+       countIf(explain LIKE '%InReverseOrder%') AS reverse_reads,
+       countIf(explain LIKE '%: InOrder%') AS direct_reads
+FROM ( EXPLAIN actions = 1
+    SELECT l.k, r.v FROM t_desc_key AS l FINAL LEFT JOIN t_right AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_read_in_reverse_order_final = 0,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
+             query_plan_optimize_lazy_materialization = 0, enable_parallel_replicas = 0,
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
 -- Results. Each dataset is read three ways: with the reverse read-in-order optimization
 -- (`reverse_on`), with `topKThroughJoin` instead (`topk`, the optimization disabled), and with
 -- neither optimization (`plain`, the ground truth). All three must agree, including `src`,

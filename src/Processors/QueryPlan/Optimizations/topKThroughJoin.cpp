@@ -419,28 +419,22 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
                 description,
                 n,
                 sort_step->getSettings());
-            const bool read_in_order_useful = wouldReadInOrderBeUseful(
+            const auto order_info = getInputOrderIfReadInOrderIsUseful(
                 probe_sort_step,
                 reading->getStorageMetadata()->getSortingKey(),
                 *preserved_input_node);
 
-            /// `wouldReadInOrderBeUseful` is unaware of `FINAL`-time gating: even when
-            /// the sort description matches the storage's sorting key, pass 2's
-            /// `ReadFromMergeTree::requestReadingInOrder` returns `false` for a reverse
-            /// direction with `FINAL` unless the storage supports it. If we deferred here on
-            /// the strength of the column match, both optimizations would silently disable.
-            /// Guard conservatively: when reading `FINAL` from a storage that does not support
-            /// reading in reverse order, only defer if all sort columns are ascending, since a
-            /// single descending column is enough for the eventual read direction to be -1 in
-            /// the common case (storage key without reverse flags). This may miss the rare
-            /// reverse-storage-key case where pass 2 would have succeeded, but never silently
-            /// disables both passes.
-            const bool any_desc = std::ranges::any_of(
-                description, [](const SortColumnDescription & c) { return c.direction != 1; });
-            const bool final_blocks_pass2
-                = reading->isQueryWithFinal() && any_desc && !reading->canReadInReverseOrderWithFinal();
+            /// The input order alone is not enough: pass 2's
+            /// `ReadFromMergeTree::requestReadingInOrder` also rejects a reverse direction with
+            /// `FINAL` unless the storage supports it. If we deferred in that case, the second
+            /// pass would reject the read and both optimizations would silently disable.
+            /// Note that the direction is the one computed for the storage's sorting key, so a
+            /// descending sorting key read by an ascending sort description is a reverse read
+            /// here, and a descending sort description of it is a direct one.
+            const bool final_blocks_pass2 = order_info && reading->isQueryWithFinal()
+                && order_info->direction != 1 && !reading->canReadInReverseOrderWithFinal();
 
-            if (read_in_order_useful && !final_blocks_pass2)
+            if (order_info && !final_blocks_pass2)
                 return 0;
         }
     }
