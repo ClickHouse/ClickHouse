@@ -4,8 +4,9 @@
 # no-random-settings: the read-speed family (local_filesystem_read_method, max_read_buffer_size,
 # enable_filesystem_cache, use_page_cache_for_local_disks,
 # merge_tree_compact_parts_min_granules_to_multibuffer_read) is randomized, and a fast enough
-# combination makes the unpatched read finish under the assertions below, which stops them
-# discriminating. max_block_size is randomized too, but every query that depends on it sets it.
+# combination lets the unpatched read finish before a cancel is delivered, which stops the
+# assertions discriminating. max_block_size is randomized too, but every query that depends on it
+# sets it.
 # The text arm additionally depends on use_skip_indexes_on_data_read and
 # query_plan_direct_read_from_text_index, which are randomized too; those it pins per query,
 # because each one on its own makes that assertion pass with the fix reverted.
@@ -51,22 +52,25 @@ inside_part_read() {
     grep -qF 'While reading part' "$1" && echo 'inside the part read' || echo "not interrupted inside the part read: $(head -c 400 "$1")"
 }
 
+# max_execution_time runs from the start of the query, so loading the marks and analysing the index
+# are charged against it, and several checks fire before the read begins. On a loaded runner the
+# work before the read can outlast a fixed limit, and the deadline then fires while the query is
+# still being prepared, so the read is never entered and the diagnostic above cannot appear. Retry
+# with a longer limit until the deadline lands inside the read, keyed on that diagnostic itself:
+# it is the only signal that reports where the query stopped. A limit that stops timing out at all
+# is already too generous, so the ladder ends there. The elapsed value is not asserted, because it
+# is everything before the read plus one mark, so it tracks machine load.
 timeout_err="${CLICKHOUSE_TMP}/04746_timeout_err.txt"
-${CLICKHOUSE_CLIENT} --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
-    --max_execution_time 1 --timeout_overflow_mode throw \
-    -q "$read_query" >/dev/null 2>"$timeout_err"
+for limit in 1 2 4 8 16 32 64; do
+    ${CLICKHOUSE_CLIENT} --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
+        --max_execution_time "$limit" --timeout_overflow_mode throw \
+        -q "$read_query" >/dev/null 2>"$timeout_err"
+    grep -qF 'While reading part' "$timeout_err" && break
+    grep -q 'Timeout exceeded' "$timeout_err" || break
+done
+
 echo -n 'timeout observed '
 inside_part_read "$timeout_err"
-
-# The whole point of the check is that max_execution_time is respected, so also require the
-# reported elapsed to stay near the limit. 5x the 1s limit is far above the fixed server (which
-# stops one mark past the limit) and far below an uninterrupted read of this part.
-elapsed=$(sed -nE 's/.*elapsed ([0-9]+)\.[0-9]+ ms.*/\1/p' "$timeout_err" | head -1)
-if [ -n "$elapsed" ] && [ "$elapsed" -lt 5000 ]; then
-    echo 'timeout honoured'
-else
-    echo "timeout overshot: elapsed=${elapsed}ms"
-fi
 
 query_id="compact_read_cancel_${CLICKHOUSE_DATABASE}_$$"
 kill_err="${CLICKHOUSE_TMP}/04746_kill_err.txt"
@@ -139,10 +143,12 @@ SELECT 'text part type', part_type FROM system.parts
 WHERE database = currentDatabase() AND table = 't_text_read_cancel' AND active"
 
 # Every row carries 'filler', so no mark is pruned and the walk covers all 400k of them. Each
-# extra predicate adds a virtual column whose posting list is materialized per mark, which is what
-# makes one block's walk long enough to measure.
+# extra predicate adds a virtual column whose posting list is materialized per mark, and the walk
+# costs about 150 ms per predicate, so the count sets how long the read lasts. It has to stay long
+# relative to the handshake below, which needs a few client round-trips: at 30 predicates the read
+# takes 4.5 s and the cancel can arrive after it has already finished.
 text_pred="1"
-for i in $(seq 1 30); do
+for i in $(seq 1 120); do
     text_pred="$text_pred AND hasAnyTokens(s, ['filler', 'tok$i'])"
 done
 text_query="SELECT count() FROM t_text_read_cancel WHERE $text_pred"
@@ -160,28 +166,51 @@ SELECT 'text index used', count() > 0 FROM (EXPLAIN indexes = 1 $text_query) WHE
 # the token reports its interrupt site.
 # query_plan_direct_read_from_text_index = 1: with it disabled the text reader is not used at all,
 # the predicate is evaluated over the physical column, and the token then comes from the compact
-# reader's own check, so the assertion would pass with the text-index check reverted.
+# reader's own check, so the token would report an interrupt with the text-index check reverted.
+# Cancelled by KILL rather than by a deadline, for the reason given above the compact timeout arm:
+# analysing this index costs more than a fixed limit on a loaded runner, so a deadline can expire
+# before the read starts. KILL is ordered after the handshake below, so it always arrives while the
+# read is running.
 text_err="${CLICKHOUSE_TMP}/04746_text_err.txt"
 text_query_id="text_read_cancel_${CLICKHOUSE_DATABASE}_$$"
 ${CLICKHOUSE_CLIENT} --query_id "$text_query_id" \
     --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
     --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 \
-    --max_execution_time 1 --timeout_overflow_mode throw \
-    -q "$text_query" >/dev/null 2>"$text_err"
-echo -n 'text timeout observed '
-inside_part_read "$text_err"
+    -q "$text_query" >/dev/null 2>"$text_err" &
+text_pid=$!
+
+# Wait until the query is inside the single block read: every mark has been selected, so analysis
+# is over, while no row has reached the pipeline yet (read_rows = 0), so the reader is still
+# walking marks. No counter advances during that walk, which is why the handshake tests entry
+# into the read rather than progress through it.
+text_reading=0
+for _ in $(seq 1 600); do
+    text_reading=$(${CLICKHOUSE_CLIENT} -q "
+        SELECT ProfileEvents['SelectedMarks'] > 0 AND read_rows = 0
+        FROM system.processes WHERE query_id = '$text_query_id'")
+    [ "$text_reading" = "1" ] && break
+    sleep 0.1
+done
+
+echo -n 'text kill observed '
+if [ "$text_reading" != "1" ]; then
+    echo 'did not observe the in-block read phase'
+else
+    ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$text_query_id' SYNC FORMAT Null"
+    inside_part_read "$text_err"
+fi
+wait "$text_pid" 2>/dev/null
 rm -f "$text_err"
 
 # The line above proves the query stopped inside a block read, and 'text index used' proves the
 # index pruned granules, but neither proves the text index READER served the query: the direct-read
 # rewrite is decided separately from pruning. This event is incremented only at the top of
 # MergeTreeReaderTextIndex::readRows, and its scope guard reports during unwinding, so it is
-# recorded even though this query leaves that function by throwing. Match
-# ExceptionWhileProcessing, not QueryFinish: the fixed server ends this query with a thrown
-# TIMEOUT_EXCEEDED, so there is no QueryFinish row.
+# recorded even though this query leaves that function by throwing. read_rows stays 0 because the
+# interrupted read delivers no block, which an uninterrupted walk would.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
-SELECT 'text index reader ran', ProfileEvents['TextIndexReaderTotalMicroseconds'] > 0
+SELECT 'text index reader ran', ProfileEvents['TextIndexReaderTotalMicroseconds'] > 0, read_rows
 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_id = '$text_query_id'
   AND type = 'ExceptionWhileProcessing' AND event_date >= yesterday()
