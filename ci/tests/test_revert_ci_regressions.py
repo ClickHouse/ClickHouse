@@ -369,6 +369,7 @@ def test_high_confidence_regression_is_actionable():
         verdict="regression",
         confidence="high",
         offending_pull_request_number=112345,
+        offending_commit_sha="b" * 40,
     )
     assert investigation.is_actionable()
 
@@ -382,6 +383,10 @@ def test_high_confidence_regression_is_actionable():
         {"confidence": "medium"},
         {"confidence": "low"},
         {"offending_pull_request_number": 0},
+        # `high` confidence is defined as having identified the first failing
+        # commit, so a verdict without one does not mean what it claims -- and
+        # the pull request number has nothing to be checked against.
+        {"offending_commit_sha": ""},
     ],
 )
 def test_anything_short_of_a_certain_regression_is_not_actionable(overrides):
@@ -389,13 +394,51 @@ def test_anything_short_of_a_certain_regression_is_not_actionable(overrides):
         "verdict": "regression",
         "confidence": "high",
         "offending_pull_request_number": 112345,
+        "offending_commit_sha": "b" * 40,
     }
     fields.update(overrides)
     assert not job.Investigation(failure=make_failure(), **fields).is_actionable()
 
 
+def _investigation_naming(pull_request_number=112345, commit_sha="b" * 40):
+    return job.Investigation(
+        failure=make_failure(),
+        verdict="regression",
+        confidence="high",
+        offending_pull_request_number=pull_request_number,
+        offending_commit_sha=commit_sha,
+    )
+
+
 def test_a_recently_merged_pull_request_may_be_reverted():
-    assert job.culprit_guard(make_pull_request(), make_failure(), NOW) == ""
+    assert job.culprit_guard(make_pull_request(), _investigation_naming(), NOW) == ""
+
+
+def test_a_pull_request_that_did_not_produce_the_named_commit_is_not_reverted():
+    """The number and the commit answer the same question, and the number is the
+    half that carries no evidence with it: every value of it names some real
+    pull request. They disagree exactly when one of them was not established,
+    and which one to trust is then unknowable, so neither is acted on."""
+    guard = job.culprit_guard(
+        make_pull_request(), _investigation_naming(commit_sha="c" * 40), NOW
+    )
+    assert "disagree" in guard
+    assert "c" * 40 in guard
+    assert "b" * 40 in guard
+
+
+def test_an_abbreviated_commit_still_matches_the_merge_commit():
+    """`git` prints abbreviated shas and abbreviations are prefixes."""
+    assert (
+        job.culprit_guard(make_pull_request(), _investigation_naming("b" * 12), NOW)
+        == ""
+    )
+
+
+def test_a_verdict_with_no_commit_cannot_be_checked_and_is_not_reverted():
+    """`is_actionable` stops this first; the guard does not depend on that."""
+    guard = job.culprit_guard(make_pull_request(), _investigation_naming(commit_sha=""), NOW)
+    assert "no master commit" in guard
 
 
 @pytest.mark.parametrize(
@@ -418,7 +461,9 @@ def test_a_recently_merged_pull_request_may_be_reverted():
     ],
 )
 def test_pull_requests_that_must_not_be_reverted_automatically(overrides, expected):
-    guard = job.culprit_guard(make_pull_request(**overrides), make_failure(), NOW)
+    guard = job.culprit_guard(
+        make_pull_request(**overrides), _investigation_naming(), NOW
+    )
     assert expected in guard
 
 
@@ -437,7 +482,10 @@ def test_a_merged_reapply_is_an_ordinary_pull_request_again(overrides):
     the job exists to remove, and exempting it by the shape of its title or
     branch would leave the branch broken by design. Only a revert is exempt --
     reverting one restores the breakage it removed."""
-    assert job.culprit_guard(make_pull_request(**overrides), make_failure(), NOW) == ""
+    assert (
+        job.culprit_guard(make_pull_request(**overrides), _investigation_naming(), NOW)
+        == ""
+    )
 
 
 def test_a_change_reverted_twice_keeps_one_reapply_in_its_title():
@@ -644,12 +692,13 @@ class FakeCIDB:
         return "".join(json.dumps(row) + "\n" for row in self.rows)
 
 
-def _commits(*failed, run_counts=None, check_names=None, first_run_times=None):
-    """One row per commit, newest first by the commit's first run, each tested
-    once in every check the failure was seen in, unless the caller says
-    otherwise."""
-    run_counts = run_counts or [1] * len(failed)
-    check_names = check_names or [make_failure().check_names] * len(failed)
+def _commits(*failed, exercised=None, first_run_times=None):
+    """One row per commit, newest first by the commit's first run, each
+    exercised by every check the failure was seen in unless the caller says
+    otherwise. Each argument says whether the failure was recorded on that
+    commit; when it was, it was recorded in the first check that exercised it,
+    which of them being immaterial here."""
+    exercised = exercised or [make_failure().check_names] * len(failed)
     first_run_times = first_run_times or [
         "2026-07-31 21:%02d:00" % (59 - index) for index in range(len(failed))
     ]
@@ -657,9 +706,8 @@ def _commits(*failed, run_counts=None, check_names=None, first_run_times=None):
         {
             "commit_sha": f"{index:040x}",
             "first_run_time": first_run_times[index],
-            "failed": int(value),
-            "run_count": run_counts[index],
-            "check_names": check_names[index],
+            "exercised_checks": exercised[index],
+            "failed_checks": exercised[index][:1] if value else [],
         }
         for index, value in enumerate(failed)
     ]
@@ -675,7 +723,6 @@ def test_a_failure_that_has_passed_ever_since_is_not_reverted():
     fixed = job.already_fixed(FakeCIDB(_commits(0, 0, 0)), make_failure())
     assert "the failure is gone" in fixed
     assert "3 newest commits" in fixed
-    assert "3 runs" in fixed
 
 
 def test_one_passing_commit_is_not_enough_to_call_a_failure_fixed():
@@ -684,33 +731,24 @@ def test_one_passing_commit_is_not_enough_to_call_a_failure_fixed():
     assert job.already_fixed(FakeCIDB(_commits(0)), make_failure()) == ""
 
 
-def test_one_commit_tested_twice_is_one_piece_of_evidence():
-    """A check is often re-run on the same commit. Two green runs of one commit
-    say no more about a fix than one does."""
-    green = _commits(0, run_counts=[2])
-    assert job.already_fixed(FakeCIDB(green), make_failure()) == ""
+def test_one_commit_tested_many_times_is_one_piece_of_evidence():
+    """A check is often re-run on the same commit, and a fix is a question about
+    commits, so the runs are collapsed into their commit in the query rather
+    than counted. Two clean runs of one commit say no more than one does, and
+    nineteen of them cannot crowd the second commit out of the row budget."""
+    cidb = FakeCIDB(_commits(0))
+    assert job.already_fixed(cidb, make_failure()) == ""
+    assert "GROUP BY commit_sha" in cidb.queries[0]
 
 
 def test_a_rerun_of_the_old_bad_commit_does_not_hide_the_fix():
     """A rerun of the bad commit fails again long after the fix has merged.
     Its rows are the newest ones, but the commit itself is not: ordered by
-    each commit's first run it sits behind the green commits that fixed the
+    each commit's first run it sits behind the clean commits that fixed the
     failure, and the fix is still seen."""
-    rows = _commits(0, 0, 1, run_counts=[1, 1, 3])
-    fixed = job.already_fixed(FakeCIDB(rows), make_failure())
+    fixed = job.already_fixed(FakeCIDB(_commits(0, 0, 1)), make_failure())
     assert "the failure is gone" in fixed
     assert "2 newest commits" in fixed
-
-
-def test_reruns_of_one_green_commit_do_not_crowd_out_the_second():
-    """A check re-run many times on one green commit is one commit's worth of
-    evidence, not a full page of rows: the second green commit is still seen,
-    however often the first was re-run."""
-    rows = _commits(0, 0, 1, run_counts=[19, 1, 2])
-    fixed = job.already_fixed(FakeCIDB(rows), make_failure())
-    assert "the failure is gone" in fixed
-    assert "2 newest commits" in fixed
-    assert "20 runs" in fixed
 
 
 def test_a_commit_from_before_the_regression_is_not_green_evidence():
@@ -732,20 +770,26 @@ def test_a_commit_from_before_the_regression_is_not_green_evidence():
     assert job.already_fixed(FakeCIDB(rows), make_failure()) == ""
 
 
-def test_a_commit_not_every_check_reported_on_is_not_green_evidence():
-    """A commit where only the fast check has finished is unfinished, not
-    green: the slow check is the one that may still fail again."""
+def test_a_check_that_no_longer_reports_cannot_be_established_either_way():
+    """A check the failure was seen in that has exercised none of the commits
+    since -- renamed, or switched off -- makes the question unanswerable rather
+    than answering it. Falling through as "not fixed" would revert on the
+    strength of a check matrix that no longer exists, and no amount of waiting
+    would change the answer, so this stands the revert down."""
     fast_only = ["Stateless tests (amd_debug, parallel)"]
-    rows = _commits(0, 0, 1, check_names=[fast_only, fast_only, fast_only])
-    assert job.already_fixed(FakeCIDB(rows), make_failure()) == ""
+    rows = _commits(0, 0, 1, exercised=[fast_only, fast_only, fast_only])
+    fixed = job.already_fixed(FakeCIDB(rows), make_failure())
+    assert "cannot be established" in fixed
+    assert "Stateless tests (amd_tsan, parallel)" in fixed
 
 
 def test_an_unfinished_commit_does_not_hide_older_full_green_evidence():
-    """Fully reported green commits behind an unfinished one are still newer
-    than every failure, so they still count."""
+    """Fully reported clean commits behind an unfinished one are still newer
+    than every failure, so they still count. The slow check has reported on
+    those, so it is still running rather than gone."""
     fast_only = ["Stateless tests (amd_debug, parallel)"]
     full = make_failure().check_names
-    rows = _commits(0, 0, 0, 1, check_names=[fast_only, full, full, full])
+    rows = _commits(0, 0, 0, 1, exercised=[fast_only, full, full, full])
     fixed = job.already_fixed(FakeCIDB(rows), make_failure())
     assert "the failure is gone" in fixed
     assert "2 newest commits" in fixed
@@ -760,14 +804,36 @@ def test_the_commit_history_window_opens_before_the_failure():
     assert f"- INTERVAL {job.FIRST_RUN_LOOKBACK_HOURS} HOUR" in cidb.queries[0]
 
 
-def test_the_commits_carry_the_checks_they_reported_in():
+def test_the_commits_carry_what_exercised_them_and_what_failed_on_them():
+    """The failure is read as absent rather than as passed, so a commit carries
+    the checks that ran tests on it at all and the checks that recorded the
+    failure -- not a pass that, for a logical error or a hung check, is never
+    written down anywhere."""
     cidb = FakeCIDB([])
     job.already_fixed(cidb, make_failure())
-    assert "arraySort(groupUniqArray(50)(check_name)) AS check_names" in cidb.queries[0]
+    query = cidb.queries[0]
+    assert (
+        "arraySort(groupUniqArrayIf(50)(check_name, test_name != '')) "
+        "AS exercised_checks" in query
+    )
+    assert "AS failed_checks" in query
+    # A check that died before it reached the tests wrote the row about itself
+    # and no test rows, so it exercised nothing.
+    assert "test_name != ''" in query
+
+
+def test_a_failure_absent_from_the_newest_commits_is_read_as_fixed():
+    """The failures this job investigates mostly have no passing row to find: a
+    logical error is recorded under the text of the assertion, and only when it
+    fires. So the newest commits being clean of the name is what a fix looks
+    like, and the guard has to be able to see it."""
+    fixed = job.already_fixed(FakeCIDB(_commits(0, 0, 1)), make_failure())
+    assert "the failure is gone" in fixed
+    assert "clean of it" in fixed
 
 
 def test_a_failure_on_the_newest_commit_blocks_older_green_evidence():
-    """Green commits behind a failing one say nothing: the failure was still
+    """Clean commits behind a failing one say nothing: the failure was still
     there after them."""
     assert job.already_fixed(FakeCIDB(_commits(1, 0, 0)), make_failure()) == ""
 
@@ -775,7 +841,41 @@ def test_a_failure_on_the_newest_commit_blocks_older_green_evidence():
 def test_a_failure_nothing_has_run_since_is_reverted():
     """No news is not good news: the failure is still the newest thing known
     about this test in the checks it failed in."""
-    assert job.already_fixed(FakeCIDB([]), make_failure()) == ""
+    assert job.already_fixed(FakeCIDB(_commits(1)), make_failure()) == ""
+
+
+def test_an_empty_answer_is_not_evidence_that_the_failure_is_gone():
+    """The failure's own commits are inside this window, so an answer without
+    them is not "nothing has run since" -- it is an answer that does not contain
+    the failure it was asked about. That is unusable rather than reassuring, and
+    it must not read as either verdict."""
+    fixed = job.already_fixed(FakeCIDB([]), make_failure())
+    assert "cannot be established" in fixed
+
+
+def test_an_intermittent_failure_needs_more_than_its_own_quiet_spell():
+    """A failure that hits one run in a hundred leaves clean commits behind it
+    all the time, so two of them are what it does anyway, fix or no fix. The bar
+    is its own record: longer than the longest it has gone quiet between two
+    occurrences."""
+    # Occurrences on the 1st and the 5th commit: it went 3 commits clean between
+    # them, so 3 clean commits since the last one prove nothing ...
+    quiet = job.already_fixed(FakeCIDB(_commits(0, 0, 0, 1, 0, 0, 0, 1)), make_failure())
+    assert quiet == ""
+    # ... and 4 of them are more than it has ever gone quiet for.
+    fixed = job.already_fixed(
+        FakeCIDB(_commits(0, 0, 0, 0, 1, 0, 0, 0, 1)), make_failure()
+    )
+    assert "the failure is gone" in fixed
+    assert "longer than the 3 it went clean" in fixed
+
+
+def test_a_failure_that_hits_every_time_needs_only_the_floor():
+    """With no gap in its record the floor decides, so a fix is seen as soon as
+    it is."""
+    fixed = job.already_fixed(FakeCIDB(_commits(0, 0, 1, 1, 1)), make_failure())
+    assert "the failure is gone" in fixed
+    assert "2 newest commits" in fixed
 
 
 def test_the_later_commits_are_looked_up_for_the_same_test_in_the_same_checks():
@@ -1188,13 +1288,15 @@ def test_the_reserve_covers_the_worst_case_of_what_it_guards():
     assert job.INVESTIGATION_RESERVE_SEC < job.RUN_BUDGET_SEC
 
 
-# --- the token is refreshed, not reused ---------------------------------------
+# --- the agent holds no credential that can write -----------------------------
 
 
-def test_every_agent_attempt_mints_a_fresh_token(monkeypatch):
-    """`GHAuth.auth` mints once per process unless `force` is passed, so without
-    it the "refresh before each attempt" is a no-op from the second attempt on
-    and a long run can hit token expiry in the middle of a revert."""
+def test_the_investigation_mints_no_github_token(monkeypatch):
+    """The agent executes commands with network access over CI output a merged
+    pull request can write, and anything it changed on GitHub would happen
+    before every guard in `act`. A token it can reach is a token it can use --
+    wrapping `gh` would not help, since it can read the credential itself -- so
+    no token is minted while it runs."""
     calls = []
     monkeypatch.setattr(
         job.GHAuth, "auth", lambda **kwargs: calls.append(kwargs) or True
@@ -1205,8 +1307,83 @@ def test_every_agent_attempt_mints_a_fresh_token(monkeypatch):
     investigation = job.investigate(make_failure(), 0)
 
     assert investigation.verdict == "error"
-    assert len(calls) == job.MAX_AGENT_ATTEMPTS
-    assert all(call.get("force") for call in calls)
+    assert calls == []
+
+
+def test_the_agent_gets_its_own_empty_gh_config_and_no_token_in_its_environment(
+    monkeypatch, tmp_path
+):
+    """`gh` reads the App token this job authenticates for itself out of
+    `GH_CONFIG_DIR`, and `GH_TOKEN`/`GITHUB_TOKEN` override that directory --
+    `actions/checkout` exports the latter. All three have to go."""
+    verdict_file = tmp_path / "verdict.json"
+    commands = []
+
+    class FakeSecret:
+        def __init__(self, **_):
+            pass
+
+        def get_value(self):
+            return "openai-key"
+
+    def fake_check(command, **_):
+        commands.append(command)
+        verdict_file.write_text('{"verdict": "inconclusive"}', encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(job, "TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr(job.Secret, "Config", FakeSecret)
+    monkeypatch.setattr(job.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(job.Shell, "check", fake_check)
+
+    assert job.run_agent("investigate", str(verdict_file))
+
+    assert len(commands) == 1
+    command = commands[0]
+    assert "env -u GH_TOKEN -u GITHUB_TOKEN " in command
+    assert "GH_CONFIG_DIR=" in command
+    # The scratch directory is created empty and thrown away, so the `gh` the
+    # agent could run is not logged in to anything.
+    assert "gh auth login" not in command
+
+
+def test_the_revert_path_mints_the_token_itself(monkeypatch):
+    """The guards read GitHub and the revert pushes and merges, so the token is
+    minted there -- once the verdict is in and the agent is no longer running.
+    `force` refreshes one an earlier revert in the same run already minted, so a
+    long run cannot fail on an expired token halfway through a revert."""
+    calls = []
+    monkeypatch.setattr(
+        job.GHAuth, "auth", lambda **kwargs: calls.append(kwargs) or True
+    )
+    monkeypatch.setattr(job, "get_pull_request", lambda *a, **k: None)
+
+    investigation = _investigation()
+    job.act(investigation, "ClickHouse/ClickHouse", NOW)
+
+    assert len(calls) == 1
+    assert calls[0].get("force")
+    assert investigation.action == job.Action.SKIPPED_GUARD
+
+
+def test_the_prompt_does_not_promise_the_agent_a_github_cli():
+    """The prompt is what the agent plans against: telling it `gh` is
+    authenticated when it is not would spend the investigation on failing
+    commands instead of on `git` and the database, which is what it has."""
+    prompt = job.investigation_prompt(make_failure(), "/tmp/verdict.json")
+    assert "No GitHub credential" in prompt
+    assert "gh pr view" not in prompt
+    assert "gh pr diff" not in prompt
+    # What it does have, and what the investigation actually runs on.
+    assert "git log --oneline" in prompt
+    assert "git show" in prompt
+    assert "https://play.clickhouse.com/?user=play" in prompt
+
+
+def test_the_prompt_requires_a_commit_with_a_regression_verdict():
+    prompt = job.investigation_prompt(make_failure(), "/tmp/verdict.json")
+    assert "must name both the pull request and the" in prompt
+    assert "Merge pull request #N" in prompt
 
 
 # --- the dry run works before the job has ever run ----------------------------

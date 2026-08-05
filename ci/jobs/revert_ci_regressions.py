@@ -115,11 +115,17 @@ MAX_CULPRIT_AGE_DAYS = 3
 # rather than with a revert, which is the usual way a broken master is repaired.
 # Reverting then undoes a change nothing is wrong with any more, and the revert
 # has to be reconciled with the fix that stayed. So the failure has to still be
-# there when the revert is about to happen: every run of it on `master` since it
-# was last seen has to have passed, on at least this many commits. One commit is
-# not enough -- a failure that does not hit on every run would look fixed after
-# any single passing one. Commits rather than runs: the same commit is often
-# tested more than once, and two runs of one commit are one piece of evidence.
+# there when the revert is about to happen: it has to be absent from at least
+# this many of the newest `master` commits that every affected check exercised.
+# One commit is not enough -- a failure that does not hit on every run would
+# look fixed after any single clean one. Commits rather than runs: the same
+# commit is often tested more than once, and two runs of one commit are one
+# piece of evidence.
+#
+# This is a floor rather than the whole bar. For an intermittent failure a
+# couple of clean commits are what its own hit rate produces anyway, so
+# `already_fixed` raises the requirement to more than the longest run of clean
+# commits the failure is on record for going quiet for.
 GREEN_COMMITS_TO_CONSIDER_FIXED = 2
 
 # How far before the failure's first occurrence the per-commit history is read
@@ -275,11 +281,18 @@ class Investigation:
     reintroduce_pull_request_number: int = 0
 
     def is_actionable(self) -> bool:
-        """Whether the verdict is certain enough to revert on."""
+        """Whether the verdict is certain enough to revert on.
+
+        Both halves of the attribution are required: the pull request to revert
+        and the `master` commit it came in on. `high` confidence means the first
+        failing commit was identified, so a verdict without one does not mean
+        what it claims, and the commit is what `culprit_guard` checks the pull
+        request number against."""
         return (
             self.verdict == "regression"
             and self.confidence == "high"
             and self.offending_pull_request_number > 0
+            and bool(self.offending_commit_sha)
         )
 
     def note(self, text: str) -> None:
@@ -378,9 +391,30 @@ def quote_sql_string(value: str) -> str:
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def commits_since_the_failure_query(failure: Failure, limit=20) -> str:
-    """Every `master` commit this test ran on since the failure first appeared,
-    one row per commit, newest first, each marked as failed or not.
+def commits_since_the_failure_query(failure: Failure, limit=50) -> str:
+    """Every `master` commit that ran the checks the failure was seen in since it
+    first appeared, one row per commit, newest first, carrying which of those
+    checks exercised the commit and which of them saw the failure on it.
+
+    The failure is read as *absent*, not as *passed*. Most of what this job
+    picks up has no passing row to find: a logical error, a sanitizer report or
+    a hung check is recorded under the text of the failure itself, and a row
+    under that name exists only when it happened. Over 30 days of `master` the
+    assertion `IColumn::assertTypeEquality` has 8 rows, all `FAIL`, and
+    `Hung check failed, possible deadlock found` has 52, all `FAIL`, while an
+    ordinary test like `00001_select_1` has a thousand `OK` rows. So a query
+    that asked which commits *passed this test* would come back with the failing
+    commits and nothing else, for exactly the failures this job investigates,
+    and the guard built on it could never fire. What a fix looks like for those
+    is the name no longer appearing on commits that ran the check.
+
+    Which means a commit has to be shown to have run the check at all, or the
+    name is missing for the trivial reason that nothing looked: `exercised_checks`
+    is the checks that wrote at least one test-level row on this commit. A check
+    that died before it got to the tests -- a build that failed, a server that
+    would not start -- writes the row about itself and no test rows, and so does
+    not count as having exercised anything. `failed_checks` is the checks that
+    recorded this failure on this commit.
 
     Per commit, not per run: whether the failure is fixed is a question about
     the newest commits of `master`, and rows are a bad proxy for commits. A
@@ -404,10 +438,6 @@ def commits_since_the_failure_query(failure: Failure, limit=20) -> str:
     sorts behind the regression, and is never reached -- and `already_fixed`
     additionally drops anything whose first run predates the failure.
 
-    Each commit also carries the distinct `check_names` it reported in, so
-    the caller can tell a commit every relevant check passed on from one
-    where only the fast checks have finished so far.
-
     The same outcome logic as the query that picked the failure up: the
     outcome is in `test_status`, and a `SKIPPED` row is not an outcome at
     all -- a test that did not run says nothing about whether it still fails,
@@ -418,6 +448,10 @@ def commits_since_the_failure_query(failure: Failure, limit=20) -> str:
     failure; the question here is whether the builds that showed it still do.
     """
     checks = ", ".join(quote_sql_string(name) for name in failure.check_names)
+    failed_here = (
+        f"test_name = {quote_sql_string(failure.test_name)} "
+        f"AND (test_status LIKE 'F%' OR test_status LIKE 'E%')"
+    )
     # The timestamps are projected under names of their own: aliasing one back
     # to `check_start_time` would shadow the column the `WHERE` compares, and
     # the query would fail on comparing a `String` with a `DateTime`.
@@ -425,16 +459,14 @@ def commits_since_the_failure_query(failure: Failure, limit=20) -> str:
 SELECT
     commit_sha,
     toString(min(check_start_time)) AS first_run_time,
-    toUInt8(max(test_status LIKE 'F%' OR test_status LIKE 'E%')) AS failed,
-    toUInt32(count()) AS run_count,
-    arraySort(groupUniqArray(50)(check_name)) AS check_names
+    arraySort(groupUniqArrayIf(50)(check_name, test_name != '')) AS exercised_checks,
+    arraySort(groupUniqArrayIf(50)(check_name, {failed_here})) AS failed_checks
 FROM {Settings.CI_DB_TABLE_NAME}
 WHERE check_start_time >= toDateTime({quote_sql_string(failure.first_failure_time)})
       - INTERVAL {int(FIRST_RUN_LOOKBACK_HOURS)} HOUR
       AND head_ref = '{BASE_BRANCH}'
       AND startsWith(head_repo, 'ClickHouse/')
       AND check_name IN ({checks})
-      AND test_name = {quote_sql_string(failure.test_name)}
       AND test_status != 'SKIPPED'
 GROUP BY commit_sha
 ORDER BY min(check_start_time) DESC
@@ -452,44 +484,108 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
     merged while the run is investigating, and this is the last moment at which
     the answer is still worth anything.
 
-    Walks the commits newest first and counts the green ones down to the
-    newest failing commit. The commits behind a failing one say nothing more:
-    either they are the bad commits themselves, or the failure was still there
-    after them. The walk also ends at the first commit whose first run
-    predates the failure: from there on the commits are older than the
-    regression, and how they did says nothing about a fix.
+    Three outcomes, not two, and only one of them lets a revert through:
 
-    A commit is green evidence only once every check the failure was seen in
-    has reported on it and none failed. A commit where only the fast checks
-    have finished is not green, it is unfinished: counting it would stand the
-    revert down on the strength of the checks that never showed the failure
-    in the first place, right before the slow one fails again. Such a commit
-    is skipped rather than counted -- fully reported green commits behind it
-    are still evidence, because they are still newer than every failure.
+    - the failure is demonstrably gone -- a reason, and the revert stands down;
+    - the failure is demonstrably still there -- "", and the revert proceeds;
+    - neither can be established -- a reason, and the revert stands down.
+
+    The third one is the point. This is the last stop before a pull request is
+    reverted and the revert merged with no checks, so "I could not tell" has to
+    have the same effect as "it is fixed" and not the same effect as "it is
+    still broken". Answering the question needs the checks the failure was seen
+    in to still be reporting under those names; when one of them was renamed or
+    switched off, every later commit is missing it, no amount of waiting will
+    change that, and reverting on the strength of a check matrix that no longer
+    exists is exactly the guess this guard is here to prevent.
+
+    A commit is green evidence only once every check the failure was seen in has
+    exercised it and none of them recorded the failure. A commit where only the
+    fast checks have finished is not green, it is unfinished: counting it would
+    stand the revert down on the strength of the checks that never showed the
+    failure in the first place, right before the slow one fails again. Such a
+    commit is skipped rather than counted -- fully reported green commits behind
+    it are still evidence, because they are still newer than every failure.
+
+    How much green is enough depends on how often the failure hits. Two clean
+    commits mean a fix for something that failed on every run, and mean nothing
+    for something that failed on one run in a hundred -- the assertion that
+    started this guard's rewrite hit 7 of ~657 stress runs, so the newest few
+    commits being clean is the *normal* state of it, fix or no fix. What
+    distinguishes the two is the failure's own record: the longest run of clean
+    commits between two of its occurrences is how long it is known to be able to
+    hide. Green evidence has to be longer than that, and at least
+    `GREEN_COMMITS_TO_CONSIDER_FIXED` either way. For a failure that hits every
+    time the longest gap is zero and the floor decides; for an intermittent one
+    the bar rises to what its own intermittency would produce anyway, which is
+    the honest reading and errs towards not reverting.
     """
     commits = parse_json_each_row(cidb.query(commits_since_the_failure_query(failure)))
     first_failure = parse_db_time(failure.first_failure_time)
     required_checks = set(failure.check_names)
-    green = []
-    for commit in commits:
-        if parse_db_time(commit["first_run_time"]) < first_failure:
-            break
-        if int(commit["failed"]):
-            break
-        if not required_checks <= set(commit["check_names"]):
+
+    # Only the commits that reached the branch after the failure started say
+    # anything about whether it is gone. The older ones are the ones the
+    # regression had not happened to yet.
+    since = [
+        commit
+        for commit in commits
+        if parse_db_time(commit["first_run_time"]) >= first_failure
+    ]
+
+    reported = {check for commit in since for check in commit["exercised_checks"]}
+    missing = sorted(required_checks - reported)
+    if missing:
+        return (
+            f"whether the failure is gone cannot be established: "
+            f"{', '.join(missing)} exercised none of the {len(since)} {BASE_BRANCH} "
+            f"commits since it started, so the checks it was seen in are not the "
+            f"checks running now and there is nothing to compare against"
+        )
+
+    # Newest first: the clean run since the newest occurrence, and the longest
+    # clean run between two occurrences, which is what that run has to beat. The
+    # oldest clean run is not a gap -- the window cuts it short, so its length
+    # says nothing -- and is left out.
+    clean_since_failure = None
+    gaps = []
+    run = 0
+    for commit in since:
+        if commit["failed_checks"]:
+            if clean_since_failure is None:
+                clean_since_failure = run
+            else:
+                gaps.append(run)
+            run = 0
             continue
-        green.append(commit)
-    # Not green enough to tell a fix from a failure that did not hit on this
-    # commit, or nothing has run since the failure at all. The next
-    # investigation of this failure asks again.
-    if len(green) < GREEN_COMMITS_TO_CONSIDER_FIXED:
+        if not required_checks <= set(commit["exercised_checks"]):
+            continue
+        run += 1
+
+    # No occurrence anywhere in the window: then every clean commit in it is the
+    # run since the last one, and there is no gap on record to beat, so the floor
+    # decides. This is what a fix looks like once the failure has aged past the
+    # row budget -- the commits that carried it have dropped off the end and only
+    # clean ones are left.
+    if clean_since_failure is None:
+        clean_since_failure = run
+
+    longest_gap = max(gaps, default=0)
+    enough = max(GREEN_COMMITS_TO_CONSIDER_FIXED, longest_gap + 1)
+    if clean_since_failure < enough:
         return ""
-    runs = sum(int(commit["run_count"]) for commit in green)
+    newest = since[0]
+    hiding = (
+        f", longer than the {longest_gap} it went clean between its own occurrences"
+        if longest_gap
+        else ""
+    )
     return (
-        f"the failure is gone: the {len(green)} newest commits of {BASE_BRANCH} "
-        f"that ran it all passed, in {runs} runs, the newest "
-        f"{green[0]['commit_sha']} first tested at {green[0]['first_run_time']} "
-        f"UTC, so something merged in the meantime already fixed it"
+        f"the failure is gone: the {clean_since_failure} newest commits of "
+        f"{BASE_BRANCH} that every affected check exercised are clean of it{hiding}, "
+        f"the newest {newest['commit_sha']} first tested at "
+        f"{newest['first_run_time']} UTC, so something merged in the meantime "
+        f"already fixed it"
     )
 
 
@@ -650,6 +746,14 @@ def parse_verdict(text: str) -> dict:
 
     if name == "regression" and not pull_request:
         raise ValueError("the verdict is a regression but names no pull request")
+    # The commit is what makes the attribution checkable. `high` confidence is
+    # defined as having identified the first failing commit, and `culprit_guard`
+    # holds the named pull request to it: without a commit there is nothing to
+    # hold it to, and a pull request number on its own is exactly the part of the
+    # answer a mistaken agent can produce out of thin air. So a regression states
+    # both or it is not a readable verdict.
+    if name == "regression" and not commit:
+        raise ValueError("the verdict is a regression but names no commit")
     if name != "regression" and pull_request:
         # Naming a pull request while concluding this is not a regression is a
         # contradiction. The pull request is dropped so that nothing downstream
@@ -666,10 +770,13 @@ def parse_verdict(text: str) -> dict:
     }
 
 
-def culprit_guard(pull_request: dict, failure: Failure, now: datetime) -> str:
+def culprit_guard(
+    pull_request: dict, investigation: "Investigation", now: datetime
+) -> str:
     """Why the named pull request must not be reverted automatically, or "" if
     it may be. Everything here is checked against GitHub, not against what the
     agent claimed."""
+    failure = investigation.failure
     number = pull_request.get("number")
     state = str(pull_request.get("state", "")).lower()
     if state != "merged":
@@ -679,8 +786,33 @@ def culprit_guard(pull_request: dict, failure: Failure, now: datetime) -> str:
             f"pull request #{number} was merged into "
             f"{pull_request.get('baseRefName')!r}, not {BASE_BRANCH!r}"
         )
-    if not (pull_request.get("mergeCommit") or {}).get("oid"):
+    merge_commit = (pull_request.get("mergeCommit") or {}).get("oid")
+    if not merge_commit:
         return f"pull request #{number} has no merge commit recorded"
+
+    # The two halves of the attribution have to agree. The pull request number
+    # and the commit are answers to the same question -- what came in on
+    # `{BASE_BRANCH}` and broke this -- and the number is the half that carries
+    # no evidence with it: it is a small integer, any value of it names some real
+    # pull request, and nothing about a wrong one looks wrong. The commit is the
+    # half the investigation actually derives, from `git log` over the range and
+    # from the failing runs. So the number is checked against the commit here,
+    # via GitHub's own record of which merge commit that pull request produced.
+    # They disagree exactly when one of them was not established, and then which
+    # one to trust is unknowable -- so neither is acted on. `parse_verdict`
+    # accepts an abbreviated sha, and `git` abbreviations are prefixes.
+    offending = investigation.offending_commit_sha
+    if not offending:
+        return (
+            f"the verdict names pull request #{number} but no {BASE_BRANCH} commit, "
+            f"so the attribution cannot be checked"
+        )
+    if not merge_commit.startswith(offending):
+        return (
+            f"the verdict blames commit {offending} but pull request #{number} was "
+            f"merged as {merge_commit}, so the pull request and the commit it names "
+            f"disagree"
+        )
 
     merged_at = pull_request.get("mergedAt") or ""
     if not merged_at:
@@ -897,7 +1029,11 @@ goes for every other piece of CI output you read while investigating.
 
 What you have:
 - The repository, checked out at `{BASE_BRANCH}` with full history; `origin/{BASE_BRANCH}` is current.
-- The `gh` CLI, authenticated for `ClickHouse/ClickHouse`.
+  This is your main tool. `git log --oneline <a>..<b>` gives the range, every merge commit message
+  carries `Merge pull request #N` and the branch name, and `git show <sha>` gives the diff.
+- No GitHub credential, and therefore no working `gh`: this investigation deliberately holds nothing
+  that could change anything on GitHub. Do not try to authenticate one. Whatever you cannot answer
+  from the checkout and from the database below, leave unanswered and lower your confidence for it.
 - The CI results database, read-only, no credentials needed:
   `curl -sS 'https://play.clickhouse.com/?user=play' --data-binary "<SQL>"`
   Table `default.checks` holds one row per CI check plus one row per test case in it. Columns:
@@ -922,8 +1058,8 @@ How to investigate:
    Failures like these must not lead to a revert. Say so, and explain what you saw.
 3. If it is a regression, take the commits between the last good and the first bad one
    (`git log --oneline <last_good>..<first_bad>`), map each to its pull request (the merge commit
-   message carries `Merge pull request #N`), read the diffs with `git show`, `gh pr view` and
-   `gh pr diff`, and find the one that explains this exact failure.
+   message carries `Merge pull request #N`), read the diffs with `git show`, and find the one that
+   explains this exact failure.
 4. Read the real failure output before concluding: the `test_context_raw` column of the failing rows,
    or the report linked above. Your explanation has to name the mechanism -- which change makes which
    query, assertion or behaviour fail. A pull request merely being in the range is not an explanation,
@@ -941,7 +1077,7 @@ of this holds:
 - the failure is new -- the test passed consistently before it appeared;
 - the first failing commit is identified and the range narrows down to one pull request;
 - you can state the causal mechanism from the diff;
-- the failure is still happening, and neither a fix nor a revert for it is merged or in review.
+- the failure is still happening, and nothing that looks like a fix for it is already merged.
 Otherwise answer with `medium` or `low` confidence, or with the `inconclusive` verdict. "I could not
 tell" is a useful answer that costs nothing; a wrong revert throws away somebody's work and breaks
 the branch a second time.
@@ -957,6 +1093,12 @@ Write the verdict as JSON to `{verdict_file}`, and put nothing else in that file
   "offending_commit": "<sha of the {BASE_BRANCH} commit that introduced the failure, or empty>",
   "explanation": "<a few sentences: what fails, when it started, and why that pull request causes it>"
 }}
+
+A `regression` verdict must name both the pull request and the `{BASE_BRANCH}` commit, and they have to
+be the same event: the commit has to be the merge commit that brought that pull request in, which is
+the commit whose message says `Merge pull request #N`. CI checks the two against each other and acts on
+neither if they disagree, so a number guessed next to a commit you did establish costs you the whole
+finding. If you cannot name the commit, this is not a `regression` verdict.
 """
 
 
@@ -1035,15 +1177,41 @@ Most recent report: {failure.report_url}
 def run_agent(prompt: str, verdict_file: str) -> str:
     """Run the codex agent once and return what it wrote to `verdict_file`.
 
-    The same invocation as the Code Review job, which is what these runners are
-    set up for: a writable workspace so the verdict file can be written, and
-    network access for `gh` and for the CI database queries."""
+    Broadly the same invocation as the Code Review job, which is what these
+    runners are set up for: a writable workspace so the verdict file can be
+    written, and network access for the CI database queries.
+
+    With one difference, and it is the point of this function. The agent runs
+    with **no GitHub credential at all**. The prompt tells it to change nothing,
+    but a prompt is not a boundary: the agent executes commands, with network
+    access, over CI output that a merged pull request can write -- and every
+    mutation it could make would happen *before* `culprit_guard`,
+    `already_fixed`, `already_handled` and `MAX_REVERTS_PER_RUN` ever run, so a
+    revert this job would have refused could be pushed and merged around it.
+    Wrapping `gh` would not fix that: the agent can read whatever token the
+    process can reach and call the API itself. The only boundary that holds is
+    the absence of the credential, so:
+
+    - `GH_CONFIG_DIR` points at an empty scratch directory, which is where `gh`
+      keeps the App token this job authenticates for its own use. Nothing else
+      shares it, and it is thrown away with the directory.
+    - `GH_TOKEN` and `GITHUB_TOKEN` are unset in the child, because both
+      override `GH_CONFIG_DIR`, and `actions/checkout` exports the latter.
+
+    `gh` needs a token for everything, so the agent has no `gh`. It loses
+    nothing it needs: the full history of the base branch is checked out
+    locally, the merge commit message carries `Merge pull request #N`, `git
+    show` has the diff, and the CI database is read over plain HTTP with no
+    credentials. The write-capable token is minted in `act`, after the guards
+    have run and this process -- not the agent -- has decided to revert."""
     if os.path.exists(verdict_file):
         os.unlink(verdict_file)
     openai_key = Secret.Config(
         name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER
     ).get_value()
-    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as codex_home:
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as codex_home, (
+        tempfile.TemporaryDirectory(dir=TEMP_DIR)
+    ) as gh_config_dir:
         subprocess.run(
             ["codex", "login", "--with-api-key"],
             input=openai_key,
@@ -1052,7 +1220,10 @@ def run_agent(prompt: str, verdict_file: str) -> str:
             env={**os.environ, "CODEX_HOME": codex_home},
         )
         Shell.check(
-            f"CODEX_HOME={shlex.quote(codex_home)} codex exec "
+            f"env -u GH_TOKEN -u GITHUB_TOKEN "
+            f"CODEX_HOME={shlex.quote(codex_home)} "
+            f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
+            f"codex exec "
             f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
             f"-s workspace-write "
             f"-c sandbox_workspace_write.network_access=true "
@@ -1248,15 +1419,9 @@ def investigate(failure: Failure, index: int) -> Investigation:
     raw = ""
     error = ""
     for attempt in range(1, MAX_AGENT_ATTEMPTS + 1):
-        # The agent runs long and makes GitHub calls throughout, and so does the
-        # revert that may follow it; mint a fresh App token before each attempt
-        # so that it cannot expire midway. `force` is what makes this a refresh:
-        # without it the token is minted once per process and this is a no-op
-        # from the second attempt on.
-        if not GHAuth.auth(force=True, no_strict=True):
-            print(
-                "WARNING: could not refresh the GitHub token; continuing on the old one"
-            )
+        # No GitHub token is minted here, deliberately. The agent must not hold a
+        # credential that can write -- see `run_agent` -- and this process makes
+        # no GitHub call until the guards in `act` do, which mint their own.
         reset_worktree()
         try:
             raw = run_agent(prompt, verdict_file)
@@ -1292,13 +1457,22 @@ def act(investigation: Investigation, repo: str, now: datetime) -> None:
     would be worse than a red job.
     """
     number = investigation.offending_pull_request_number
+    # The first GitHub call of the run, and the start of the phase that pushes
+    # and merges: the write-capable token is minted here, once the verdict is in
+    # and the agent that produced it is no longer running. It is minted rather
+    # than reused because the run is long -- `force` refreshes a token that was
+    # already minted in this process, which the previous revert of the same run
+    # would have done -- and because the calls that follow must not fail on an
+    # expired one halfway through a revert.
+    if not GHAuth.auth(force=True, no_strict=True):
+        print("WARNING: could not refresh the GitHub token; continuing on the old one")
     pull_request = get_pull_request(number, repo)
     if not pull_request:
         investigation.action = Action.SKIPPED_GUARD
         investigation.note(f"Not reverted: pull request #{number} could not be read.")
         return
 
-    guard = culprit_guard(pull_request, investigation.failure, now)
+    guard = culprit_guard(pull_request, investigation, now)
     if guard:
         investigation.action = Action.SKIPPED_GUARD
         investigation.note(f"Not reverted: {guard}.")
@@ -1541,6 +1715,10 @@ def dry_run_action(investigation: Investigation, repo: str, now: datetime) -> No
     They query GitHub and the local history and change nothing, so they run as
     they normally would; only the revert itself is replaced by a note."""
     number = investigation.offending_pull_request_number
+    # As in `act`: the guards read GitHub, so the token is minted here and not
+    # while the agent was running.
+    if not GHAuth.auth(force=True, no_strict=True):
+        print("WARNING: could not refresh the GitHub token; continuing on the old one")
     pull_request = get_pull_request(number, repo)
     if not pull_request:
         investigation.action = Action.SKIPPED_GUARD
@@ -1549,7 +1727,7 @@ def dry_run_action(investigation: Investigation, repo: str, now: datetime) -> No
         )
         return
 
-    guard = culprit_guard(pull_request, investigation.failure, now)
+    guard = culprit_guard(pull_request, investigation, now)
     if not guard:
         merge_commit = pull_request["mergeCommit"]["oid"]
         if not Shell.check(
