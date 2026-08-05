@@ -93,7 +93,10 @@ String QueryExecutor::execute(const String & query)
     /// string rather than a number.
     query_context->setSetting("output_format_json_quote_64bit_integers", false);
     query_context->setSetting("output_format_json_quote_64bit_floats", false);
-    query_context->setSetting("output_format_json_quote_decimals", false);
+    /// Decimals, on the contrary, are quoted: an unquoted decimal is parsed back as a double,
+    /// which cannot hold all of its digits. From the string the reply encoder builds a BSON
+    /// decimal128 (see `appendTypedValue`), so the value round-trips exactly.
+    query_context->setSetting("output_format_json_quote_decimals", true);
     query_context->setSetting("output_format_json_quote_denormals", false);
     query_context->setSetting("output_format_json_named_tuples_as_objects", true);
     query_context->setSetting("output_format_json_array_of_rows", false);

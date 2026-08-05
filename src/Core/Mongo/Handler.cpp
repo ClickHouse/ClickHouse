@@ -291,6 +291,30 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
         bson_append_int64(document, key.data(), key_length, value.GetInt64());
         return;
     }
+    if (which.isDecimal() && value.IsString())
+    {
+        /// `output_format_json_quote_decimals` is pinned to `true` (see `MongoProtocol.cpp`), so a
+        /// decimal arrives as a string with all of its digits and becomes a BSON decimal128, the
+        /// type a Mongo client sends as `$numberDecimal`. A value decimal128 cannot hold exactly -
+        /// a wide enough `Decimal128` or `Decimal256` - stays a string, because
+        /// `bson_decimal128_from_string` would silently round it to 34 significant digits.
+        std::string_view text(value.GetString(), value.GetStringLength());
+        size_t digits = 0;
+        bool seen_nonzero = false;
+        for (char c : text)
+        {
+            if (c < '0' || c > '9')
+                continue;
+            seen_nonzero |= c != '0';
+            digits += seen_nonzero;
+        }
+        bson_decimal128_t decimal;
+        if (digits <= 34 && bson_decimal128_from_string(value.GetString(), &decimal))
+        {
+            bson_append_decimal128(document, key.data(), key_length, &decimal);
+            return;
+        }
+    }
     if (which.isArray() && value.IsArray())
     {
         const auto & element_type = assert_cast<const DataTypeArray &>(*unwrapped).getNestedType();
