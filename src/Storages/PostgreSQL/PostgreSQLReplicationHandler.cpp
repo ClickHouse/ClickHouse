@@ -1969,6 +1969,39 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                             "automatically once the conflict is resolved, without a server restart or a manual "
                             "re-attach.",
                             doubleQuoteString(publication_name), colliding);
+
+                    /// The remaining publication extras are tables this database does not materialize. Two very
+                    /// different histories leave a table in this state: an operator added it to the publication
+                    /// manually (it never belonged to this database), or it was part of the original database
+                    /// definition but never completed its first snapshot (for example, it had no primary key and
+                    /// no replica identity index when the database was created, so loadFromSnapshot() failed for
+                    /// it and the initial synchronization skipped it). Nothing persists the originally configured
+                    /// table set, so the two cannot be told apart here, and both are ignored per the comment
+                    /// above - but not silently: name them and the recovery, so a table whose first snapshot
+                    /// failed does not drop out of replication without a trace. Persisting the configured table
+                    /// set (so that such a table is retried automatically instead) belongs to the same deliberate
+                    /// persistent-replication-state change as the `rebuild required` marker discussed on the
+                    /// review thread, since it has the same on-disk lifecycle across DROP/DETACH/ATTACH/RENAME.
+                    String not_materialized;
+                    for (const auto & pair : published)
+                    {
+                        if (expected.contains(pair))
+                            continue;
+                        if (!not_materialized.empty())
+                            not_materialized += ", ";
+                        not_materialized += pair.first + '.' + pair.second;
+                    }
+
+                    if (!not_materialized.empty())
+                        LOG_WARNING(
+                            log,
+                            "The existing publication {} also publishes the following table(s) this database does "
+                            "not replicate: {}. A table is left in this state when it was added to the publication "
+                            "manually, or when it was part of the original database definition but never completed "
+                            "its first snapshot (for example, it had no primary key and no replica identity index "
+                            "when the database was created). Such a table is not replicated after this restart. To "
+                            "start replicating it, fix it on the PostgreSQL side if needed and run ATTACH TABLE {}.<table>",
+                            doubleQuoteString(publication_name), not_materialized, backQuoteIfNeed(current_database_name));
                 }
                 else
                 {
