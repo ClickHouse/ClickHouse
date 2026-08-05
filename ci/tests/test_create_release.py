@@ -413,19 +413,15 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert "New release" in final.stdout
 
 
-def test_prepare_refuses_when_previous_release_is_orphaned(tmp_path):
-    """Creating the next patch is refused while a prior release is orphaned.
+def _build_patch_release_repo(tmp_path):
+    """Build a synthetic ``26.6`` branch whose tip mints a non-empty patch.
 
-    An orphaned release is one that was published but whose
-    ``Update version_date.tsv and changelog`` PR (head ``auto/v<tag>``) was
-    never merged. Here the branch tip would mint ``26.6.2.2`` while the earlier
-    ``v26.6.2.1-stable`` release still has an OPEN changelog PR, so ``prepare``
-    must fail closed rather than supersede (and permanently strand) it — the
-    scenario that stranded v26.6.2.158 when a rerun minted v26.6.2.160. Recovery
-    by tag ref is unaffected (it never reaches this create path).
+    Same shape as ``test_dry_run_patch_release_end_to_end``: a previous
+    ``v26.6.1.1-stable`` tag, the version githash pointed at it so two real
+    commits make the tip ``26.6.2.2`` (not the refused empty tweak==1 case), and
+    the real ``ci/`` + ``tests/`` trees symlinked in. Returns ``(repo, script)``.
+    Shared by the orphan-guard tests, which differ only in their `gh` stub.
     """
-    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
-
     repo = tmp_path / "repo"
     repo.mkdir()
 
@@ -472,38 +468,23 @@ def test_prepare_refuses_when_previous_release_is_orphaned(tmp_path):
     os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
     os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
     script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
+    return repo, script
 
-    # `gh` stub: report an OPEN changelog PR for the earlier v26.6.2.1 release.
-    #   * matching-refs lists the surviving `auto/v26.6.2.1-stable` head branch;
-    #   * `pr list --head <that> --state open` returns a PR, `--state merged` none
-    #     (so get_pr_state_by_branch reports OPEN);
-    #   * everything else (e.g. is_latest_release_branch) returns `[]`.
+
+def _run_prepare_with_gh_stub(tmp_path, repo, script, gh_stub_body):
+    """Run ``--prepare-release-info`` from the branch tip with a custom `gh` stub."""
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
-    gh_stub.write_text(
-        "#!/usr/bin/env python3\n"
-        "import sys\n"
-        'a = " ".join(sys.argv[1:])\n'
-        'if "matching-refs" in a:\n'
-        "    print('[\"refs/heads/auto/v26.6.2.1-stable\"]')\n"
-        'elif "pr list" in a and "--head auto/v26.6.2.1-stable" in a '
-        'and "--state open" in a:\n'
-        '    print(\'[{"url": "https://github.com/test/clickhouse/pull/999"}]\')\n'
-        "else:\n"
-        "    print('[]')\n",
-        encoding="utf-8",
-    )
+    gh_stub.write_text(gh_stub_body, encoding="utf-8")
     gh_stub.chmod(0o755)
-
     env = {
         **os.environ,
         "PYTHONPATH": REPO_ROOT,
         "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
         "GITHUB_REPOSITORY": "test/clickhouse",
     }
-
-    result = subprocess.run(
+    return subprocess.run(
         [
             sys.executable,
             script,
@@ -519,10 +500,82 @@ def test_prepare_refuses_when_previous_release_is_orphaned(tmp_path):
         capture_output=True,
         text=True,
     )
+
+
+# `gh` stub reporting an OPEN changelog PR for the earlier v26.6.2.1 release:
+#   * matching-refs lists the surviving `auto/v26.6.2.1-stable` head branch;
+#   * `pr list --head <that> --state open` returns a PR, `--state merged` none
+#     (so get_pr_state_by_branch reports OPEN);
+#   * `release view v26.6.2.1-stable` reports PUBLISHED / not-found per {published};
+#   * everything else (e.g. is_latest_release_branch) returns `[]`.
+_ORPHAN_GH_STUB = """\
+#!/usr/bin/env python3
+import sys
+
+a = " ".join(sys.argv[1:])
+if "matching-refs" in a:
+    print('["refs/heads/auto/v26.6.2.1-stable"]')
+elif "release view v26.6.2.1-stable" in a:
+    if {published}:
+        print("PUBLISHED")
+    else:
+        sys.stderr.write("release not found")
+        sys.exit(1)
+elif "pr list" in a and "--head auto/v26.6.2.1-stable" in a and "--state open" in a:
+    print('[{{"url": "https://github.com/test/clickhouse/pull/999"}}]')
+else:
+    print("[]")
+"""
+
+
+def test_prepare_refuses_when_previous_release_is_orphaned(tmp_path):
+    """Creating the next patch is refused while a prior release is orphaned.
+
+    An orphaned release is one that was *published* but whose
+    ``Update version_date.tsv and changelog`` PR (head ``auto/v<tag>``) was
+    never merged. Here the branch tip would mint ``26.6.2.2`` while the earlier
+    ``v26.6.2.1-stable`` release is published yet still has an OPEN changelog PR,
+    so ``prepare`` must fail closed rather than supersede (and permanently
+    strand) it — the scenario that stranded v26.6.2.158 when a rerun minted
+    v26.6.2.160. Recovery by tag ref is unaffected (never reaches create).
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo, script = _build_patch_release_repo(tmp_path)
+    result = _run_prepare_with_gh_stub(
+        tmp_path, repo, script, _ORPHAN_GH_STUB.format(published="True")
+    )
     assert result.returncode != 0, "orphaned previous release should have failed"
     out = result.stdout + result.stderr
     assert "orphaned" in out, out
     assert "pull/999" in out, out
+
+
+def test_prepare_allows_when_prior_changelog_pr_open_but_unpublished(tmp_path):
+    """An open changelog PR for a release that never shipped is not an orphan.
+
+    ``release_job.py`` opens the changelog PR before it creates the GitHub
+    Release (and before package/docker publish), so a run that died right after
+    "Create ChangeLog PR" leaves an open ``auto/v<tag>`` PR for a release that
+    was never published. That must NOT block the next patch — merging it would
+    land metadata for a release that does not exist. With no published GitHub
+    Release for ``v26.6.2.1-stable``, ``prepare`` proceeds and creates
+    ``26.6.2.2`` normally.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo, script = _build_patch_release_repo(tmp_path)
+    result = _run_prepare_with_gh_stub(
+        tmp_path, repo, script, _ORPHAN_GH_STUB.format(published="False")
+    )
+    assert result.returncode == 0, (
+        f"unpublished prior release must not block create\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["release_tag"] == "v26.6.2.2-stable"
+    assert info["create_new_release"] is True
 
 
 def test_prepare_recovers_from_tag(tmp_path):

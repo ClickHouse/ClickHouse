@@ -140,13 +140,21 @@ def find_orphaned_changelog_pr(
     merge it (this is exactly how v26.6.2.158 was stranded when a rerun minted
     v26.6.2.160 instead of recovering it).
 
+    An open changelog PR alone is not proof: `release_job.py` opens it *before*
+    creating the GitHub Release and before package/docker publish, so a run that
+    died right after "Create ChangeLog PR" leaves an open PR for a release that
+    never shipped — not an orphan to finalize (merging it would land metadata
+    for a release that does not exist). The orphan signal therefore also
+    requires the release to have been published: a PUBLISHED GitHub Release for
+    the tag, which the job creates only after the changelog PR.
+
     Changelog PR branches are `auto/v{major}.{minor}.{patch}.{tweak}-{codename}`
     and are deleted when their PR merges, so a surviving `auto/v{branch}.` head
-    branch with an OPEN PR is the orphan. The branch listing uses
+    branch with an OPEN PR is the candidate. The branch listing uses
     `git/matching-refs` — authoritative, unlike the eventually-consistent PR
     search index (`gh pr list --search "head:..."` misses recently-created PRs)
-    — and each candidate's state is confirmed with the retried, fail-close
-    `get_pr_state_by_branch`, so a transient GitHub error raises rather than
+    — and both the PR state and the release publish state are confirmed with
+    retried, fail-close reads, so a transient GitHub error raises rather than
     being mistaken for 'no orphan'. `matching-refs` on a zero-match prefix
     returns `[]` (HTTP 200), so an empty command output means the read failed."""
     prefix = f"auto/v{release_branch}."
@@ -166,8 +174,18 @@ def find_orphaned_changelog_pr(
         # excluding it keeps the guard correct if that ordering ever changes.
         if branch == own_branch:
             continue
-        if GH.get_pr_state_by_branch(branch, repo=repo) == "OPEN":
-            return GH.get_pr_url_by_branch(branch, repo=repo)
+        if GH.get_pr_state_by_branch(branch, repo=repo) != "OPEN":
+            continue
+        # Confirm the release actually shipped before treating the open PR as an
+        # orphan (see the post-publish-signal note above).
+        release_tag = branch.removeprefix("auto/")
+        if GH.get_release_publish_state(release_tag, repo=repo) != "PUBLISHED":
+            print(
+                f"Open changelog PR for [{release_tag}] but no published GitHub "
+                f"Release — nothing shipped, not an orphan; ignoring."
+            )
+            continue
+        return GH.get_pr_url_by_branch(branch, repo=repo)
     return ""
 
 
