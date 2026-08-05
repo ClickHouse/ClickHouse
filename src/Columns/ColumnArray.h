@@ -101,6 +101,7 @@ public:
     void doInsertFrom(const IColumn & src_, size_t n) override;
 #endif
     void insertDefault() override;
+    void insertManyDefaults(size_t length) override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void filter(const Filter & filt) override;
