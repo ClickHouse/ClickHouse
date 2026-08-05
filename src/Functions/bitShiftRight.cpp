@@ -174,20 +174,21 @@ SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
 └─────┴──────────┴───────────┴────────────────┘
         )"},
         {"Usage example with hexadecimal encoding", R"(
-SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+-- The shifted value is binary, so it is shown with `hex`.
+SELECT 'abc' AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
         )",
         R"(
-┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftRight('abc', 12))─┐
-│ abc │ 616263     │           │ 0616                          │
-└─────┴────────────┴───────────┴───────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 0616      │
+└─────┴────────┴───────────┘
         )"},
 {"Usage example with Fixed String encoding", R"(
-SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
+SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
         )",
 R"(
-┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftRight(toFixedString('abc', 3), 12))─┐
-│ abc │ 616263                       │           │ 000616                                          │
-└─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 000616    │
+└─────┴────────┴───────────┘
         )"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

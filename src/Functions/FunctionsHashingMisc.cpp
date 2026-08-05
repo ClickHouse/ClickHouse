@@ -91,9 +91,11 @@ New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
     FunctionDocumentation::Examples sipHash128_examples = {
     {
         "Usage example",
-        "SELECT hex(sipHash128('foo', '\\x01', 3));",
+        // The hash is binary, so it is shown with `hex`, and the result is aliased to keep the
+        // non-printable byte of the argument out of the column name.
+        "SELECT hex(sipHash128('foo', '\\x01', 3)) AS res;",
         R"(
-┌─hex(sipHash128('foo', '', 3))────┐
+┌─res──────────────────────────────┐
 │ 9DE516A64A414D4B1B609415E4523F24 │
 └──────────────────────────────────┘
         )"
@@ -122,11 +124,11 @@ New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128Referen
     FunctionDocumentation::Examples sipHash128Keyed_examples = {
         {
             "Usage example",
-            "SELECT hex(sipHash128Keyed((506097522914230528, 1084818905618843912),'foo', '\\x01', 3));",
+            "SELECT hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '\\x01', 3)) AS res;",
             R"(
-┌─hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
-│ B8467F65C8B4CFD9A5F8BD733917D9BF                                              │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─res──────────────────────────────┐
+│ B8467F65C8B4CFD9A5F8BD733917D9BF │
+└──────────────────────────────────┘
             )"
         }
     };
@@ -146,11 +148,11 @@ Like [`sipHash128`](/sql-reference/functions/hash-functions#sipHash128) but impl
     FunctionDocumentation::Examples sipHash128Ref_examples = {
     {
         "Usage example",
-        "SELECT hex(sipHash128Reference('foo', '\x01', 3));",
+        "SELECT hex(sipHash128Reference('foo', '\\x01', 3)) AS res;",
         R"(
-┌─hex(sipHash128Reference('foo', '', 3))─┐
-│ 4D1BE1A22D7F5933C0873E1698426260       │
-└────────────────────────────────────────┘
+┌─res──────────────────────────────┐
+│ C3AA2F3C06A14DBE3742E9107AA9765D │
+└──────────────────────────────────┘
         )"
     }
     };
@@ -171,11 +173,11 @@ Same as [`sipHash128Reference`](#sipHash128Reference) but additionally takes an 
     FunctionDocumentation::Examples sipHash128RefKeyed_examples = {
     {
         "Usage example",
-        "SELECT hex(sipHash128Reference('foo', '\x01', 3));",
+        "SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912), 'foo', '\\x01', 3)) AS res;",
          R"(
-┌─hex(sipHash128Reference('foo', '', 3))─┐
-│ 4D1BE1A22D7F5933C0873E1698426260       │
-└────────────────────────────────────────┘
+┌─res──────────────────────────────┐
+│ 1D010CC83FB5460C25B556CE40992E61 │
+└──────────────────────────────────┘
         )"
     }
     };

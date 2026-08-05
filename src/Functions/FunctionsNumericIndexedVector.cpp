@@ -22,12 +22,15 @@ Creates a NumericIndexedVector from a map. The map's keys represent the vector's
         {
             "Usage example",
             R"(
-SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res, toTypeName(res);
+-- A NumericIndexedVector is a binary value, so it is shown with `hex`.
+SELECT
+    hex(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res,
+    toTypeName(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS type;
             )",
             R"(
-┌─res─┬─toTypeName(res)────────────────────────────────────────────┐
-│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
-└─────┴────────────────────────────────────────────────────────────┘
+┌─res────────────────────────────────────────────────────────────────┬─type───────────────────────────────────────────────────────┐
+│ 080000000000000001010000020103000002020300000201030000020203010101 │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
+└────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
             )"
         }
         };

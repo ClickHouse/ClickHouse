@@ -16,11 +16,14 @@ REGISTER_FUNCTION(Bitmap)
         {"array", "Unsigned integer array.", {"Array(UInt*)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_bitmapBuild = {"Returns a bitmap from the provided array", {"AggregateFunction(groupBitmap, T)"}};
-    FunctionDocumentation::Examples examples_bitmapBuild = {{"Usage example", "SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);",
+    FunctionDocumentation::Examples examples_bitmapBuild = {{"Usage example", R"(
+-- A bitmap is a binary value, so it is shown with `hex`.
+SELECT hex(bitmapBuild([1, 2, 3, 4, 5])) AS res, toTypeName(bitmapBuild([1, 2, 3, 4, 5])) AS type;
+        )",
         R"(
-┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
-│     │ AggregateFunction(groupBitmap, UInt8)        │
-└─────┴──────────────────────────────────────────────┘
+┌─res────────────┬─type──────────────────────────────────┐
+│ 00050102030405 │ AggregateFunction(groupBitmap, UInt8) │
+└────────────────┴───────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapBuild = {20, 1};
