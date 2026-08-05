@@ -39,6 +39,11 @@ PROBE_CMD = (
 )
 REJECT_COND = 'if [ "$attempt1_conclusion" != "action_required" ]; then'
 
+# The variables that carry a candidate from the listing to the rerun decision. Each
+# must be assigned exactly once: a second assignment anywhere silently substitutes a
+# value the asserted command never produced, leaving the whole guard inert, CI green.
+DATA_PATH_VARS = ("run_entries", "run_id", "run_attempt", "attempt1_conclusion")
+
 GH_STUB = """#!/usr/bin/env bash
 # The caller's own --jq expression, so the stub answers the field that was asked for rather
 # than a fixed string: requesting anything but .conclusion must be observable.
@@ -107,6 +112,69 @@ def _listing_select_conjuncts(step):
     return {c.strip() for c in m.group(1).split(" and ")}
 
 
+def _listing_jq(step):
+    """The listing ``--jq`` argument, read from the NORMALIZED invocation so a re-wrap
+    across continuation lines is not a false refusal. Returns (expr, invocation)."""
+    assert "gh run list" in step, step
+    invocation = " ".join(
+        step.split("gh run list", 1)[1].split("\n\n", 1)[0].replace("\\\n", " ").split()
+    )
+    m = re.search(r'--jq\s+"(.*)"\)\s*$', invocation)
+    assert m, invocation
+    return m.group(1), invocation
+
+
+def _jq_stages(expr):
+    """``expr`` split on top-level ``|``: parenthesised groups and ``\\"``-quoted jq
+    strings do not separate stages."""
+    stages, cur, depth, i, in_str = [], "", 0, 0, False
+    while i < len(expr):
+        if expr[i : i + 2] == '\\"':
+            in_str = not in_str
+            cur += expr[i : i + 2]
+            i += 2
+            continue
+        c = expr[i]
+        if not in_str:
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+            elif c == "|" and depth == 0:
+                stages.append(cur.strip())
+                cur = ""
+                i += 1
+                continue
+        cur += c
+        i += 1
+    stages.append(cur.strip())
+    return stages
+
+
+_COMPOUND_OPEN = r"(?:^|;|\bthen\b|\bdo\b|\belse\b)\s*(?:if|while|until|case|for)\b"
+_COMPOUND_CLOSE = r"(?:^|;)\s*(?:fi|done|esac)\b"
+
+
+def _reject_branch_continues(step):
+    """True iff the already-retried branch runs ``continue`` as a TOP-LEVEL command of
+    its own body. A ``continue`` nested in a conditional is unreachable, and one after
+    the branch's own ``fi`` belongs to the loop rather than the branch."""
+    after = step.split('!= "action_required" ]; then', 1)[1]
+    depth = 0
+    for line in after.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if depth == 0 and re.match(r"^continue\b(?!=)", s):
+            return True
+        opens = len(re.findall(_COMPOUND_OPEN, ";" + s))
+        closes = len(re.findall(_COMPOUND_CLOSE, ";" + s))
+        if depth == 0 and closes > opens:
+            return False  # the branch's own terminator
+        depth += opens - closes
+    return False
+
+
 def test_selector_admits_gated_fork_runs():
     step = _retry_step()
     # The probe spans continuation lines, so its assertions below read this NORMALIZED
@@ -121,6 +189,20 @@ def test_selector_admits_gated_fork_runs():
         ".attempt <= 2",
         r".createdAt >= \"$cutoff\"",
     }, "the listing filter must be exactly the attempt bound and the cutoff"
+    # The conjunct set pins what is INSIDE the select and nothing outside it: appending
+    # `| select(.attempt == 1)` to the same expression keeps that set identical while
+    # filtering every fork run back out. So pin the top-level shape as well.
+    listing_jq, listing_invocation = _listing_jq(step)
+    stages = _jq_stages(listing_jq)
+    assert (
+        len(stages) == 3 and stages[0] == ".[]" and stages[1].startswith("select(")
+    ), f"the listing filter must be exactly `.[] | select(...) | projection`: {stages}"
+    # `.attempt` steers the guard, so the field must be requested. Without it jq yields
+    # null, `null <= 2` still admits the row, and run_attempt becomes the string "null":
+    # a same-repo attempt-1 run is then skipped and a fork run aborts the step at
+    # `$((run_attempt + 1))`.
+    m = re.search(r"--json\s+([A-Za-z0-9_,]+)", listing_invocation)
+    assert m and "attempt" in m.group(1).split(","), listing_invocation
     assert 'attempt1_conclusion" != "action_required"' in step, "missing attempt-1 probe"
     # The probe must interrogate attempt 1: reading any other attempt makes it meaningless.
     # Against `normalized` (hoisted above), so a re-wrap is not a false refusal.
@@ -176,17 +258,13 @@ def test_selector_admits_gated_fork_runs():
         and significant[0].startswith("attempt1_conclusion=$(gh api")
         and body_depth == 0
     ), "the attempt-1 probe must BE the guard's body, not sit behind another conditional"
-    # And its reject branch must actually skip the run, not merely log. Scope the search to
-    # that branch's own body: a "continue" belonging to a later loop would satisfy this too.
-    reject_branch = re.split(
-        r"\n\s*fi\b", step.split('!= "action_required" ]; then', 1)[1], maxsplit=1
-    )[0]
-    # `\s*continue\b` also accepts `continue=false`, an assignment that does not skip the
-    # iteration. Require `continue` as the command word: `(?!=)` rejects the assignment
-    # while `continue 1` and a trailing no-op stay accepted, both being equivalent.
-    assert re.search(
-        r"^[ \t]*continue\b(?!=)", reject_branch, re.M
-    ), "the reject branch must continue, or the gate is inert"
+    # And its reject branch must actually skip the run, not just log. A `\n\s*continue`
+    # search matches a continue nested inside `if false; then ... fi`, which never runs,
+    # so the already-retried run falls through to the rerun logic. Depth-track instead.
+    # The `(?!=)` lookahead is PRESERVED: it rejects `continue=false`, an assignment.
+    assert _reject_branch_continues(
+        step
+    ), "the reject branch must run `continue` at top level, or the gate is inert"
     # The projection and the two splits must agree on field order: transposing either makes
     # run_id and run_attempt swap, so the probe reads a nonexistent run and rejects every
     # gated candidate while every assert above still passes.
@@ -194,10 +272,15 @@ def test_selector_admits_gated_fork_runs():
     assert 'run_id="${run_entry%%:*}"' in step, "run id must come from the head field"
     assert 'run_attempt="${run_entry##*:}"' in step, "attempt must come from the tail field"
     # Presence is not enough: a later `run_id="${run_entry##*:}"` would overwrite the correct
-    # value from the wrong field while every assertion above still passes.
-    for var, expansion in (("run_id", "%%:*"), ("run_attempt", "##*:")):
-        assigns = re.findall(rf'^\s*{var}="\$\{{run_entry([^}}]*)\}}"', step, re.M)
-        assert assigns == [expansion], (var, assigns)
+    # value from the wrong field while every assertion above still passes. Each
+    # data-path
+    # variable must be assigned exactly once, in ANY form -- a per-form count sees only
+    # assignments matching the expected expansion, so `run_attempt=1` appended later
+    # is invisible to it; `(?:^|;)` additionally catches a semicolon-separated overwrite
+    # on the same line, which a `^`-anchored count misses.
+    for var in DATA_PATH_VARS:
+        assigns = re.findall(rf"(?:^|;)\s*{var}=", step, re.M)
+        assert len(assigns) == 1, (var, assigns)
     # A gated attempt 1 has status "completed" and conclusion "action_required", so a probe
     # reading any other field rejects every fork candidate while the asserts above still pass.
     assert (
