@@ -7,8 +7,8 @@
 -- materialises every comparison as its own `UInt8` column, so no chain pattern exists for the pass
 -- to rewrite. `oracle` and `keyed` must agree.
 
+SET enable_analyzer = 1;
 SET allow_suspicious_variant_types = 1;
-SET allow_experimental_variant_type = 1;
 SET use_variant_default_implementation_for_comparisons = 0;
 SET optimize_redundant_comparisons = 1;
 SET optimize_and_compare_chain = 1;
