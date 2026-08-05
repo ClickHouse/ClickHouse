@@ -23,15 +23,14 @@ class Block;
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table);
 
-/// Inline ALIAS columns into their expressions and disambiguate projection items that only become
-/// structurally identical after inlining (e.g. two ALIAS columns expanding to the same expression),
-/// wrapping duplicates in __actionName(expr, '<unique>') so the shard/replica emits as many distinct
-/// output columns as the initiator planner expects. Without this the duplicate columns collapse by
-/// name and the position-based column match throws NUMBER_OF_COLUMNS_DOESNT_MATCH. GROUP BY / ORDER BY
-/// / HAVING keys referencing a wrapped alias are rewritten to the same wrapper too, so duplicate keys
-/// do not collapse at the WithMergeableState the parallel replicas execute up to. Used by both the
-/// Distributed/remote() path and the parallel-replicas path before buildQueryTreeForShard.
-void inlineAndDisambiguateAliasColumns(QueryTreeNodePtr & query_tree_to_modify, const ContextPtr & context);
+/** Replace every `ALIAS` column node with its defining expression, so the expression is evaluated on the shard/replica
+  * that reads the real table instead of the column being resolved there as if it were physical.
+  *
+  * Must be applied to any query tree that is about to be shipped, before `buildQueryTreeForShard`: that function rebuilds
+  * a shipped table expression from column names and types only, which drops an `ALIAS` column's resolved expression and
+  * leaves the remote side asking storage for a column it does not have (`NO_SUCH_COLUMN_IN_TABLE`).
+  */
+void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify);
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
 

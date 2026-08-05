@@ -961,13 +961,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-
-    /// Inline ALIAS columns and disambiguate projection items that only become structurally
-    /// identical after inlining, so the shard emits as many distinct output columns as the
-    /// outer planner expects (otherwise NUMBER_OF_COLUMNS_DOESNT_MATCH). Also rewrite the matching
-    /// GROUP BY / ORDER BY / HAVING keys so that a shard which itself uses parallel replicas keeps
-    /// the duplicate keys distinct at its WithMergeableState.
-    inlineAndDisambiguateAliasColumns(query_tree_to_modify, query_context);
+    inlineAliasColumns(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
 

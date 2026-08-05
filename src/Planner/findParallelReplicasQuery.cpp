@@ -615,11 +615,11 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     auto initial_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
-    /// Disambiguate duplicate-ALIAS projection columns before sending the query to replicas (see the
-    /// Distributed/remote() path), so they do not collapse by name on the replica and trip the
-    /// position-based column match with NUMBER_OF_COLUMNS_DOESNT_MATCH. initial_header above retains
-    /// the original (un-disambiguated) column count that the converting step matches against.
-    inlineAndDisambiguateAliasColumns(modified_query_tree, context);
+    /// Inline ALIAS columns before shipping the query, mirroring the Distributed/remote() path.
+    /// buildQueryTreeForShard below rebuilds a shipped table expression from names and types only, which
+    /// would drop an ALIAS column's expression and make the replica read it as physical.
+    /// initial_header above is taken from the un-inlined tree, which is what the converting step matches.
+    inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 
