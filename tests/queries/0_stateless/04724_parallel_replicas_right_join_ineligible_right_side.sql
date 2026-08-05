@@ -237,7 +237,18 @@ RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
 ORDER BY r.key
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1;
 
--- A replicated left side is eligible, so it keeps the local join the optimization exists for.
+-- A replicated left side is eligible, so it keeps the local join the optimization exists for. The
+-- next two arms are a pair: the first says the JOIN reached the replicas at all, the second that it
+-- was not globalized. `RIGHT JOIN` is a substring of `GLOBAL ALL RIGHT JOIN`, so neither alone
+-- distinguishes a local join from a global one.
+
+SELECT '-- replicated left, right eligible: the JOIN is still offloaded';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM t_replicated_right) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%RIGHT JOIN%';
 
 SELECT '-- replicated left, right eligible: the local join is kept';
 SELECT count() FROM (
