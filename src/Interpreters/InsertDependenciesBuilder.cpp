@@ -1129,11 +1129,9 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
     chassert(storage);
 
-    /// The root target is already refreshed by InterpreterInsertQuery. A view owns no sink, its
-    /// target is observed as its own node below. Refresh once per storage: paths are walked, not
-    /// nodes, so a target shared by several views is observed once per view, and a later re-pin
-    /// would drift from the header already computed. Use the parent view's insert context, the
-    /// one createSink builds this target's sink with, so `SQL SECURITY DEFINER` holds.
+    /// Refresh at most once per storage: `popBack` erases from `visited`, so re-pinning a shared
+    /// target would drift from the header already computed. The context must be the parent view's,
+    /// the one `createSinkImpl` builds this sink with, so `SQL SECURITY DEFINER` holds.
     if (current != init_table_id && !storage->isView() && !metadata_snapshots.contains(current))
         storage->updateExternalDynamicMetadataIfExists(insert_contexts.at(parent));
 
