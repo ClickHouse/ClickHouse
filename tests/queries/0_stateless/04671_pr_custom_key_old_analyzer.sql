@@ -24,6 +24,19 @@ SELECT count(), sum(y) FROM d
 SETTINGS enable_analyzer = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0,
     parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'x';
 
+-- `parallel_replicas_only_with_analyzer` says that the query is executed locally without the analyzer, but
+-- it does not stop the initiator from sending the query to every replica of the shard either. The filter by
+-- the custom key is what keeps the result correct, with both values of the setting.
+SELECT count(), sum(y) FROM d
+SETTINGS enable_analyzer = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0,
+    parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x',
+    parallel_replicas_only_with_analyzer = 0;
+
+SELECT count(), sum(y) FROM d
+SETTINGS enable_analyzer = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0,
+    parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x',
+    parallel_replicas_only_with_analyzer = 1;
+
 -- Without the custom key there is nothing to filter by, and the query fails the same way it does with the analyzer.
 SELECT count(), sum(y) FROM d
 SETTINGS enable_analyzer = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0,
