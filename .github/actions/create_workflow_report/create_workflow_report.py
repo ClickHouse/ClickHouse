@@ -762,10 +762,9 @@ def get_new_fails_this_pr(
 
 def _workflow_config_s3_url(pr_number: int, commit_sha: str, ref_name: str) -> str:
     if pr_number == 0:
-        # REF uploads use a double slash before config_workflow in the S3 key.
         return (
             f"https://{S3_BUCKET}.s3.amazonaws.com/REFs/{ref_name}/{commit_sha}/"
-            "/config_workflow/workflow_config_masterci.json"
+            "config_workflow/workflow_config_masterci.json"
         )
     return (
         f"https://{S3_BUCKET}.s3.amazonaws.com/PRs/{pr_number}/{commit_sha}/"
