@@ -1,0 +1,6 @@
+=== invalid polygon literal still throws (validate_polygons=1, default) ===
+Polygon is not valid
+=== valid polygon literal still prunes by default ===
+ParquetPrunedRowGroups: 1 (increment)
+=== hole outside shell still throws (not validated ring-by-ring) ===
+Polygon is not valid

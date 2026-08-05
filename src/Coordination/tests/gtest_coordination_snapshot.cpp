@@ -35,6 +35,8 @@
 #include <cstring>
 #include <future>
 #include <limits>
+#include <map>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
 
@@ -413,11 +415,11 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     DB::SnapshotableHashTable<IntNode> map_snp;
     EXPECT_TRUE(map_snp.insert("/hello", 7).second);
     EXPECT_FALSE(map_snp.insert("/hello", 145).second);
-    map_snp.enableSnapshotMode(map_snp.snapshotSizeWithVersion().second);
+    auto view = map_snp.issueReadView();
     EXPECT_FALSE(map_snp.insert("/hello", 145).second);
     map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
     EXPECT_EQ(map_snp.getValue("/hello"), 554);
-    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 2);
+    EXPECT_EQ(map_snp.listSize(), 2);
     EXPECT_EQ(map_snp.size(), 1);
 
     auto itr = map_snp.begin();
@@ -436,7 +438,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     }
     EXPECT_EQ(map_snp.getValue("/hello3"), 3);
 
-    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 7);
+    EXPECT_EQ(map_snp.listSize(), 7);
     EXPECT_EQ(map_snp.size(), 6);
     itr = std::next(map_snp.begin(), 2);
     for (size_t i = 0; i < 5; ++i)
@@ -450,7 +452,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_TRUE(map_snp.erase("/hello3"));
     EXPECT_TRUE(map_snp.erase("/hello2"));
 
-    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 7);
+    EXPECT_EQ(map_snp.listSize(), 7);
     EXPECT_EQ(map_snp.size(), 4);
     itr = std::next(map_snp.begin(), 2);
     for (size_t i = 0; i < 5; ++i)
@@ -460,10 +462,9 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
         EXPECT_EQ(itr->isActiveInMap(), i != 3 && i != 2);
         itr = std::next(itr);
     }
-    map_snp.disableSnapshotMode();
-    map_snp.clearOutdatedNodes();
+    map_snp.retireReadView(std::move(view));
 
-    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 4);
+    EXPECT_EQ(map_snp.listSize(), 4);
     EXPECT_EQ(map_snp.size(), 4);
     itr = map_snp.begin();
     EXPECT_EQ(itr->key, "/hello");
@@ -504,29 +505,27 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     hello.clear();
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
-    /// Insert a node, then enable snapshot mode so the node is captured by the snapshot.
+    /// Insert a node, then issue a read view so the node is captured by it.
     hello.insert("hello", 1);
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
-    hello.enableSnapshotMode(hello.snapshotSizeWithVersion().second);
+    auto hello_view = hello.issueReadView();
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateDataSize(), 18);
-    /// The node was already updated (version > snapshot_up_to_version),
+    /// The node was already updated (version > the view's pinned version),
     /// so insertOrReplace does not create another snapshot copy.
     hello.insertOrReplace("hello", 1);
     EXPECT_EQ(hello.getApproximateDataSize(), 18);
 
-    /// Must disable snapshot mode before clearing outdated nodes (matches production flow).
-    hello.disableSnapshotMode();
-    hello.clearOutdatedNodes();
+    /// Retiring the view drains the outdated nodes.
+    hello.retireReadView(std::move(hello_view));
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
-    /// Enable a new snapshot to test erase keeping outdated nodes.
-    hello.enableSnapshotMode(hello.snapshotSizeWithVersion().second);
+    /// Issue a new view to test erase keeping outdated nodes.
+    hello_view = hello.issueReadView();
     hello.erase("hello");
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
-    hello.disableSnapshotMode();
-    hello.clearOutdatedNodes();
+    hello.retireReadView(std::move(hello_view));
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
     /// Node
@@ -554,17 +553,86 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
 
     world.insert("world", n1);
     EXPECT_GT(world.getApproximateDataSize(), 0);
-    world.enableSnapshotMode(world.snapshotSizeWithVersion().second);
+    auto world_view = world.issueReadView();
     world.updateValue("world", [&](Node & value) { value = n2; });
     EXPECT_GT(world.getApproximateDataSize(), 0);
 
-    /// Erase while in snapshot mode — outdated nodes stay in list.
+    /// Erase while a view is outstanding — outdated nodes stay in list.
     world.erase("world");
     EXPECT_GT(world.getApproximateDataSize(), 0);
 
-    world.disableSnapshotMode();
-    world.clearOutdatedNodes();
+    world.retireReadView(std::move(world_view));
     EXPECT_EQ(world.getApproximateDataSize(), 0);
+}
+
+TEST_P(CoordinationTest, SnapshotableHashMapOverlappingViews)
+{
+    DB::SnapshotableHashTable<IntNode> map;
+
+    auto empty_view = map.issueReadView();
+    EXPECT_EQ(empty_view->prefixSize(), 0);
+    EXPECT_EQ(empty_view->nodeCount(), 0);
+    EXPECT_TRUE(empty_view->begin() == empty_view->end());
+    map.retireReadView(std::move(empty_view));
+
+    map.insert("/a", 1);
+    map.insert("/b", 2);
+    map.insert("/c", 3);
+
+    auto view1 = map.issueReadView();
+
+    map.updateValue("/b", [](IntNode & v) { v = 20; });
+    map.erase("/c");
+    map.insert("/d", 4);
+
+    auto view2 = map.issueReadView();
+
+    /// Update then erase: all "/b" copies share one key allocation; the erase marks the
+    /// last copy as its unique freer.
+    map.updateValue("/b", [](IntNode & v) { v = 200; });
+    map.erase("/b");
+    map.erase("/a");
+
+    auto view3 = map.issueReadView();
+
+    auto collect = [](const auto & view)
+    {
+        std::map<std::string, int> result;
+        for (const auto & elem : view)
+            result.emplace(elem.key, elem.value.value);
+        return result;
+    };
+
+    using Expected = std::map<std::string, int>;
+    EXPECT_EQ(collect(*view1), (Expected{{"/a", 1}, {"/b", 2}, {"/c", 3}}));
+    EXPECT_EQ(collect(*view2), (Expected{{"/a", 1}, {"/b", 20}, {"/d", 4}}));
+    EXPECT_EQ(collect(*view3), (Expected{{"/d", 4}}));
+    EXPECT_EQ(view3->prefixSize(), 6);
+    EXPECT_EQ(view3->nodeCount(), 1);
+
+    map.erase("/d");
+
+    /// Every element of view4's prefix is invisible to it: the leading skip must exhaust the view.
+    auto view4 = map.issueReadView();
+    EXPECT_EQ(view4->prefixSize(), 6);
+    EXPECT_EQ(view4->nodeCount(), 0);
+    EXPECT_TRUE(view4->begin() == view4->end());
+
+    /// Erase then re-create: the new "/c" gets a fresh key allocation.
+    map.insert("/c", 30);
+
+    /// Retire out of order; garbage is drained only at the last retire.
+    map.retireReadView(std::move(view2));
+    EXPECT_GT(map.listSize(), map.size());
+    EXPECT_EQ(collect(*view1), (Expected{{"/a", 1}, {"/b", 2}, {"/c", 3}}));
+    EXPECT_EQ(collect(*view3), (Expected{{"/d", 4}}));
+    map.retireReadView(std::move(view1));
+    map.retireReadView(std::move(view4));
+    map.retireReadView(std::move(view3));
+
+    EXPECT_EQ(map.size(), 1);
+    EXPECT_EQ(map.listSize(), 1);
+    EXPECT_EQ(map.getValue("/c"), 30);
 }
 
 TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
@@ -601,7 +669,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.session_id, 7);
-    EXPECT_EQ(snapshot.node_stream->node_count, 4 + this->keeper_context->getSystemNodesWithData().size());
+    EXPECT_EQ(snapshot.view->getNodeCount(), 4 + this->keeper_context->getSystemNodesWithData().size());
     EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -661,7 +729,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMoreWrites)
 
     DB::KeeperStorageSnapshot snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
-    EXPECT_EQ(snapshot.node_stream->node_count, 52 + this->keeper_context->getSystemNodesWithData().size());
+    EXPECT_EQ(snapshot.view->getNodeCount(), 52 + this->keeper_context->getSystemNodesWithData().size());
 
     for (size_t i = 50; i < 100; ++i)
     {
@@ -761,8 +829,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMode)
         EXPECT_EQ(storage.getStorageStats().nodes_count, 27 + this->keeper_context->getSystemNodesWithData().size());
         if (const auto * mem_nodes_storage = dynamic_cast<const DB::KeeperMemNodesStorage *>(storage.nodes_storage))
         {
-            EXPECT_EQ(mem_nodes_storage->container.snapshotSizeWithVersion().first, 103 + this->keeper_context->getSystemNodesWithData().size());
-            EXPECT_EQ(mem_nodes_storage->container.snapshotSizeWithVersion().second, 1);
+            EXPECT_EQ(mem_nodes_storage->container.listSize(), 103 + this->keeper_context->getSystemNodesWithData().size());
         }
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
@@ -770,9 +837,8 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMode)
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 50).size(), 1);
     EXPECT_EQ(storage.getStorageStats().nodes_count, 27 + this->keeper_context->getSystemNodesWithData().size());
     {
-        auto stream = storage.nodes_storage->beginWritingSnapshot();
-        EXPECT_EQ(stream->node_count, 27 + this->keeper_context->getSystemNodesWithData().size());
-        storage.nodes_storage->finishWritingSnapshot(std::move(stream));
+        auto view = storage.issueReadView();
+        EXPECT_EQ(view->getNodeCount(), 27 + this->keeper_context->getSystemNodesWithData().size());
     }
     for (size_t i = 0; i < 50; ++i)
     {
@@ -1099,10 +1165,10 @@ static nuraft::ptr<nuraft::buffer> makeSingleNodeSnapshotBuffer(
     const std::string & node_path,
     const std::string & node_data)
 {
-    DB::KeeperMemoryStorage storage(500, "", ctx);
-    storage.initializeSystemNodes();
-    addNode(storage, node_path, node_data);
-    return makeInstallBuffer(storage, log_idx, ctx);
+    auto storage = std::make_shared<DB::KeeperMemoryStorage>(500, "", ctx);
+    storage->initializeSystemNodes();
+    addNode(*storage, node_path, node_data);
+    return makeInstallBuffer(*storage, log_idx, ctx);
 }
 
 /// Drain a queued create_snapshot task synchronously (the snapshot thread's job in production)
@@ -1852,7 +1918,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotTTLRoundTrip)
     manager.serializeSnapshotBufferToDisk(*buf, zxid);
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(zxid);
-    std::unique_ptr<DB::KeeperStorage> restored = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    std::shared_ptr<DB::KeeperStorage> restored = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
     auto deser_result = manager.deserializeSnapshotFromBuffer(debuf, *restored);
 
     EXPECT_TRUE(restored->containsTTLPath("/ttl_node"));
@@ -2087,8 +2153,6 @@ TEST_P(CoordinationTest, ReceiveDuplicateSnapshotRepublishIsIdempotent)
     DB::KeeperStorage & storage = *storage_ptr;
 
     DB::KeeperSnapshotManager manager(3, ctx, true);
-    /// Only one `KeeperStorageSnapshot` may be alive per storage at a time (it holds snapshot
-    /// mode on), so scope each one before creating the next.
     nuraft::ptr<nuraft::buffer> buf;
     {
         DB::KeeperStorageSnapshot snapshot(&storage, 100, nullptr, ctx->getWriteSnapshotVersion());
@@ -2484,7 +2548,7 @@ TEST_P(CoordinationTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
 
-    std::unique_ptr<DB::KeeperStorage> original_storage = DB::KeeperStorage::create(500, "", ctx);
+    std::shared_ptr<DB::KeeperStorage> original_storage = DB::KeeperStorage::create(500, "", ctx);
     addNode(*original_storage, "/original", "original");
     auto original_buf = makeSnapshotBufferFromStorage(*original_storage, 10, ctx);
     nuraft::snapshot snapshot(10, 0, std::make_shared<nuraft::cluster_config>());
@@ -2495,7 +2559,7 @@ TEST_P(CoordinationTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
     const fs::path published_snapshot_path = fs::path("./snapshots") / published_files[0];
     const auto published_snapshot_size = fs::file_size(published_snapshot_path);
 
-    std::unique_ptr<DB::KeeperStorage> duplicate_storage = DB::KeeperStorage::create(500, "", ctx);
+    std::shared_ptr<DB::KeeperStorage> duplicate_storage = DB::KeeperStorage::create(500, "", ctx);
     addNode(*duplicate_storage, "/duplicate", "duplicate");
     auto duplicate_buf = makeSnapshotBufferFromStorage(*duplicate_storage, 10, ctx);
     ASSERT_GT(duplicate_buf->size(), 1);
@@ -2515,7 +2579,7 @@ TEST_P(CoordinationTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
     EXPECT_EQ(fs::file_size(published_snapshot_path), published_snapshot_size);
 
     nuraft::snapshot other_snapshot(11, 0, std::make_shared<nuraft::cluster_config>());
-    std::unique_ptr<DB::KeeperStorage> other_storage = DB::KeeperStorage::create(500, "", ctx);
+    std::shared_ptr<DB::KeeperStorage> other_storage = DB::KeeperStorage::create(500, "", ctx);
     /// Serialize over an isolated disk: a throwaway manager over `./snapshots` would run its
     /// ctor incomplete-pair scan and delete the idx-10 receive that is mid-flight here.
     auto other_buf = makeInstallBuffer(*other_storage, 11, ctx);
