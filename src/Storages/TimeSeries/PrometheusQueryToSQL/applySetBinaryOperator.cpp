@@ -113,7 +113,7 @@ String materializeTable(ASTPtr && select_query, ConverterContext & context)
 }
 
 void checkArgumentTypes(
-    const PQT::BinaryOperator * operator_node,
+    const PrometheusQueryTree::BinaryOperator * operator_node,
     const SQLQueryPiece & left_argument,
     const SQLQueryPiece & right_argument,
     const ConverterContext & context)
@@ -150,7 +150,7 @@ void checkArgumentTypes(
 }
 
 String
-prepareSide(const PQT::BinaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context, bool & metric_name_dropped)
+prepareSide(const PrometheusQueryTree::BinaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context, bool & metric_name_dropped)
 {
     argument = toVectorGrid(std::move(argument), context);
     metric_name_dropped = argument.metric_name_dropped;
@@ -313,7 +313,7 @@ bool isSetBinaryOperator(std::string_view operator_name)
 
 
 SQLQueryPiece applySetBinaryOperator(
-    const PQT::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context)
+    const PrometheusQueryTree::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context)
 {
     const auto & operator_name = operator_node->operator_name;
     const ImplInfo * impl_info = getImplInfo(operator_name);
