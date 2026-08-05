@@ -1059,12 +1059,18 @@ void RemoteQueryExecutor::finish()
         /// itself and drains the connections (see `read`).
         if (sync_read_in_progress)
         {
-            /// A synchronous read in progress implies the query was sent over real connections
-            /// and no `read_context` fiber exists, so setting the flag is all `tryCancel` would
-            /// have done here. It also suppresses `sendCancel` in any later `tryCancel`, keeping
+            /// Setting the flag also suppresses `sendCancel` in any later `tryCancel`, keeping
             /// the delegated `Cancel` send (see `read`) the only one.
-            chassert(!read_context);
             was_cancelled = true;
+
+            /// Reads are synchronous, but the query itself may have been sent through a
+            /// `read_context` fiber (`async_query_sending_for_remote`, on by default). That
+            /// fiber suspended right after sending the query and is never resumed on this
+            /// path, so cancelling it - as `tryCancel` would have done - only marks it
+            /// cancelled and destroys it, without touching the connections.
+            if (read_context)
+                read_context->cancel();
+
             drain_requested = true;
             return;
         }
