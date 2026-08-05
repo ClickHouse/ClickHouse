@@ -64,7 +64,7 @@ protected:
 
 /// Implementation of makeDate, makeDate32
 template <typename Traits>
-class FunctionMakeDate final : public FunctionWithNumericParamsBase
+class FunctionMakeDate : public FunctionWithNumericParamsBase
 {
 private:
     static constexpr std::array mandatory_argument_names_year_month_day = {"year", "month", "day"};
@@ -174,7 +174,7 @@ public:
 
 /// Implementation of YYYYMMDDToDate, YYYYMMDDToDate32
 template<typename Traits>
-class FunctionYYYYYMMDDToDate final : public FunctionWithNumericParamsBase
+class FunctionYYYYYMMDDToDate : public FunctionWithNumericParamsBase
 {
 private:
     static constexpr std::array mandatory_argument_names = { "YYYYMMDD" };
@@ -289,14 +289,12 @@ protected:
 
     static Int64 minDateTime(const DateLUTImpl & lut)
     {
-        /// DateLUTImpl::makeDateTime no longer clamps out-of-range years (DateTime64 supports the extended range),
-        /// so pin the clamp sentinels to explicit in-range dates to keep makeDateTime / makeDateTime64 behaviour.
-        return lut.makeDateTime(DATE_LUT_MIN_YEAR, 1, 1, 0, 0, 0);
+        return lut.makeDateTime(DATE_LUT_MIN_YEAR - 1, 1, 1, 0, 0, 0);
     }
 
     static Int64 maxDateTime(const DateLUTImpl & lut)
     {
-        return lut.makeDateTime(DATE_LUT_MAX_YEAR, 12, 31, 23, 59, 59);
+        return lut.makeDateTime(DATE_LUT_MAX_YEAR + 1, 1, 1, 23, 59, 59);
     }
 
     std::string extractTimezone(const ColumnWithTypeAndName & timezone_argument) const
@@ -333,7 +331,7 @@ protected:
 };
 
 /// makeDateTime(year, month, day, hour, minute, second[, timezone])
-class FunctionMakeDateTime final : public FunctionMakeDateTimeBase
+class FunctionMakeDateTime : public FunctionMakeDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = {"timezone"};
@@ -414,7 +412,7 @@ public:
 };
 
 /// makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
-class FunctionMakeDateTime64 final : public FunctionMakeDateTimeBase
+class FunctionMakeDateTime64 : public FunctionMakeDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = {"fraction", "precision", "timezone"};
@@ -553,7 +551,7 @@ protected:
 };
 
 /// YYYYMMDDhhmmssToDateTime
-class FunctionYYYYMMDDhhmmssToDateTime final : public FunctionYYYYMMDDhhmmssToDateTimeBase
+class FunctionYYYYMMDDhhmmssToDateTime : public FunctionYYYYMMDDhhmmssToDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = { "timezone" };
@@ -632,7 +630,7 @@ public:
 };
 
 /// YYYYMMDDhhmmssToDateTime64
-class FunctionYYYYMMDDhhmmssToDateTime64 final : public FunctionYYYYMMDDhhmmssToDateTimeBase
+class FunctionYYYYMMDDhhmmssToDateTime64 : public FunctionYYYYMMDDhhmmssToDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = { "precision", "timezone" };

@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
-#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -100,7 +99,7 @@ public:
 
         size_t keysCount() const
         {
-            chassert(key_names_left.size() == key_names_right.size());
+            assert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
         }
 
@@ -169,7 +168,6 @@ private:
     const bool enable_software_prefetch_in_join = false;
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
-    const bool join_runtime_filter_from_fixed_hash_table = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -220,7 +218,7 @@ private:
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    std::optional<bool> join_expression_value = std::nullopt;
+    bool is_join_with_constant = false;
 
     bool enable_analyzer = false;
 
@@ -334,13 +332,6 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
-    bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
-
-    const std::vector<std::pair<String, String>> & getSharedRuntimeFilterDescriptors() const
-    {
-        static const std::vector<std::pair<String, String>> empty;
-        return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
-    }
 
     bool oneDisjunct() const;
 
@@ -394,17 +385,12 @@ public:
 
     bool isJoinWithConstant() const
     {
-        return join_expression_value.has_value();
+        return is_join_with_constant;
     }
 
-    std::optional<bool> getJoinExpressionValue() const
+    void setIsJoinWithConstant(bool is_join_with_constant_value)
     {
-        return join_expression_value;
-    }
-
-    void setJoinExpressionValue(bool join_expression_value_)
-    {
-        join_expression_value = join_expression_value_;
+        is_join_with_constant = is_join_with_constant_value;
     }
 
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
@@ -482,6 +468,7 @@ public:
 bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
+    JoinStrictness strictness,
     bool is_special_storage,
     bool one_disjunct);
 }

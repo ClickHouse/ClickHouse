@@ -36,7 +36,7 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
     SerializationPtr shared_data_path_serialization;
-    bool read_from_shared_data{};
+    bool read_from_shared_data;
     ColumnPtr shared_data;
     size_t shared_data_size = 0;
 
@@ -46,20 +46,6 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
         new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (shared_data)
-            callback(shared_data);
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (structure_state)
-            callback(structure_state);
-        if (nested_state)
-            callback(nested_state);
     }
 };
 

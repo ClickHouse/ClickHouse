@@ -43,20 +43,18 @@ SELECT id FROM tab ORDER BY L2Distance(vec, [toBFloat16(-inf), toBFloat16(1.0), 
 
 DROP TABLE tab;
 
--- Test another special case for i8 quantization. Zero-magnitude and non-finite squared vectors (searched data and reference vectors)
+-- Test another special case for i8 quantization. Zero-magnitude vectors (searched data and reference vectors)
 -- also cause undefined behavior in ubsan --> reject them
 
 CREATE TABLE tab (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 3, 'i8', 32, 128))
 ENGINE = MergeTree ORDER BY id;
 
--- There are other zero-magnitude squared vectors, but we can't test the other ones reliably because of rounding errors
+-- There are other zero-magnitude vectors, but we can't test the other ones reliably because of rounding errors
 INSERT INTO tab VALUES (12, [0.0, 0.0, 0.0]); -- { serverError INCORRECT_DATA }
-INSERT INTO tab VALUES (12, [1e300, 1.0, 1.0]); -- { serverError INCORRECT_DATA }
 
 -- Insert dummy values, otherwise the SELECT earlies out before the zero-magnitude check
 INSERT INTO tab VALUES (0, [1.0, 0.0, 0.0]), (1, [0.0, 1.0, 0.0]), (2, [0.0, 0.0, 1.0]);
 
 SELECT id FROM tab ORDER BY L2Distance(vec, [0.0, 0.0, 0.0]) LIMIT 1; -- { serverError INCORRECT_QUERY }
-SELECT id FROM tab ORDER BY L2Distance(vec, [1e300, 1.0, 1.0]) LIMIT 1; -- { serverError INCORRECT_QUERY }
 
 DROP TABLE tab;
