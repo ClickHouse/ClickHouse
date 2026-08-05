@@ -9,6 +9,10 @@ CREATE TABLE t_modify_projection
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
 
+-- The test asserts that the two inserted parts stay separate until OPTIMIZE, so a
+-- spontaneous background merge must not combine them earlier.
+SYSTEM STOP MERGES t_modify_projection;
+
 INSERT INTO t_modify_projection SELECT number, number * 2 FROM numbers(10000);
 
 SELECT '-- initial definition';
@@ -23,18 +27,21 @@ SHOW CREATE TABLE t_modify_projection;
 SELECT '-- the old part keeps the old granularity, a new part gets the new one';
 INSERT INTO t_modify_projection SELECT number, number * 2 FROM numbers(10000);
 
+-- `name` is the projection name and is the same for both parts, so order by the
+-- parent part name to make the output deterministic.
 SELECT name, rows, marks
 FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_modify_projection' AND active
-ORDER BY name;
+ORDER BY parent_name;
 
 SELECT '-- a merge rebuilds the projection with the new granularity';
+SYSTEM START MERGES t_modify_projection;
 OPTIMIZE TABLE t_modify_projection FINAL;
 
 SELECT name, rows, marks
 FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_modify_projection' AND active
-ORDER BY name;
+ORDER BY parent_name;
 
 SELECT '-- errors';
 ALTER TABLE t_modify_projection MODIFY PROJECTION nonexistent (SELECT v ORDER BY v) WITH SETTINGS (index_granularity = 128); -- { serverError NO_SUCH_PROJECTION_IN_TABLE }
