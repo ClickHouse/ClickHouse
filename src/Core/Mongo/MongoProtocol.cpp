@@ -95,8 +95,11 @@ String QueryExecutor::execute(const String & query)
     query_context->setSetting("output_format_json_quote_64bit_floats", false);
     /// Decimals, on the contrary, are quoted: an unquoted decimal is parsed back as a double,
     /// which cannot hold all of its digits. From the string the reply encoder builds a BSON
-    /// decimal128 (see `appendTypedValue`), so the value round-trips exactly.
+    /// decimal128 (see `appendTypedValue`), so the value round-trips exactly. The trailing
+    /// zeros are kept so that the reply carries the full scale of the column: BSON decimals
+    /// distinguish `1.5` from `1.5000000000`, and the column stores the latter.
     query_context->setSetting("output_format_json_quote_decimals", true);
+    query_context->setSetting("output_format_decimal_trailing_zeros", true);
     query_context->setSetting("output_format_json_quote_denormals", false);
     query_context->setSetting("output_format_json_named_tuples_as_objects", true);
     query_context->setSetting("output_format_json_array_of_rows", false);
