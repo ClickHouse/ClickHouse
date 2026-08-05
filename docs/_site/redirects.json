@@ -27768,6 +27768,14 @@
     "source": "/operations/system-tables/metrics"
   },
   {
+    "destination": "/reference/system-tables/overview",
+    "source": "/operations/system-tables/models"
+  },
+  {
+    "destination": "/reference/system-tables/overview",
+    "source": "/reference/system-tables/models"
+  },
+  {
     "destination": "/reference/system-tables/moves",
     "source": "/operations/system-tables/moves"
   },
