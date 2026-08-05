@@ -54,7 +54,7 @@ function shared_native_and_http_tests()
     echo '--- a long-running background query is visible and attributed in system.processes, and KILL QUERY kills it'
     local victim_id="victim_${run}_${CLICKHOUSE_DATABASE}"
     $run "INSERT INTO t SETTINGS max_block_size = 1 SELECT number FROM numbers(600) WHERE NOT ignore(sleepEachRow(0.1))" "$victim_id"
-    wait_for "count() = 1 FROM system.processes WHERE query_id = '$victim_id' AND peak_memory_usage > 0 AND read_rows > 0"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$victim_id' AND user = currentUser() AND current_database = currentDatabase() AND read_rows > 0"
     echo "attributed in system.processes"
     out=$($run "KILL QUERY WHERE query_id = '$victim_id' SYNC")
     [[ -z "$out" ]] && echo "no output"
