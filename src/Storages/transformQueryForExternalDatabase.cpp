@@ -177,6 +177,31 @@ bool fieldHasStringWithNulByte(const Field & field)
     }
 }
 
+/// External databases have no ClickHouse-compatible syntax for `Array` / `Map` literals: the
+/// dialect formatters (see `FieldVisitorToStringForDialect` in `ASTLiteral.cpp`) would emit them
+/// with ClickHouse `[...]` syntax, which the external database rejects. A top-level `Array` is
+/// rejected in `isCompatible` directly, but such values can also hide inside `IN` tuples, e.g.
+/// `(id, arr_col) IN ((1, [1, 2]))`, so the check has to recurse. `Tuple` itself stays allowed:
+/// it serializes as a parenthesized list, which external databases understand in `IN` sets.
+bool fieldContainsArrayOrMap(const Field & field)
+{
+    checkStackSize();
+
+    switch (field.getType())
+    {
+        case Field::Types::Array:
+        case Field::Types::Map:
+            return true;
+        case Field::Types::Tuple:
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldContainsArrayOrMap(element))
+                    return true;
+            return false;
+        default:
+            return false;
+    }
+}
+
 /// Returns true if `node` references a column of UUID type, including when that reference
 /// is nested inside a tuple or another expression (e.g. the row comparison
 /// `(uuid_col, x) < (...)`). ClickHouse and external databases (e.g. PostgreSQL) sort UUIDs
@@ -312,6 +337,13 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
         if (literal_escaping_style == LiteralEscapingStyle::SQLite && fieldHasStringWithNulByte(literal->value))
             return false;
 
+        /// Foreign databases often have no support for Array / Map, and ClickHouse would serialize
+        /// such literals with its own `[...]` syntax anyway (see `fieldContainsArrayOrMap`); this
+        /// also covers Array / Map nested inside IN tuples (including single-element tuples, which
+        /// are unwrapped below). Tuple literals themselves are passed to support the IN clause.
+        if (fieldContainsArrayOrMap(literal->value))
+            return false;
+
         if (literal->value.getType() == Field::Types::Tuple)
         {
             /// Represent a tuple with zero or one elements as (x) instead of tuple(x).
@@ -322,8 +354,7 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
                 return true;
             }
         }
-        /// Foreign databases often have no support for Array. But Tuple literals are passed to support IN clause.
-        return literal->value.getType() != Field::Types::Array;
+        return true;
     }
 
     return node->as<ASTIdentifier>();

@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
@@ -83,6 +84,7 @@ private:
                 {"is_value", DataTypeFactory::instance().get("Bool")},
                 {"uuid_col", std::make_shared<DataTypeUUID>()},
                 {"lc_uuid_col", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUUID>())},
+                {"arr", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())},
             }),
         TableWithColumnNamesAndTypes(
             createDBAndTable("table2"),
@@ -423,10 +425,10 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
         "SELECT sleepEachRow(1) FROM table",
         R"(SELECT "column" FROM "test"."table")");
 
-    check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col"},
+    check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col", "arr"},
         "SELECT * EXCEPT (is_value) FROM table WHERE (column) IN (1)",
-        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col" FROM "test"."table" WHERE ("column") IN (1))",
-        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col" FROM "test"."table" WHERE "column" IN (1))");
+        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col", "arr" FROM "test"."table" WHERE ("column") IN (1))",
+        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col", "arr" FROM "test"."table" WHERE "column" IN (1))");
 
     check(state, 1, {"is_value"},
         "SELECT is_value FROM table WHERE is_value = true",
@@ -475,4 +477,36 @@ TEST(TransformQueryForExternalDatabase, UUIDColumn)
     check(state, 1, {"uuid_col"},
           "SELECT uuid_col FROM table WHERE uuid_col = toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AND uuid_col > toUUID('12345678-1234-1234-1234-123456789012')",
           R"(SELECT "uuid_col" FROM "test"."table" WHERE "uuid_col" = '61f0c404-5cb3-11e7-907b-a6006ad3dba0')");
+}
+
+TEST(TransformQueryForExternalDatabase, ArrayLiteral)
+{
+    const State & state = State::instance();
+    /// The State context is shared between tests; make sure strict mode (set by the Strict test)
+    /// is off here, so non-compatible predicates are dropped rather than throwing.
+    state.context->setSetting("external_table_strict_query", false);
+
+    /// External databases do not understand ClickHouse `[...]` array syntax, so predicates with
+    /// Array literals must not be pushed down - they are evaluated locally instead. A top-level
+    /// Array literal has been rejected since long ago:
+    check(state, 1, {"arr"},
+          "SELECT arr FROM table WHERE arr = [1, 2]",
+          R"(SELECT "arr" FROM "test"."table")");
+
+    /// But an Array literal nested inside an IN tuple must be rejected too, both for a
+    /// single-row set (the pushed-down query lists columns in table-definition order):
+    check(state, 1, {"a", "arr"},
+          "SELECT a, arr FROM table WHERE (a, arr) IN ((1, [1, 2]))",
+          R"(SELECT "a", "arr" FROM "test"."table")");
+
+    /// ... and for a multi-row set:
+    check(state, 1, {"a", "arr"},
+          "SELECT a, arr FROM table WHERE (a, arr) IN ((1, [1, 2]), (3, [4]))",
+          R"(SELECT "a", "arr" FROM "test"."table")");
+
+    /// In a conjunction, the compatible predicate is still pushed down while the one with the
+    /// nested Array literal stays local.
+    check(state, 1, {"a", "arr"},
+          "SELECT a, arr FROM table WHERE (a, arr) IN ((1, [1, 2])) AND a > 0",
+          R"(SELECT "a", "arr" FROM "test"."table" WHERE "a" > 0)");
 }
