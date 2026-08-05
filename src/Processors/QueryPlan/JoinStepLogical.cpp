@@ -1861,12 +1861,17 @@ static bool canBeEvaluatedOnSide(
     bool reads_own_column = false;
     std::stack<JoinActionRef> stack;
     stack.push(condition);
+
+    std::unordered_set<const ActionsDAG::Node *> visited;
     while (!stack.empty())
     {
         auto action = stack.top();
         stack.pop();
 
         const auto * raw_node = action.getNode();
+        if (!visited.insert(raw_node).second)
+            continue;
+
         if (raw_node->type == ActionsDAG::ActionType::INPUT)
         {
             if (side == JoinTableSide::Left ? action.fromLeft() : action.fromRight())
@@ -1874,16 +1879,27 @@ static bool canBeEvaluatedOnSide(
             else if (!findInlinableConstant(raw_node, constants))
                 return false;
         }
-
-        if (raw_node->type == ActionsDAG::ActionType::FUNCTION
+        else if (raw_node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            for (const auto & argument : action.getArguments())
+                stack.push(argument);
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::FUNCTION
             && raw_node->function_base
             && raw_node->function_base->isDeterministic())
         {
             for (const auto & argument : action.getArguments())
                 stack.push(argument);
         }
+        else if (raw_node->type == ActionsDAG::ActionType::COLUMN)
+        {
+            /// Column represent a constant value, so it can be evaluated on any side
+            continue;
+        }
         else
+        {
             return false;
+        }
     }
 
     return reads_own_column;
