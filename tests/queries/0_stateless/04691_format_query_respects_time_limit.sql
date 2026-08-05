@@ -1,5 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, long
 -- no-fasttest: needs enough rows of moderate SQL text that an unpatched parse loop overshoots the limit.
+-- long: `fuzzQuery` holds one process-global mutex per row, so copies of this test run by the flaky
+-- check serialize against each other and its two `fuzzQuery` cases alone cost about 110 s of a run.
 
 -- The query-parsing functions parse one row at a time inside a single pipeline task. Cancellation is
 -- only polled between tasks, so before the fix a whole block ran to completion and the query outlived
