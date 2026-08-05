@@ -82,7 +82,7 @@ class RandomQueryKiller:
                 # A query_id is arbitrary text (tests pass --query_id), so pass it as a query
                 # parameter instead of interpolating it: parameters are read with
                 # deserializeTextEscaped, the exact inverse of the TSV escaping above.
-                call(
+                returncode = call(
                     [
                         "clickhouse",
                         "client",
@@ -95,9 +95,19 @@ class RandomQueryKiller:
                     stderr=subprocess.DEVNULL,
                     timeout=self._KILL_QUERY_TIMEOUT,
                 )
+                # Both expected outcomes exit 0: a matched kill prints a kill_status row,
+                # a query that already finished prints nothing. Non-zero means the command
+                # itself is broken, which would silently disable the killer.
+                if returncode:
+                    logging.warning(
+                        "KILL QUERY exited %s for query_id %s", returncode, query_id
+                    )
+        except subprocess.TimeoutExpired as e:
+            # Expected while the server is loaded, and far too frequent to report louder.
+            logging.debug("Random query killer timed out: %s", e)
         except Exception as e:
-            # Errors are expected (server busy, no queries, etc.)
-            logging.debug("Random query killer got exception (expected): %s", e)
+            # Anything else means the killer itself is misbehaving.
+            logging.warning("Random query killer failed: %s: %s", type(e).__name__, e)
 
     def _kill_random_client(self) -> None:
         """Kill a random clickhouse-client process."""
@@ -117,8 +127,10 @@ class RandomQueryKiller:
                     os.kill(int(pid), signal.SIGTERM)
                 except (ProcessLookupError, ValueError):
                     pass  # Process already gone
+        except subprocess.TimeoutExpired as e:
+            logging.debug("Random client killer timed out: %s", e)
         except Exception as e:
-            logging.debug("Random client killer got exception (expected): %s", e)
+            logging.warning("Random client killer failed: %s: %s", type(e).__name__, e)
 
     def _kill_random_mutation(self) -> None:
         """Select a random unfinished mutation and kill it."""
@@ -150,7 +162,7 @@ class RandomQueryKiller:
                 # returns a kill_status row without waiting for the mutation to finalize. The
                 # subprocess cap stays above --receive_timeout so the client's own timeout is
                 # the one that governs.
-                call(
+                returncode = call(
                     [
                         "clickhouse",
                         "client",
@@ -168,9 +180,20 @@ class RandomQueryKiller:
                     stderr=subprocess.DEVNULL,
                     timeout=self._KILL_MUTATION_TIMEOUT,
                 )
+                # A mutation that finished or a table dropped meanwhile still exits 0, so a
+                # non-zero code means the command itself is broken.
+                if returncode:
+                    logging.warning(
+                        "KILL MUTATION exited %s for %s on %s.%s",
+                        returncode,
+                        mutation_id,
+                        db,
+                        table,
+                    )
+        except subprocess.TimeoutExpired as e:
+            logging.debug("Random mutation killer timed out: %s", e)
         except Exception as e:
-            # Errors are expected (server busy, no mutations, table dropped meanwhile, etc.)
-            logging.debug("Random mutation killer got exception (expected): %s", e)
+            logging.warning("Random mutation killer failed: %s: %s", type(e).__name__, e)
 
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
