@@ -74,6 +74,17 @@ SELECT count() FROM (
     WHERE tupleElement(t, 'a.b') = 5)
 WHERE explain ILIKE '%column_name: t.a.b%';
 
+-- A reader may match field names case-insensitively, so a collision that differs only in case
+-- is refused too.
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT 1 FROM file('nonexistent_04708.parquet', Parquet, 't Tuple(A Tuple(B UInt64), `a.b` UInt64)')
+    WHERE tupleElement(t, 'a.b') = 5)
+WHERE explain ILIKE '%column_name: t.a.b%';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT 1 FROM file('nonexistent_04708.parquet', Parquet, 't Tuple(a Tuple(b UInt64), `A.B` UInt64)')
+    WHERE tupleElement(t, 'A.B') = 5)
+WHERE explain ILIKE '%column_name: t.A.B%';
+
 SELECT '-- a dotted element name with no colliding nested path is still rewritten';
 SELECT count() FROM (
     EXPLAIN QUERY TREE SELECT 1 FROM file('nonexistent_04708.parquet', Parquet, 't Tuple(`a.b` UInt64, c UInt64)')

@@ -378,7 +378,9 @@ bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const
     {
         auto head = name.substr(0, dot);
         auto tail = name.substr(dot + 1);
-        if (!head.empty() && !tail.empty() && tuple.tryGetPositionByName(head))
+        /// Case-insensitively, because a reader may match field names that way.
+        if (!head.empty() && !tail.empty()
+            && (tuple.tryGetPositionByName(head) || tuple.tryGetPositionByName(head, /*case_insensitive=*/true)))
             return true;
     }
     return false;
