@@ -122,6 +122,16 @@ MAX_CULPRIT_AGE_DAYS = 3
 # tested more than once, and two runs of one commit are one piece of evidence.
 GREEN_COMMITS_TO_CONSIDER_FIXED = 2
 
+# How far before the failure's first occurrence the per-commit history is read
+# when asking whether the failure is already fixed. The point of the margin is
+# each commit's *real* first run: with a window opened exactly at the first
+# occurrence, a pre-regression commit that somebody re-runs late loses its
+# early runs to the cutoff, gets ordered by the rerun, and floats in front of
+# the failing commits as false green evidence. A week covers any commit a
+# rerun would plausibly land on while keeping the query off the bulk of the
+# table.
+FIRST_RUN_LOOKBACK_HOURS = 7 * 24
+
 # Table in the CI database that records the investigations. It joins with
 # `checks`: `test_name`, `check_names`, `commit_shas`, `report_url` and
 # `offending_pull_request_number` all carry values from there.
@@ -382,10 +392,21 @@ def commits_since_the_failure_query(failure: Failure, limit=20) -> str:
     commit's newest run but never its first, so this order tracks the order
     the commits reached the branch in.
 
-    The window opens at the failure's first occurrence rather than its last
-    for the same reason: the last occurrence moves with every rerun of a bad
-    commit, and a cutoff placed there can hide the very commits that fixed
-    the failure.
+    The window opens `FIRST_RUN_LOOKBACK_HOURS` *before* the failure's first
+    occurrence, not at it, and not at its last occurrence. The last occurrence
+    moves with every rerun of a bad commit, and a cutoff placed there can hide
+    the very commits that fixed the failure. And a cutoff placed exactly at
+    the first occurrence falsifies the first-run ordering this query depends
+    on: a commit that passed *before* the regression and was re-run late
+    would lose its early runs to the cutoff, take the rerun as its first run,
+    and float in front of the failing commits as green evidence of a fix that
+    never happened. With the margin, such a commit keeps its real first run,
+    sorts behind the regression, and is never reached -- and `already_fixed`
+    additionally drops anything whose first run predates the failure.
+
+    Each commit also carries the distinct `check_names` it reported in, so
+    the caller can tell a commit every relevant check passed on from one
+    where only the fast checks have finished so far.
 
     The same outcome logic as the query that picked the failure up: the
     outcome is in `test_status`, and a `SKIPPED` row is not an outcome at
@@ -405,9 +426,11 @@ SELECT
     commit_sha,
     toString(min(check_start_time)) AS first_run_time,
     toUInt8(max(test_status LIKE 'F%' OR test_status LIKE 'E%')) AS failed,
-    toUInt32(count()) AS run_count
+    toUInt32(count()) AS run_count,
+    arraySort(groupUniqArray(50)(check_name)) AS check_names
 FROM {Settings.CI_DB_TABLE_NAME}
 WHERE check_start_time >= toDateTime({quote_sql_string(failure.first_failure_time)})
+      - INTERVAL {int(FIRST_RUN_LOOKBACK_HOURS)} HOUR
       AND head_ref = '{BASE_BRANCH}'
       AND startsWith(head_repo, 'ClickHouse/')
       AND check_name IN ({checks})
@@ -432,13 +455,29 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
     Walks the commits newest first and counts the green ones down to the
     newest failing commit. The commits behind a failing one say nothing more:
     either they are the bad commits themselves, or the failure was still there
-    after them.
+    after them. The walk also ends at the first commit whose first run
+    predates the failure: from there on the commits are older than the
+    regression, and how they did says nothing about a fix.
+
+    A commit is green evidence only once every check the failure was seen in
+    has reported on it and none failed. A commit where only the fast checks
+    have finished is not green, it is unfinished: counting it would stand the
+    revert down on the strength of the checks that never showed the failure
+    in the first place, right before the slow one fails again. Such a commit
+    is skipped rather than counted -- fully reported green commits behind it
+    are still evidence, because they are still newer than every failure.
     """
     commits = parse_json_each_row(cidb.query(commits_since_the_failure_query(failure)))
+    first_failure = parse_db_time(failure.first_failure_time)
+    required_checks = set(failure.check_names)
     green = []
     for commit in commits:
+        if parse_db_time(commit["first_run_time"]) < first_failure:
+            break
         if int(commit["failed"]):
             break
+        if not required_checks <= set(commit["check_names"]):
+            continue
         green.append(commit)
     # Not green enough to tell a fix from a failure that did not hit on this
     # commit, or nothing has run since the failure at all. The next
@@ -461,12 +500,21 @@ def recent_investigations_query(hours=FAILURE_WINDOW_HOURS) -> str:
     The revert time is what decides whether a later occurrence of the same test
     is still the failure that was reverted; `maxIf` over no matching row yields
     the zero `DateTime`, which is older than any occurrence and so stands for
-    "never reverted"."""
+    "never reverted".
+
+    `investigated_commit_shas` is every commit whose failure was already put in
+    front of the agent within the window, across all the investigations of this
+    test. It is what tells the same stale evidence from a fresh regression: a
+    failure made of the commits that were already investigated is a second
+    opinion the cooldown exists to suppress, while enough failing commits that
+    no investigation has seen are a new failure that happens to share the test
+    name."""
     return f"""\
 SELECT
     test_name,
     toString(max(investigation_time)) AS last_investigation_time,
-    toString(maxIf(investigation_time, action = '{Action.REVERTED}')) AS last_revert_time
+    toString(maxIf(investigation_time, action = '{Action.REVERTED}')) AS last_revert_time,
+    arraySort(groupUniqArrayArray(commit_shas)) AS investigated_commit_shas
 FROM {INVESTIGATION_TABLE}
 WHERE investigation_time >= now() - INTERVAL {int(hours)} HOUR
 GROUP BY test_name
@@ -515,6 +563,18 @@ def skip_reason(failure: Failure, prior: Dict[str, dict], now: datetime) -> str:
     evidence: something else broke it. The exception holds only until that
     recurrence has been looked at -- from the next run on, the last
     investigation is newer than the revert and the cooldown applies again.
+
+    The cooldown suppresses a second opinion on the same evidence, so it holds
+    only while the evidence *is* the same. The failure group is keyed by the
+    test name, and a fresh regression of the same test can start minutes after
+    a flake of it was investigated; a cooldown that only looked at the clock
+    would sit on that regression for hours. So the failing commits are compared
+    with the ones the prior investigations already saw, and once the commits no
+    investigation has seen would clear the pick-up threshold on their own --
+    `MIN_FAILURES` of them, the same bar a new failure has to clear -- the
+    failure is investigated without waiting. Below that bar the cooldown
+    stands: a single flaky recurrence trickling in one commit per hour is
+    exactly the second opinion the cooldown is there to avoid.
     """
     seen = prior.get(failure.key)
     if not seen:
@@ -529,6 +589,10 @@ def skip_reason(failure: Failure, prior: Dict[str, dict], now: datetime) -> str:
             f"UTC, and it was last seen at {failure.last_failure_time} UTC"
         )
     if investigated <= reverted:
+        return ""
+    investigated_shas = set(seen.get("investigated_commit_shas") or [])
+    new_commits = [sha for sha in failure.commit_shas if sha not in investigated_shas]
+    if len(new_commits) >= MIN_FAILURES:
         return ""
     age = now - investigated
     if age < timedelta(hours=INVESTIGATION_COOLDOWN_HOURS):

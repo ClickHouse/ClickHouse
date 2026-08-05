@@ -143,13 +143,18 @@ def test_failure_never_seen_before_is_investigated():
 NEVER_REVERTED = "1970-01-01 00:00:00"
 
 
-def _prior(investigated_hours_ago, reverted_at=NEVER_REVERTED):
-    """What `recent_investigations_query` reports about a failure it has seen."""
+def _prior(investigated_hours_ago, reverted_at=NEVER_REVERTED, investigated_shas=None):
+    """What `recent_investigations_query` reports about a failure it has seen.
+    Unless the caller says otherwise, the prior investigations saw the same
+    commits the failure carries now -- the evidence has not changed."""
+    if investigated_shas is None:
+        investigated_shas = make_failure().commit_shas
     return {
         "last_investigation_time": (
             NOW - timedelta(hours=investigated_hours_ago)
         ).strftime("%Y-%m-%d %H:%M:%S"),
         "last_revert_time": reverted_at,
+        "investigated_commit_shas": investigated_shas,
     }
 
 
@@ -196,6 +201,36 @@ def test_a_recurrence_that_has_been_looked_at_waits_for_the_cooldown_again():
     failure = make_failure(last_failure_time="2026-07-31 21:12:40")
     prior = {failure.key: _prior(1, reverted_at="2026-07-31 12:00:00")}
     assert "cooldown" in job.skip_reason(failure, prior, NOW)
+
+
+def test_new_failing_commits_within_the_cooldown_are_investigated_at_once():
+    """The cooldown suppresses a second opinion on the same evidence, not a
+    first opinion on new evidence: a fresh regression of the same test can
+    start minutes after a flake of it was judged harmless, and it fails on
+    commits no investigation has seen."""
+    failure = make_failure(commit_shas=["c" * 40, "d" * 40, "a" * 40])
+    prior = {failure.key: _prior(1, investigated_shas=["a" * 40, "b" * 40])}
+    assert job.skip_reason(failure, prior, NOW) == ""
+
+
+def test_a_single_new_failing_commit_does_not_break_the_cooldown():
+    """One new commit is a single sighting -- below the bar a new failure has
+    to clear to be picked up at all. A flake that keeps trickling in one
+    commit per hour must not reopen the investigation every hour."""
+    failure = make_failure(commit_shas=["c" * 40, "a" * 40])
+    prior = {failure.key: _prior(1, investigated_shas=["a" * 40])}
+    assert "cooldown" in job.skip_reason(failure, prior, NOW)
+
+
+def test_the_prior_investigations_carry_the_commits_they_saw():
+    """`investigated_commit_shas` is the union over every investigation of the
+    test within the window: evidence shown to the agent once is old evidence,
+    whichever run showed it."""
+    query = job.recent_investigations_query()
+    assert (
+        "arraySort(groupUniqArrayArray(commit_shas)) AS investigated_commit_shas"
+        in query
+    )
 
 
 def test_the_runs_still_in_flight_when_the_revert_landed_are_not_a_new_failure():
@@ -609,16 +644,22 @@ class FakeCIDB:
         return "".join(json.dumps(row) + "\n" for row in self.rows)
 
 
-def _commits(*failed, run_counts=None):
+def _commits(*failed, run_counts=None, check_names=None, first_run_times=None):
     """One row per commit, newest first by the commit's first run, each tested
-    once unless the caller says otherwise."""
+    once in every check the failure was seen in, unless the caller says
+    otherwise."""
     run_counts = run_counts or [1] * len(failed)
+    check_names = check_names or [make_failure().check_names] * len(failed)
+    first_run_times = first_run_times or [
+        "2026-07-31 21:%02d:00" % (59 - index) for index in range(len(failed))
+    ]
     return [
         {
             "commit_sha": f"{index:040x}",
-            "first_run_time": "2026-07-31 21:%02d:00" % (59 - index),
+            "first_run_time": first_run_times[index],
             "failed": int(value),
             "run_count": run_counts[index],
+            "check_names": check_names[index],
         }
         for index, value in enumerate(failed)
     ]
@@ -672,6 +713,59 @@ def test_reruns_of_one_green_commit_do_not_crowd_out_the_second():
     assert "20 runs" in fixed
 
 
+def test_a_commit_from_before_the_regression_is_not_green_evidence():
+    """A commit that passed before the regression says nothing about a fix,
+    however late somebody re-runs it: the walk ends where the commits get
+    older than the failure."""
+    rows = _commits(
+        0,
+        0,
+        1,
+        first_run_times=[
+            # The newest row is a pre-regression commit: its real first run
+            # predates the failure's first occurrence, 13:28:40.
+            "2026-07-31 12:00:00",
+            "2026-07-31 21:00:00",
+            "2026-07-31 20:00:00",
+        ],
+    )
+    assert job.already_fixed(FakeCIDB(rows), make_failure()) == ""
+
+
+def test_a_commit_not_every_check_reported_on_is_not_green_evidence():
+    """A commit where only the fast check has finished is unfinished, not
+    green: the slow check is the one that may still fail again."""
+    fast_only = ["Stateless tests (amd_debug, parallel)"]
+    rows = _commits(0, 0, 1, check_names=[fast_only, fast_only, fast_only])
+    assert job.already_fixed(FakeCIDB(rows), make_failure()) == ""
+
+
+def test_an_unfinished_commit_does_not_hide_older_full_green_evidence():
+    """Fully reported green commits behind an unfinished one are still newer
+    than every failure, so they still count."""
+    fast_only = ["Stateless tests (amd_debug, parallel)"]
+    full = make_failure().check_names
+    rows = _commits(0, 0, 0, 1, check_names=[fast_only, full, full, full])
+    fixed = job.already_fixed(FakeCIDB(rows), make_failure())
+    assert "the failure is gone" in fixed
+    assert "2 newest commits" in fixed
+
+
+def test_the_commit_history_window_opens_before_the_failure():
+    """The margin is what keeps a late rerun of a pre-regression commit from
+    losing its early runs to the cutoff and taking the rerun as its first
+    run."""
+    cidb = FakeCIDB([])
+    job.already_fixed(cidb, make_failure())
+    assert f"- INTERVAL {job.FIRST_RUN_LOOKBACK_HOURS} HOUR" in cidb.queries[0]
+
+
+def test_the_commits_carry_the_checks_they_reported_in():
+    cidb = FakeCIDB([])
+    job.already_fixed(cidb, make_failure())
+    assert "arraySort(groupUniqArray(50)(check_name)) AS check_names" in cidb.queries[0]
+
+
 def test_a_failure_on_the_newest_commit_blocks_older_green_evidence():
     """Green commits behind a failing one say nothing: the failure was still
     there after them."""
@@ -688,9 +782,10 @@ def test_the_later_commits_are_looked_up_for_the_same_test_in_the_same_checks():
     cidb = FakeCIDB(_commits(1))
     job.already_fixed(cidb, make_failure())
     query = cidb.queries[0]
-    # The window opens at the failure's *first* occurrence: its last one moves
-    # with every rerun of a bad commit, and a cutoff there can hide the very
-    # commits that fixed the failure.
+    # The window is anchored at the failure's *first* occurrence: its last one
+    # moves with every rerun of a bad commit, and a cutoff there can hide the
+    # very commits that fixed the failure. The lookback margin before it is
+    # what keeps each commit's first run its real one.
     assert "check_start_time >= toDateTime('2026-07-31 13:28:40')" in query
     # One row per commit, ordered by the commit's first run: a rerun moves a
     # commit's newest run but never its first.
