@@ -317,7 +317,7 @@ def main():
                 f"ln -sf /build/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"
             )
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats", verbose=True)
         # The sccache server sometimes fails to start because of issues with S3.
         # Start it explicitly with retries before cmake, since cmake can invoke
         # the compiler during configuration. Non-fatal: build can proceed without it.
@@ -443,7 +443,7 @@ def main():
 
         run_shell("sccache stats", "sccache --show-stats", verbose=True)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats", verbose=True)
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
             Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}")
             files.append(clang_tidy_cache_log)
@@ -451,6 +451,7 @@ def main():
                 "clang-tidy-cache.log stats",
                 f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
                 f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"',
+                verbose=True,
             )
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
