@@ -340,7 +340,6 @@ public:
 
     virtual void drop(ContextPtr) {}
 
-<<<<<<< HEAD
     virtual bool isBackgroundExecutable() const
     {
         return false;
@@ -358,11 +357,9 @@ public:
         return 0;
     }
 
-=======
     virtual bool isClusterSupported() const { return true; }
 
 private:
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";

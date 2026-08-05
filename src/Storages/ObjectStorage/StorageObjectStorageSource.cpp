@@ -746,7 +746,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     continue;
 
                 auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(
-                    object_info->getFileFormat().value_or(configuration->format));
+                    object_info->getFileFormat().value_or(configuration->getFormat()));
                 if (file_bucket_info)
                 {
                     auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
@@ -802,13 +802,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
-        const auto format_name = object_info->getFileFormat().value_or(configuration->format);
+        const auto format_name = object_info->getFileFormat().value_or(configuration->getFormat());
         const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
 
         CompressionMethod compression_method = {};
         if (input_format_does_not_read_file)
         {
-<<<<<<< HEAD
             /// `One` produces a single row per object without consuming the underlying `ReadBuffer`.
             read_buf = std::make_unique<EmptyReadBuffer>();
             compression_method = CompressionMethod::None;
@@ -816,21 +815,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
-            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
-=======
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->getCompressionMethod());
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
-<<<<<<< HEAD
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
-            compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
-=======
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->getCompressionMethod());
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
             read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
         }
 
@@ -861,7 +853,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// tables (e.g. Iceberg with Parquet + ORC files), table-level PREWHERE support
             /// may not match the individual file's format capabilities.
             /// See https://github.com/ClickHouse/ClickHouse/issues/96829
-            const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
+            const auto actual_format = object_info->getFileFormat().value_or(configuration->getFormat());
             const bool format_supports_prewhere =
                 FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings);
 
@@ -938,33 +930,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             "Reading object '{}', size: {} bytes, with format: {}",
             object_info->getPath(),
             object_info->getObjectMetadata()->size_bytes,
-<<<<<<< HEAD
             format_name);
-=======
-            object_info->getFileFormat().value_or(configuration->getFormat()));
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 
         logIcebergFileStats(object_info, log);
 
         InputFormatPtr input_format;
-<<<<<<< HEAD
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-=======
-        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
-            && (object_info->getFileFormat().value_or(configuration->getFormat()) == "Parquet")
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
             && !object_info->getObjectMetadata()->etag.empty())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
                 object_with_metadata->relative_path = object_info->getPath();
             input_format = FormatFactory::instance().getInputWithMetadata(
-<<<<<<< HEAD
                 format_name,
-=======
-                object_info->getFileFormat().value_or(configuration->getFormat()),
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
                 *read_buf,
                 initial_header,
                 context_,
@@ -983,11 +962,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else
         {
             input_format = FormatFactory::instance().getInput(
-<<<<<<< HEAD
             format_name,
-=======
-            object_info->getFileFormat().value_or(configuration->getFormat()),
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
             *read_buf,
             initial_header,
             context_,

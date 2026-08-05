@@ -1069,7 +1069,6 @@ def test_table_without_metadata_location(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
-<<<<<<< HEAD
 def test_check_database(started_cluster):
     """Test that CHECK DATABASE works with Glue catalog database."""
     node = started_cluster.instances["node1"]
@@ -1131,7 +1130,7 @@ def test_check_database(started_cluster):
             "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
-=======
+
 def test_namespace_filter(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1169,8 +1168,7 @@ def test_namespace_filter(started_cluster):
     node.query(f"DROP TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.{table_name}`")
     assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{namespace_prefix}bravo.{table_name}`")
 
-    
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+
 def test_sts_smoke(started_cluster):
     """Test that STS authentication works with Glue catalog using role_arn and role_session_name"""
     node = started_cluster.instances["node1"]

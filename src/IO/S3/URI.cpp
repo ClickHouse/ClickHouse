@@ -156,7 +156,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     validateKey(key, uri);
 }
 
-<<<<<<< HEAD
 bool URI::tryInitPathStyle()
 {
     /// Case when bucket name and key represented in the path of S3 URL.
@@ -212,7 +211,8 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     else
         storage_name = name;
     return true;
-=======
+}
+
 bool URI::isAWSRegion(std::string_view region)
 {
     /// List from https://docs.aws.amazon.com/general/latest/gr/s3.html
@@ -260,7 +260,6 @@ bool URI::isAWSRegion(std::string_view region)
         region = region.substr(3);
 
     return regions.contains(region);
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 }
 
 void URI::addRegionToURI(const std::string &region)

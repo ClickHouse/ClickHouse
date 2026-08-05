@@ -37,15 +37,10 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
-<<<<<<< HEAD
-=======
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString object_storage_cluster;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
-    extern const SettingsUInt64 lock_object_storage_task_distribution_ms;
-    extern const SettingsBool allow_experimental_iceberg_read_optimization;
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 }
 
 namespace ErrorCodes
@@ -474,30 +469,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         }
     }
 
-<<<<<<< HEAD
-    if (!endsWith(table_function->name, "Cluster"))
-    {
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-
-        /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
-        /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
-        /// (e.g. `s3Cluster`) and prepend the cluster name argument. This ensures that on the shard,
-        /// `TableFunctionObjectStorageCluster::executeImpl` is called, which correctly handles
-        /// `distributed_processing` for task-based file distribution from the initiator.
-        ///
-        /// Some table functions (e.g. `paimonLocal`, `deltaLakeLocal`) do not have a Cluster variant,
-        /// so we only rename when the target function actually exists.
-        const String cluster_function_name = table_function->name + "Cluster";
-        if (TableFunctionFactory::instance().isTableFunctionName(cluster_function_name))
-        {
-            args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
-            table_function->name = cluster_function_name;
-        }
-    }
-    else
-=======
     if (cluster_name_in_settings || !endsWith(table_function->name, "Cluster"))
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     {
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->getFormat(), context, /*with_structure=*/true);
 
@@ -597,18 +569,14 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
             new_metadata = *metadata_snapshot;
     }
 
-<<<<<<< HEAD
     setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         new_metadata.columns,
         query_context,
         /* format_settings */ std::nullopt,
-        configuration->partition_strategy_type)));
-=======
-    setInMemoryMetadata(new_metadata);
+        configuration->getPartitionStrategyType())));
 
     if (pure_storage)
         pure_storage->setInMemoryMetadata(IStorageCluster::getInMemoryMetadata());
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(

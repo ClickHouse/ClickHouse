@@ -24,8 +24,8 @@ struct PersistentTableComponents
     const CompressionMethod metadata_compression_method;
     const String table_path;
     const std::optional<String> table_uuid;
-<<<<<<< HEAD
     const IcebergPathResolver path_resolver;
+    const String common_namespace;
 
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
     /// (`table_path` and `table_uuid`).
@@ -37,9 +37,6 @@ struct PersistentTableComponents
         if (table_uuid.has_value())
             metadata_cache->remove(*table_uuid);
     }
-=======
-    const String common_namespace;
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 };
 
 }

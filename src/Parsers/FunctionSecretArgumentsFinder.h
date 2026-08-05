@@ -102,20 +102,14 @@ protected:
             result.start = real_index;
             result.are_named = argument_is_named;
         }
-<<<<<<< HEAD
         chassert(result.replacement.empty()); /// We shouldn't use replacement with masking other arguments
         /// Widen the masked range to cover `index`. Arguments are normally marked consecutively in
         /// increasing order, but a malformed query can mix the named secret form (`key = ...`) with the
         /// positional form and ask to mask an earlier index after a later one. Masking is best-effort
         /// over arbitrary user input, so it must widen the range rather than assert on the order.
-        size_t end = std::max(result.start + result.count, index + 1);
-        result.start = std::min(result.start, index);
+        size_t end = std::max(result.start + result.count, real_index + 1);
+        result.start = std::min(result.start, real_index);
         result.count = end - result.start;
-=======
-        chassert(real_index >= result.start); /// We always check arguments consecutively
-        chassert(result.replacement.empty()); /// We shouldn't use replacement with masking other arguments
-        result.count = real_index + 1 - result.start;
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
         if (!argument_is_named)
             result.are_named = false;
     }
@@ -142,27 +136,17 @@ protected:
             findIcebergFunctionSecretArguments(/* is_cluster_function= */ true);
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
-<<<<<<< HEAD
                  (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
-                 (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3") ||
+                 (function->name() == "gcs") || (function->name() == "icebergS3") ||
                  (function->name() == "paimon") || (function->name() == "paimonS3"))
-=======
-                 (function->name() == "deltaLake") || (function->name() == "hudi") ||
-                 (function->name() == "gcs") || (function->name() == "icebergS3") || (function->name() == "paimon") ||
-                 (function->name() == "paimonS3"))
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
         else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
                  (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-<<<<<<< HEAD
-                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster") ||
+                 (function ->name() == "icebergS3Cluster") ||
                  (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster"))
-=======
-                 (function ->name() == "icebergS3Cluster"))
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);

@@ -108,11 +108,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "partition_strategy",
     "partition_columns_in_data_file",
     "storage_class_name",
-<<<<<<< HEAD
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
-=======
     "storage_type",
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials

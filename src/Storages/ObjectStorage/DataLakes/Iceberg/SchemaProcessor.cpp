@@ -300,11 +300,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-<<<<<<< HEAD
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, bool allow_geo_parser)
-=======
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, ContextPtr context_)
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, ContextPtr context_, bool allow_geo_parser)
 {
     if (type_name == f_boolean)
         return DataTypeFactory::instance().get("Bool");
@@ -323,18 +319,14 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, Cont
     if (type_name == f_timestamp)
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
-<<<<<<< HEAD
-        return std::make_shared<DataTypeDateTime64>(6, "UTC");
-    if (type_name == f_timestamp_ns)
-        return std::make_shared<DataTypeDateTime64>(9);
-    if (type_name == f_timestamptz_ns)
-        return std::make_shared<DataTypeDateTime64>(9, "UTC");
-=======
     {
         std::string timezone = context_->getSettingsRef()[Setting::iceberg_timezone_for_timestamptz];
         return std::make_shared<DataTypeDateTime64>(6, timezone);
     }
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+    if (type_name == f_timestamp_ns)
+        return std::make_shared<DataTypeDateTime64>(9);
+    if (type_name == f_timestamptz_ns)
+        return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
 
@@ -444,13 +436,8 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
-<<<<<<< HEAD
-        auto data_type = getSimpleType(type_name, allow_geo_parser);
+        auto data_type = getSimpleType(type_name, context_, allow_geo_parser);
         return required || !data_type->canBeInsideNullable() ? data_type : makeNullable(data_type);
-=======
-        auto data_type = getSimpleType(type_name, context_);
-        return required ? data_type : makeNullable(data_type);
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());

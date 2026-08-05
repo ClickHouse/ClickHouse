@@ -22,17 +22,12 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
-<<<<<<< HEAD
-#include <optional>
-=======
-#include <Formats/FormatParserSharedResources.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Disks/DiskType.h>
-
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+#include <optional>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -182,32 +177,19 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const std::optional<FormatSettings> & format_settings) override
     {
-<<<<<<< HEAD
-        assertInitialized();
-        current_metadata->mutate(commands, storage_ptr, context, storage_id, metadata_snapshot, catalog, format_settings);
-=======
         assertInitializedDL();
-        current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+        current_metadata->mutate(commands, storage_ptr, context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
     void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
     {
-<<<<<<< HEAD
         lazyInitializeIfNeeded(object_storage, context);
-=======
-        assertInitializedDL();
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
         current_metadata->checkMutationIsPossible(commands);
     }
 
     void checkAlterIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const AlterCommands & commands) override
     {
-<<<<<<< HEAD
         lazyInitializeIfNeeded(object_storage, context);
-=======
-        assertInitializedDL();
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
         current_metadata->checkAlterIsPossible(commands);
     }
 
@@ -218,14 +200,8 @@ public:
         const StorageID & storage_id,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
-<<<<<<< HEAD
         lazyInitializeIfNeeded(object_storage, context);
         current_metadata->alter(params, context, storage_id, catalog);
-=======
-        assertInitializedDL();
-        current_metadata->alter(params, context);
-
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
@@ -391,7 +367,6 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
-<<<<<<< HEAD
 #if USE_AVRO && USE_PARQUET
         if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed
             || (*settings)[DataLakeStorageSetting::storage_catalog_url].changed
@@ -408,56 +383,13 @@ public:
             return nullptr;
         return datalake_database->getCatalog();
 #else
-=======
-#if USE_AWS_S3 && USE_AVRO
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
-        {
-            auto catalog_parameters = DataLake::CatalogSettings{
-                .storage_endpoint = (*settings)[DataLakeStorageSetting::object_storage_endpoint].value,
-                .aws_access_key_id = (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].value,
-                .aws_secret_access_key = (*settings)[DataLakeStorageSetting::storage_aws_secret_access_key].value,
-                .region = (*settings)[DataLakeStorageSetting::storage_region].value,
-                .namespaces = catalog_namespaces,
-                .aws_role_arn = (*settings)[DataLakeStorageSetting::storage_aws_role_arn].value,
-                .aws_role_session_name = (*settings)[DataLakeStorageSetting::storage_aws_role_session_name].value
-            };
-
-            return std::make_shared<DataLake::GlueCatalog>(
-                (*settings)[DataLakeStorageSetting::storage_catalog_url].value,
-                context,
-                catalog_parameters,
-                /* table_engine_definition */nullptr
-            );
-        }
-        /// Attach condition is provided for compatibility.
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::ICEBERG_REST ||
-            (is_attach && (*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::NONE && !(*settings)[DataLakeStorageSetting::storage_catalog_url].value.empty()))
-        {
-            return std::make_shared<DataLake::RestCatalog>(
-                (*settings)[DataLakeStorageSetting::storage_warehouse].value,
-                (*settings)[DataLakeStorageSetting::storage_catalog_url].value,
-                (*settings)[DataLakeStorageSetting::storage_catalog_credential].value,
-                (*settings)[DataLakeStorageSetting::storage_auth_scope].value,
-                (*settings)[DataLakeStorageSetting::storage_auth_header],
-                (*settings)[DataLakeStorageSetting::storage_oauth_server_uri].value,
-                (*settings)[DataLakeStorageSetting::storage_oauth_server_use_request_body].value,
-                catalog_namespaces,
-                context);
-        }
-
-#endif
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
         return nullptr;
 #endif
     }
 
     bool optimize(ObjectStoragePtr object_storage, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
     {
-<<<<<<< HEAD
         lazyInitializeIfNeeded(object_storage, context);
-=======
-        assertInitializedDL();
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
@@ -895,8 +827,8 @@ public:
     ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
         { return getImpl().getColumnMapperForCurrentSchema(storage_metadata_snapshot, context); }
 
-    std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr context, bool is_attach) const override
-        { return getImpl().getCatalog(context, is_attach); }
+    std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr context, const StorageID & table_id) const override
+        { return getImpl().getCatalog(context, table_id); }
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
         { return getImpl().optimize(metadata_snapshot, context, format_settings); }

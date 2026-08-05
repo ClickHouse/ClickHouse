@@ -447,54 +447,14 @@ def create_iceberg_table(
     run_on_cluster=False,
     format="Parquet",
     order_by="",
-<<<<<<< HEAD
     settings=None,
-    **kwargs,
-):
-    node.query(
-        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster=run_on_cluster, **kwargs),
-        settings=settings,
-    )
-=======
     object_storage_cluster=False,
     **kwargs,
 ):
-    if 'output_format_parquet_use_custom_encoder' in kwargs:
-        node.query(
-            get_creation_expression(
-                storage_type,
-                table_name,
-                cluster,
-                schema,
-                format_version,
-                partition_by,
-                if_not_exists,
-                compression_method,
-                format,
-                order_by,
-                run_on_cluster=run_on_cluster,
-                object_storage_cluster=object_storage_cluster,
-                **kwargs),
-            settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
-        )
-    else:
-        node.query(
-            get_creation_expression(
-                storage_type,
-                table_name,
-                cluster,
-                schema,
-                format_version,
-                partition_by,
-                if_not_exists,
-                compression_method,
-                format,
-                order_by,
-                run_on_cluster=run_on_cluster,
-                object_storage_cluster=object_storage_cluster,
-                **kwargs),
-        )
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+    node.query(
+        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster=run_on_cluster, object_storage_cluster=object_storage_cluster, **kwargs),
+        settings=settings,
+    )
 
 
 def drop_iceberg_table(

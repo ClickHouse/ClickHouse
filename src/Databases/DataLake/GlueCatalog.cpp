@@ -58,16 +58,13 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
-<<<<<<< HEAD
     extern const int FAULT_INJECTED;
+    extern const int CATALOG_NAMESPACE_DISABLED;
 }
 
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
-=======
-    extern const int CATALOG_NAMESPACE_DISABLED;
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 }
 
 namespace DB::Setting

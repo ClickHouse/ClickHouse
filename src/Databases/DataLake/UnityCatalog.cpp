@@ -19,11 +19,8 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
-<<<<<<< HEAD
     extern const int BAD_ARGUMENTS;
-=======
     extern const int CATALOG_NAMESPACE_DISABLED;
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 }
 
 namespace

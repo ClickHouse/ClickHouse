@@ -633,7 +633,6 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 - The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
 :::
 
-<<<<<<< HEAD
 ### Remove Orphan Files {#iceberg-remove-orphan-files}
 
 Orphan files are files on storage that are not referenced by any snapshot in the Iceberg table metadata. They accumulate from failed writes, partial cleanup after compaction, and interrupted operations, causing unbounded storage growth. The `remove_orphan_files` command identifies and removes these orphan files.
@@ -715,7 +714,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 - Use `dry_run = 1` to preview orphan files before deletion
 - The `older_than` threshold protects against deleting files from in-progress writes — the default 3-day threshold provides a generous safety margin
 :::
-=======
+
 ## Altinity Antalya branch
 
 ### Specify storage type in arguments
@@ -756,7 +755,6 @@ iceberg(named_collection[, option=value [,..]])
 ```
 
 The default value for `storage_type` is `s3`.
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 
 ## See Also {#see-also}
 

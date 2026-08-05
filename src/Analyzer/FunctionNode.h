@@ -9,11 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <Parsers/NullsAction.h>
-<<<<<<< HEAD
-=======
-#include <Common/typeid_cast.h>
 #include <Common/SettingsChanges.h>
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 
 namespace DB
 {

@@ -82,15 +82,10 @@ class IcebergSchemaProcessor : private WithContext
     using Node = ActionsDAG::Node;
 
 public:
-<<<<<<< HEAD
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
-
-    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
-=======
-    explicit IcebergSchemaProcessor(ContextPtr context_) : WithContext(context_) {}
+    explicit IcebergSchemaProcessor(ContextPtr context_, bool allow_geo_parser_ = false)
+        : WithContext(context_), allow_geo_parser(allow_geo_parser_) {}
 
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_);
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(ContextPtr context_, Int32 old_id, Int32 new_id);
     NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
@@ -100,11 +95,7 @@ public:
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickhouseTableSchemaById(Int32 id) const;
 
-<<<<<<< HEAD
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
-=======
-    static DataTypePtr getSimpleType(const String & type_name, ContextPtr context_);
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+    static DataTypePtr getSimpleType(const String & type_name, ContextPtr context_, bool allow_geo_parser = true);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 

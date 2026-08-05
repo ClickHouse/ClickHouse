@@ -133,13 +133,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-<<<<<<< HEAD
-CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
-=======
-SET allow_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
 CREATE DATABASE {name} ENGINE = {engine}('{BASE_URL}', 'minio', '{minio_secret_key}')
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """,
         settings={
@@ -291,7 +285,6 @@ def test_list_tables(started_cluster, engine):
     )
 
 
-<<<<<<< HEAD
 def test_check_database(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -356,11 +349,8 @@ def test_check_database(started_cluster):
         )
 
 
-def test_many_namespaces(started_cluster):
-=======
 @pytest.mark.parametrize("engine", AVAILABLE_ENGINES)
 def test_many_namespaces(started_cluster, engine):
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     node = started_cluster.instances["node1"]
     root_namespace_1 = f"A_{uuid.uuid4()}"
     root_namespace_2 = f"B_{uuid.uuid4()}"
@@ -450,7 +440,6 @@ def test_hide_sensitive_info(started_cluster, engine):
 
     create_table(catalog, namespace, table_name)
 
-<<<<<<< HEAD
     def check_secret_hidden(secret, additional_settings):
         settings = {
             "catalog_type": "rest",
@@ -462,7 +451,7 @@ def test_hide_sensitive_info(started_cluster, engine):
         node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
         try:
             node.query(
-                f"""CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+                f"""CREATE DATABASE {CATALOG_NAME} ENGINE = {engine}('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}""",
                 settings={
                     "allow_database_iceberg": 1,
@@ -506,23 +495,6 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
             "allow_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
-=======
-    create_clickhouse_iceberg_database(
-        started_cluster,
-        node,
-        CATALOG_NAME,
-        additional_settings={"catalog_credential": "SECRET_1"},
-        engine=engine,
-    )
-    assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
-
-    create_clickhouse_iceberg_database(
-        started_cluster,
-        node,
-        CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
-        engine=engine,
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     )
 
     qid_table = uuid.uuid4().hex
@@ -1227,7 +1199,6 @@ def test_gcs(started_cluster):
         assert "Google cloud storage converts to S3" in str(err.value)
 
 
-<<<<<<< HEAD
 def test_invalid_auth_header_format(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1325,9 +1296,6 @@ def test_iceberg_file_progress_callback(started_cluster):
     )
 
 
-# TODO - turn on after merge alternative syntax
-def _test_cluster_joins(started_cluster):
-=======
 def test_namespace_filter(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1394,8 +1362,8 @@ def test_namespace_filter(started_cluster):
     assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.a2.{table_name}`")
 
 
-def test_cluster_joins(started_cluster):
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+# TODO - turn on after merge alternative syntax
+def _test_cluster_joins(started_cluster):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_join_tables_{uuid.uuid4()}"

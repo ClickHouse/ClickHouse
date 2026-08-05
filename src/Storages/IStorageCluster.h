@@ -58,12 +58,10 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
-<<<<<<< HEAD
     const String & getClusterName() const { return cluster_name; }
-=======
+
     const String & getOriginalClusterName() const { return cluster_name; }
     virtual String getClusterName(ContextPtr /* context */) const { return getOriginalClusterName(); }
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 
 protected:
     virtual void updateQueryToSendIfNeeded(

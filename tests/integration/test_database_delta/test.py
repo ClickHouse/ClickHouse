@@ -956,7 +956,6 @@ FROM {db_name}.`{schema_name}.{table_name}`
     )
 
 
-<<<<<<< HEAD
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_varchar_char_types_via_unity_catalog(started_cluster, use_delta_kernel):
     """
@@ -1030,7 +1029,8 @@ SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false
         .strip()
     )
     assert row == "1\thello varchar\thello char"
-=======
+
+
 def test_namespace_filter(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1068,4 +1068,3 @@ def test_namespace_filter(started_cluster):
 
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}alpha.{table_name}`") == "0\n"
     assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}bravo.{table_name}`")
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)

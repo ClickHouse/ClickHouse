@@ -97,18 +97,6 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     query_settings.throw_on_zero_files_match = false;
     query_settings.ignore_non_existent_file = true;
 
-<<<<<<< HEAD
-=======
-    bool local_distributed_processing = distributed_processing;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        local_distributed_processing = false;
-
-    const auto path = configuration->getRawPath();
-
-    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
-        return path.path;
-
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
@@ -443,7 +431,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         new_metadata.columns,
         query_context,
         format_settings,
-        configuration->partition_strategy_type)));
+        configuration->getPartitionStrategyType())));
 }
 
 

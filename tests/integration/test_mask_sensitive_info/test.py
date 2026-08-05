@@ -294,15 +294,7 @@ def test_create_table():
         f"AzureQueue('{azure_conn_string}', 'cont', '*', 'CSV') SETTINGS mode = 'unordered', after_processing = 'move', after_processing_move_connection_string = '{azure_sas_conn_string}', after_processing_move_container = 'chprocessed'",
         f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV') SETTINGS mode = 'unordered'",
         f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none') SETTINGS mode = 'unordered'",
-<<<<<<< HEAD
         "AzureBlobStorage('BlobEndpoint=https://my-endpoint/;SharedAccessSignature=sp=r&st=2025-09-29T14:58:11Z&se=2025-09-29T00:00:00Z&spr=https&sv=2022-11-02&sr=c&sig=SECRET%SECRET%SECRET%SECRET', 'exampledatasets', 'example.csv')",
-        f"S3('https://my-s3-endpoint/bucket/data.csv', 'myaccess', '{password}', 'CSV')",
-=======
-        (
-            f"AzureBlobStorage('BlobEndpoint=https://my-endpoint/;SharedAccessSignature=sp=r&st=2025-09-29T14:58:11Z&se=2025-09-29T00:00:00Z&spr=https&sv=2022-11-02&sr=c&sig=SECRET%SECRET%SECRET%SECRET', 'exampledatasets', 'example.csv')",
-            "STD_EXCEPTION",
-        ),
-
         f"AzureBlobStorage(named_collection_2, connection_string = '{azure_conn_string}', container = 'cont', blob_path = 'test_simple_7.csv', format = 'CSV')",
         f"AzureBlobStorage(named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_8.csv', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '{azure_account_key}')",
@@ -316,8 +308,7 @@ def test_create_table():
         f"Iceberg(storage_type='azure', '{azure_storage_account_url}', 'cont', 'test_simple_5_{table_suffix}.csv', '{azure_account_name}', '{azure_account_key}')",
         f"Iceberg(storage_type='azure', named_collection_2, connection_string = '{azure_conn_string}', container = 'cont', blob_path = 'test_simple_6_{table_suffix}.csv', format = 'CSV')",
         f"Iceberg(storage_type='azure', named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_7_{table_suffix}.csv', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
-
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+        f"S3('https://my-s3-endpoint/bucket/data.csv', 'myaccess', '{password}', 'CSV')",
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@'",
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@domain.com'",
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '{password}', compression_method = 'gzip')",
@@ -420,9 +411,6 @@ def test_create_table():
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV') SETTINGS mode = 'unordered'"),
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none') SETTINGS mode = 'unordered'"),
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureBlobStorage('{masked_sas_conn_string}', 'exampledatasets', 'example.csv')"),
-<<<<<<< HEAD
-            generate_create_table_numbered("(`x` int) ENGINE = S3('https://my-s3-endpoint/bucket/data.csv', 'myaccess', '[HIDDEN]', 'CSV')"),
-=======
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureBlobStorage(named_collection_2, connection_string = '{masked_azure_conn_string}', container = 'cont', blob_path = 'test_simple_7.csv', format = 'CSV')"),
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureBlobStorage(named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_8.csv', account_name = '{azure_account_name}', account_key = '[HIDDEN]')"),
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '[HIDDEN]')"),
@@ -436,7 +424,7 @@ def test_create_table():
             generate_create_table_numbered(f"(`x` int) ENGINE = Iceberg(storage_type = 'azure', '{azure_storage_account_url}', 'cont', 'test_simple_5_{table_suffix}.csv', '{azure_account_name}', '[HIDDEN]')"),
             generate_create_table_numbered(f"(`x` int) ENGINE = Iceberg(storage_type = 'azure', named_collection_2, connection_string = '{masked_azure_conn_string}', container = 'cont', blob_path = 'test_simple_6_{table_suffix}.csv', format = 'CSV')"),
             generate_create_table_numbered(f"(`x` int) ENGINE = Iceberg(storage_type = 'azure', named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_7_{table_suffix}.csv', account_name = '{azure_account_name}', account_key = '[HIDDEN]')"),
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+            generate_create_table_numbered("(`x` int) ENGINE = S3('https://my-s3-endpoint/bucket/data.csv', 'myaccess', '[HIDDEN]', 'CSV')"),
             generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@'"),
             generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@domain.com'"),
             generate_create_table_numbered("(`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '[HIDDEN]', compression_method = 'gzip')"),
@@ -698,30 +686,6 @@ def test_table_functions():
             "CREATE TABLE tablefunc39 (`x` int) AS iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc40 (`x` int) AS iceberg(named_collection_2, url = 'http://minio1:9001/root/data/test4.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]')",
             "CREATE TABLE tablefunc41 (`x` int) AS icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-<<<<<<< HEAD
-            f"CREATE TABLE tablefunc42 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
-            f"CREATE TABLE tablefunc43 (`x` int) AS deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
-            "CREATE TABLE tablefunc44 (`x` int) AS hudi('http://minio1:9001/root/data/test7.csv', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc45 (`x` int) AS arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
-            "CREATE TABLE tablefunc46 (`x` int) AS arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
-            "CREATE TABLE tablefunc47 (`x` int) AS arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
-            "CREATE TABLE tablefunc48 (`x` int) AS url('https://username:[HIDDEN]@domain.com/path', 'CSV')",
-            "CREATE TABLE tablefunc49 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
-            "CREATE TABLE tablefunc50 (`x` int) AS jdbc('[HIDDEN]', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc51 (`x` int) AS odbc('[HIDDEN]', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc52 (`x` int) AS jdbc('jdbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc53 (`x` int) AS odbc('odbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc54 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]')",
-            "CREATE TABLE tablefunc55 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
-            "CREATE TABLE tablefunc56 (`x` int) AS jdbc(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb')",
-            "CREATE TABLE tablefunc57 (`x` int) AS odbc(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb')",
-            "CREATE TABLE tablefunc58 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]')",
-            "CREATE TABLE tablefunc59 (`x` int) AS jdbc(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]')",
-            "CREATE TABLE tablefunc60 (`x` int) AS deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc61 (`x` int) AS paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc62 (`x` int) AS paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            f"CREATE TABLE tablefunc63 (`x` int) AS paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
-=======
             "CREATE TABLE tablefunc42 (`x` int) AS icebergS3(named_collection_2, url = 'http://minio1:9001/root/data/test4.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]')",
             f"CREATE TABLE tablefunc43 (`x` int) AS icebergAzure('{masked_azure_conn_string}', 'cont', 'test_simple.csv')",
             f"CREATE TABLE tablefunc44 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple.csv', '{azure_account_name}', '[HIDDEN]')",
@@ -743,7 +707,20 @@ def test_table_functions():
             "CREATE TABLE tablefunc60 (`x` int) AS arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
             "CREATE TABLE tablefunc61 (`x` int) AS url('https://username:[HIDDEN]@domain.com/path', 'CSV')",
             "CREATE TABLE tablefunc62 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+            "CREATE TABLE tablefunc63 (`x` int) AS jdbc('[HIDDEN]', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc64 (`x` int) AS odbc('[HIDDEN]', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc65 (`x` int) AS jdbc('jdbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc66 (`x` int) AS odbc('odbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc67 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]')",
+            "CREATE TABLE tablefunc68 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
+            "CREATE TABLE tablefunc69 (`x` int) AS jdbc(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb')",
+            "CREATE TABLE tablefunc70 (`x` int) AS odbc(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb')",
+            "CREATE TABLE tablefunc71 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]')",
+            "CREATE TABLE tablefunc72 (`x` int) AS jdbc(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]')",
+            "CREATE TABLE tablefunc73 (`x` int) AS deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc74 (`x` int) AS paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc75 (`x` int) AS paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            f"CREATE TABLE tablefunc76 (`x` int) AS paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
         ],
         must_not_contain=[password],
     )

@@ -55,8 +55,8 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-<<<<<<< HEAD
     extern const int FAULT_INJECTED;
+    extern const int CATALOG_NAMESPACE_DISABLED;
 }
 
 namespace DB::Setting
@@ -67,9 +67,6 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
-=======
-    extern const int CATALOG_NAMESPACE_DISABLED;
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
 }
 
 namespace DataLake
@@ -650,14 +647,12 @@ bool RestCatalog::empty() const
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
-<<<<<<< HEAD
         if (found_table)
             return true;
 
-=======
         if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
             return false;
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+
         const auto tables = getTables(namespace_name, /* limit */1);
         if (!tables.empty())
             found_table = true;
@@ -1128,16 +1123,10 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
-<<<<<<< HEAD
         const bool allow_geo_parser
             = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
-        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
-=======
-        // int format_version = metadata_object->getValue<int>("format-version");
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(context_);
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(context_, allow_geo_parser);
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, context_, log);
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
         auto schema = schema_processor.getClickhouseTableSchemaById(id);
         result.setSchema(*schema);
     }

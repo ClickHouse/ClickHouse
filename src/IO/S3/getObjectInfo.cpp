@@ -9,11 +9,7 @@ namespace ProfileEvents
 {
     extern const Event S3GetObjectTagging;
     extern const Event S3HeadObject;
-<<<<<<< HEAD
-=======
     extern const Event S3HeadObjectMicroseconds;
-    extern const Event DiskS3GetObject;
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
     extern const Event DiskS3GetObjectTagging;
     extern const Event DiskS3HeadObject;
 }

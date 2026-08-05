@@ -112,13 +112,8 @@ void insertRowToLogTable(
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
             .table_path = table_path,
-<<<<<<< HEAD
             .file_path = file_path.serialize(),
-            .metadata_content = row,
-=======
-            .file_path = file_path,
             .metadata_content = get_row(),
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
             .row_in_file = row_in_file,
             .pruning_status = pruning_status});
 }

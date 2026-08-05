@@ -47,15 +47,13 @@ struct URI
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
 
-<<<<<<< HEAD
-private:
-    bool tryInitPathStyle();
-    bool tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern);
-=======
     /// Returns true if 'region' string is an AWS S3 region
     /// https://docs.aws.amazon.com/general/latest/gr/s3.html
     static bool isAWSRegion(std::string_view region);
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
+
+private:
+    bool tryInitPathStyle();
+    bool tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern);
 };
 
 }

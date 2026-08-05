@@ -1352,7 +1352,6 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_par
         cluster_full_traffic = int(cluster_full_traffic)
         assert cluster_full_traffic == full_traffic
 
-<<<<<<< HEAD
     cluster_optimized_traffic = node.query(
         f"""
         SELECT sum(ProfileEvents['{event}'])
@@ -1434,8 +1433,6 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
             )
         node.query(f"DROP TABLE IF EXISTS {dst_table}")
         node.query(f"DROP TABLE IF EXISTS {iceberg_table}")
-=======
-    assert errors == 0
 
 
 def test_object_storage_remote_initiator_without_cluster_function(started_cluster):
@@ -1532,4 +1529,3 @@ def test_object_storage_remote_initiator_without_cluster_function(started_cluste
     assert users[1:] == ["s0_0_0\tdefault",
                      "s0_0_1\tfoo",
                      "s0_1_0\tfoo"]
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)

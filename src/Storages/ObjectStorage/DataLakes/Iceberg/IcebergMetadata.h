@@ -102,10 +102,7 @@ public:
     static Int32 parseTableSchema(
         const Poco::JSON::Object::Ptr & metadata_object,
         Iceberg::IcebergSchemaProcessor & schema_processor,
-<<<<<<< HEAD
-=======
         ContextPtr context_,
->>>>>>> ff71e89ea9e (Merge pull request #1640 from Altinity/frontport/antalya-26.3/alternative_syntax)
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
