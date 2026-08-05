@@ -28,9 +28,7 @@ doc_type: 'guide'
 Вы можете выполнить следующие шаги либо в Python REPL, либо с помощью скрипта.
 
 <Steps>
-  <Step>
-    ## Установка библиотек
-
+  <Step title="Установка библиотек" id="install-libraries">
     Установите необходимые библиотеки, выполнив следующие команды:
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Укажите учетные данные
-
+  <Step title="Укажите учетные данные" id="setup-credentials">
     Далее вам потребуется указать свой API-ключ Anthropic:
 
     ```python
@@ -61,9 +57,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## Инициализация MCP-сервера
-
+  <Step title="Инициализация MCP-сервера" id="initialize-mcp-and-agent">
     Теперь настройте MCP-сервер ClickHouse так, чтобы он указывал на Песочницу ClickHouse.
     Вам потребуется преобразовать их из функций Python в инструменты Llama Index:
 
@@ -95,9 +89,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Создайте агента
-
+  <Step title="Создайте агента" id="create-agent">
     Теперь вы готовы создать агента, у которого есть доступ к этим инструментам. Установите максимальное
     число вызовов инструментов за один запуск равным 10. При необходимости этот параметр можно изменить:
 
@@ -112,9 +104,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Инициализируйте LLM
-
+  <Step title="Инициализируйте LLM" id="initialize-llm">
     Инициализируйте модель Claude Sonnet 4.0 с помощью следующего кода:
 
     ```python
@@ -123,27 +113,26 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Запустите агент
-
+  <Step title="Запустите агент" id="run-agent">
     Теперь вы можете задать агенту вопрос:
 
     ```python
     response = agent.query("What's the most popular repository?")
     ```
 
-    Ответ довольно длинный, поэтому в примере ниже он сокращён:
+    Ответ довольно длинный, поэтому в примере
+    ниже он сокращён:
 
     ```response title="Response"
     Added user message to memory: What's the most popular repository?
     === LLM Response ===
-    Я помогу вам найти самый популярный репозиторий. Сначала давайте изучим доступные базы данных и таблицы, чтобы понять структуру данных.
+    I'll help you find the most popular repository. Let me first explore the available databases and tables to understand the data structure.
     === Calling Function ===
     Calling function: list_databases with args: {}
     === Function Output ===
     meta=None content=[TextContent(type='text', text='amazon\nbluesky\ncountry\ncovid\ndefault\ndns\nenvironmental\nfood\nforex\ngeo\ngit\ngithub\nhackernews\nimdb\nlogs\nmetrica\nmgbench\nmta\nnoaa\nnyc_taxi\nnypd\nontime\nopensky\notel\notel_v2\npypi\nrandom\nreddit\nrubygems\nstackoverflow\nstar_schema\nstock\nsystem\ntw_weather\ntwitter\nuk\nwiki\nwords\nyoutube', annotations=None)] isError=False
     === LLM Response ===
-    Я вижу базу данных `github`, которая, вероятно, содержит данные о репозиториях. Давайте изучим таблицы в этой базе данных.
+    I can see there's a `github` database which likely contains repository data. Let me explore the tables in that database.
     === Calling Function ===
     Calling function: list_tables with args: {"database": "github"}
     === Function Output ===
@@ -151,9 +140,9 @@ doc_type: 'guide'
     ...
     ...
     === LLM Response ===
-    На основе данных GitHub **самым популярным репозиторием является `sindresorhus/awesome`** с **402 292 звёздами**.
+    Based on the GitHub data, **the most popular repository is `sindresorhus/awesome`** with **402,292 stars**.
 
-    Топ-10 самых популярных репозиториев по количеству звёзд:
+    Here are the top 10 most popular repositories by star count:
 
     1. **sindresorhus/awesome** - 402,292 stars
     2. **996icu/996.ICU** - 388,413 stars  
@@ -166,7 +155,7 @@ doc_type: 'guide'
     9. **vinta/awesome-python** - 269,320 stars
     10. **freeCodeCamp/freeCodeCamp** - 261,824 stars
 
-    Репозиторий `sindresorhus/awesome` — это тщательно составленный список «awesome»-списков, что и объясняет его популярность: он служит исчерпывающим каталогом ресурсов по самым разным темам в области разработки программного обеспечения.
+    The `sindresorhus/awesome` repository is a curated list of awesome lists, which explains its popularity as it serves as a comprehensive directory of resources across many different topics in software development.
     ```
   </Step>
 </Steps>

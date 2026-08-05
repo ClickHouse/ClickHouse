@@ -14,32 +14,30 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
 </Warning>
 
 <Steps>
-  <Step>
-    ## راجع التوصيات
-
+  <Step title="راجع التوصيات" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## التثبيت باستخدام صيغة Homebrew المجتمعية
-
+  <Step title="التثبيت باستخدام صيغة Homebrew المجتمعية" id="install-using-community-homebrew-formula">
     لتثبيت ClickHouse على macOS باستخدام [Homebrew](https://brew.sh/)، يمكنك استخدام
-    [صيغة Homebrew](https://formulae.brew.sh/cask/clickhouse) المجتمعية الخاصة بـ ClickHouse.
+    ClickHouse community [صيغة Homebrew](https://formulae.brew.sh/cask/clickhouse).
 
     ```bash
     brew install --cask clickhouse
     ```
   </Step>
 
-  <Step>
-    ## إصلاح خطأ تعذّر التحقق من المطوّر في macOS
-
+  <Step title="إصلاح خطأ تعذّر التحقق من المطوّر في macOS" id="fix-developer-verification-error-macos">
     إذا ثبّتَّ ClickHouse باستخدام `brew`، فقد تواجه خطأً من macOS.
     بشكل افتراضي، لا يشغّل macOS التطبيقات أو الأدوات التي أنشأها مطوّر لا يمكن التحقق منه.
 
     عند محاولة تشغيل أي أمر `clickhouse`، قد يظهر لك هذا الخطأ:
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="مربع حوار خطأ تعذّر التحقق من المطوّر في macOS" border />
+    <div className="ch-image-sm">
+      <Frame>
+        <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" alt="مربع حوار خطأ تعذّر التحقق من المطوّر في macOS" />
+      </Frame>
+    </div>
 
     لتجاوز خطأ التحقق هذا، تحتاج إلى إزالة التطبيق من quarantine bin في macOS، إما بالعثور على الإعداد المناسب في نافذة System Settings، أو باستخدام الطرفية، أو عبر إعادة تثبيت ClickHouse.
 
@@ -51,13 +49,21 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
 
     2. انتقل إلى **Privacy &amp; Security**:
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="العرض الافتراضي لإعدادات Privacy & Security في macOS" border />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" alt="العرض الافتراضي لإعدادات Privacy & Security في macOS" />
+      </Frame>
+    </div>
 
     3. مرّر إلى أسفل النافذة للعثور على رسالة تفيد بأن *&quot;clickhouse-macos-aarch64&quot;* تم حظره لأنه ليس من مطوّر معروف.
 
     4. انقر على **Allow Anyway**.
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="إعدادات Privacy & Security في macOS التي تعرض زر Allow Anyway" border />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" alt="إعدادات Privacy & Security في macOS التي تعرض زر Allow Anyway" />
+      </Frame>
+    </div>
 
     5. أدخل كلمة مرور مستخدم macOS الخاصة بك.
 
@@ -102,9 +108,7 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## إصلاح المشكلة بإعادة تثبيت ClickHouse
-
+  <Step title="إصلاح المشكلة بإعادة تثبيت ClickHouse" id="fix-issue">
     يوفّر Brew خيارًا في سطر الأوامر يتجنب وضع binaries المثبّتة في quarantine bin من الأساس.
 
     أولًا، أزل تثبيت ClickHouse:

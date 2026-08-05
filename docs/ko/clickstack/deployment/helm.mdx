@@ -51,17 +51,13 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
 <br />
 
 <Steps>
-  <Step>
-    ### 사전 요구 사항
-
+  <Step title="사전 요구 사항" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * Kubernetes 클러스터(v1.20+ 권장)
     * `kubectl`이 클러스터와 통신할 수 있도록 구성되어 있음
   </Step>
 
-  <Step>
-    ### ClickStack Helm 리포지토리 추가
-
+  <Step title="ClickStack Helm 리포지토리 추가" id="add-the-clickstack-helm-repository">
     ClickStack Helm 리포지토리를 추가하세요:
 
     ```shell
@@ -70,9 +66,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
     ```
   </Step>
 
-  <Step>
-    ### 오퍼레이터 설치
-
+  <Step title="오퍼레이터 설치" id="install-the-operators">
     먼저 오퍼레이터 차트를 설치합니다. 그러면 메인 차트에 필요한 CRD가 등록됩니다:
 
     ```shell
@@ -86,9 +80,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
     ```
   </Step>
 
-  <Step>
-    ### ClickStack 설치
-
+  <Step title="ClickStack 설치" id="installing-clickstack">
     오퍼레이터가 실행 중이면 메인 차트를 설치합니다:
 
     ```shell
@@ -96,9 +88,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
     ```
   </Step>
 
-  <Step>
-    ### 설치 확인
-
+  <Step title="설치 확인" id="verify-the-installation">
     설치 상태를 확인하세요:
 
     ```shell
@@ -108,9 +98,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
     모든 파드가 준비되면 다음 단계로 진행하십시오.
   </Step>
 
-  <Step>
-    ### 포트 포워딩
-
+  <Step title="포트 포워딩" id="forward-ports">
     포트 포워딩을 사용하면 HyperDX에 접근하고 설정할 수 있습니다. 프로덕션 환경에 배포할 때는 적절한 네트워크 액세스, TLS 종료, 확장성을 보장할 수 있도록 인그레스 또는 로드 밸런서를 통해 서비스를 노출해야 합니다. 포트 포워딩은 장기 운영이나 고가용성 환경용이 아니라 로컬 개발 또는 일회성 관리 작업에 가장 적합합니다.
 
     ```shell
@@ -126,9 +114,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
     </Tip>
   </Step>
 
-  <Step>
-    ### UI로 이동
-
+  <Step title="UI로 이동" id="navigate-to-the-ui">
     HyperDX UI에 액세스하려면 [http://localhost:8080](http://localhost:8080)에 접속하세요.
 
     요구 사항을 충족하는 사용자 이름과 비밀번호를 입력해 사용자를 생성하세요.
@@ -144,9 +130,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
     </Info>
   </Step>
 
-  <Step>
-    ### 값 사용자 지정(선택 사항)
-
+  <Step title="값 사용자 지정(선택 사항)" id="customizing-values">
     `--set` 플래그를 사용해 설정을 사용자 지정할 수 있습니다. 예시는 다음과 같습니다:
 
     ```shell
@@ -188,9 +172,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
     ```
   </Step>
 
-  <Step>
-    ### 시크릿 사용(선택 사항)
-
+  <Step title="시크릿 사용(선택 사항)" id="using-secrets">
     v2.x chart는 values의 `hyperdx.secrets`를 바탕으로 채워지는 통합 시크릿(`clickstack-secret`)을 사용합니다. ClickHouse 비밀번호, MongoDB 비밀번호, HyperDX API Key를 포함한 모든 민감한 환경 변수는 이 단일 시크릿을 통해 관리됩니다.
 
     시크릿 값을 재정의하려면:

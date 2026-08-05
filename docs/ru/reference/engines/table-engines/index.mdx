@@ -29,16 +29,21 @@ doc_type: 'reference'
 
 Движки семейства:
 
-| Движки MergeTree                                                                                               |
-| -------------------------------------------------------------------------------------------------------------- |
-| [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree)                                       |
-| [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree)                     |
-| [SummingMergeTree](/ru/reference/engines/table-engines/mergetree-family/summingmergetree)                         |
-| [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree)                 |
-| [CollapsingMergeTree](/ru/reference/engines/table-engines/mergetree-family/collapsingmergetree)                   |
-| [VersionedCollapsingMergeTree](/ru/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
-| [GraphiteMergeTree](/ru/reference/engines/table-engines/mergetree-family/graphitemergetree)                       |
-| [CoalescingMergeTree](/ru/reference/engines/table-engines/mergetree-family/coalescingmergetree)                   |
+| Движки MergeTree                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------- |
+| [Обзор семейства MergeTree](/ru/reference/engines/table-engines/mergetree-family/index)                                 |
+| [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree)                                             |
+| [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree)                           |
+| [SummingMergeTree](/ru/reference/engines/table-engines/mergetree-family/summingmergetree)                               |
+| [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree)                       |
+| [CollapsingMergeTree](/ru/reference/engines/table-engines/mergetree-family/collapsingmergetree)                         |
+| [VersionedCollapsingMergeTree](/ru/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree)       |
+| [GraphiteMergeTree](/ru/reference/engines/table-engines/mergetree-family/graphitemergetree)                             |
+| [CoalescingMergeTree](/ru/reference/engines/table-engines/mergetree-family/coalescingmergetree)                         |
+| [Точный и приблизительный векторный поиск](/ru/reference/engines/table-engines/mergetree-family/annindexes)             |
+| [Пользовательский ключ партиционирования](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key) |
+| [Движки таблиц Replicated*](/ru/reference/engines/table-engines/mergetree-family/replication)                           |
+| [Полнотекстовый поиск с текстовыми индексами](/ru/reference/engines/table-engines/mergetree-family/textindexes)         |
 
 <div id="log">
   ### Log
@@ -48,11 +53,12 @@ doc_type: 'reference'
 
 Движки семейства Log:
 
-| Движки семейства Log                                               |
-| ------------------------------------------------------------------ |
-| [TinyLog](/ru/reference/engines/table-engines/log-family/tinylog)     |
-| [StripeLog](/ru/reference/engines/table-engines/log-family/stripelog) |
-| [Log](/ru/reference/engines/table-engines/log-family/log)             |
+| Движки семейства Log                                                       |
+| -------------------------------------------------------------------------- |
+| [Семейство движков Log](/ru/reference/engines/table-engines/log-family/index) |
+| [TinyLog](/ru/reference/engines/table-engines/log-family/tinylog)             |
+| [StripeLog](/ru/reference/engines/table-engines/log-family/stripelog)         |
+| [Log](/ru/reference/engines/table-engines/log-family/log)                     |
 
 <div id="integration-engines">
   ### Интеграционные движки
@@ -62,21 +68,35 @@ doc_type: 'reference'
 
 Движки семейства:
 
-| Интеграционные движки                                                             |
-| --------------------------------------------------------------------------------- |
-| [ODBC](/ru/reference/engines/table-engines/integrations/odbc)                         |
-| [JDBC](/ru/reference/engines/table-engines/integrations/jdbc)                        |
-| [MySQL](/ru/reference/engines/table-engines/integrations/mysql)                      |
-| [MongoDB](/ru/reference/engines/table-engines/integrations/mongodb)                  |
-| [Redis](/ru/reference/engines/table-engines/integrations/redis)                      |
-| [HDFS](/ru/reference/engines/table-engines/integrations/hdfs)                        |
-| [S3](/ru/reference/engines/table-engines/integrations/s3)                            |
-| [Kafka](/ru/reference/engines/table-engines/integrations/kafka)                      |
-| [EmbeddedRocksDB](/ru/reference/engines/table-engines/integrations/embedded-rocksdb) |
-| [RabbitMQ](/ru/reference/engines/table-engines/integrations/rabbitmq)                |
-| [PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql)            |
-| [S3Queue](/ru/reference/engines/table-engines/integrations/s3queue)                  |
-| [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series)           |
+| Интеграционные движки                                                                           |
+| ----------------------------------------------------------------------------------------------- |
+| [Движки таблиц для интеграций](/ru/reference/engines/table-engines/integrations/index)             |
+| [ODBC](/ru/reference/engines/table-engines/integrations/odbc)                                      |
+| [JDBC](/ru/reference/engines/table-engines/integrations/jdbc)                                      |
+| [MySQL](/ru/reference/engines/table-engines/integrations/mysql)                                    |
+| [MongoDB](/ru/reference/engines/table-engines/integrations/mongodb)                                |
+| [Redis](/ru/reference/engines/table-engines/integrations/redis)                                    |
+| [HDFS](/ru/reference/engines/table-engines/integrations/hdfs)                                      |
+| [S3](/ru/reference/engines/table-engines/integrations/s3)                                          |
+| [Kafka](/ru/reference/engines/table-engines/integrations/kafka)                                    |
+| [EmbeddedRocksDB](/ru/reference/engines/table-engines/integrations/embedded-rocksdb)               |
+| [RabbitMQ](/ru/reference/engines/table-engines/integrations/rabbitmq)                              |
+| [PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql)                          |
+| [S3Queue](/ru/reference/engines/table-engines/integrations/s3queue)                                |
+| [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series)                         |
+| [ArrowFlight](/ru/reference/engines/table-engines/integrations/arrowflight)                        |
+| [AzureQueue](/ru/reference/engines/table-engines/integrations/azure-queue)                         |
+| [AzureBlobStorage](/ru/reference/engines/table-engines/integrations/azureBlobStorage)              |
+| [DeltaLake](/ru/reference/engines/table-engines/integrations/deltalake)                            |
+| [ExternalDistributed](/ru/reference/engines/table-engines/integrations/ExternalDistributed)        |
+| [Hive](/ru/reference/engines/table-engines/integrations/hive)                                      |
+| [Hudi](/ru/reference/engines/table-engines/integrations/hudi)                                      |
+| [Iceberg](/ru/reference/engines/table-engines/integrations/iceberg)                                |
+| [MaterializedPostgreSQL](/ru/reference/engines/table-engines/integrations/materialized-postgresql) |
+| [NATS](/ru/reference/engines/table-engines/integrations/nats)                                      |
+| [Paimon](/ru/reference/engines/table-engines/integrations/paimon)                                  |
+| [SQLite](/ru/reference/engines/table-engines/integrations/sqlite)                                  |
+| [YTsaurus](/ru/reference/engines/table-engines/integrations/ytsaurus)                              |
 
 <div id="special-engines">
   ### Специальные движки
@@ -84,24 +104,26 @@ doc_type: 'reference'
 
 Движки этого семейства:
 
-| Специальные движки                                                       |
-| ------------------------------------------------------------------------ |
-| [Distributed](/ru/reference/engines/table-engines/special/distributed)      |
-| [Словарь](/ru/reference/engines/table-engines/special/dictionary)           |
-| [Merge](/ru/reference/engines/table-engines/special/merge)                  |
-| [Executable](/ru/reference/engines/table-engines/special/executable)        |
-| [File](/ru/reference/engines/table-engines/special/file)                    |
-| [Null](/ru/reference/engines/table-engines/special/null)                    |
-| [Set](/ru/reference/engines/table-engines/special/set)                      |
-| [JOIN](/ru/reference/engines/table-engines/special/join)                    |
-| [URL](/ru/reference/engines/table-engines/special/url)                      |
-| [View](/ru/reference/engines/table-engines/special/view)                    |
-| [Memory](/ru/reference/engines/table-engines/special/memory)                |
-| [Buffer](/ru/reference/engines/table-engines/special/buffer)                |
-| [Внешние данные](/ru/reference/engines/table-engines/special/external-data) |
-| [GenerateRandom](/ru/reference/engines/table-engines/special/generate)      |
-| [KeeperMap](/ru/reference/engines/table-engines/special/keepermap)          |
-| [FileLog](/ru/reference/engines/table-engines/special/filelog)              |
+| Специальные движки                                                          |
+| --------------------------------------------------------------------------- |
+| [Специальные движки таблиц](/ru/reference/engines/table-engines/special/index) |
+| [Псевдоним](/ru/reference/engines/table-engines/special/alias)                 |
+| [Distributed](/ru/reference/engines/table-engines/special/distributed)         |
+| [Словарь](/ru/reference/engines/table-engines/special/dictionary)              |
+| [Merge](/ru/reference/engines/table-engines/special/merge)                     |
+| [Executable](/ru/reference/engines/table-engines/special/executable)           |
+| [File](/ru/reference/engines/table-engines/special/file)                       |
+| [Null](/ru/reference/engines/table-engines/special/null)                       |
+| [Set](/ru/reference/engines/table-engines/special/set)                         |
+| [JOIN](/ru/reference/engines/table-engines/special/join)                       |
+| [URL](/ru/reference/engines/table-engines/special/url)                         |
+| [View](/ru/reference/engines/table-engines/special/view)                       |
+| [Memory](/ru/reference/engines/table-engines/special/memory)                   |
+| [Buffer](/ru/reference/engines/table-engines/special/buffer)                   |
+| [Внешние данные](/ru/reference/engines/table-engines/special/external-data)    |
+| [GenerateRandom](/ru/reference/engines/table-engines/special/generate)         |
+| [KeeperMap](/ru/reference/engines/table-engines/special/keepermap)             |
+| [FileLog](/ru/reference/engines/table-engines/special/filelog)                 |
 
 <div id="table_engines-virtual_columns">
   ## Виртуальные столбцы

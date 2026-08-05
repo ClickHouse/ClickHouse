@@ -26,10 +26,8 @@ Para obtener una explicación conceptual de cómo funciona Hydra, consulte [Hydr
 * Acceso al registro de Helm y al gráfico de Helm `onprem-clickhouse-cluster`
 
 <Steps>
-  <Step>
-    ## 1. Identificar el clúster principal
-
-    Antes de crear una instancia secundaria, anote el **nombre** y el **espacio de nombres** del clúster principal. El principal debe estar en ejecución; no se pueden aprovisionar instancias secundarias si el principal está detenido, terminado o inactivo.
+  <Step title="1. Identificar el clúster principal" id="1-identify-the-parent-cluster">
+    Antes de crear una instancia secundaria, anote el **nombre** y el **espacio de nombres** del clúster principal. El principal debe estar en ejecución -- no se pueden aprovisionar instancias secundarias si el principal está detenido, terminado o inactivo.
 
     Para un clúster llamado `default-xx-01`, los valores predeterminados son:
 
@@ -39,9 +37,7 @@ Para obtener una explicación conceptual de cómo funciona Hydra, consulte [Hydr
     | Espacio de nombres | `ns-default-xx-01` |
   </Step>
 
-  <Step>
-    ## 2. Crear una instancia secundaria
-
+  <Step title="2. Crear una instancia secundaria" id="2-create-a-child-instance">
     <Warning>
       Cada instancia de ClickHouseCluster debe estar en su propio espacio de nombres. No despliegue una instancia secundaria en el mismo espacio de nombres que la principal. El Operator asume un ClickHouseCluster por espacio de nombres, y no cumplir esto provoca clústeres degradados.
     </Warning>
@@ -68,9 +64,7 @@ Para obtener una explicación conceptual de cómo funciona Hydra, consulte [Hydr
     * Expondrá su propio endpoint de Kubernetes Service
   </Step>
 
-  <Step>
-    ## 3. Crear una instancia secundaria de solo lectura (opcional)
-
+  <Step title="3. Crear una instancia secundaria de solo lectura (opcional)" id="3-create-a-read-only-child-optional">
     Para crear una instancia secundaria que pueda consultar datos pero no escribir en ellos, agregue el indicador `isReadonly`:
 
     ```bash
@@ -89,9 +83,7 @@ Para obtener una explicación conceptual de cómo funciona Hydra, consulte [Hydr
     Las instancias secundarias de solo lectura son adecuadas para informes, dashboards o cargas de trabajo de analítica en las que no se necesita acceso de escritura.
   </Step>
 
-  <Step>
-    ## 4. Verificar la instancia secundaria
-
+  <Step title="4. Verificar la instancia secundaria" id="4-verify-the-child-instance">
     Después de desplegar la instancia secundaria, verifique que esté en ejecución:
 
     ```bash
