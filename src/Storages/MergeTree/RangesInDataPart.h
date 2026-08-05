@@ -54,30 +54,34 @@ struct RangesInDataPartDescription
     UInt64 part_checksum_low64 = 0;
     UInt64 part_checksum_high64 = 0;
 
-    /// Whether the announcing replica's storage guarantees that a part name identifies the same
-    /// content on every replica.
-    enum class StorageReplication : UInt8
+    /// Whether the announcing replica's table guarantees that a part name identifies the same
+    /// content on every cluster member.
+    enum class PartNameIdentity : UInt8
     {
         /// Field was not populated: the announcement came from a replica whose protocol predates
         /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`, or the description is a
         /// coordinator-internal queue entry.
         Unknown = 0,
-        /// Non-replicated `MergeTree`: block numbers are allocated by a node-local
-        /// `SimpleIncrement`, so two replicas can independently produce same-named parts with
-        /// divergent content. Same-named parts MUST be verified by content fingerprint; the
+        /// Part names are allocated per node and the data is node-local, as in a plain `MergeTree`
+        /// on ordinary local or per-node remote disks: block numbers come from a node-local
+        /// `SimpleIncrement`, so two cluster members can independently produce same-named parts
+        /// with divergent content. Same-named parts MUST be verified by content fingerprint; the
         /// coordinator fails closed when the fingerprint is unavailable.
-        NotReplicated = 1,
-        /// `ReplicatedMergeTree` and descendants: block numbers come from a Keeper-coordinated
-        /// counter, so a part name implies identical content across replicas and same-named
-        /// parts are safe to merge even without a fingerprint.
-        Replicated = 2,
+        NodeLocal = 1,
+        /// A part name implies identical content on every cluster member, so same-named parts are
+        /// safe to merge even without a fingerprint. Two independent guarantees land here:
+        /// `ReplicatedMergeTree` and descendants (block numbers come from a Keeper-coordinated
+        /// counter), and a plain `MergeTree` whose data lives on shared-metadata storage
+        /// (`MetadataStorageType::Plain`, `PlainRewritable`, `StaticWeb`, `WebIndex`, `Keeper`),
+        /// where every cluster member reads literally the same set of parts.
+        ClusterWide = 2,
     };
 
-    /// Populated from `data_part->storage.supportsReplication` in `RangesInDataPart::getDescription`.
-    /// Used by `ParallelReplicasReadingCoordinator` to decide whether a missing part fingerprint
-    /// is tolerable (replicated storage: yes, by the engine's contract) or must fail closed
-    /// (non-replicated storage: same-named parts may hold divergent data).
-    StorageReplication storage_replication = StorageReplication::Unknown;
+    /// Populated by `RangesInDataPart::getDescription` from the table's replication support and the
+    /// metadata type of its disks. Used by `ParallelReplicasReadingCoordinator` to decide whether a
+    /// missing part fingerprint is tolerable (`ClusterWide`: yes, guaranteed by the engine or by
+    /// shared storage) or must fail closed (`NodeLocal`: same-named parts may hold divergent data).
+    PartNameIdentity part_name_identity = PartNameIdentity::Unknown;
 
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;

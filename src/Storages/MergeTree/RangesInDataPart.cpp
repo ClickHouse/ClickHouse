@@ -5,6 +5,8 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include <Disks/DiskType.h>
+#include <Disks/IDisk.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -52,7 +54,7 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_r
     {
         writeVarUInt(part_checksum_low64, out);
         writeVarUInt(part_checksum_high64, out);
-        writeVarUInt(static_cast<UInt64>(storage_replication), out);
+        writeVarUInt(static_cast<UInt64>(part_name_identity), out);
     }
 }
 
@@ -91,14 +93,14 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in, UInt64 parallel_r
         readVarUInt(part_checksum_low64, in);
         readVarUInt(part_checksum_high64, in);
 
-        UInt64 storage_replication_value = 0;
-        readVarUInt(storage_replication_value, in);
-        if (storage_replication_value > static_cast<UInt64>(StorageReplication::Replicated))
+        UInt64 part_name_identity_value = 0;
+        readVarUInt(part_name_identity_value, in);
+        if (part_name_identity_value > static_cast<UInt64>(PartNameIdentity::ClusterWide))
             throw Exception(
                 ErrorCodes::UNKNOWN_PROTOCOL,
-                "Unexpected storage replication value {} in parallel replicas part description",
-                storage_replication_value);
-        storage_replication = static_cast<StorageReplication>(storage_replication_value);
+                "Unexpected part name identity value {} in parallel replicas part description",
+                part_name_identity_value);
+        part_name_identity = static_cast<PartNameIdentity>(part_name_identity_value);
     }
 }
 
@@ -160,6 +162,54 @@ RangesInDataPart::RangesInDataPart(
         ranges.emplace_back(0, total_marks_count);
 }
 
+namespace
+{
+
+/// Whether a part name of `storage` identifies the same content on every cluster member.
+///
+/// Two independent guarantees make it so:
+///
+///   * The engine coordinates block numbers through Keeper (`ReplicatedMergeTree` and descendants),
+///     so a part name is globally unique by construction.
+///
+///   * All of the table's data lives on storage whose metadata is shared by every cluster member -
+///     `MetadataStorageType::Plain`, `PlainRewritable`, `StaticWeb`, `WebIndex` and `Keeper`. There
+///     every member enumerates literally the same parts, so same-named parts trivially hold the
+///     same content even for a plain `MergeTree`. Deriving this from the engine's replication bit
+///     alone would misclassify such a deployment as node-local and reject perfectly safe queries.
+///
+/// `MetadataStorageType::Local` and `Memory` keep metadata per node, so a plain `MergeTree` on them
+/// is node-local: two members can each mint an `all_1_1_0` holding different rows.
+bool partNameIsClusterWideIdentity(const MergeTreeData & storage)
+{
+    if (storage.supportsReplication())
+        return true;
+
+    const auto disks = storage.getDisks();
+    if (disks.empty())
+        return false;
+
+    for (const auto & disk : disks)
+    {
+        switch (disk->getDataSourceDescription().metadata_type)
+        {
+            case MetadataStorageType::Plain:
+            case MetadataStorageType::PlainRewritable:
+            case MetadataStorageType::StaticWeb:
+            case MetadataStorageType::WebIndex:
+            case MetadataStorageType::Keeper:
+                break;
+            case MetadataStorageType::None:
+            case MetadataStorageType::Local:
+            case MetadataStorageType::Memory:
+                return false;
+        }
+    }
+    return true;
+}
+
+}
+
 RangesInDataPartDescription RangesInDataPart::getDescription() const
 {
     chassert(!data_part->isProjectionPart() || parent_part);
@@ -189,11 +239,12 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
         .total_marks_in_part = data_part->index_granularity->getMarksCountWithoutFinal(),
         .part_checksum_low64 = fingerprint_low64,
         .part_checksum_high64 = fingerprint_high64,
-        /// Tells the coordinator whether a part name is a content identity here (replicated
-        /// engines) or same-named parts must be verified by fingerprint (plain MergeTree).
-        .storage_replication = data_part->storage.supportsReplication()
-            ? RangesInDataPartDescription::StorageReplication::Replicated
-            : RangesInDataPartDescription::StorageReplication::NotReplicated,
+        /// Tells the coordinator whether a part name is a content identity here (replicated engines
+        /// and shared-metadata storage) or same-named parts must be verified by fingerprint (a plain
+        /// `MergeTree` on node-local storage).
+        .part_name_identity = partNameIsClusterWideIdentity(data_part->storage)
+            ? RangesInDataPartDescription::PartNameIdentity::ClusterWide
+            : RangesInDataPartDescription::PartNameIdentity::NodeLocal,
     };
 }
 

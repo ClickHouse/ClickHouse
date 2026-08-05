@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MarkRange.h>
 
 #include <Common/Exception.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <gtest/gtest.h>
 
@@ -36,22 +38,22 @@ void setPartFingerprint(Desc & desc, UInt64 low64, UInt64 high64)
     }
 }
 
-/// `StorageReplication` is a nested TYPE, so a member-access `requires` cannot probe it.
+/// `PartNameIdentity` is a nested TYPE, so a member-access `requires` cannot probe it.
 template <typename Desc>
-constexpr bool has_storage_replication = requires { typename Desc::StorageReplication; };
+constexpr bool has_part_name_identity = requires { typename Desc::PartNameIdentity; };
 
 template <typename Desc>
-void setStorageReplicated(Desc & desc)
+void setPartNameIdentityClusterWide(Desc & desc)
 {
-    if constexpr (has_storage_replication<Desc>)
-        desc.storage_replication = Desc::StorageReplication::Replicated;
+    if constexpr (has_part_name_identity<Desc>)
+        desc.part_name_identity = Desc::PartNameIdentity::ClusterWide;
 }
 
 template <typename Desc>
-void setStorageNotReplicated(Desc & desc)
+void setPartNameIdentityNodeLocal(Desc & desc)
 {
-    if constexpr (has_storage_replication<Desc>)
-        desc.storage_replication = Desc::StorageReplication::NotReplicated;
+    if constexpr (has_part_name_identity<Desc>)
+        desc.part_name_identity = Desc::PartNameIdentity::NodeLocal;
 }
 
 /// Builds a `RangesInDataPartDescription` whose analyzed view (`ranges` / `rows`) AND underlying
@@ -552,7 +554,7 @@ TEST(ParallelReplicasCoordinator, InOrderAcceptsSameChecksumWithDivergentAnalyze
 /// name implies identical content by the engine's contract, so the coordinator may safely fall
 /// back to the cheaper `total_marks_in_part` check. This keeps `ReplicatedMergeTree` parallel
 /// replicas working during a rolling upgrade.
-TEST(ParallelReplicasCoordinator, DefaultFallsBackToMarksWhenChecksumUnsetOnReplicatedStorage)
+TEST(ParallelReplicasCoordinator, DefaultFallsBackToMarksWhenChecksumUnsetOnClusterWidePartNames)
 {
     ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
 
@@ -563,7 +565,7 @@ TEST(ParallelReplicasCoordinator, DefaultFallsBackToMarksWhenChecksumUnsetOnRepl
             "all", 1, 1, 0, /*marks=*/8,
             /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
             /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull);
-        setStorageReplicated(desc);
+        setPartNameIdentityClusterWide(desc);
         parts.push_back(desc);
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
     }
@@ -586,7 +588,7 @@ TEST(ParallelReplicasCoordinator, DefaultFallsBackToMarksWhenChecksumUnsetOnRepl
 /// divergent same-named parts with a coincidentally equal mark count would merge, and ranges
 /// from the first replica's snapshot could be dispatched against the second replica's different
 /// data, returning incorrect results.
-TEST(ParallelReplicasCoordinator, InOrderFailsClosedWhenFingerprintUnavailableOnNonReplicatedStorage)
+TEST(ParallelReplicasCoordinator, InOrderFailsClosedWhenFingerprintUnavailableOnNodeLocalPartNames)
 {
     ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
 
@@ -597,7 +599,7 @@ TEST(ParallelReplicasCoordinator, InOrderFailsClosedWhenFingerprintUnavailableOn
             "all", 1, 1, 0, /*marks=*/8,
             /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
             /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull);
-        setStorageNotReplicated(desc);
+        setPartNameIdentityNodeLocal(desc);
         parts.push_back(desc);
         coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
     }
@@ -617,7 +619,7 @@ TEST(ParallelReplicasCoordinator, InOrderFailsClosedWhenFingerprintUnavailableOn
 /// same-named part reporting non-replicated storage but without a usable fingerprint (for
 /// example, a part whose checksums were not loaded). One side reporting non-replicated storage
 /// is enough to make the missing fingerprint fatal.
-TEST(ParallelReplicasCoordinator, DefaultFailsClosedWhenFingerprintUnavailableOnNonReplicatedStorage)
+TEST(ParallelReplicasCoordinator, DefaultFailsClosedWhenFingerprintUnavailableOnNodeLocalPartNames)
 {
     ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
 
@@ -632,7 +634,7 @@ TEST(ParallelReplicasCoordinator, DefaultFailsClosedWhenFingerprintUnavailableOn
     /// fingerprint (checksums not loaded). Mark counts agree, but identity is unverifiable.
     RangesInDataPartsDescription parts_new;
     auto desc = makePart("all", 1, 1, 0, /*marks=*/8);
-    setStorageNotReplicated(desc);
+    setPartNameIdentityNodeLocal(desc);
     parts_new.push_back(desc);
     EXPECT_THROW(
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts_new))),
@@ -641,7 +643,7 @@ TEST(ParallelReplicasCoordinator, DefaultFailsClosedWhenFingerprintUnavailableOn
 
 /// Two newer replicas on non-replicated storage announcing the SAME part (matching fingerprints)
 /// must still be accepted: the fail-closed rule applies only when the fingerprint is missing.
-TEST(ParallelReplicasCoordinator, InOrderAcceptsMatchingFingerprintOnNonReplicatedStorage)
+TEST(ParallelReplicasCoordinator, InOrderAcceptsMatchingFingerprintOnNodeLocalPartNames)
 {
     ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
 
@@ -652,8 +654,77 @@ TEST(ParallelReplicasCoordinator, InOrderAcceptsMatchingFingerprintOnNonReplicat
             "all", 1, 1, 0, /*marks=*/8,
             /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
             /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull);
-        setStorageNotReplicated(desc);
+        setPartNameIdentityNodeLocal(desc);
         parts.push_back(desc);
         EXPECT_NO_THROW(coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(replica_num, std::move(parts))));
+    }
+}
+
+/// Wire-format guard for the fields this change adds to `RangesInDataPartDescription`.
+///
+/// Every field is written and read behind a protocol-version gate, so a serializer and a
+/// deserializer that disagree about which gates are open silently misparse the remainder of the
+/// stream rather than failing loudly. Round-trip each protocol version this description has a
+/// distinct layout for and require both that the values survive and that the reader consumed the
+/// whole buffer - a leftover byte or a short read is exactly the symptom of a gate mismatch.
+///
+/// Versions are spelled as literals rather than through the
+/// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_*` constants because `Bugfix validation (unit tests)`
+/// compiles this file against the merge-base sources, where the newer constants do not exist yet.
+TEST(ParallelReplicasCoordinator, PartDescriptionRoundTripsPerProtocolVersion)
+{
+    for (const UInt64 protocol_version : {8ull, 9ull, 10ull})
+    {
+        auto original = makePartWithFingerprint(
+            "all", 3, 7, 2, /*marks=*/42,
+            /*fingerprint_low64=*/0x0123456789ABCDEFull,
+            /*fingerprint_high64=*/0xFEDCBA9876543210ull);
+        setPartNameIdentityNodeLocal(original);
+        original.min_marks_per_task = 24;
+
+        RangesInDataPartsDescription originals;
+        originals.push_back(original);
+
+        WriteBufferFromOwnString out;
+        originals.serialize(out, protocol_version);
+
+        ReadBufferFromString in(out.str());
+        RangesInDataPartsDescription restored;
+        restored.deserialize(in, protocol_version);
+
+        /// A gate mismatch shows up here first: the reader either runs off the end of the buffer or
+        /// stops short of it.
+        EXPECT_TRUE(in.eof()) << "leftover bytes at parallel replicas protocol version " << protocol_version;
+
+        ASSERT_EQ(restored.size(), 1u);
+        const auto & got = restored.front();
+        EXPECT_EQ(got.info, original.info) << "at protocol version " << protocol_version;
+        EXPECT_EQ(got.ranges, original.ranges) << "at protocol version " << protocol_version;
+        EXPECT_EQ(got.rows, original.rows) << "at protocol version " << protocol_version;
+        EXPECT_EQ(got.min_marks_per_task, original.min_marks_per_task) << "at protocol version " << protocol_version;
+
+        /// The newer fields only travel once their gate is open; below it they must come back as the
+        /// default rather than as garbage read out of the following field.
+        if constexpr (requires { got.total_marks_in_part; })
+        {
+            const size_t expected_total_marks = protocol_version >= 9 ? original.total_marks_in_part : 0;
+            EXPECT_EQ(got.total_marks_in_part, expected_total_marks) << "at protocol version " << protocol_version;
+        }
+
+        if constexpr (requires { got.part_checksum_low64; })
+        {
+            const UInt64 expected_low64 = protocol_version >= 10 ? original.part_checksum_low64 : 0;
+            const UInt64 expected_high64 = protocol_version >= 10 ? original.part_checksum_high64 : 0;
+            EXPECT_EQ(got.part_checksum_low64, expected_low64) << "at protocol version " << protocol_version;
+            EXPECT_EQ(got.part_checksum_high64, expected_high64) << "at protocol version " << protocol_version;
+        }
+
+        if constexpr (has_part_name_identity<RangesInDataPartDescription>)
+        {
+            const auto expected_identity = protocol_version >= 10
+                ? RangesInDataPartDescription::PartNameIdentity::NodeLocal
+                : RangesInDataPartDescription::PartNameIdentity::Unknown;
+            EXPECT_EQ(got.part_name_identity, expected_identity) << "at protocol version " << protocol_version;
+        }
     }
 }

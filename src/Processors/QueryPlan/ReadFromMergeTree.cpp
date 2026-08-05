@@ -4118,7 +4118,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         for (size_t lane = 0; lane < num_lanes; ++lane)
         {
             DistributedReadBucket bucket;
-            bucket.marks.deserialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+            /// Pinned layout, NOT the build's current protocol version: this blob carries no version
+            /// and negotiates none, so producer and consumer must always agree.
+            bucket.marks.deserialize(buf, DBMS_PARALLEL_REPLICAS_DISTRIBUTED_READ_BUCKET_VERSION);
             readBinary(bucket.needs_merge, buf);
             if (bucket.needs_merge)
             {
@@ -5636,7 +5638,8 @@ std::vector<String> ReadFromMergeTree::serializeDistributedReadBuckets() const
         for (size_t i = start; i < end; ++i)
         {
             const auto & bucket = distributed_read_buckets[i];
-            bucket.marks.serialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+            /// Pinned layout, NOT the build's current protocol version - see the constant's comment.
+            bucket.marks.serialize(buf, DBMS_PARALLEL_REPLICAS_DISTRIBUTED_READ_BUCKET_VERSION);
             writeBinary(bucket.needs_merge, buf);
             if (bucket.needs_merge)
             {
