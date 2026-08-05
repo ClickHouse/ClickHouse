@@ -185,29 +185,25 @@ def test_write_table(started_cluster):
 
 
 def test_bad_hdfs_uri(started_cluster):
-    try:
-        node1.query(
-            "create table BadStorage1 (id UInt32, name String, weight Float64) ENGINE = HDFS('hads:hgsdfs100500:9000/other_storage', 'TSV')"
-        )
-    except Exception as ex:
-        print(ex)
-        assert "Bad HDFS URL" in str(ex)
-    try:
-        node1.query(
-            "create table BadStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs100500:9000/other_storage', 'TSV')"
-        )
-    except Exception as ex:
-        print(ex)
-        assert "Unable to connect to HDFS" in str(ex)
+    # A malformed URL is rejected at CREATE time.
+    error = node1.query_and_get_error(
+        "create table BadStorage1 (id UInt32, name String, weight Float64) ENGINE = HDFS('hads:hgsdfs100500:9000/other_storage', 'TSV')"
+    )
+    assert "Bad HDFS URL" in error
 
+    # An unreachable NameNode and a nonexistent path are detected on first access.
+    node1.query(
+        "create table BadStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs100500:9000/other_storage', 'TSV')"
+    )
+    error = node1.query_and_get_error("select * from BadStorage2")
+    assert "Unable to connect to HDFS" in error
     node1.query("drop table BadStorage2")
-    try:
-        node1.query(
-            "create table BadStorage3 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/<>', 'TSV')"
-        )
-    except Exception as ex:
-        print(ex)
-        assert "Unable to open HDFS file" in str(ex)
+
+    node1.query(
+        "create table BadStorage3 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/<>', 'TSV')"
+    )
+    error = node1.query_and_get_error("select * from BadStorage3")
+    assert "Unable to open HDFS file" in error or "FileNotFoundException" in error
     node1.query("drop table BadStorage3")
 
 
@@ -710,30 +706,48 @@ def test_insert_select_schema_inference(started_cluster):
 
 
 def test_cluster_join(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+    dir = "/test_cluster_join"
+    fs.mkdirs(dir)
+    for i in range(1, 4):
+        hdfs_api.write_data(f"{dir}/file{i}", f"{i}\n")
+
     result = node1.query(
-        """
-        SELECT l.id,r.id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as l
-        JOIN hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as r
+        f"""
+        SELECT l.id,r.id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000{dir}/file*', 'TSV', 'id UInt32') as l
+        JOIN hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000{dir}/file*', 'TSV', 'id UInt32') as r
         ON l.id = r.id
+        ORDER BY l.id
     """
     )
-    assert "AMBIGUOUS_COLUMN_NAME" not in result
+    assert result == "1\t1\n2\t2\n3\t3\n"
+    fs.delete(dir, recursive=True)
 
 
 def test_cluster_macro(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+    dir = "/test_cluster_macro"
+    fs.mkdirs(dir)
+    for i in range(1, 4):
+        hdfs_api.write_data(f"{dir}/file{i}", f"{i}\n")
+
     with_macro = node1.query(
-        """
-        SELECT id FROM hdfsCluster('{default_cluster_macro}', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
+        f"""
+        SELECT id FROM hdfsCluster('{{default_cluster_macro}}', 'hdfs://hdfs1:9000{dir}/file*', 'TSV', 'id UInt32') ORDER BY id
     """
     )
 
     no_macro = node1.query(
-        """
-        SELECT id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
+        f"""
+        SELECT id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000{dir}/file*', 'TSV', 'id UInt32') ORDER BY id
     """
     )
 
+    assert with_macro == "1\n2\n3\n"
     assert TSV(with_macro) == TSV(no_macro)
+    fs.delete(dir, recursive=True)
 
 
 def test_virtual_columns_2(started_cluster):
@@ -1014,7 +1028,7 @@ def test_skip_empty_files(started_cluster):
     )
 
     node.query_and_get_error(
-        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UINt64') settings hdfs_skip_empty_files=0"
+        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=0"
     )
 
     node.query_and_get_error(

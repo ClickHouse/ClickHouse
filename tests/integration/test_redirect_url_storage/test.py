@@ -86,11 +86,7 @@ def test_url_with_redirect_not_allowed(started_cluster):
     node1.query(
         "create table WebHDFSStorageWithoutRedirect (id UInt32, name String, weight Float64) ENGINE = URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV')"
     )
-    with pytest.raises(Exception):
-        assert (
-            node1.query("select * from WebHDFSStorageWithoutRedirect")
-            == "1\tMark\t72.53\n"
-        )
+    node1.query_and_get_error("select * from WebHDFSStorageWithoutRedirect")
 
 
 def test_url_with_redirect_allowed(started_cluster):

@@ -32,8 +32,10 @@ class HDFSApi(object):
         self.timeout = timeout
         self.hdfs_ip = hdfs_ip
 
-    @staticmethod
-    def req_wrapper(func, expected_code, cnt=2, **kwargs):
+    def req_wrapper(self, func, expected_code, cnt=2, **kwargs):
+        # Bound every request, so that a nonresponsive NameNode or DataNode fails
+        # the test quickly instead of hanging the whole shard.
+        kwargs.setdefault("timeout", self.timeout)
         for i in range(0, cnt):
             logging.debug(f"CALL: {str(kwargs)}")
             response_data = func(**kwargs)
