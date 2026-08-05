@@ -261,19 +261,18 @@ struct DataType
         {
             auto inner_json_object = json_object->getObject(key);
             String inner_type = inner_json_object->getValue<String>("type");
-            // check nullable
-            auto result = check_and_remove_nullable(inner_type);
-            bool nullable = result.first;
-            const String & real_type = result.second;
+            const String real_type = check_and_remove_nullable(inner_type).second;
+            /// Composite types are never wrapped in Nullable: ClickHouse forbids
+            /// Nullable(Array) and Nullable(Map), so wrapping made any Paimon table
+            /// with a nullable ARRAY/MAP column entirely unreadable
+            /// ("Nested type ... cannot be inside Nullable type"). A NULL composite
+            /// value is read as an empty one, the same mapping the Iceberg and
+            /// DeltaLake schema processors use.
             if (real_type == "ARRAY")
             {
                 type.root_type = RootDataType::ARRAY;
                 auto nested_type = parse(inner_json_object, "element");
                 type.clickhouse_data_type = std::make_shared<DataTypeArray>(nested_type.clickhouse_data_type);
-                if (nullable)
-                {
-                    type.clickhouse_data_type = std::make_shared<DataTypeNullable>(type.clickhouse_data_type);
-                }
             }
             else if (real_type == "MAP")
             {
@@ -281,10 +280,6 @@ struct DataType
                 auto key_type = parse(inner_json_object, "key");
                 auto value_type = parse(inner_json_object, "value");
                 type.clickhouse_data_type = std::make_shared<DataTypeMap>(key_type.clickhouse_data_type, value_type.clickhouse_data_type);
-                if (nullable)
-                {
-                    type.clickhouse_data_type = std::make_shared<DataTypeNullable>(type.clickhouse_data_type);
-                }
             }
             else
             {
