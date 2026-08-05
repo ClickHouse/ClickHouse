@@ -152,6 +152,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | PROGRESS_IN_ASYNC_INSERT        | 54484   | Progress (INSERT)      | On an **asynchronous** INSERT (`async_insert = 1`), once the insert is flushed the server sends an extra [`Progress`](#progress) packet, then the insert's `ProfileEvents`, before `EndOfStream`. Gated on the *negotiated* version ≥ 54484; below it the server omits this trailing Progress. The Progress wire format is unchanged — only the emission is new. In practice the increment carries the elapsed time; the written-row counters are reported via the accompanying ProfileEvents. A client that already drains interleaved Progress needs no format change, only to tolerate one more packet. |
 | CLIENT_AGENT_IN_CLIENT_INFO     | 54485   | ClientInfo             | Adds a trailing `client_agent` `String` to ClientInfo. The canonical client auto-detects an agent identifier from its environment (for example `claude-code`, `cursor`, `gemini-cli`, or the value of the `AGENT` variable); an external client with nothing detected sends an empty string. Required once negotiated version ≥ 54485 — omitting it desynchronizes the rest of the Query packet. |
 | INTERNAL_QUERY_FLAG             | 54486   | ClientInfo             | Adds a trailing `is_internal` `UInt8` to ClientInfo. `1` for a server-internal query (not user-issued), propagated to remote queries so their `system.query_log` rows are labeled internal; external clients send `0`. Required once negotiated version ≥ 54486 — omitting it desynchronizes the rest of the Query packet. |
+| INTERSERVER_CURRENT_ROLES       | 54488   | ClientInfo             | Adds a trailing `current_roles` optional String list to ClientInfo (`[UInt8 present]` then, if `1`, `[VarUInt count][String]*count`), and, for inter-server queries, extends the `auth_hash` to cover the serialized list. Carries the initiator's active (enabled) role names so a secondary node scopes row policies the same way instead of falling back to the user's default roles. Only populated for inter-server queries and only when `push_external_roles_in_interserver_queries = 1`; external clients send `0` (absent). Required once negotiated version ≥ 54488 — omitting the presence byte desynchronizes the rest of the Query packet. |
 
 ## Packet envelope {#packet-envelope}
 
@@ -405,6 +406,72 @@ sequenceDiagram
 
 The connection returns to `READY` on `EndOfStream` or a handled `Exception`. Protocol violations and I/O errors terminate it.
 
+### INSERT ... RETURNING phase {#insert-returning-phase}
+
+`INSERT ... RETURNING` extends the [INSERT phase](#insert-phase) with a full query-result stream after the row upload. Once the client sends the end-of-input terminator (the empty Data block), the server executes the `RETURNING` subquery and streams its output exactly as the [Query phase](#query-phase) does: a header block, zero or more result blocks, optional `Totals`/`Extremes`, and finally `EndOfStream` or `Exception`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: Query packet (INSERT … RETURNING body)
+    C->>S: External-table Data packets (0 or more)
+    opt metadata before schema
+        S->>C: TableColumns / Progress / ...
+    end
+    S->>C: Data packet — INSERT schema block (columns, 0 rows)
+    loop one or more blocks
+        C->>S: Data packet (rows N)
+    end
+    C->>S: Data packet — empty block, end-of-input terminator
+    S->>C: Data packet — RETURNING result header (columns, 0 rows)
+    loop until EndOfStream or Exception
+        S->>C: Data — result block / Progress / ProfileInfo / Log / ProfileEvents
+    end
+    opt WITH TOTALS
+        S->>C: Totals
+    end
+    opt extremes setting
+        S->>C: Extremes
+    end
+    S->>C: EndOfStream
+```
+
+Steps 1–5 are identical to the plain INSERT phase. After the end-of-input terminator:
+
+6. The server sends a `Data` header block for the `RETURNING` result (0 rows, full column structure).
+7. The server streams result blocks interleaved with `Progress`, `ProfileInfo`, `Log`, and `ProfileEvents` packets, exactly as in the Query phase response loop.
+8. If `WITH TOTALS` is active the server sends a `Totals` packet; if `extremes` is enabled it sends an `Extremes` packet.
+9. The server sends `EndOfStream`.
+
+**Client implementation note.** A client that handles plain `INSERT` by draining until `EndOfStream`/`Exception` and discarding all non-`EndOfStream` packets will silently drop the `RETURNING` result. To consume the result the client must detect the `Data` header packet that arrives after the end-of-input terminator and switch into the Query-phase response loop. The simplest safe approach is to treat the post-terminator response identically to a `SELECT` response: accumulate `Data` blocks, handle `Totals`/`Extremes`, and exit on `EndOfStream` or `Exception`.
+
+**Protocol compatibility gate.** The server only enables this post-terminator result stream for clients with protocol revision `DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS` or newer. For older native clients, `INSERT ... RETURNING` is rejected with `NOT_IMPLEMENTED` before insert data is processed.
+
+**Settings restriction.** The following settings raise `NOT_IMPLEMENTED` if supplied in the `RETURNING` subquery `SETTINGS` clause, because they operate on shared query-level state that is captured at `INSERT` registration and cannot be correctly scoped to the subquery alone:
+
+| Category | Rejected settings |
+|---|---|
+| Memory | `max_memory_usage`, `max_memory_usage_for_user`, `memory_overcommit_ratio_denominator`, `memory_overcommit_ratio_denominator_for_user`, `memory_usage_overcommit_max_wait_microseconds` |
+| Execution time | `max_execution_time`, `timeout_overflow_mode` |
+| Temporary data on disk | `max_temporary_data_on_disk_size_for_query`, `max_temporary_data_on_disk_size_for_user`, `temporary_files_codec`, `temporary_files_buffer_size` |
+| Network bandwidth | `max_network_bandwidth_for_user`, `max_network_bandwidth_for_all_users`, `max_remote_read_network_bandwidth`, `max_remote_write_network_bandwidth`, `max_local_read_bandwidth`, `max_local_write_bandwidth` |
+| Concurrency / admission | `max_concurrent_queries_for_user`, `max_concurrent_queries_for_all_users`, `queue_max_wait_ms`, `replace_running_query`, `replace_running_query_max_wait_ms`, `priority`, `low_priority_query_wait_time_ms`, `workload`, `reserve_memory`, `use_concurrency_control` |
+| Query cache | `use_query_cache`, `enable_reads_from_query_cache`, `enable_writes_to_query_cache`, `query_cache_nondeterministic_function_handling`, `query_cache_system_table_handling` |
+| Profile | `profile` (rejected because it can expand into any of the settings above) |
+
+Result-shaping limits (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) are fully supported, as they operate only on the result pipeline.
+
+`use_query_cache` is also rejected when enabled via session or outer `INSERT` settings (for example `SET use_query_cache = 1`), not only when specified in the `RETURNING` subquery itself.
+
+The same query-global settings class (except `use_concurrency_control`) and the query-cache settings family (`use_query_cache`, `enable_reads_from_query_cache`, `enable_writes_to_query_cache`, `query_cache_nondeterministic_function_handling`, `query_cache_system_table_handling`) are also rejected in source-side `SETTINGS` of `INSERT ... SELECT ... RETURNING ... SETTINGS ...`, because those values are bound at query registration or unsupported in the delayed `RETURNING` path and cannot be scoped to source phase only. Explicit query/source `SETTINGS parallel_distributed_insert_select = 1` is also rejected with `NOT_IMPLEMENTED` for `INSERT ... RETURNING`: the `RETURNING` phase is initiator-only and cannot be executed on each shard's remote `INSERT`. When `parallel_distributed_insert_select` is enabled only via session/profile defaults, `INSERT ... RETURNING` falls back to the initiator-local source pipeline.
+
+Output format settings (e.g. `output_format_json_quote_64bit_integers`) supplied in the `RETURNING` subquery `SETTINGS` are accepted but silently ignored — the result is serialized using the output format established by the outer query context and the client transport.
+
+`input()` is not supported in the `RETURNING` subquery and is rejected with `NOT_IMPLEMENTED`.
+
 ## Message reference {#message-reference}
 
 Fields are listed in wire order. The `Type` column uses:
@@ -551,6 +618,7 @@ Client → Server, embedded in the Query body (field 2). Gated by `CLIENT_INFO` 
 | 23 | jwt                          | String  | inter-server | JWT_IN_INTERSERVER (v54476), if jwt_present=1 | JWT bearer token, only present when field 22 = `1`. |
 | 24 | client_agent                 | String  | client       | CLIENT_AGENT_IN_CLIENT_INFO (v54485)   | Trailing field. Identifier of the client tool/agent, auto-detected from the environment (e.g. `claude-code`, `cursor`, `gemini-cli`, or the `AGENT` env var). External clients with no detected agent send an empty string. Present on the normal Query path once negotiated version ≥ 54485 (sent on all interfaces, not only TCP). |
 | 25 | is_internal                  | UInt8   | client       | INTERNAL_QUERY_FLAG (v54486)           | Trailing field. `1` for a server-internal query (not user-issued), propagated to remote queries to label them internal in `system.query_log`; orthogonal to `query_kind` (field 1). External clients send `0`. Present once negotiated version ≥ 54486 (sent on all interfaces, not only TCP). |
+| 26 | current_roles                | UInt8 [+ String list] | inter-server | INTERSERVER_CURRENT_ROLES (v54488) | Trailing field. `[UInt8 present]`, then when `present = 1` a `[VarUInt count][String]*count` list of the initiator's active (enabled) role names. Lets a secondary node scope row policies to the initiator's roles instead of the user's default roles. Only populated for inter-server queries and only when `push_external_roles_in_interserver_queries = 1`; otherwise, and for external clients, `present = 0`. The presence byte is required once negotiated version ≥ 54488 (sent on all interfaces, not only TCP). For inter-server queries the serialized list is also folded into the `auth_hash` (see [Inter-server authentication](#inter-server-authentication)). |
 
 <Info>
 **Interface-dependent layout (fields 7–12)**
@@ -582,7 +650,7 @@ The Query field 4 (`auth_hash`) is **not** the shared cluster secret on the wire
 
 1. **Enter inter-server mode.** The connecting server signals it inside `ClientHello`: the `user` field is the inter-server marker and `password` is empty. It then appends two more strings — the cluster name and a freshly-generated 32-byte `salt` (`encodeSHA256` of a random value) — immediately after the `user`/`password` fields, as part of the same `ClientHello` packet. The server reads these two strings **before** it sends `ServerHello`, so a client must write them up front; waiting for `ServerHello` first deadlocks, because the server is blocked reading them.
 2. **Obtain the nonce.** `ServerHello` carries an 8-byte `UInt64` nonce when `INTERSERVER_SECRET_V2` (v54462) is negotiated.
-3. **Compute the hash.** For every non-`InitialQuery` Query packet, the client writes `encodeSHA256(salt + nonce + cluster_secret + query + query_id + initial_user + external_roles)` into field 4 — a 32-byte digest. (`nonce` is its decimal string form, present only when negotiated ≥ v54462; `external_roles` is appended only when `INTERSERVER_EXTERNALLY_GRANTED_ROLES` (v54472) is negotiated.) For an `InitialQuery`, or when no cluster secret is configured, the client writes an empty string instead.
+3. **Compute the hash.** For every non-`InitialQuery` Query packet, the client writes `encodeSHA256(salt + nonce + cluster_secret + query + query_id + initial_user + external_roles + current_roles)` into field 4 — a 32-byte digest. (`nonce` is its decimal string form, present only when negotiated ≥ v54462; `external_roles` is appended only when `INTERSERVER_EXTERNALLY_GRANTED_ROLES` (v54472) is negotiated; `current_roles` is the serialized role-name list — `[VarUInt count][String]*count`, without the presence byte — appended only when `INTERSERVER_CURRENT_ROLES` (v54488) is negotiated and the list is present.) For an `InitialQuery`, or when no cluster secret is configured, the client writes an empty string instead.
 4. **Verify.** The server reads field 4 with a 32-byte cap and recomputes the same concatenation using its own copy of the cluster secret; the connection is rejected if the digests differ.
 
 External (non-inter-server) clients never enter this mode and always send an empty `auth_hash`.
@@ -715,7 +783,7 @@ The 8 columns, in this exact order:
 | 3 | host_name               | String   | Server hostname emitting the log |
 | 4 | query_id                | String   | Query ID the log belongs to |
 | 5 | thread_id               | UInt64   | OS thread ID |
-| 6 | priority                | Int8     | Log level (Poco priority: 1 = Fatal, … 8 = Trace) |
+| 6 | priority                | Int8     | Log level (Poco priority: 1 = Fatal, … 8 = Trace, 9 = Test) |
 | 7 | source                  | String   | Logger name |
 | 8 | text                    | String   | Log message text |
 
@@ -1001,7 +1069,7 @@ The `compression` flag in the [Query packet](#query) (field 6) toggles compressi
 
 | Setting                  | Default       | Unit   | Description |
 |--------------------------|---------------|--------|-------------|
-| `send_logs_level`        | `"fatal"`     | string | Minimum log level. Values: `"none"`, `"fatal"`, `"error"`, `"warning"`, `"information"`, `"debug"`, `"trace"`. |
+| `send_logs_level`        | `"fatal"`     | string | Minimum log level. Values: `"none"`, `"fatal"`, `"error"`, `"warning"`, `"information"`, `"debug"`, `"trace"`, `"test"`. |
 | `send_logs_source_regexp`| `""`          | string | Regex filter on the logger source. Empty = all sources pass. |
 
 Setting `send_logs_level` to anything other than `"none"` makes the server emit [Log](#log) packets during query execution.

@@ -8,8 +8,6 @@ void BlockIO::resetPipeline(bool cancel)
 {
     if (cancel)
         pipeline.cancel();
-    /// May use storage that is protected by pipeline, so should be destroyed first
-    query_metadata_cache.reset();
     pipeline.reset();
 }
 
@@ -44,7 +42,6 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) /// NOLINT(hicpp-noexcept-move,per
     reset();
 
     process_list_entries    = std::move(rhs.process_list_entries);
-    query_metadata_cache    = std::move(rhs.query_metadata_cache);
     pipeline                = std::move(rhs.pipeline);
     finish_callback_state   = std::move(rhs.finish_callback_state);
 
@@ -74,8 +71,6 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
     releaseQuerySlot();
     if (finalize_query_pipeline)
     {
-        /// Keep the same teardown order as in resetPipeline:
-        query_metadata_cache.reset();
         const QueryPipelineFinalizedInfo query_pipeline_finalized_info = finalize_query_pipeline(std::move(pipeline));
         for (const auto & callback : finish_callbacks)
             callback(query_pipeline_finalized_info, finish_time);
