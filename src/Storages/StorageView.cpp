@@ -1214,6 +1214,27 @@ SinkToStoragePtr StorageView::write(
 
     auto column_mapping = extractColumnMapping(select, getStorageID(), target_columns, target_table_ref);
 
+    /// A `SELECT *` view does not carry a per-column mapping, so the identifier check inside
+    /// `extractColumnMapping` never runs for it. The wildcard is expanded and frozen into the view's
+    /// column list when the view is created, and that expansion is not limited to insertable target
+    /// columns: under `asterisk_include_materialized_columns = 1` / `asterisk_include_alias_columns = 1`
+    /// a view defined as `CREATE VIEW v AS SELECT * FROM t` persists a header that also contains the
+    /// target's `MATERIALIZED` and `ALIAS` columns. Forwarding such a header would fail deep inside the
+    /// nested `INSERT` with an error naming a column and a table the user never wrote — for example
+    /// `INSERT INTO v (a)` reporting `No such column al in table t`. Validate the whole view surface
+    /// against the target's insertable columns here so the view is rejected up front instead.
+    for (const auto & col : metadata_snapshot->getSampleBlockNonMaterialized())
+    {
+        auto it = column_mapping.find(col.name);
+        const String target_name = (it != column_mapping.end()) ? it->second : col.name;
+        if (!target_columns.contains(target_name))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because its column '{}' does not correspond to a column of "
+                "the underlying table {} that can be written to",
+                getStorageID().getFullTableName(), col.name,
+                target_table->getStorageID().getFullTableName());
+    }
+
     /// A SELECT-list alias may collide with the name of a *different* underlying column, as in
     /// `SELECT t.a AS b, t.b AS a FROM t WHERE a > 0`. If the WHERE references such a name, the
     /// constraint is ambiguous: at read time the name resolves to the alias by default but to the

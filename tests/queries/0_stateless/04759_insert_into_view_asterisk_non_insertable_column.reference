@@ -1,0 +1,6 @@
+materialized column in the view header
+alias column in the view header
+nothing was written
+0
+a plain wildcard view is still insertable
+1	42	2	3

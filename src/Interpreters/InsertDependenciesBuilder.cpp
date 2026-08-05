@@ -17,7 +17,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageView.h>
 
 #include <DataTypes/DataTypeEnum.h>
