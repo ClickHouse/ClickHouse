@@ -30,6 +30,9 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    /// `readImpl` forwards the requested column NAMES into the inner query, whose column types may
+    /// differ from the view's declared ones, so a rewritten `arr.size0` may not resolve there.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
