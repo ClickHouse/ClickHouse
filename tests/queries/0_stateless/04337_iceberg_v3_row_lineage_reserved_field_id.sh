@@ -81,8 +81,42 @@ PY
 
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH_UNMAPPED}') ORDER BY x;" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 
+# Likewise, Iceberg assigns field ids from 1 upwards, so id 0 was never assigned by any table even
+# though it is numerically within `last-column-id`. An unmapped column with that id is a genuine
+# schema mismatch and must still be rejected, so the accepted window needs a lower bound too.
+ICEBERG_TABLE_PATH_ZERO="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_v3_zero"
+rm -rf "${ICEBERG_TABLE_PATH_ZERO}"
+
+${CLICKHOUSE_CLIENT} --query "
+    SET allow_experimental_insert_into_iceberg = 1;
+    CREATE TABLE t_v3_zero (x Int32) ENGINE = IcebergLocal('${ICEBERG_TABLE_PATH_ZERO}');
+    INSERT INTO t_v3_zero (x) VALUES (1);
+"
+
+DATAFILE_ZERO=$(ls "${ICEBERG_TABLE_PATH_ZERO}"/data/*.parquet 2>/dev/null | head -1)
+
+python3 - "$DATAFILE_ZERO" <<'PY'
+import sys
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+path = sys.argv[1]
+x = pa.field("x", pa.int32(), nullable=False, metadata={b"PARQUET:field_id": b"1"})
+# 0: below the table's last-column-id, but Iceberg never assigns it because ids start at 1.
+extra = pa.field("extra", pa.int64(), nullable=True, metadata={b"PARQUET:field_id": b"0"})
+table = pa.table(
+    {"x": pa.array([1], pa.int32()), "extra": pa.array([0], pa.int64())},
+    schema=pa.schema([x, extra]),
+)
+pq.write_table(table, path)
+PY
+
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH_ZERO}') ORDER BY x;" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
+
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_v3_row_lineage;"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_v3_unmapped;"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_v3_zero;"
 rm -rf "${ICEBERG_TABLE_PATH}"
 rm -rf "${ICEBERG_TABLE_PATH_UNMAPPED}"
+rm -rf "${ICEBERG_TABLE_PATH_ZERO}"
