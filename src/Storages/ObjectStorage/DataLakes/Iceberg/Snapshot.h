@@ -26,25 +26,6 @@ struct IcebergDataSnapshot
     /// Rows in equality-delete files (snapshot summary). Not a count of deleted data rows;
     /// used only to fail closed trivial COUNT when equality deletes are present.
     std::optional<size_t> total_equality_delete_rows;
-
-    std::optional<size_t> getTotalRows() const
-    {
-        if (!total_rows.has_value() || !total_position_delete_rows.has_value())
-            return std::nullopt;
-        /// Fail closed on inconsistent summary: unsigned subtract would wrap to a huge COUNT.
-        if (*total_position_delete_rows > *total_rows)
-            return std::nullopt;
-        return *total_rows - *total_position_delete_rows;
-    }
-
-    /// Summary `total-equality-deletes` is optional. Only trust the cheap getTotalRows() shortcut
-    /// when the field is present and explicitly zero; absent or >0 must fall through / fail closed.
-    /// Callers must also fail closed when DVs and parquet position deletes coexist in manifests —
-    /// snapshot totals alone cannot express Iceberg DV supersession of matching position deletes.
-    bool allowsSnapshotTotalRowsShortcut() const
-    {
-        return total_equality_delete_rows.has_value() && *total_equality_delete_rows == 0;
-    }
 };
 
 using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;

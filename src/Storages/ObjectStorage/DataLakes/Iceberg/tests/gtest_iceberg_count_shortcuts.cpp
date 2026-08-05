@@ -45,40 +45,18 @@ TEST(IcebergCountShortcuts, HasEqualityAndPositionDeleteHelpers)
     EXPECT_TRUE(hasIcebergPositionDeletes(iceberg));
 }
 
-TEST(IcebergCountShortcuts, SnapshotShortcutRequiresExplicitZeroEqualityDeletes)
+TEST(IcebergCountShortcuts, SnapshotSummaryFieldsRemainLoggingHintsOnly)
 {
+    /// IcebergMetadata::totalRows must not return summary math. These fields stay populated for
+    /// mismatch warnings / equality fail-closed, but there is no getTotalRows shortcut anymore.
     Iceberg::IcebergDataSnapshot snapshot;
     snapshot.total_rows = 100;
     snapshot.total_position_delete_rows = 10;
-
-    /// Field absent: getTotalRows() would succeed, but shortcut must not be used.
-    ASSERT_TRUE(snapshot.getTotalRows().has_value());
-    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
-
-    snapshot.total_equality_delete_rows = 5;
-    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
-
-    snapshot.total_equality_delete_rows = 0;
-    EXPECT_TRUE(snapshot.allowsSnapshotTotalRowsShortcut());
-    EXPECT_EQ(*snapshot.getTotalRows(), 90u);
-
-    /// Note: IcebergMetadata::totalRows still scans manifests for DV + parquet position-delete
-    /// coexistence before trusting this snapshot shortcut.
-}
-
-TEST(IcebergCountShortcuts, SnapshotGetTotalRowsFailsClosedWhenDeletesExceedRows)
-{
-    Iceberg::IcebergDataSnapshot snapshot;
-    snapshot.total_rows = 100;
-    snapshot.total_position_delete_rows = 150;
     snapshot.total_equality_delete_rows = 0;
 
-    EXPECT_TRUE(snapshot.allowsSnapshotTotalRowsShortcut());
-    EXPECT_FALSE(snapshot.getTotalRows().has_value());
-
-    snapshot.total_position_delete_rows = 100;
-    ASSERT_TRUE(snapshot.getTotalRows().has_value());
-    EXPECT_EQ(*snapshot.getTotalRows(), 0u);
+    EXPECT_EQ(*snapshot.total_rows, 100u);
+    EXPECT_EQ(*snapshot.total_position_delete_rows, 10u);
+    EXPECT_EQ(*snapshot.total_equality_delete_rows, 0u);
 }
 
 #endif

@@ -166,8 +166,9 @@ struct ProcessedManifestFileEntry
 using ProcessedManifestFileEntryPtr = std::shared_ptr<const ProcessedManifestFileEntry>;
 
 /// Live POSITION_DELETE entries are either puffin deletion vectors or parquet position-delete files.
-/// Iceberg readers ignore matching parquet position deletes when a DV applies; trivial COUNT must
-/// not subtract both. Detect coexistence so callers can fail closed.
+/// Iceberg readers ignore matching parquet position deletes when a DV applies. Helpers classify
+/// coexistence for callers that need the distinction; IcebergMetadata::totalRows fail-closes on
+/// any live position deletes (DV or parquet) rather than subtracting either kind.
 struct PositionDeleteKindPresence
 {
     bool has_deletion_vectors = false;
