@@ -37,9 +37,13 @@ SETTINGS enable_analyzer = 0, enable_parallel_replicas = 1, max_parallel_replica
     parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x',
     parallel_replicas_only_with_analyzer = 1;
 
--- Without the custom key there is nothing to filter by, and the query fails the same way it does with the analyzer.
+-- Without the custom key there is nothing to filter by, and the query fails the same way it does with the
+-- analyzer. This one asks for the parallel replicas of a plain `MergeTree` explicitly, because it is the only
+-- query here that needs them to be used to get its result: the replicas of the cluster are the same server, so
+-- the others return the same numbers whether the data is read by one replica of a shard or by all of them.
 SELECT count(), sum(y) FROM d
 SETTINGS enable_analyzer = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0,
+    parallel_replicas_for_non_replicated_merge_tree = 1,
     parallel_replicas_mode = 'custom_key_sampling'; -- { serverError BAD_ARGUMENTS }
 
 -- JOINs are not supported with the custom key, and the query is executed without the parallel replicas.
