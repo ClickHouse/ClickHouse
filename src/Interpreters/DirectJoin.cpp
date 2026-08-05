@@ -109,7 +109,7 @@ DirectKeyValueJoin::DirectKeyValueJoin(
     right_sample_block_with_storage_column_names = right_sample_block_with_storage_column_names_;
 }
 
-bool DirectKeyValueJoin::addBlockToJoin(const Block &, bool)
+bool DirectKeyValueJoin::addBlockToJoin(const Block &, size_t, size_t, bool)
 {
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
 }

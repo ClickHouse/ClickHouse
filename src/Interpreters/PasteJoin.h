@@ -29,7 +29,7 @@ public:
     std::string getName() const override { return "PasteJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
-    bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
+    bool addBlockToJoin(const Block & /* block */, size_t /* num_rows */, size_t /* worker_id */, bool /* check_limits */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::addBlockToJoin should not be called");
     }

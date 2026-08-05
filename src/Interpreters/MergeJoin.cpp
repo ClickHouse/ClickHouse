@@ -823,7 +823,7 @@ Block MergeJoin::modifyRightBlock(const Block & src_block) const
     return materializeBlock(src_block);
 }
 
-bool MergeJoin::addBlockToJoin(const Block & src_block, bool)
+bool MergeJoin::addBlockToJoin(const Block & src_block, size_t /* num_rows */, size_t /* worker_id */, bool)
 {
     Block block = modifyRightBlock(src_block);
 

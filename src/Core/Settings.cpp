@@ -299,7 +299,7 @@ The `max_joined_block_size_bytes` combined with this setting is helpful to avoid
 )", 0) \
     DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
 Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
-This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
+This can speed up the non-joined phase of hash joins with large right tables.
 When disabled, non-joined rows are processed by a single thread.
 )", 0) \
     DECLARE(MaxThreads, max_insert_threads, 0, R"(
@@ -3735,11 +3735,11 @@ Possible values:
 
  When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
+ `hash` and `parallel_hash` are aliases of the same join class. Listing one or the other does not control how parallel the join is. Parallelism is chosen automatically from the join kind, `parallel_hash_join_threshold`, and `max_threads`.
+
 - parallel_hash
 
- A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
-
- When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ Same as `hash`.
 
 - partial_merge
 
@@ -8386,8 +8386,8 @@ When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=val
 Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
 )", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
-When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
-The former is used when we know that the right table size is below the threshold.
+When a hash join is used and an estimate of the right table size is available, this threshold decides whether the join may run in parallel.
+Below the threshold, the join runs with a simpler single-threaded execution; at or above it, it can use multiple threads (when `max_threads` > 1).
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.

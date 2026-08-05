@@ -1,6 +1,6 @@
 -- The following queries use very weird block structure:
 -- __table3.b UInt8 UInt8(size = 1), __table3.b UInt8 Const(size = 1, UInt8(size = 1)), __table3.c UInt8 Const(size = 1, UInt8(size = 1))
--- That leads to a pretty legit error in ConcurrentHashJoin within a call to Block::cloneEmpty():
+-- That leads to a pretty legit error in HashJoin within a call to Block::cloneEmpty():
 -- Code: 352. DB::Exception: Block structure mismatch in (columns with identical name must have identical structure) stream: different columns:
 -- __table3.b UInt8 UInt8(size = 0)
 -- __table3.b UInt8 Const(size = 0, UInt8(size = 1))

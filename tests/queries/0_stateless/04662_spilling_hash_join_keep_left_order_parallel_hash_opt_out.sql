@@ -3,7 +3,7 @@
 
 -- The `parallel_hash` counterpart of `04649_spilling_hash_join_keep_left_order_opt_out`: with
 -- `query_plan_read_in_order_through_spilling_join = 0` nothing pins the join, so the
--- `ConcurrentHashJoin`-backed `SpillingHashJoin` really converts its slots to `GraceHashJoin` once
+-- parallel-`HashJoin`-backed `SpillingHashJoin` really converts its chunks to `GraceHashJoin` once
 -- the threshold is crossed. Ratio-based auto-spill stays enabled: the effective threshold is the
 -- minimum of the ratio-derived value and the absolute `max_bytes_before_external_join`, so the
 -- absolute value keeps the test deterministic while the ratio branch is exercised too.
