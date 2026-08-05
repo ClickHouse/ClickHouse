@@ -145,13 +145,8 @@ UInt32 ClusterMetadataDDLWorker::getMaxLogPointer() const
 bool ClusterMetadataDDLWorker::processCommittedEntries()
 {
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataDDLWorker::processCommittedEntries");
-    return catchUpLocalSnapshot(getMaxLogPointer());
-}
-
-bool ClusterMetadataDDLWorker::catchUpLocalSnapshot(UInt32 target_log_ptr)
-{
     std::lock_guard lock(processing_mutex);
-    return catchUpLocalSnapshotUnlocked(target_log_ptr);
+    return catchUpLocalSnapshotUnlocked(getMaxLogPointer());
 }
 
 bool ClusterMetadataDDLWorker::catchUpLocalSnapshotUnlocked(UInt32 target_log_ptr)
@@ -419,9 +414,6 @@ bool ClusterMetadataDDLWorker::reloadSnapshotAndAdvanceIfTooFarBehind(UInt32 log
         max_log_ptr,
         logs_to_keep);
 
-    if (!snapshot_reloader)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster metadata DDL worker cannot reload snapshot because snapshot reloader is not set");
-
     const String digest = snapshot_reloader();
     updateReplicaDigest(digest);
     updateReplicaLogPointer(max_log_ptr);
@@ -608,22 +600,11 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
             local_materialization_started = true;
             local_digest = mutation_applier(mutations_to_apply);
             if (caught_up_to_durable_log && local_digest != target_digest)
-            {
-                if (!snapshot_reloader)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cluster metadata DDL worker local digest {} does not match durable digest {} and snapshot reloader is not set",
-                        local_digest,
-                        target_digest);
-
-                local_digest = snapshot_reloader();
-                if (local_digest != target_digest)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cluster metadata DDL worker reloaded digest {} does not match durable digest {}",
-                        local_digest,
-                        target_digest);
-            }
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cluster metadata DDL worker local digest {} does not match durable digest {}",
+                    local_digest,
+                    target_digest);
             local_snapshot_published = true;
         }
 

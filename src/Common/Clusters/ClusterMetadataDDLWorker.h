@@ -110,7 +110,6 @@ private:
     void initializeCounter();
     void registerReplica();
     bool reloadSnapshotAndAdvanceIfTooFarBehind(UInt32 log_ptr, UInt32 max_log_ptr, UInt32 logs_to_keep);
-    bool catchUpLocalSnapshot(UInt32 target_log_ptr);
     bool catchUpLocalSnapshotUnlocked(UInt32 target_log_ptr);
     EnqueuedMutation enqueueMutationImpl(const ClusterMetadataMutation & mutation);
     void applyEnqueuedMutationLocallyUnlocked(const EnqueuedMutation & enqueued, const ClusterMetadataMutation & mutation);
