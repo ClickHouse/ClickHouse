@@ -139,6 +139,23 @@ LogsQLParser::IncreaseDepth::~IncreaseDepth()
     --parser.depth;
 }
 
+LogsQLParser::QueryScopeGuard::QueryScopeGuard(LogsQLParser & parser_)
+    : parser(parser_)
+    , saved_options_time_offset_ns(parser_.options_time_offset_ns)
+    , saved_options_global_filter(parser_.options_global_filter)
+    , saved_query_time_range_ns(parser_.query_time_range_ns)
+    , saved_current_stats_time_bucket_ns(parser_.current_stats_time_bucket_ns)
+{
+}
+
+LogsQLParser::QueryScopeGuard::~QueryScopeGuard()
+{
+    parser.options_time_offset_ns = saved_options_time_offset_ns;
+    parser.options_global_filter = saved_options_global_filter;
+    parser.query_time_range_ns = saved_query_time_range_ns;
+    parser.current_stats_time_bucket_ns = saved_current_stats_time_bucket_ns;
+}
+
 LogsQLParser::LogsQLParser(const char * begin_, const char * end_, Context context_)
     : lex(begin_, end_), context(std::move(context_))
 {
@@ -185,6 +202,7 @@ ASTPtr LogsQLParser::parse()
 LogsQLParser::Layer LogsQLParser::parseQuery(bool is_subquery)
 {
     IncreaseDepth depth_guard(*this);
+    QueryScopeGuard scope_guard(*this);
 
     parseQueryOptions();
 

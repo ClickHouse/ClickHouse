@@ -98,11 +98,27 @@ private:
         ~IncreaseDepth();
     };
 
+    /// Saves and restores the query-scoped state around a recursive `parseQuery`,
+    /// so that a subquery (which inherits the state of its parent on entry) cannot
+    /// leak its own time range, offset, bucket, or global filter into the parent.
+    struct QueryScopeGuard
+    {
+        LogsQLParser & parser;
+        Int64 saved_options_time_offset_ns;
+        ASTPtr saved_options_global_filter;
+        std::optional<Int64> saved_query_time_range_ns;
+        std::optional<Int64> saved_current_stats_time_bucket_ns;
+
+        explicit QueryScopeGuard(LogsQLParser & parser_);
+        ~QueryScopeGuard();
+    };
+
     [[noreturn]] void throwSyntaxError(const String & message) const { lex.throwSyntaxError(message); }
     [[noreturn]] void throwNotImplemented(const String & what) const;
 
     /// The identifier for the column backing the given LogsQL field.
     ASTPtr columnExpr(const String & field_name) const;
+    ASTPtr numericColumnExpr(const String & field_name) const;
     String columnName(const String & field_name) const;
 
     String parseFieldName();
