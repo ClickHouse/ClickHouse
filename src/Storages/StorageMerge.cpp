@@ -1342,6 +1342,11 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
+        /// The child plan is united into this pipeline in the same process, where nothing
+        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+        auto child_select_query_options = SelectQueryOptions(processed_stage);
+        child_select_query_options.is_local_plan_for_distributed_query = true;
+
         if (use_analyzer)
         {
             /// Converting query to AST because types might be different in the source table.
@@ -1349,7 +1354,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             auto ast = modified_query_info.query_tree->toAST();
             InterpreterSelectQueryAnalyzer interpreter(ast,
                 modified_context,
-                SelectQueryOptions(processed_stage));
+                child_select_query_options);
 
             auto & planner = interpreter.getPlanner();
             planner.buildQueryPlanIfNeeded();
@@ -1361,7 +1366,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             /// TODO: Find a way to support projections for StorageMerge
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
-                SelectQueryOptions(processed_stage)};
+                child_select_query_options};
 
             interpreter.buildQueryPlan(plan);
         }
