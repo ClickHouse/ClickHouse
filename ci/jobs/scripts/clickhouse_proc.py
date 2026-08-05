@@ -1038,7 +1038,13 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         watchdogs = []
         for _ in range(cls.WATCHDOG_ANCESTOR_LIMIT):
             pid = cls._parent_pid(pid)
-            if pid <= 1 or not cls._watchdog_process_alive(pid):
+            # `unknown_alive=False`: this is discovery, and its results become
+            # `SIGKILL` targets in `_kill_watchdogs`. An ancestor whose identity
+            # cannot be read must end the walk, not be promoted into a kill
+            # target - otherwise a `ps` failure while the parent-pid lookup
+            # still works would take out the `sh -c` wrapper and every live
+            # ancestor above it.
+            if pid <= 1 or not cls._watchdog_process_alive(pid, unknown_alive=False):
                 break
             watchdogs.append(pid)
         watchdogs.reverse()
@@ -1061,6 +1067,15 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             return 0
         try:
             return int(cls._ps_field(pid, "ppid") or 0)
+        except ProcessIdentityUnknown as e:
+            # "Cannot be determined" is an answer here, not an error to raise:
+            # this walk runs inside `start` and inside the teardown, and a
+            # transient `ps` failure must not make `start` report success
+            # without recording the pids, nor abort a teardown before any
+            # signal is sent. With 0 the callers degrade to the no-watchdog
+            # path and the startup snapshot.
+            print(f"WARNING: cannot read the parent of process {pid}: {e}")
+            return 0
         except ValueError:
             return 0
 
@@ -1151,7 +1166,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return cls._process_alive_as(pid, lambda name: name == cls.SERVER_ARGV0)
 
     @classmethod
-    def _watchdog_process_alive(cls, pid) -> bool:
+    def _watchdog_process_alive(cls, pid, unknown_alive=True) -> bool:
         """Whether `pid` is still a live ClickHouse watchdog process.
 
         The watchdog is not `clickhouse-server`: `BaseDaemon::setupWatchdog`
@@ -1166,6 +1181,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         the original name is restored into `argv[0]` for the next server to
         inherit. A pid given to this function was found as the watchdog above a
         live server, so either name means it is still that process.
+
+        The fail-close default of treating an unreadable identity as alive is
+        right only for pids that were already established as watchdogs - it
+        keeps `_wait_watchdogs_settled` waiting and lets `_kill_watchdogs`
+        finish the job. `_server_watchdog_pids` passes `unknown_alive=False`,
+        because there the pid is a mere ancestor candidate.
         """
         return cls._process_alive_as(
             pid,
@@ -1174,23 +1195,26 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 len(name) >= cls.WATCHDOG_ARGV0_MIN
                 and cls.WATCHDOG_ARGV0.startswith(name)
             ),
+            unknown_alive=unknown_alive,
         )
 
     @classmethod
-    def _process_alive_as(cls, pid, is_expected_name) -> bool:
+    def _process_alive_as(cls, pid, is_expected_name, unknown_alive=True) -> bool:
         """Whether `pid` is alive and `is_expected_name` accepts its identity.
 
         The identity handed to `is_expected_name` is `argv[0]` of the process
-        after stripping the directory; fail-close semantics when the identity
-        cannot be read are described in `_server_process_alive`.
+        after stripping the directory. `unknown_alive` is the answer when the
+        identity cannot be read at all and the pid exists: the fail-close
+        default is described in `_server_process_alive`, and the one caller
+        for which it is the wrong direction in `_watchdog_process_alive`.
         """
         try:
             argv0 = cls._process_argv0(pid)
         except ProcessIdentityUnknown as e:
-            alive = cls._pid_exists(pid)
+            alive = unknown_alive and cls._pid_exists(pid)
             print(
                 f"WARNING: cannot identify process {pid} ({e}) - treating it as "
-                f"{'a live server' if alive else 'gone'}"
+                f"{'alive' if alive else 'gone'}"
             )
             return alive
         return argv0 is not None and is_expected_name(os.path.basename(argv0))

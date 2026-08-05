@@ -718,6 +718,49 @@ def test_parent_pid_without_proc_matches_the_proc_answer(monkeypatch, tmp_path):
         _cleanup(proc, pid)
 
 
+def test_watchdog_walk_survives_a_ps_failure_without_proc(monkeypatch):
+    # A `ps` failure inside the watchdog walk is "no parent information", not
+    # an exception: raised out of `start` it reported success without ever
+    # recording `self.pid_*`, so `stop_server` skipped the replica entirely;
+    # raised out of `_stop_one_server` it aborted the teardown before any
+    # signal was sent, leaving the server holding the status lock.
+    monkeypatch.setattr(ClickHouseProc, "HAS_PROC", False)
+
+    def unavailable(*args, **kwargs):
+        raise ProcessIdentityUnknown("ps is not available")
+
+    monkeypatch.setattr(ClickHouseProc, "_ps_field", classmethod(unavailable))
+    assert ClickHouseProc._parent_pid(os.getpid()) == 0, (
+        "a ps failure must read as an unknown parent, not break the caller"
+    )
+    assert ClickHouseProc._server_watchdog_pids(os.getpid()) == [], (
+        "the watchdog walk must degrade to no watchdogs when ps fails"
+    )
+
+
+def test_watchdog_discovery_does_not_promote_unreadable_ancestors(monkeypatch):
+    # `ps -o command=` failing while `ps -o ppid=` still works: an ancestor
+    # whose identity cannot be read must end the walk. The fail-close "unknown
+    # means alive" of the server liveness check is wrong here - it would turn
+    # the `sh -c` wrapper and every live ancestor above it into watchdogs, and
+    # `_kill_watchdogs` would then aim SIGKILL at unrelated processes.
+    parents = {10: 20, 20: 30, 30: 1}
+    monkeypatch.setattr(
+        ClickHouseProc,
+        "_parent_pid",
+        classmethod(lambda cls, pid: parents.get(pid, 0)),
+    )
+
+    def unreadable(cls, pid):
+        raise ProcessIdentityUnknown(f"cannot read the command of process {pid}")
+
+    monkeypatch.setattr(ClickHouseProc, "_process_argv0", classmethod(unreadable))
+    monkeypatch.setattr(ClickHouseProc, "_pid_exists", staticmethod(lambda pid: True))
+    assert ClickHouseProc._server_watchdog_pids(10) == [], (
+        "ancestors with an unreadable identity were promoted into kill targets"
+    )
+
+
 def test_liveness_check_reports_alive_when_the_identity_cannot_be_read(
     monkeypatch, tmp_path
 ):
