@@ -635,6 +635,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                 continue;
             }
 
+            /// The last option is returned without revisiting the loop top, empty or not.
+            CurrentThread::checkIfNotCancelled();
             return std::make_tuple(request_uri, std::move(res));
         }
         catch (...)

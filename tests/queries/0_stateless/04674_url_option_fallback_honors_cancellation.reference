@@ -12,6 +12,11 @@ code QUERY_WAS_CANCELLED, options attempted: 2
 --- KILL QUERY while an empty option is skipped ---
 reported as a cancellation
 code QUERY_WAS_CANCELLED, options attempted: 1
+--- KILL QUERY while the only option is empty, schema inference ---
+code QUERY_WAS_CANCELLED, options attempted: 1
+--- not cancelled, only option empty ---
+reported as an empty file
+0
 --- not cancelled, all options down ---
 All uri (2) options are unreachable
 code NETWORK_ERROR, options attempted: 2

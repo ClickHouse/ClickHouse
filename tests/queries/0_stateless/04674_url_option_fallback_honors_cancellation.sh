@@ -301,6 +301,43 @@ wait "$CLIENT_PID" ||:
 grep -c -m1 'All uri' "$STDERR" | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
 outcome "$QUERY_ID_EMPTY"
 
+# The only option being empty returns without revisiting the loop top and without throwing, so
+# neither of the checks above is reached. Schema inference then runs out of options and reports
+# CANNOT_EXTRACT_TABLE_STRUCTURE, hiding the cancellation. Omitting the structure argument routes
+# the query to schema inference; the read path reports the cancellation from the pipeline itself.
+echo "--- KILL QUERY while the only option is empty, schema inference ---"
+QUERY_ID_ONLY="04674_only_${CLICKHOUSE_DATABASE}"
+rm -f "$RELEASE"
+${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_ONLY" --query "
+    SELECT * FROM url('http://127.0.0.1:$EMPTY_PORT/a', 'TSV')
+    SETTINGS engine_url_skip_empty_files = 1, max_execution_time = 0, http_receive_timeout = 900,
+             http_max_tries = 1, http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
+             send_logs_level = 'fatal'
+" > /dev/null 2>&1 &
+CLIENT_PID=$!
+wait_for_requests "$QUERY_ID_ONLY" 1
+${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$QUERY_ID_ONLY' ASYNC" > /dev/null
+wait_for_cancelled "$QUERY_ID_ONLY"
+touch "$RELEASE"
+wait "$CLIENT_PID" ||:
+outcome "$QUERY_ID_ONLY"
+
+# Must not regress: an honestly empty single option is still reported as an empty file, not as a
+# cancellation, and a read of it still returns no rows without an error.
+echo "--- not cancelled, only option empty ---"
+QUERY_ID_OKEMPTY="04674_okempty_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_OKEMPTY" --query "
+    SELECT * FROM url('http://127.0.0.1:$EMPTY_PORT/a', 'TSV')
+    SETTINGS engine_url_skip_empty_files = 1, max_execution_time = 0, http_receive_timeout = 900,
+             http_max_tries = 1, http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
+             send_logs_level = 'fatal'
+" 2>&1 | grep -c -m1 'all files are empty' | sed 's/^1$/reported as an empty file/;s/^0$/not reported as an empty file/'
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM url('http://127.0.0.1:$EMPTY_PORT/a', 'TSV', 's String')
+    SETTINGS engine_url_skip_empty_files = 1, max_execution_time = 0, http_receive_timeout = 900,
+             http_max_tries = 1, http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
+             send_logs_level = 'fatal'"
+
 # Must not regress: with no cancellation, all options genuinely down still reports the aggregate
 # NETWORK_ERROR naming the option count, and still attempts every option.
 echo "--- not cancelled, all options down ---"
