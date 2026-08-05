@@ -108,6 +108,12 @@ T BinaryRow::getFixedSizeData(Int32 pos)
     return getFixedSizeDataAt<T>(getFieldOffset(pos));
 }
 
+/// `getDecimal` is defined in the header, so it instantiates this in other translation units and
+/// needs a definition to link against. An implicit instantiation would not do: it has vague
+/// linkage, and the compiler is free to drop it once the wrapper has been inlined into every
+/// caller in this file, which is what happens in an optimized build.
+template Int64 BinaryRow::getFixedSizeData<Int64>(Int32 pos);
+
 bool BinaryRow::getBoolean(Int32 pos)
 {
     char res = getFixedSizeData<char>(pos);
