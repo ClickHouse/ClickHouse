@@ -1,6 +1,6 @@
 {
   "version": 6,
-  "settings": 295,
+  "settings": 297,
   "anchorRoutes": {
     "allow_special_bool_values_inside_variant": "/reference/settings/formats/other",
     "bool_false_representation": "/reference/settings/formats/bool",
@@ -124,6 +124,8 @@
     "input_format_mysql_dump_table_name": "/reference/settings/formats/input-format",
     "input_format_native_allow_types_conversion": "/reference/settings/formats/input-format",
     "input_format_native_decode_types_in_binary_format": "/reference/settings/formats/input-format",
+    "input_format_netcdf_add_dimension_columns": "/reference/settings/formats/input-format",
+    "input_format_netcdf_fill_value_as_null": "/reference/settings/formats/input-format",
     "input_format_null_as_default": "/reference/settings/formats/input-format",
     "input_format_orc_allow_missing_columns": "/reference/settings/formats/input-format",
     "input_format_orc_case_insensitive_column_matching": "/reference/settings/formats/input-format",
@@ -480,8 +482,8 @@
     {
       "path": "/reference/settings/formats/input-format",
       "label": "input_format_*",
-      "settings": 126,
-      "characters": 58538
+      "settings": 128,
+      "characters": 60717
     },
     {
       "path": "/reference/settings/formats/output-format",
