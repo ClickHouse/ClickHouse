@@ -37,7 +37,7 @@ run_and_report() {
         SETTINGS max_threads = 1, enable_analyzer = 1, optimize_functions_to_subcolumns = 1,
                  input_format_orc_filter_push_down = 1${extra:+, ${extra}}
         FORMAT JSON" \
-        | jq -c --arg label "${label}" '{label: $label, result: .data, rows_read: .statistics.rows_read}'
+        | jq -c --arg name "${label}" '{label: $name, result: .data, rows_read: .statistics.rows_read}'
 }
 
 echo '-- pruning: a tuple element must prune like the top-level column holding the same values'
