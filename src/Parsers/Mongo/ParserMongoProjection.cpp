@@ -59,13 +59,21 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
         result->children.push_back(child_node);
     }
 
+    if (!excluded.empty() && !result->children.empty())
+    {
+        /// Mongo rejects an exclusion inside an inclusion projection, with one exception: the
+        /// implicit `_id` may always be suppressed, and `{"name": 1, "_id": 0}` is the usual way
+        /// to ask for "only these fields". This dialect never adds an implicit `_id`, so the
+        /// exclusion has nothing left to do and is simply dropped.
+        std::erase(excluded, "_id");
+        if (!excluded.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "A projection must not mix inclusion and exclusion of fields, except an exclusion of '_id'");
+    }
+
     if (!excluded.empty())
     {
-        /// Mongo rejects an exclusion inside an inclusion projection (`_id` being the exception,
-        /// which this dialect does not generate), so a projection either names the fields to keep
-        /// or becomes a `* EXCEPT (...)`.
-        if (!result->children.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A projection must not mix inclusion and exclusion of fields");
+        /// A projection either names the fields to keep or becomes a `* EXCEPT (...)`.
 
         auto asterisk = make_intrusive<ASTAsterisk>();
 

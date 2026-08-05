@@ -142,7 +142,7 @@ A collection created explicitly with `createCollection` has no document to infer
 - An `update` is translated into `ALTER TABLE ... UPDATE`, which is asynchronous: the new value does not have to be visible to the next `find`.
 - The number of documents affected by `update` and `delete` is always reported as `0`.
 - Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch.
-- A projection lists exactly the fields it names: `_id` is not added to it implicitly, because a ClickHouse table has no implicit `_id` column.
+- A projection lists exactly the fields it names: `_id` is not added to it implicitly, because a ClickHouse table has no implicit `_id` column. An exclusion of `_id` inside an inclusion projection, as in `{"name": 1, "_id": 0}`, is accepted and has nothing left to do; an exclusion of any other field there is an error, as it is in MongoDB.
 - An `update` supports `$set`, `$unset`, `$inc`, `$mul`, `$min`, `$max`, `$rename`, `$currentDate`, `$push`, `$addToSet`, `$pop`, `$pull` and `$pullAll`. A row always has a value for every column, so `$unset` - and the field a `$rename` leaves behind - writes the default of the column type, which is the value an insert that leaves the field out writes.
 - `$lookup`, `$facet`, `$out`, `$merge` and the other pipeline stages not listed above are not supported, and neither are transactions, change streams and the `OP_COMPRESSED` message.
 - A `$replaceRoot` takes a document as its new root; a field path there would name a column rather than a subdocument.
