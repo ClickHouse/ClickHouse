@@ -2333,7 +2333,19 @@ void ClientBase::onProfileEvents(Block & block)
                     std::unique_lock lock(tty_mutex);
                     progress_table.clearTableOutput(*tty_buf, lock);
                 }
-                logs_out_stream->writeProfileEvents(block);
+                /// The accumulator may hold events deferred while the sink was unavailable (or
+                /// while the delay had not elapsed): merge the current packet into it and print
+                /// the whole accumulator, so a recovered sink emits the deferred events instead
+                /// of silently dropping them.
+                if (!profile_events.last_block.empty())
+                {
+                    incrementProfileEventsBlock(profile_events.last_block, block);
+                    logs_out_stream->writeProfileEvents(profile_events.last_block);
+                }
+                else
+                {
+                    logs_out_stream->writeProfileEvents(block);
+                }
                 logs_out_stream->flush();
 
                 profile_events.last_block = {};
@@ -3202,6 +3214,10 @@ void ClientBase::processParsedSingleQuery(
     progress_indication.resetProgress();
     progress_table.resetTable();
     profile_events.watch.restart();
+    /// The trailing flush at the end of this function clears the accumulator on both of its
+    /// paths, but an exception escaping the query can skip it - do not let a stale block from
+    /// the failed query be printed under this one.
+    profile_events.last_block = {};
 
     {
         /// Temporarily apply query settings to context.
@@ -3375,32 +3391,38 @@ void ClientBase::processParsedSingleQuery(
     /// `last_block` because of `profile-events-delay-ms`, or an earlier open reported the sink as
     /// unavailable - would retry forever and hang the client after the result is already delivered.
     /// These are diagnostics, so dropping them is the right trade here.
-    if (!profile_events.last_block.empty() && initLogsOutputStream(/*wait_for_sink=*/false))
+    if (!profile_events.last_block.empty())
     {
-        if (need_render_progress && tty_buf)
+        if (initLogsOutputStream(/*wait_for_sink=*/false))
         {
-            std::unique_lock lock(tty_mutex);
-            progress_indication.clearProgressOutput(*tty_buf, lock);
-        }
-        if (need_render_progress_table && tty_buf)
-        {
-            std::unique_lock lock(tty_mutex);
-            progress_table.clearTableOutput(*tty_buf, lock);
-        }
-        /// The interrupt handler is already stopped here, so the log stream's cancellation hook
-        /// (armed in initLogsOutputStream) is inert; and in --server_logs_file=- mode this flush hits
-        /// std_out after resetOutput() already cleared its hook. Bound this trailing flush to the
-        /// terminal-facing log sink with a best-effort budget so a stuck terminal cannot hang the
-        /// client here - the same discipline tty_buf uses just above.
-        if (logs_out_terminal_buf)
-            logs_out_terminal_buf->setBestEffortFlushBudget(1000);
-        SCOPE_EXIT({
+            if (need_render_progress && tty_buf)
+            {
+                std::unique_lock lock(tty_mutex);
+                progress_indication.clearProgressOutput(*tty_buf, lock);
+            }
+            if (need_render_progress_table && tty_buf)
+            {
+                std::unique_lock lock(tty_mutex);
+                progress_table.clearTableOutput(*tty_buf, lock);
+            }
+            /// The interrupt handler is already stopped here, so the log stream's cancellation hook
+            /// (armed in initLogsOutputStream) is inert; and in --server_logs_file=- mode this flush hits
+            /// std_out after resetOutput() already cleared its hook. Bound this trailing flush to the
+            /// terminal-facing log sink with a best-effort budget so a stuck terminal cannot hang the
+            /// client here - the same discipline tty_buf uses just above.
             if (logs_out_terminal_buf)
-                logs_out_terminal_buf->setBestEffortFlushBudget(std::nullopt);
-        });
-        logs_out_stream->writeProfileEvents(profile_events.last_block);
-        logs_out_stream->flush();
+                logs_out_terminal_buf->setBestEffortFlushBudget(1000);
+            SCOPE_EXIT({
+                if (logs_out_terminal_buf)
+                    logs_out_terminal_buf->setBestEffortFlushBudget(std::nullopt);
+            });
+            logs_out_stream->writeProfileEvents(profile_events.last_block);
+            logs_out_stream->flush();
+        }
 
+        /// Whether the deferred events were flushed above or the sink stayed unavailable and they
+        /// were intentionally dropped (fail-close), the accumulator must not outlive its query:
+        /// a block inherited by the next query would attribute this query's counters to it.
         profile_events.last_block = {};
     }
 
