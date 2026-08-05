@@ -1666,7 +1666,7 @@ void wrapNestedConstructionSettings(
 /// When only the last arm carries the setting, it is indistinguishable from a query-level trailing
 /// `SETTINGS` clause (the grammar produces the same AST), so it is intentionally left to the
 /// query-level handling (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`).
-static void wrapPerArmConstructionSettings(
+void wrapPerArmConstructionSettings(
     ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
     if (!ast)

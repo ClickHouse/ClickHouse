@@ -23,6 +23,13 @@ class IAST;
 void wrapNestedConstructionSettings(
     ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks);
 
+/// Independently materialize the construction settings that a NON-last `UNION` arm carries in its own
+/// `SETTINGS` clause, wrapping each such arm as a derived table, and reject the ambiguous mix of
+/// non-last-arm and last-arm construction `SETTINGS`. Must run before `wrapNestedConstructionSettings`,
+/// which would otherwise consume the first arm's settings and re-scope them to the whole union.
+void wrapPerArmConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks);
+
 /// True if any `SETTINGS` clause anywhere in the AST subtree carries a query-construction setting.
 bool hasConstructionSettings(const IAST & ast);
 
