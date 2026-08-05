@@ -755,3 +755,42 @@ def test_denied_create_leaves_no_named_collection_dependency(started_cluster):
         assert error is not None and "NAMED_COLLECTION_IS_USED" in error, f"{node.name}: {error}"
         node.query(f"DROP TABLE {DB}.{table} SYNC")
         node.query(f"DROP NAMED COLLECTION {collection}")
+
+
+# ---------------------------------------------------------------------------
+# the preflight runs behind the statement's own authorization boundary
+# ---------------------------------------------------------------------------
+
+
+def test_missing_cluster_grant_is_reported_before_target_work(started_cluster):
+    # `executeDDLQueryOnCluster` checks `CLUSTER`, but only after the initiator preflight has
+    # already resolved the engine's target -- which expands named collections and address globs
+    # and can send the `DESC TABLE` that `getStructureOfRemoteTable` uses. A user holding neither
+    # privilege must be stopped by `CLUSTER` first, so the *named* privilege pins the order:
+    # naming the target would mean the engine work already ran. Both privileges are withheld
+    # precisely so the two orderings are distinguishable -- granting the target would make either
+    # order name `CLUSTER`, and the case would pass without exercising anything.
+    user = make_user("u_no_cluster")
+    for node in (node1, node2):
+        node.query(f"REVOKE CLUSTER ON *.* FROM {user}")
+
+    table = unique("t_no_cluster")
+    definition = f"(x UInt64) {remote_over_local_target()}"
+    error = create_on_cluster(user, table, definition)
+    assert error is not None, "the statement was accepted"
+    subject = denial_subject(error)
+    assert "CLUSTER" in subject, subject
+    assert "local_target" not in subject, subject
+    assert_absent_everywhere(table)
+
+    # With `CLUSTER` granted the statement reaches the engine's target check, which still denies
+    # it, so the reordering does not drop either check.
+    for node in (node1, node2):
+        node.query(f"GRANT CLUSTER ON *.* TO {user}")
+    assert_denied_on_target(create_on_cluster(user, table, definition), table)
+
+    for node in (node1, node2):
+        node.query(f"GRANT SELECT, INSERT ON {DB}.local_target TO {user}")
+    assert create_on_cluster(user, table, definition) is None
+    for node in (node1, node2):
+        node.query(f"DROP TABLE {DB}.{table} SYNC")

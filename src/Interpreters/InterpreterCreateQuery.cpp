@@ -2994,7 +2994,8 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create, b
     if (engine_is_resolved)
     {
         /// Resolving the engine's target evaluates user expressions and may contact remote shards,
-        /// so the statement itself must be authorized first.
+        /// so authorize first. `executeDDLQueryOnCluster` checks `CLUSTER` only after this point.
+        getContext()->checkAccess(AccessType::CLUSTER);
         getContext()->checkAccess(getRequiredAccess());
 
         /// Normalization materializes an empty `columns_list`, so its presence says nothing about
