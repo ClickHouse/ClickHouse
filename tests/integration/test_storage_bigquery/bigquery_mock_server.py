@@ -38,14 +38,34 @@ BIGQUERY_SCOPE = "https://www.googleapis.com/auth/bigquery"
 SERVER_PAGE_CAP = 4
 
 
-def f(name, type_, mode="NULLABLE", fields=None, precision=None, scale=None):
+def f(
+    name,
+    type_,
+    mode="NULLABLE",
+    fields=None,
+    precision=None,
+    scale=None,
+    default=None,
+):
     field = {"name": name, "type": type_, "mode": mode}
     if fields:
         field["fields"] = fields
     if precision is not None:
         field["precision"] = str(precision)
         field["scale"] = str(scale or 0)
+    if default is not None:
+        # The SQL default value expression, as served by tables.get. Only string literals are
+        # supported: insertAll fills the unquoted value in when a row omits the field, as BigQuery
+        # streaming inserts do.
+        field["defaultValueExpression"] = default
     return field
+
+
+def default_fill_value(field):
+    """The value a defaultValueExpression fills in for an omitted insertAll field (string literals only)."""
+    expression = field["defaultValueExpression"]
+    assert expression.startswith("'") and expression.endswith("'"), expression
+    return expression[1:-1]
 
 
 def v(value):
@@ -306,6 +326,14 @@ DRIFT_ROWS = [
     row("1", "s0", {"f": [v("n0")]}),
 ]
 
+# A REQUIRED field with a defaultValueExpression: a table definition omitting `val` stays writable,
+# because streaming inserts fill the default in for the omitted column.
+REQUIRED_DEFAULT_SCHEMA = [
+    f("id", "INTEGER", "REQUIRED"),
+    f("val", "STRING", "REQUIRED", default="'filled-by-default'"),
+    f("s", "STRING"),
+]
+
 TABLES = {}
 
 
@@ -373,6 +401,11 @@ def reset_tables():
             "type": "TABLE",
             "schema": json.loads(json.dumps(DRIFT_SCHEMA)),
             "rows": [json.loads(json.dumps(r)) for r in DRIFT_ROWS],
+        },
+        "test_required_default": {
+            "type": "TABLE",
+            "schema": REQUIRED_DEFAULT_SCHEMA,
+            "rows": [],
         },
     }
 
@@ -848,12 +881,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     unknown = set(data) - {field["name"] for field in table["schema"]}
                     if unknown:
                         raise ValueError(f"no such field: {sorted(unknown)}")
+                    # A field the row omits is filled from its defaultValueExpression, as BigQuery
+                    # streaming inserts do; an explicit null stays null.
                     converted.append(
                         {
                             "f": [
                                 {
-                                    "v": convert_insert_value(
-                                        field, data.get(field["name"])
+                                    "v": (
+                                        convert_insert_value(field, data[field["name"]])
+                                        if field["name"] in data
+                                        else (
+                                            default_fill_value(field)
+                                            if "defaultValueExpression" in field
+                                            else None
+                                        )
                                     )
                                 }
                                 for field in table["schema"]

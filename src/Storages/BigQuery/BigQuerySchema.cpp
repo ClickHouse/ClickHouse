@@ -176,6 +176,7 @@ BigQueryField parseField(const Poco::JSON::Object::Ptr & field_object)
         mode = field_object->getValue<String>("mode");
     field.repeated = mode == "REPEATED";
     field.required = mode == "REQUIRED";
+    field.has_default = field_object->has("defaultValueExpression");
 
     /// tables.get serializes int64 values as JSON strings.
     if (field_object->has("precision"))
@@ -247,6 +248,8 @@ bool bigQueryFieldsIdentical(const BigQueryField & lhs, const BigQueryField & rh
     /// it is not a unique fingerprint of the wire schema - `STRING` and `BYTES` both map to `String`, and
     /// `REQUIRED GEOGRAPHY` and `NULLABLE GEOGRAPHY` both map to `Geometry`, while the read and write paths
     /// encode and decode them differently, driven by `BigQueryField` rather than by the ClickHouse type.
+    /// `has_default` is deliberately not compared either: a `defaultValueExpression` only affects fields
+    /// a row omits, not how the written columns are encoded, so adding or dropping a default is not drift.
     if (lhs.name != rhs.name || lhs.type != rhs.type || lhs.repeated != rhs.repeated || lhs.required != rhs.required
         || lhs.precision != rhs.precision || lhs.scale != rhs.scale || lhs.children.size() != rhs.children.size())
         return false;

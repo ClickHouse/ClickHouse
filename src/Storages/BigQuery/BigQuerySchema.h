@@ -36,6 +36,11 @@ struct BigQueryField
     Type type = Type::String;
     bool repeated = false;
     bool required = false;
+    /// Whether the field declares a `defaultValueExpression`. BigQuery fills the default in when a
+    /// streamed (`tabledata.insertAll`) row omits the field, so an omitted `REQUIRED` field is only
+    /// unwritable when it has no default. Tracked for top-level fields only: defaults are applied per
+    /// column, so a default on a sub-field of a written `RECORD` column never fires on this path.
+    bool has_default = false;
     /// For parameterized Numeric/BigNumeric; 0 means the default precision and scale.
     UInt64 precision = 0;
     UInt64 scale = 0;

@@ -695,10 +695,9 @@ def test_write_schema_drift_rejected():
 
 def test_write_rejected_when_required_field_omitted():
     # A table defined with an explicit subset of the BigQuery columns is readable, but writing is
-    # rejected up front when an omitted remote field is REQUIRED: the sink would never send that
-    # field, and `tabledata.insertAll` rejects every such row (streaming inserts do not apply the
-    # remote `defaultValueExpression`), so without the check the INSERT could only fail remotely,
-    # batch by batch.
+    # rejected up front when an omitted remote field is REQUIRED and has no defaultValueExpression:
+    # the sink would never send that field, and `tabledata.insertAll` rejects every such row, so
+    # without the check the INSERT could only fail remotely, batch by batch.
     mock_reset()
     node.query("DROP TABLE IF EXISTS bq_subset")
     node.query(
@@ -710,7 +709,9 @@ def test_write_rejected_when_required_field_omitted():
     assert node.query("SELECT s FROM bq_subset") == "s0\n"
     # ...but not writable: `i` (and `rec`) are REQUIRED and omitted from the definition.
     error = node.query_and_get_error("INSERT INTO bq_subset VALUES ('x')")
-    assert "is `REQUIRED` but is not present" in error
+    assert (
+        "is `REQUIRED` without a default value expression but is not present" in error
+    )
     # The write was rejected before any request.
     assert mock_stats()["insert_requests"] == []
     node.query("DROP TABLE bq_subset")
@@ -729,6 +730,27 @@ def test_write_rejected_when_required_field_omitted():
         == "7\tsubset\n"
     )
     node.query("DROP TABLE bq_subset_ok")
+
+
+def test_write_allowed_when_omitted_required_field_has_default():
+    # An omitted REQUIRED field with a defaultValueExpression does not block writes: BigQuery
+    # streaming inserts fill the default in for the omitted column, so the up-front reject applies
+    # only to REQUIRED fields without a default.
+    mock_reset()
+    node.query("DROP TABLE IF EXISTS bq_required_default")
+    node.query(
+        "CREATE TABLE bq_required_default (id Int64) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_required_default', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    node.query("INSERT INTO bq_required_default VALUES (1)")
+    assert len(mock_stats()["insert_requests"]) == 1
+    # The mock, like BigQuery, filled the omitted `val` from its default value expression.
+    assert (
+        node.query(f"SELECT id, val FROM {bq('test_required_default')} WHERE id = 1")
+        == "1\tfilled-by-default\n"
+    )
+    node.query("DROP TABLE bq_required_default")
 
 
 def test_insert_roundtrip():

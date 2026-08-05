@@ -597,17 +597,19 @@ SinkToStoragePtr StorageBigQuery::write(
     const auto current_fields = snapshot_is_live ? analyzed_fields : fetchTableSchema(configuration, context, token_provider);
 
     /// A table defined with an explicit subset of the BigQuery columns can be read, but it cannot be
-    /// written to when an omitted remote field is `REQUIRED`: the sink never sends that field, and
-    /// `tabledata.insertAll` rejects every such row (streaming inserts do not apply the remote
-    /// `defaultValueExpression`). Reject the `INSERT` up front, before any request, instead of letting
-    /// each batch fail with a per-row remote error.
+    /// written to when an omitted remote field is `REQUIRED` and has no `defaultValueExpression`: the
+    /// sink never sends that field, and `tabledata.insertAll` rejects every such row. When the field
+    /// does declare a default, streaming inserts fill it in for the omitted column, so the subset stays
+    /// writable. Reject the doomed `INSERT` up front, before any request, instead of letting each batch
+    /// fail with a per-row remote error.
     for (const auto & field : current_fields)
-        if (field.required && !sample_block.has(field.name))
+        if (field.required && !field.has_default && !sample_block.has(field.name))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Cannot write to the BigQuery table `{}.{}`: the remote field '{}' is `REQUIRED` but is not present "
-                "in the table definition, and BigQuery streaming inserts (`tabledata.insertAll`) reject rows that "
-                "omit a `REQUIRED` field. Include the column in the table definition to write to this table",
+                "Cannot write to the BigQuery table `{}.{}`: the remote field '{}' is `REQUIRED` without a default "
+                "value expression but is not present in the table definition, and BigQuery streaming inserts "
+                "(`tabledata.insertAll`) reject rows that omit such a field. Include the column in the table "
+                "definition to write to this table",
                 configuration.dataset, configuration.table, field.name);
 
     BigQueryFields sink_fields;
@@ -680,7 +682,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ENGINE = BigQuery(project, dataset, table[, access_token][, key = value, ...])
 ```
 
-The column list is optional: when omitted, the structure is inferred from the BigQuery table schema. When specified, the columns can be a subset of the BigQuery columns, and each column must be declared with the exact type the BigQuery schema maps to (see the [data type mapping](/sql-reference/table-functions/bigquery#data-type-mapping)). A table whose definition omits a `REQUIRED` BigQuery field can be read but not written to: BigQuery streaming inserts reject rows that omit a `REQUIRED` field, so such an `INSERT` is rejected up front. A `NULLABLE` `RECORD` is mapped to `Nullable(Tuple(...))` so `NULL` records round-trip losslessly; creating such a table (whether the structure is inferred or declared explicitly) requires the `enable_nullable_tuple_type` setting, as for any `Nullable(Tuple)` column. When declaring columns explicitly, a `RECORD` field may instead be declared as a plain `Tuple(...)` to avoid the setting, at the cost of coercing a whole-record `NULL` to a default tuple; the only accepted difference from the inferred type is dropping a `Nullable` that wraps a `RECORD`'s `Tuple`, and only at that same record — the nullability cannot be moved to a different (inner or outer) record.
+The column list is optional: when omitted, the structure is inferred from the BigQuery table schema. When specified, the columns can be a subset of the BigQuery columns, and each column must be declared with the exact type the BigQuery schema maps to (see the [data type mapping](/sql-reference/table-functions/bigquery#data-type-mapping)). A table whose definition omits a `REQUIRED` BigQuery field without a default value expression can be read but not written to: BigQuery streaming inserts reject rows that omit such a field, so such an `INSERT` is rejected up front. When the omitted `REQUIRED` field declares a `defaultValueExpression`, BigQuery fills the default in and the table stays writable. A `NULLABLE` `RECORD` is mapped to `Nullable(Tuple(...))` so `NULL` records round-trip losslessly; creating such a table (whether the structure is inferred or declared explicitly) requires the `enable_nullable_tuple_type` setting, as for any `Nullable(Tuple)` column. When declaring columns explicitly, a `RECORD` field may instead be declared as a plain `Tuple(...)` to avoid the setting, at the cost of coercing a whole-record `NULL` to a default tuple; the only accepted difference from the inferred type is dropping a `Nullable` that wraps a `RECORD`'s `Tuple`, and only at that same record — the nullability cannot be moved to a different (inner or outer) record.
 
 **Engine parameters**
 
