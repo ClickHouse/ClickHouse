@@ -406,6 +406,8 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert info["version"] == "26.6.2.2"
     assert info["commit_sha"] == commit_sha
     assert info["create_new_release"] is True
+    # A fresh patch release still owes its branch the post-release bump.
+    assert info["needs_branch_bump"] is True
 
     step("--push-release-tag", "--dry-run")
     step("--create-bump-version-pr", "--dry-run")
@@ -497,6 +499,10 @@ def test_prepare_recovers_from_tag(tmp_path):
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.1-stable"
     assert info["create_new_release"] is False
+    # The branch tip still describes this release (no post-release bump commit),
+    # so recovering it must also complete the deferred branch bump — otherwise
+    # the patch number stays pinned. See needs_branch_bump.
+    assert info["needs_branch_bump"] is True
 
 
 def test_prepare_recovers_already_released_commit(tmp_path):
@@ -595,6 +601,9 @@ def test_prepare_recovers_already_released_commit(tmp_path):
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.1-stable"
     assert info["create_new_release"] is False
+    # Rerun on the un-bumped tip: the branch never advanced past this release, so
+    # the deferred bump is still owed and must run on this recovery.
+    assert info["needs_branch_bump"] is True
 
 
 def test_prepare_refuses_out_of_order_commit(tmp_path):
@@ -697,6 +706,113 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
     )
     assert result.returncode != 0, "out-of-order release should have failed"
     assert "out-of-order release" in (result.stdout + result.stderr)
+
+
+def test_prepare_recovers_superseded_release_without_rebumping(tmp_path):
+    """Recovering a superseded release via its tag must NOT re-bump the branch.
+
+    When the branch tip already describes a newer release (``26.6.4`` here), the
+    post-release bump for the recovered ``26.6.3`` has long since landed. The
+    self-heal that completes a missed bump (see needs_branch_bump) must not fire
+    here, or it would rewrite the branch version backwards. ``prepare`` recovers
+    (``create_new_release=false``) and leaves ``needs_branch_bump=false``.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    # Anchor commit the release version-file githash points at, so the strict
+    # tweak (commits since githash) is computable.
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit (previous release)")
+    anchor = _head_sha(repo)
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("VERSION_PATCH 2", "VERSION_PATCH 3")
+        .replace("26.6.2.1", "26.6.3.1")
+        .replace("0" * 40, anchor),
+        encoding="utf-8",
+    )
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Release commit (26.6.3)")
+    # The superseded release we will recover via its tag.
+    git("tag", "-a", "v26.6.3.1-stable", "-m", "Release v26.6.3.1-stable")
+
+    # Advance the branch to a newer release (26.6.4), so the branch tip is ahead
+    # of the release we recover — its post-release bump has already landed.
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("VERSION_PATCH 2", "VERSION_PATCH 4")
+        .replace("26.6.2.1", "26.6.4.1")
+        .replace("0" * 40, anchor),
+        encoding="utf-8",
+    )
+    (repo / "README.md").write_text("clickhouse 26.6.4\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Later commit (bump to 26.6.4)")
+    git("tag", "-a", "v26.6.4.1-stable", "-m", "Release v26.6.4.1-stable")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            "v26.6.3.1-stable",  # recover the superseded release via its tag
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"superseded recovery prepare failed (rc={result.returncode})\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["release_tag"] == "v26.6.3.1-stable"
+    assert info["create_new_release"] is False
+    # Branch is already ahead — must not rewrite the newer version backwards.
+    assert info["needs_branch_bump"] is False
 
 
 def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path):
@@ -891,6 +1007,7 @@ def test_prepare_creates_from_branch_ref(tmp_path):
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.2-stable"
     assert info["create_new_release"] is True
+    assert info["needs_branch_bump"] is True
 
 
 def test_prepare_fails_closed_on_stale_branch_version_file(tmp_path):
