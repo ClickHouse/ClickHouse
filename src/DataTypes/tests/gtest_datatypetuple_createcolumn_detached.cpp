@@ -1,5 +1,6 @@
 #include <Columns/ColumnBLOB.h>
 #include <Common/typeid_cast.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>

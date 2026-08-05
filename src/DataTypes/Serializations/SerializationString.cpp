@@ -831,6 +831,9 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     data.resize(initial_size + bytes_to_read);
     stream->ignore(bytes_to_skip);
     stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+    /// Unlike the sizes column above, `column` never receives the skipped `rows_offset` rows (they were
+    /// only skipped over in the data stream, not inserted), so it only grew by `num_read_rows - rows_offset`
+    /// rows in this call — that is what a later cache lookup must be able to take off its tail.
     size_t actual_read_rows = num_read_rows - rows_offset;
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), actual_read_rows);
     settings.path.pop_back();

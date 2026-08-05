@@ -1,0 +1,511 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/naive-bayes
+title: 'Naive Bayes辞書'
+sidebarTitle: 'Naive Bayes'
+description: 'テキスト分類用のNAIVE_BAYES辞書を設定します。'
+doc_type: 'reference'
+---
+
+`naive_bayes` (`NAIVE_BAYES`) Dictionary は、多項 [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) モデルを使ってテキストを分類します。これはテキスト向けの標準的なイベントモデルで、入力内のN-gramが各クラスにどれだけ出現するかに基づいて、各クラスをスコアリングします。クラスごとの**n-gram の出現回数**のテーブルを与えると、読み込み時に一度だけそれをコンパイルしてモデルを作成し、その後は渡された任意のテキストの分類に使用します。
+
+感情分析、トピックやスパムのラベル付け、言語や文字体系の判定といった、高速で軽量なテキスト分類に適しています。
+
+Dictionary は、次の3つの関数のいずれかでクエリできます。
+
+* [`naiveBayesClassifier`](/ja/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) は予測されたクラスIDを返します。
+* [`naiveBayesClassifierWithProb`](/ja/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithProb) は予測されたクラスとその確率を返します。
+* [`naiveBayesClassifierWithAllProbs`](/ja/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithAllProbs) は、すべてのクラスとその確率を返します。
+
+通常の [`dictGet`](/ja/reference/functions/regular-functions/ext-dict-functions#dictGet) でも分類できます ([注意](#notes)を参照) 。もう1つの関数 [`naiveBayesNgrams`](/ja/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) は分類を行いません。代わりに、Dictionary と同じ方法でテキストをN-gramに分割するため、生テキストから学習データを作成できます ([生テキストから学習データを構築する](#build-training-data-from-raw-text) を参照) 。
+
+<div id="quickstart">
+  ## クイックスタート
+</div>
+
+ここでは、感情分析用の token-mode のユニグラム (`n = 1`) モデルを構築します。
+
+**1. クラスごとの n-gram の出現回数を格納したソーステーブルを作成します。**
+
+```sql
+CREATE TABLE training_data (class_id UInt32, ngram String, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+```
+
+**2. 学習データを挿入** — 単語 (ユニグラム) と、各単語が正例 (`1`) および負例 (`0`) クラスで出現する頻度:
+
+```sql
+INSERT INTO training_data VALUES
+    (1,'good',10),(1,'great',8),(1,'excellent',6),(1,'love',7),(1,'happy',5),
+    (1,'amazing',4),(1,'wonderful',3),(1,'best',3),(1,'fantastic',2),(1,'nice',4),
+    (0,'bad',10),(0,'terrible',8),(0,'awful',6),(0,'hate',7),(0,'worst',5),
+    (0,'horrible',4),(0,'poor',3),(0,'disappointing',3),(0,'ugly',2),(0,'sad',4);
+```
+
+**3. `NAIVE_BAYES` レイアウトの Dictionary を作成します**:
+
+```sql
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+```
+
+`PRIMARY KEY ngram` は `ngram` カラムをキーにしますが、`NAIVE_BAYES` Dictionary では、この「キー」は分類対象として渡すテキストを指し、参照のために保存されている値ではありません ([Dictionary structure](#dictionary-structure) を参照) 。`LAYOUT` はモデルを設定します。`class_attribute 'class_id'` は `class_id` をクラスラベルとして指定し (つまり、もう一方の attribute である `count` はクラスごとの出現回数です) 、`n 1` はユニグラムを使用し、`mode 'token'` はテキストを空白区切りの単語に分割します ([Layout parameters](#layout-parameters) を参照) 。
+
+**4. 分類** — `naiveBayesClassifier` はクラス ID を返します:
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+ステップ2で挿入したトレーニングデータに基づくと、`1` は正のクラスに対応します。
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is terrible') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               0 │
+   └─────────────────┘
+```
+
+同様に、`0` は負のクラスに対応します。
+
+`dictGet` でも同じ結果が得られます。
+
+```sql
+SELECT dictGet('sentiment', 'class_id', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+予測結果の確率、または各クラスの確率を取得します:
+
+```sql
+SELECT naiveBayesClassifierWithProb('sentiment', 'amazing food but terrible service') as predicted_id_with_prob;
+```
+
+```response
+   ┌─predicted_id_with_prob─────────────┐
+1. │ {                                 ↴│
+   │↳  "class_id": 0,                  ↴│
+   │↳  "probability": 0.642857145060626↴│
+   │↳}                                  │
+   └────────────────────────────────────┘
+```
+
+予測は、確率 `0.64` でクラス `0` (負) です。
+
+```sql
+SELECT naiveBayesClassifierWithAllProbs('sentiment', 'amazing food but terrible service') as all_predicted_ids_with_probs;
+```
+
+```response
+   ┌─all_predicted_ids_with_probs─────────┐
+1. │ [{                                  ↴│
+   │↳  "class_id": 0,                    ↴│
+   │↳  "probability": 0.642857145060626  ↴│
+   │↳},{                                 ↴│
+   │↳  "class_id": 1,                    ↴│
+   │↳  "probability": 0.35714285493937414↴│
+   │↳}]                                   │
+   └──────────────────────────────────────┘
+```
+
+`naiveBayesClassifierWithAllProbs` は、可能性が最も高いクラスから最も低いクラスまで、確率の合計が `1.0` になる形ですべてのクラスを返します。ここでは、負のクラスが `0.64`、正のクラスが `0.36` です。
+
+<div id="how-it-works">
+  ## 仕組み
+</div>
+
+**学習 (ロード時) 。** 各行は `(n-gram, class, count)` という観測値です。Dictionary がロードされると、これらの行はモデルに一度だけ取り込まれます。重複する `(n-gram, class)` の行は合算され、`count = 0` の行は無視されます。
+
+**分類 (クエリ時) 。** 文字列を分類する際、モデルは次のように動作します。
+
+1. `mode` と `n` に従って文字列を n-gram に分割します ([トークン化モード](#tokenization-modes)を参照) 。
+2. クラス事前確率と、そのクラスで入力中の n-gram がどれだけ出現していたかを組み合わせて、各クラスのスコアを計算します。
+3. スコアに基づいてクラスを順位付けします。最も高いスコアのクラスが `naiveBayesClassifier` の予測結果として返されます。`naiveBayesClassifierWithProb` と `naiveBayesClassifierWithAllProbs` は、そのクラス、またはすべてのクラスについての確率も返します。
+
+各クラスのスコアに影響する要素は 2 つあります。1 つ目は平滑化に使われる `alpha` です。平滑化は、学習時にある 1 つの n-gram がそのクラスに現れなかったというだけで、モデルがそのクラスに 0 のスコアを与えてしまうのを防ぎます。`alpha` が小さいほど、モデルは学習データにより強く依存するため、あるクラスが他より大幅に高いスコアを得ることがありますが、学習データが少ない場合や偏っている場合には、モデルが敏感になりすぎることもあります。`alpha` が大きいほど、n-gram の出現回数の影響は小さくなり、クラス間のスコアはより近くなります。`alpha` が非常に大きい場合、n-gram の情報はほとんど効かなくなり、スコアは主にクラス事前確率 (次に説明します) によって決まります。
+
+2 つ目はクラス事前確率です。これは、モデルがテキストを見る前に、各クラスがどれくらい起こりやすいとみなすかを表します。どの n-gram も考慮される前に各クラスに与えられる初期スコアとして機能するため、事前確率が高いクラスほど予測されやすくなります。これをどう設定するかは `priors_mode` に依存します。デフォルトでは (`proportional`)、学習データ内の n-gram 総数が多いクラスほど高い初期スコアを持ちます。`uniform` ではすべてのクラスが同じ条件で始まるため、n-gram だけが判定を左右します。`explicit` では、各クラスの初期値を自分で設定します。[事前確率モード](#prior-modes)を参照してください。
+
+学習データ内のどこにも一度も現れなかった n-gram は無視されます。これはモデルの語彙に含まれていないため、どのクラスにも有利にも不利にもなりません。
+
+このアルゴリズムは、テキスト分類のための多項ナイーブベイズモデルに従います。詳しくは [Manning, Raghavan &amp; Schütze, *Introduction to Information Retrieval*, ch. 13 (*Text Classification and Naive Bayes*)](https://nlp.stanford.edu/IR-book/html/htmledition/text-classification-and-naive-bayes-1.html) を参照してください。
+
+<div id="dictionary-structure">
+  ## Dictionary の構造
+</div>
+
+`NAIVE_BAYES` Dictionary は固定の構造を持ちます。
+
+* `PRIMARY KEY` は単一の `String` カラム、つまり n-gram です。クエリ時、この&quot;key&quot;は保存済みのルックアップキーではなく、分類対象として渡すテキストそのものを指します。
+* これに加えて、**符号なし整数の属性をちょうど 2 つ** 宣言します。クラスラベルと出現回数です。クラス ID は内部的に常に `UInt32` を使用するため、属性を `UInt64` として宣言していても、クラスラベルは `UInt32` (最大 `4294967295`) に収まっている必要があります。これより大きい値は、Dictionary の作成時ではなくロード時に拒否されます。同じことは宣言した型にも当てはまります。元データのクラス ID または回数が宣言した属性型に収まらない場合、暗黙に切り捨てられるのではなく、ロードに失敗します。
+* `class_attribute` レイアウトパラメータは、どの属性がクラスラベルかを指定します。もう一方は自動的に回数として扱われます。2 つの属性は、どちらの順序で宣言してもかまいません。
+
+ソーステーブルには **事前に集計された** 回数が格納されます。各 `(n-gram, class)` につき 1 行で、そのクラスにその n-gram が何回出現したかを表します。これらの回数は、コーパスをトークン化して結果をグループ化することで生成します。独自の学習パイプラインで行うことも、ClickHouse で生テキストから学習データを構築することもできます ([生のテキストから学習データを構築する](#build-training-data-from-raw-text) を参照) 。Dictionary はそれらを取り込むだけです。
+
+**モデルの更新。** モデルはテーブルをバックエンドに持つ Dictionary であるため、再学習はテーブルを更新して再ロードすることで行います。
+
+```sql
+INSERT INTO training_data VALUES (1, 'awesome', 5);
+SYSTEM RELOAD DICTIONARY sentiment;
+```
+
+<div id="layout-parameters">
+  ## レイアウトパラメータ
+</div>
+
+| パラメータ             | 説明                                                                                                                                           | 例                      | デフォルト            |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------- |
+| `class_attribute` | クラスラベルを保持する属性の名前です。もう一方の属性はカウントです。                                                                                                           | `'class_id'`           | *必須*             |
+| `n`               | n-gram のサイズ: `1` = ユニグラム、`2` = バイグラム、`3` = トライグラム、… (`1`–`1024`) 。                                                                           | `2`                    | *必須*             |
+| `mode`            | トークン化方法: `byte`、`codepoint`、または `token`。[トークン化モード](#tokenization-modes)を参照してください。                                                            | `'token'`              | *必須*             |
+| `alpha`           | n-gram 尤度に対する加法的 (Lidstone) 平滑化です。`alpha = 1` はラプラス平滑化です (有限かつ `> 0` である必要があります) 。                                                           | `0.5`                  | `1.0`            |
+| `priors_mode`     | クラスの事前確率の決定方法: `uniform`、`proportional`、または `explicit`。[事前確率モード](#prior-modes)を参照してください。                                                     | `'uniform'`            | `'proportional'` |
+| `priors`          | クラスごとの明示的な事前確率です: `(class, probability)` ペアのコレクション。`priors_mode 'explicit'` の場合にのみ有効で、その場合は必須です。それ以外のモードで指定するとエラーになります。合計は `1.0` でなければなりません。 | `[(0, 0.6), (1, 0.4)]` | —                |
+| `store_source`    | 元の行を保持し、`SELECT * FROM dictionary` を使えるようにします。メモリ使用量はおおよそ 2 倍になります。                                                                          | `1`                    | `0`              |
+| `start_token`     | 入力の先頭に `(n-1)` 回追加される境界トークンです。[境界トークン](#boundary-tokens-padding)を参照してください。                                                                   | `'0x01'` / `'<s>'`     | — (パディングなし)      |
+| `end_token`       | 入力の末尾に `(n-1)` 回追加される境界トークンです。                                                                                                               | `'0xFF'` / `'</s>'`    | — (パディングなし)      |
+
+Dictionary は、`CREATE DICTIONARY` DDL (上記のクイックスタートと同様) または XML 設定ファイルで定義できます。そのファイルの配置場所については、[Dictionary layouts](/ja/reference/statements/create/dictionary/layouts/overview)を参照してください。以下の例では、すべてのレイアウトオプションを設定して全体を確認できるようにしています。必須なのは `class_attribute`、`n`、`mode` のみで、その他のデフォルト値は上の表に示しています。設定ファイルでは、事前確率は `prior` 要素を繰り返して記述します (以下の例のとおり、クラスごとに 1 つ) 。また、`byte` と `codepoint` のパディングトークンは数値で記述します (config では raw bytes を保持できません) 。さらに、`token` リテラルは必要に応じて XML エスケープされるため、`<s>` は `&lt;s&gt;` になります。
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY naive_bayes (ngram String, class_id UInt32, count UInt64)
+    PRIMARY KEY ngram
+    SOURCE(CLICKHOUSE(TABLE 'training_data'))
+    LAYOUT(NAIVE_BAYES(
+        class_attribute 'class_id'
+        n 2
+        mode 'token'
+        alpha 0.5
+        priors_mode 'explicit'
+        priors [(0, 0.6), (1, 0.4)]
+        store_source 1
+        start_token '<s>'
+        end_token '</s>'
+    ))
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <dictionary>
+        <name>naive_bayes</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>ngram</name>
+                    <type>String</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>class_id</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>count</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+        <source>
+            <clickhouse>
+                <table>training_data</table>
+            </clickhouse>
+        </source>
+        <layout>
+            <naive_bayes>
+                <class_attribute>class_id</class_attribute>
+                <n>2</n>
+                <mode>token</mode>
+                <alpha>0.5</alpha>
+                <priors_mode>explicit</priors_mode>
+                <priors>
+                    <prior>
+                        <class>0</class>
+                        <probability>0.6</probability>
+                    </prior>
+                    <prior>
+                        <class>1</class>
+                        <probability>0.4</probability>
+                    </prior>
+                </priors>
+                <store_source>1</store_source>
+                <start_token>&lt;s&gt;</start_token>
+                <end_token>&lt;/s&gt;</end_token>
+            </naive_bayes>
+        </layout>
+        <lifetime>3600</lifetime>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="tokenization-modes">
+  ## トークン化モード
+</div>
+
+`mode` は「トークン」を何とみなすかを決めるため、N-gram の形もそれによって決まります。元の N-gram は、**同じ** `mode` と `n` で生成されている必要があります。
+
+* `byte` — 各トークンは 1 バイトです。UTF-8 は前提としません。`n = 2` の場合、`'abc'` からはバイト bi-gram の `'ab'`、`'bc'` が生成されます。*適している用途* は、任意のバイト列に対する言語やエンコーディングの検出、および文字より細かい単位の特徴が重要なあらゆるデータです。通常は `n >= 2` と組み合わせて使います。
+* `codepoint` — 各トークンは 1 つの Unicode コードポイントです。入力は UTF-8 として解釈されます。`n = 1` の場合、`'café'` からはコードポイント `'c'`、`'a'`、`'f'`、`'é'` が生成されます。*適している用途* は、文字体系や言語の検出、および空白による単語境界が当てにならない短いテキストや CJK テキストです。 (元の N-gram は有効な UTF-8 である必要があります。クエリ入力は寛容にデコードされます。詳しくは [Notes](#notes) を参照してください。)
+* `token` — 各トークンは、**ASCII whitespace** (space、tab、newline、carriage return、form feed、vertical tab。連続する場合は 1 つの separator として扱われます) で区切られた単語です。`U+00A0` (no-break space) や `U+2003` (em space) などの非 ASCII の Unicode whitespace は separator **ではなく**、トークン内にそのまま残ります。分割するのは whitespace だけで、小文字化や記号の除去は行われません。したがって、`'Hello, World!'` は `'Hello,'` と `'World!'` というトークンになり (カンマ、`!`、大文字はすべて保持されます) 、`n = 2` の場合は 1 つの bi-gram `'Hello, World!'` を形成します。*適している用途* は、空白区切りの言語における単語レベルの分類 — 感情、topic、スパム、文の言語などです。
+
+<div id="prior-modes">
+  ## 事前確率モード
+</div>
+
+事前確率とは、モデルがテキストを見る*前*に、各クラスに対してどの程度あり得ると見なしているかを表すものです。`priors_mode` は、その設定方法を選びます。
+
+* `proportional` (デフォルト)  — 各クラスの事前確率は、学習データ内でのそのクラスの合計 N-gram 数に比例します。つまり、そのクラスの `count` カラムの合計であり、行数や学習文書数ではありません。そのため、より多く出現したクラスほど、初期状態で起こりやすいと見なされます。学習時のクラス比率 (合計 N-gram 数ベース) が、クエリ時に想定される出現頻度と一致している場合は、**これを選択してください**。**指定するものはありません** — 元のカウントから導出されます。
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional'))
+  ```
+
+* `uniform` — 最初はすべてのクラスが同じ確率になるため、どのクラスも有利にならず、予測は完全に入力の N-gram に基づいて決まります。クラスが均等である場合や、学習時の頻度がクエリ時に各クラスが現れる頻度を反映していない場合は、**これを選択してください**。**指定するものはありません。**
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'uniform'))
+  ```
+
+* `explicit` — `priors [(0, 0.6), (1, 0.4)]` を使って事前確率を指定します。クラスごとに 1 つの `(class, probability)` ペアを与え、各確率は 0 より大きく 1 以下で、合計は `1.0` でなければなりません。実際のベース率が分かっていて、それが学習データと異なる場合は、**これを選択してください**。たとえば、学習セットは均等でも、本番トラフィックのうちスパムは 1% しかない、といった場合です。各クラスの実際に想定される比率から、**これらを計算してください**。
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.9), (1, 0.1)]))
+  ```
+
+<div id="boundary-tokens-padding">
+  ## 境界トークン (パディング)
+</div>
+
+パディングはデフォルトで無効です。`n > 1` の場合にのみ意味を持ち、テキストの先頭と末尾でモデルがシグナルを利用できるようになるため、精度の向上に役立ちます。
+
+**有効な理由。** `n > 1` の場合、テキスト中央のN-gramは左右両方のコンテキストを完全に持ちますが、最初と最後のトークンはそうではありません。境界トークンを追加すると、「テキストの開始」と「テキストの終了」を示すN-gramが生成され、モデルは位置に関連したパターンを学習できます。たとえば、メッセージの*先頭*に現れるときに特徴的な単語や、単語の*末尾*に典型的な文字などです。
+
+**必要な対応：**
+
+1. **各側を個別に決定する。** `start_token` と `end_token` は独立しています。一方のみ、両方、またはどちらも設定しないことが可能です。空の値はその側がパディングされないことを意味します。
+2. **実際のデータと衝突しないレアな値を選択する。** たとえば、`byte` には `0x01` / `0xFF`、`codepoint` には `U+10FFFE` / `U+10FFFF`、`token` には `<s>` / `</s>` などを使用します。
+3. **同じパディングでトレーニング用N-gramを生成する。** Dictionaryはクエリ入力にパディングを適用しますが、ソースには適用しないため、境界トークンはロードするN-gramにあらかじめ組み込まれている必要があります。一致を保証する最も簡単な方法は、[`naiveBayesNgrams`](/ja/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) を使用してソースを構築し、layoutに指定するのと同じ `start_token`、`end_token` (および `n` と `mode`) を渡すことです。これにより、Dictionaryがクエリ時に生成するパディング済みN-gramと完全に一致するN-gramが出力されます。
+
+パディングトークンのフォーマットはモードによって異なります：
+
+* `byte` — バイト値を表す数値で、10進数または `0x` 16進数で指定します (`'1'` と `'0x01'` は同じです) ：
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' start_token '0x01' end_token '0xFF'))
+  ```
+
+* `codepoint` — UTF-8コードポイントを表す数値で、10進数または `0x` 16進数で指定します (`'1114110'` と `'0x10FFFE'` は同じです) ：
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF'))
+  ```
+
+* `token` — リテラルのトークン文字列：
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token' start_token '<s>' end_token '</s>'))
+  ```
+
+<div id="build-training-data-from-raw-text">
+  ## 生テキストから学習データを作成する
+</div>
+
+事前に集計済みのカウントではなく、ラベル付きの生テキストから始める場合は、[`naiveBayesNgrams`](/ja/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) 関数を使って N-gram に分割します。レイアウトと同じ `n`、`mode`、`start_token`、`end_token` を指定すると、Dictionary が想定するものとまったく同じ N-gram が生成されるため、学習データはクエリ時にモデルが参照するデータと一致します。
+
+`(class_id, text)` の行からなるテーブルがある場合、1 つの `GROUP BY` で `(ngram, class_id, count)` の元データを作成します:
+
+```sql
+CREATE TABLE docs (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO docs VALUES
+    (1, 'The food was amazing and the service was great'),
+    (0, 'The service was terrible and the food was awful'),
+    (1, 'I loved this cozy little place and the friendly staff'),
+    (0, 'I hated the bad weather and the long wait'),
+    (1, 'Best dinner we have had here, everything was delicious');
+
+CREATE TABLE training_data (ngram String, class_id UInt32, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+
+INSERT INTO training_data
+SELECT ngram, class_id, count()
+FROM docs
+ARRAY JOIN naiveBayesNgrams(text, 1, 'token') AS ngram
+GROUP BY ngram, class_id;
+```
+
+```sql
+SELECT * FROM training_data ORDER BY ngram LIMIT 5;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ Best  │        1 │     1 │
+2. │ I     │        1 │     1 │
+3. │ I     │        0 │     1 │
+4. │ The   │        0 │     1 │
+5. │ The   │        1 │     1 │
+   └───────┴──────────┴───────┘
+```
+
+`training_data` は、`NAIVE_BAYES` Dictionary の有効なソースになりました (ここでは token ユニグラム を使用しています。レイアウトに合わせて `n` と `mode` の引数を変更してください) 。この Dictionary はクエリ入力を与えられたとおりにそのままトークン化するため、学習テキストが小文字化されていてもクエリテキストがそうでない場合、両者の N-gram は一致せず、モデルの精度が低下します。
+
+<Info>
+  **事前確率と文書数**
+
+  `proportional` の事前確率 (デフォルト) は、各クラスの**総 N-gram 数**に基づいて重み付けされ、文書数には基づきません。古典的な文書頻度ベースの事前確率 (`documents_in_class / total_documents`) を使いたい場合は、生の `docs` テーブルから計算し、`priors_mode 'explicit'` を指定して渡してください。
+
+  ```sql
+  SELECT groupArray((class_id, frac)) AS priors
+  FROM (SELECT class_id, count() / sum(count()) OVER () AS frac FROM docs GROUP BY class_id);
+  ```
+
+  ```response
+     ┌─priors────────────┐
+  1. │ [(0,0.4),(1,0.6)] │
+     └───────────────────┘
+  ```
+</Info>
+
+次に、上で計算した明示的な事前確率を指定して `training_data` から Dictionary を作成し、新しいレビューを分類します:
+
+```sql
+CREATE DICTIONARY review_sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.4), (1, 0.6)]))
+LIFETIME(0);
+```
+
+```sql
+SELECT
+    naiveBayesClassifier('review_sentiment', 'amazing food and friendly staff') AS positive_review,
+    naiveBayesClassifier('review_sentiment', 'awful service and a terrible meal') AS negative_review;
+```
+
+```response
+   ┌─positive_review─┬─negative_review─┐
+1. │               1 │               0 │
+   └─────────────────┴─────────────────┘
+```
+
+クラス `1` はポジティブ、`0` はネガティブなので、どちらのレビューも正しく分類されています。
+
+<div id="more-examples">
+  ## その他の例
+</div>
+
+**バイトモード** — バイトのバイグラム (`n = 2`, `mode 'byte'`; class `0` = 文字 `a`–`d` からなる文字列、class `1` = 文字 `x`–`z`) :
+
+```sql
+CREATE TABLE byte_patterns_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO byte_patterns_src VALUES (0,'ab',5),(0,'bc',5),(0,'cd',5),(1,'xy',5),(1,'yz',5),(1,'zw',5);
+
+CREATE DICTIONARY byte_patterns (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'byte_patterns_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('byte_patterns', 'abcd') AS abcd, naiveBayesClassifier('byte_patterns', 'xyzw') AS xyzw;
+```
+
+```response
+   ┌─abcd─┬─xyzw─┐
+1. │    0 │    1 │
+   └──────┴──────┘
+```
+
+**コードポイントモード** — 文字ごとのスクリプト判定 (`n = 1`、`mode 'codepoint'`、class `0` = ラテン文字、`1` = キリル文字) :
+
+```sql
+CREATE TABLE script_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO script_src VALUES (0,'a',5),(0,'b',5),(0,'c',5),(0,'d',5),(1,'а',5),(1,'б',5),(1,'в',5),(1,'г',5);
+
+CREATE DICTIONARY script (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'script_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'codepoint')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('script', 'abcd') AS latin, naiveBayesClassifier('script', 'абвг') AS cyrillic;
+```
+
+```response
+   ┌─latin─┬─cyrillic─┐
+1. │     0 │        1 │
+   └───────┴──────────┘
+```
+
+**`store_source` を使って学習データを読み出します**:
+
+```sql
+CREATE TABLE stored_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO stored_src VALUES (0,'alpha',3),(0,'beta',2),(1,'gamma',4);
+
+CREATE DICTIONARY stored (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'stored_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1)) LIFETIME(0);
+
+SELECT ngram, class_id, count FROM stored ORDER BY ngram;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ alpha │        0 │     3 │
+2. │ beta  │        0 │     2 │
+3. │ gamma │        1 │     4 │
+   └───────┴──────────┴───────┘
+```
+
+**生テキストからの言語検出** — 境界パディングを付けた短い単語の例です (`n = 2`、`mode 'codepoint'`、class `0` = 英語、`1` = スペイン語) 。学習用の N-gram は [`naiveBayesNgrams`](/ja/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) を使って生の単語から構築され、関数とレイアウトの両方に渡される境界トークンによって、モデルは各単語の先頭と末尾の文字を利用できます:
+
+```sql
+CREATE TABLE words (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO words VALUES
+    (0,'dog'),(0,'cat'),(0,'fish'),(0,'bird'),(0,'book'),(0,'hand'),(0,'tree'),(0,'milk'),(0,'duck'),(0,'frog'),(0,'lamp'),(0,'desk'),
+    (1,'gato'),(1,'casa'),(1,'perro'),(1,'libro'),(1,'mano'),(1,'leche'),(1,'arbol'),(1,'agua'),(1,'queso'),(1,'fuego'),(1,'mesa'),(1,'silla');
+
+CREATE TABLE word_ngrams (ngram String, class_id UInt32, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO word_ngrams
+SELECT ngram, class_id, count()
+FROM words
+ARRAY JOIN naiveBayesNgrams(text, 2, 'codepoint', '0x10FFFE', '0x10FFFF') AS ngram
+GROUP BY ngram, class_id;
+
+CREATE DICTIONARY lang (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'word_ngrams'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('lang', 'window') AS window, naiveBayesClassifier('lang', 'fiesta') AS fiesta;
+```
+
+```response
+   ┌─window─┬─fiesta─┐
+1. │      0 │      1 │
+   └────────┴────────┘
+```
+
+<div id="notes">
+  ## 注記
+</div>
+
+* **計算型 Dictionary のセマンティクス。** これは *計算型* の Dictionary です。`dictGet(dict, '<class_attribute>', text)` は `text` を分類します (キーは保存済みのキーではなく、分類対象の入力です) 。count 属性にはクエリできず、`dictHas` は常に `1` を返します。
+* **ロード時のソース検証。** すべてのソース N-gram は、設定された `n` と `mode` に一致している必要があります (`codepoint` mode では、有効な UTF-8 であることも必要です) 。一致しない場合、ロードは失敗します。count が 0 の行は無視されるため ([仕組み](#how-it-works) を参照) 、空のソース、または count が 0 の行しかないソースは学習対象がなく、ロードに失敗します。
+* **クエリ時のトークン化は寛容です。** ソース検証とは異なり、クエリ入力が拒否されることはありません。`codepoint` mode では、有効な UTF-8 でないバイト列は、クエリを失敗させるのではなく、可能な限りデコードされます。`token` mode では、単語の区切りとして扱われるのは ASCII whitespace のみです (`U+00A0` のような Unicode whitespace は token 内に残ります) 。不正な入力でも分類は行われますが、通常は事前確率に基づく分類になります。これは、その N-gram が学習済みのものと一致しないためです。

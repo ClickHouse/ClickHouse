@@ -1,4 +1,5 @@
 #include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
@@ -370,6 +371,8 @@ String getNameForSubstreamPath(
             stream_name += "." + std::to_string(it->bucket);
         else if (it->type == SubstreamType::MapBucketsInfo)
             stream_name += ".buckets_info";
+        else if (it->type == SubstreamType::MapBucketIndexes)
+            stream_name += ".bucket_indexes";
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
             stream_name += ".structure";
         else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
@@ -498,6 +501,11 @@ struct SubstreamsCacheColumnWithNumReadRowsElement : public ISerialization::ISub
 
 void ISerialization::addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows)
 {
+    /// The consumers of this cache element insert the last num_read_rows rows of the column into the
+    /// result (see insertDataFromCachedColumn), so the column must contain at least that many rows,
+    /// otherwise the range arithmetic there would underflow.
+    chassert(column);
+    chassert(column->size() >= num_read_rows);
     addElementToSubstreamsCache(cache, path, std::make_unique<SubstreamsCacheColumnWithNumReadRowsElement>(column, num_read_rows));
 }
 
@@ -508,6 +516,11 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
         return std::nullopt;
 
     auto * typed_element = assert_cast<SubstreamsCacheColumnWithNumReadRowsElement *>(element);
+    /// The invariant established at insertion must still hold at lookup. If it does not, the cached
+    /// column was mutated in place through another reference after it was cached (broken copy-on-write
+    /// discipline, see https://github.com/ClickHouse/ClickHouse/issues/105626).
+    chassert(typed_element->column);
+    chassert(typed_element->column->size() >= typed_element->num_read_rows);
     return std::make_pair(typed_element->column, typed_element->num_read_rows);
 }
 
@@ -711,6 +724,18 @@ bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & 
         || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
 }
 
+bool ISerialization::isSingleValuePerPartStream(const DB::ISerialization::SubstreamPath & path)
+{
+    /// The whole path is scanned rather than only its last element, because the codebook substream is terminal
+    /// only when the column itself is enumerated; when the subcolumn is read on its own, the path of its stream
+    /// is `ProductQuantizationCodebook` followed by the `Regular` substream of the underlying `FixedString`.
+    for (const auto & elem : path)
+        if (elem.type == SubstreamType::ProductQuantizationCodebook)
+            return true;
+
+    return false;
+}
+
 bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams)
 {
     if (path.empty())
@@ -805,6 +830,8 @@ void ISerialization::insertDataFromCachedColumn(IColumn & result_column, const C
     /// so each reader keeps its own column (no COW clone needed). result_column must differ from the
     /// cached column, otherwise this is a self-insert whose source can be invalidated mid-copy.
     chassert(&result_column != cached_column.get());
+    /// The range arithmetic relies on this invariant, otherwise `cached_column->size() - num_read_rows` underflows.
+    chassert(cached_column->size() >= num_read_rows);
     result_column.insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
 }
 
