@@ -201,8 +201,8 @@ If `DEFINER`/`SQL SECURITY` aren't specified, the result depends on the [`ignore
 With its default value of `true`, the query is stored as written and the view gets an empty SQL security type. A normal view then runs with the permissions of the invoker, and for a materialized view with an explicitly specified target table, the access checks on that target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.
 
 With `false`, the following defaults are written into the view definition at creation time:
-- `SQL SECURITY`: `INVOKER` for normal views and `DEFINER` for materialized views ([configurable by settings](/reference/settings/session-settings/default#default_normal_view_sql_security))
-- `DEFINER`: `CURRENT_USER` ([configurable by settings](/reference/settings/session-settings/default#default_view_definer))
+- `SQL SECURITY`: `INVOKER` for normal views (configurable by [`default_normal_view_sql_security`](/reference/settings/session-settings/default#default_normal_view_sql_security)) and `DEFINER` for materialized views (configurable by [`default_materialized_view_sql_security`](/reference/settings/session-settings/default#default_materialized_view_sql_security))
+- `DEFINER`: `CURRENT_USER` (configurable by [`default_view_definer`](/reference/settings/session-settings/default#default_view_definer))
 
 Refreshable materialized views always receive these defaults, regardless of the setting.
 
