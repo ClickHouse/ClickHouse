@@ -101,3 +101,36 @@ TEST(TreeHashCompleteness, GroupingSetsFlagIsSignificant)
 
     EXPECT_EQ(hashOfJSONRoundTrip(query), hashOf(query));
 }
+
+TEST(TreeHashCompleteness, SetQueryStandaloneFlagIsSignificant)
+{
+    /// `is_standalone` is not a child, and the SQL parser fixes it per position, so no pair of
+    /// queries differs by the flag alone. `readJSON` accepts it independently of the position, so a
+    /// JSON-built AST can. Every position that reads an embedded `ASTSetQuery` is a carrier.
+    const std::string queries[] = {
+        "CREATE TABLE t (a UInt64, PROJECTION p (SELECT a) WITH SETTINGS (x = 1)) ENGINE = MergeTree ORDER BY a",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1",
+        "CREATE TABLE t (a UInt64 SETTINGS (max_compress_block_size = 1)) ENGINE = MergeTree ORDER BY a",
+        "SELECT 1 SETTINGS max_threads = 1",
+    };
+
+    for (const auto & query : queries)
+    {
+        const String json = serializeASTToJSON(*parse(query));
+
+        /// `writeJSON` omits the flag for an embedded node, so the carrier injects it.
+        const String key = "\"type\":\"SetQuery\",";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos) << query;
+        String with_flag = json;
+        with_flag.insert(pos + key.size(), "\"is_standalone\":true,");
+
+        auto restored = IAST::createFromJSON(with_flag, /*max_depth=*/ 1000, /*max_elements=*/ 100000);
+        EXPECT_NE(restored->formatWithSecretsOneLine(), parse(query)->formatWithSecretsOneLine()) << query;
+        EXPECT_NE(restored->getTreeHash(/*ignore_aliases=*/ false), hashOf(query)) << query;
+
+        EXPECT_EQ(hashOfJSONRoundTrip(query), hashOf(query)) << query;
+    }
+
+    EXPECT_NE(hashOf("SET max_threads = 1"), hashOf("SELECT 1 SETTINGS max_threads = 1"));
+}
