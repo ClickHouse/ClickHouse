@@ -65,6 +65,7 @@ namespace ErrorCodes
     DECLARE(Bool, skip_cache_on_disk_failure, false, "If true, bypass filesystem cache operations silently on disk IO errors. If false (default), disk IO errors are propagated as startup failures.", 0) \
     DECLARE(Bool, use_split_cache, false, "Use separation of files to system/data.", 0) \
     DECLARE(Double, split_cache_ratio, 0.1, "Ratio of system segment to total size of cache for split_cache.", 0) \
+    DECLARE(String, system_cache_extensions, ".txt,.json,.idx,.cidx,.dat", "Comma-separated list of file extensions that are classified as system cache segments when `use_split_cache` is enabled. When changed, existing cache entries remain in their previous segment type and are evicted naturally over time. Restart is required to change this setting.", 0) \
     DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
     DECLARE(UInt64, idle_client_ttl_sec, 7 * 24 * 60 * 60, "If non-zero and `write_cache_per_user_id_directory` is enabled, all cache entries that belong to a client (user_id) which has not been accessed for this many seconds are fully removed from the cache. Each access by the client refreshes the timer. Default is 1 week. Used by the distributed cache server.", 0) \
