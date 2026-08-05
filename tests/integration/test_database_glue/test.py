@@ -1747,6 +1747,7 @@ def test_listing_propagates_non_not_found_error(started_cluster):
     node = started_cluster.instances["node1"]
 
     db_name = f"glue_unreachable_{uuid.uuid4().hex}"
+    missing_namespace = f"glue_unreachable_ns_{uuid.uuid4().hex}"
     # ATTACH is lazy, so the unreachable endpoint is only contacted by the listing below.
     node.query(
         f"""
@@ -1758,13 +1759,20 @@ def test_listing_propagates_non_not_found_error(started_cluster):
     try:
         # `name = 'ns.table'` is pushed down, so the failing call is the single-namespace listing -- the
         # same code path the previous test exercises -- rather than the enclosing database enumeration.
-        # A low retry count keeps the unreachable endpoint from retrying for minutes.
         error = node.query_and_get_error(
             f"SELECT name FROM system.tables WHERE database = '{db_name}' "
-            f"AND name = 'some_namespace.some_table' "
-            f"SETTINGS show_data_lake_catalogs_in_system_tables = true, s3_retry_attempts = 1"
+            f"AND name = '{missing_namespace}.some_table' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
         )
         assert "DATALAKE_DATABASE_ERROR" in error, error
         assert "Exception calling GetTables" in error, error
+
+        # The error above is only evidence about the changed branch if the single-namespace listing is what
+        # failed. The database enumeration throws with a byte-identical message from an unmodified function,
+        # so without this the arm would also pass on a degraded pushdown -- and then a guard widened to
+        # swallow every error type would still be reported as caught.
+        assert node.contains_in_log(
+            f"Getting tables for database '{missing_namespace}'"
+        )
     finally:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
