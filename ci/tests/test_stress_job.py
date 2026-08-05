@@ -310,7 +310,14 @@ def test_a_single_query_line_longer_than_the_budget_is_still_shown(tmp_path):
 
 def test_hung_check_polling_loop_is_throttled():
     """The loop prints one progress token per probe *before* the verdict, so an
-    unthrottled loop can fill the embedded window in the genuine-hang case."""
+    unthrottled loop can fill the embedded window in the genuine-hang case.
+
+    "Some sleep exists somewhere under the loop" is not the contract: `sleep(0)`,
+    a sub-second interval, and a `sleep(1)` nested in the `hung_count == 0` branch
+    all leave the loop unthrottled on the path that matters. Pin the pace (a
+    literal of at least one second per probe), the depth (a direct body statement)
+    and the position (after the break).
+    """
     source = Path(__file__).resolve().parents[2] / "tests" / "clickhouse-test"
     tree = ast.parse(source.read_text(encoding="utf-8"))
 
@@ -327,7 +334,167 @@ def test_hung_check_polling_loop_is_throttled():
         if isinstance(n, ast.While) and calls(n, "get_processlist_size")
     ]
     assert len(loops) == 1, f"expected one hung-check polling loop, found {len(loops)}"
-    assert calls(loops[0], "sleep"), "the hung-check polling loop must not spin"
+    loop = loops[0]
+
+    # `loop.body`, not `ast.walk`: a sleep nested inside a branch does not pace
+    # the loop, and `ast.walk` cannot tell the two placements apart.
+    sleeps = [
+        (i, stmt)
+        for i, stmt in enumerate(loop.body)
+        if isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Call)
+        and getattr(stmt.value.func, "id", None) == "sleep"
+    ]
+    assert len(sleeps) == 1, (
+        "the hung-check polling loop must pace its probes with exactly one sleep"
+        f" among its own body statements, found {len(sleeps)}"
+    )
+    index, sleep_stmt = sleeps[0]
+
+    interval = sleep_stmt.value.args
+    assert len(interval) == 1 and isinstance(
+        interval[0], ast.Constant
+    ), "the polling loop's sleep interval must be a literal so it is reviewable"
+    assert isinstance(interval[0].value, (int, float)) and interval[0].value >= 1, (
+        "the polling loop must sleep at least one second per probe: the 90-second"
+        " deadline then yields ~90 probes and ~180 bytes of progress tokens, which"
+        " fits the embedded window. sleep(0) throttles nothing and a sub-second"
+        f" interval floods it (found {interval[0].value!r})"
+    )
+
+    breaks = [
+        i
+        for i, stmt in enumerate(loop.body)
+        if any(isinstance(n, ast.Break) for n in ast.walk(stmt))
+    ]
+    assert breaks, "expected the zero-hung fast path to break out of the loop"
+    assert index > max(breaks), (
+        "the sleep must follow the zero-hung break, so that it paces the probes"
+        " on the path taken when queries are hung and a clean run never sleeps"
+    )
+
+
+def test_main_embeds_the_head_window_into_test_results():
+    """`main` must keep routing the `info` cell through `build_hung_check_info`.
+
+    Every other test here calls the helper directly, so reverting the call site
+    alone would reinstate the tail read with the whole suite green. Extracting
+    the logic into a helper is what opened that gap: it used to be inline.
+
+    Shape is not enough - the data flow is pinned too: the helper is handed the
+    log, its result is the last write to `info_field`, and the row interpolates
+    that name.
+    """
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "ci"
+        / "jobs"
+        / "scripts"
+        / "stress"
+        / "stress.py"
+    )
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    mains = [
+        n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main"
+    ]
+    assert len(mains) == 1, f"expected one main() in stress.py, found {len(mains)}"
+    main = mains[0]
+
+    builders = [
+        n
+        for n in ast.walk(main)
+        if isinstance(n, ast.Call)
+        and getattr(n.func, "id", None) == "build_hung_check_info"
+    ]
+    assert len(builders) == 1, (
+        "main() must build the hung-check info cell through build_hung_check_info"
+        f" exactly once, found {len(builders)}"
+    )
+    builder = builders[0]
+    assert (
+        len(builder.args) == 1
+        and isinstance(builder.args[0], ast.Name)
+        and builder.args[0].id == "hung_check_log"
+    ), "build_hung_check_info must be given the hung-check log, not another file"
+
+    # The NESTING, not mere co-occurrence: a second, unescaped path would still
+    # satisfy "both names appear somewhere in main()".
+    wired = [
+        n
+        for n in ast.walk(main)
+        if isinstance(n, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "info_field" for t in n.targets)
+        and isinstance(n.value, ast.Call)
+        and getattr(n.value.func, "id", None) == "escape_tsv_info"
+        and len(n.value.args) == 1
+        and isinstance(n.value.args[0], ast.Call)
+        and getattr(n.value.args[0].func, "id", None) == "build_hung_check_info"
+    ]
+    assert len(wired) == 1, (
+        "expected `info_field = escape_tsv_info(build_hung_check_info(...))` in"
+        f" main(), found {len(wired)} such assignments"
+    )
+
+    # ORDERING, which the assertion above cannot see: main() legitimately
+    # pre-initialises `info_field = ""` for the OSError path, so the nested form
+    # existing is not enough - it must also be the write that wins.
+    assigns = sorted(
+        (
+            n
+            for n in ast.walk(main)
+            if isinstance(n, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "info_field" for t in n.targets)
+        ),
+        key=lambda n: (n.lineno, n.col_offset),
+    )
+    assert assigns, "main() must assign info_field"
+    last = assigns[-1]
+    assert (
+        isinstance(last.value, ast.Call)
+        and getattr(last.value.func, "id", None) == "escape_tsv_info"
+        and len(last.value.args) == 1
+        and isinstance(last.value.args[0], ast.Call)
+        and getattr(last.value.args[0].func, "id", None) == "build_hung_check_info"
+    ), (
+        "the LAST write to info_field must be escape_tsv_info(build_hung_check_info(...));"
+        " a later assignment silently discards the head window"
+    )
+
+    # And the cell has to reach the row: a window computed and never interpolated
+    # is the pre-#103551 empty field with extra steps.
+    rows = [
+        n
+        for n in ast.walk(main)
+        if isinstance(n, ast.Assign)
+        and any(
+            isinstance(t, ast.Name) and t.id == "hung_check_status" for t in n.targets
+        )
+    ]
+    assert (
+        len(rows) == 1
+    ), f"expected one hung_check_status assignment, found {len(rows)}"
+    interpolated = {
+        f.value.id
+        for f in ast.walk(rows[0].value)
+        if isinstance(f, ast.FormattedValue) and isinstance(f.value, ast.Name)
+    }
+    assert "info_field" in interpolated, (
+        "the Hung check failed row must interpolate info_field, or the head window is"
+        " computed and thrown away"
+    )
+
+    assert not [
+        n
+        for n in ast.walk(main)
+        if isinstance(n, ast.Attribute) and n.attr == "SEEK_END"
+    ], "main() must not seek to the end of the log; reading the head is the fix"
+    assert not [
+        n
+        for n in ast.walk(main)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "seek"
+    ], "main() must not seek in the log; build_hung_check_info owns the read"
 
 
 def test_small_log_is_embedded_whole_and_round_trips(tmp_path):
