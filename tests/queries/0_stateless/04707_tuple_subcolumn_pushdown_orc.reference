@@ -1,35 +1,21 @@
 -- pruning: a tuple element must prune like the top-level column holding the same values
-1
-top_level	20000
-1
-tuple_element	20000
-1
-tuple_element_ci	20000
+{"label":"top_level","result":[{"count()":1}],"rows_read":2000}
+{"label":"tuple_element","result":[{"count()":1}],"rows_read":2000}
+{"label":"tuple_element_ci","result":[{"count()":1}],"rows_read":2000}
 -- refused as key names: only named tuple elements have their own statistics
-14286
-map_keys	200000
-100000
-map_values	200000
-33334
-nullable_null	200000
-25000
-array_size	200000
-1
-unnamed_tuple	200000
-1
-array_of_tuple	200000
+{"label":"map_keys","result":[{"count()":2857}],"rows_read":20000}
+{"label":"map_values","result":[{"count()":20000}],"rows_read":20000}
+{"label":"nullable_null","result":[{"count()":6667}],"rows_read":20000}
+{"label":"array_size","result":[{"count()":5000}],"rows_read":20000}
+{"label":"unnamed_tuple","result":[{"count()":1}],"rows_read":20000}
+{"label":"array_of_tuple","result":[{"count()":1}],"rows_read":20000}
 -- a structure hint whose element type disagrees with the file must not prune
-1
-type_mismatch	200000
+{"label":"type_mismatch","result":[{"count()":1}],"rows_read":20000}
 -- flattened Nested: the resolver descends a LIST of STRUCT
-1
-nested_natural	200000
-1
-nested_flattened	200000
-1
-nested_flattened_array	200000
-3226
-nested_flattened_string	200000
+{"label":"nested_natural","result":[{"count()":1}],"rows_read":20000}
+{"label":"nested_flattened","result":[{"count()":1}],"rows_read":20000}
+{"label":"nested_flattened_array","result":[{"count()":1}],"rows_read":20000}
+{"label":"nested_flattened_string","result":[{"count()":645}],"rows_read":20000}
 -- a dotted element name colliding with a nested path returns the dotted element
 999	111
 2	0
