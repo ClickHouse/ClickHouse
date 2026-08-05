@@ -394,14 +394,10 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 
 ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-<<<<<<< HEAD
-    chassert(cluster);
-=======
     if (!remote_table_columns.empty())
         return remote_table_columns;
 
-    assert(cluster);
->>>>>>> 289ca733946 (Merge pull request #1845 from Altinity/feature/antalya-26.3/no_useless_describe)
+    chassert(cluster);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 }
 
