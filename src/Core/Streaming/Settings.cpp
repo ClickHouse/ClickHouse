@@ -8,7 +8,6 @@ namespace DB
 WatermarkSettingsPtr WatermarkSettings::clone() const
 {
     auto result = std::make_shared<WatermarkSettings>(*this);
-
     if (result->expression)
         result->expression = result->expression->clone();
 
