@@ -203,6 +203,52 @@ SELECT count() FROM (
     SETTINGS parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
 ) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%numbers(%';
 
+-- Being a MergeTree is not on its own enough for the materialized side to be read by each replica
+-- separately: it also has to be eligible for parallel replicas. The arms below therefore run at the
+-- DEFAULT parallel_replicas_for_non_replicated_merge_tree = 0, where a plain MergeTree is not, so
+-- the right side needs to be replicated to keep the JOIN offloaded at all.
+
+CREATE TABLE t_plain_left (key UInt64) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_plain_left SELECT number FROM numbers(10);
+
+CREATE TABLE t_replicated_right (key UInt64)
+ENGINE = ReplicatedMergeTree('/parallel_replicas/{database}/t_replicated_right', 'r1') ORDER BY key;
+INSERT INTO t_replicated_right SELECT number FROM numbers(10);
+
+SELECT '-- non-replicated MergeTree left, right eligible: left is materialized into a temporary table';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM t_plain_left) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%' AND explain ILIKE '%_data_%';
+
+SELECT '-- non-replicated MergeTree left, right eligible: the raw left read is not sent to the replicas';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM t_plain_left) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%t_plain_left%';
+
+SELECT '-- non-replicated MergeTree left, right eligible: results are correct';
+SELECT r.key FROM (SELECT key FROM t_plain_left WHERE key < 5) AS l
+RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+ORDER BY r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1;
+
+-- A replicated left side is eligible, so it keeps the local join the optimization exists for.
+
+SELECT '-- replicated left, right eligible: the local join is kept';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM t_replicated_right) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%';
+
+DROP TABLE t_replicated_right SYNC;
+DROP TABLE t_plain_left;
 DROP TABLE t_merge_left;
 DROP TABLE t_left;
 DROP TABLE t_mid;

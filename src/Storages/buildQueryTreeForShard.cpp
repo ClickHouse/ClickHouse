@@ -32,6 +32,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <IO/WriteHelpers.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -897,20 +898,28 @@ public:
     void visitImpl(QueryTreeNodePtr & node)
     {
         if (auto * table_node = node->as<TableNode>())
+        {
             storages.push_back(table_node->getStorage());
+            table_nodes.push_back(table_node);
+        }
         else if (auto * table_func_node = node->as<TableFunctionNode>())
         {
             /// See https://github.com/ClickHouse/ClickHouse/issues/77990
             /// Now that parallel replicas support TableFunctionRemote, GlobalJoin also needs to support TableFunctionRemote.
             const auto & name = table_func_node->getTableFunctionName();
             if (name == "cluster" || name == "clusterAllReplicas" || name == "remote" || name == "remoteSecure")
+            {
                 storages.push_back(table_func_node->getStorage());
+                table_nodes.push_back(nullptr);
+            }
             else
                 has_uncollected_table_function = true;
         }
     }
 
     std::vector<StoragePtr> storages;
+    /// Parallel to `storages`; null where the storage came from a table function, which has no TableNode.
+    std::vector<const TableNode *> table_nodes;
     /// Set when a table function was left out of `storages`, which on its own reads as "no storages".
     bool has_uncollected_table_function = false;
 };
@@ -932,19 +941,33 @@ public:
     }
 
     /// Whether the materialized side may be left for each replica to read on its own.
-    static bool materializedSideCanStayLocal(JoinNode & join_node)
+    bool materializedSideCanStayLocal(JoinNode & join_node)
     {
         CollectStoragesVisitor collect_storages;
         collect_storages.visit(getMaterializedTableExpressionNode(join_node));
 
+        const bool is_right_join = join_node.getKind() == JoinKind::Right;
+
         /// An uncollected table function leaves `storages` empty, which the loop below would read
         /// as all-MergeTree.
-        if (join_node.getKind() == JoinKind::Right && collect_storages.has_uncollected_table_function)
+        if (is_right_join && collect_storages.has_uncollected_table_function)
             return false;
 
-        for (const auto & storage : collect_storages.storages)
-            if (!storage->isMergeTree())
+        for (size_t i = 0; i < collect_storages.storages.size(); ++i)
+        {
+            const auto & storage = collect_storages.storages[i];
+            const auto * table_node = collect_storages.table_nodes[i];
+
+            /// Nothing else checks eligibility on a RIGHT JOIN's materialized side: the candidate
+            /// walk admits it by node type alone.
+            if (is_right_join && table_node)
+            {
+                if (!isTableNodeEligibleForParallelReplicas(*table_node, storage, getContext()))
+                    return false;
+            }
+            else if (!storage->isMergeTree())
                 return false;
+        }
 
         return true;
     }
