@@ -252,3 +252,69 @@ def test_parse_failure_logical_error_stack_trace_str_next_failure_other_pattern(
 
     assert result_name.startswith("Logical error: first error without format (STID:")
     assert "second assertion normalized" not in result_name
+
+
+def test_parse_failure_logical_error_file_without_thread_ids(tmp_path):
+    # A plain file input whose lines carry no server-log `[ thread_id ] {}`
+    # prefixes - e.g. stderr.log standing in for an absent server log. The search
+    # for the `Format string:` line cannot be bounded by the thread, so it must be
+    # bounded by the failure block, exactly as for the `stack_trace_str` input: a
+    # `Format string:` that appears after the next failure line of any kind (here
+    # an assertion) belongs to that failure and must not rename the matched one.
+    server_log = tmp_path / "stderr.log"
+    server_log.write_text(
+        "Logical error: 'first error without format'.\n"
+        "Stack trace (when copying this message, always include the lines "
+        "below):\n"
+        "\n"
+        "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+        "@ 0x00000000139d383c\n"
+        "Assertion `count == 0` failed.\n"
+        "Format string: 'second assertion normalized {}'.\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith("Logical error: 'first error without format' (STID:")
+    assert "second assertion normalized" not in result_name
+
+
+def test_parse_failure_logical_error_file_without_thread_ids_own_format_string(
+    tmp_path,
+):
+    # The positive counterpart: on a thread-less file input, a `Format string:`
+    # line that belongs to the matched failure (before any other failure line)
+    # must still normalize the name.
+    server_log = tmp_path / "stderr.log"
+    server_log.write_text(
+        "Logical error: 'Cannot parse element A: expected B'.\n"
+        "Format string: 'Cannot parse element {}: expected {}'.\n"
+        "Stack trace (when copying this message, always include the lines "
+        "below):\n"
+        "\n"
+        "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+        "@ 0x00000000139d383c\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith(
+        "Logical error: Cannot parse element A: expected B (STID:"
+    )
+    assert "'" not in result_name.partition(" (STID:")[0].removeprefix(
+        "Logical error: "
+    )

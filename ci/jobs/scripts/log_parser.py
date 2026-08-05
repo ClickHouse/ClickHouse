@@ -1,3 +1,4 @@
+import itertools
 import re
 import string
 import sys
@@ -144,33 +145,46 @@ class FuzzerLogParser:
                 )
                 return self.extract_format_string(next_fatal_line)
             # The input has no thread ids (e.g. a bare stack trace string), so bound
-            # the search by the failure block instead: the format string belongs to
-            # this failure only if it appears before the next fatal / failure line.
-            # The next failure may be carried by any pattern (e.g. an assertion
-            # following a logical error), so check all of them, not just the matched
-            # one.
-            for line in lines[match_index + 1 :]:
-                if "Format string: " in line:
-                    return self.extract_format_string(line)
-                if "<Fatal>" in line or any(
-                    re.search(pattern, line) for _, _, pattern in self.ERROR_PATTERNS
-                ):
-                    return ""
-            return ""
+            # the search by the failure block instead.
+            return self.format_string_within_failure_block(lines[match_index + 1 :])
 
         if not matched_log_file:
             return None
         match_position, _, match_line = Shell.get_output(
             f"rg --text -n -m1 '{matched_pattern}' {matched_log_file}"
         ).partition(":")
-        thread = self.thread_id(match_line)
-        if not match_position.isdigit() or not thread:
+        if not match_position.isdigit():
             return None
-        next_fatal_line = Shell.get_output(
-            f"tail -n +{int(match_position) + 1} {matched_log_file}"
-            f" | rg --text -m1 '\\[ {thread} \\] \\{{.*<Fatal>'"
-        )
-        return self.extract_format_string(next_fatal_line)
+        thread = self.thread_id(match_line)
+        if thread:
+            next_fatal_line = Shell.get_output(
+                f"tail -n +{int(match_position) + 1} {matched_log_file}"
+                f" | rg --text -m1 '\\[ {thread} \\] \\{{.*<Fatal>'"
+            )
+            return self.extract_format_string(next_fatal_line)
+        # The file has no thread ids either (e.g. stderr.log standing in for an
+        # absent server log), so bound the search by the failure block, same as for
+        # the string input above. Stream the lines instead of loading the file.
+        with open(matched_log_file, errors="replace") as f:
+            return self.format_string_within_failure_block(
+                itertools.islice(f, int(match_position), None)
+            )
+
+    def format_string_within_failure_block(self, lines):
+        # Find the `Format string:` line within the failure block that starts right
+        # after the matched failure line, for inputs without thread ids: the format
+        # string belongs to the matched failure only if it appears before the next
+        # fatal / failure line. The next failure may be carried by any pattern (e.g.
+        # an assertion following a logical error), so check all of them, not just
+        # the matched one.
+        for line in lines:
+            if "Format string: " in line:
+                return self.extract_format_string(line)
+            if "<Fatal>" in line or any(
+                re.search(pattern, line) for _, _, pattern in self.ERROR_PATTERNS
+            ):
+                return ""
+        return ""
 
     def parse_failure(self):
         files = []
