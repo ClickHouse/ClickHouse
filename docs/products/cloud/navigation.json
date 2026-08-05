@@ -80,6 +80,9 @@
           "$ref": "../bring-your-own-cloud/navigation.json"
         },
         {
+          "sourceRef": "ClickHouse/airgap-docs"
+        },
+        {
           "group": "Connect and query",
           "pages": [
             "products/cloud/features/sql-console-features/sql-console",
@@ -115,8 +118,7 @@
                 "products/cloud/guides/data-sources/secure-gcs",
                 "products/cloud/guides/data-sources/accessing-iceberg-data-securely"
               ]
-            },
-            "products/cloud/guides/migration/oss-to-cloud-backup-restore"
+            }
           ]
         },
         {
