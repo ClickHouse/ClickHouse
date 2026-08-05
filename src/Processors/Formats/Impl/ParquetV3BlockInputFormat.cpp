@@ -486,13 +486,20 @@ namespace
 /// for these queries. A floor of 16 keeps that 20-row-group file as a single
 /// source, while a real `hits.parquet` (hundreds of row groups) still gets
 /// fan-out up to `max_threads`.
-std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t num_row_groups)
+///
+/// `apply_row_group_floor == false` disables the floor: it is part of the same
+/// heuristic as the byte-based gates, so turning both of those off (which
+/// `compatibility` set to a pre-26.8 version does) must restore the old
+/// row-group-count-only fan-out for every file, including one with fewer than
+/// `min_row_groups_per_chunk` row groups.
+std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t num_row_groups, bool apply_row_group_floor = true)
 {
     if (target_count == 0 || num_row_groups == 0)
         return {};
 
     static constexpr size_t min_row_groups_per_chunk = 16;
-    const size_t max_chunks_by_row_groups = std::max<size_t>(1, num_row_groups / min_row_groups_per_chunk);
+    const size_t max_chunks_by_row_groups
+        = apply_row_group_floor ? std::max<size_t>(1, num_row_groups / min_row_groups_per_chunk) : num_row_groups;
     const size_t num_chunks = std::min({target_count, num_row_groups, max_chunks_by_row_groups});
     std::vector<FileBucketInfoPtr> result;
     result.reserve(num_chunks);
@@ -669,20 +676,24 @@ size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const 
 /// of compressed data. This targets the short-query regression: fanning a
 /// light/narrow query (few or small columns) out across many sources multiplies
 /// the per-source open/reader-init overhead without any read-parallelism win.
-/// `min_row_groups_per_chunk` still applies via the delegated `computeBucketsByCount`.
-///
 /// `min_bytes_to_split == 0` disables the lower bound; `min_bytes_per_bucket == 0`
 /// disables the per-bucket size cap (falling back to a pure row-group-count split).
+/// With both at 0 - the values `compatibility` set to a pre-26.8 version restores -
+/// the whole size heuristic is off, so `min_row_groups_per_chunk` is not applied
+/// either and the fan-out is driven by the row-group count alone, exactly as before
+/// the size gate existed. Otherwise the floor applies via the delegated
+/// `computeBucketsByCount`.
 std::vector<FileBucketInfoPtr> computeBucketsByCountAndBytes(
     size_t target_count, size_t num_row_groups, size_t projected_bytes, size_t min_bytes_to_split, size_t min_bytes_per_bucket)
 {
     if (target_count == 0 || num_row_groups == 0)
         return {};
+    const bool apply_row_group_floor = min_bytes_to_split > 0 || min_bytes_per_bucket > 0;
     if (min_bytes_to_split > 0 && projected_bytes < min_bytes_to_split)
-        return computeBucketsByCount(1, num_row_groups);
+        return computeBucketsByCount(1, num_row_groups, apply_row_group_floor);
     const size_t max_chunks_by_bytes
         = min_bytes_per_bucket > 0 ? std::max<size_t>(1, projected_bytes / min_bytes_per_bucket) : target_count;
-    return computeBucketsByCount(std::min(target_count, max_chunks_by_bytes), num_row_groups);
+    return computeBucketsByCount(std::min(target_count, max_chunks_by_bytes), num_row_groups, apply_row_group_floor);
 }
 
 /// Reads the Parquet footer via the native reader (the same path `ParquetV3BlockInputFormat`
