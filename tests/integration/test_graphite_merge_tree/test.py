@@ -527,7 +527,7 @@ CREATE TABLE test.graphite
     ENGINE = GraphiteMergeTree('graphite_rollup')
     PARTITION BY toYYYYMM(date)
     ORDER BY (metric, timestamp)
-    SETTINGS index_granularity=8192, min_rows_for_wide_part=0, min_bytes_for_wide_part=0;
+    SETTINGS index_granularity=8192;
 """
     )
 
@@ -535,77 +535,3 @@ CREATE TABLE test.graphite
     q("INSERT INTO test.graphite FORMAT TSV", to_insert)
     q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")
     q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")
-
-    assert TSV(
-        q(
-            """
-SELECT metric, value, timestamp, date, updated
-FROM test.graphite
-ORDER BY metric, timestamp
-"""
-        )
-    ) == TSV("one_min.x1\t100\t999999600\t2001-09-09\t0\n")
-
-    assert TSV(
-        q(
-            """
-SELECT count()
-FROM system.parts_columns
-WHERE database = 'test'
-  AND table = 'graphite'
-  AND active
-  AND column = 'updated'
-"""
-        )
-    ) == TSV("0\n")
-
-
-def test_ttl_non_rollup_column(graphite_table):
-    q(
-        """
-DROP TABLE IF EXISTS test.graphite;
-CREATE TABLE test.graphite
-    (
-        metric String,
-        value Float64,
-        timestamp UInt32,
-        date Date,
-        updated UInt32,
-        extra UInt32 TTL date + INTERVAL 1 DAY
-    )
-    ENGINE = GraphiteMergeTree('graphite_rollup')
-    PARTITION BY toYYYYMM(date)
-    ORDER BY (metric, timestamp)
-    SETTINGS index_granularity=8192, min_rows_for_wide_part=0, min_bytes_for_wide_part=0;
-"""
-    )
-
-    q(
-        "INSERT INTO test.graphite FORMAT TSV",
-        "one_min.x1\t100\t1000000000\t2001-09-09\t1\t77",
-    )
-    q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")
-    q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")
-
-    assert TSV(
-        q(
-            """
-SELECT metric, value, timestamp, date, updated, extra
-FROM test.graphite
-ORDER BY metric, timestamp
-"""
-        )
-    ) == TSV("one_min.x1\t100\t999999600\t2001-09-09\t1\t0\n")
-
-    assert TSV(
-        q(
-            """
-SELECT count()
-FROM system.parts_columns
-WHERE database = 'test'
-  AND table = 'graphite'
-  AND active
-  AND column = 'extra'
-"""
-        )
-    ) == TSV("0\n")

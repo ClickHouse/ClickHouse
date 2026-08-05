@@ -137,7 +137,7 @@ void floatToFixedStr(char* buffer, int bufferSize, float value, int precision)
 	int flags = DoubleToStringConverter::UNIQUE_ZERO |
 		DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN;
 	DoubleToStringConverter dc(flags, POCO_FLT_INF, POCO_FLT_NAN, POCO_FLT_EXP, -std::numeric_limits<float>::digits10, std::numeric_limits<float>::digits10, 0, 0);
-	dc.ToFixed(static_cast<double>(value), precision, &builder);
+	dc.ToFixed(value, precision, &builder);
 	builder.Finalize();
 }
 
@@ -249,7 +249,7 @@ float strToFloat(const char* str)
 	int processed;
 	int flags = StringToDoubleConverter::ALLOW_LEADING_SPACES |
 		StringToDoubleConverter::ALLOW_TRAILING_SPACES;
-	StringToDoubleConverter converter(flags, 0.0, std::numeric_limits<double>::quiet_NaN(), POCO_FLT_INF, POCO_FLT_NAN);
+	StringToDoubleConverter converter(flags, 0.0, std::numeric_limits<float>::quiet_NaN(), POCO_FLT_INF, POCO_FLT_NAN);
 	float result = converter.StringToFloat(str, static_cast<int>(strlen(str)), &processed);
 	return result;
 }
