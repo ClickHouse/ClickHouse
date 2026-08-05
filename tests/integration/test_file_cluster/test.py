@@ -1,9 +1,5 @@
 import logging
-<<<<<<< HEAD
-=======
-import time
 import uuid
->>>>>>> e884b9beef0 (Merge pull request #1863 from Altinity/bugfix/antalya-26.3/1855_s3cluster_hive)
 
 import pytest
 

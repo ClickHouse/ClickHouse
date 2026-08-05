@@ -146,7 +146,7 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
+        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), getHivePartitionColumnsWithoutVirtuals(metadata), context);
 
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
@@ -154,28 +154,8 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
         if (url.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
-<<<<<<< HEAD
     };
     auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
-=======
-    }
-
-private:
-    mutable StorageURLSource::DisclosedGlobIterator iterator;
-};
-
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr) const
-{
-    auto callback = std::make_shared<UrlTaskIterator>(
-        uri,
-        context->getSettingsRef()[Setting::glob_expansion_max_elements],
-        predicate,
-        getVirtualsList(),
-        getHivePartitionColumnsWithoutVirtuals(),
-        context
-    );
->>>>>>> e884b9beef0 (Merge pull request #1863 from Altinity/bugfix/antalya-26.3/1855_s3cluster_hive)
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

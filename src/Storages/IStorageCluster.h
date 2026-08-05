@@ -107,7 +107,7 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method writeFallBackToPure is not supported by storage {}", getName());
     }
 
-    NamesAndTypesList getHivePartitionColumnsWithoutVirtuals() const;
+    NamesAndTypesList getHivePartitionColumnsWithoutVirtuals(const StorageMetadataPtr & metadata_snapshot) const;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 

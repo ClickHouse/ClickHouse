@@ -595,13 +595,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         local_context,
         predicate,
         filter,
-<<<<<<< HEAD
         storage_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        hive_partition_columns_to_read_from_file_path,
-=======
-        getVirtualsList(),
-        getHivePartitionColumnsWithoutVirtuals(),
->>>>>>> e884b9beef0 (Merge pull request #1863 from Altinity/bugfix/antalya-26.3/1855_s3cluster_hive)
+        getHivePartitionColumnsWithoutVirtuals(storage_metadata_snapshot),
         nullptr,
         local_context->getFileProgressCallback(),
         /*ignore_archive_globs=*/false,

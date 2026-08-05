@@ -79,16 +79,12 @@ StorageFileCluster::StorageFileCluster(
         context);
 
     storage_metadata.setConstraints(constraints_);
-<<<<<<< HEAD
-    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context));
-=======
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         storage_metadata.columns,
         context,
         std::nullopt,
         PartitionStrategyFactory::StrategyType::NONE,
         sample_path));
->>>>>>> e884b9beef0 (Merge pull request #1863 from Altinity/bugfix/antalya-26.3/1855_s3cluster_hive)
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -113,35 +109,15 @@ void StorageFileCluster::updateQueryToSendIfNeeded(
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
-    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
+    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), getHivePartitionColumnsWithoutVirtuals(metadata), context);
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();
         if (file.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(file));
-<<<<<<< HEAD
     };
     auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
-=======
-    }
-
-private:
-    mutable StorageFileSource::FilesIterator iterator;
-};
-
-RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr) const
-{
-    auto callback = std::make_shared<FileTaskIterator>(
-        paths,
-        std::nullopt,
-        predicate,
-        getVirtualsList(),
-        getHivePartitionColumnsWithoutVirtuals(),
-        context
-    );
->>>>>>> e884b9beef0 (Merge pull request #1863 from Altinity/bugfix/antalya-26.3/1855_s3cluster_hive)
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

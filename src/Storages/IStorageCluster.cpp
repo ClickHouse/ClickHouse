@@ -713,11 +713,11 @@ QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
-NamesAndTypesList IStorageCluster::getHivePartitionColumnsWithoutVirtuals() const
+NamesAndTypesList IStorageCluster::getHivePartitionColumnsWithoutVirtuals(const StorageMetadataPtr & metadata_snapshot) const
 {
     // Virtual columns can contain hive columns, so we remove these hive coulmns to avoid duplicates.
     // In non-cluster case these columns are filtered in DB::prepareReadingFromFormat function.
-    auto virtual_columns = getVirtualsList();
+    auto virtual_columns = metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     NamesAndTypesList hive_partition_filtered;
     for (const auto & hive_name_and_type : hive_partition_columns_to_read_from_file_path)
     {
