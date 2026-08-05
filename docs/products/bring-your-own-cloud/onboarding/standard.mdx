@@ -40,6 +40,10 @@ Prepare a fresh AWS account, GCP project, or Azure subscription under your organ
 <Step title="Account/project/subscription setup" id="account-setup">
 The initial BYOC setup can be performed using a [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml), a [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp), or a [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). It creates a highly privileged identity (IAM role/service account/service principal), enabling BYOC controllers from ClickHouse Cloud to manage your infrastructure.
 
+<Warning>
+**Apply the onboarding artifacts exactly as provided.** Do not change anything in the CloudFormation template or Terraform module — including renaming resources or adding parameters such as a `PermissionsBoundary` — without ClickHouse's explicit approval. ClickHouse automation depends on the exact resources these artifacts create; supported customizations are exposed as parameters. In particular, on AWS the IAM role must keep its default name `ClickHouseManagementRole` — no prefix or suffix — unless ClickHouse has explicitly agreed to a different name beforehand. The Terraform module technically exposes a `role_name` input, but ClickHouse's automation must be configured to match, so changing it without coordination (or renaming the role in the CloudFormation template, which has no such parameter) produces a stack that applies successfully while infrastructure provisioning fails, because ClickHouse cannot assume the expected role.
+</Warning>
+
 <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background='black'/>
 
 <Note>
@@ -59,8 +63,18 @@ module "clickhouse_onboarding" {
 
 Replace `<version>` with the latest tag from the module's [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) — always use the latest release.
 
+The module outputs `clickhouse_management_role_arn`. In the standard flow you don't need to act on it — onboarding continues in the ClickHouse Cloud console — but keep it at hand: ClickHouse will ask for it if your setup deviates from the defaults (for example, a coordinated custom role name).
+
 <Note>
 The module was previously distributed as a tarball at `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. That URL remains available but is deprecated — use the GitHub module above.
+</Note>
+
+#### AWS external ID {#aws-external-id}
+
+On AWS, the IAM role created during setup trusts ClickHouse Cloud with an [external ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) to protect against confused-deputy attacks. The ClickHouse Cloud console generates an external ID for your AWS account when you start onboarding and pre-fills it in the CloudFormation link; if you use Terraform, pass the same value as `external_id`. All BYOC infrastructures on the same AWS account share the same external ID.
+
+<Note>
+BYOC infrastructures onboarded before external IDs were introduced use the placeholder value `emptyid` for backward compatibility. The console shows this value when you add infrastructure on an AWS account with an existing legacy deployment, so that all infrastructures on the account keep a consistent trust configuration. If you would like to switch to a unique external ID, contact ClickHouse Support.
 </Note>
 </Step>
 <Step title="Set up BYOC infrastructure" id="setup-byoc-infrastructure">
@@ -68,7 +82,7 @@ You will be prompted to set up the infrastructure, including object storage buck
 
 - **Region**: All **public regions** listed in our [supported regions](/products/cloud/reference/supported-regions) documentation are available for BYOC deployments. Private regions aren't currently supported.
 
-- **VPC/VNet CIDR range**: By default, we use `10.0.0.0/16` for the BYOC VPC (AWS/GCP) or VNet (Azure) CIDR range. If you plan to use VPC/VNet peering with another account, ensure the CIDR ranges don't overlap. Allocate a proper CIDR range for BYOC, with a minimum size of `/23` to accommodate necessary workloads.
+- **VPC/VNet CIDR range**: By default, we use `10.0.0.0/16` for the BYOC VPC (AWS/GCP) or VNet (Azure) CIDR range. If you plan to use VPC/VNet peering with another account, ensure the CIDR ranges don't overlap. Allocate a proper CIDR range for BYOC, with a minimum size of `/23` to accommodate necessary workloads. The `/23` minimum accommodates only about 30 server pods — every replica consumes IP addresses, so allocate a larger range (at least `/22` is recommended) if you expect the deployment to grow.
 
 - **Availability Zones**: If you plan to use VPC peering, aligning availability zones between the source and BYOC accounts can help reduce cross-AZ traffic costs. For example, in AWS, availability zone suffixes (`a`, `b`, `c`) may represent different physical zone IDs across accounts. See the [AWS guide](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) for details.
 
