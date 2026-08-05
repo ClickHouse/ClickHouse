@@ -347,7 +347,7 @@ CREATE TABLE t_graphite_time (key UInt32, Path String, Time DateTime64(3), Value
 ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_graphite_time;
 
--- The accepted types must not be rejected by that check: Date, an integer, and a Nullable wrapper.
+-- The accepted types must not be rejected by that check: Date and an integer.
 CREATE TABLE t_graphite_time (key UInt32, Path String, Time Date, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
 ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
 DETACH TABLE t_graphite_time;
@@ -362,12 +362,37 @@ ATTACH TABLE t_graphite_time;
 SELECT 'graphite time UInt32', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite_time';
 DROP TABLE t_graphite_time;
 
-CREATE TABLE t_graphite_time (key UInt32, Path String, Time Nullable(DateTime), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
-ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
-DETACH TABLE t_graphite_time;
-ATTACH TABLE t_graphite_time;
-SELECT 'graphite time Nullable', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite_time';
-DROP TABLE t_graphite_time;
+-- (z2) a nullable path or time column is rejected too. The rollup reads them with `getDataAt` and
+-- `getUInt`, which throw on a NULL, so a single NULL row would leave the table unable to merge and
+-- unable to answer FINAL reads. The rows exist before the switch, so these cases redden if the guard
+-- goes away: without it the ALTER succeeds and the OPTIMIZE below fails instead.
+CREATE TABLE t_graphite_null (key UInt32, Path String, Time Nullable(DateTime), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_null VALUES (1, 'max_a', NULL, 5, 2);
+ALTER TABLE t_graphite_null MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_null FINAL;
+SELECT 'graphite nullable time rejected', engine, count() FROM t_graphite_null, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_null' GROUP BY engine;
+DROP TABLE t_graphite_null;
+
+CREATE TABLE t_graphite_null (key UInt32, Path Nullable(String), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_null VALUES (1, NULL, '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_null MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_null FINAL;
+SELECT 'graphite nullable path rejected', engine, count() FROM t_graphite_null, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_null' GROUP BY engine;
+DROP TABLE t_graphite_null;
+
+-- A nullable version column stays allowed: the rollup compares it with `compareAt` and copies it with
+-- `insertFrom`, both of which handle NULL.
+CREATE TABLE t_graphite_null (key UInt32, Path String, Time DateTime, Value Float64, Version Nullable(UInt32)) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_null VALUES (1, 'max_a', '2020-01-01 00:00:10', 5, NULL);
+ALTER TABLE t_graphite_null MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_null;
+ATTACH TABLE t_graphite_null;
+OPTIMIZE TABLE t_graphite_null FINAL;
+SELECT 'graphite nullable version accepted', engine, count() FROM t_graphite_null, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_null' GROUP BY engine;
+DROP TABLE t_graphite_null;
 
 -- (s) the engine clause survives a round trip through the `clickhouse_json` AST dialect.
 SET allow_experimental_json_ast_dialect = 1;

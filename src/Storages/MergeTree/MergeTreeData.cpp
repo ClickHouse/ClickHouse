@@ -1797,9 +1797,9 @@ static void checkDimensionsAreInSortingKey(const StorageInMemoryMetadata & metad
         boost::algorithm::join(offending_columns, ", "));
 }
 
-/// The configured path/time/value/version columns must exist and the value column must be Float64, as
-/// GraphiteRollupSortedAlgorithm::defineColumns requires at merge time. Called only from the MODIFY ENGINE
-/// paths: create-time GraphiteMergeTree keeps its historical "fail at merge" behavior.
+/// The configured path/time/value/version columns must exist and be readable by GraphiteRollupSortedAlgorithm
+/// at merge time. Called only from the MODIFY ENGINE paths: create-time GraphiteMergeTree keeps its historical
+/// "fail at merge" behavior.
 static void checkGraphiteSchema(const Graphite::Params & params, const StorageInMemoryMetadata & metadata)
 {
     const auto & columns = metadata.getColumns();
@@ -1814,14 +1814,26 @@ static void checkGraphiteSchema(const Graphite::Params & params, const StorageIn
         return columns.getPhysical(column_name).type;
     };
 
-    require_column(params.path_column_name, "path");
+    auto path_type = require_column(params.path_column_name, "path");
     auto time_type = require_column(params.time_column_name, "time");
     auto value_type = require_column(params.value_column_name, "value");
     require_column(params.version_column_name, "version");
 
+    /// The rollup reads the path with `getDataAt` and the time with `getUInt`; both throw on a NULL, so
+    /// one NULL row stops every merge and every FINAL read. The version column uses NULL-safe methods.
+    for (const auto & [role, column_name, type] : {std::tuple{"path", params.path_column_name, path_type},
+                                                   std::tuple{"time", params.time_column_name, time_type}})
+    {
+        if (isNullableOrLowCardinalityNullable(type))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The {} column '{}' of GraphiteMergeTree must not be nullable, got {}.",
+                role, column_name, type->getName());
+    }
+
     /// The rollup reads the time column with `IColumn::getUInt`, which only the integer-backed columns
-    /// implement. Strip Nullable/LowCardinality first: the check is about the underlying column.
-    WhichDataType which_time(recursiveRemoveLowCardinality(removeNullable(time_type)));
+    /// implement.
+    WhichDataType which_time(recursiveRemoveLowCardinality(time_type));
     if (!which_time.isNativeInteger() && !which_time.isEnum() && !which_time.isDateOrDate32() && !which_time.isDateTime())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
