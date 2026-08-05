@@ -84,12 +84,14 @@ namespace ErrorCodes
   * Note: as an alternative, we could implement settings to be completely dynamic in the form of the map: String -> Field,
   *  but we are not going to do it, because settings are used everywhere as static struct fields.
   *
-  * `flags` can include a Tier (BETA | EXPERIMENTAL) and an optional bitwise AND with IMPORTANT.
+  * `flags` can include a Tier (BETA | PRIVATE_PREVIEW | EXPERIMENTAL) and an optional bitwise AND with IMPORTANT.
   * The default (0) means a PRODUCTION ready setting
   *
   * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
-  * Tiers:
+  * Tiers, in increasing order of maturity:
   * EXPERIMENTAL: The feature is in active development stage. Mostly for developers or for ClickHouse enthusiasts.
+  * PRIVATE_PREVIEW: The feature is on a clear path to general availability, but its applicability is still
+  * limited and it is not recommended for production use.
   * BETA: There are no known bugs problems in the functionality, but the outcome of using it together with other
   * features/components is unknown and correctness is not guaranteed.
   * PRODUCTION (Default): The feature is safe to use along with other features from the PRODUCTION tier.

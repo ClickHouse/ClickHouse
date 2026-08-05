@@ -394,6 +394,8 @@ String renderSettingDoc(std::string_view description, std::string_view type_name
 
     if (tier == SettingsTierType::EXPERIMENTAL)
         add_note("**Tier:** Experimental");
+    else if (tier == SettingsTierType::PRIVATE_PREVIEW)
+        add_note("**Tier:** Private preview");
     else if (tier == SettingsTierType::BETA)
         add_note("**Tier:** Beta");
 

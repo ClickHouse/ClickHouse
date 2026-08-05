@@ -764,10 +764,12 @@ MergeTreeData::MergeTreeData(
     {
         const auto & ac = getContext()->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
         settings->sanityCheck(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
             allow_experimental,
+            allow_private_preview,
             allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
@@ -5883,10 +5885,12 @@ void MergeTreeData::changeSettings(
         {
             const auto & ac = getContext()->getAccessControl();
             bool allow_experimental = ac.getAllowExperimentalTierSettings();
+            bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
             bool allow_beta = ac.getAllowBetaTierSettings();
             copy->sanityCheck(
                 getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
                 allow_experimental,
+                allow_private_preview,
                 allow_beta,
                 getContext()->wasBackgroundPoolAutoLowered());
         }
