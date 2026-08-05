@@ -87,7 +87,7 @@ BlockIO InterpreterExecuteAsQuery::execute()
     }
 
     const auto & query = query_ptr->as<const ASTExecuteAsQuery &>();
-    String target_user_name = query.target_user->toString();
+    String target_user_name = query.target_user->as<const ASTUserNameWithHost &>().toString();
     getContext()->checkAccess(AccessType::IMPERSONATE, target_user_name);
 
     if (query.subquery)
