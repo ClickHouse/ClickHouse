@@ -1,11 +1,14 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/defines.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -61,6 +64,64 @@ bool statisticsHasMinMax(const ColumnStatisticsDescription & stats_desc)
     return false;
 }
 
+/// Functions that negate a comparison, i.e. can be `true` for a `NaN` operand. `NaN` never
+/// satisfies a plain comparison (`NaN < c`, `NaN = c`, ... are all `false`), so only a negation can
+/// make a floating-point predicate `true` for `NaN`. These are exactly the negating entries of
+/// `KeyCondition::atom_map` that produce a prunable `NOT_IN_RANGE` / `NOT_IN_SET` atom (`notLike`
+/// and `notEmpty` are omitted: they apply only to String/Array, never to a floating-point column).
+bool isNegatingFunction(std::string_view name)
+{
+    return name == "not"
+        || name == "notEquals"
+        || name == "notIn"
+        || name == "globalNotIn"
+        || name == "notNullIn"
+        || name == "globalNotNullIn";
+}
+
+bool isFloatingPointColumn(const DataTypePtr & type)
+{
+    return type && isFloat(removeLowCardinalityAndNullable(type));
+}
+
+/// Collect floating-point columns that appear anywhere beneath a negating function in the original
+/// (non-inverted) filter tree.
+///
+/// `MinMax`/`Basic` statistics compute min/max via `IColumn::getExtremes`, which deliberately skips
+/// `NaN`. So the stored range excludes `NaN`, yet `NaN` sorts after `+inf` and satisfies negated
+/// predicates such as `NOT (f < c)` or `f <> c`. Pruning a part by that range would then drop rows
+/// that actually match. Statistics-based pruning is therefore disabled for such columns; the range
+/// analysis stays sound for every other (non-negated) predicate, where `NaN` cannot match anyway.
+///
+/// The traversal is intentionally conservative: once under a negation it stays under it for the whole
+/// subtree, so a column may be excluded even where an even number of negations would cancel out.
+/// Excluding a column only forgoes a pruning opportunity, never correctness.
+void collectFloatColumnsUnderNegation(
+    const ActionsDAG::Node & node,
+    bool under_negation,
+    NameSet & unsafe_columns,
+    std::unordered_set<const ActionsDAG::Node *> & visited_under_negation,
+    std::unordered_set<const ActionsDAG::Node *> & visited)
+{
+    auto & visited_set = under_negation ? visited_under_negation : visited;
+    if (!visited_set.insert(&node).second)
+        return;
+
+    if (under_negation
+        && node.type == ActionsDAG::ActionType::INPUT
+        && isFloatingPointColumn(node.result_type))
+    {
+        unsafe_columns.insert(node.result_name);
+    }
+
+    const bool child_under_negation = under_negation
+        || (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+            && isNegatingFunction(node.function_base->getName()));
+
+    for (const auto * child : node.children)
+        collectFloatColumnsUnderNegation(*child, child_under_negation, unsafe_columns, visited_under_negation, visited);
+}
+
 } /// anonymous namespace
 
 StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_, const ActionsDAG::Node & filter_node_, ContextPtr context_)
@@ -73,8 +134,20 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
     const auto & columns = metadata_->getColumns();
     Names filter_columns = filter_dag.dag->getRequiredColumnsNames();
 
+    /// Floating-point columns that a negated predicate (`NOT (f < c)`, `f <> c`, `f NOT IN (...)`)
+    /// could match via `NaN`. Their min/max statistics exclude `NaN`, so pruning them is unsound.
+    NameSet nan_unsafe_columns;
+    {
+        std::unordered_set<const ActionsDAG::Node *> visited_under_negation;
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        collectFloatColumnsUnderNegation(filter_node_, /*under_negation=*/ false, nan_unsafe_columns, visited_under_negation, visited);
+    }
+
     for (const auto & name : filter_columns)
     {
+        if (nan_unsafe_columns.contains(name))
+            continue;
+
         if (const auto * col = columns.tryGet(name))
         {
             if (statisticsHasMinMax(col->statistics))
