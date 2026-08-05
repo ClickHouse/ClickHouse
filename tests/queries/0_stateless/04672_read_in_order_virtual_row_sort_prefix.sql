@@ -47,9 +47,9 @@ SELECT '-- non-key column last';
 SELECT extract(explain, '(?:Prefix sort description|Read type|Virtual row conversions).*') AS e
 FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT * FROM ev ORDER BY name, code, ref LIMIT 5) WHERE e != '';
 
-SELECT '--- Date to String stays non-strict: the prefix is cut after it';
+SELECT '--- non-strictly monotonic function: the prefix is cut after it';
 SELECT extract(explain, '(?:Prefix sort description|Read type|Virtual row conversions).*') AS e
-FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT * FROM by_day ORDER BY toString(d), num LIMIT 5) WHERE e != '';
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT * FROM by_day ORDER BY toStartOfMonth(d), num LIMIT 5) WHERE e != '';
 
 SELECT '--- INNER JOIN: read-in-order needs the virtual row';
 

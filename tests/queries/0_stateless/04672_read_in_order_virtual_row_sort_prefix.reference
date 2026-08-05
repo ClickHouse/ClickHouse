@@ -23,8 +23,8 @@ Virtual row conversions
 Prefix sort description: name ASC, code ASC
 Read type: InOrder
 Virtual row conversions
---- Date to String stays non-strict: the prefix is cut after it
-Prefix sort description: toString(d) ASC
+--- non-strictly monotonic function: the prefix is cut after it
+Prefix sort description: toStartOfMonth(d) ASC
 Read type: InOrder
 Virtual row conversions
 --- INNER JOIN: read-in-order needs the virtual row
