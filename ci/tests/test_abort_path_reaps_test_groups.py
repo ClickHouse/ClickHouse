@@ -1139,11 +1139,8 @@ def test_a_signal_to_the_parent_still_reaps_the_group():
     ct = runpy.run_path(_CLICKHOUSE_TEST)
     pgids = []
     try:
-        # One worker: a signalled parent cannot join its workers first (that is the point of
-        # the path), so with several of them a second worker can record its group AFTER the
-        # reap has walked the directory - a race in the fixture, not in the runner.  One
-        # group is enough: it is recorded before the signal is sent, so the reap either runs
-        # on this path or it does not.
+        # One worker, so this pins only "the reap runs on this path at all".  Whether it is
+        # COMPLETE with several workers is a separate property, asserted below.
         pgids, _slept = _abort_run(ct, sequential=False, jobs=1, signal_parent=True)
         survivors = {pgid: _wait_dead(pgid, timeout=20) for pgid in pgids}
         assert not any(survivors.values()), (
@@ -1153,6 +1150,99 @@ def test_a_signal_to_the_parent_still_reaps_the_group():
     finally:
         for pgid in pgids:
             _kill_group(pgid)
+        _clear_records()
+
+
+def test_no_worker_is_alive_when_the_reap_walks_the_records():
+    """The reap walks the records ONCE, so no worker may be alive while it walks.
+
+    A live worker can write its next ``<token>.<worker>.<pgid>`` after the walk has passed
+    the directory, and nothing walks again - that group then survives holding the runner's
+    stdout, which is the whole failure this file exists to prevent.  Measured directly on
+    the unfixed runner: the walk saw ONE record while TWO worker pids were in scope, so it
+    is the record's absence at walk time, not the scope, that leaks the group.
+
+    The enclosing ``try`` opens before the pool is built, so its ``finally`` also runs
+    while ``while processes:`` is still iterating - reachable with no signal at all, via an
+    exception out of the poll loop's own liveness, memory or lldb helpers.
+
+    Asserted as the liveness invariant rather than as a surviving group, because whether a
+    given interleaving actually loses the record is a race: this way the guard is
+    deterministic in both directions, and it is the same precondition the ``stop_testing``
+    branch has always documented ("every worker is joined, and the parent is the last
+    process still alive").
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    alive_at_walk = []
+    real_cleanup = ct["kill_process_group"].__globals__["cleanup_test_groups"]
+
+    def cleanup_spy(*args_, **kwargs):
+        # The reap runs in the parent, which is this process, so a plain list suffices.
+        alive_at_walk.append([p.pid for p in multiprocessing.active_children()])
+        return real_cleanup(*args_, **kwargs)
+
+    pgids = []
+    try:
+        _patch(ct, cleanup_test_groups=cleanup_spy)
+        pgids, _slept = _abort_run(ct, sequential=False, jobs=2, signal_parent=True)
+        assert alive_at_walk, "the reap never walked the records on this path"
+        assert not any(alive_at_walk), (
+            f"no worker may still be running when the reap walks: a record written after "
+            f"the walk is never reaped; alive per walk: {alive_at_walk}"
+        )
+    finally:
+        _patch(ct, cleanup_test_groups=real_cleanup)
+        for pgid in pgids:
+            _kill_group(pgid)
+        _clear_records()
+
+
+def test_an_exception_before_the_pool_exists_is_not_replaced():
+    """The reap's ``finally`` must survive an abort raised before the pool is built.
+
+    ``multiprocessing.Value``/``Manager`` run between the ``try`` and the worker loop and
+    can fail (fd or memory pressure), and ``signal_handler`` can raise from anywhere in
+    that window.  The ``finally`` stops ``processes``, so if that name is only bound in the
+    loop the teardown raises ``NameError`` and REPLACES the real cause - the run reports a
+    crash in its own cleanup instead of what actually went wrong.
+    """
+    _clear_records()
+    ct = runpy.run_path(_CLICKHOUSE_TEST)
+    real_mp = ct["kill_process_group"].__globals__["multiprocessing"]
+    sentinel = RuntimeError("injected before the pool exists")
+
+    def boom(*_args, **_kwargs):
+        raise sentinel
+
+    # `Manager` is the last thing built before the worker loop, so this lands inside the
+    # `try` with `processes` not yet bound on the unfixed shape.
+    try:
+        _patch(
+            ct,
+            multiprocessing=SimpleNamespace(
+                Value=real_mp.Value, Event=real_mp.Event, Manager=boom
+            ),
+        )
+        with pytest.raises(BaseException) as caught:
+            ct["do_run_tests"](
+                2,
+                SimpleNamespace(
+                    parallel_tests=["04999_a.sh", "04999_b.sh"], sequential_tests=[]
+                ),
+                Namespace(
+                    jobs=2, no_self_parallel=False, stop_time=None, hung_check=False
+                ),
+                real_mp.Value("i", 0),
+                [],
+                real_mp.Event(),
+                real_mp.Event(),
+            )
+        assert caught.value is sentinel, (
+            f"the teardown must not replace the original exception; got {caught.value!r}"
+        )
+    finally:
+        _patch(ct, multiprocessing=real_mp)
         _clear_records()
 
 

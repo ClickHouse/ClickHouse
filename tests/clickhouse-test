@@ -5267,11 +5267,14 @@ def do_run_tests(
     # written by them. Never pruned, unlike `processes`: a worker that already exited is
     # exactly the one whose orphan needs reaping.
     worker_pids = set()
+    # Bound before the `try` below, whose `finally` stops the workers: an exception
+    # raised before the pool is built must not turn into a `NameError` there.
+    processes = []
 
     if test_suite.parallel_tests:
-        # In a `finally`, so every exit reaps and not just the `stop_testing` branch: a
-        # signal to the parent raises `Terminated` here, and a worker that finishes holding
-        # a retained record has no other reaper. Idempotent, and it never raises.
+        # In a `finally`, so every exit reaps and not just the `stop_testing` branch. It
+        # stops the workers first: the reap walks the records once, so a worker still
+        # running could record a group after that walk. Idempotent, and it never raises.
         try:
             tests_n = len(test_suite.parallel_tests)
             jobs = min(jobs, tests_n)
@@ -5307,7 +5310,6 @@ def do_run_tests(
 
             batch_size = len(test_suite.parallel_tests) // jobs
 
-            processes = []
             for i in range(jobs):
                 if args.no_self_parallel:
                     queue = worker_queues[i]
@@ -5430,20 +5432,7 @@ def do_run_tests(
                         print("Stopping tests, terminating all processes...")
                         # Wait briefly for test results to be written
                         sleep(5)
-                        for p in processes:
-                            if p.is_alive():
-                                p.terminate()
-                        # Wait for processes to exit, then force-kill stragglers
-                        for p in processes:
-                            p.join(timeout=10)
-                            if p.is_alive():
-                                print(f"Force killing process {p.name} (pid {p.pid})")
-                                p.kill()
-                        for p in processes:
-                            p.join(timeout=5)
-                        # Reap the groups the killed workers left behind. Safe only here: every
-                        # worker is joined, and the parent is the last process still alive.
-                        reap_recorded_test_groups(worker_pids)
+                        quiesce_workers_and_reap(processes, worker_pids)
                     finally:
                         signal.signal(signal.SIGTERM, old_sigterm_handler)
                     if global_time_limit_reached:
@@ -5475,7 +5464,7 @@ def do_run_tests(
                             runner_process_killed.set()
                         processes.remove(p)
         finally:
-            reap_recorded_test_groups(worker_pids)
+            quiesce_workers_and_reap(processes, worker_pids)
 
     if test_suite.sequential_tests:
         # Sequential runner shares the total_failures_shared counter with parallel workers
@@ -6905,6 +6894,42 @@ def cleanup_test_groups(diagnostics=True, worker_pids=None):
             continue
         finally:
             _pgid_file.unlink(missing_ok=True)
+
+
+def quiesce_workers_and_reap(processes, worker_pids):
+    """Stop the workers, then reap the test groups they recorded.
+
+    The reap walks the record directory once, so it is only complete when no worker can
+    still add a record: a worker that writes its next `<token>.<worker>.<pgid>` after that
+    walk keeps its group alive holding the runner's stdout. Stopping the workers first is
+    what makes the single walk enough.
+
+    Every signal the runner handles is ignored throughout, because terminating a worker
+    makes it broadcast SIGTERM to the whole group via `stop_tests`.
+    """
+    handled = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+    previous = [(s, signal.signal(s, signal.SIG_IGN)) for s in handled]
+    try:
+        try:
+            for p in processes:
+                if p.is_alive():
+                    p.terminate()
+            # Wait for processes to exit, then force-kill stragglers
+            for p in processes:
+                p.join(timeout=10)
+                if p.is_alive():
+                    print(f"Force killing process {p.name} (pid {p.pid})")
+                    p.kill()
+            for p in processes:
+                p.join(timeout=5)
+        except Exception as e:
+            # A worker left running only widens the reap's blind spot; it must not
+            # replace the exception the job side keys on.
+            print(f"Warning: could not stop all workers before the reap: {e}")
+        reap_recorded_test_groups(worker_pids)
+    finally:
+        for s, handler in previous:
+            signal.signal(s, handler)
 
 
 def reap_recorded_test_groups(worker_pids):
