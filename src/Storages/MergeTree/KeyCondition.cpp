@@ -1533,14 +1533,27 @@ bool KeyCondition::hasOnlyConjunctions() const
 }
 
 
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
+
 static Field applyFunctionForField(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
+    /// `arg_type` and the type `func` was resolved against can disagree over LowCardinality in
+    /// either direction, which `FunctionCast` turns into a bad cast. Equality-once-stripped keeps
+    /// this to aligning LowCardinality-ness, never substituting a different value type.
+    auto exec_type = arg_type;
+    if (!func->getArgumentTypes().empty())
+    {
+        const auto declared_arg_type = getArgumentTypeOfMonotonicFunction(*func);
+        if (declared_arg_type->lowCardinality() != arg_type->lowCardinality()
+            && recursiveRemoveLowCardinality(declared_arg_type)->equals(*recursiveRemoveLowCardinality(arg_type)))
+            exec_type = declared_arg_type;
+    }
     ColumnsWithTypeAndName columns
     {
-            { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
+            { exec_type->createColumnConst(1, arg_value), exec_type, "x" },
         };
 
     auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
@@ -1576,17 +1589,27 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        /// Strip outer `LowCardinality` from the argument column and type before executing, keeping the
-        /// cached result full too. A monotonic-function chain is built against the outer-LowCardinality
-        /// stripped key type (`applyFunctionChainToColumn` strips it the same way), so a specialized
-        /// wrapper such as the UInt8->Bool `CAST` does `checkAndGetColumn<ColumnUInt8>` on the raw
-        /// column and aborts with a bad cast on a `ColumnLowCardinality` (e.g. a `LowCardinality(Bool)`
-        /// key compared with a `LowCardinality` constant). `removeLowCardinality` /
-        /// `convertToFullColumnIfLowCardinality` are no-ops for non-LC inputs.
-        if (args[0].column && args[0].column->lowCardinality())
+        /// The chain is built against the recursively-stripped key type (`extractAtomFromTree`), while the
+        /// index column can still carry LowCardinality, so strip column and type in lockstep. Recursive is
+        /// required: a top-level `->lowCardinality()` check misses a nested `Array(LowCardinality(T))`,
+        /// which the sibling `applyFunctionChainToColumn` also does not handle.
+        args[0].column = recursiveRemoveLowCardinality(args[0].column->convertToFullIfWrapped());
+        args[0].type = recursiveRemoveLowCardinality(args[0].type);
+        /// The link may itself have been resolved against a LowCardinality argument type, so restore that
+        /// representation for the call as `applyFunctionChainToColumn` does; otherwise the wrapper casts a
+        /// plain column to `ColumnLowCardinality` and throws.
+        if (!func->getArgumentTypes().empty())
         {
-            args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
-            args[0].type = removeLowCardinality(args[0].type);
+            const auto declared_arg_type = getArgumentTypeOfMonotonicFunction(*func);
+            if (declared_arg_type->lowCardinality()
+                && recursiveRemoveLowCardinality(declared_arg_type)->equals(*args[0].type))
+            {
+                auto lc_column = declared_arg_type->createColumn();
+                assert_cast<ColumnLowCardinality &>(*lc_column)
+                    .insertRangeFromFullColumn(*args[0].column, 0, args[0].column->size());
+                args[0].column = std::move(lc_column);
+                args[0].type = declared_arg_type;
+            }
         }
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, removeLowCardinality(func->getResultType()), result_name});
         (*columns)[result_idx].column
@@ -1597,7 +1620,6 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
-DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
@@ -5967,10 +5989,14 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 /// The case when the column is wrapped in a chain of possibly monotonic functions.
                 if (!element.monotonic_functions_chain.empty())
                 {
+                    /// `sparse_data_types` keeps the raw key type, which can be `LowCardinality`, while the
+                    /// chain was built against the stripped type. The dense caller above strips the same
+                    /// way, and `getMonotonicityForRange` implementations differ in whether they unwrap
+                    /// `LowCardinality` themselves.
                     std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                         key_range,
                         element.monotonic_functions_chain,
-                        sparse_data_types[sparse_pos],
+                        recursiveRemoveLowCardinality(sparse_data_types[sparse_pos]),
                         single_point);
 
                     if (!new_range)
