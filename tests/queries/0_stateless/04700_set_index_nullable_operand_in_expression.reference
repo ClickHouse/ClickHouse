@@ -6,3 +6,10 @@ scalar_subquery	5
 materialize	5
 subquery_plain	5
 nullable_constant	5
+nobulk_index_used	1
+nobulk_plain	5
+nobulk_to_nullable	5
+nobulk_null_if	5
+nobulk_subquery_plain	5
+nobulk_materialize	5
+nobulk_nullable_constant	5

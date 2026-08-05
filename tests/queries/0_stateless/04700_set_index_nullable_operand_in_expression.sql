@@ -35,4 +35,18 @@ SELECT 'subquery_plain', count() FROM t_113234 WHERE t % (SELECT 19) = 16;
 -- A `Nullable` comparison constant sits outside the indexed expression and was never affected.
 SELECT 'nullable_constant', count() FROM t_113234 WHERE t % 19 = toNullable(16);
 
+-- Without bulk filtering the condition is evaluated through `mayBeTrueOnGranule`, which runs the
+-- hyperrectangle check before the same actions, so cover that path too.
+SET secondary_indices_enable_bulk_filtering = 0;
+
+SELECT 'nobulk_index_used', countIf(explain LIKE '%Name: t_set%') > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % 19 = 16);
+
+SELECT 'nobulk_plain', count() FROM t_113234 WHERE t % 19 = 16;
+SELECT 'nobulk_to_nullable', count() FROM t_113234 WHERE t % toNullable(19) = 16;
+SELECT 'nobulk_null_if', count() FROM t_113234 WHERE t % nullIf(19, 0) = 16;
+SELECT 'nobulk_subquery_plain', count() FROM t_113234 WHERE t % (SELECT 19) = 16;
+SELECT 'nobulk_materialize', count() FROM t_113234 WHERE t % materialize(toNullable(19)) = 16;
+SELECT 'nobulk_nullable_constant', count() FROM t_113234 WHERE t % 19 = toNullable(16);
+
 DROP TABLE t_113234;
