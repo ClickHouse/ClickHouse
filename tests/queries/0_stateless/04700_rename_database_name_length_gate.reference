@@ -1,0 +1,13 @@
+deps-off-into-long-rejected
+deps-on-into-long-rejected
+deps-off-accept-accepted
+droppable-after-accept
+deps-off-boundary-reject-rejected
+deps-off-boundary-accept-accepted
+detached-into-long-rejected
+detached-into-long-deps-on-rejected
+detached-accept-accepted
+detached-droppable-after-accept
+replicated-into-long-rejected
+replicated-accept-accepted
+replicated-droppable-after-accept

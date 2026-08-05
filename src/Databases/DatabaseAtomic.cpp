@@ -732,16 +732,20 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     waitDatabaseStarted();
     std::lock_guard lock(mutex);
 
+    /// A longer database name leaves less room for the table name in the dropped-metadata file
+    /// name metadata_dropped/{db}.{table}.{uuid}.sql, so a rename can leave a table that cannot
+    /// be dropped. Detached tables are checked too, because ATTACH does not re-check the length.
+    for (const auto & table : tables)
+        checkTableNameLengthUnlocked(new_name, table.first, getContext());
+    for (const auto & detached_table : snapshot_detached_tables)
+        checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
+
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
         for (auto & table : tables)
-        {
-            checkTableNameLengthUnlocked(new_name, table.first, getContext());
-
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
-        }
     }
 
 
