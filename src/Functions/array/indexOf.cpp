@@ -16,10 +16,8 @@ If the array does not contain the searched-for value, the function returns `0`.
 Elements set to `NULL` are handled as normal values.
 
 `NaN` elements do not follow the `NULL` rule above.
-A scalar comparison of two `NaN` values (`NaN = NaN`) is `0`.
-For a plain `Array(Float32)` or `Array(Float64)`, elements are compared the same way, so `indexOf([1.1, nan], nan)` returns `0`.
-Other layouts, such as a `Tuple` or nested array element, can match.
-Whether a `NaN` element is found is therefore an implementation detail. Do not rely on a specific behavior.
+A scalar comparison of two `NaN` values (`NaN = NaN`) is `0`, but `indexOf` may still report a `NaN` element as found.
+Whether it does is an implementation detail. Do not rely on a specific behavior.
 To find one, test for it: `arrayFirstIndex(x -> isNaN(x), arr)` returns its position, `arrayExists(x -> isNaN(x), arr)` a flag.
     )";
     FunctionDocumentation::Syntax syntax = "indexOf(arr, x)";
