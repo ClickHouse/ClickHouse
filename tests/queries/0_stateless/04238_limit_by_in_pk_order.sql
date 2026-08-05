@@ -250,7 +250,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_offset' AND current_database = currentDatabase() AND type = 'QueryFinish';
 
 -- Not optimized: no outer LIMIT, so nothing bounds the number of groups.
-SELECT count() FROM (SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) SETTINGS log_comment = '04238_outer_limit_absent');
+SELECT count() FROM (SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c)) SETTINGS log_comment = '04238_outer_limit_absent';
 SYSTEM FLUSH LOGS query_log;
 SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_absent' AND current_database = currentDatabase() AND type = 'QueryFinish';
 
