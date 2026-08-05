@@ -240,6 +240,8 @@ private:
     /// before publishing the part.
     UInt64 currentLeadershipEpoch() const override;
 
+    bool hasLeaderElection() const override;
+
     /// Guard called by write paths immediately BEFORE the first irreversible rename that publishes
     /// a part on (possibly shared) storage (`MergeTreeSink::commitPart`, the merge finalize). For a
     /// non-`leader_election` table it is a no-op. Otherwise it requires that this node still holds a

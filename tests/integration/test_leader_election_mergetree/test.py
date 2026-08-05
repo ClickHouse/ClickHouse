@@ -2251,3 +2251,64 @@ def test_move_partition_dest_publish_undone_when_source_publish_fails(started_cl
                 node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_COMMIT_UNDO = "12345678-abcd-abcd-abcd-12345678ab24"
+
+
+def test_insert_publish_undone_when_lease_goes_stale_before_commit(started_cluster):
+    """
+    Regression for the commit-time publish fence of `MergeTreeData::Transaction::commit`: the
+    insert/merge/mutation paths rename the part to its persistent name BEFORE `commit`
+    (`rename_in_transaction = false`), so a lease lost — or lost and reacquired — between the
+    rename and the commit used to leave the part on shared storage while the client got an
+    exception; the next leader would then load and activate a part of a failed `INSERT`. With
+    the fence armed, `commit` re-checks the admission epoch and renames the published part back
+    to its temporary directory when the check fails.
+
+    The `merge_tree_leader_election_stale_lease_before_commit` failpoint deterministically fails
+    the commit-time check after the publishing rename has happened, so the undo is exercised.
+    Reloading the table from shared storage afterwards must not see the rejected part.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_before_commit"
+    table = "test_commit_undo_fence"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_COMMIT_UNDO)
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="between the publishing renames and the commit"):
+                node1.query(f"INSERT INTO {table} VALUES (10)")
+
+            assert (
+                int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+            ), "The rejected INSERT still took effect locally"
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The decisive check: reload the part set from shared storage. If the publishing rename
+        # of the rejected INSERT had not been undone, the part would be picked up here.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3, (
+            "A part of the rejected INSERT was left on shared storage"
+        )
+
+        # With the failpoint cleared the same INSERT succeeds and becomes visible.
+        node1.query(f"INSERT INTO {table} VALUES (10)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass

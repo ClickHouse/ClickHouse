@@ -143,6 +143,14 @@ bool MutatePlainMergeTreeTask::executeStep()
                     /// rename has already happened, and it cannot detect a lease that was lost
                     /// and reacquired while the mutation was executing.
                     storage.assertWritableLeaderAtEpoch(admission_epoch);
+
+                    /// Also arm the publish fence: `transaction.commit` then re-checks the same
+                    /// epoch and renames the published part back if the check fails, so a failed
+                    /// commit does not leave the mutation result on shared storage for the next
+                    /// leader to activate.
+                    if (storage.hasLeaderElection())
+                        transaction.setPublishFenceEpoch(admission_epoch);
+
                     storage.renameTempPartAndReplaceUnlocked(new_part, transaction, lock, /*rename_in_transaction=*/ false);
                     transaction.commit(lock);
                 }

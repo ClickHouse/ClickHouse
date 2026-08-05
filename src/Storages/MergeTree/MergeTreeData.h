@@ -384,6 +384,12 @@ public:
         /// lease goes stale in the middle of the batch. Without it, a lease lost after the first
         /// rename would still leave the remaining parts of an aborted DDL under their persistent
         /// names on shared storage, where the new leader can load them.
+        /// `commit` also enforces the armed fence (instead of the plain leadership check of
+        /// `assertCanCommitTransaction`) and undoes the published renames when it fails, so a
+        /// lease lost — or lost and reacquired — between the renames and the commit cannot leave
+        /// parts of a failed operation visible to the next leader. Direct renames done outside
+        /// `renameParts` (insert/merge/mutation with `rename_in_transaction = false`) join the
+        /// same undo journal in `preparePartForCommit`.
         void setPublishFenceEpoch(UInt64 admission_epoch) { publish_fence_epoch = admission_epoch; }
 
         /// Rename the parts already published by `renameParts` back to the temporary directories
@@ -794,6 +800,11 @@ public:
     /// irreversible shared-storage side effect. Returns 0 for every engine but `StorageMergeTree`
     /// with `leader_election` (see the override there), where 0 also means "no lease".
     virtual UInt64 currentLeadershipEpoch() const { return 0; }
+
+    /// Whether this table coordinates writes via `leader_election`. Write paths that publish
+    /// parts outside `Transaction::renameParts` (insert, merge, mutation) use it to decide
+    /// whether to arm the transaction's publish fence (`Transaction::setPublishFenceEpoch`).
+    virtual bool hasLeaderElection() const { return false; }
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);

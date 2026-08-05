@@ -4606,6 +4606,11 @@ UInt64 StorageMergeTree::currentLeadershipEpoch() const
     return leader_election_ptr ? leader_election_ptr->leadershipEpoch() : 0;
 }
 
+bool StorageMergeTree::hasLeaderElection() const
+{
+    return leader_election_ptr != nullptr;
+}
+
 void StorageMergeTree::clearDataAfterPartitionDDL(std::string_view ddl_kind, bool with_mutations)
 {
     /// See the comment in the header: under `leader_election` the lease freshness is re-checked

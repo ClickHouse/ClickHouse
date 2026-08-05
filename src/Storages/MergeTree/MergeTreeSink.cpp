@@ -380,6 +380,15 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
     /// It's important to create it outside of lock scope because
     /// otherwise it can lock parts in destructor and deadlock is possible.
     MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
+
+    /// Arm the publish fence: `transaction.commit` then re-checks the leader/epoch under which
+    /// this insert was admitted (not merely leadership) and renames the published part back to
+    /// its temporary directory if the check fails, so a lease lost — or lost and reacquired —
+    /// between the rename below and the commit cannot leave a part of a failed `INSERT` on
+    /// shared storage for the next leader to activate.
+    if (storage.hasLeaderElection())
+        transaction.setPublishFenceEpoch(commit_epoch);
+
     {
         auto lock = storage.lockParts();
 
