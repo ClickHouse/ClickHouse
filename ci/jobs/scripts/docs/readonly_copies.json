@@ -12,6 +12,18 @@
       "repo": "ClickHouse/clickhouse-connect",
       "url": "https://github.com/ClickHouse/clickhouse-connect",
       "subdir": "docs"
+    },
+    {
+      "path": "docs/chdb",
+      "repo": "chdb-io/chdb",
+      "url": "https://github.com/chdb-io/chdb",
+      "subdir": "docs"
+    },
+    {
+      "path": "docs/images/chdb",
+      "repo": "chdb-io/chdb",
+      "url": "https://github.com/chdb-io/chdb",
+      "subdir": "docs/images/chdb"
     }
   ]
 }

@@ -110,6 +110,10 @@ class Info:
         return self.env.USER_LOGIN
 
     @property
+    def head_update_user(self):
+        return self.env.HEAD_UPDATE_USER
+
+    @property
     def commit_authors(self):
         return self.env.COMMIT_AUTHORS or []
 

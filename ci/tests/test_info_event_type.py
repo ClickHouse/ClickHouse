@@ -48,6 +48,7 @@ PAYLOADS = {
             "user": {"login": "nobody"},
             "updated_at": "2026-07-28T00:00:00Z",
         },
+        "sender": {"login": "current-updater"},
     },
     Workflow.Event.PUSH: {
         "commits": [],
@@ -125,3 +126,10 @@ def test_push_and_dispatch_predicates(tmp_path, monkeypatch):
     info = _info_for(Workflow.Event.DISPATCH, tmp_path, monkeypatch)
     assert info.is_dispatch_event
     assert not info.is_push_event
+
+
+def test_pull_request_exposes_head_update_user(tmp_path, monkeypatch):
+    info = _info_for(Workflow.Event.PULL_REQUEST, tmp_path, monkeypatch)
+
+    assert info.user_name == "nobody"
+    assert info.head_update_user == "current-updater"
