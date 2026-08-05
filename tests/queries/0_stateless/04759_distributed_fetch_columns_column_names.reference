@@ -72,6 +72,56 @@ rows: 20
 18446744073709551607
 18446744073709551608
 18446744073709551609
+=== Merge over Distributed ===
+-- mrg A
+header: __table1.A
+rows: 200
+-1
+-10
+-11
+-12
+-- mrg A, B
+header: __table1.A	__table1.B
+rows: 200
+-1	10
+-10	100
+-11	110
+-12	120
+-- mrg B, A
+header: __table1.B	__table1.A
+rows: 200
+0	0
+10	-1
+100	-10
+110	-11
+-- mrg filtered
+header: __table1.A	__table1.B
+rows: 200
+-1	10
+-10	100
+-11	110
+-12	120
+-- mrg, serialize_query_plan
+header: __table1.A
+rows: 200
+-1
+-10
+-11
+-12
+-- mrg_mismatch A
+header: __table1.A
+rows: 200
+0
+18446744073709551517
+18446744073709551518
+18446744073709551519
+-- mrg_mismatch B, A
+header: __table1.B	__table1.A
+rows: 200
+0	0
+10	18446744073709551615
+100	18446744073709551606
+110	18446744073709551605
 === Distributed read without a wrapper ===
 -- dist A
 header: __table1.A

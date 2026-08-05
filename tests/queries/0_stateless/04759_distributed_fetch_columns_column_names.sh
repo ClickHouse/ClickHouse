@@ -41,6 +41,12 @@ CREATE MATERIALIZED VIEW mv1 TO dist_target AS SELECT toUInt64(A) AS A FROM mv_s
 -- prefer_localhost_replica the run happens to randomize.
 INSERT INTO mv_source SELECT -number FROM numbers(10) SETTINGS distributed_foreground_insert = 1;
 
+-- Merge forwards its child's stage, so a Distributed child is read at FetchColumns here too, and
+-- Merge adapts that header itself: by name when the names match, by position otherwise.
+CREATE TABLE mrg (A Int64, B Int64) ENGINE = Merge(currentDatabase(), '^dist$');
+-- Merge whose declared type differs from the child's un-order-preservingly, as buf_mismatch does.
+CREATE TABLE mrg_mismatch (A UInt64, B Int64) ENGINE = Merge(currentDatabase(), '^dist$');
+
 CREATE TABLE rt (k Int64, v Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO rt SELECT -number, number FROM numbers(5);
 -- Keys matching a NONZERO B, so a value replaced by a default is visible in the result.
@@ -85,6 +91,18 @@ fetch 'buf_widen A' 'SELECT A FROM buf_widen'
 
 echo '=== MaterializedView over a Distributed target ==='
 fetch 'mv1 A' 'SELECT A FROM mv1'
+
+echo '=== Merge over Distributed ==='
+fetch 'mrg A' 'SELECT A FROM mrg'
+fetch 'mrg A, B' 'SELECT A, B FROM mrg'
+# Reversed projection, so a positional match against a differently ordered header would swap A and B.
+# Both of Merge's headers are built from the requested columns, so the two ways it can match agree
+# here; this case is what would show it if that ever stopped holding.
+fetch 'mrg B, A' 'SELECT B, A FROM mrg'
+fetch 'mrg filtered' 'SELECT A FROM mrg WHERE B > 900'
+fetch 'mrg, serialize_query_plan' 'SELECT A FROM mrg SETTINGS serialize_query_plan = 1'
+fetch 'mrg_mismatch A' 'SELECT A FROM mrg_mismatch'
+fetch 'mrg_mismatch B, A' 'SELECT B, A FROM mrg_mismatch'
 
 echo '=== Distributed read without a wrapper ==='
 fetch 'dist A' 'SELECT A FROM dist'
