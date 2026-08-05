@@ -642,6 +642,26 @@ namespace JSONUtils
         return namesMayProduceRawBytesInJSON(names, settings, /*validate_utf8=*/false);
     }
 
+    bool boolRepresentationsMayProduceRawBytesInJSONStrings(const Block & header, const FormatSettings & settings, bool validate_utf8)
+    {
+        if (!settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None))
+            return false;
+
+        /// When validation is on and some value type may itself emit invalid UTF-8, the format
+        /// installs `WriteBufferValidUTF8` over the whole output, which also sanitizes the `Bool`
+        /// representations. This cannot be short-circuited on `validate_utf8` alone: the `Bool`
+        /// value type is itself "clean" (`textCanContainOnlyValidUTF8`), so a header of clean value
+        /// types with a non-UTF-8 representation does not install the buffer even with validation on.
+        if (validate_utf8)
+        {
+            for (const auto & type : header.getDataTypes())
+                if (!type->textCanContainOnlyValidUTF8())
+                    return false;
+        }
+
+        return true;
+    }
+
     void skipColon(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);

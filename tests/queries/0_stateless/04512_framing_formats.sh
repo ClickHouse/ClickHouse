@@ -353,6 +353,81 @@ data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPack
     -d 'SELECT 1 AS `col\xE2\x9C\x93` FORMAT SQLInsert' | grep -c '"packet":"data"')
 [ "$data_packets" -ge 1 ] && echo 'SQLInsert (valid UTF-8 column name) accepted: OK'
 
+# The value serializations also write some settings verbatim: the `Escaped` and `CSV` kinds write the
+# `TSV` / `CSV` `NULL` representations (`SerializationNullable`) and the `Bool` representations
+# (`SerializationBool`), the plain text kind of the presentational formats and of the `*Strings*` JSON
+# variants writes the `Bool` representations, and `CSV` writes its field delimiter between the fields.
+# All of these are knowable from the settings before any row is written, so a non-UTF-8 value makes the
+# text framings reject the output, while the base64 framing still carries it byte-exactly.
+echo '--- JSONEachPacketString is rejected for CSV with a non-UTF-8 NULL representation'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_csv_null_representation=%FF" \
+    -d 'SELECT NULL::Nullable(UInt8) AS x FORMAT CSV' \
+    | grep -o -m1 'is not compatible with the output format CSV'
+
+echo '--- JSONEachPacketBase64 carries CSV with a non-UTF-8 NULL representation byte-exactly'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64&format_csv_null_representation=%FF" \
+    -d 'SELECT NULL::Nullable(UInt8) AS x FORMAT CSV' \
+    | grep '"packet":"data"' | sed -E 's/.*"data":"([^"]*)".*/\1/' \
+    | while read -r encoded_payload; do echo "$encoded_payload" | base64 --decode; done \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&format_csv_null_representation=%FF" -d 'SELECT NULL::Nullable(UInt8) AS x FORMAT CSV') \
+    && echo 'CSV payload with a non-UTF-8 NULL representation round-trips' || echo 'MISMATCH'
+
+# A valid multi-byte UTF-8 NULL representation (here U+2205 EMPTY SET) must not be misdetected.
+echo '--- JSONEachPacketString accepts CSV with a valid UTF-8 (multi-byte) NULL representation'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_csv_null_representation=%E2%88%85" \
+    -d 'SELECT NULL::Nullable(UInt8) AS x FORMAT CSV' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'CSV (valid UTF-8 NULL representation) accepted: OK'
+
+echo '--- JSONEachPacketString is rejected for TSV with a non-UTF-8 NULL representation'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_tsv_null_representation=%FF" \
+    -d 'SELECT NULL::Nullable(UInt8) AS x FORMAT TSV' \
+    | grep -o -m1 'is not compatible with the output format TSV'
+
+echo '--- JSONEachPacketString is rejected for CSV with a non-UTF-8 field delimiter'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_csv_delimiter=%FF" \
+    -d 'SELECT 1 AS a, 2 AS b FORMAT CSV' \
+    | grep -o -m1 'is not compatible with the output format CSV'
+
+echo '--- JSONEachPacketString is rejected for TSV with a non-UTF-8 Bool representation'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&bool_true_representation=%FF" \
+    -d 'SELECT true AS b FORMAT TSV' \
+    | grep -o -m1 'is not compatible with the output format TSV'
+
+# The presentational formats write the values through the plain text kind, which also uses the `Bool`
+# representations verbatim.
+echo '--- JSONEachPacketString is rejected for Pretty with a non-UTF-8 Bool representation'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&bool_false_representation=%FF" \
+    -d 'SELECT false AS b FORMAT Pretty' \
+    | grep -o -m1 'is not compatible with the output format Pretty'
+
+# The `*Strings*` JSON variants embed the plain text form of every value into a JSON string without
+# validating UTF-8 by default, so the `Bool` representations leak into the JSON verbatim. With
+# `output_format_json_validate_utf8 = 1` the whole-output validating buffer is installed only when some
+# column's value type may itself emit invalid UTF-8; a header of clean value types (`Bool`) skips the
+# buffer, so the rejection must stay. With a `String` column present, the buffer is installed and
+# sanitizes the representation, so the same query is accepted.
+echo '--- JSONEachPacketString is rejected for JSONStringsEachRow with a non-UTF-8 Bool representation'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&bool_true_representation=%FF" \
+    -d 'SELECT true AS b FORMAT JSONStringsEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONStringsEachRow'
+
+echo '--- JSONEachPacketString is rejected for JSONStringsEachRow with a non-UTF-8 Bool representation even with UTF-8 validation on (clean-typed header installs no validating buffer)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&bool_true_representation=%FF&output_format_json_validate_utf8=1" \
+    -d 'SELECT true AS b FORMAT JSONStringsEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONStringsEachRow'
+
+echo '--- JSONEachPacketString accepts JSONStringsEachRow with a non-UTF-8 Bool representation when the validating buffer is installed'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&bool_true_representation=%FF&output_format_json_validate_utf8=1" \
+    -d "SELECT true AS b, 'x' AS s FORMAT JSONStringsEachRow" | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONStringsEachRow (validating buffer sanitizes the Bool representation) accepted: OK'
+
+# The non-strings JSON formats write `Bool` values as JSON `true` / `false` and are unaffected by the
+# representations.
+echo '--- JSONEachPacketString accepts JSONEachRow with a non-UTF-8 Bool representation'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&bool_true_representation=%FF" \
+    -d 'SELECT true AS b FORMAT JSONEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONEachRow (Bool as JSON true/false) accepted: OK'
+
 # `TSKV` always writes the column names into the header (`writeAnyEscapedString<'='>`, which escapes
 # control characters but does not validate UTF-8), so a non-UTF-8 column name is knowable before any
 # row is written and makes the output non-textual, exactly like the `*WithNames*` variants below.

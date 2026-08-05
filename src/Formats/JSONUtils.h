@@ -85,6 +85,19 @@ namespace JSONUtils
     /// (for example `CustomSeparated` with the `JSON` escaping rule).
     bool tupleElementNamesMayProduceRawBytesInJSON(const Block & header, const FormatSettings & settings, bool validate_utf8);
 
+    /// Returns true if the `Bool` representations (`bool_true_representation` /
+    /// `bool_false_representation`) may leak bytes that are not valid UTF-8 into the output of the
+    /// `*Strings*` JSON variants (`JSONStrings`, `JSONStringsEachRow`, `JSONCompactStrings*`). Those
+    /// variants serialize every value through the plain `serializeText` kind and embed the result
+    /// with `writeJSONString`, which escapes control characters but passes non-UTF-8 bytes through
+    /// verbatim - and `SerializationBool` writes the representations verbatim in that kind. Like the
+    /// `Tuple` element names (see above), the only sanitization is the whole-output
+    /// `WriteBufferValidUTF8`, which is installed only when `validate_utf8` is on and at least one
+    /// column's value type may itself emit invalid UTF-8 - the `Bool` value type is "clean", so a
+    /// header of clean value types skips the buffer even with validation on. The representations
+    /// come from the settings, so text framings can reject the output accordingly.
+    bool boolRepresentationsMayProduceRawBytesInJSONStrings(const Block & header, const FormatSettings & settings, bool validate_utf8);
+
     /// Functions helpers for writing JSON data to WriteBuffer.
 
     void writeFieldDelimiter(WriteBuffer & out, size_t new_lines = 1);

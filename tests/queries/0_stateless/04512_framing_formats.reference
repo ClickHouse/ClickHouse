@@ -140,6 +140,28 @@ text/event-stream; charset=UTF-8; payload=base64
 SQLInsert payload with a non-UTF-8 column name round-trips
 --- JSONEachPacketString accepts SQLInsert with a valid UTF-8 (multi-byte) column name
 SQLInsert (valid UTF-8 column name) accepted: OK
+--- JSONEachPacketString is rejected for CSV with a non-UTF-8 NULL representation
+is not compatible with the output format CSV
+--- JSONEachPacketBase64 carries CSV with a non-UTF-8 NULL representation byte-exactly
+CSV payload with a non-UTF-8 NULL representation round-trips
+--- JSONEachPacketString accepts CSV with a valid UTF-8 (multi-byte) NULL representation
+CSV (valid UTF-8 NULL representation) accepted: OK
+--- JSONEachPacketString is rejected for TSV with a non-UTF-8 NULL representation
+is not compatible with the output format TSV
+--- JSONEachPacketString is rejected for CSV with a non-UTF-8 field delimiter
+is not compatible with the output format CSV
+--- JSONEachPacketString is rejected for TSV with a non-UTF-8 Bool representation
+is not compatible with the output format TSV
+--- JSONEachPacketString is rejected for Pretty with a non-UTF-8 Bool representation
+is not compatible with the output format Pretty
+--- JSONEachPacketString is rejected for JSONStringsEachRow with a non-UTF-8 Bool representation
+is not compatible with the output format JSONStringsEachRow
+--- JSONEachPacketString is rejected for JSONStringsEachRow with a non-UTF-8 Bool representation even with UTF-8 validation on (clean-typed header installs no validating buffer)
+is not compatible with the output format JSONStringsEachRow
+--- JSONEachPacketString accepts JSONStringsEachRow with a non-UTF-8 Bool representation when the validating buffer is installed
+JSONStringsEachRow (validating buffer sanitizes the Bool representation) accepted: OK
+--- JSONEachPacketString accepts JSONEachRow with a non-UTF-8 Bool representation
+JSONEachRow (Bool as JSON true/false) accepted: OK
 --- JSONEachPacketString is rejected for TSKV with a non-UTF-8 column name
 is not compatible with the output format TSKV
 --- EventStream base64-encodes TSKV with a non-UTF-8 column name

@@ -78,6 +78,8 @@ Every packet is a JSON object on a separate line (newline-delimited JSON, `appli
 
 Because `JSONEachPacketString` puts the payload bytes into a JSON string, it is meant for output formats that produce valid UTF-8 text. `String` and `FixedString` columns can hold arbitrary bytes, so text output formats such as `JSONEachRow`, `TSV` or `CSV` may emit invalid UTF-8 for such values - just as ClickHouse's own `JSONEachRow` does with the default `output_format_json_validate_utf8 = 0` - and in that case the resulting JSON string, and therefore the whole NDJSON stream, is not guaranteed to be valid UTF-8. `JSONEachPacketString` does not validate or re-encode the payload; use `JSONEachPacketBase64` for byte-exact transport of arbitrary bytes.
 
+Output formats that knowably produce non-UTF-8 bytes are rejected by `JSONEachPacketString` up front with an error, before the query executes: binary formats (`Native`, `RowBinary`), raw passthrough formats (`RawBLOB`, `TSVRaw`), formats that write a non-UTF-8 column name, data type name, or `Tuple` element name from the query header into their output, and configurations whose settings-driven literals are written verbatim by the serializations and are not valid UTF-8 - the `format_csv_delimiter`, `format_tsv_null_representation` / `format_csv_null_representation`, and `bool_true_representation` / `bool_false_representation` settings.
+
 ```bash
 curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
 ```

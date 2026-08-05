@@ -144,20 +144,24 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
             /// hence the output, non-textual. The row values of the non-`Strings` variants can also
             /// synthesize object keys from named `Tuple` element names (see
             /// `tupleElementNamesMayProduceRawBytesInJSON`); the `Strings` variants write a `Tuple`
-            /// value in its plain text form, which carries no element names. All of this is knowable
-            /// from the header, so the text framings reject or base64-encode the output accordingly.
-            if (with_names || with_types || !yield_strings)
-                factory.registerOutputFormatMayProduceRawBytesChecker(
-                    format_name,
-                    [with_names, with_types, yield_strings](const FormatSettings & settings, const Block & header)
-                    {
-                        return (with_names
-                                && JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8))
-                            || (with_types
-                                && JSONUtils::namesMayProduceRawBytesInJSON(header.getDataTypeNames(), settings, settings.json.validate_utf8))
-                            || (!yield_strings
-                                && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8));
-                    });
+            /// value in its plain text form, which carries no element names - but that plain text
+            /// form writes the `Bool` representations verbatim (see
+            /// `boolRepresentationsMayProduceRawBytesInJSONStrings`). All of this is knowable from
+            /// the header and the settings, so the text framings reject or base64-encode the output
+            /// accordingly.
+            factory.registerOutputFormatMayProduceRawBytesChecker(
+                format_name,
+                [with_names, with_types, yield_strings](const FormatSettings & settings, const Block & header)
+                {
+                    return (with_names
+                            && JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8))
+                        || (with_types
+                            && JSONUtils::namesMayProduceRawBytesInJSON(header.getDataTypeNames(), settings, settings.json.validate_utf8))
+                        || (!yield_strings
+                            && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8))
+                        || (yield_strings
+                            && JSONUtils::boolRepresentationsMayProduceRawBytesInJSONStrings(header, settings, settings.json.validate_utf8));
+                });
         };
 
         registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);

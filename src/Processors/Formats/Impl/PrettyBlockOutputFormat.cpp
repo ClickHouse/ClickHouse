@@ -4,6 +4,7 @@
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -889,13 +890,18 @@ void registerOutputFormatPretty(FormatFactory & factory)
                 });
 
                 /// The header (and, for many rows, the footer) column names are written verbatim, so a
-                /// name that is not valid UTF-8 makes the output not valid UTF-8 either. The text
-                /// framings reject or base64-encode the output in that case (see
+                /// name that is not valid UTF-8 makes the output not valid UTF-8 either. The values are
+                /// written through the plain `serializeText` kind, which writes the `Bool`
+                /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`). The text
+                /// framings reject or base64-encode the output in these cases (see
                 /// `checkIfOutputFormatMayProduceRawBytes`). `Pretty` does not write the data type names.
                 factory.registerOutputFormatMayProduceRawBytesChecker(
                     name,
-                    [](const FormatSettings &, const Block & header)
-                    { return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false); });
+                    [](const FormatSettings & settings, const Block & header)
+                    {
+                        return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
+                            || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None);
+                    });
             }
         }
     }
