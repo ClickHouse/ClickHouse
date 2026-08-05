@@ -3,7 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
+#include <Storages/ObjectStorage/DataLakes/DeletionVectorBitmap.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Types.h>

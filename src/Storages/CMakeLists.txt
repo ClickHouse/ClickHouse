@@ -1,3 +1,4 @@
+add_subdirectory(ObjectStorage)
 add_subdirectory(System)
 
 if (ENABLE_EXAMPLES)

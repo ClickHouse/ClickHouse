@@ -1,0 +1,4 @@
+clickhouse_add_executable(benchmark_deletion_vector_transform benchmark_deletion_vector_transform.cpp)
+target_link_libraries(benchmark_deletion_vector_transform PRIVATE
+    ch_contrib::gbenchmark_all
+    dbms)

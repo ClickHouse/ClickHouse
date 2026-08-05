@@ -5,8 +5,8 @@
 
 #if USE_AVRO
 
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Processors/ISimpleTransform.h>
+#include <Storages/ObjectStorage/DataLakes/DeletionVectorBitmap.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 
 namespace DB::Iceberg
