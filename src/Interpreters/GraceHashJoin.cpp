@@ -801,6 +801,19 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
             if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
                 return;
+
+            /// Before spilling/rehashing, try to compress the in-memory bucket if
+            /// `enable_join_in_memory_compression` is on. Grace's bucket inserts pass `check_limits = false`,
+            /// so the inner `HashJoin` never compresses on its own; compress it here so a compressible
+            /// bucket can stay in memory (like `hash`) instead of immediately rehashing.
+            if (table_join->enableJoinInMemoryCompression() && !hash_join->haveCompressed())
+            {
+                hash_join->shrinkStoredBlocksToFit(hash_join_total_bytes, /* force_optimize = */ true);
+                hash_join_total_keys = hash_join->getAndSetRightTableKeys();
+                hash_join_total_bytes = hash_join->getTotalByteCount();
+                if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
+                    return;
+            }
         }
 
         if (block_added)
@@ -824,8 +837,12 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
                 current_blocks.emplace_back(std::move(blocks[bucket_index]));
             }
 
-            for (const auto & right_block : right_blocks)
+            /// Consume the released blocks one by one: each is decompressed (if the in-memory bucket
+            /// compressed its stored data under memory pressure) and freed right after scattering,
+            /// so rehashing never holds the whole uncompressed bucket in memory at once.
+            while (!right_blocks.empty())
             {
+                Block right_block = right_blocks.next();
                 Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
                 flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
                 current_blocks.emplace_back(std::move(blocks[bucket_index]));

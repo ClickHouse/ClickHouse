@@ -653,7 +653,26 @@ ExchangeLookupPtr createExchangeLookup(
 static String serializeQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString out;
-    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    /// The stateless-worker task protocol carries no query-plan version negotiation, so the plan is
+    /// serialized at the pinned version every deployed worker understands, not at this server's newest
+    /// DBMS_QUERY_PLAN_SERIALIZATION_VERSION: a not-yet-upgraded worker in a rolling upgrade would
+    /// reject a newer-versioned stream in QueryPlan::deserialize before executing the task.
+    /// Exception: a fragment whose behavior depends on a version-gated setting (a join step with
+    /// `enable_join_in_memory_compression` enabled, or with a subquery-local `max_memory_usage`
+    /// override that the receiver could not restore from its query context, which the pinned
+    /// version's writeChangedBinary would otherwise silently drop), or that contains a step that
+    /// cannot be written below its own minimum version at all (a `WindowStep`, registered only
+    /// since version 4), is serialized at the higher
+    /// version it requires, so the feature is not lost on this path. The version is derived from the fragment itself, not from a session
+    /// setting: a fragment with no hash join, or whose joins do not enable compression (even when
+    /// they carry an incidental gated setting such as the query-level `max_memory_usage`, which is
+    /// only compression's trigger), stays at the pinned version and remains byte-compatible for a
+    /// not-yet-upgraded worker, while one that needs the newer version makes such a worker fail
+    /// closed with a clear unsupported-version error in QueryPlan::deserialize instead of running
+    /// the join without the requested compression.
+    UInt64 version = std::max<UInt64>(
+        DBMS_STATELESS_WORKER_QUERY_PLAN_SERIALIZATION_VERSION, query_plan.getRequiredSerializationVersion());
+    query_plan.serialize(out, version);
     return out.str();
 }
 

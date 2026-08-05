@@ -31,6 +31,7 @@
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -82,6 +83,11 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_memory_usage;
 }
 
 static std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
@@ -1089,6 +1095,104 @@ static void constructPhysicalStep(
         nodes, makeDescription("Post Join Actions"));
 }
 
+/// Whether the join predicate is a constant (`JOIN ON 1`, `JOIN ON NULL`, ...), and if so, its value.
+/// Such a join is marked with `TableJoin::setJoinExpressionValue` below and is then executed by
+/// `ConstantJoin` regardless of `join_algorithm` (see the ConstantJoin branch in
+/// Planner/PlannerJoins.cpp), so serialization-version selection consults this too.
+/// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
+/// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
+/// ASOF JOIN is excluded: a constant expression cannot contain the required inequality predicate,
+/// and marking the join as a join with constant would leave `table_join_clauses` empty.
+/// Instead, it is rejected with INVALID_JOIN_ON_EXPRESSION.
+static std::optional<bool> tryGetConstantJoinPredicateValue(const JoinOperator & join_operator)
+{
+    if (join_operator.strictness == JoinStrictness::Asof)
+        return {};
+
+    const auto & join_expression = join_operator.expression;
+    const bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
+
+    const bool is_always_true_predicate = !is_join_without_expression && join_expression.empty();
+    const bool is_always_false_predicate = join_expression.size() == 1
+        && join_expression[0].getType()->onlyNull()
+        && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown;
+
+    if (is_always_true_predicate || is_always_false_predicate)
+        return is_always_true_predicate;
+    return {};
+}
+
+/// Whether this join will be executed by `ConstantJoin`: both an explicit CROSS/COMMA join and a join
+/// with a constant predicate are routed there whatever `join_algorithm` says.
+static bool willExecuteAsConstantJoin(const JoinOperator & join_operator)
+{
+    return isCrossOrComma(join_operator.kind) || tryGetConstantJoinPredicateValue(join_operator).has_value();
+}
+
+/// Whether `MergeJoin` supports this join's shape, i.e. whether `join_algorithm = 'partial_merge'` or
+/// `'prefer_partial_merge'` will really build a `MergeJoin` for it and `'auto'` will really build a
+/// `JoinSwitcher` (see tryCreateJoin in Planner/PlannerJoins.cpp). Mirrors
+/// `MergeJoin::isSupported(table_join)`: the kind and strictness predicate, plus `oneDisjunct`. The join
+/// gets more than one `TableJoin` clause only when its whole ON expression is a single top-level `OR`
+/// (see tryAddDisjunctiveConditions), so anything else is single-clause; a single top-level `OR` either
+/// resolves to one clause per disjunct - which `MergeJoin` does not support - or, when the disjuncts
+/// yield no keys, becomes a CROSS join executed by `ConstantJoin`.
+static bool shapeSupportsMergeJoin(const JoinOperator & join_operator)
+{
+    if (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness))
+        return false;
+
+    const auto & join_expression = join_operator.expression;
+    return !(join_expression.size() == 1 && join_expression.front().isFunction(JoinConditionOperator::Or));
+}
+
+/// Whether `FullSortingMergeJoin` supports this join's shape, i.e. whether an enabled
+/// `join_algorithm = 'full_sorting_merge'` / `'parallel_full_sorting_merge'` really builds one for it,
+/// so that a later hash fallback in the algorithm list is never reached (see tryCreateJoin in
+/// Planner/PlannerJoins.cpp). Mirrors `FullSortingMergeJoin::isSupported(table_join)` on what the
+/// serialized step knows:
+/// - the kind and strictness predicate (isMergeAlgorithmStrictnessAndKindSupported);
+/// - a single non-empty clause: as with `MergeJoin`, more than one `TableJoin` clause only comes from
+///   a single top-level `OR`, and an empty expression means a CROSS or constant-predicate join
+///   executed by `ConstantJoin`;
+/// - no leftover conditions: `FullSortingMergeJoin::isSupported` rejects per-side filter conditions
+///   and a mixed (cross-side) `ON` expression, and any expression element not consumed as an equality
+///   key becomes exactly one of those (see addJoinPredicatesToTableJoin and concatConditions above,
+///   where a from-neither-side leftover counts as a left filter condition too), so every element must
+///   be a plain `=` / null-safe `=` between one left-side and one right-side argument.
+///   `residual_filter` is irrelevant: it becomes a post-join `FilterStep`, never a TableJoin
+///   condition.
+/// - ASOF claims nothing (conservative version bump): its extra inequality-key extraction is not
+///   mirrored here.
+/// The remaining `isSupported` checks cannot fail on a serialized step: `hasUsing` is always false
+/// once a `JoinOperator` is set, and `joinUseNulls` / special storage apply only to a
+/// `JoinStepLogicalLookup` right side, which is not serializable in the first place.
+static bool shapeSupportsFullSortingMergeJoin(const JoinOperator & join_operator)
+{
+    if (join_operator.strictness == JoinStrictness::Asof)
+        return false;
+
+    if (!FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness))
+        return false;
+
+    if (willExecuteAsConstantJoin(join_operator))
+        return false;
+
+    const auto & join_expression = join_operator.expression;
+    if (join_expression.empty())
+        return false;
+
+    for (const auto & predicate : join_expression)
+    {
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            return false;
+        if (!((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
+            return false;
+    }
+    return true;
+}
+
 static QueryPlanNode buildPhysicalJoinImpl(
     std::vector<QueryPlanNode *> children,
     JoinOperator join_operator,
@@ -1121,20 +1225,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     const bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
 
-    const bool is_always_true_predicate = !is_join_without_expression && join_expression.empty();
-    const bool is_always_false_predicate = join_expression.size() == 1
-        && join_expression[0].getType()->onlyNull()
-        && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown;
-    /// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
-    /// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
-    /// ASOF JOIN is excluded: a constant expression cannot contain the required inequality predicate,
-    /// and marking the join as a join with constant would leave `table_join_clauses` empty.
-    /// Instead, it is rejected below with INVALID_JOIN_ON_EXPRESSION.
-    if (join_operator.strictness != JoinStrictness::Asof && (is_always_true_predicate || is_always_false_predicate))
+    /// See tryGetConstantJoinPredicateValue for which predicates count as constant.
+    if (auto constant_predicate_value = tryGetConstantJoinPredicateValue(join_operator))
     {
-        bool join_expression_value = join_expression.empty();
         join_expression.clear();
-        table_join->setJoinExpressionValue(join_expression_value);
+        table_join->setJoinExpressionValue(*constant_predicate_value);
     }
 
     std::vector<JoinActionRef> used_expressions;
@@ -1657,6 +1752,24 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
 {
     join_settings.updatePlanSettings(settings);
     sorting_settings.updatePlanSettings(settings);
+    /// A join executed by `ConstantJoin` (an explicit CROSS/COMMA join, or a join with a constant
+    /// predicate such as `ON 1`) keeps its own dedicated threshold-based compression path, and PASTE
+    /// join stores no build side, so `enable_join_in_memory_compression` never applies to this step
+    /// and must not raise its fragment's minimum serialization version (a receiver that later
+    /// rewrites the join into an inner hash join simply plans without the setting, the same graceful
+    /// degradation as a pre-version-5 receiver). `ConstantJoin` does consume `max_memory_usage`
+    /// though, so a step-local value must still reach the receiver whatever `join_algorithm` allows.
+    /// See getMinRequiredVersion.
+    settings.join_executes_as_constant_join = willExecuteAsConstantJoin(join_operator);
+    settings.join_kind_consumes_in_memory_compression
+        = !settings.join_executes_as_constant_join && !isPaste(join_operator.kind);
+    /// Which implementation the enabled `join_algorithm` set resolves to also depends on the join's
+    /// shape: with a shape `MergeJoin` supports, `prefer_partial_merge` never reaches its hash
+    /// fallback and `auto` builds a `JoinSwitcher`, and neither consumes `max_memory_usage`; with a
+    /// shape `FullSortingMergeJoin` supports, `full_sorting_merge` / `parallel_full_sorting_merge`
+    /// never fall through to a later hash entry either, and it consumes neither setting.
+    settings.join_shape_supports_merge_join = shapeSupportsMergeJoin(join_operator);
+    settings.join_shape_supports_full_sorting_merge_join = shapeSupportsFullSortingMergeJoin(join_operator);
 }
 
 static void serializeNodeList(
@@ -1736,6 +1849,26 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
+
+    /// `max_memory_usage` joined the plan serialization only in version 5, and version selection
+    /// (QueryPlanSerializationSettings::getMinRequiredVersion) keeps fragments without in-memory
+    /// join compression at the baseline version, so their streams omit it. It is not only the
+    /// compression trigger: HashJoin::shrinkStoredBlocksToFit consults it for plain block shrinking
+    /// too, and leaving it at 0 here would silently drop that shrink trigger on the remote fragment
+    /// (a possible MEMORY_LIMIT_EXCEEDED where the local path would have shrunk). The query settings
+    /// travel with the distributed query, so restore the value from the receiver's query context.
+    /// A version-5 stream always carries the sender's exact value (updatePlanSettings marks every
+    /// serialized setting changed), so this never overrides an explicitly sent value.
+    if (!ctx.settings.isChanged("max_memory_usage"))
+        join_settings.max_memory_usage = ctx.context->getSettingsRef()[Setting::max_memory_usage];
+
+    /// A step-local value (a subquery-local SETTINGS override, carried only by version-5 streams -
+    /// see QueryPlanSerializationSettings::getMinRequiredVersion) cannot be restored from the query
+    /// context. Recompute the flag against this receiver's query context, so re-serializing the step
+    /// for a further hop keeps carrying the value. An omitted value was just restored from that very
+    /// context above, so the flag correctly stays false for it.
+    join_settings.max_memory_usage_is_step_local
+        = join_settings.max_memory_usage != ctx.context->getSettingsRef()[Setting::max_memory_usage];
 
     return std::make_unique<JoinStepLogical>(
         std::move(left_header),

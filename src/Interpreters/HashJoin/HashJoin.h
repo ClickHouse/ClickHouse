@@ -1,8 +1,12 @@
 #pragma once
 
+#include <atomic>
 #include <deque>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -103,6 +107,10 @@ class HashJoinMethods;
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
   */
+/// A decompressed view of a stored (compressed) `StoredBlock`, produced by `getDecompressedColumns`
+/// for the probe phase when `enable_join_in_memory_compression` compressed the stored blocks.
+using DecompressedColumnsPtr = std::shared_ptr<const StoredBlock>;
+
 class HashJoin : public IJoin
 {
 public:
@@ -482,7 +490,88 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
-    BlocksList releaseJoinedBlocks(bool restructure = false);
+
+    /// When this HashJoin is one slot of a `ConcurrentHashJoin` (`parallel_hash`), points to the
+    /// concurrent join's global byte counter, so that the `max_bytes_in_join` half-threshold in
+    /// `shrinkStoredBlocksToFit` fires on the logical join's total instead of the slot-local count.
+    /// The size limit itself is enforced on the global total, so with balanced keys every slot
+    /// would otherwise stay under its own half-threshold while the global total already exceeds
+    /// the limit, and the query would throw before anything compresses.
+    void setLogicalJoinTotalBytesCounter(const std::atomic<size_t> * counter) { logical_join_total_bytes = counter; }
+
+    /// Companion of setLogicalJoinTotalBytesCounter: points to the part of this slot's byte count that
+    /// the counter above already includes (`ConcurrentHashJoin::InternalHashJoin::local_total_bytes`,
+    /// published by `updateTotalRowsAndBytesUnlocked` after each insert completes). The counter therefore
+    /// lags by the current insert's own delta while `shrinkStoredBlocksToFit` runs at the end of that
+    /// insert, and without this the logical total that crosses a threshold inside the last non-empty slot
+    /// of a source block is observed by no slot at all: every earlier slot saw a lower total, and the next
+    /// source block is first met by `SpillingHashJoin`'s pre-insert spill check, which switches to
+    /// `GraceHashJoin` before any slot can compress. The slots of one source block are filled
+    /// sequentially, so the current insert's delta is the only unpublished one, and adding it back
+    /// reconstructs the logical total as of the end of this insert. Read under the slot's mutex, which
+    /// the wrapper holds across the insert and the publication, so it never races.
+    void setPublishedLogicalJoinLocalBytes(const size_t * published_bytes) { published_logical_join_local_bytes = published_bytes; }
+
+    /// When this HashJoin is one slot of a `ConcurrentHashJoin` (`parallel_hash`), points to the
+    /// concurrent join's shared query-memory baseline for the `max_memory_usage` (and available-memory)
+    /// compression trigger in `shrinkStoredBlocksToFit`. The slots build sequentially, so each slot would
+    /// otherwise snapshot its own `memory_usage_before_adding_blocks` on its first insert, and a later slot
+    /// would start from a higher baseline (earlier slots already grew the query memory) and need more growth
+    /// before its own half-of-`max_memory_usage` threshold fires - letting the query hit the memory limit
+    /// before those slots ever compress. The first slot to insert publishes the earliest baseline here, and
+    /// every slot then measures the query-memory delta from that common point, matching the way the
+    /// `max_bytes_in_join` trigger is aggregated across slots via `setLogicalJoinTotalBytesCounter`.
+    void setSharedMemoryUsageBaseline(std::atomic<Int64> * baseline) { shared_memory_usage_before_adding_blocks = baseline; }
+
+    /// "Not yet published" marker for the shared baseline above, the initial value of the atomic
+    /// handed to setSharedMemoryUsageBaseline. Must be a value getCurrentQueryMemoryUsage can never
+    /// return: 0 is a legitimate baseline at query start, and using it as the marker would let a
+    /// later slot overwrite a published 0 with its own higher snapshot, silently re-raising the
+    /// compression trigger's reference point.
+    static constexpr Int64 SHARED_MEMORY_USAGE_BASELINE_UNSET = std::numeric_limits<Int64>::min();
+
+    /// When this HashJoin (or the `ConcurrentHashJoin` it is a slot of) is wrapped by a
+    /// `SpillingHashJoin` and `enable_join_in_memory_compression` is on, holds the wrapper's
+    /// effective spill threshold (`max_bytes_before_external_join`, with the ratio setting already
+    /// folded in). It arms the compression trigger in `shrinkStoredBlocksToFit` at the same point
+    /// the wrapper would otherwise switch to `GraceHashJoin` (`total * 2 >= threshold`): the wrapper
+    /// checks before each insert while compression runs at the end of the insert that crosses the
+    /// point, so a compressible build side shrinks below the threshold before the next insert's
+    /// switch check sees it - compression genuinely acts as the intermediate step before spilling
+    /// even when this threshold is the only configured memory budget.
+    void setExternalJoinThresholdForCompression(size_t threshold) { external_join_threshold_for_compression = threshold; }
+
+    /// Streams the stored right-side blocks out of the join, one block per `next` call.
+    /// Each call decompresses (when `enable_join_in_memory_compression` compressed the stored
+    /// columns) and materializes a single block, destroying its stored source before returning,
+    /// so the peak memory overhead on top of the remaining stored data is one block instead of
+    /// the whole uncompressed right-hand side. This matters because the consumers (spilling to
+    /// `GraceHashJoin`, grace bucket rehashing, `JoinSwitcher`) run exactly when memory pressure
+    /// has already fired.
+    class ReleasedJoinedBlocks
+    {
+    public:
+        bool empty() const { return columns_list.empty(); }
+        size_t size() const { return columns_list.size(); }
+
+        /// Produces the next block. Must not be called when `empty`.
+        Block next();
+
+    private:
+        friend class HashJoin;
+
+        StoredBlocksList columns_list;
+        Block sample_block;
+        bool have_compressed = false;
+
+        /// Set when `restructure` was requested: mapping of `right_sample_block` columns
+        /// into `sample_block` positions, with nullability to restore.
+        bool restructure = false;
+        std::vector<size_t> positions;
+        std::vector<bool> is_nullable;
+    };
+
+    ReleasedJoinedBlocks releaseJoinedBlocks(bool restructure = false);
 
     /// Modify right block (update structure according to sample block) to save it in block list
     static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);
@@ -496,6 +585,15 @@ public:
     void debugKeys() const;
 
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
+
+    /// Arms insert-time compaction (compression, with `enable_join_in_memory_compression`) for the
+    /// right-side blocks added from now on, as if the memory-pressure trigger inside
+    /// `shrinkStoredBlocksToFit` had fired. Needed by `JoinSwitcher` (`join_algorithm = 'auto'`),
+    /// which enforces the join limits itself and therefore calls `shrinkStoredBlocksToFit` with
+    /// `force_optimize`: that path deliberately skips the trigger evaluation, so without arming it
+    /// here every block added after the forced pass would be stored uncompressed and the next limit
+    /// crossing would switch to `MergeJoin` on an uncompressed build size.
+    void armCompactionForFurtherBlocks() { shrink_blocks = true; }
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
     void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
@@ -515,6 +613,24 @@ public:
 
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetch() const { return enable_prefetch; }
+
+    /// True if some stored right-side blocks were compressed in memory (by `enable_join_in_memory_compression`),
+    /// so they must be decompressed before reading at probe time.
+    bool haveCompressed() const { return have_compressed; }
+
+    /// Used when stored columns from one `HashJoin` are moved into another (e.g. `ConcurrentHashJoin`'s
+    /// two-level slot merge into slot 0): if any source join had compressed blocks, the destination must
+    /// treat its stored blocks as possibly compressed too, otherwise the probe reads `ColumnCompressed`
+    /// as an ordinary column.
+    void setHaveCompressed(bool value) { have_compressed = value; }
+
+    /// Returns a decompressed view of the given stored (compressed) `StoredBlock`. Every call
+    /// decompresses anew: keeping decompressed data resident would defeat the purpose of
+    /// `enable_join_in_memory_compression` (saving memory), so there is deliberately no cross-batch
+    /// cache. The caller (`DecompressResolver`) deduplicates within one output batch, holds the
+    /// result only while that batch is materialized, and releases it early when the working set
+    /// grows past its budget. Must only be called when `haveCompressed()` is true.
+    static DecompressedColumnsPtr getDecompressedColumns(const StoredBlock * compressed);
 
     void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
 
@@ -552,6 +668,25 @@ private:
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
+    /// True when some stored right-side columns are kept in compressed form
+    /// (by `enable_join_in_memory_compression`); see `haveCompressed`.
+    bool have_compressed = false;
+
+    /// See setLogicalJoinTotalBytesCounter. Null unless this instance is a `ConcurrentHashJoin` slot
+    /// with `enable_join_in_memory_compression` on.
+    const std::atomic<size_t> * logical_join_total_bytes = nullptr;
+
+    /// See setPublishedLogicalJoinLocalBytes. Null unless this instance is a `ConcurrentHashJoin` slot
+    /// with `enable_join_in_memory_compression` on.
+    const size_t * published_logical_join_local_bytes = nullptr;
+
+    /// See setSharedMemoryUsageBaseline. Null unless this instance is a `ConcurrentHashJoin` slot
+    /// with `enable_join_in_memory_compression` on.
+    std::atomic<Int64> * shared_memory_usage_before_adding_blocks = nullptr;
+
+    /// See setExternalJoinThresholdForCompression. Zero unless wrapped by a `SpillingHashJoin`
+    /// with `enable_join_in_memory_compression` on.
+    size_t external_join_threshold_for_compression = 0;
 
     std::vector<Sizes> key_sizes;
 
@@ -578,7 +713,11 @@ private:
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
-    Int64 memory_usage_before_adding_blocks = 0;
+    /// Query memory usage snapshotted before the first stored block, the reference point for the
+    /// `max_memory_usage` shrink/compression trigger. An optional rather than a zero-marked value:
+    /// getCurrentQueryMemoryUsage can legitimately return 0 at join start, and treating that as
+    /// "not yet snapshotted" would leave the trigger disarmed (or re-snapshot it later, higher).
+    std::optional<Int64> memory_usage_before_adding_blocks;
 
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
@@ -630,5 +769,84 @@ private:
     void reinitUsedFlags();
 
     void doDebugAsserts() const;
+};
+
+/// Translates a stored (possibly compressed) `StoredBlock` pointer to one that can be read directly.
+/// When the join compressed its right-side blocks, a block is decompressed on first use (at most once
+/// per distinct block since the last `release`) and kept alive in `held` until the caller has copied
+/// the values it needs out of it. To keep the probe-side working set bounded when one output batch
+/// references many distinct stored blocks (e.g. a build side made of many tiny blocks, where a batch
+/// could otherwise pin one decompressed block per matched row), the callers check `needReleaseBefore`
+/// as they consume resolved blocks and call `release` to drop the ones already copied from; a block
+/// referenced again later is decompressed anew, trading repeated decompression for a bounded working
+/// set. When compression is off, it is a transparent pass-through with no overhead.
+struct DecompressResolver
+{
+    /// Upper bound on the decompressed data held at once (plus at most one block, since the bound is
+    /// only enforced before decompressing the next one). Large enough that ordinary stored blocks
+    /// (a few MiB each) never trigger early releases, small enough that a compressed multi-GiB build
+    /// side cannot reappear uncompressed during the probe.
+    static constexpr size_t held_bytes_budget = 64 * 1024 * 1024;
+
+    const bool active;
+    std::vector<DecompressedColumnsPtr> held;
+    std::unordered_map<const StoredBlock *, const StoredBlock *> resolved;
+    size_t held_bytes = 0;
+
+    /// Blocks dropped by a budget-forced `release` since the last batch boundary (a batch-boundary
+    /// release clears it: everything is copied out there, so a later reference is a legitimate new
+    /// batch, not thrash). Decompressing one of these again means the consumer copies in an order
+    /// that alternates between blocks that do not fit the budget together (e.g. a build side of a
+    /// few blocks larger than the budget each, probed in row order by keys that jump between them):
+    /// enforcing the budget would then release and re-decompress tens of megabytes on every block
+    /// switch, degrading the probe to O(rows * block size) - observed as a stress-test "hung" query.
+    /// The bulk lazy output paths avoid this by grouping their copies by stored block, but the
+    /// row-at-a-time paths (`joinGet`, the non-lazy output, the byte-accounted limit/offset path)
+    /// copy in row order, so when thrash is detected the budget stops being enforced for the rest
+    /// of this batch: memory is then bounded by the distinct blocks the batch references instead of
+    /// the time being unbounded.
+    std::unordered_set<const StoredBlock *> released_over_budget;
+    bool budget_disabled = false;
+
+    explicit DecompressResolver(const HashJoin & join) : active(join.haveCompressed()) { }
+
+    const StoredBlock * operator()(const StoredBlock * block)
+    {
+        if (!active || block == nullptr)
+            return block;
+
+        auto [it, inserted] = resolved.try_emplace(block, nullptr);
+        if (inserted)
+        {
+            if (!budget_disabled && !released_over_budget.empty() && released_over_budget.contains(block))
+                disableBudget();
+            auto decompressed = HashJoin::getDecompressedColumns(block);
+            /// Not StoredBlock::allocatedBytes: it scales by the selector, which is empty on this view.
+            for (const auto & column : decompressed->columns)
+                held_bytes += column->allocatedBytes();
+            it->second = decompressed.get();
+            held.push_back(std::move(decompressed));
+        }
+        return it->second;
+    }
+
+    /// True when resolving `block` would decompress a new block while the working set is already over
+    /// budget: the caller must flush what it copied so far and `release(true)` before resolving it.
+    /// Checked at that moment - not after every consumed row - so that a working set which is over
+    /// budget but still referenced (e.g. a single stored block larger than the whole budget) is kept
+    /// rather than re-decompressed for every row.
+    bool needReleaseBefore(const StoredBlock * block) const
+    {
+        return active && !budget_disabled && block != nullptr && held_bytes > held_bytes_budget && !resolved.contains(block);
+    }
+
+    /// Drops the decompressed working set (all resolved pointers become dangling). Counts the release
+    /// in a profile event when it was forced by the budget rather than by reaching the end of a batch.
+    /// Callers reacting to `needReleaseBefore` pass `forced_by_budget = true` so re-decompression of a
+    /// dropped block can be told apart from the legitimate once-per-batch decompression.
+    void release(bool forced_by_budget = false);
+
+private:
+    void disableBudget();
 };
 }

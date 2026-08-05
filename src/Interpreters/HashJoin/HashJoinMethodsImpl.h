@@ -792,6 +792,10 @@ static ColumnPtr buildAdditionalFilter(
         required_columns.reserve(required_cols.size());
         auto rhs_pos_it = added_columns.additional_filter_required_rhs_pos.begin();
         auto req_cols_it = required_cols.begin();
+        /// Right-side values are read straight from the stored `StoredBlock`, whose columns may be
+        /// `ColumnCompressed` when `enable_join_in_memory_compression` triggered. Route them through the
+        /// same per-batch decompress resolver the output paths use; a transparent pass-through otherwise.
+        DecompressResolver resolve(*added_columns.lazy_output.join);
         for (size_t pos = 0; pos < required_cols.size(); ++pos, ++req_cols_it)
         {
             if (rhs_pos_it != added_columns.additional_filter_required_rhs_pos.end() && pos == rhs_pos_it->first)
@@ -802,7 +806,12 @@ static ColumnPtr buildAdditionalFilter(
                 auto col = req_col.type->createColumn();
                 for (const UInt64 selected_row : selected_rows)
                 {
-                    const auto * block = added_columns.lazy_output.stored_columns[refWordBlockNo(selected_row)];
+                    const StoredBlock * stored = added_columns.lazy_output.stored_columns[refWordBlockNo(selected_row)];
+                    /// The values of the previous rows are copied out, so the working set can be
+                    /// released before it has to grow past its budget.
+                    if (resolve.needReleaseBefore(stored))
+                        resolve.release(/*forced_by_budget=*/ true);
+                    const auto * block = resolve(stored);
                     const auto [src_col, row_pos] = getBlockColumnAndRow(block, refWordRowNo(selected_row), rhs_pos_it->second);
                     col->insertFrom(*src_col, row_pos);
                 }

@@ -61,24 +61,56 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
 static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 
-/// Version 2 serializes a bucketed `ReadFromMergeTree` leaf read as just its bucket count; the per-bucket
-/// marks travel in the `read_bucket` task parameter. The deserializer rejects a version-1 bucketed step (its
-/// trailing part-name payload would desync the plan), so all `make_distributed_plan` nodes need one version.
-/// Version 3 adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
-/// replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and do a
-/// full non-parallel read, so the serializer fails closed when this flag is set below version 3.
-/// Version 4 adds `WindowStep` to the set of serializable steps. An older worker does not register a
-/// "Window" step at all (`QueryPlanStepRegistry::createStep` would throw `UNKNOWN_IDENTIFIER` on it), so
-/// the serializer fails closed instead when talking to a peer below version 4.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
-/// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
-/// that one blob is reused for every replica, so a replica below this version must be excluded up front
-/// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
-/// future bump can't silently leave this gate behind.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// Query plan serialization version.
+/// Version 1: initial query plan serialization.
+/// Version 2: serializes a bucketed `ReadFromMergeTree` leaf read as just its bucket count; the per-bucket
+///            marks travel in the `read_bucket` task parameter. The deserializer rejects a version-1 bucketed
+///            step (its trailing part-name payload would desync the plan), so all `make_distributed_plan`
+///            nodes need one version.
+/// Version 3: adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
+///            replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and
+///            do a full non-parallel read, so the serializer fails closed when this flag is set below version 3.
+/// Version 4: adds `WindowStep` to the set of serializable steps. An older worker does not register a
+///            "Window" step at all (`QueryPlanStepRegistry::createStep` would throw `UNKNOWN_IDENTIFIER` on it),
+///            so the serializer fails closed instead when talking to a peer below version 4.
+/// Version 5: serialized join steps may carry the in-memory join compression settings
+///            (`max_memory_usage`, `enable_join_in_memory_compression`).
+///            These names are omitted when serializing for a receiver older than version 5, because
+///            `BaseSettings::readBinary` throws on unknown setting names.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 5;
+/// The minimum query-plan serialization version a replica must advertise to participate in parallel
+/// replicas at the QueryPlan stage: version 3 introduced the parallel-replicas flag (bit 32) on a
+/// serialized `ReadFromMergeTree`, which every parallel-replicas plan carries (the flag is
+/// data-dependent, so `QueryPlan::getRequiredSerializationVersion` does not see it - this constant is
+/// its floor). Higher versions are not required up front: `Connection::sendQueryPlan` re-serializes
+/// the plan down to each receiver's advertised version via `serializeForReceiver`, so
+/// `RemoteQueryExecutor` excludes a replica only when it is below the *fragment's* required version
+/// (`max` of this constant and `QueryPlan::getRequiredSerializationVersion`), instead of below the
+/// current global maximum - otherwise a rolling upgrade would lose all not-yet-upgraded replicas even
+/// for fragments they could execute identically.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
+/// The stateless-worker task protocol (DistributedPlanExecutor -> StatelessWorkerEndpoint) has no
+/// query-plan version negotiation: the initiator cannot learn the worker's supported version before
+/// sending a task, and the worker rejects a stream that is newer than what it understands in
+/// QueryPlan::deserialize. The query plan embedded in a task is therefore serialized at this pinned
+/// version - the newest version every deployed worker already understands - so a rolling upgrade of a
+/// mixed-version deployment does not make not-yet-upgraded workers reject tasks. Settings introduced
+/// by newer versions are omitted for this version by writeChangedBinary; they only tune in-memory
+/// behavior, so the omission degrades gracefully (an omitted `max_memory_usage` is restored on the
+/// receiver from its query context settings, see JoinStepLogical::deserialize). Exceptions: when a
+/// join step of the fragment has `enable_join_in_memory_compression` enabled, its `join_algorithm` may
+/// resolve to a hash-family implementation and it actually consults the setting (a `ConstantJoin` -
+/// CROSS/COMMA or a constant predicate - and PASTE joins never do), or when its `max_memory_usage` is
+/// a subquery-local override that the receiver cannot restore from its query context, the task plan is
+/// serialized at version 5
+/// instead, so the opted-in feature is not silently dropped on this path - a not-yet-upgraded worker
+/// then rejects the task with a clear unsupported-version error rather than misbehaving (see
+/// serializeQueryPlan in DistributedPlanExecutor.cpp). Bump it only after the task protocol learns to negotiate the
+/// query-plan version, or when every supported worker release understands the newer one.
+static constexpr auto DBMS_STATELESS_WORKER_QUERY_PLAN_SERIALIZATION_VERSION = 3;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

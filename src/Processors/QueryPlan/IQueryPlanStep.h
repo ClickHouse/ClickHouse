@@ -78,6 +78,12 @@ public:
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual bool isSerializable() const { return false; }
+    /// The minimum query-plan serialization version this step can be written at, regardless of any
+    /// settings (see QueryPlan::getRequiredSerializationVersion). A step registered under
+    /// QueryPlanStepRegistry only since a later version overrides this, so that a serialization path
+    /// without version negotiation raises the stream version only for plans that contain such a step,
+    /// and the negotiated path can refuse a too-old receiver up front.
+    virtual UInt64 getRequiredSerializationVersion() const { return 1; }
 
     virtual QueryPlanStepPtr clone() const;
 

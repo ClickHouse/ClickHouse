@@ -59,10 +59,12 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
     return Block(std::move(columns));
 }
 
-/// Nothing is here for now
 struct QueryPlan::SerializationFlags
 {
-    /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
+    /// Query-plan serialization version of the stream. On serialize it is the negotiated version
+    /// (min of this server's and the receiver's supported version); on deserialize it is set from the
+    /// leading version field. Settings whose names a receiver of this version does not know are omitted
+    /// when writing them (see writeChangedBinary), and steps read it through ctx.version.
     UInt64 version = 0;
     bool skip_data = false;
 };
@@ -75,6 +77,26 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     SerializationFlags flags;
     flags.version = version;
     serialize(out, flags);
+}
+
+UInt64 QueryPlan::getRequiredSerializationVersion() const
+{
+    /// The version below which serializing this plan would silently change the behavior of some
+    /// step on the receiver (see QueryPlanSerializationSettings::getMinRequiredVersion) or fail
+    /// outright because a step cannot be written at all below its own minimum version (see
+    /// IQueryPlanStep::getRequiredSerializationVersion, e.g. WindowStep). This lets a caller on a
+    /// path without version negotiation raise the version only for plans that actually need it,
+    /// instead of keying off a session setting that may not correspond to anything in this
+    /// fragment, and lets the negotiated path (serializeForReceiver) refuse a receiver that is
+    /// too old for this plan instead of silently dropping the newer settings.
+    UInt64 version = 1;
+    for (const auto & node : nodes)
+    {
+        QueryPlanSerializationSettings settings;
+        node.step->serializeSettings(settings);
+        version = std::max({version, settings.getMinRequiredVersion(), node.step->getRequiredSerializationVersion()});
+    }
+    return version;
 }
 
 void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) const
@@ -128,7 +150,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings);
 
-        settings.writeChangedBinary(out);
+        settings.writeChangedBinary(out, flags.version);
 
         IQueryPlanStep::Serialization ctx{out, registry};
         ctx.version = flags.version;
@@ -146,6 +168,10 @@ void QueryPlan::ensureSerialized(size_t max_supported_version) const
     serialized_plan = std::make_unique<WriteBufferFromOwnString>();
     serialize(*serialized_plan, max_supported_version);
     serialized_plan->finalize();
+    /// Remember the version the cache was actually written at (see QueryPlan::serialize, which clamps
+    /// to DBMS_QUERY_PLAN_SERIALIZATION_VERSION), so serializeForReceiver can tell whether a given
+    /// receiver can read the cached stream.
+    serialized_version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 }
 
 std::string_view QueryPlan::getSerializedData() const
@@ -160,6 +186,40 @@ std::string_view QueryPlan::getSerializedData() const
 bool QueryPlan::isSerialized() const
 {
     return serialized_plan != nullptr;
+}
+
+void QueryPlan::serializeForReceiver(WriteBuffer & out, size_t receiver_version) const
+{
+    /// Fail closed when the receiver is too old for this plan. Down-negotiating would omit the newer
+    /// settings from the stream (see QueryPlanSerializationSettings::writeChangedBinary) and silently
+    /// change the behavior of some step on the receiver - e.g. run a hash join without the requested
+    /// in-memory compression on a not-yet-upgraded shard - so refuse instead and let the caller retry
+    /// on another replica or the user disable the feature until the rolling upgrade finishes.
+    UInt64 required_version = getRequiredSerializationVersion();
+    if (receiver_version < required_version)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "The query plan requires serialization version {}, but the receiving server supports only version {}. "
+            "This can happen during a rolling upgrade of a cluster. "
+            "Disable the query features that require the newer version (e.g. `enable_join_in_memory_compression`) "
+            "or upgrade the receiving server",
+            required_version, receiver_version);
+
+    /// Reuse the cached serialization only when the receiver understands the version it was cached at.
+    /// Otherwise re-serialize on the fly at the receiver's (lower) version: a not-yet-upgraded replica
+    /// in a rolling upgrade supports only an older plan serialization version and must receive a stream
+    /// at that version - with the newer settings omitted - rather than the cached newer-versioned stream,
+    /// which it would reject in deserialize() via the top-level version check. The cache is shared across
+    /// connections with different negotiated versions (the pre-serialized parallel-replicas path), so this
+    /// decision is made per receiver.
+    if (serialized_plan && serialized_version <= receiver_version)
+    {
+        auto data = serialized_plan->stringView();
+        out.write(data.data(), data.size());
+    }
+    else
+    {
+        serialize(out, receiver_version);
+    }
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data)

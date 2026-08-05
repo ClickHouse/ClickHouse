@@ -1122,17 +1122,15 @@ void Connection::sendQueryPlan(const QueryPlan & query_plan)
 {
     writeVarUInt(Protocol::Client::QueryPlan, *out);
 
-    if (query_plan.isSerialized())
-    {
-        // Use cached serialization
-        auto serialized_data = query_plan.getSerializedData();
-        out->write(serialized_data.data(), serialized_data.size());
-    }
-    else
-    {
-        // Fallback: serialize on-the-fly
-        query_plan.serialize(*out, server_query_plan_serialization_version);
-    }
+    /// Serialize for this specific receiver's negotiated query plan serialization version. This reuses
+    /// the cached serialization when it is compatible with the receiver, and otherwise re-serializes on
+    /// the fly. In a mixed-version (rolling-upgrade) cluster, a receiver that only understands an older
+    /// version must never get a newer-versioned stream (it would reject it), even when the plan was
+    /// pre-serialized once at the local version and shared across connections (parallel replicas).
+    /// If the plan genuinely needs a version newer than the receiver supports (a step opted into a
+    /// feature the receiver does not know), serializeForReceiver throws instead of silently dropping
+    /// the feature on that receiver.
+    query_plan.serializeForReceiver(*out, server_query_plan_serialization_version);
 }
 
 void Connection::sendCancel()

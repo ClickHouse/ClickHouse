@@ -71,7 +71,12 @@ public:
 
     /// Extract all stored blocks from a specific slot.
     /// The slot's HashJoin data is reset afterwards.
-    BlocksList releaseSlotBlocks(size_t slot_idx);
+    HashJoin::ReleasedJoinedBlocks releaseSlotBlocks(size_t slot_idx);
+
+    /// Run one forced `shrinkStoredBlocksToFit` pass over every slot, latch insert-time compaction for
+    /// the blocks added later, and return the resulting total size. Used by `SpillingHashJoin` as the
+    /// last chance for `enable_join_in_memory_compression` before it gives up on the in-memory join.
+    size_t compressStoredBlocks();
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
@@ -138,7 +143,19 @@ private:
     std::atomic<size_t> global_total_rows{0};
     std::atomic<size_t> global_total_bytes{0};
 
-    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    /// One-shot latch for the last-chance compression pass that runs when the global
+    /// `max_bytes_in_join` check is about to fail (see addBlockToJoin).
+    std::mutex size_limit_compression_mutex;
+    bool size_limit_compression_attempted = false; /// Guarded by size_limit_compression_mutex.
+
+    /// Shared query-memory baseline for the `max_memory_usage` compression trigger, so it fires on the
+    /// logical join's growth instead of per slot. The first slot to insert publishes the earliest baseline
+    /// (an explicit "unset" marker rather than 0: query memory usage can legitimately be 0 at join start,
+    /// and a published 0 must not be overwritten by a later slot's higher snapshot).
+    /// See HashJoin::setSharedMemoryUsageBaseline.
+    std::atomic<Int64> shared_memory_usage_before_adding_blocks{HashJoin::SHARED_MEMORY_USAGE_BASELINE_UNSET};
+
+    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block, bool allow_zero_copy);
     std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
     void resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
 };
