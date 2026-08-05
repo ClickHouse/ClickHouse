@@ -34,6 +34,10 @@ from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks import new_tests_check
 from ci.praktika.result import Result
 
+# `_install_stubs` replaces `has_new_unit_tests` with a path-classification stub; keep
+# the real one so a test can opt back into the actual gtest-macro parsing.
+_REAL_HAS_NEW_UNIT_TESTS = new_tests_check.has_new_unit_tests
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -358,6 +362,37 @@ def test_unit_only_passes_without_per_arch(monkeypatch):
         changed_files=["src/Functions/tests/gtest_my_unit.cpp"],
         workflow_subresults=[],
     )
+    assert new_tests_check.check() is True
+
+
+def test_unit_only_gtest_test_macro_takes_the_unit_branch(monkeypatch, tmp_path):
+    """A unit test registered with `GTEST_TEST` must enable the `has_unit` branch.
+
+    Unlike the cases above, this one does NOT stub `has_new_unit_tests`: the file is
+    written to disk and the real predicate (which parses the gtest macros) runs. With
+    no CI-report link in the body, `check()` can only return True through the
+    `has_unit` branch, so it is a witness that the suite was recognized.
+    """
+    src = tmp_path / "src" / "Functions" / "tests"
+    src.mkdir(parents=True)
+    (src / "gtest_my_unit.cpp").write_text(
+        "#include <gtest/gtest.h>\nGTEST_TEST(MySuite, my_case) { EXPECT_TRUE(false); }\n"
+    )
+    changed = ["src/Functions/tests/gtest_my_unit.cpp"]
+    _install_stubs(
+        monkeypatch,
+        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        changed_files=changed,
+        workflow_subresults=[],
+    )
+    # Restore the real predicate that `_install_stubs` replaced, and resolve the
+    # relative changed path against the fixture tree.
+    monkeypatch.setattr(
+        new_tests_check, "has_new_unit_tests", _REAL_HAS_NEW_UNIT_TESTS
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert new_tests_check.has_new_unit_tests(changed) is True
     assert new_tests_check.check() is True
 
 
