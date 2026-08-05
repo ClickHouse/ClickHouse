@@ -331,12 +331,12 @@ def main():
     # recovery (only-repo/only-docker) or an out-of-order full run skips them
     # without erroring and just re-exports repos / rebuilds docker.
     create_new_release = False
-    needs_branch_bump = False
+    is_branch_release = False
     if ok:
         with open(RELEASE_INFO_FILE) as f:
             _prepared = json.load(f)
         create_new_release = _prepared["create_new_release"]
-        needs_branch_bump = _prepared.get("needs_branch_bump", False)
+        is_branch_release = _prepared["is_branch_release"]
 
     # only-repo / only-docker only re-publish artifacts for an already-created
     # release (repo/Docker recovery). If the ref resolves to a new release, they
@@ -861,15 +861,8 @@ def main():
     # step already failed, so a failed publish leaves the branch un-bumped and
     # recoverable. ("new" bumps earlier, above, because the merge step below
     # merges the master bump PR it opens.)
-    #
-    # Gated on `needs_branch_bump`, not `create_new_release`: a run that failed
-    # after the tag push but before this step leaves the tag pushed and the
-    # branch un-bumped, so every later run recovers the same release
-    # (`create_new_release` is False). Recovering the bump too (prepare sets
-    # `needs_branch_bump` while the branch tip has not advanced past the release)
-    # completes the interrupted bump and unpins the patch number; once the branch
-    # is ahead the flag is False, so a genuine recovery never rewrites it back.
-    if needs_branch_bump:
+    # Gated on `is_branch_release` so an un-bumped recovery still completes the bump.
+    if is_branch_release and args.release_type == "patch":
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
