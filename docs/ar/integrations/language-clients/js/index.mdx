@@ -1,0 +1,1490 @@
+---
+sidebarTitle: 'JavaScript'
+keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'الويب', 'المتصفح', 'Cloudflare', 'العمّال', 'عميل', 'الاتصال', 'التكامل']
+slug: /integrations/javascript
+description: 'عميل JavaScript الرسمي للاتصال بـ ClickHouse.'
+title: 'ClickHouse JS'
+doc_type: 'مرجع'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-js'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+عميل JS الرسمي للاتصال بـ ClickHouse.
+العميل مكتوب بلغة TypeScript ويوفر تعريفات أنواع لواجهة برمجة تطبيقات العميل العامة.
+
+لا يتضمن أي تبعيات، وهو مُحسَّن لتحقيق أقصى أداء، وقد اختُبر مع إصدارات وتكوينات مختلفة من ClickHouse (نشر محلي على عقدة واحدة، ونشر محلي على cluster، وClickHouse Cloud).
+
+تتوفر نسختان مختلفتان من العميل لبيئات مختلفة:
+
+* `@clickhouse/client` - Node.js only
+* `@clickhouse/client-web` - المتصفحات (Chrome/Firefox)، Cloudflare workers
+
+عند استخدام TypeScript، تأكد من أن الإصدار لا يقل عن [4.5](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html)، إذ يتيح ذلك [بنية import وexport المضمنة](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html#type-modifiers-on-import-names).
+
+الشيفرة المصدرية للعميل متاحة في [مستودع ClickHouse-JS على GitHub](https://github.com/ClickHouse/clickhouse-js).
+
+<Info>
+  **مهارات AI Agent**
+
+  يأتي عميل JS مزودًا بمهارات AI Agent يمكن أن تساعد وكلاء البرمجة على العمل مع العميل. ثبّتها باستخدام:
+
+  ```sh
+  npm skills add ClickHouse/clickhouse-js
+  ```
+</Info>
+
+<div id="environment-requirements-nodejs">
+  ## متطلبات البيئة (node.js)
+</div>
+
+يجب أن يكون Node.js متاحًا في البيئة لتشغيل العميل.
+العميل متوافق مع جميع [إصدارات Node.js التي لا تزال مدعومة](https://github.com/nodejs/release#readme).
+
+وبمجرد أن يقترب أحد إصدارات Node.js من نهاية دورة الدعم، يتوقف العميل عن دعمه لأنه يُعد قديمًا وغير آمن.
+
+يدعم العميل حاليًا إصدارات Node.js التالية:
+
+| إصدار Node.js | مدعوم؟   |
+| ------------- | -------- |
+| 24.x          | ✔        |
+| 22.x          | ✔        |
+| 20.x          | ✔        |
+| 18.x          | أفضل جهد |
+
+<div id="environment-requirements-web">
+  ## متطلبات البيئة (الويب)
+</div>
+
+يُختبَر إصدار الويب من العميل رسميًا على أحدث إصدارات متصفحات Chrome وFirefox، ويمكن استخدامه كتبعية، على سبيل المثال، في تطبيقات React/Vue/Angular أو في Cloudflare workers.
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+لتثبيت أحدث إصدار مستقر من عميل Node.js، شغّل:
+
+```sh
+npm i @clickhouse/client
+```
+
+تثبيت إصدار الويب:
+
+```sh
+npm i @clickhouse/client-web
+```
+
+<div id="compatibility-with-clickhouse">
+  ## التوافق مع ClickHouse
+</div>
+
+| إصدار العميل | ClickHouse |
+| ------------ | ---------- |
+| 1.12.0       | 24.8+      |
+
+من المرجّح أن يعمل العميل أيضًا مع الإصدارات الأقدم؛ ومع ذلك، فهذا الدعم يُقدَّم على أساس بذل أفضل جهد وليس مضمونًا. إذا كان لديك إصدار من ClickHouse أقدم من 23.3، فيُرجى الرجوع إلى [سياسة الأمان في ClickHouse](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) والنظر في الترقية.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+نسعى إلى تغطية سيناريوهات متنوعة لاستخدام العميل من خلال [الأمثلة](https://github.com/ClickHouse/clickhouse-js/blob/main/examples) الموجودة في مستودع العميل.
+
+يمكن الاطلاع على النظرة العامة في [README الخاص بالأمثلة](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/README.md#overview).
+
+إذا كان هناك شيء غير واضح أو مفقود في الأمثلة أو في الوثائق التالية، فلا تتردد في [التواصل معنا](/ar/integrations/language-clients/js/index#contact-us).
+
+<div id="client-api">
+  ### واجهة برمجة تطبيقات العميل
+</div>
+
+يجب أن تكون معظم الأمثلة متوافقة مع كلٍّ من إصدار Node.js وإصدار الويب من العميل، ما لم يُذكر صراحةً خلاف ذلك.
+
+<div id="creating-a-client-instance">
+  #### إنشاء مثيل للعميل
+</div>
+
+يمكنك إنشاء أي عدد تحتاج إليه من مثيلات العميل باستخدام دالة المصنع `createClient`:
+
+```ts
+import { createClient } from '@clickhouse/client' // or '@clickhouse/client-web'
+
+const client = createClient({
+  /* configuration */
+})
+```
+
+إذا كانت بيئتك لا تدعم وحدات ESM، يمكنك استخدام صيغة CJS بدلًا منها:
+
+```ts
+const { createClient } = require('@clickhouse/client');
+
+const client = createClient({
+  /* configuration */
+})
+```
+
+يمكن [تهيئة مثيل العميل مسبقًا](/ar/integrations/language-clients/js/index#configuration) عند إنشائه.
+
+<div id="configuration">
+  #### التهيئة
+</div>
+
+عند إنشاء مثيل عميل، يمكن تعديل إعدادات الاتصال التالية:
+
+| الإعداد                                                                  | الوصف                                                                      | القيمة الافتراضية       | انظر أيضًا                                                                                                   |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **url**?: string                                                         | عنوان URL لمثيل ClickHouse.                                                | `http://localhost:8123` | [وثائق تهيئة URL](/ar/integrations/language-clients/js/index#url-configuration)                                 |
+| **pathname**?: string                                                    | مسار اختياري يُضاف إلى عنوان URL الخاص بـ ClickHouse بعد أن يعالجه العميل. | `''`                    | [وثائق الوكيل مع pathname](/ar/integrations/language-clients/js/index#proxy-with-a-pathname)                    |
+| **request&#95;timeout**?: number                                         | مهلة الطلب بالمللي ثانية.                                                  | `30_000`                | -                                                                                                            |
+| **compression**?: `{ **response**?: boolean; **request**?: boolean }`    | تفعيل الضغط.                                                               | -                       | [وثائق الضغط](/ar/integrations/language-clients/js/index#compression)                                           |
+| **username**?: string                                                    | اسم المستخدم الذي تُرسل الطلبات نيابةً عنه.                                | `default`               | -                                                                                                            |
+| **password**?: string                                                    | كلمة مرور المستخدم.                                                        | `''`                    | -                                                                                                            |
+| **application**?: string                                                 | اسم التطبيق الذي يستخدم عميل Node.js.                                      | `clickhouse-js`         | -                                                                                                            |
+| **database**?: string                                                    | اسم قاعدة البيانات المراد استخدامها.                                       | `default`               | -                                                                                                            |
+| **clickhouse&#95;settings**?: ClickHouseSettings                         | إعدادات ClickHouse التي تُطبَّق على جميع الطلبات.                          | `{}`                    | -                                                                                                            |
+| **log**?: `{ **LoggerClass**?: Logger, **level**?: ClickHouseLogLevel }` | إعدادات سجلات العميل الداخلية.                                             | -                       | [وثائق التسجيل](/ar/integrations/language-clients/js/index#logging-nodejs-only)                                 |
+| **session&#95;id**?: string                                              | معرّف جلسة ClickHouse اختياري يُرسل مع كل طلب.                             | -                       | -                                                                                                            |
+| **keep&#95;alive**?: `{ **enabled**?: boolean }`                         | مفعّل افتراضيًا في كلٍّ من إصداري Node.js والويب.                          | -                       | -                                                                                                            |
+| **http&#95;headers**?: `Record<string, string>`                          | رؤوس HTTP إضافية لطلبات ClickHouse الصادرة.                                | -                       | [وثائق الوكيل العكسي مع المصادقة](/ar/integrations/language-clients/js/index#reverse-proxy-with-authentication) |
+| **roles**?: string |  string[]                                           | أسماء أدوار ClickHouse المطلوب إرفاقها بالطلبات الصادرة.                   | -                       | [استخدام الأدوار مع واجهة HTTP](/ar/concepts/features/interfaces/http#setting-role-with-query-parameters)       |
+
+<div id="nodejs-specific-configuration-parameters">
+  #### معلمات التكوين الخاصة بـ Node.js
+</div>
+
+| الإعداد                                                                                                | الوصف                                                                  | القيمة الافتراضية | راجع أيضًا                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **max&#95;open&#95;connections**?: number                                                              | الحد الأقصى لعدد المقابس المتصلة المسموح به لكل مضيف.                  | `10`              | -                                                                                                                                  |
+| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`                               | تكوين شهادات TLS.                                                      | -                 | [وثائق TLS](/ar/integrations/language-clients/js/index#tls-certificates-nodejs-only)                                                  |
+| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }`                         | -                                                                      | -                 | [وثائق Keep Alive](/ar/integrations/language-clients/js/index#keep-alive-configuration-nodejs-only)                                   |
+| **http&#95;agent**?: http.Agent | https.Agent <br /><Badge color="green" icon="flask">تجريبي</Badge>   | وكيل HTTP مخصص للعميل.                                                 | -                 | [وثائق HTTP agent](/ar/integrations/language-clients/js/index#custom-httphttps-agent-experimental-nodejs-only)                        |
+| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">تجريبي</Badge> | يعيّن ترويسة `Authorization` باستخدام بيانات اعتماد المصادقة الأساسية. | `true`            | [استخدام هذا الإعداد في وثائق HTTP agent](/ar/integrations/language-clients/js/index#custom-httphttps-agent-experimental-nodejs-only) |
+
+<div id="url-configuration">
+  ### إعداد URL
+</div>
+
+<Warning>
+  سيؤدي إعداد URL *دائمًا* إلى تجاوز القيم المضمّنة في الشيفرة، وسيُسجَّل تحذير في هذه الحالة.
+</Warning>
+
+يمكن إعداد معظم معلمات مثيل العميل باستخدام URL. يكون تنسيق URL على النحو التالي: `http[s]://[username:password@]hostname:port[/database][?param1=value1&param2=value2]`. في معظم الحالات، يعكس اسم معلمة معيّنة مسارها في واجهة خيارات `config`، مع بعض الاستثناءات القليلة. المعلمات التالية مدعومة:
+
+| المعلمة                                    | النوع                                                                |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| `pathname`                                 | سلسلة نصية اعتباطية.                                                 |
+| `application_id`                           | سلسلة نصية اعتباطية.                                                 |
+| `session_id`                               | سلسلة نصية اعتباطية.                                                 |
+| `request_timeout`                          | عدد غير سالب.                                                        |
+| `max_open_connections`                     | عدد غير سالب، أكبر من الصفر.                                         |
+| `compression_request`                      | منطقي. انظر أدناه (1)                                                |
+| `compression_response`                     | منطقي.                                                               |
+| `log_level`                                | القيم المسموح بها: `OFF`, `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`. |
+| `keep_alive_enabled`                       | منطقي.                                                               |
+| `clickhouse_setting_*` or `ch_*`           | انظر أدناه (2)                                                       |
+| `http_header_*`                            | انظر أدناه (3)                                                       |
+| (Node.js فقط) `keep_alive_idle_socket_ttl` | عدد غير سالب.                                                        |
+
+* (1) بالنسبة إلى القيم المنطقية، تكون القيم الصالحة `true`/`1` و `false`/`0`.
+* (2) أي معلمة تبدأ بـ `clickhouse_setting_` أو `ch_` ستُزال منها هذه البادئة، وسيُضاف الباقي إلى `clickhouse_settings` الخاص بالعميل. على سبيل المثال، `?ch_async_insert=1&ch_wait_for_async_insert=1` سيكون مماثلًا لما يلي:
+
+```ts
+createClient({
+  clickhouse_settings: {
+    async_insert: 1,
+    wait_for_async_insert: 1,
+  },
+})
+```
+
+ملاحظة: يجب تمرير القيم المنطقية لـ `clickhouse_settings` بصيغة `1`/`0` في عنوان URL.
+
+* ‏(3) مماثل لـ (2)، ولكن لإعداد `http_header`. على سبيل المثال، يُعد `?http_header_x-clickhouse-auth=foobar` مكافئًا لـ:
+
+```ts
+createClient({
+  http_headers: {
+    'x-clickhouse-auth': 'foobar',
+  },
+})
+```
+
+<div id="connecting">
+  ### الاتصال
+</div>
+
+<div id="gather-your-connection-details">
+  #### جهّز تفاصيل الاتصال الخاصة بك
+</div>
+
+<ConnectionDetails />
+
+<div id="connection-overview">
+  #### نظرة عامة على الاتصال
+</div>
+
+يدعم العميل الاتصال عبر بروتوكول HTTP أو HTTPS. ويجري العمل حاليًا على دعم RowBinary، راجع [المشكلة ذات الصلة](https://github.com/ClickHouse/clickhouse-js/issues/216).
+
+يوضح المثال التالي كيفية إعداد اتصال بـ ClickHouse Cloud. ويفترض أن قيمتَي `url` (بما في
+ذلك البروتوكول والمنفذ) و`password` محددتان عبر متغيرات البيئة، وأن المستخدم `default` هو المستخدم المعتمد.
+
+**مثال:** إنشاء مثيل العميل في Node.js باستخدام متغيرات البيئة للتهيئة.
+
+```ts
+import { createClient } from '@clickhouse/client'
+
+const client = createClient({
+  url: process.env.CLICKHOUSE_HOST ?? 'http://localhost:8123',
+  username: process.env.CLICKHOUSE_USER ?? 'default',
+  password: process.env.CLICKHOUSE_PASSWORD ?? '',
+})
+```
+
+يحتوي مستودع العميل على أمثلة متعددة تستخدم متغيرات البيئة، مثل [إنشاء جدول في ClickHouse Cloud](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_cloud.ts)، و[استخدام عمليات الإدراج غير المتزامنة](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/async_insert.ts)، وغيرها الكثير.
+
+<div id="connection-pool-nodejs-only">
+  #### مجمع الاتصالات (لـ Node.js فقط)
+</div>
+
+لتجنّب العبء الإضافي الناتج عن إنشاء اتصال مع كل طلب، ينشئ العميل مجمعًا من الاتصالات إلى ClickHouse لإعادة استخدامها، بالاستفادة من آلية Keep-Alive. تكون Keep-Alive مفعّلة افتراضيًا، ويُضبط حجم مجمع الاتصالات على `10`، ولكن يمكنك تغييره باستخدام [خيار الإعداد](/ar/integrations/language-clients/js/index#configuration) `max_open_connections`.
+
+لا يوجد ما يضمن استخدام الاتصال نفسه من مجمع الاتصالات في الاستعلامات اللاحقة، ما لم يضبط المستخدم `max_open_connections: 1`. نادرًا ما تكون هناك حاجة إلى ذلك، لكنه قد يكون مطلوبًا في الحالات التي يستخدم فيها المستخدمون الجداول المؤقتة.
+
+انظر أيضًا: [إعداد Keep-Alive](/ar/integrations/language-clients/js/index#keep-alive-configuration-nodejs-only).
+
+<div id="query-id">
+  ### معرّف الاستعلام
+</div>
+
+ستوفّر كل طريقة تُرسل استعلامًا أو عبارة (`command`, `exec`, `insert`, `select`) قيمة `query_id` في النتيجة. يُسنِد العميل هذا المعرّف الفريد لكل استعلام، وقد يكون مفيدًا لاسترجاع البيانات من `system.query_log`،
+إذا كان ذلك مفعّلًا في [إعدادات الخادم](/ar/reference/settings/server-settings/settings)، أو لإلغاء الاستعلامات طويلة التشغيل (راجع [المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/troubleshooting/cancel_query.ts)). وإذا لزم الأمر، يمكن للمستخدم تجاوز `query_id` ضمن params لطرق `command`/`query`/`exec`/`insert`.
+
+<Tip>
+  إذا كنت تتجاوز المعامل `query_id`، فعليك التأكد من فرادته في كل استدعاء. ويُعدّ معرّف UUID عشوائي خيارًا جيدًا.
+</Tip>
+
+<div id="base-parameters-for-all-client-methods">
+  ### المعلمات الأساسية لجميع طرق العميل
+</div>
+
+توجد عدة معلمات يمكن تطبيقها على جميع طرق العميل ([query](/ar/integrations/language-clients/js/index#query-method)/[command](/ar/integrations/language-clients/js/index#command-method)/[insert](/ar/integrations/language-clients/js/index#insert-method)/[exec](/ar/integrations/language-clients/js/index#exec-method)).
+
+```ts
+interface BaseQueryParams {
+  // ClickHouse settings that can be applied on query level.
+  clickhouse_settings?: ClickHouseSettings
+  // Parameters for query binding.
+  query_params?: Record<string, unknown>
+  // AbortSignal instance to cancel a query in progress.
+  abort_signal?: AbortSignal
+  // query_id override; if not specified, a random identifier will be generated automatically.
+  query_id?: string
+  // session_id override; if not specified, the session id will be taken from the client configuration.
+  session_id?: string
+  // credentials override; if not specified, the client's credentials will be used.
+  auth?: { username: string, password: string }
+  // A specific list of roles to use for this query. Overrides the roles set in the client configuration.
+  role?: string | Array<string>
+}
+```
+
+<div id="query-method">
+  ### طريقة الاستعلام
+</div>
+
+تُستخدم هذه الطريقة لمعظم العبارات التي يمكن أن تُرجع استجابة، مثل `SELECT`، أو لإرسال عبارات DDL مثل `CREATE TABLE`، ويجب انتظار اكتمالها. ويُفترض أن يستهلك التطبيق مجموعة النتائج المُعادة.
+
+<Note>
+  توجد طريقة مخصّصة [insert](/ar/integrations/language-clients/js/index#insert-method) لإدراج البيانات، و[command](/ar/integrations/language-clients/js/index#command-method) لعبارات DDL.
+</Note>
+
+```ts
+interface QueryParams extends BaseQueryParams {
+  // Query to execute that might return some data.
+  query: string
+  // Format of the resulting dataset. Default: JSON.
+  format?: DataFormat
+}
+
+interface ClickHouseClient {
+  query(params: QueryParams): Promise<ResultSet>
+}
+```
+
+راجع أيضًا: [المعلمات الأساسية لجميع طُرق العميل](/ar/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+<Tip>
+  لا تُحدِّد عبارة FORMAT في `query`، واستخدم المعامل `format` بدلًا من ذلك.
+</Tip>
+
+<div id="result-set-and-row-abstractions">
+  #### تجريدات مجموعة النتائج والصفوف
+</div>
+
+يوفّر `ResultSet` عدة طرق ميسّرة لمعالجة البيانات في تطبيقك.
+
+يعتمد تنفيذ `ResultSet` في Node.js على `Stream.Readable` داخليًا، بينما يستخدم إصدار الويب واجهة Web API ‏`ReadableStream`.
+
+يمكنك استهلاك `ResultSet` باستدعاء الطريقة `text` أو `json` على `ResultSet`، ما يحمّل مجموعة الصفوف كاملةً التي أعادها الاستعلام إلى الذاكرة.
+
+يجب أن تبدأ في استهلاك `ResultSet` في أسرع وقت ممكن، لأنه يُبقي تدفّق الاستجابة مفتوحًا، وبالتالي يُبقي الاتصال الأساسي مشغولًا. ولا يَخزّن العميل البيانات الواردة مؤقتًا، تجنبًا لاحتمال استهلاك التطبيق قدرًا مفرطًا من الذاكرة.
+
+بدلًا من ذلك، إذا كانت البيانات كبيرة جدًا بحيث لا يمكن تحميلها في الذاكرة دفعةً واحدة، يمكنك استدعاء الطريقة `stream` ومعالجة البيانات في وضع البث. في هذه الحالة، سيُحوَّل كل جزء من أجزاء الاستجابة إلى مصفوفات صغيرة نسبيًا من الصفوف، جزءًا تلو الآخر (ويعتمد حجم هذه المصفوفة على حجم الجزء الذي يستقبله العميل من الخادم، والذي قد يختلف، وكذلك على حجم الصف الواحد).
+
+يُرجى الرجوع إلى قائمة [تنسيقات البيانات المدعومة](/ar/integrations/language-clients/js/index#supported-data-formats) لتحديد أفضل تنسيق للبث في حالتك. على سبيل المثال، إذا كنت تريد بث كائنات JSON، فيمكنك اختيار [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)، وسيُحلَّل كل صف على أنه كائن JS، أو ربما التنسيق الأكثر إحكامًا [JSONCompactColumns](/ar/reference/formats/JSON/JSONCompactColumns)، الذي سيجعل كل صف مصفوفةً مضغوطة من القيم. انظر أيضًا: [بث الملفات](/ar/integrations/language-clients/js/index#streaming-files-nodejs-only).
+
+<Warning>
+  إذا لم يتم استهلاك `ResultSet` أو التدفق الخاص به بالكامل، فسيُتلف بعد فترة عدم النشاط `request_timeout`.
+</Warning>
+
+```ts
+interface BaseResultSet<Stream> {
+  // See "Query ID" section above
+  query_id: string
+
+  // Consume the entire stream and get the contents as a string
+  // Can be used with any DataFormat
+  // Should be called only once
+  text(): Promise<string>
+
+  // Consume the entire stream and parse the contents as a JS object
+  // Can be used only with JSON formats
+  // Should be called only once
+  json<T>(): Promise<T>
+
+  // Returns a readable stream for responses that can be streamed
+  // Every iteration over the stream provides an array of Row[] in the selected DataFormat
+  // Should be called only once
+  stream(): Stream
+}
+
+interface Row {
+  // Get the content of the row as a plain string
+  text: string
+
+  // Parse the content of the row as a JS object
+  json<T>(): T
+}
+```
+
+**مثال:** (Node.js/Web) استعلام يُرجع مجموعة بيانات بتنسيق `JSONEachRow`، مع استهلاك التدفّق بالكامل وتحليل المحتويات على هيئة كائنات JavaScript.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/array_json_each_row.ts).
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT * FROM my_table',
+  format: 'JSONEachRow',
+})
+const dataset = await resultSet.json() // or `row.text` to avoid parsing JSON
+```
+
+**مثال:** (Node.js فقط) نتيجة استعلام متدفقة بتنسيق `JSONEachRow` باستخدام النهج التقليدي `on('data')`. ويمكن استخدامه بالتبادل مع صيغة `for await const`. [الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_streaming_json_each_row.ts).
+
+```ts
+const rows = await client.query({
+  query: 'SELECT number FROM system.numbers_mt LIMIT 5',
+  format: 'JSONEachRow', // or JSONCompactEachRow, JSONStringsEachRow, etc.
+})
+const stream = rows.stream()
+stream.on('data', (rows: Row[]) => {
+  rows.forEach((row: Row) => {
+    console.log(row.json()) // or `row.text` to avoid parsing JSON
+  })
+})
+await new Promise((resolve, reject) => {
+  stream.on('end', () => {
+    console.log('Completed!')
+    resolve(0)
+  })
+  stream.on('error', reject)
+})
+```
+
+**مثال:** (Node.js فقط) نتيجة استعلام متدفقة بتنسيق `CSV` باستخدام الأسلوب التقليدي `on('data')`. ويمكن استخدامه بالتبادل مع بنية `for await const`.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_streaming_text_line_by_line.ts)
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT number FROM system.numbers_mt LIMIT 5',
+  format: 'CSV', // or TabSeparated, CustomSeparated, etc.
+})
+const stream = resultSet.stream()
+stream.on('data', (rows: Row[]) => {
+  rows.forEach((row: Row) => {
+    console.log(row.text)
+  })
+})
+await new Promise((resolve, reject) => {
+  stream.on('end', () => {
+    console.log('Completed!')
+    resolve(0)
+  })
+  stream.on('error', reject)
+})
+```
+
+**مثال:** (Node.js فقط) نتيجة استعلام متدفقة على شكل كائنات JavaScript بتنسيق `JSONEachRow`، ويُتعامل معها باستخدام صياغة `for await const`. ويمكن استخدام ذلك بدلًا من الأسلوب التقليدي `on('data')`.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_streaming_json_each_row_for_await.ts).
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT number FROM system.numbers LIMIT 10',
+  format: 'JSONEachRow', // or JSONCompactEachRow, JSONStringsEachRow, etc.
+})
+for await (const rows of resultSet.stream()) {
+  rows.forEach(row => {
+    console.log(row.json())
+  })
+}
+```
+
+<Note>
+  تستخدم صياغة `for await const` شيفرة أقل قليلًا من نهج `on('data')`، لكنها قد تؤثر سلبًا في الأداء.
+  راجع [هذه المشكلة في مستودع Node.js](https://github.com/nodejs/node/issues/31979) لمزيد من التفاصيل.
+</Note>
+
+**مثال:** (للويب فقط) التكرار عبر `ReadableStream` من الكائنات.
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT * FROM system.numbers LIMIT 10',
+  format: 'JSONEachRow'
+})
+
+const reader = resultSet.stream().getReader()
+while (true) {
+  const { done, value: rows } = await reader.read()
+  if (done) { break }
+  rows.forEach(row => {
+    console.log(row.json())
+  })
+}
+```
+
+<div id="insert-method">
+  ### طريقة insert
+</div>
+
+هذه هي الطريقة الأساسية لإدراج البيانات.
+
+```ts
+export interface InsertResult {
+  query_id: string
+  executed: boolean
+}
+
+interface ClickHouseClient {
+  insert(params: InsertParams): Promise<InsertResult>
+}
+```
+
+نوع الإرجاع مقتضب، لأننا لا نتوقع استرجاع أي بيانات من الخادم ونستهلك دفق الاستجابة فورًا.
+
+إذا جرى تمرير مصفوفة فارغة إلى الطريقة `insert`، فلن تُرسَل عبارة `insert` إلى الخادم؛ وبدلًا من ذلك، ستُعاد الطريقة فورًا بالقيمة `{ query_id: '...', executed: false }`. وإذا لم يُمرَّر `query_id` ضمن معلمات الطريقة في هذه الحالة، فستكون قيمته في النتيجة سلسلة فارغة، لأن إرجاع معرّف UUID عشوائي يولّده العميل قد يكون مُربِكًا، إذ إن الاستعلام ذي `query_id` هذا لن يكون موجودًا في جدول `system.query_log`.
+
+إذا أُرسلت عبارة `insert` إلى الخادم، فستكون العلامة `executed` هي `true`.
+
+<div id="insert-method-and-streaming-in-nodejs">
+  #### طريقة `insert` والدفق في Node.js
+</div>
+
+يمكن أن تعمل هذه الطريقة إما مع `Stream.Readable` أو مع `Array<T>` عادي، وذلك بحسب [تنسيق البيانات](/ar/integrations/language-clients/js/index#supported-data-formats) المحدد لطريقة `insert`. راجع أيضًا هذا القسم حول [دفق الملفات](/ar/integrations/language-clients/js/index#streaming-files-nodejs-only).
+
+من المفترض استخدام `await` مع طريقة `insert`؛ ومع ذلك، يمكن تحديد دفق إدخال ثم انتظار عملية `insert` لاحقًا، عند اكتمال الدفق فقط (وسيؤدي ذلك أيضًا إلى اكتمال الوعد الخاص بـ `insert`). قد يكون هذا مفيدًا في بعض الحالات، مثل مستمعات الأحداث والسيناريوهات المشابهة، لكن معالجة الأخطاء قد تكون معقدة بسبب كثرة الحالات الطرفية في جهة العميل. بدلًا من ذلك، فكّر في استخدام [عمليات insert غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts) كما هو موضح في [هذا المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/async_insert_without_waiting.ts).
+
+<Tip>
+  إذا كانت لديك عبارة `INSERT` مخصصة يصعب تمثيلها باستخدام هذه الطريقة، ففكّر في استخدام [طريقة `command`](/ar/integrations/language-clients/js/index#command-method).
+
+  يمكنك الاطلاع على كيفية استخدامها في مثالي [INSERT INTO ... VALUES](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_values_and_functions.ts) أو [INSERT INTO ... SELECT](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_from_select.ts).
+</Tip>
+
+```ts
+interface InsertParams<T> extends BaseQueryParams {
+  // Table name to insert the data into
+  table: string
+  // A dataset to insert.
+  values: ReadonlyArray<T> | Stream.Readable
+  // Format of the dataset to insert.
+  format?: DataFormat
+  // Allows to specify which columns the data will be inserted into.
+  // - An array such as `['a', 'b']` will generate: `INSERT INTO table (a, b) FORMAT DataFormat`
+  // - An object such as `{ except: ['a', 'b'] }` will generate: `INSERT INTO table (* EXCEPT (a, b)) FORMAT DataFormat`
+  // By default, the data is inserted into all columns of the table,
+  // and the generated statement will be: `INSERT INTO table FORMAT DataFormat`.
+  columns?: NonEmptyArray<string> | { except: NonEmptyArray<string> }
+}
+```
+
+انظر أيضًا: [المعلمات الأساسية لجميع طرق العميل](/ar/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+<Warning>
+  لا يضمن إلغاء طلب باستخدام `abort_signal` عدم حدوث إدراج للبيانات، إذ قد يكون الخادم قد استقبل بعض البيانات المتدفقة قبل الإلغاء.
+</Warning>
+
+**مثال:** (Node.js/Web) إدراج مصفوفة من القيم.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/array_json_each_row.ts).
+
+```ts
+await client.insert({
+  table: 'my_table',
+  // structure should match the desired format, JSONEachRow in this example
+  values: [
+    { id: 42, name: 'foo' },
+    { id: 42, name: 'bar' },
+  ],
+  format: 'JSONEachRow',
+})
+```
+
+**مثال:** (Node.js فقط) إدراج دفق من ملف CSV.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/insert_file_stream_csv.ts). انظر أيضًا: [بث الملفات](/ar/integrations/language-clients/js/index#streaming-files-nodejs-only).
+
+```ts
+await client.insert({
+  table: 'my_table',
+  values: fs.createReadStream('./path/to/a/file.csv'),
+  format: 'CSV',
+})
+```
+
+**مثال**: استبعِد أعمدة معيّنة من عبارة insert.
+
+إذا كان لديك تعريف جدول كالتالي:
+
+```sql
+CREATE OR REPLACE TABLE mytable
+(id UInt32, message String)
+ENGINE MergeTree()
+ORDER BY (id)
+```
+
+أدرِج عمودًا محددًا فقط:
+
+```ts
+// Generated statement: INSERT INTO mytable (message) FORMAT JSONEachRow
+await client.insert({
+  table: 'mytable',
+  values: [{ message: 'foo' }],
+  format: 'JSONEachRow',
+  // `id` column value for this row will be zero (default for UInt32)
+  columns: ['message'],
+})
+```
+
+استبعاد أعمدة معيّنة:
+
+```ts
+// Generated statement: INSERT INTO mytable (* EXCEPT (message)) FORMAT JSONEachRow
+await client.insert({
+  table: tableName,
+  values: [{ id: 144 }],
+  format: 'JSONEachRow',
+  // `message` column value for this row will be an empty string
+  columns: {
+    except: ['message'],
+  },
+})
+```
+
+راجع [الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_exclude_columns.ts) للاطلاع على مزيد من التفاصيل.
+
+**مثال**: الإدراج في قاعدة بيانات تختلف عن تلك المحددة في مثيل العميل. [الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_into_different_db.ts).
+
+```ts
+await client.insert({
+  table: 'mydb.mytable', // Fully qualified name including the database
+  values: [{ id: 42, message: 'foo' }],
+  format: 'JSONEachRow',
+})
+```
+
+<div id="web-version-limitations">
+  #### قيود إصدار الويب
+</div>
+
+حاليًا، لا تعمل عمليات الإدراج في `@clickhouse/client-web` إلا مع التنسيقات `Array<T>` و`JSON*`.
+ولا يزال إدراج التدفقات غير مدعوم في إصدار الويب بسبب ضعف التوافق مع المتصفحات.
+
+وبناءً على ذلك، تبدو واجهة `InsertParams` في إصدار الويب مختلفة قليلًا عن إصدار Node.js،
+إذ تقتصر `values` على النوع `ReadonlyArray<T>` فقط:
+
+```ts
+interface InsertParams<T> extends BaseQueryParams {
+  // Table name to insert the data into
+  table: string
+  // A dataset to insert.
+  values: ReadonlyArray<T>
+  // Format of the dataset to insert.
+  format?: DataFormat
+  // Allows to specify which columns the data will be inserted into.
+  // - An array such as `['a', 'b']` will generate: `INSERT INTO table (a, b) FORMAT DataFormat`
+  // - An object such as `{ except: ['a', 'b'] }` will generate: `INSERT INTO table (* EXCEPT (a, b)) FORMAT DataFormat`
+  // By default, the data is inserted into all columns of the table,
+  // and the generated statement will be: `INSERT INTO table FORMAT DataFormat`.
+  columns?: NonEmptyArray<string> | { except: NonEmptyArray<string> }
+}
+```
+
+هذا عرضة للتغيير مستقبلًا. انظر أيضًا: [Base parameters for all client methods](/ar/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+<div id="command-method">
+  ### طريقة command
+</div>
+
+يمكن استخدامها مع العبارات التي لا تُرجع أي مخرجات، عندما لا تكون عبارة `format` قابلة للتطبيق، أو عندما لا تكون مهتمًا بالاستجابة على الإطلاق. ومن أمثلة هذه العبارات `CREATE TABLE` أو `ALTER TABLE`.
+
+يجب استخدام `await` معها.
+
+يتم إتلاف تدفق الاستجابة فورًا، ما يعني تحرير socket الأساسي.
+
+```ts
+interface CommandParams extends BaseQueryParams {
+  // Statement to execute.
+  query: string
+}
+
+interface CommandResult {
+  query_id: string
+}
+
+interface ClickHouseClient {
+  command(params: CommandParams): Promise<CommandResult>
+}
+```
+
+انظر أيضًا: [Base parameters for all client methods](/ar/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+**مثال:** (Node.js/Web) أنشئ جدولًا في ClickHouse Cloud.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_cloud.ts).
+
+```ts
+await client.command({
+  query: `
+    CREATE TABLE IF NOT EXISTS my_cloud_table
+    (id UInt64, name String)
+    ORDER BY (id)
+  `,
+  // Recommended for cluster usage to avoid situations where a query processing error occurred after the response code,
+  // and HTTP headers were already sent to the client.
+  // See https://clickhouse.com/docs/interfaces/http/#response-buffering
+  clickhouse_settings: {
+    wait_end_of_query: 1,
+  },
+})
+```
+
+**مثال:** (Node.js/Web) أنشئ جدولًا في مثيل ClickHouse ذاتي الاستضافة.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_single_node.ts).
+
+```ts
+await client.command({
+  query: `
+    CREATE TABLE IF NOT EXISTS my_table
+    (id UInt64, name String)
+    ENGINE MergeTree()
+    ORDER BY (id)
+  `,
+})
+```
+
+**مثال:** (Node.js/الويب) INSERT FROM SELECT
+
+```ts
+await client.command({
+  query: `INSERT INTO my_table SELECT '42'`,
+})
+```
+
+<Warning>
+  إن إلغاء طلب باستخدام `abort_signal` لا يضمن أن الخادم لم ينفّذ التعليمة.
+</Warning>
+
+<div id="exec-method">
+  ### طريقة `Exec`
+</div>
+
+إذا كان لديك استعلام مخصّص لا يندرج ضمن `query`/`insert`،
+وكانت النتيجة تهمّك، فيمكنك استخدام `exec` كبديل لـ `command`.
+
+تعيد `exec` دفقًا قابلاً للقراءة ويجب استهلاكه أو إغلاقه من جانب التطبيق.
+
+```ts
+interface ExecParams extends BaseQueryParams {
+  // Statement to execute.
+  query: string
+}
+
+interface ClickHouseClient {
+  exec(params: ExecParams): Promise<QueryResult>
+}
+```
+
+انظر أيضًا: [Base parameters for all client methods](/ar/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+يختلف نوع القيمة المعادة للدفق بين Node.js وإصدار الويب.
+
+Node.js:
+
+```ts
+export interface QueryResult {
+  stream: Stream.Readable
+  query_id: string
+}
+```
+
+الويب:
+
+```ts
+export interface QueryResult {
+  stream: ReadableStream
+  query_id: string
+}
+```
+
+<div id="ping">
+  ### Ping
+</div>
+
+تُرجِع الطريقة `ping` المخصّصة للتحقق من حالة الاتصال القيمة `true` إذا أمكن الوصول إلى الخادم.
+
+إذا تعذّر الوصول إلى الخادم، فستتضمن النتيجة أيضًا الخطأ الأساسي.
+
+```ts
+type PingResult =
+  | { success: true }
+  | { success: false; error: Error }
+
+/** Parameters for the health-check request - using the built-in `/ping` endpoint.
+ *  This is the default behavior for the Node.js version. */
+export type PingParamsWithEndpoint = {
+  select: false
+  /** AbortSignal instance to cancel a request in progress. */
+  abort_signal?: AbortSignal
+  /** Additional HTTP headers to attach to this particular request. */
+  http_headers?: Record<string, string>
+}
+/** Parameters for the health-check request - using a SELECT query.
+ *  This is the default behavior for the Web version, as the `/ping` endpoint does not support CORS.
+ *  Most of the standard `query` method params, e.g., `query_id`, `abort_signal`, `http_headers`, etc. will work,
+ *  except for `query_params`, which does not make sense to allow in this method. */
+export type PingParamsWithSelectQuery = { select: true } & Omit<
+  BaseQueryParams,
+  'query_params'
+>
+export type PingParams = PingParamsWithEndpoint | PingParamsWithSelectQuery
+
+interface ClickHouseClient {
+  ping(params?: PingParams): Promise<PingResult>
+}
+```
+
+قد تكون `Ping` أداة مفيدة للتحقق مما إذا كان الخادم متاحًا عند بدء تشغيل التطبيق، لا سيما مع ClickHouse Cloud، حيث قد يكون المثيل في وضع الخمول ويستيقظ بعد إجراء ping. في هذه الحالة، قد ترغب في إعادة المحاولة بضع مرات مع تأخير بين كل محاولة وأخرى.
+
+لاحظ أنه افتراضيًا، يستخدم إصدار Node.js نقطة النهاية `/ping`، بينما يستخدم إصدار الويب استعلام `SELECT 1` لتحقيق نتيجة مماثلة، لأن نقطة النهاية `/ping` لا تدعم CORS.
+
+**مثال:** (Node.js/Web) إجراء ping بسيط على مثيل خادم ClickHouse. ملاحظة: في إصدار الويب، ستكون الأخطاء التي يتم التقاطها مختلفة.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/ping.ts).
+
+```ts
+const result = await client.ping();
+if (!result.success) {
+  // process result.error
+}
+```
+
+**مثال:** إذا كنت تريد أيضًا التحقق من بيانات الاعتماد عند استدعاء الطريقة `ping`، أو تمرير معاملات إضافية مثل `query_id`، فيمكنك استخدامها كما يلي:
+
+```ts
+const result = await client.ping({ select: true, /* query_id, abort_signal, http_headers, or any other query params */ });
+```
+
+ستدعم الطريقة ping معظم معلمات الطريقة `query` القياسية - راجع تعريف النوع `PingParamsWithSelectQuery`.
+
+<div id="close-nodejs-only">
+  ### Close (Node.js فقط)
+</div>
+
+يُغلق جميع الاتصالات المفتوحة ويُحرِّر الموارد. لا يُحدث أي تأثير في إصدار الويب.
+
+```ts
+await client.close()
+```
+
+<div id="streaming-files-nodejs-only">
+  ## تدفّق الملفات (Node.js فقط)
+</div>
+
+تتوفر عدة أمثلة على تدفّق الملفات باستخدام تنسيقات البيانات الشائعة (NDJSON وCSV وParquet) في مستودع العميل.
+
+* [التدفّق من ملف NDJSON](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/insert_file_stream_ndjson.ts)
+* [التدفّق من ملف CSV](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/insert_file_stream_csv.ts)
+* [التدفّق من ملف Parquet](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/insert_file_stream_parquet.ts)
+* [التدفّق إلى ملف Parquet](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_parquet_as_file.ts)
+
+يُفترض أن يكون تدفّق التنسيقات الأخرى إلى ملف مشابهًا لـ Parquet،
+وسيكون الاختلاف الوحيد في التنسيق المستخدم في استدعاء `query` (`JSONEachRow` و`CSV` وما إلى ذلك) واسم ملف الإخراج.
+
+<div id="supported-data-formats">
+  ## تنسيقات البيانات المدعومة
+</div>
+
+يتعامل العميل مع تنسيقات البيانات بصيغة JSON أو كنص.
+
+إذا حدّدت `format` كأحد التنسيقات التابعة لعائلة JSON (`JSONEachRow` و`JSONCompactEachRow` وما إلى ذلك)، فسيقوم العميل بتسلسل البيانات وإلغاء تسلسلها أثناء نقلها عبر الشبكة.
+
+تُرسل البيانات المقدَّمة بتنسيقات النص &quot;الخام&quot; (`CSV` وعائلتا `TabSeparated` و`CustomSeparated`) عبر الشبكة كما هي، من دون أي تحويلات إضافية.
+
+<Tip>
+  قد يحدث التباس بين JSON كتنسيق عام و[تنسيق ClickHouse JSON](/ar/reference/formats/JSON/JSON).
+
+  يدعم العميل تدفّق كائنات JSON باستخدام تنسيقات مثل [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow) (راجع نظرة عامة الجدول للاطلاع على التنسيقات الأخرى المناسبة للبث؛ وراجع أيضًا أمثلة `select_streaming_` [في مستودع العميل](https://github.com/ClickHouse/clickhouse-js/tree/main/examples/node)).
+
+  المسألة فقط أن تنسيقات مثل [ClickHouse JSON](/ar/reference/formats/JSON/JSON) وبعض التنسيقات الأخرى تُمثَّل ككائن واحد في الاستجابة، ولذلك لا يمكن للعميل تدفّقها.
+</Tip>
+
+| التنسيق                                    | الإدخال (مصفوفة) | الإدخال (كائن) | الإدخال/الإخراج (تدفق) | الإخراج (JSON) | الإخراج (نص)    |
+| ------------------------------------------ | ---------------- | -------------- | ---------------------- | -------------- | --------------- |
+| JSON                                       | ❌                | ✔️             | ❌                      | ✔️             | ✔️              |
+| JSONCompact                                | ❌                | ✔️             | ❌                      | ✔️             | ✔️              |
+| JSONObjectEachRow                          | ❌                | ✔️             | ❌                      | ✔️             | ✔️              |
+| JSONColumnsWithMetadata                    | ❌                | ✔️             | ❌                      | ✔️             | ✔️              |
+| JSONStrings                                | ❌                | ❌️             | ❌                      | ✔️             | ✔️              |
+| JSONCompactStrings                         | ❌                | ❌              | ❌                      | ✔️             | ✔️              |
+| JSONEachRow                                | ✔️               | ❌              | ✔️                     | ✔️             | ✔️              |
+| JSONEachRowWithProgress                    | ❌️               | ❌              | ✔️ ❗- انظر أدناه       | ✔️             | ✔️              |
+| JSONStringsEachRow                         | ✔️               | ❌              | ✔️                     | ✔️             | ✔️              |
+| JSONCompactEachRow                         | ✔️               | ❌              | ✔️                     | ✔️             | ✔️              |
+| JSONCompactStringsEachRow                  | ✔️               | ❌              | ✔️                     | ✔️             | ✔️              |
+| JSONCompactEachRowWithNames                | ✔️               | ❌              | ✔️                     | ✔️             | ✔️              |
+| JSONCompactEachRowWithNamesAndTypes        | ✔️               | ❌              | ✔️                     | ✔️             | ✔️              |
+| JSONCompactStringsEachRowWithNames         | ✔️               | ❌              | ✔️                     | ✔️             | ✔️              |
+| JSONCompactStringsEachRowWithNamesAndTypes | ✔️               | ❌              | ✔️                     | ✔️             | ✔️              |
+| CSV                                        | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| CSVWithNames                               | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| CSVWithNamesAndTypes                       | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| TabSeparated                               | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| TabSeparatedRaw                            | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| TabSeparatedWithNames                      | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| TabSeparatedWithNamesAndTypes              | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| CustomSeparated                            | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| CustomSeparatedWithNames                   | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| CustomSeparatedWithNamesAndTypes           | ❌                | ❌              | ✔️                     | ❌              | ✔️              |
+| Parquet                                    | ❌                | ❌              | ✔️                     | ❌              | ✔️❗- انظر أدناه |
+
+بالنسبة إلى Parquet، يُرجَّح أن تكون حالة الاستخدام الرئيسية لعمليات SELECT هي كتابة التدفق الناتج إلى ملف. راجع [المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_parquet_as_file.ts) في مستودع العميل.
+
+`JSONEachRowWithProgress` هو تنسيق مخصّص للإخراج فقط ويدعم الإبلاغ عن التقدم ضمن التدفق. راجع [هذا المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_json_each_row_with_progress.ts) لمزيد من التفاصيل.
+
+تتوفر القائمة الكاملة لتنسيقات الإدخال والإخراج في ClickHouse
+[هنا](/ar/reference/formats/index).
+
+<div id="supported-clickhouse-data-types">
+  ## أنواع بيانات ClickHouse المدعومة
+</div>
+
+<Note>
+  ينطبق نوع JS المرتبط على أي تنسيقات `JSON*`، باستثناء التنسيقات التي تمثل كل شيء كسلسلة نصية (مثل `JSONStringEachRow`)
+</Note>
+
+| النوع                  | الحالة           | نوع JS                           |
+| ---------------------- | ---------------- | -------------------------------- |
+| UInt8/16/32            | ✔️               | number                           |
+| UInt64/128/256         | ✔️ ❗- انظر أدناه | string                           |
+| Int8/16/32             | ✔️               | number                           |
+| Int64/128/256          | ✔️ ❗- انظر أدناه | string                           |
+| Float32/64             | ✔️               | number                           |
+| Decimal                | ✔️ ❗- انظر أدناه | number                           |
+| Boolean                | ✔️               | boolean                          |
+| String                 | ✔️               | string                           |
+| FixedString            | ✔️               | string                           |
+| UUID                   | ✔️               | string                           |
+| Date32/64              | ✔️               | string                           |
+| DateTime32/64          | ✔️ ❗- انظر أدناه | string                           |
+| Enum                   | ✔️               | string                           |
+| LowCardinality         | ✔️               | string                           |
+| Array(T)               | ✔️               | T[]                              |
+| (new) JSON             | ✔️               | object                           |
+| Variant(T1, T2...)     | ✔️               | T (بحسب النوع الفعلي)            |
+| Dynamic                | ✔️               | T (بحسب النوع الفعلي)            |
+| Nested                 | ✔️               | T[]                              |
+| Tuple(T1, T2, ...)     | ✔️               | [T1, T2, ...]                    |
+| Tuple(n1 T1, n2 T2...) | ✔️               | &#123; n1: T1; n2: T2; ...&#125; |
+| Nullable(T)            | ✔️               | نوع JS لـ T أو null              |
+| IPv4                   | ✔️               | string                           |
+| IPv6                   | ✔️               | string                           |
+| Point                  | ✔️               | [ number, number ]               |
+| Ring                   | ✔️               | Array&lt;Point&gt;               |
+| Polygon                | ✔️               | Array&lt;Ring&gt;                |
+| MultiPolygon           | ✔️               | Array&lt;Polygon&gt;             |
+| Map(K, V)              | ✔️               | Record&lt;K, V&gt;               |
+| Time/Time64            | ✔️               | string                           |
+
+القائمة الكاملة لتنسيقات ClickHouse المدعومة متاحة
+[هنا](/ar/reference/data-types/index).
+
+انظر أيضًا:
+
+* [أمثلة على العمل مع Dynamic/Variant/JSON](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/dynamic_variant_json.ts)
+* [أمثلة على العمل مع Time/Time64](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/time_time64.ts)
+
+<div id="datedate32-types-caveats">
+  ### محاذير أنواع Date/Date32
+</div>
+
+نظرًا لأن العميل يُدرج القيم من دون أي تحويل إضافي للنوع، فلا يمكن إدراج الأعمدة من النوع `Date`/`Date32` إلا
+كسلاسل نصية.
+
+**مثال:** أدرج قيمة من النوع `Date`.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/ba387d7f4ce375a60982ac2d99cb47391cf76cec/__tests__/integration/date_time.test.ts)
+
+```ts
+await client.insert({
+  table: 'my_table',
+  values: [ { date: '2022-09-05' } ],
+  format: 'JSONEachRow',
+})
+```
+
+ومع ذلك، إذا كنت تستخدم أعمدة `DateTime` أو `DateTime64`، يمكنك استخدام كلٍّ من السلاسل النصية وكائنات JS Date. ويمكن تمرير كائنات JS Date إلى `insert` كما هي مع ضبط `date_time_input_format` على `best_effort`. راجع هذا [المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_js_dates.ts) لمزيد من التفاصيل.
+
+<div id="decimal-types-caveats">
+  ### محاذير أنواع Decimal*
+</div>
+
+يمكن إدراج قيم Decimal باستخدام تنسيقات من عائلة `JSON*`. بافتراض أن لدينا جدولًا معرّفًا كما يلي:
+
+```sql
+CREATE TABLE my_table
+(
+  id     UInt32,
+  dec32  Decimal(9, 2),
+  dec64  Decimal(18, 3),
+  dec128 Decimal(38, 10),
+  dec256 Decimal(76, 20)
+)
+ENGINE MergeTree()
+ORDER BY (id)
+```
+
+يمكن إدراج القيم دون فقدان الدقة باستخدام التمثيل النصي:
+
+```ts
+await client.insert({
+  table: 'my_table',
+  values: [{
+    id: 1,
+    dec32:  '1234567.89',
+    dec64:  '123456789123456.789',
+    dec128: '1234567891234567891234567891.1234567891',
+    dec256: '12345678912345678912345678911234567891234567891234567891.12345678911234567891',
+  }],
+  format: 'JSONEachRow',
+})
+```
+
+ومع ذلك، عند الاستعلام عن البيانات بتنسيقات `JSON*`، سيُرجع ClickHouse قيم Decimal على شكل *أرقام* افتراضيًا، مما قد يؤدي إلى فقدان الدقة. لتجنّب ذلك، يمكنك تحويل قيم Decimal إلى سلسلة نصية في الاستعلام:
+
+```ts
+await client.query({
+  query: `
+    SELECT toString(dec32)  AS decimal32,
+           toString(dec64)  AS decimal64,
+           toString(dec128) AS decimal128,
+           toString(dec256) AS decimal256
+    FROM my_table
+  `,
+  format: 'JSONEachRow',
+})
+```
+
+راجع [هذا المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_decimals.ts) لمزيد من التفاصيل.
+
+<div id="integral-types-int64-int128-int256-uint64-uint128-uint256">
+  ### الأنواع العددية الصحيحة: Int64, Int128, Int256, UInt64, UInt128, UInt256
+</div>
+
+على الرغم من أن الخادم يمكنه قبولها كأرقام، فإنها تُعاد كسلاسل نصية في تنسيقات الإخراج من عائلة `JSON*` لتجنب
+overflow للأعداد الصحيحة، لأن القيم القصوى لهذه الأنواع أكبر من `Number.MAX_SAFE_INTEGER`.
+
+ومع ذلك، يمكن تعديل هذا السلوك
+باستخدام [إعداد `output_format_json_quote_64bit_integers`](/ar/reference/settings/formats#output_format_json_quote_64bit_integers)
+.
+
+**مثال:** اضبط تنسيق إخراج JSON للأرقام ذات 64 بت.
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT * from system.numbers LIMIT 1',
+  format: 'JSONEachRow',
+})
+
+expect(await resultSet.json()).toEqual([ { number: '0' } ])
+```
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT * from system.numbers LIMIT 1',
+  format: 'JSONEachRow',
+  clickhouse_settings: { output_format_json_quote_64bit_integers: 0 },
+})
+
+expect(await resultSet.json()).toEqual([ { number: 0 } ])
+```
+
+<div id="clickhouse-settings">
+  ## إعدادات ClickHouse
+</div>
+
+يمكن للعميل تعديل سلوك ClickHouse من خلال آلية
+[الإعدادات](/ar/reference/settings/session-settings).
+يمكن تعيين الإعدادات على مستوى مثيل العميل بحيث تُطبَّق على كل طلب يُرسَل إلى
+ClickHouse:
+
+```ts
+const client = createClient({
+  clickhouse_settings: {}
+})
+```
+
+أو يمكن ضبط إعداد على مستوى الطلب:
+
+```ts
+client.query({
+  clickhouse_settings: {}
+})
+```
+
+يمكن العثور على ملف تعريف الأنواع الذي يضم جميع إعدادات ClickHouse المدعومة
+[هنا](https://github.com/ClickHouse/clickhouse-js/blob/main/packages/client-common/src/settings.ts).
+
+<Warning>
+  تأكد من أن المستخدم الذي تُنفَّذ الاستعلامات نيابةً عنه لديه الصلاحيات الكافية لتغيير الإعدادات.
+</Warning>
+
+<div id="advanced-topics">
+  ## موضوعات متقدمة
+</div>
+
+<div id="queries-with-parameters">
+  ### الاستعلامات ذات المعلمات
+</div>
+
+يمكنك إنشاء استعلامٍ بمعلمات وتمرير قيَم إليها من تطبيق العميل. يتيح لك ذلك تجنب تنسيق
+الاستعلام بقيَم ديناميكية محددة على جهة العميل.
+
+نسّق الاستعلام كالمعتاد، ثم ضع القيَم التي تريد تمريرها من معلمات التطبيق إلى الاستعلام بين أقواس
+بالتنسيق التالي:
+
+```text
+{<name>: <data_type>}
+```
+
+حيث:
+
+* `name` — معرّف العنصر النائب.
+* `data_type` - [نوع البيانات](/ar/reference/data-types/index) لقيمة مَعلمة التطبيق.
+
+**مثال:**: استعلام بمعلمات.
+[الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/query_with_parameter_binding.ts)
+.
+
+```ts
+await client.query({
+  query: 'SELECT plus({val1: Int32}, {val2: Int32})',
+  format: 'CSV',
+  query_params: {
+    val1: 10,
+    val2: 20,
+  },
+})
+```
+
+اطّلع على https://clickhouse.com/docs/interfaces/cli#cli-queries-with-parameters-syntax لمزيد من التفاصيل.
+
+<div id="compression">
+  ### الضغط
+</div>
+
+ملاحظة: ضغط الطلبات غير متاح حاليًا في إصدار الويب. أما ضغط الاستجابات فيعمل بشكل طبيعي. ويدعم إصدار Node.js الاثنين معًا.
+
+يمكن أن تستفيد تطبيقات البيانات التي تعمل مع مجموعات بيانات كبيرة عبر الشبكة من تفعيل الضغط. حاليًا، لا يتوفر الدعم إلا لـ `GZIP` باستخدام [zlib](https://nodejs.org/docs/latest-v14.x/api/zlib.html).
+
+```typescript
+createClient({
+  compression: {
+    response: true,
+    request: true
+  }
+})
+```
+
+معلمات الإعداد هي:
+
+* `response: true` يوجّه ClickHouse server لإرسال جسم الاستجابة مضغوطًا. القيمة الافتراضية: `response: false`
+* `request: true` يفعّل الضغط في جسم طلب العميل. القيمة الافتراضية: `request: false`
+
+<div id="logging-nodejs-only">
+  ### التسجيل (Node.js فقط)
+</div>
+
+<Warning>
+  يُعدّ التسجيل ميزة تجريبية وقد يتغير في المستقبل.
+</Warning>
+
+يقوم تنفيذ المُسجِّل الافتراضي بإخراج سجلات السجل إلى `stdout` عبر الطريقتين `console.debug/info`، وإلى `stderr` عبر الطريقتين `console.warn/error`.
+يمكنك تخصيص منطق التسجيل من خلال توفير `LoggerClass`، واختيار مستوى السجل المطلوب عبر المعامل `level` (القيمة الافتراضية هي `WARN`):
+
+```typescript
+import type { Logger } from '@clickhouse/client'
+
+// All three LogParams types are exported by the client
+interface LogParams {
+  module: string
+  message: string
+  args?: Record<string, unknown>
+}
+type ErrorLogParams = LogParams & { err: Error }
+type WarnLogParams = LogParams & { err?: Error }
+
+class MyLogger implements Logger {
+  trace({ module, message, args }: LogParams) {
+    // ...
+  }
+  debug({ module, message, args }: LogParams) {
+    // ...
+  }
+  info({ module, message, args }: LogParams) {
+    // ...
+  }
+  warn({ module, message, args }: WarnLogParams) {
+    // ...
+  }
+  error({ module, message, args, err }: ErrorLogParams) {
+    // ...
+  }
+}
+
+const client = createClient({
+  log: {
+    LoggerClass: MyLogger,
+    level: ClickHouseLogLevel.DEBUG,
+  }
+})
+```
+
+حاليًا، سيسجّل العميل الأحداث التالية:
+
+* `TRACE` - معلومات منخفضة المستوى عن دورة حياة مقابس Keep-Alive
+* `DEBUG` - معلومات الاستجابة (من دون رؤوس التفويض ومعلومات المضيف)
+* `INFO` - غير مستخدم في الغالب، ويطبع مستوى السجل الحالي عند تهيئة العميل
+* `WARN` - أخطاء غير فادحة؛ يُسجَّل طلب `ping` الفاشل كتحذير، لأن الخطأ الأساسي يكون مضمنًا في النتيجة المعادة
+* `ERROR` - أخطاء فادحة من الطرق `query`/`insert`/`exec`/`command`، مثل فشل الطلب
+
+يمكنك العثور على تطبيق Logger الافتراضي [هنا](https://github.com/ClickHouse/clickhouse-js/blob/main/packages/client-common/src/logger.ts).
+
+<div id="tls-certificates-nodejs-only">
+  ### شهادات TLS ‏(Node.js فقط)
+</div>
+
+يوفّر عميل Node.js دعمًا اختياريًا لكلٍّ من TLS الأساسي (Certificate Authority فقط)
+وTLS المتبادل (Certificate Authority وشهادات العميل).
+
+مثال على تهيئة TLS الأساسية، بافتراض أن شهاداتك موجودة في المجلد `certs`
+وأن اسم ملف CA هو `CA.pem`:
+
+```ts
+const client = createClient({
+  url: 'https://<hostname>:<port>',
+  username: '<username>',
+  password: '<password>', // if required
+  tls: {
+    ca_cert: fs.readFileSync('certs/CA.pem'),
+  },
+})
+```
+
+مثال على تهيئة TLS المتبادل باستخدام شهادات العميل:
+
+```ts
+const client = createClient({
+  url: 'https://<hostname>:<port>',
+  username: '<username>',
+  tls: {
+    ca_cert: fs.readFileSync('certs/CA.pem'),
+    cert: fs.readFileSync(`certs/client.crt`),
+    key: fs.readFileSync(`certs/client.key`),
+  },
+})
+```
+
+اطّلع على الأمثلة الكاملة لـ TLS [الأساسي](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/basic_tls.ts) و[المتبادل](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/mutual_tls.ts) في المستودع.
+
+<div id="keep-alive-configuration-nodejs-only">
+  ### إعداد Keep-Alive (Node.js فقط)
+</div>
+
+يُفعّل العميل Keep-Alive في وكيل HTTP الأساسي افتراضيًا، ما يعني إعادة استخدام المقابس المتصلة للطلبات اللاحقة، مع إرسال الترويسة `Connection: keep-alive`. وتبقى المقابس الخاملة ضمن مجموعة الاتصالات لمدة 2500 مللي ثانية افتراضيًا (راجع [الملاحظات حول ضبط هذا الخيار](/ar/integrations/language-clients/js/index#adjusting-idle_socket_ttl)).
+
+يُفترض أن تكون قيمة `keep_alive.idle_socket_ttl` أقل بفارق ملحوظ من إعدادات الخادم/موازن التحميل. والسبب الرئيسي هو أنه، نظرًا لأن HTTP/1.1 يسمح للخادم بإغلاق المقابس من دون إخطار العميل، فإذا أغلق الخادم أو موازن التحميل الاتصال *قبل* أن يغلقه العميل، فقد يحاول العميل إعادة استخدام مقبس مغلق، ما يؤدي إلى الخطأ `socket hang up`.
+
+إذا كنت تعدّل `keep_alive.idle_socket_ttl`، فضع في اعتبارك أنه يجب أن يظل متوافقًا دائمًا مع إعدادات Keep-Alive الخاصة بالخادم/موازن التحميل، وأن يكون **أقل منها دائمًا**، بما يضمن ألا يغلق الخادم الاتصال المفتوح أولًا.
+
+<div id="adjusting-idle_socket_ttl">
+  #### ضبط `idle_socket_ttl`
+</div>
+
+يضبط العميل `keep_alive.idle_socket_ttl` على 2500 ملّي ثانية، إذ يمكن اعتبارها القيمة الافتراضية الأكثر أمانًا؛ وعلى جانب الخادم، قد يُضبط `keep_alive_timeout` [على قيمة منخفضة تصل إلى 3 ثوانٍ في إصدارات ClickHouse الأقدم من 23.11](https://github.com/ClickHouse/ClickHouse/commit/1685cdcb89fe110b45497c7ff27ce73cc03e82d1) من دون أي تعديلات على `config.xml`.
+
+<Warning>
+  إذا كنت راضيًا عن الأداء ولا تواجه أي مشكلات، فمن المستحسن **عدم** زيادة قيمة الإعداد `keep_alive.idle_socket_ttl`، لأن ذلك قد يؤدي إلى أخطاء محتملة من نوع &quot;Socket hang-up&quot;؛ كذلك، إذا كان تطبيقك يرسل الكثير من الاستعلامات ولم تكن هناك فترات توقف طويلة بينها، فمن المفترض أن تكون القيمة الافتراضية كافية، لأن المقابس لن تبقى في حالة خمول لمدة تكفي لذلك، وسيُبقيها العميل ضمن المجمّع.
+</Warning>
+
+يمكنك العثور على قيمة مهلة Keep-Alive الصحيحة في ترويسات استجابة الخادم بتشغيل الأمر التالي:
+
+```sh
+curl -is --data-binary "SELECT 1" <clickhouse_url>
+```
+
+تحقق من قيم ترويستي `Connection` و`Keep-Alive` في الاستجابة. على سبيل المثال:
+
+```text
+Connection: Keep-Alive
+Keep-Alive: timeout=10
+```
+
+في هذه الحالة، تكون قيمة `keep_alive_timeout` 10 ثوانٍ، ويمكنك محاولة زيادة `keep_alive.idle_socket_ttl` إلى 9000 أو حتى 9500 مللي ثانية للإبقاء على المقابس الخاملة مفتوحة لفترة أطول قليلًا من الوضع الافتراضي. راقب أي أخطاء محتملة من نوع &quot;Socket hang-up&quot;، إذ تشير إلى أن الخادم يغلق الاتصالات قبل أن يغلقها العميل، وخفِّض القيمة حتى تختفي الأخطاء.
+
+<div id="troubleshooting">
+  #### استكشاف الأخطاء وإصلاحها
+</div>
+
+إذا كنت تواجه أخطاء `socket hang up` حتى عند استخدام أحدث إصدار من العميل، فهناك الخيارات التالية لحل هذه المشكلة:
+
+* فعِّل السجلات بمستوى `WARN` على الأقل (وهو المستوى الافتراضي). يتيح ذلك التحقق مما إذا كان هناك دفق غير مستهلك أو دفق معلّق في شيفرة التطبيق؛ إذ ستسجّله طبقة النقل عند مستوى `WARN`، لأن ذلك قد يؤدي إلى إغلاق المقبس من جانب الخادم. يمكنك تفعيل التسجيل في إعدادات العميل كما يلي:
+
+  ```ts
+  const client = createClient({
+    log: { level: ClickHouseLogLevel.WARN },
+  })
+  ```
+
+* تأكد من أن الإعداد المطلوب مُطبَّق على مثيل العميل الصحيح. إذا كان لديك عدة مثيلات للعميل في تطبيقك، فتحقق مرة أخرى من أن المثيل الذي تستخدمه للاستعلامات لديه القيمة الصحيحة لـ `keep_alive.idle_socket_ttl`.
+
+* خفِّض إعداد `keep_alive.idle_socket_ttl` في إعدادات العميل بمقدار 500 مللي ثانية. في بعض الحالات، مثل ارتفاع كمون الشبكة بين العميل والخادم، قد يكون هذا مفيدًا لتجنّب الحالة التي يحصل فيها طلب صادر على مقبس على وشك أن يغلقه الخادم.
+
+* إذا كان هذا الخطأ يحدث أثناء الاستعلامات طويلة التشغيل من دون وجود بيانات داخلة أو خارجة (على سبيل المثال، `INSERT FROM SELECT` طويل التشغيل)، فقد يكون السبب موازن تحميل أو مكونات شبكة أخرى تغلق الاتصالات طويلة الأمد أو الطلبات طويلة التشغيل. يمكنك محاولة فرض وصول بعض البيانات أثناء الاستعلامات طويلة التشغيل باستخدام مجموعة إعدادات ClickHouse التالية:
+
+  ```ts
+  const client = createClient({
+    // هنا نفترض أن لدينا بعض الاستعلامات التي يزيد execution time الخاص بها عن 5 دقائق
+    request_timeout: 400_000,
+    /** تتيح هذه الإعدادات معًا تجنّب مشكلات timeout الخاصة بـ LB في حالة الاستعلامات طويلة التشغيل التي لا تدخل فيها بيانات أو تخرج منها،
+     *  مثل `INSERT FROM SELECT` وما شابهها، إذ قد يعتبر LB الاتصال خاملًا ويغلقه بشكل مفاجئ.
+     *  في هذه الحالة، نفترض أن لدى LB timeout لاتصال خامل مقداره 120s، لذا نضبط 110s كقيمة "آمنة". */
+    clickhouse_settings: {
+      send_progress_in_http_headers: 1,
+      http_headers_progress_interval_ms: '110000', // UInt64, should be passed as a string
+    },
+  })
+  ```
+
+  ومع ذلك، ضع في اعتبارك أن الحجم الإجمالي للترويسات المستلمة له حد أقصى قدره 16KB في الإصدارات الحديثة من Node.js؛ وبعد تلقّي عدد معيّن من ترويسات التقدم، وكان ذلك نحو 70-80 في اختباراتنا، سيجري إنشاء استثناء.
+
+  ومن الممكن أيضًا استخدام نهج مختلف تمامًا، مع تجنّب وقت الانتظار في تنسيق النقل بالكامل؛ ويمكن فعل ذلك بالاستفادة من &quot;الميزة&quot; في واجهة HTTP التي تقضي بعدم إلغاء عمليات mutation عند فقدان الاتصال. راجع [هذا المثال (الجزء 2)](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/long_running_queries_timeouts.ts) لمزيد من التفاصيل.
+
+* يمكن تعطيل ميزة Keep-Alive بالكامل. في هذه الحالة، سيضيف العميل أيضًا ترويسة `Connection: close` إلى كل طلب، ولن يعيد `HTTP agent` الأساسي استخدام الاتصالات. سيتم تجاهل إعداد `keep_alive.idle_socket_ttl`، إذ لن تكون هناك مقابس خاملة. سيؤدي هذا إلى كلفة إضافية، لأن اتصالًا جديدًا سيُنشأ لكل طلب.
+
+  ```ts
+  const client = createClient({
+    keep_alive: {
+      enabled: false,
+    },
+  })
+  ```
+
+* استبعد المشكلات المحتملة في بقية مكدس الشبكة، بما في ذلك Node.js نفسه، عن طريق تشغيل اختبار بسيط من سطر الأوامر باستخدام مثيل ClickHouse نفسه ومسار الشبكة نفسه (أي من الجهاز نفسه أو من مقطع الشبكة نفسه، مثل pod في Kubernetes)، على سبيل المثال باستخدام `curl`:
+
+  ```sh
+  curl -is --user '<user>:<password>' --data-binary "SELECT 1" <clickhouse_url>
+  ```
+
+  قد ترغب في تشغيله ضمن حلقة لعدة دقائق. إذا رأيت أخطاء مشابهة في `curl`، فمن المرجح أن المشكلة لا تتعلق بإعدادات العميل، بل بمكدس الشبكة أو إعدادات الخادم.
+
+* لاختبار الاتصال باستخدام وظائف Node.js الأساسية، يمكنك محاولة إنشاء HTTP request بسيطة إلى ClickHouse server باستخدام واجهة `fetch` API المدمجة:
+
+```ts
+  const response = await fetch('<clickhouse_url>?query=SELECT+1', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + Buffer.from('<user>:<password>').toString('base64'),
+    }
+  })
+```
+
+* في بعض الحالات، قد تضيف شيفرة التطبيق أو موائمات إطار العمل `ping()` استباقية قبل تنفيذ الاستعلام الفعلي، ما قد يؤدي إلى وضع ينجح فيه طلب `ping()`، لكن يفشل طلب الاستعلام اللاحق بخطأ &quot;socket hang up&quot; بسبب المشكلة الأساسية نفسها المرتبطة بالاتصالات الخاملة. إذا لاحظت هذا النمط في السجلات، فحاول التحقق مما إذا كان هناك خيار لتعطيل عمليات `ping()` الاستباقية في إطار العمل أو في شيفرة التطبيق. ومن المفترض أن يساعد ذلك أيضًا في تقليل احتمال التعرّض لتقييد المعدّل من أي من مكوّنات الشبكة الوسيطة.
+
+* تأكد من أن التطبيق نفسه يحصل على وقت CPU كافٍ، وأن الشبكة لا يقيّد موفّر الاستضافة معدلها. وقد تكون أيضًا وسائل المراقبة المختلفة، مثل مقاييس توقّف GC المؤقت، ومقاييس تأخر حلقة الأحداث، وما شابهها، مفيدة في استبعاد المشكلات المحتملة الناتجة عن شحّ الموارد.
+
+* جرّب فحص شيفرة التطبيق مع تفعيل قاعدة ESLint ‏[no-floating-promises](https://typescript-eslint.io/rules/no-floating-promises/)، إذ يساعد ذلك في تحديد الوعود غير المُعالجة التي قد تؤدي إلى تدفقات ومقابس معلّقة.
+
+<div id="read-only-users">
+  ### المستخدمون ذوو صلاحية القراءة فقط
+</div>
+
+عند استخدام العميل مع [مستخدم `readonly=1`](/ar/concepts/features/configuration/settings/permissions-for-queries#readonly)، لا يمكن تمكين ضغط الاستجابة، لأنه يتطلب الإعداد `enable_http_compression`. سيؤدي التكوين التالي إلى حدوث خطأ:
+
+```ts
+const client = createClient({
+  compression: {
+    response: true, // won't work with a readonly=1 user
+  },
+})
+```
+
+اطّلع على [المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/read_only_user.ts) الذي يسلّط الضوء بشكل أكبر على القيود المفروضة على المستخدم ذي `readonly=1`.
+
+<div id="proxy-with-a-pathname">
+  ### وكيل مع اسم مسار
+</div>
+
+إذا كان مثيل ClickHouse لديك خلف وكيل، وكانت هناك قيمة لاسم المسار ضمن عنوان URL، كما في المثال http://proxy:8123/clickhouse&#95;server، فحدِّد `clickhouse_server` كخيار الإعداد `pathname` (مع أو بدون شرطة مائلة في البداية)؛ وإلا، فإذا أُدرج مباشرةً في `url` فسيُعامل على أنه الخيار `database`. كما أن أسماء المسارات متعددة المقاطع مدعومة، مثل `/my_proxy/db`.
+
+```ts
+const client = createClient({
+  url: 'http://proxy:8123',
+  pathname: '/clickhouse_server',
+})
+```
+
+<div id="reverse-proxy-with-authentication">
+  ### وكيل عكسي مع المصادقة
+</div>
+
+إذا كان لديك وكيل عكسي مع مصادقة أمام نشر ClickHouse لديك، فيمكنك استخدام الإعداد `http_headers` لتوفير الترويسات اللازمة هناك:
+
+```ts
+const client = createClient({
+  http_headers: {
+    'My-Auth-Header': '...',
+  },
+})
+```
+
+<div id="custom-httphttps-agent-experimental-nodejs-only">
+  ### وكيل HTTP/HTTPS مخصص (تجريبي، Node.js فقط)
+</div>
+
+<Warning>
+  هذه ميزة تجريبية وقد تتغير مستقبلًا بشكل غير متوافق مع الإصدارات السابقة. ينبغي أن يكون التنفيذ الافتراضي والإعدادات التي يوفرها العميل كافية لمعظم حالات الاستخدام. لا تستخدم هذه الميزة إلا إذا كنت متأكدًا من حاجتك إليها.
+</Warning>
+
+افتراضيًا، سيُهيّئ العميل وكيل HTTP أو HTTPS الأساسي باستخدام الإعدادات المحددة في تهيئة العميل (مثل `max_open_connections` و`keep_alive.enabled` و`tls`)، ليتولى إدارة الاتصالات مع خادم ClickHouse. بالإضافة إلى ذلك، إذا استُخدمت شهادات TLS، فسيُهيَّأ الوكيل الأساسي بالشهادات اللازمة، وستُفرض ترويسات مصادقة TLS الصحيحة.
+
+بعد الإصدار 1.2.0، أصبح من الممكن تزويد العميل بوكيل HTTP أو HTTPS مخصص ليحل محل الوكيل الأساسي الافتراضي. وقد يكون ذلك مفيدًا في حالات تهيئة الشبكة المعقدة. تنطبق الشروط التالية عند توفير وكيل مخصص:
+
+* لن يكون للخيارين `max_open_connections` و`tls` أي *تأثير*، وسيتجاهلهما العميل، لأنهما جزء من تهيئة الوكيل الأساسي.
+* سيقتصر `keep_alive.enabled` على تحديد القيمة الافتراضية لترويسة `Connection` (`true` -&gt; `Connection: keep-alive`، `false` -&gt; `Connection: close`).
+* مع أن إدارة مقابس keep-alive الخاملة ستستمر في العمل (لأنها لا ترتبط بالوكيل، بل بالمقبس نفسه)، فقد أصبح من الممكن الآن تعطيلها بالكامل بضبط قيمة `keep_alive.idle_socket_ttl` على `0`.
+
+<div id="custom-agent-usage-examples">
+  #### أمثلة على استخدام وكيل مخصّص
+</div>
+
+استخدام وكيل HTTP أو HTTPS مخصّص من دون شهادات:
+
+```ts
+const agent = new http.Agent({ // or https.Agent
+  keepAlive: true,
+  keepAliveMsecs: 2500,
+  maxSockets: 10,
+  maxFreeSockets: 10,
+})
+const client = createClient({
+  http_agent: agent,
+})
+```
+
+استخدام HTTPS Agent مخصّص مع إعداد TLS أساسي وشهادة CA:
+
+```ts
+const agent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 2500,
+  maxSockets: 10,
+  maxFreeSockets: 10,
+  ca: fs.readFileSync('./ca.crt'),
+})
+const client = createClient({
+  url: 'https://myserver:8443',
+  http_agent: agent,
+  // With a custom HTTPS agent, the client won't use the default HTTPS connection implementation; the headers should be provided manually
+  http_headers: {
+    'X-ClickHouse-User': 'username',
+    'X-ClickHouse-Key': 'password',
+  },
+  // Important: authorization header conflicts with the TLS headers; disable it.
+  set_basic_auth_header: false,
+})
+```
+
+استخدام HTTPS Agent مخصّص مع TLS المتبادل:
+
+```ts
+const agent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 2500,
+  maxSockets: 10,
+  maxFreeSockets: 10,
+  ca: fs.readFileSync('./ca.crt'),
+  cert: fs.readFileSync('./client.crt'),
+  key: fs.readFileSync('./client.key'),
+})
+const client = createClient({
+  url: 'https://myserver:8443',
+  http_agent: agent,
+  // With a custom HTTPS agent, the client won't use the default HTTPS connection implementation; the headers should be provided manually
+  http_headers: {
+    'X-ClickHouse-User': 'username',
+    'X-ClickHouse-Key': 'password',
+    'X-ClickHouse-SSL-Certificate-Auth': 'on',
+  },
+  // Important: authorization header conflicts with the TLS headers; disable it.
+  set_basic_auth_header: false,
+})
+```
+
+عند استخدام الشهادات *و* وكيل *HTTPS* مخصّص، يُرجَّح أن يلزم تعطيل ترويسة التفويض الافتراضية عبر الإعداد `set_basic_auth_header` (أُضيف في الإصدار 1.2.0)، لأنها تتعارض مع ترويسات TLS. ويجب توفير جميع ترويسات TLS يدويًا.
+
+<div id="known-limitations-nodejsweb">
+  ## القيود المعروفة (Node.js/web)
+</div>
+
+* لا توجد مُحوِّلات بيانات لمجموعات النتائج، لذا لا تُستخدم سوى الأنواع البدائية في اللغة. ومن المخطط إضافة بعض مُحوِّلات أنواع البيانات مع دعم [RowBinary format](https://github.com/ClickHouse/clickhouse-js/issues/216).
+* توجد بعض [الملاحظات المتعلقة بأنواع البيانات Decimal* وDate* / DateTime*](/ar/integrations/language-clients/js/index#datedate32-types-caveats).
+* عند استخدام تنسيقات عائلة JSON*، تُمثَّل الأرقام الأكبر من Int32 كسلاسل نصية، لأن القيم القصوى لأنواع Int64+ أكبر من `Number.MAX_SAFE_INTEGER`. راجع قسم [Integral types](/ar/integrations/language-clients/js/index#integral-types-int64-int128-int256-uint64-uint128-uint256) لمزيد من التفاصيل.
+
+<div id="known-limitations-web">
+  ## القيود المعروفة (الويب)
+</div>
+
+* يعمل التدفّق مع استعلامات select، لكنه معطّل لعمليات insert (وعلى مستوى النوع أيضًا).
+* ضغط الطلبات معطّل، ويتم تجاهل الإعدادات. أما ضغط الاستجابة فيعمل.
+* لا يتوفر دعم للتسجيل حتى الآن.
+
+<div id="tips-for-performance-optimizations">
+  ## نصائح لتحسين الأداء
+</div>
+
+* لتقليل استهلاك ذاكرة التطبيق، يُنصح باستخدام التدفقات في عمليات الإدراج الكبيرة (مثلًا من الملفات) واستعلامات `SELECT` عند الحاجة. وبالنسبة إلى مستمعي الأحداث وحالات الاستخدام المشابهة، قد تكون [الإدراجات غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts) خيارًا جيدًا آخر، إذ تتيح تقليل التجميع على جهة العميل أو حتى الاستغناء عنه تمامًا. تتوفر أمثلة على الإدراج غير المتزامن في [مستودع العميل](https://github.com/ClickHouse/clickhouse-js/tree/main/examples/node)، حيث تأتي أسماء الملفات بالبادئة `async_insert_`.
+* لا يفعّل العميل ضغط الطلبات أو الاستجابات افتراضيًا. ومع ذلك، عند تنفيذ استعلامات `SELECT` أو إدراج مجموعات بيانات كبيرة، يمكنك التفكير في تفعيله عبر `ClickHouseClientConfigOptions.compression` (إما لـ `request` فقط أو `response` فقط أو لكليهما).
+* يفرض الضغط أثرًا ملحوظًا على الأداء. فتفعيله لـ `request` أو `response` سيؤثر سلبًا في سرعة استعلامات `SELECT` أو عمليات الإدراج، على التوالي، لكنه سيقلل حجم حركة مرور الشبكة التي ينقلها التطبيق.
+
+<div id="contact-us">
+  ## تواصل معنا
+</div>
+
+إذا كانت لديك أي أسئلة أو احتجت إلى مساعدة، فلا تتردد في التواصل معنا على [Community Slack](https://clickhouse.com/slack) (قناة `#clickhouse-js`) أو عبر [GitHub issues](https://github.com/ClickHouse/clickhouse-js/issues).

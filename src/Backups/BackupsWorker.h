@@ -133,9 +133,6 @@ private:
         size_t only_shard_num, size_t only_replica_num, ContextMutablePtr context, const AccessRightsElements & access_to_check,
         const ZooKeeperRetriesInfo & retries_info) const;
 
-    /// Run data restoring tasks which insert data to tables.
-    void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
-
     std::pair<bool, BackupStatus> addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
                                           bool internal, QueryStatusPtr process_list_element, BackupStatus status, std::map<String, String> settings);
 

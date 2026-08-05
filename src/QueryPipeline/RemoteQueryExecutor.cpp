@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -156,12 +157,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             auto table_name = main_table.getQualifiedName();
 
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, &table_name);
-            connection_establisher.run(result, fail_message, /*force_connected=*/true);
+            connection_establisher.run(result, fail_message);
         }
         else
         {
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, nullptr);
-            connection_establisher.run(result, fail_message, /*force_connected=*/true);
+            connection_establisher.run(result, fail_message);
         }
 
         ConnectionPoolEntries connection_entries;
@@ -495,6 +496,36 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
+
+    /// A distributed query must carry a known initiator version: the receiving server uses it for
+    /// version-gated compatibility decisions (e.g. whether to enable the analyzer, see `TCPHandler`).
+    /// A zero version means the initiating query context was not populated as an initial query
+    /// (a real client always reports its version, and a server that (re-)initiates a query fills it
+    /// with its own version). Sending zero silently triggers wrong compatibility downgrades on the
+    /// remote, so fail loudly instead.
+    if (modified_client_info.client_version_major == 0
+        && modified_client_info.client_version_minor == 0
+        && modified_client_info.client_version_patch == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Sending a distributed query with unknown (zero) client version. "
+            "The query context was not initialized as an initial query");
+
+    /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
+    /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
+    modified_client_info.current_roles.reset();
+    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
+        && modified_client_info.initial_user == modified_client_info.current_user)
+    {
+        const auto & access_control = context->getAccessControl();
+        Strings current_role_names;
+        for (const auto & role_id : context->getCurrentRoles())
+        {
+            /// tryReadName: skip a concurrently-dropped role (its policies already target nobody).
+            if (auto name = access_control.tryReadName(role_id))
+                current_role_names.push_back(*name);
+        }
+        modified_client_info.current_roles = std::move(current_role_names);
+    }
 
     if (extension)
         modified_client_info.collaborate_with_initiator = true;
