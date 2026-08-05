@@ -487,6 +487,10 @@ If <a href="/reference/settings/server-settings/settings/other#logger" target="_
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
+:::note
+In recent versions of ClickHouse the `Running binary search on index range`, `Found (LEFT) boundary mark`, and `Found (RIGHT) boundary mark` messages are logged at the `test` level (the highest verbosity) rather than at `trace`. To see them, raise the log verbosity to `test` (for example, `SET send_logs_level = 'test'` on the client, or `<logger><level>test</level></logger>` in the server configuration). The remaining lines shown above are still logged at `trace`. This applies to every binary-search log example in this guide.
+:::
+
 We can see in the trace log above, that one mark out of the 1083 existing marks satisfied the query.
 
 <Accordion title="Trace Log Details">
@@ -910,7 +914,7 @@ Now, instead of [almost doing a full table scan](/guides/clickhouse/data-modelli
 With the primary index from the [original table](#a-table-with-a-primary-key) where UserID was the first, and URL the second key column, ClickHouse used a [generic exclusion search](/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) over the index marks for executing that query and that wasn't very effective because of the similarly high cardinality of UserID and URL.
 
 With URL as the first column in the primary index, ClickHouse is now running <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">binary search</a> over the index marks.
-The corresponding trace log in the ClickHouse server log file confirms that:
+The corresponding server log confirms that (in recent versions the binary-search messages are logged at the `test` level — see the [note above](#the-primary-index-is-used-for-selecting-granules)):
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
                                            'http://public_search'])
@@ -1045,7 +1049,7 @@ Processed 335.87 thousand rows,
 
 Because effectively the implicitly created table (and its primary index) backing the materialized view is identical to the [secondary table that we created explicitly](/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), the query is executed in the same effective way as with the explicitly created table.
 
-The corresponding trace log in the ClickHouse server log file confirms that ClickHouse is running binary search over the index marks:
+The corresponding server log confirms that ClickHouse is running binary search over the index marks (in recent versions the binary-search messages are logged at the `test` level — see the [note above](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1124,7 +1128,7 @@ Processed 319.49 thousand rows, 1
 
 Because effectively the hidden table (and its primary index) created by the projection is identical to the [secondary table that we created explicitly](/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), the query is executed in the same effective way as with the explicitly created table.
 
-The corresponding trace log in the ClickHouse server log file confirms that ClickHouse is running binary search over the index marks:
+The corresponding server log confirms that ClickHouse is running binary search over the index marks (in recent versions the binary-search messages are logged at the `test` level — see the [note above](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

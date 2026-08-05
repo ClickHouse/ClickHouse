@@ -842,9 +842,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     for (const auto & part : parts)
     {
+        auto estimates = part.data_part->getEstimates();
         try
         {
-            auto estimates = part.data_part->getEstimates();
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
             {
                 LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
@@ -854,7 +854,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         catch (const Exception &)
         {
             tryLogCurrentException(log, fmt::format(
-                "Failed to use statistics for part {}, skipping statistics pruning for this part",
+                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
                 part.data_part->name), LogsLevel::debug);
         }
         res_parts.push_back(part);
@@ -1841,7 +1841,6 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         if (!query_info.isStream() && merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
-    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
     else if (!parts)
     {
         if (!query_info.isStream())
@@ -2376,7 +2375,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         res.search_algorithm = MarkRanges::SearchAlgorithm::BinarySearch;
         ProfileEvents::increment(ProfileEvents::IndexBinarySearchAlgorithm);
-        LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part_name, marks_count);
+        LOG_TEST(log, "Running binary search on index range for part {} ({} marks)", part_name, marks_count);
 
         size_t steps = 0;
 
@@ -2404,7 +2403,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 ++steps;
             }
             result_range.begin = searched_left;
-            LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
+            LOG_TEST(log, "Found (LEFT) boundary mark: {}", searched_left);
 
             /// Invariant:  check_in_range(searched_left..part_range.end).can_be_true
             ///            !check_in_range(searched_right..part_range.end).can_be_true
@@ -2421,7 +2420,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 ++steps;
             }
             result_range.end = searched_right;
-            LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
+            LOG_TEST(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
             if (result_range.begin < result_range.end)
             {
