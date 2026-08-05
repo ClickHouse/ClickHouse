@@ -582,6 +582,7 @@ Cluster::Cluster(
     const Settings & settings,
     const HostsByShard & names,
     const ClusterConnectionParameters & params)
+    : name(params.cluster_name)
 {
     UInt32 current_shard_num = 1;
 
@@ -614,6 +615,7 @@ Cluster::Cluster(
     const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
     const ClusterConnectionParameters & params,
     bool internal_replication)
+    : name(params.cluster_name)
 {
     UInt32 current_shard_num = 1;
 

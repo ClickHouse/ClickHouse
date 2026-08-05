@@ -363,6 +363,10 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnInitiator())
         return nullptr;
 
+    /// A shard number shipped for a different cluster cannot scope this read.
+    if (ClusterProxy::hasForeignShardScope(context))
+        return nullptr;
+
     auto stack = getSupportingParallelReplicasQueries(query_tree_node.get(), context);
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
