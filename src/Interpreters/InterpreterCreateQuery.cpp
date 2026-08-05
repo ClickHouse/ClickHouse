@@ -770,6 +770,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
+    /// Whether the table definition is fresh user input, as opposed to metadata read back from disk.
+    /// A full-definition `ATTACH TABLE t (...) ENGINE = ...` (with or without `FROM '/path/'`) is CREATE-like
+    /// user input that also runs under `LoadingStrictnessLevel::ATTACH`, so it counts as fresh too. Definitions
+    /// read back from metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
+    /// are marked with `attach_short_syntax` or use `FORCE_ATTACH`/`FORCE_RESTORE`, and `SECONDARY_CREATE`
+    /// (DDL replay in `Replicated` databases, `RESTORE`) was already validated on the initiator.
+    const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
+        || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax);
+
     if (create.columns_list)
     {
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
@@ -819,13 +828,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// Do not let a `CHECK` constraint that can never be evaluated (it contains a subquery) into the metadata.
         /// Only for a fresh definition: an already existing table must keep loading even if its metadata has one.
-        /// A full-definition `ATTACH TABLE t (...) ENGINE = ...` (with or without `FROM '/path/'`) is CREATE-like
-        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`, so it counts as fresh too. Definitions
-        /// read back from metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
-        /// are marked with `attach_short_syntax` or use `FORCE_ATTACH`/`FORCE_RESTORE`, and `SECONDARY_CREATE`
-        /// (DDL replay in `Replicated` databases, `RESTORE`) was already validated on the initiator.
-        const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
-            || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax);
         if (is_fresh_definition)
             ConstraintsDescription::validateNoSubqueries(properties.constraints.getConstraints(), getContext());
     }
@@ -884,6 +886,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
+
+        /// The copied constraints become fresh metadata of the new table, so they are validated
+        /// like on a plain `CREATE`: a grandfathered `CHECK` constraint with a subquery in the
+        /// source table (created before the validation existed) must not be copied into it.
+        if (is_fresh_definition)
+            ConstraintsDescription::validateNoSubqueries(properties.constraints.getConstraints(), getContext());
 
         if (create.is_clone_as)
         {
