@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <time.h>
 #include <vector>
@@ -185,6 +186,14 @@ public:
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
 
+    /// An older peer can forward a server-initiated query whose context was never filled with a
+    /// version, so `client_version_*` arrives as 0.0.0 over the wire. Take the immediate peer's
+    /// version from the connection hello instead (a real server always reports it there), so that
+    /// version-gated compatibility decisions and the zero-version check in `RemoteQueryExecutor`
+    /// on the next hop do not misfire during a rolling upgrade. No-op when the client version is
+    /// already known or the connection version is not.
+    void setClientVersionFromConnectionIfUnknown();
+
     /// Initialize parameters related to HTTP request.
     void setFromHTTPRequest(const Poco::Net::HTTPRequest & request);
 
@@ -193,6 +202,12 @@ public:
     String getVersionStr() const;
 
 private:
+    struct ForwardedForCache;
+
+    /// `ClientInfo::getLastForwardedFor` can be called several times while processing one HTTP request.
+    /// Cache successful and rejected parses so the header is parsed once and an invalid value is logged once.
+    mutable std::shared_ptr<const ForwardedForCache> last_forwarded_for_cache;
+
     void fillOSUserHostNameAndVersionInfo();
 };
 
