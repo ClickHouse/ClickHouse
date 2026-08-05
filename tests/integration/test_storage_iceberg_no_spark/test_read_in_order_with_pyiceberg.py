@@ -251,13 +251,15 @@ def test_sort_order_transform_special_char_column_name(started_cluster_iceberg_n
 def test_sort_order_through_merge_table(started_cluster_iceberg_no_spark):
     # Regression test for reading an Iceberg table through a `Merge` table.
     # An Iceberg table is only sorted by its sorting key when every data file
-    # carries the table's sort order id, which is what
-    # `ReadFromObjectStorageStep::requestReadingInOrder` verifies. `pyiceberg`
-    # declares a sort order but writes the data unsorted, so the read-in-order
-    # optimization has to be rejected. `ReadFromMerge::requestReadingInOrder`
-    # used to ignore object storage children and advertise the order of the
-    # declared sorting key on its own, which dropped the sorting step and
-    # returned unsorted rows.
+    # carries the table's sort order id - and even then the object storage
+    # pipeline does not preserve file order yet
+    # (https://github.com/ClickHouse/ClickHouse/issues/112981) - so the object
+    # storage arm of `recursivelyApplyToReadingSteps` fails closed and rejects
+    # reading in order through a `Merge` table. Here `pyiceberg` declares a sort
+    # order but writes the data unsorted, making the danger concrete:
+    # `ReadFromMerge::requestReadingInOrder` used to ignore object storage
+    # children and advertise the order of the declared sorting key on its own,
+    # which dropped the sorting step and returned unsorted rows.
     #
     # Note that the request can also be rejected earlier, because a `Merge` table
     # does not refresh the metadata of the tables it selects, so their sorting key

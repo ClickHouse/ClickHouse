@@ -1789,14 +1789,18 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
         return nested_read_from_merge.requestReadingInOrder(order_info_, query_limit);
     };
 
-    /// `ReadFromObjectStorageStep::requestReadingInOrder` validates that the data really is sorted by
-    /// the sorting key (for `Iceberg`, that every data file carries the table's sort order id) and that
-    /// the requested direction is the natural one. The direct read path relies on that check, so
-    /// reading through a `Merge` table must not skip it: otherwise the outer step would advertise an
-    /// order the child reader cannot deliver.
-    auto request_read_in_order_object_storage = [order_info_](ReadFromObjectStorageStep & read_from_object_storage)
+    /// Fail closed for an object storage table. Even when its data files really are sorted -
+    /// `ReadFromObjectStorageStep::requestReadingInOrder` would accept the natural direction -
+    /// its `initializePipeline` does not preserve that order yet: every source pulls files from
+    /// one shared iterator, so which stream reads which file is a race, and the pipe may be
+    /// resized afterwards (https://github.com/ClickHouse/ClickHouse/issues/112981). The direct
+    /// read path has the same limitation and is being fixed separately; until the object storage
+    /// pipeline delivers ordered streams, a `Merge` table must not advertise an order its child
+    /// reader does not deliver. Once it does, this can simply delegate to
+    /// `requestReadingInOrder(order_info_->direction)`.
+    auto request_read_in_order_object_storage = [](ReadFromObjectStorageStep &)
     {
-        return read_from_object_storage.requestReadingInOrder(order_info_->direction);
+        return false;
     };
 
     bool ok = true;

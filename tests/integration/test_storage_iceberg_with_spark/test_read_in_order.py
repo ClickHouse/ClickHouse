@@ -309,21 +309,21 @@ def test_read_in_order_through_merge_table(started_cluster_iceberg_with_spark, s
 
     merge_source = f"merge(currentDatabase(), '^{TABLE_NAME}$')"
 
-    # The `Merge` queries have to come first, before the table has ever been read
-    # directly. A persistent `Iceberg` table only learns its sort order when
+    # Reading in order through a `Merge` table over an object storage table is
+    # rejected in either direction, for two independent reasons. First, a
+    # persistent `Iceberg` table only learns its sort order when
     # `updateExternalDynamicMetadataIfExists` is called, which the analyzer does
     # for the tables named in the query - and a `Merge` table does not forward it
-    # to the tables it selects. So while the `Merge` table is the only reader, the
-    # child's sorting key is empty as far as `checkSupportedReadingStep` is
-    # concerned and reading in order is rejected before the object storage reader
-    # is ever asked, in either direction. Reading it directly below refreshes the
-    # metadata for the rest of the test.
-    #
-    # This makes the object storage arm of `recursivelyApplyToReadingSteps` a
-    # fail-closed safeguard rather than an enabled optimization: it makes sure
-    # that if and when a `Merge` table does refresh the metadata of its children,
-    # the outer step cannot announce an order the child reader does not deliver.
-    # Flip the ascending assertion below when that happens.
+    # to the tables it selects - so while the `Merge` table is the only reader the
+    # child's sorting key is empty and `checkSupportedReadingStep` rejects the
+    # optimization outright. Second, even with refreshed metadata, the object
+    # storage arm of `recursivelyApplyToReadingSteps` fails closed:
+    # `ReadFromObjectStorageStep::initializePipeline` does not preserve file order
+    # (https://github.com/ClickHouse/ClickHouse/issues/112981), so the outer step
+    # must not announce an order the child reader does not deliver. The `Merge`
+    # queries here come first, before any direct read has refreshed the child's
+    # metadata, so this block exercises the first gate; the block at the end of
+    # the test exercises the second.
     assert instance.query(
         f"SELECT id FROM {merge_source} ORDER BY id"
     ).strip().split("\n") == ["1", "2", "3", "4"]
@@ -370,4 +370,21 @@ def test_read_in_order_through_merge_table(started_cluster_iceberg_with_spark, s
     ).strip().split("\n") == ["4", "3", "2", "1"]
     assert "PartialSortingTransform" in (
         instance.query(f"EXPLAIN PIPELINE SELECT id FROM {TABLE_NAME} ORDER BY id DESC")
+    )
+
+    # The direct reads above refreshed the child's metadata (cached in the
+    # storage object), so from here on the child's sorting key is visible through
+    # the `Merge` table and `checkSupportedReadingStep` no longer stands in the
+    # way. The fail-closed object storage arm of `recursivelyApplyToReadingSteps`
+    # must still reject the request and keep the sorting step: the object storage
+    # pipeline does not preserve file order, so accepting here would return rows
+    # in a racy order (https://github.com/ClickHouse/ClickHouse/issues/112981).
+    # Once that issue is fixed and the `Merge` path delegates to
+    # `ReadFromObjectStorageStep::requestReadingInOrder`, flip the ascending
+    # assertion to expect the sorting step to be dropped.
+    assert instance.query(
+        f"SELECT id FROM {merge_source} ORDER BY id"
+    ).strip().split("\n") == ["1", "2", "3", "4"]
+    assert "PartialSortingTransform" in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {merge_source} ORDER BY id")
     )
