@@ -240,8 +240,6 @@ ClusterMetadataDDLWorker::EnqueuedMutation ClusterMetadataDDLWorker::enqueueMuta
         const UInt32 entry_number = max_log_ptr + 1;
         const String entry_name = DDLTaskBase::getLogEntryName(entry_number);
         const String entry_path = joinPath(log_root, entry_name);
-        if (!mutation_preparer)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster metadata DDL worker cannot prepare entries without mutation preparer");
         const auto prepared_mutation = mutation_preparer(mutation);
         if (prepared_mutation.is_noop)
         {
@@ -314,9 +312,6 @@ void ClusterMetadataDDLWorker::enqueueMutationAndConfirmLocal(const ClusterMetad
 void ClusterMetadataDDLWorker::applyEnqueuedMutationLocallyUnlocked(const EnqueuedMutation & enqueued, const ClusterMetadataMutation & mutation)
 {
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataDDLWorker::applyEnqueuedMutationLocally");
-    if (!mutation_applier)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster metadata DDL worker cannot apply entries without mutation applier");
-
     const String local_digest = mutation_applier(std::vector<ClusterMetadataMutation>{mutation});
     if (local_digest != enqueued.digest)
         throw Exception(
@@ -594,9 +589,6 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
 
         if (!mutations_to_apply.empty())
         {
-            if (!mutation_applier)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster metadata DDL worker cannot apply entries without mutation applier");
-
             local_materialization_started = true;
             local_digest = mutation_applier(mutations_to_apply);
             if (caught_up_to_durable_log && local_digest != target_digest)
