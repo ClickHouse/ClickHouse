@@ -132,12 +132,12 @@ namespace
         ASTPtr grid_values;
     };
 
-    const PQT::Offset * getAtModifierRangeArgument(const SQLQueryPiece & range_argument)
+    const PrometheusQueryTree::Offset * getAtModifierRangeArgument(const SQLQueryPiece & range_argument)
     {
         if (!range_argument.node || range_argument.node->node_type != NodeType::Offset)
             return nullptr;
 
-        const auto * offset_node = static_cast<const PQT::Offset *>(range_argument.node);
+        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(range_argument.node);
         return offset_node->at_timestamp ? offset_node : nullptr;
     }
 
@@ -151,7 +151,7 @@ namespace
         if (!range_argument.node || range_argument.node->node_type != NodeType::Offset)
             return {};
 
-        const auto * offset_node = static_cast<const PQT::Offset *>(range_argument.node);
+        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(range_argument.node);
         if (offset_node->at_timestamp)
         {
             const auto & expression_range = context.node_range_getter.get(offset_node->getExpression());
