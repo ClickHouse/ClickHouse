@@ -30,7 +30,7 @@ namespace DB
  * Unlike ALP, the integerized values can be packed as zigzag deltas, which is much smaller on
  * smooth series whose neighboring values are close while the overall range is wide.
  * Unlike the streaming XOR codecs, whole-vector runs collapse into a constant vector,
- * and the XOR reference is picked from a ring of 32 recent values with an explicit index.
+ * and the XOR reference is picked from a ring of 64 recent values with an explicit index.
  *
  * Compressed payload layout (after the generic codec header):
  *
@@ -61,20 +61,23 @@ namespace DB
  * the decoder unpacks all 1024 lanes and uses the first count of them.
  *
  * XOR bitstream for count values:
+ *   - 8 bits of flags; bit 0 set means the trailing-zero field is omitted in the XOR branches
+ *     (chosen by the encoder for data whose XOR residues have almost no trailing zeros, where
+ *     the field would be pure overhead; the center then simply extends to the lowest bit);
  *   - the first value is written raw (float_width * 8 bits);
  *   - for each following value, one bit selects between a run and a single value:
  *     1: run; 10 bits of length L in [1, 1023]: the previous value repeats L more times;
  *     0: single value, followed by a 2-bit branch tag:
- *        00 EQUAL:       5-bit ring index; the value equals ring[index];
- *        01 XOR_PREV:    3-bit leading-zero class, exact trailing-zero count
- *                        (6 bits for Float64, 5 for Float32), center bits;
+ *        00 EQUAL:       6-bit ring index; the value equals ring[index];
+ *        01 XOR_PREV:    3-bit leading-zero class, then unless omitted the exact trailing-zero
+ *                        count (6 bits for Float64, 5 for Float32), then center bits;
  *                        the reference is the most recently inserted ring value;
- *        10 XOR_WINDOW:  5-bit ring index, then class, trailing count and center bits
+ *        10 XOR_WINDOW:  6-bit ring index, then the same fields as XOR_PREV
  *                        with ring[index] as the reference;
  *        11 RAW:         float_width * 8 bits.
  *        center = (value XOR reference) >> trailing, of
- *        (width - lead_class_value - trailing) bits.
- *   The ring holds the 32 most recent single values (all four branches insert, runs do not),
+ *        (width - lead_class_value - trailing) bits, with trailing = 0 when omitted.
+ *   The ring holds the 64 most recent single values (all four branches insert, runs do not),
  *   indexed by absolute slot; both sides start from a zeroed ring, so indices into slots that
  *   were not filled yet are well-defined.
  */
@@ -120,8 +123,8 @@ constexpr UInt32 WALLABY_HEADER_SIZE = 2 * sizeof(UInt8) + sizeof(UInt32);
 
 constexpr UInt32 WALLABY_VECTOR_VALUES = Compression::FFOR::DEFAULT_VALUES;
 
-constexpr UInt32 WALLABY_RING_SIZE = 32;
-constexpr UInt8 WALLABY_RING_INDEX_BITS = 5;
+constexpr UInt32 WALLABY_RING_SIZE = 64;
+constexpr UInt8 WALLABY_RING_INDEX_BITS = 6;
 static_assert(1u << WALLABY_RING_INDEX_BITS == WALLABY_RING_SIZE);
 
 constexpr UInt8 WALLABY_RUN_LENGTH_BITS = 10;
@@ -369,21 +372,51 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     return DecimalEncodingResult<T>{use_delta ? VectorMode::DecimalDelta : VectorMode::DecimalFor, payload_size, bits};
 }
 
-/// Encodes a vector with the XOR mode into scratch and returns the payload size in bytes.
+/// Hash of the high bits of a value used to probe the ring for a reference sharing them.
+template <typename T>
+ALWAYS_INLINE UInt8 highBitsProbeKey(T word)
+{
+    constexpr UInt8 width = WallabyTraits<T>::width_bits;
+    return static_cast<UInt8>((word >> (width - 8)) ^ (word >> (width - 16)));
+}
+
+/** Encodes a vector with the XOR mode into scratch and returns the payload size in bytes,
+  * or 0 when the encoding is abandoned because it cannot beat the RAW mode.
+  */
 template <typename T>
 UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_size)
 {
     using Traits = WallabyTraits<T>;
     constexpr UInt8 width = Traits::width_bits;
 
+    /// Decide whether the trailing-zero field pays off: sample XOR residues of neighbors.
+    UInt64 sampled_trail = 0;
+    UInt32 sampled = 0;
+    for (UInt32 i = 8; i < count; i += 8)
+    {
+        const T xored = words[i] ^ words[i - 1];
+        if (xored != 0)
+        {
+            sampled_trail += static_cast<UInt8>(std::countr_zero(xored));
+            ++sampled;
+        }
+    }
+    const bool omit_trail = sampled > 0 && sampled_trail / sampled < 3;
+    const UInt8 trail_field_bits = omit_trail ? 0 : Traits::trail_bits;
+
     BitWriter writer(scratch, scratch_size);
+    writer.writeBits(8, omit_trail ? 1 : 0);
 
     std::array<T, WALLABY_RING_SIZE> ring{};
+    /// Probe table: high-bits hash -> ring slot of the most recent value with that hash.
+    std::array<UInt8, 256> probe{};
+
     UInt32 ring_position = 0;
     UInt32 newest_slot = 0;
 
     writer.writeBits(width, words[0]);
     ring[ring_position] = words[0];
+    probe[highBitsProbeKey(words[0])] = static_cast<UInt8>(ring_position);
     newest_slot = ring_position;
     ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
     T previous = words[0];
@@ -414,24 +447,35 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
         UInt8 best_class = 0;
         UInt8 best_trail = 0;
 
-        for (UInt32 slot = 0; slot < WALLABY_RING_SIZE; ++slot)
+        /// O(1) candidate probes: the predecessor and the most recent value with the same high bits.
+        const UInt32 hashed_slot = probe[highBitsProbeKey(value)];
+        const UInt32 candidates[2] = {newest_slot, hashed_slot};
+        for (UInt32 candidate = 0; candidate < 2; ++candidate)
         {
+            const UInt32 slot = candidates[candidate];
+            if (candidate == 1 && slot == newest_slot)
+                break;
+
             const T xored = value ^ ring[slot];
             if (xored == 0)
             {
-                best_cost = 3 + WALLABY_RING_INDEX_BITS;
-                best_branch = Branch::Equal;
-                best_index = slot;
+                const UInt32 cost = 3 + WALLABY_RING_INDEX_BITS;
+                if (cost < best_cost)
+                {
+                    best_cost = cost;
+                    best_branch = Branch::Equal;
+                    best_index = slot;
+                }
                 break;
             }
 
             const UInt8 lead = static_cast<UInt8>(std::countl_zero(xored));
-            const UInt8 trail = static_cast<UInt8>(std::countr_zero(xored));
+            const UInt8 trail = omit_trail ? 0 : static_cast<UInt8>(std::countr_zero(xored));
             const UInt8 class_index = leadClassIndex<T>(lead);
             const UInt8 center_length = width - Traits::lead_classes[class_index] - trail;
             const bool is_prev = slot == newest_slot;
             const UInt32 cost = 3 + (is_prev ? 0 : WALLABY_RING_INDEX_BITS)
-                + WALLABY_LEAD_CLASS_BITS + Traits::trail_bits + center_length;
+                + WALLABY_LEAD_CLASS_BITS + trail_field_bits + center_length;
             if (cost < best_cost)
             {
                 best_cost = cost;
@@ -464,7 +508,8 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
                 const T xored = value ^ ring[best_index];
                 const UInt8 center_length = width - Traits::lead_classes[best_class] - best_trail;
                 writer.writeBits(WALLABY_LEAD_CLASS_BITS, best_class);
-                writer.writeBits(Traits::trail_bits, best_trail);
+                if (!omit_trail)
+                    writer.writeBits(Traits::trail_bits, best_trail);
                 writer.writeBits(center_length, xored >> best_trail);
                 break;
             }
@@ -475,10 +520,15 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
         }
 
         ring[ring_position] = value;
+        probe[highBitsProbeKey(value)] = static_cast<UInt8>(ring_position);
         newest_slot = ring_position;
         ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
         previous = value;
         ++i;
+
+        /// Bail out early on incompressible data: the RAW mode will be chosen anyway.
+        if ((i & 255) == 0 && writer.count() > static_cast<UInt64>(i) * (width + 1))
+            return 0;
     }
 
     writer.flush();
@@ -492,6 +542,8 @@ void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
     constexpr UInt8 width = Traits::width_bits;
 
     BitReader reader(payload, payload_size);
+
+    const bool omit_trail = (reader.readBits(8) & 1) != 0;
 
     std::array<T, WALLABY_RING_SIZE> ring{};
     UInt32 ring_position = 0;
@@ -529,7 +581,7 @@ void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
             {
                 const UInt32 slot = tag == 0b01 ? newest_slot : static_cast<UInt32>(reader.readBits(WALLABY_RING_INDEX_BITS));
                 const UInt8 class_index = static_cast<UInt8>(reader.readBits(WALLABY_LEAD_CLASS_BITS));
-                const UInt8 trail = static_cast<UInt8>(reader.readBits(Traits::trail_bits));
+                const UInt8 trail = omit_trail ? 0 : static_cast<UInt8>(reader.readBits(Traits::trail_bits));
                 const Int32 center_length = width - Traits::lead_classes[class_index] - trail;
                 if (center_length <= 0)
                     throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt center length");

@@ -457,7 +457,7 @@ The codec splits data into blocks of 1024 values and picks the cheapest of sever
 
 - Constant blocks collapse to a single value.
 - Values that originate from decimals are represented as exact scaled integers and bit-packed either directly (Frame-of-Reference) or as deltas; the delta form is much smaller on smooth series whose neighboring values are close while the overall range is wide.
-- The remaining blocks are compressed with XOR against a window of 32 recent values, similar to `Gorilla` but with a wider choice of references.
+- The remaining blocks are compressed with XOR against a window of 64 recent values, similar to `Gorilla` but with a wider choice of references.
 
 Values that cannot be represented exactly are stored as raw exceptions, so compression is always lossless, including `NaN` payloads, infinities, denormals and signed zeros.
 
