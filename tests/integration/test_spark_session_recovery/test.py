@@ -3,19 +3,18 @@ import signal
 
 import pyspark
 from pyspark.context import SparkContext
+from pyspark.sql import SparkSession
 
 from helpers import spark_tools
 from helpers.spark_tools import ResilientSparkSession
 
 
 def _jvm_proc():
-    gateway = SparkContext._gateway
-    return getattr(gateway, "proc", None) if gateway is not None else None
+    return getattr(SparkContext._gateway, "proc", None)
 
 
 def _jvm_pid():
-    proc = _jvm_proc()
-    return proc.pid if proc is not None else None
+    return getattr(_jvm_proc(), "pid", None)
 
 
 def _alive(pid):
@@ -27,12 +26,9 @@ def _alive(pid):
 
 
 def _kill_jvm_and_reap(proc):
-    """Kill the gateway JVM and wait until it is reaped, not merely signalled.
-
-    Nothing in pyspark ever waits on ``gateway.proc``, so a killed JVM stays a
-    zombie and ``os.kill(pid, 0)`` keeps succeeding; ``wait()`` is what makes
-    the liveness check below able to fail.
-    """
+    """Kill the gateway JVM and wait until reaped, not merely signalled: nothing
+    in pyspark waits on ``gateway.proc``, so a killed JVM stays a zombie whose
+    ``os.kill(pid, 0)`` keeps succeeding until ``wait()`` reaps it."""
     os.kill(proc.pid, signal.SIGKILL)
     proc.wait(timeout=30)
     assert not _alive(proc.pid)
@@ -47,9 +43,9 @@ def _create():
 
 
 def test_recovers_dead_gateway_and_reuses_live_one():
-    """A jointly ordered scenario: pyspark caches the py4j gateway in class state
-    and no stop() clears it, so a session built after the JVM died must discard
-    that handle, while a session built while it still answers must reuse it."""
+    """pyspark caches the py4j gateway in class state and no stop() clears it, so
+    a session built after the JVM died must discard it, while one built while it
+    still answers must reuse it."""
     try:
         session = ResilientSparkSession(_create)
         first_proc = _jvm_proc()
@@ -73,9 +69,9 @@ def test_recovers_dead_gateway_and_reuses_live_one():
         assert reused.range(4).count() == 4
 
         # Recovery: with the JVM dead, the next session must relaunch it. Before
-        # the fix this raised "... does not exist in the JVM" from __init__ -- for
-        # SparkSession$ here, not CI's SparkConf, because _restart above left
-        # SparkSession._instantiatedSession set and getOrCreate asks for it first.
+        # the fix __init__ raised "... does not exist in the JVM" -- naming
+        # SparkSession$, not CI's SparkConf, because _restart left
+        # _instantiatedSession set and getOrCreate asks for that first.
         _kill_jvm_and_reap(first_proc)
 
         recovered = ResilientSparkSession(_create)
@@ -84,16 +80,23 @@ def test_recovers_dead_gateway_and_reuses_live_one():
         assert second_pid != first_pid
         assert recovered.range(5).count() == 5
 
-        # Attribute access on a wrapper whose JVM has since died goes through
-        # __getattr__ -> _restart, which must recover the same way __init__ does.
+        # Attribute access on a wrapper whose JVM died goes through __getattr__
+        # -> _restart, which must recover the same way __init__ does.
         _kill_jvm_and_reap(second_proc)
 
         assert recovered.range(6).count() == 6
         assert _jvm_pid() not in (first_pid, second_pid)
         recovered.stop()
     finally:
-        # A failure above can leave a dead gateway cached, breaking the next
-        # module in this worker that builds a session without the wrapper.
+        # A failure leaves a live session or a dead gateway; both poison the next
+        # module here. getOrCreate reuses a live session via
+        # applyModifiableSettings, which cannot apply a static conf: stop it.
+        active = SparkSession._instantiatedSession
+        if active is not None:
+            try:
+                active.stop()  # raises once the gateway is dead; tolerated
+            except Exception:
+                pass
         # Conditional: dropping a live gateway would orphan its JVM.
         if SparkContext._gateway is not None and not spark_tools._gateway_is_live():
             spark_tools._reset_pyspark_class_state()
