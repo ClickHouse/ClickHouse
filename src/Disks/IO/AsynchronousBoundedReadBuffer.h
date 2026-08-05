@@ -58,8 +58,8 @@ public:
     const ImplPtr & getImpl() { return impl; }
 
     /// NOTE: readBigAt does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
-    /// (when supported). An in-flight prefetch is consumed (dropped) first: readBigAt must not run
-    /// against impl concurrently with it.
+    /// (when supported). An in-flight prefetch is consumed first (readBigAt must not run against impl
+    /// concurrently with it) and its data is retained: readBigAt calls serve from it when covered.
     bool supportsReadAt() override { return impl->supportsReadAt(); }
 
     /// Reads into `memory` (or prefetch_buffer), not into the pointer set via `ReadBuffer::set`.
@@ -94,6 +94,9 @@ private:
     mutable std::mutex prefetch_future_mutex;
     /// Lock-free check for readBigAt whether a prefetch is in flight.
     mutable std::atomic<bool> prefetch_pending{false};
+    /// A prefetch consumed by readBigAt, retained so that any readBigAt call can serve data from it.
+    /// Immutable once published (by the store to prefetch_pending); reset by the sequential prefetch.
+    mutable std::optional<IAsynchronousReader::Result> prefetch_result;
 
     /// When using userspace page cache, we directly use memory owned by the cache instead of
     /// allocating our own buffers.

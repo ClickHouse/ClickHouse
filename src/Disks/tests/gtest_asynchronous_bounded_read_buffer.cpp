@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -16,6 +17,11 @@
 
 using namespace DB;
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event RemoteFSPrefetchedReads;
+}
 
 class AsynchronousBoundedReadBufferTest : public ::testing::TestWithParam<const char *>
 {
@@ -108,6 +114,8 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtWithPrefetch)
     /// Smaller than the file, so the prefetch is usually still in flight when the reads run.
     constexpr size_t buffer_size = 16384;
 
+    const auto prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
+
     for (size_t iteration = 0; iteration < num_iterations; ++iteration)
     {
         AsynchronousBoundedReadBuffer read_buffer(
@@ -162,4 +170,63 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtWithPrefetch)
         for (size_t t = 0; t < num_threads; ++t)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
     }
+
+    /// The prefetched data is retained after being consumed, so in every iteration both threads
+    /// whose ranges start inside it must have been served from it, not only the consuming one.
+    const auto prefetched_reads = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads] - prefetched_reads_before;
+    EXPECT_GE(prefetched_reads, 2 * num_iterations);
+}
+
+TEST_F(AsynchronousBoundedReadBufferTest, readBigAtFromRetainedPrefetch)
+{
+    String contents;
+    contents.reserve(100000);
+    for (size_t i = 0; i < 100000; ++i)
+        contents += static_cast<char>('a' + i % 26);
+
+    const String file_path = makeTempFile(contents);
+    ThreadPoolRemoteFSReader remote_fs_reader(4, 0);
+
+    /// Smaller than the file, so the prefetch covers only its prefix.
+    constexpr size_t buffer_size = 16384;
+
+    AsynchronousBoundedReadBuffer read_buffer(
+        createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader,
+        buffer_size, /* min_bytes_for_seek */ 0,
+        Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+
+    read_buffer.prefetch(Priority{0});
+
+    const auto prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
+    auto prefetched_reads = [&] { return ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads] - prefetched_reads_before; };
+
+    auto read_at = [&](size_t offset, size_t count)
+    {
+        String buf(count, 0);
+        size_t total = 0;
+        while (total < count)
+        {
+            size_t read = read_buffer.readBigAt(buf.data() + total, count - total, offset + total, nullptr);
+            if (read == 0)
+                break;
+            total += read;
+        }
+        EXPECT_EQ(total, count);
+        EXPECT_EQ(buf, contents.substr(offset, count));
+    };
+
+    /// A read past the prefetched range consumes the prefetch, but retains its data.
+    read_at(50000, 10000);
+    EXPECT_EQ(prefetched_reads(), 0);
+
+    /// Reads inside the prefetched range are served from the retained data, each of them.
+    read_at(0, 10000);
+    EXPECT_EQ(prefetched_reads(), 1);
+    read_at(5000, 5000);
+    EXPECT_EQ(prefetched_reads(), 2);
+
+    /// A read crossing the end of the prefetched range: the head is served from the retained
+    /// data, the suffix is read directly.
+    read_at(10000, 20000);
+    EXPECT_EQ(prefetched_reads(), 3);
 }
