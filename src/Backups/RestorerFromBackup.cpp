@@ -24,6 +24,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Disks/IStoragePolicy.h>
 #include <Storages/IStorage.h>
 #include <base/insertAtEnd.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -976,6 +977,35 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         ThreadName::RESTORE_TABLE_DATA);
 }
 
+bool RestorerFromBackup::shouldRestoreTableData(const QualifiedTableName & table_name, const StoragePtr & storage) const
+{
+    /// The table-checking stage assigns `table_info.storage` via the throwing `IDatabase::getTable` for
+    /// every table before the data stage is scheduled, so `storage` cannot be null here.
+    chassert(storage);
+
+    /// A fully read-only storage policy cannot accept writes: restoring data into it can only fail
+    /// (with READONLY on reservation, or on the engine's emptiness check if the table has already
+    /// discovered its data from the disk). Such policies hold shared/static data - e.g. Cloud example
+    /// datasets - so the data recorded in the backup is expected to be on the read-only storage
+    /// already. Skip restoring the data instead of failing the whole RESTORE.
+    auto policy = storage->getStoragePolicy();
+    if (!policy || !policy->isReadOnly())
+        return true;
+
+    /// If the read-only storage does not actually hold the data (e.g. the shared dataset was relocated
+    /// or removed), the restored table serves whatever the storage holds - possibly nothing. That cannot
+    /// be reliably detected here (an empty backup source and asynchronous part discovery both look the
+    /// same), so it is deliberately not checked.
+    LOG_INFO(
+        log,
+        "Skipping restore of data for table {}: storage policy {} has no writable disk, the data is expected "
+        "to be already present on the read-only storage",
+        table_name.getFullName(),
+        policy->getName());
+
+    return false;
+}
+
 void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     try
@@ -987,6 +1017,10 @@ void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_
                 "Table engine {} doesn't support partitions",
                 storage->getName());
         }
+
+        if (!shouldRestoreTableData(table_name, storage))
+            return;
+
         storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
     }
     catch (Exception & e)
