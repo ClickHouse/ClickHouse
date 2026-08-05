@@ -219,12 +219,12 @@ For **mapped** fields that are missing on the wire:
 
 - Ordinary **non-nullable** mapped columns use the protobuf schema field default (`proto2` `[default = …]`, otherwise the type default) during parsing — not the table `DEFAULT` expression.
 - Mapped `Nullable(...)` columns resolve to `NULL` when the field is absent (they do not take the protobuf field/type default).
-- With [`input_format_protobuf_flatten_google_wrappers`](/operations/settings/settings-formats#input_format_protobuf_flatten_google_wrappers) enabled for `google.protobuf.*Value` wrappers:
+- With [`input_format_protobuf_flatten_google_wrappers`](/reference/settings/formats/input-format#input_format_protobuf_flatten_google_wrappers) enabled for `google.protobuf.*Value` wrappers:
   - an **absent** wrapper on a `Nullable(...)` column is treated as a missing outer field and becomes `NULL`;
   - a **present-but-empty** wrapper (`str {}`) keeps the nested scalar default (`''` / `0`);
   - a non-nullable column mapped to an absent wrapper gets the nested scalar default rather than `NULL`.
 
-Table `DEFAULT` (and default expressions) apply to table columns that have **no** matching field in the message type when [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats#input_format_defaults_for_omitted_fields) is enabled (the default). If that setting is `0`, unmapped columns keep the data type default inserted during parsing instead of the table `DEFAULT` expression.
+Table `DEFAULT` (and default expressions) apply to table columns that have **no** matching field in the message type when [`input_format_defaults_for_omitted_fields`](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) is enabled (the default). If that setting is `0`, unmapped columns keep the data type default inserted during parsing instead of the table `DEFAULT` expression.
 
 Example of a proto2 schema field default (used for a mapped field absent from the message):
 
