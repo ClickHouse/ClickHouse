@@ -1311,12 +1311,28 @@ try
         /// during a normal startup.
         std::exception_ptr remap_exception;
         size_t remapped_size = 0;
+#if USE_JEMALLOC
+        bool jemalloc_background_threads_were_enabled = false;
+#endif
         {
             /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
             /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
             /// thread first, so that no new record can be queued into the signal pipe from here on. Nothing is
             /// lost: the signal stays pending for the process and is delivered once the mask is restored below.
             BlockSignalsScope block_signals(asynchronousHandledSignals());
+
+#if USE_JEMALLOC
+            /// `Jemalloc::setup` in `BaseDaemon::initialize` has already started jemalloc background threads
+            /// (`jemalloc_enable_background_threads` defaults to true). They execute allocator code from the text
+            /// segment, and they were created with an unblocked signal mask, so they could also take a handled
+            /// signal inside the remap window. Writing `false` into the `background_thread` mallctl stops *and
+            /// joins* every background thread before returning, so after this call they are fully quiesced.
+            /// They are restarted below, after the remap. `max_background_threads` is a separate mallctl and is
+            /// left untouched, so re-enabling restores the configured limit.
+            if (Jemalloc::tryGetValue("background_thread", jemalloc_background_threads_were_enabled)
+                && jemalloc_background_threads_were_enabled)
+                Jemalloc::setBackgroundThreads(false);
+#endif
 
             /// Blocking the signals is not enough by itself: a signal that arrived just before the mask was set
             /// may already have written a record into the signal pipe, and the listener thread would execute the
@@ -1339,6 +1355,16 @@ try
                 remap_exception = std::current_exception();
             }
         }
+
+#if USE_JEMALLOC
+        /// Restarted outside the signal-blocking scope, so the new background threads inherit the same
+        /// (unblocked) signal mask they had before the remap. Restarted even if remapExecutable threw,
+        /// for the same reason the logging threads are: the allocator must be back in its configured
+        /// state while the exception unwinds. `verifySetup` below cross-checks the state against the
+        /// server settings, so a failure to restore would not go unnoticed.
+        if (jemalloc_background_threads_were_enabled)
+            Jemalloc::setBackgroundThreads(true);
+#endif
 
         /// Fail closed if the restart itself throws: continuing with only part of the logging threads
         /// running would keep accepting messages into queues that no consumer drains (open() tears the
