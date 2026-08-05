@@ -271,10 +271,15 @@ def main():
                 # runner may still be running `unattended-upgrades`, which holds
                 # `/var/lib/dpkg/lock-frontend`. Without a timeout `apt-get install`
                 # aborts immediately ("Could not get lock ... held by process
-                # unattended-upgr"); swallowed by the trailing `||:`, it leaves the
-                # tools uninstalled and the fail-close check below aborts the whole
-                # release. The timeout makes apt wait for the lock instead.
-                "command -v createrepo_c || (sudo apt-get update -o DPkg::Lock::Timeout=300 && sudo apt-get install -o DPkg::Lock::Timeout=300 -y createrepo-c) ||:",
+                # unattended-upgr"). The timeout makes apt wait for the lock instead.
+                #
+                # No trailing `||:`: an install failure must abort here with the
+                # actual apt error (404, lock, missing package), not be swallowed
+                # and re-surface later as the generic fail-close message below,
+                # which hides the root cause. The leading `command -v` / version
+                # `grep` still skip the install entirely when the tool is already
+                # present, so a machine that has the tools is never blocked.
+                "command -v createrepo_c || (sudo apt-get update -o DPkg::Lock::Timeout=300 && sudo apt-get install -o DPkg::Lock::Timeout=300 -y createrepo-c)",
                 # reprepro 5.4.4+ is required for the 'Limit' field in distributions config.
                 # Ubuntu Jammy only has 5.3.0, so build from source if needed.
                 "reprepro --version 2>&1 | grep -qE '5\\.[4-9]' || ("
@@ -284,21 +289,20 @@ def main():
                 "  cd /tmp/reprepro-src &&"
                 "  dpkg-buildpackage -b --no-sign &&"
                 "  sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb"
-                ") ||:",
+                ")",
             ]
-            # The installs above are best-effort (`||:`) so a local dev machine
-            # without sudo/apt is not blocked. For a real release the repo tools
-            # must be present before any mutation (tags, GitHub release, repos),
-            # so verify them here and fail closed. Skipped on dry-run (local
+            # The installs above abort the step on failure. This final check is a
+            # belt-and-suspenders post-condition: for a real release the repo tools
+            # must be present before any mutation (tags, GitHub release, repos), so
+            # verify them here and fail closed. Skipped on dry-run (local
             # convenience).
             + (
                 []
                 if args.dry_run
                 else [
-                    # Verify the *version*, not just presence: an older
-                    # distro reprepro (5.3.x) may be installed while the 5.4+
-                    # source build failed under the trailing `||:`. reprepro
-                    # 5.4+ is required (the 'Limit' distributions field).
+                    # Verify the *version*, not just presence: reprepro 5.4+ is
+                    # required (the 'Limit' distributions field), so a stale
+                    # distro reprepro (5.3.x) must not satisfy the check.
                     "command -v createrepo_c >/dev/null"
                     " && reprepro --version 2>&1 | grep -qE '5\\.[4-9]'"
                     " || { echo 'ERROR: createrepo_c and reprepro 5.4+ must be"
