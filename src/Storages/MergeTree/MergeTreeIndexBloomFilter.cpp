@@ -622,7 +622,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Match values from JSON subcolumns against an index over all serialized JSON values.
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllValues"))
+    if (auto json_info = tryMatchNodeToJSONAllValuesIndex(key_node, header))
     {
         if (function_name != "in" && function_name != "globalIn")
             return false;
@@ -632,18 +632,31 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         for (size_t row = 0; row < column->size(); ++row)
         {
             Field value = (*column)[row];
-            if (!isJSONPathFilterSafe(key_type, value))
+            DataTypePtr serialization_type = type;
+
+            const auto key_data_type = WhichDataType(key_type);
+            if (json_info->match_kind != JSONAllValuesMatchKind::StringCast
+                && !key_data_type.isDynamic() && !key_data_type.isVariant())
+            {
+                value = tryConvertJSONValueToType(value, type, key_type);
+                if (value.isNull())
+                    return false;
+
+                serialization_type = key_type;
+            }
+
+            if (!canContainNull(*key_type) && value == key_type->getDefault())
                 return false;
 
-            serialized_values->insert(serializeJSONValueAsText(value, type));
+            serialized_values->insert(serializeJSONValueAsText(value, serialization_type));
         }
 
-        const DataTypePtr & index_type = header.getByPosition(json_info->header_position).type;
+        const DataTypePtr & index_type = header.getByPosition(json_info->subcolumn.header_position).type;
         const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
         const auto & nested_type = array_type.getNestedType();
         ColumnPtr serialized_values_column = std::move(serialized_values);
         out.predicate.emplace_back(std::make_pair(
-            json_info->header_position,
+            json_info->subcolumn.header_position,
             BloomFilterHash::hashWithColumn(
                 nested_type, serialized_values_column, 0, serialized_values_column->size())));
         out.function = RPNElement::FUNCTION_IN;
@@ -934,17 +947,31 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         return true;
     }
 
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllValues"))
+    if (auto json_info = tryMatchNodeToJSONAllValuesIndex(key_node, header))
     {
         if (function_name != "equals")
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
-        if (!isJSONPathFilterSafe(key_type, value_field))
+        Field serialized_value = value_field;
+        DataTypePtr serialization_type = value_type;
+
+        const auto key_data_type = WhichDataType(key_type);
+        if (json_info->match_kind != JSONAllValuesMatchKind::StringCast
+            && !key_data_type.isDynamic() && !key_data_type.isVariant())
+        {
+            serialized_value = tryConvertJSONValueToType(value_field, value_type, key_type);
+            if (serialized_value.isNull())
+                return false;
+
+            serialization_type = key_type;
+        }
+
+        if (!canContainNull(*key_type) && serialized_value == key_type->getDefault())
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        fillJSONValueBloomPredicate(*json_info, header, value_field, value_type, out);
+        fillJSONValueBloomPredicate(json_info->subcolumn, header, serialized_value, serialization_type, out);
         return true;
     }
 

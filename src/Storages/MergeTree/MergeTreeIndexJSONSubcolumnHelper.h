@@ -18,6 +18,19 @@ struct JSONSubcolumnIndexInfo
     size_t header_position;        /// position of JSONAllPaths column in the index header
 };
 
+enum class JSONAllValuesMatchKind : uint8_t
+{
+    Direct,
+    IdentityCast,
+    StringCast,
+};
+
+struct JSONAllValuesIndexInfo
+{
+    JSONSubcolumnIndexInfo subcolumn;
+    JSONAllValuesMatchKind match_kind;
+};
+
 /// Try to match a column name from the filter DAG to a JSON index column in the header.
 /// Iterates all dot positions in `column_name` to handle JSON columns whose names contain dots
 /// (e.g., `my.json` JSON or `t Tuple(json JSON)` with index on `JSONAllPaths(t.json)`).
@@ -55,6 +68,18 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const Names & index_columns,
     const String & json_function_name);
 
+/// Match a JSON subcolumn against a `JSONAllValues` index without accepting casts that can change
+/// the indexed representation. A cast to `String` is safe because `JSONAllValues` uses the same
+/// text representation for JSON values.
+std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
+    const RPNBuilderTreeNode & node,
+    const Block & header);
+
+/// Overload that works with a list of index column names instead of a `Block`.
+std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
+    const RPNBuilderTreeNode & node,
+    const Names & index_columns);
+
 /// Check if a JSON path filter is safe to use for index skipping.
 /// When a JSON path is absent in a granule, the expression evaluates to:
 ///   - NULL if the type is Dynamic or Nullable (always safe — comparisons with NULL are false)
@@ -66,6 +91,13 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field);
+
+/// Convert a value to the type whose text representation is stored by `JSONAllValues`.
+/// The source type is required for domain-specific conversions such as `Date` to `DateTime`.
+Field tryConvertJSONValueToType(
+    const Field & value,
+    const DataTypePtr & source_type,
+    const DataTypePtr & target_type);
 
 /// Convert a value to the text representation stored by `JSONAllValues`.
 String serializeJSONValueAsText(const Field & value, const DataTypePtr & type);

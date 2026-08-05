@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/WriteBufferFromString.h>
@@ -100,6 +101,49 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     return json_info;
 }
 
+std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
+    const RPNBuilderTreeNode & node,
+    const Block & header)
+{
+    return tryMatchNodeToJSONAllValuesIndex(node, header.getNames());
+}
+
+std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
+    const RPNBuilderTreeNode & node,
+    const Names & index_columns)
+{
+    if (node.isFunction())
+    {
+        auto function = node.toFunctionNode();
+        const auto function_name = function.getFunctionName();
+        if ((function_name == "CAST" || function_name == "_CAST") && function.getArgumentsSize() == 2)
+        {
+            auto argument = function.getArgumentAt(0);
+            auto json_info = tryMatchJSONSubcolumnToIndex(argument.getColumnName(), index_columns, "JSONAllValues");
+            if (!json_info)
+                return std::nullopt;
+
+            const auto * node_dag = node.getDAGNode();
+            const auto * argument_dag = argument.getDAGNode();
+            if (!node_dag || !argument_dag)
+                return std::nullopt;
+
+            if (node_dag->result_type->equals(*argument_dag->result_type))
+                return JSONAllValuesIndexInfo{std::move(*json_info), JSONAllValuesMatchKind::IdentityCast};
+
+            if (node_dag->result_type->getTypeId() == TypeIndex::String)
+                return JSONAllValuesIndexInfo{std::move(*json_info), JSONAllValuesMatchKind::StringCast};
+
+            return std::nullopt;
+        }
+    }
+
+    if (auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, "JSONAllValues"))
+        return JSONAllValuesIndexInfo{std::move(*json_info), JSONAllValuesMatchKind::Direct};
+
+    return std::nullopt;
+}
+
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field)
@@ -117,6 +161,35 @@ bool isJSONPathFilterSafe(
         return false;
 
     return true;
+}
+
+Field tryConvertJSONValueToType(
+    const Field & value,
+    const DataTypePtr & source_type,
+    const DataTypePtr & target_type)
+{
+    const auto * source_array = typeid_cast<const DataTypeArray *>(source_type.get());
+    const auto * target_array = typeid_cast<const DataTypeArray *>(target_type.get());
+    if (source_array && target_array && value.getType() == Field::Types::Array)
+    {
+        const auto & source_values = value.safeGet<Array>();
+        Array converted_values;
+        converted_values.reserve(source_values.size());
+
+        for (const auto & source_value : source_values)
+        {
+            auto converted_value = tryConvertJSONValueToType(
+                source_value, source_array->getNestedType(), target_array->getNestedType());
+            if (converted_value.isNull() && !canContainNull(*target_array->getNestedType()))
+                return {};
+
+            converted_values.emplace_back(std::move(converted_value));
+        }
+
+        return converted_values;
+    }
+
+    return tryConvertFieldToType(value, *target_type, source_type.get());
 }
 
 String serializeJSONValueAsText(const Field & value, const DataTypePtr & type)

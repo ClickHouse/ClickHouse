@@ -15,7 +15,7 @@ function create_table()
         CREATE TABLE json_values_bloom
         (
             id UInt32,
-            data JSON,
+            data JSON(num Int64, tags Array(String)),
             INDEX json_idx JSONAllValues(data) TYPE ${index_type} GRANULARITY 1
         )
         ENGINE = MergeTree
