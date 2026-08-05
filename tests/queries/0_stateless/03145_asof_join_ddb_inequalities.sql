@@ -11,7 +11,7 @@ CREATE TABLE events0 (
 ) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO events0 SELECT toDateTime('2023-03-21 13:00:00', 'UTC') + INTERVAL number HOUR, number FROM numbers(4);
-INSERT INTO events0 VALUES (NULL, -10),('0000-01-01 00:00:00', -1), ('9999-12-31 23:59:59', 9);
+INSERT INTO events0 VALUES (NULL, -10),('1970-01-01 00:00:00', -1), ('9999-12-31 23:59:59', 9);
 
 CREATE TABLE probe0 (
     begin Nullable(DateTime('UTC'))
