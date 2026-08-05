@@ -8,8 +8,14 @@ ipv4 has index  	4
 ipv4 has noindex	4
 absent int default index  	8
 absent int default noindex	8
-missing typed default index  	8
-missing typed default noindex	8
+missing typed default index  	4
+missing typed default noindex	4
+missing string default index  	4
+missing string default noindex	4
+missing string in index  	4
+missing string in noindex	4
+missing string tokens index  	4
+missing string tokens noindex	4
 absent datetime default index  	8
 absent datetime default noindex	8
 absent int non-default index  	0
@@ -26,15 +32,14 @@ dynamic string index  	4
 dynamic string noindex	4
 string cast index  	4
 string cast noindex	4
-Parts: 1 | Granules: 1
 Description: text GRANULARITY 100000000
 Condition: (mode: All; tokens: ["1", "2", "3", "4"])
 Granules: 1/3
-Parts: 1 | Granules: 1
 Granules: 1/3
-Parts: 1 | Granules: 1
 Granules: 1/3
-Parts: 1 | Granules: 1
 Granules: 1/3
-narrowing cast indexes	0
+typed default pruned indexes	1
+typed string default pruned indexes	1
+typed string in pruned indexes	1
+typed string tokens pruned indexes	1
 has default indexes	1

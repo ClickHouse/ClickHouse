@@ -3,6 +3,7 @@
 -- index probe. Every query below must return the same count with and without the skip index.
 
 SET allow_experimental_full_text_index = 1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_json_all_values_coercion;
 
@@ -20,7 +21,7 @@ INSERT INTO t_json_all_values_coercion
 SELECT '{"ip":"1.2.3.4","ips":["1.2.3.4"],"ts":"2026-01-01 00:00:00","x":256,"dynamic_x":256}'
 FROM numbers(4);
 INSERT INTO t_json_all_values_coercion
-SELECT '{"ip":"8.8.8.8","ips":["8.8.8.8"],"ts":"2020-05-05 10:00:00","x":1,"dynamic_x":1}'
+SELECT '{"ip":"8.8.8.8","ips":["8.8.8.8"],"missing":1,"ts":"2020-05-05 10:00:00","x":1,"dynamic_x":1}'
 FROM numbers(4);
 
 -- The index holds "1.2.3.4"; probing the literal as written would look for "16909060".
@@ -38,13 +39,23 @@ SELECT 'ipv4 array noindex', count() FROM t_json_all_values_coercion WHERE data.
 SELECT 'ipv4 has index  ', count() FROM t_json_all_values_coercion WHERE has(data.ips, toUInt32(16909060));
 SELECT 'ipv4 has noindex', count() FROM t_json_all_values_coercion WHERE has(data.ips, toUInt32(16909060)) SETTINGS use_skip_indexes = 0;
 
--- An absent path reads as the key expression type's default value, which the index never recorded,
--- so a predicate that the default value satisfies matches every row and must not prune.
+-- A cast of an absent dynamic path can produce a default value that `JSONAllValues` did not record,
+-- so non-identity casts of dynamic paths do not use the index.
 SELECT 'absent int default index  ', count() FROM t_json_all_values_coercion WHERE data.absent::Int64 = 0;
 SELECT 'absent int default noindex', count() FROM t_json_all_values_coercion WHERE data.absent::Int64 = 0 SETTINGS use_skip_indexes = 0;
 
+-- Statically typed paths are different: `JSONAllValues` emits their materialized default values.
 SELECT 'missing typed default index  ', count() FROM t_json_all_values_coercion WHERE data.missing = 0;
 SELECT 'missing typed default noindex', count() FROM t_json_all_values_coercion WHERE data.missing = 0 SETTINGS use_skip_indexes = 0;
+
+SELECT 'missing string default index  ', count() FROM t_json_all_values_coercion WHERE data.missing::String = '0';
+SELECT 'missing string default noindex', count() FROM t_json_all_values_coercion WHERE data.missing::String = '0' SETTINGS use_skip_indexes = 0;
+
+SELECT 'missing string in index  ', count() FROM t_json_all_values_coercion WHERE data.missing::String IN ('0');
+SELECT 'missing string in noindex', count() FROM t_json_all_values_coercion WHERE data.missing::String IN ('0') SETTINGS use_skip_indexes = 0;
+
+SELECT 'missing string tokens index  ', count() FROM t_json_all_values_coercion WHERE hasAllTokens(data.missing::String, '0');
+SELECT 'missing string tokens noindex', count() FROM t_json_all_values_coercion WHERE hasAllTokens(data.missing::String, '0') SETTINGS use_skip_indexes = 0;
 
 SELECT 'absent datetime default index  ', count() FROM t_json_all_values_coercion WHERE data.absent::DateTime = toDateTime(0);
 SELECT 'absent datetime default noindex', count() FROM t_json_all_values_coercion WHERE data.absent::DateTime = toDateTime(0) SETTINGS use_skip_indexes = 0;
@@ -69,7 +80,7 @@ SELECT 'identity cast noindex', count() FROM t_json_all_values_coercion WHERE da
 
 -- A dynamic path has no single stored type, so the literal's own type is still used for the probe.
 INSERT INTO t_json_all_values_coercion
-SELECT '{"ip":"9.9.9.9","ips":["9.9.9.9"],"ts":"2021-02-02 02:02:02","x":9,"dynamic_x":9,"tag":"needle"}'
+SELECT '{"ip":"9.9.9.9","ips":["9.9.9.9"],"missing":9,"ts":"2021-02-02 02:02:02","x":9,"dynamic_x":9,"tag":"needle"}'
 FROM numbers(4);
 
 SELECT 'dynamic string index  ', count() FROM t_json_all_values_coercion WHERE data.tag = 'needle';
@@ -96,12 +107,23 @@ SELECT trim(explain) FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_json_all_values_coercion WHERE data.tag::String = 'needle'
 ) WHERE explain LIKE '%Granules:%';
 
-SELECT 'narrowing cast indexes', count() FROM (
-    EXPLAIN indexes = 1 SELECT count() FROM t_json_all_values_coercion WHERE data.x::UInt8 = 0
-) WHERE explain LIKE '%Name: idx_values%';
+SELECT 'typed default pruned indexes', count() FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_json_all_values_coercion WHERE data.missing = 0
+) WHERE explain LIKE '%Granules: 1/3%';
 
--- The default-value restriction applies to equality on a missing path, not to `has`, because
--- `has` on a missing array is false for every searched element.
+SELECT 'typed string default pruned indexes', count() FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_json_all_values_coercion WHERE data.missing::String = '0'
+) WHERE explain LIKE '%Granules: 1/3%';
+
+SELECT 'typed string in pruned indexes', count() FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_json_all_values_coercion WHERE data.missing::String IN ('0')
+) WHERE explain LIKE '%Granules: 1/3%';
+
+SELECT 'typed string tokens pruned indexes', count() FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_json_all_values_coercion WHERE hasAllTokens(data.missing::String, '0')
+) WHERE explain LIKE '%Granules: 1/3%';
+
+-- `has` on a missing array is false for every searched element, so the default element value is safe.
 SELECT 'has default indexes', count() FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_json_all_values_coercion WHERE has(data.ips, toUInt32(0))
 ) WHERE explain LIKE '%Name: idx_values%';

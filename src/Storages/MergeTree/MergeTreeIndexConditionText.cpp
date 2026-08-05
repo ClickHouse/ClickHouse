@@ -1016,14 +1016,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
                     value_field = std::move(converted_value);
                     serialization_type = std::move(target_type);
-
-                    /// A missing non-nullable JSON path evaluates to the type's default value, but
-                    /// `JSONAllValues` does not store a value for that path. The index cannot prove
-                    /// that a comparison with the default value is false.
-                    if (function_name == "equals"
-                        && !canContainNull(*serialization_type)
-                        && value_field == serialization_type->getDefault())
-                        return false;
                 }
             }
 
