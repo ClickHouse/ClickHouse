@@ -6,11 +6,11 @@ jobs, so its first attempt that actually runs anything is 2, and a selector keye
 ``attempt == 1`` can never see it. The invariant is "exactly one attempt executed":
 attempt 1 for a same-repo run, attempt 2 behind an approval gate.
 
-The step is read as text (like ``test_create_release.py``) so no YAML parser is needed,
-and the behavioural test feeds the step's own ``--jq`` expression to real ``jq``, so the
-listing filter is covered as well as the per-run probe -- but ``jq`` is absent from the
-CI Tests image, so in CI only the static assertions execute and they are what must pin
-the step's semantics.
+The step is read as text (like ``test_create_release.py``) so no YAML parser is needed.
+The listing filter's coverage is static (its three ``jq`` stages are pinned by exact
+equality); the ``jq``-gated behavioural rows cover eligibility and rerun. ``jq`` is absent
+from the CI Tests image, so in CI only the static assertions execute and they are what
+must pin the step's semantics.
 """
 
 import datetime
@@ -46,18 +46,21 @@ REJECT_COND = 'if [ "$attempt1_conclusion" != "action_required" ]; then'
 # looks for, and each forges run_id, run_attempt or attempt1_conclusion -- either removing
 # the never-retried invariant or making the gate inert. A closed whitelist of the region's
 # commands refuses every such form, including the ones no regex can name.
+# The listing command is matched as a PATTERN: its semantics are pinned by the stage-equality
+# assert and by the `--json ... attempt` assert above, so re-pinning its flag spelling here
+# only refuses harmless edits (`--limit`, field order, flag order).
+LISTING_RE = re.compile(r"^run_entries=\$\(gh run list .*\)$")
+# One simple `echo`: no separator (`;` `&` `|`), no grouping or substitution. Such a line
+# cannot assign to the shell, so dropping it admits a log line without admitting an
+# assignment. Narrowing this pattern can only cause a false refusal, never a false accept.
+ECHO_RE = re.compile(r"^echo (?:[^;&|(){}`]*)$")
 EXPECTED_DATA_PATH = [
-    'run_entries=$(gh run list --repo "$GH_REPO" --workflow pull_request.yml '
-    "--status failure --limit 50 --json databaseId,attempt,createdAt "
-    '--jq ".[] | select(.attempt <= 2 and .createdAt >= \\"$cutoff\\") '
-    '| \\"\\(.databaseId):\\(.attempt)\\"")',
+    "<LISTING>",
     'if [ -z "$run_entries" ]; then',
-    'echo "No recent failed runs found."',
     "exit 0",
     "fi",
     "for run_entry in $run_entries; do",
     'if [ "$rerun_count" -ge "$MAX_RERUNS" ]; then',
-    'echo "Reached maximum of $MAX_RERUNS reruns, stopping."',
     "break",
     "fi",
     'run_id="${run_entry%%:*}"',
@@ -121,19 +124,6 @@ def _retry_step():
     # A silently empty extraction would make every assertion below vacuous.
     assert "MAX_RERUNS" in step and "gh run list" in step, step
     return step
-
-
-def _listing_select_conjuncts(step):
-    """The conjuncts of the ``gh run list --jq`` listing filter's ``select()``.
-
-    Anchored to that invocation: the step has nine ``select(`` occurrences and only the
-    first belongs to the listing filter.
-    """
-    assert "gh run list" in step, step
-    invocation = step.split("gh run list", 1)[1].split("\n\n", 1)[0]
-    m = re.search(r"select\((.*?)\)", invocation)
-    assert m, invocation
-    return {c.strip() for c in m.group(1).split(" and ")}
 
 
 def _listing_jq(step):
@@ -209,8 +199,11 @@ def _data_path_commands(step):
     body = []
     for l in joined.splitlines():
         s = " ".join(l.split())
-        if s and not s.startswith("#"):
-            body.append(s)
+        if not s or s.startswith("#"):
+            continue
+        if ECHO_RE.match(s):
+            continue
+        body.append("<LISTING>" if LISTING_RE.match(s) else s)
     return body
 
 
