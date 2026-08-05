@@ -256,7 +256,6 @@ public:
     void insertManyDefaults(size_t length) override
     {
         /// Only the offsets grow: a default string appends no characters.
-        /// Only the offsets grow: a default string appends no characters.
         const auto last = offsets.back(); /// By value: resize_fill may reallocate.
         offsets.resize_fill(offsets.size() + length, last);
     }

@@ -34,13 +34,13 @@ Int64 peakOf(F && body)
         CurrentThread::flushUntrackedMemory();
         CurrentThread::get().untracked_memory_limit = prev_untracked_limit;
         thread_tracker.setParent(prev_parent);
-        thread_tracker.resetCounters();
     });
 
     /// Without this the offsets' reallocations are batched below the 4 MiB default and never reach the tracker.
+    /// The thread tracker's own counters are deliberately not reset: the peak is read from `scope_tracker`, and
+    /// zeroing them here would leave the amount negative once the caller frees the column (Thread does not saturate).
     CurrentThread::get().untracked_memory_limit = 1;
     thread_tracker.setParent(&scope_tracker);
-    thread_tracker.resetCounters();
 
     body();
 
