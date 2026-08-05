@@ -580,15 +580,19 @@ TEST(ColumnObject, HashSharedDataNothingEntry)
     /// The hash must match hashing the path together with ColumnVariant::NULL_DISCRIMINATOR directly,
     /// i.e. the same null handling ColumnDynamic::updateHashWithValue performs for a NULL value,
     /// rather than hashing a type name and attempting to deserialize a value that doesn't exist.
+    /// SipHash::get128 finalizes and mutates internal state, so it must only be called once per
+    /// instance (see the ATTENTION note on SipHash::get128) - capture the result instead of calling
+    /// it again below.
     SipHash expected;
     expected.update(std::string_view("g"));
     expected.update(ColumnVariant::NULL_DISCRIMINATOR);
-    ASSERT_EQ(expected.get128(), actual.get128());
+    auto actual_hash = actual.get128();
+    ASSERT_EQ(expected.get128(), actual_hash);
 
     /// Hashing must be deterministic across repeated calls.
     SipHash actual_again;
     object.updateHashWithValue(0, actual_again);
-    ASSERT_EQ(actual.get128(), actual_again.get128());
+    ASSERT_EQ(actual_hash, actual_again.get128());
 }
 
 TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
