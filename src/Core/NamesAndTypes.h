@@ -112,11 +112,11 @@ public:
     template <typename Iterator>
     NamesAndTypesList(Iterator begin, Iterator end) : ListWithMemoryTracking<NameAndTypePair>(begin, end) {}
 
-    void readText(ReadBuffer & buf, bool check_eof = true);
-    /// When use_column_ids is true, columns that have a non-empty
-    /// column_id write that id instead of the logical name.  This is
-    /// used when persisting columns.txt for MergeTree parts so that the
-    /// on-disk file contains stable column IDs that survive renames.
+    static constexpr UInt64 FORMAT_VERSION_WITH_NAMES = 1;
+    static constexpr UInt64 FORMAT_VERSION_WITH_COLUMN_IDS = 2;
+
+    /// Returns the format version read, so the caller can check it against its own state.
+    UInt64 readText(ReadBuffer & buf, bool check_eof = true);
     void writeText(WriteBuffer & buf, bool use_column_ids = false) const;
 
     String toString() const;

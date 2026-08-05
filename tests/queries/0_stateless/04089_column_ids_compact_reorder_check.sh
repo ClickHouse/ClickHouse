@@ -55,7 +55,7 @@ import sys
 path = sys.argv[1]
 with open(path) as f:
     lines = f.readlines()
-# lines[0]: "columns format version: 1", lines[1]: "N columns:", then one line per column.
+# lines[0]: "columns format version: N", lines[1]: "N columns:", then one line per column.
 body = lines[2:]
 assert len(body) == 3, body
 body[1], body[2] = body[2], body[1]

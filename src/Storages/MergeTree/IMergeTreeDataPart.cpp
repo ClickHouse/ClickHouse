@@ -2477,7 +2477,15 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
     if (auto in = readFileIfExists("columns.txt"))
     {
-        loaded_columns.readText(*in);
+        const auto columns_format_version = loaded_columns.readText(*in);
+
+        /// The IDs in the name slot resolve to nothing without the mapping, so the columns would
+        /// silently read as defaults under names like `1`.
+        if (columns_format_version == NamesAndTypesList::FORMAT_VERSION_WITH_COLUMN_IDS && !column_id_mapping)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Part {} was written under column IDs (columns.txt format version {}) but table {} has no active "
+                "column-ID mapping. The part belongs to another table, or the table's `column_ids.json` is gone.",
+                name, columns_format_version, storage.getStorageID().getNameForLogs());
 
         for (auto & column : loaded_columns)
             setVersionToAggregateFunctions(column.type, true);

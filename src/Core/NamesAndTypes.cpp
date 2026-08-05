@@ -14,6 +14,7 @@
 #include <IO/Operators.h>
 
 #include <boost/algorithm/string.hpp>
+#include <algorithm>
 #include <cstddef>
 
 namespace DB
@@ -22,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 NameAndTypePair::NameAndTypePair(
@@ -107,11 +109,19 @@ void NameAndTypePair::setDelimiterAndTypeInStorage(const String & name_in_storag
     type_in_storage = type_in_storage_;
 }
 
-void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
+/// Under `FORMAT_VERSION_WITH_COLUMN_IDS` a name slot holds a column ID, not the logical name.
+UInt64 NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    assertString("columns format version: 1\n", buf);
+    assertString("columns format version: ", buf);
+    UInt64 format_version = 0;
+    DB::readText(format_version, buf);
+    assertChar('\n', buf);
+
+    if (format_version != FORMAT_VERSION_WITH_NAMES && format_version != FORMAT_VERSION_WITH_COLUMN_IDS)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown columns format version: {}", format_version);
+
     size_t count = 0;
     DB::readText(count, buf);
     assertString(" columns:\n", buf);
@@ -130,16 +140,25 @@ void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
 
     if (check_eof)
         assertEOF(buf);
+
+    return format_version;
 }
 
 void NamesAndTypesList::writeText(WriteBuffer & buf, bool use_column_ids) const
 {
-    writeString("columns format version: 1\n", buf);
+    /// `use_column_ids` only permits the substitution; the version declares whether any column
+    /// actually took it, so the header cannot disagree with the tokens below it.
+    const auto substitutes_id = [&](const NameAndTypePair & column) { return use_column_ids && !column.column_id.empty(); };
+    const bool any_id_substituted = std::any_of(begin(), end(), substitutes_id);
+
+    writeString("columns format version: ", buf);
+    DB::writeText(any_id_substituted ? FORMAT_VERSION_WITH_COLUMN_IDS : FORMAT_VERSION_WITH_NAMES, buf);
+    writeChar('\n', buf);
     DB::writeText(size(), buf);
     writeString(" columns:\n", buf);
     for (const auto & it : *this)
     {
-        const auto & col_name = (use_column_ids && !it.column_id.empty()) ? it.column_id.value() : it.name;
+        const auto & col_name = substitutes_id(it) ? it.column_id.value() : it.name;
         writeBackQuotedString(col_name, buf);
         writeChar(' ', buf);
         writeString(it.type->getName(), buf);

@@ -1,15 +1,16 @@
-error_mentions_mapping
-error_mentions_table
-error_mentions_column
-error_mentions_file
-1	x	1.5
-refused_naming_column_ids_json
+incomplete_mapping_refused
+absent_mapping_refused
 table_loaded_after_fileless_attach=0
-1	x	0
-2	y	9.9
 flip_requires_experimental_flag
 1	x
 mapping_created_by_settings_flip
-1	def
-2	y
-b	1
+column-ids part: columns format version: 2
+ids part slots own streams
+plain part: columns format version: 1
+refused_column_ids_part
+rows after refusal: 1
+proj_columns_txt_uses_column_id
+parent part: columns format version: 2
+projection part: columns format version: 2
+1
+7	10

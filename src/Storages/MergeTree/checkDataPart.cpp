@@ -262,6 +262,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 column_id = col.name;
             else if (auto id = column_id_mapping->tryGetColumnId(col.name))
                 column_id = id->value();
+            else if (expected_types.contains(col.name))
+                /// A projection's synthetic aggregates are absent from the table's mapping by
+                /// design, so they stay name-keyed -- as everywhere else an ID is unavailable.
+                column_id = col.name;
             else
             {
                 UInt64 numeric_id = 0;
@@ -291,8 +295,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     it->second->getName(), col.type->getName());
         }
 
-        /// The compact ordinal-consistency check needs loaded serializations, so it runs
-        /// below -- see `checkCompactColumnIdSubstreamPositions`.
+        /// Slots cannot be compared by name here -- `columns_substreams` keeps the write-time
+        /// name, so rename history would false-positive. The ordinal-consistency check resolves
+        /// by ID instead, and needs loaded serializations: see `checkCompactColumnIdSubstreamPositions`.
     }
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
