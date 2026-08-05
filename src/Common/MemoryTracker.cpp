@@ -662,7 +662,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
           */
         if (unlikely(new_amount < 0))
         {
-            amount.fetch_sub(new_amount);
+            amount.fetch_sub(new_amount, std::memory_order_relaxed);
             accounted_size += new_amount;
         }
     }
