@@ -499,7 +499,22 @@ bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const
     /// predicate but does not apply the mutations (apply_mutations_on_fly = 0) would wrongly skip
     /// them. The read path already bypasses the cache in this case; this keeps the write path
     /// symmetric.
-    return !info->mutation_steps.empty() || !info->patch_parts.empty();
+    ///
+    /// Only filters that vary between queries count. A materialized lightweight delete does not:
+    /// `_row_exists` is committed part data, so every query reading the part sees the same rows.
+    /// Its step lands in `mutation_steps` too, hence the checks below instead of testing that list.
+    /// (`apply_deleted_mask = 0` is the exception and skips the cache entirely, see
+    /// MergeTreeReaderSettings::createFromContext.)
+    if (!info->patch_parts.empty())
+        return true;
+
+    /// Not `alter_conversions->hasMutations()`: a pending mutation that touches no column this
+    /// query reads produces no step and rewrites nothing the query observes.
+    if (info->has_on_fly_mutation_steps)
+        return true;
+
+    /// An unmaterialized lightweight delete is applied from the mutations snapshot at read time.
+    return info->alter_conversions && info->alter_conversions->hasLightweightDelete();
 }
 
 }
