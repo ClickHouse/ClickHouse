@@ -104,9 +104,8 @@ void SpillableMemoryWriteBuffer::spillImpl()
     for (const auto & range : chunk_list)
         spill_config->checker.dealloc(range.size());
 
-    /// Drop the written chunks; their memory is reclaimed by ~MemoryWriteBuffer.
-    chunk_list.clear();
-    chunk_tail = chunk_list.before_begin();
+    /// Free the spilled chunks instead of only dropping their handles.
+    freeChunks();
 }
 
 void SpillableMemoryWriteBuffer::finalizeImpl()
@@ -126,8 +125,7 @@ void SpillableMemoryWriteBuffer::cancelImpl() noexcept
             spill_config->checker.dealloc(range.size());
     }
 
-    chunk_list.clear();
-    chunk_tail = chunk_list.before_begin();
+    freeChunks();
 }
 
 std::unique_ptr<ReadBuffer> SpillableMemoryWriteBuffer::getReadBufferImpl()
