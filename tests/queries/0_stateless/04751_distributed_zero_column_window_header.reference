@@ -13,10 +13,16 @@
 2
 2
 2
+2
+2
+2
+2
 --- const projection through a stored view
 2
 2
 --- plain table, no constant anywhere
+2
+2
 2
 2
 2
@@ -42,6 +48,8 @@
 2
 1
 1
+2
+2
 --- controls: unchanged shapes
 2
 2

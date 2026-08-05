@@ -14,6 +14,10 @@ SELECT count(*) OVER () FROM cluster('test_cluster_two_shards_localhost', view(S
 SELECT count(*) OVER () FROM cluster('test_cluster_two_shards_localhost', view(SELECT [1, 2] AS c0));
 SELECT count(*) OVER () FROM cluster('test_cluster_two_shards_localhost', view(SELECT (1, 'a') AS c0));
 SELECT count(*) OVER () FROM cluster('test_cluster_two_shards_localhost', view(SELECT toDecimal64(1.5, 2) AS c0));
+SELECT count(*) OVER () FROM remote('127.0.0.{1,2}', view(SELECT 'r' AS c0));
+-- clusterAllReplicas discards duplicate host:port pairs, so a cluster whose two shards are both
+-- 127.0.0.1 would collapse into one and read a single row on either side of this fix.
+SELECT count(*) OVER () FROM clusterAllReplicas('test_cluster_two_shards', view(SELECT 'r' AS c0));
 
 SELECT '--- const projection through a stored view';
 DROP VIEW IF EXISTS v_const;
@@ -27,6 +31,7 @@ DROP TABLE IF EXISTS d_plain;
 CREATE TABLE d_plain AS t_plain ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), 't_plain');
 SELECT count(*) OVER () FROM d_plain;
 SELECT count(*) OVER () FROM d_plain SETTINGS serialize_query_plan = 1;
+SELECT count(*) OVER () FROM remote('127.0.0.{1,2}', currentDatabase(), 't_plain');
 
 SELECT '--- the column read to count rows differs between the two sides';
 -- The initiator plans against a StorageDummy, which reports no column sizes and therefore ranks
@@ -57,6 +62,7 @@ SELECT '--- a user alias that spells an internal column identifier';
 SELECT count(*) OVER () AS `__table1.k` FROM d_plain;
 SELECT count(*) OVER () AS `__table1.k` FROM t_plain;
 SELECT 1 AS `__table1.k` FROM t_plain;
+SELECT count(*) OVER () AS `__row_count_marker` FROM d_plain;
 
 SELECT '--- controls: unchanged shapes';
 SELECT count(*) OVER () FROM d_plain SETTINGS prefer_localhost_replica = 1;
