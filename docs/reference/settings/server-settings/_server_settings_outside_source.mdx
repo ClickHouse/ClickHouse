@@ -130,6 +130,8 @@ bcrypt's computational overhead at higher work factors.
 </Warning>
 
 ## table_engines_require_grant {#table_engines_require_grant}
+<CloudNotSupportedBadge/>
+
 If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
 
 - **Default:** `false`
@@ -1807,6 +1809,10 @@ Settings for optional improvements in the access control system.
 | `table_engines_require_grant` | Sets whether creating a table with a specific table engine requires a grant.                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
 | `throw_on_unmatched_row_policies` | Sets whether reading from a table should throw an exception if the table has row policies, but none of them are for the current user | `false` |
 | `users_without_row_policies_can_read_rows` | Sets whether users without permissive row policies can still read rows using a `SELECT` query. For example, if there are two users A and B and a row policy is defined only for A, then if this setting is true, user B will see all rows. If this setting is false, user B will see no rows.                                                                                                                                                                                                                    | `true`  |
+
+<Note>
+The `table_engines_require_grant` setting is not supported in ClickHouse Cloud.
+</Note>
 
 Example:
 

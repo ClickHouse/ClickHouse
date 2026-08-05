@@ -507,6 +507,18 @@ def main():
         manual_server_sections_by_name = {
             section.name: section for section in manual_server_sections
         }
+        table_engines_section = manual_server_sections_by_name[
+            "table_engines_require_grant"
+        ]
+        assert "<CloudNotSupportedBadge/>" in table_engines_section.markdown
+        assert mod._component_imports_for_page(
+            "",
+            table_engines_section.markdown,
+            server_family["detail_component_imports"],
+        ) == [
+            'import { CloudNotSupportedBadge } from '
+            '"/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";'
+        ]
         expected_manual_server_defaults = {
             "allow_implicit_no_password": "true",
             "allow_no_password": "true",
