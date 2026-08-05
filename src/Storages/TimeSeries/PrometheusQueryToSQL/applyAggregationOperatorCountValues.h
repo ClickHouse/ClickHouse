@@ -16,6 +16,6 @@ inline bool isAggregationOperatorCountValues(std::string_view operator_name)
 
 /// Applies the `count_values` aggregation operator.
 SQLQueryPiece applyAggregationOperatorCountValues(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

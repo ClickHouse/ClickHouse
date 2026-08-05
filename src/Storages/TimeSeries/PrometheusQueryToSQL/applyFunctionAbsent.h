@@ -15,6 +15,6 @@ inline bool isFunctionAbsent(std::string_view function_name)
 }
 
 /// Applies the PromQL function `absent`.
-SQLQueryPiece applyFunctionAbsent(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

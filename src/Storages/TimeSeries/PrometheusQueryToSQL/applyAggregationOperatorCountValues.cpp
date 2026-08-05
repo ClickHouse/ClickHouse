@@ -35,7 +35,7 @@ constexpr const char * COUNT_PAIRS = "count_pairs";
 constexpr const char * COUNTS = "counts";
 
 void checkArgumentTypes(
-    const PQT::AggregationOperator * operator_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
 {
     const auto & operator_name = operator_node->operator_name;
 
@@ -83,7 +83,7 @@ ASTPtr setValueLabel(ASTPtr group, const String & label_name)
         make_intrusive<ASTIdentifier>(LABEL_VALUE));
 }
 
-ASTPtr transformGroup(const PQT::AggregationOperator * operator_node, ASTPtr group, const String & label_name, bool & metric_name_dropped)
+ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_node, ASTPtr group, const String & label_name, bool & metric_name_dropped)
 {
     if (operator_node->without)
     {
@@ -114,7 +114,7 @@ ASTPtr transformGroup(const PQT::AggregationOperator * operator_node, ASTPtr gro
 
 
 SQLQueryPiece applyAggregationOperatorCountValues(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(operator_node, arguments, context);
 
@@ -125,7 +125,7 @@ SQLQueryPiece applyAggregationOperatorCountValues(
             ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
             "Aggregation operator 'count_values' expects its first argument to be a string literal");
     }
-    const auto * label_node = static_cast<const PQT::StringLiteral *>(label_argument_node);
+    const auto * label_node = static_cast<const PrometheusQueryTree::StringLiteral *>(label_argument_node);
     const String & label_name = label_node->string;
     if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
     {

@@ -25,18 +25,18 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-const PQT::InstantSelector * peelToInstantSelector(const Node * node)
+const PrometheusQueryTree::InstantSelector * peelToInstantSelector(const Node * node)
 {
     while (node->node_type == NodeType::Offset)
-        node = static_cast<const PQT::Offset *>(node)->getExpression();
+        node = static_cast<const PrometheusQueryTree::Offset *>(node)->getExpression();
 
     if (node->node_type == NodeType::InstantSelector)
-        return static_cast<const PQT::InstantSelector *>(node);
+        return static_cast<const PrometheusQueryTree::InstantSelector *>(node);
 
     return nullptr;
 }
 
-ASTPtr makeInferredLabelsMap(const PQT::Function * function_node)
+ASTPtr makeInferredLabelsMap(const PrometheusQueryTree::Function * function_node)
 {
     std::map<String, String> labels;
     /// This set deliberately stays monotonic, matching Prometheus's historic `has` map:
@@ -52,7 +52,7 @@ ASTPtr makeInferredLabelsMap(const PQT::Function * function_node)
             if (matcher.label_name == kMetricName)
                 continue;
 
-            if (matcher.matcher_type == PQT::MatcherType::EQ && !labels_with_equality_matcher.contains(matcher.label_name))
+            if (matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ && !labels_with_equality_matcher.contains(matcher.label_name))
             {
                 labels_with_equality_matcher.insert(matcher.label_name);
                 if (!matcher.label_value.empty())
@@ -82,7 +82,7 @@ ASTPtr makeInferredLabelsMap(const PQT::Function * function_node)
 }
 
 
-SQLQueryPiece applyFunctionAbsent(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     if (arguments.size() != 1)
     {
