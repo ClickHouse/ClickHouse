@@ -122,6 +122,27 @@ def main():
             "Content after the badge.\n"
         )
 
+        migrated_snippet, _ = migrate.transform_imports(
+            f'import {badge} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
+            f"<{badge} />\n\n"
+            "Content after the badge.\n",
+            migrate.Lookups(),
+            [],
+        )
+        assert migrated_snippet == (
+            f'import {{ {badge} }} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
+            f"<{badge} />\n\n"
+            "Content after the badge.\n"
+        )
+        remigrated_snippet, _ = migrate.transform_imports(
+            migrated_snippet,
+            migrate.Lookups(),
+            [],
+        )
+        assert remigrated_snippet == migrated_snippet
+
     migrated_namespace, _ = migrate.transform_imports(
         "import * as BadgeNS from '@theme/badges/CloudNotSupportedBadge';\n\n"
         "<BadgeNS.CloudNotSupportedBadge />\n",
