@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 -- The `ORDER BY` prefix that can be served from the sorting key is cut short at the first
 -- non-strictly-monotonic function, and the virtual row optimization is only built for a prefix.
 -- When the virtual row is not built, read-in-order is refused for `INNER JOIN` altogether.
