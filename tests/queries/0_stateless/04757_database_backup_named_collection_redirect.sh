@@ -3,6 +3,10 @@
 # Tag no-fasttest: requires S3
 # Tag no-encrypted-storage: DiskBackup cannot decrypt an encrypted source disk's backup
 
+# Each `BACKUP ... TO S3` warns that s3_disable_checksum is off, and the test profile sets
+# max_backup_bandwidth, so the warning always fires. `error` keeps `<Fatal>` visible.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
