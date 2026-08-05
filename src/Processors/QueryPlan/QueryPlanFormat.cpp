@@ -55,7 +55,7 @@ namespace QueryPlanFormat
 
     String trimColumnIdentifier(std::string_view name)
     {
-        if (name.find(TABLE_PREFIX) == std::string_view::npos)
+        if (!name.contains(TABLE_PREFIX))
             return String(name);
 
         String result;
