@@ -4,7 +4,7 @@
 -- Widening `part_minmax_index_columns` on a live table does not reload the parts already in memory, so a
 -- part written under `partition_key_only` still carries a minmax index without the block column slots at
 -- all. A mutation must grow the inherited index to the current set of minmax columns and repair the
--- `_block_number` range - otherwise the mutated part is written without the block column files and reads
+-- block column ranges - otherwise the mutated part is written without the block column files and reads
 -- back the whole universe after a reload.
 
 DROP TABLE IF EXISTS t_minmax_widened;
@@ -29,17 +29,20 @@ FROM mergeTreeIndex(currentDatabase(), 't_minmax_widened', with_minmax = 1) ORDE
 
 SELECT '-- pruning works without a reload --';
 SELECT count() FROM t_minmax_widened WHERE _block_number = 100 SETTINGS max_rows_to_read = 1;
+SELECT count() FROM t_minmax_widened WHERE _block_offset = 100 SETTINGS max_rows_to_read = 1;
 
 DETACH TABLE t_minmax_widened SYNC;
 ATTACH TABLE t_minmax_widened;
 
--- `_block_number` is repaired from the part's own block range; `_block_offset` stays unknown, because a
--- mutation may have dropped rows and the row count of the original block is no longer recoverable.
+-- `_block_number` is repaired from the part's own block range. `_block_offset` is repaired too, because
+-- the source part is a single never-mutated block, so its offsets are exactly `[0, rows_count - 1]` and
+-- the column-only mutation keeps every row.
 SELECT '-- after a reload --';
 SELECT DISTINCT part_name, minmax__block_number, minmax__block_offset
 FROM mergeTreeIndex(currentDatabase(), 't_minmax_widened', with_minmax = 1) ORDER BY part_name;
 
 SELECT '-- pruning works again --';
 SELECT count() FROM t_minmax_widened WHERE _block_number = 100 SETTINGS max_rows_to_read = 1;
+SELECT count() FROM t_minmax_widened WHERE _block_offset = 100 SETTINGS max_rows_to_read = 1;
 
 DROP TABLE t_minmax_widened;

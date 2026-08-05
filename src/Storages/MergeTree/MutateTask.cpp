@@ -1442,27 +1442,34 @@ static void processStatisticsChanges(
     }
 }
 
-/// Repair the `_block_number` range of a minmax index inherited from a part that does not know it: a part
+/// Repair the block column ranges of a minmax index inherited from a part that does not know them: a part
 /// that was mutated before the index started to be materialized for mutated parts has no
 /// `minmax__block_number.idx` of its own, and `MinMaxIndex::load` is not allowed to synthesize the range for
 /// it, so the range came back as the whole universe; a part loaded before `part_minmax_index_columns` was
-/// widened to cover the block columns carries an index without their slots at all. Re-deriving the range
-/// here heals the part on the next column-only mutation instead of carrying the lost range forward until a
+/// widened to cover the block columns carries an index without their slots at all. Re-deriving the ranges
+/// here heals the part on the next column-only mutation instead of carrying the lost ranges forward until a
 /// merge or a full rewrite happens.
 ///
-/// The repaired range is the block range of the part's own name, `[min_block, max_block]`: the
-/// `_block_number` of every row is the number of the block that inserted it, and merges and mutations only
-/// ever combine parts whose blocks lie within the resulting part's range (a part without a physically
+/// The repaired `_block_number` range is the block range of the part's own name, `[min_block, max_block]`:
+/// the `_block_number` of every row is the number of the block that inserted it, and merges and mutations
+/// only ever combine parts whose blocks lie within the resulting part's range (a part without a physically
 /// stored `_block_number` column even reads the column back as the constant `min_block`). For a part that
 /// still covers a single block the range degenerates to the exact value `load` would have synthesized.
-/// The `_block_offset` range cannot be repaired the same way - a mutation may have dropped rows, and the row
-/// count of the original block is not recoverable from the mutated part - so it is left as the whole
-/// universe, which does not prune but is not wrong either.
-static void repairInheritedBlockNumberMinMax(
-    IMergeTreeDataPart::MinMaxIndex & minmax_index, const IMergeTreeDataPart & new_data_part, const StorageMetadataPtr & metadata_snapshot)
+///
+/// The `_block_offset` range is repairable only while the source part is a single never-mutated block -
+/// exactly the shape `load` still synthesizes the range for. Such a part holds every row of its block, so
+/// the offsets are `[0, rows_count - 1]`, and a mutation that does not rewrite the whole part keeps every
+/// row, so the range carries over to the new part unchanged. Once the chain has passed through a mutation
+/// or a merge, rows may have been dropped and the row count of the original block is no longer recoverable,
+/// so the range is left as the whole universe, which does not prune but is not wrong either.
+static void repairInheritedBlockColumnsMinMax(
+    IMergeTreeDataPart::MinMaxIndex & minmax_index,
+    const IMergeTreeDataPart & source_part,
+    const IMergeTreeDataPart & new_data_part,
+    const StorageMetadataPtr & metadata_snapshot)
 {
     const auto & part_info = new_data_part.info;
-    if (part_info.isPatch() || !metadata_snapshot->isVirtualColumn(BlockNumberColumn::name))
+    if (part_info.isPatch())
         return;
 
     const auto columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), new_data_part.storage.getSettings());
@@ -1475,11 +1482,22 @@ static void repairInheritedBlockNumberMinMax(
     while (minmax_index.hyperrectangle.size() < columns.size())
         minmax_index.hyperrectangle.emplace_back(Range::createWholeUniverse());
 
+    const auto & source_info = source_part.info;
+    const bool source_offsets_are_whole_block
+        = source_info.getBlocksCount() == 1 && source_info.level == 0 && source_info.mutation == 0 && source_part.rows_count != 0;
+
     size_t i = 0;
     for (const auto & [column_name, _] : columns)
     {
-        if (column_name == BlockNumberColumn::name && minmax_index.hyperrectangle[i].left.isNegativeInfinity())
-            minmax_index.hyperrectangle[i] = Range(part_info.min_block, true, part_info.max_block, true);
+        if (minmax_index.hyperrectangle[i].left.isNegativeInfinity())
+        {
+            if (column_name == BlockNumberColumn::name && metadata_snapshot->isVirtualColumn(BlockNumberColumn::name))
+                minmax_index.hyperrectangle[i] = Range(part_info.min_block, true, part_info.max_block, true);
+
+            if (column_name == BlockOffsetColumn::name && metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name)
+                && source_offsets_are_whole_block)
+                minmax_index.hyperrectangle[i] = Range(Field(UInt64(0)), true, Field(UInt64(source_part.rows_count - 1)), true);
+        }
 
         ++i;
     }
@@ -1568,7 +1586,7 @@ static void finalizeMutatedPart(
         auto minmax_index = std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*new_minmax_index);
         if (minmax_index->initialized)
         {
-            repairInheritedBlockNumberMinMax(*minmax_index, *new_data_part, metadata_snapshot);
+            repairInheritedBlockColumnsMinMax(*minmax_index, *source_part, *new_data_part, metadata_snapshot);
 
             auto files = minmax_index->store(
                 metadata_snapshot,
