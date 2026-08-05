@@ -62,4 +62,7 @@ nan
 --- prometheusQueryRange with various steps ---
 0
 0
+--- positive subsecond ranges with second-precision timestamps ---
+0
+0
 --- error: invalid syntax ---

@@ -8,6 +8,8 @@
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -349,6 +351,20 @@ namespace
     using TimestampType = PrometheusQueryParsingUtil::TimestampType;
     using DurationType = PrometheusQueryParsingUtil::DurationType;
 
+    bool hasNonZeroMantissaDigit(std::string_view input)
+    {
+        size_t exponent_pos = input.find_first_of("eE");
+        input = input.substr(0, exponent_pos);
+
+        for (char c : input)
+        {
+            if (c >= '1' && c <= '9')
+                return true;
+        }
+
+        return false;
+    }
+
     template <typename T>
     std::string_view getTypeName()
     {
@@ -363,7 +379,8 @@ namespace
     /// Parses an unsigned scalar in number format, for example "1000" or "1_000" or "5.67" or "2e10" or "Inf" or "Nan".
     /// Underscores between digits are ignored.
     template <typename T>
-    bool tryParseNumberFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseNumberFormat(
+        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool * is_nonzero = nullptr)
     {
         /// Remove underscores between digits if necessary.
         String str = removeUnderscoresBetweenDigits</* is_hex = */ false>(input);
@@ -400,6 +417,9 @@ namespace
             }
         }
 
+        if (is_nonzero)
+            *is_nonzero = hasNonZeroMantissaDigit(str);
+
         return true;
     }
 
@@ -415,7 +435,8 @@ namespace
     /// If it succeeds the function returns true and sets `result`.
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
     template <typename T>
-    bool tryParseHexFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseHexFormat(
+        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool * is_nonzero = nullptr)
     {
         bool has_hex_prefix = (input.length() >= 2) && (input[0] == '0') && (std::tolower(input[1]) == 'x');
         if (!has_hex_prefix)
@@ -453,6 +474,9 @@ namespace
             result = static_cast<T>(value);
         }
 
+        if (is_nonzero)
+            *is_nonzero = value != 0;
+
         return true;
     }
 
@@ -463,13 +487,84 @@ namespace
         return found_time_unit;
     }
 
+    /// Checks whether a decimal number has only zero digits beyond the requested scale.
+    /// The decimal parser intentionally truncates those digits, so this has to inspect the original input.
+    bool isDecimalNumberExactAtScale(std::string_view input, UInt32 scale)
+    {
+        size_t pos = 0;
+        if (input.starts_with('+') || input.starts_with('-'))
+            ++pos;
+
+        while (pos != input.length() && std::isspace(input[pos]))
+            ++pos;
+
+        size_t end_pos = input.length();
+        while (end_pos != pos && std::isspace(input[end_pos - 1]))
+            --end_pos;
+
+        String normalized = removeUnderscoresBetweenDigits</* is_hex = */ false>(input.substr(pos, end_pos - pos));
+        std::string_view unsigned_input = normalized;
+
+        size_t exponent_pos = unsigned_input.find_first_of("eE");
+        std::string_view mantissa = unsigned_input.substr(0, exponent_pos);
+
+        Int32 exponent = 0;
+        if (exponent_pos != String::npos)
+            tryParse(exponent, unsigned_input.substr(exponent_pos + 1));
+
+        Int64 fractional_digits = 0;
+        Int64 mantissa_digits = 0;
+        bool after_decimal_point = false;
+        for (char c : mantissa)
+        {
+            if (c == '.')
+            {
+                after_decimal_point = true;
+            }
+            else if (std::isdigit(c))
+            {
+                ++mantissa_digits;
+                if (after_decimal_point)
+                    ++fractional_digits;
+            }
+        }
+
+        const Int64 discarded_digits = fractional_digits - exponent - static_cast<Int64>(scale);
+        if (discarded_digits <= 0)
+            return true;
+
+        const Int64 digits_to_check = std::min(discarded_digits, mantissa_digits);
+
+        Int64 checked_digits = 0;
+        for (auto it = mantissa.rbegin(); it != mantissa.rend() && checked_digits < digits_to_check; ++it)
+        {
+            if (!std::isdigit(*it))
+                continue;
+
+            if (*it != '0')
+                return false;
+
+            ++checked_digits;
+        }
+
+        return true;
+    }
+
     /// Tries to parse an unsigned scalar in duration format, for example "1y2w5d13h15m30s1ms".
     /// If it succeeds the function returns true and sets `result`.
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
     template <typename T>
-    bool tryParseDurationFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseDurationFormat(
+        std::string_view input,
+        UInt32 scale,
+        T & result,
+        String * error_message,
+        size_t * error_pos,
+        bool * is_nonzero = nullptr,
+        bool * is_exact = nullptr)
     {
         bool has_time_units = false;
+        bool has_nonzero_value = false;
         Int64 seconds = 0;
         Int64 milliseconds = 0;
         size_t last_unit_order = 0;
@@ -501,6 +596,8 @@ namespace
                 setErrorPos(error_pos, number_start_pos);
                 return false;
             }
+
+            has_nonzero_value |= number != 0;
 
             size_t unit_start_pos = pos;
             while (pos != input.length() && !std::isdigit(input[pos]))
@@ -640,11 +737,34 @@ namespace
             result = static_cast<ScalarType>(seconds) + static_cast<ScalarType>(milliseconds) / 1000;
         }
 
+        if (is_nonzero)
+            *is_nonzero = has_nonzero_value;
+
+        if (is_exact)
+        {
+            *is_exact = true;
+            if constexpr (is_decimal<T>)
+            {
+                if (scale < 3)
+                {
+                    const auto divisor = DecimalUtils::scaleMultiplier<T>(3 - scale);
+                    *is_exact = milliseconds % divisor == 0;
+                }
+            }
+        }
+
         return true;
     }
 
     template <typename T>
-    bool tryParseNumber(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseNumber(
+        std::string_view input,
+        UInt32 scale,
+        T & result,
+        String * error_message,
+        size_t * error_pos,
+        bool * is_positive = nullptr,
+        bool * is_exact = nullptr)
     {
         size_t pos = 0;
 
@@ -671,19 +791,20 @@ namespace
         std::string_view unsigned_input = input.substr(pos, end_pos - pos);
 
         bool ok = false;
+        bool is_nonzero = false;
 
         /// Parse an unsigned number in one of three formats.
         if (isHexFormat(unsigned_input))
         {
-            ok = tryParseHexFormat(unsigned_input, scale, result, error_message, error_pos);
+            ok = tryParseHexFormat(unsigned_input, scale, result, error_message, error_pos, &is_nonzero);
         }
         else if (isDurationFormat(unsigned_input))
         {
-            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos);
+            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos, &is_nonzero, is_exact);
         }
         else
         {
-            ok = tryParseNumberFormat(unsigned_input, scale, result, error_message, error_pos);
+            ok = tryParseNumberFormat(unsigned_input, scale, result, error_message, error_pos, &is_nonzero);
         }
 
         if (!ok)
@@ -693,8 +814,50 @@ namespace
             return false;
         }
 
+        if (is_positive)
+            *is_positive = !negative && is_nonzero;
+
         if (negative)
             result = -result;
+
+        return true;
+    }
+
+    struct ParsedDurationInfo
+    {
+        bool is_positive = false;
+        bool is_exact = true;
+    };
+
+    bool tryParseDurationWithInfo(
+        std::string_view input,
+        UInt32 timestamp_scale,
+        DurationType & res_duration,
+        ParsedDurationInfo & info,
+        String * error_message,
+        size_t * error_pos)
+    {
+        bool result = tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, &info.is_positive, &info.is_exact);
+        if (!result || !info.is_positive)
+            return result;
+
+        if (!isDurationFormat(input))
+        {
+            info.is_exact = isDecimalNumberExactAtScale(input, timestamp_scale);
+        }
+
+        return result;
+    }
+
+    bool tryRoundUpDuration(
+        DurationType & duration, std::string_view input, size_t input_pos, String * error_message, size_t * error_pos)
+    {
+        if (common::addOverflow(duration.value, DurationType::NativeType{1}, duration.value))
+        {
+            setErrorMessage(error_message, "Cannot parse time range {}: Overflow, the duration is too big", quoteString(input));
+            setErrorPos(error_pos, input_pos);
+            return false;
+        }
 
         return true;
     }
@@ -758,12 +921,25 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
         return false;
     }
 
-    if (!tryParseDuration(input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, error_message, error_pos))
+    ParsedDurationInfo range_info;
+    if (!tryParseDurationWithInfo(
+            input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, range_info, error_message, error_pos))
     {
         if (error_pos)
             *error_pos += start_pos;
         return false;
     }
+
+    if (!range_info.is_positive)
+    {
+        setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
+        setErrorPos(error_pos, start_pos);
+        return false;
+    }
+
+    if ((!range_info.is_exact || res_range == 0)
+        && !tryRoundUpDuration(res_range, input, start_pos, error_message, error_pos))
+        return false;
 
     return true;
 }
@@ -830,21 +1006,50 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         return false;
     }
 
-    if (!tryParseDuration(input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, error_message, error_pos))
+    ParsedDurationInfo range_info;
+    if (!tryParseDurationWithInfo(
+            input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, range_info, error_message, error_pos))
     {
         if (error_pos)
             *error_pos += range_start_pos;
         return false;
     }
 
+    if (!range_info.is_positive)
+    {
+        setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
+        setErrorPos(error_pos, range_start_pos);
+        return false;
+    }
+
+    if ((!range_info.is_exact || res_range == 0)
+        && !tryRoundUpDuration(res_range, input, range_start_pos, error_message, error_pos))
+        return false;
+
     res_step.reset();
 
     if (step_start_pos != step_end_pos)
     {
-        if (!tryParseDuration(input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), error_message, error_pos))
+        ParsedDurationInfo step_info;
+        if (!tryParseDurationWithInfo(
+                input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), step_info, error_message, error_pos))
         {
             if (error_pos)
                 *error_pos += step_start_pos;
+            return false;
+        }
+
+        if (!step_info.is_positive)
+        {
+            setErrorMessage(error_message, "Cannot parse time range {}: Expected a step greater than zero", quoteString(input));
+            setErrorPos(error_pos, step_start_pos);
+            return false;
+        }
+
+        if (!step_info.is_exact || *res_step == 0)
+        {
+            setErrorMessage(error_message, "Cannot parse time range {}: Expected a step representable at the timestamp precision", quoteString(input));
+            setErrorPos(error_pos, step_start_pos);
             return false;
         }
     }
