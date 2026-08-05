@@ -46,7 +46,9 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE src_g (a Array(Tuple(Float64, Float64)), k UInt64) ENGINE = MergeTree ORDER BY tuple();
     INSERT INTO src_f SELECT number * 1e-9, number FROM numbers(60000);
     INSERT INTO src_i SELECT number, number FROM numbers(60000);
-    INSERT INTO src_s SELECT base58Encode(repeat('Q', 7000) || toString(number)), number FROM numbers(3000);
+    -- 'Q' is a base58 digit, so this needs no base58Encode to be decodable, and the length varies per
+    -- row so the argument stays column-dependent.
+    INSERT INTO src_s SELECT repeat('Q', 4000 + (number % 7)), number FROM numbers(3000);
     INSERT INTO src_g SELECT [(number * 1e-7, 0.), (number * 1e-7 + 2., 0.), (number * 1e-7 + 2., 2.), (number * 1e-7, 2.), (number * 1e-7, 0.)], number FROM numbers(2000);"
 
 # $1 = label, $2 = the table DDL carrying the persisted expression, $3 = the source table
