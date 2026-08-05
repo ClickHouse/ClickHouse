@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
+    extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -2113,9 +2114,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         const bool inner_settings_forbid_pushdown = inner_settings[Setting::distributed_group_by_no_merge] != 0
                             || inner_settings[Setting::force_optimize_skip_unused_shards] != 0;
 
+                        /// Also suppress when the outer query aggregates and max_rows_to_group_by is set.
+                        /// StorageView::readImpl fetches the view's raw rows and performs the outer GROUP BY
+                        /// entirely on the initiator, so the limit is checked once against the global set of
+                        /// keys. The pushdown ships the whole GROUP BY to each shard instead, so each shard's
+                        /// Aggregator enforces the limit independently against only its own local rows; for
+                        /// group_by_overflow_mode = 'any' / 'break' the merge phase does not re-apply the cap
+                        /// globally (see Aggregator::ensureLimitsFixedMapMerge), so shards could each keep a
+                        /// different, locally-permitted set of keys and the initiator would return more groups
+                        /// in total than the limit allows. Matches the precedent set by
+                        /// AggregatingStep::canUseShardedAggregation and useDataParallelAggregation, which
+                        /// disable independent aggregation for the same reason.
+                        const bool outer_group_by_forbids_pushdown = inner_settings[Setting::max_rows_to_group_by] != 0
+                            && table_expression_query_info.query_tree->as<QueryNode &>().hasGroupBy();
+
                         if (has_row_policy
                             || force_skip_unused_shards
                             || inner_settings_forbid_pushdown
+                            || outer_group_by_forbids_pushdown
                             || containsNonDeterministicFunction(table_expression_query_info.query_tree)
                             || containsSubqueryNode(table_expression_query_info.query_tree)
                             || astContainsNonDeterministicFunction(table_expression_query_info.additional_filter_ast, query_context)
