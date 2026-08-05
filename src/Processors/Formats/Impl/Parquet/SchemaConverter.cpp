@@ -1337,9 +1337,10 @@ void SchemaConverter::processSubtreeVariantSelective(TraversalNode & node)
     size_t primitive_span_end = primitive_columns.size();
 
     /// Create one selective output per requested subcolumn. All outputs span the whole set of
-    /// leaves read for this Variant column; the first of them (in output_columns order) claims
-    /// the leaves and is formed eagerly, the rest are formed on demand, sharing the formed
-    /// piece columns (Reader::RowSubgroup::variant_piece_cache).
+    /// leaves read for this Variant column. The first output owns the primitive completion
+    /// counters and is formed eagerly; the rest are formed on demand, sharing formed piece
+    /// columns through `Reader::RowSubgroup::variant_piece_cache`.
+    bool first_selective_output = true;
     for (const auto & req : requests)
     {
         const auto & entry = sample_block->getByPosition(req.pos);
@@ -1347,6 +1348,8 @@ void SchemaConverter::processSubtreeVariantSelective(TraversalNode & node)
         out.name = entry.name;
         out.idx_in_output_block = req.pos;
         out.variant = true;
+        out.variant_form_on_demand = !first_selective_output;
+        first_selective_output = false;
         out.variant_metadata_column = metadata_piece;
         if (req.target.group_schema_idx != UINT64_MAX)
         {

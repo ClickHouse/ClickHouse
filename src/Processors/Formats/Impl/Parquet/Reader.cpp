@@ -2116,7 +2116,8 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 if (output_idx.has_value())
                 {
                     const auto & info = output_columns.at(*output_idx);
-                    row_subgroup.output[idx].primitive_columns_remaining.store(info.primitive_end - info.primitive_start);
+                    const size_t primitive_count = info.variant_form_on_demand ? 0 : info.primitive_end - info.primitive_start;
+                    row_subgroup.output[idx].primitive_columns_remaining.store(primitive_count);
                 }
             }
             if (options.format.defaults_for_omitted_fields)
@@ -3389,9 +3390,9 @@ ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx
     if (output_idx.has_value())
     {
         const auto & info = output_columns[*output_idx];
-        /// Normally output column is formed by decodePrimitiveColumn. But if the column is missing
-        /// in the file, and we're returning default values, we form it here, i.e. during prewhere or delivery.
-        chassert(state.column || (info.primitive_start == info.primitive_end));
+        /// Normally output column is formed by decodePrimitiveColumn. Missing columns and
+        /// selective Variant outputs sharing another output's primitives are formed here.
+        chassert(state.column || info.variant_form_on_demand || (info.primitive_start == info.primitive_end));
         if (!state.column)
             state.column = formOutputColumn(row_subgroup, *output_idx, row_subgroup.filter.rows_pass);
     }

@@ -255,6 +255,11 @@ struct Reader
         /// to the requested subcolumn type.
         std::optional<std::vector<String>> variant_select_path;
 
+        /// Selective Variant outputs after the first one share the same primitive span but are
+        /// formed on demand from cached piece columns. Their primitive completion counter stays at
+        /// zero because each primitive has a single owning output.
+        bool variant_form_on_demand = false;
+
         /// Object (JSON) subcolumn synthesized from a whole JSON-typed column (a Variant assembly
         /// or a plain JSON-annotated leaf): json_subcolumn_source is the output_columns index of
         /// that whole column (which has idx_in_output_block pointing at an extended_sample_block
