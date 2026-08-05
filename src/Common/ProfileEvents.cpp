@@ -1846,13 +1846,13 @@ Event getByName(std::string_view name)
 
 void Counters::setTraceProfileEvent(Event event)
 {
-    auto * trace_array = should_trace_array.load(std::memory_order_relaxed);
+    auto * trace_array = should_trace_array.load(std::memory_order_acquire);
     if (!trace_array)
     {
         /// It is very unlikely that it will be allocated twice, since we set it at the beginning of the query
         auto fresh = std::make_unique<std::atomic_bool[]>(num_counters);
         std::atomic_bool * expected = nullptr;
-        if (should_trace_array.compare_exchange_strong(expected, fresh.get(), std::memory_order_release, std::memory_order_relaxed))
+        if (should_trace_array.compare_exchange_strong(expected, fresh.get(), std::memory_order_release, std::memory_order_acquire))
         {
             should_trace_holder = std::move(fresh);
             trace_array = should_trace_holder.get();
@@ -1975,7 +1975,13 @@ void Counters::increment(Event event, Count amount)
     {
         current->fetchAdd(event, amount, cpu);
         if (auto * trace_arr = current->should_trace_array.load(std::memory_order_relaxed))
+        {
+            /// Small optimization for quite a hot path.
+            /// Load with relaxed as it almost always returns null.
+            /// If non-null, add an acquire fence.
+            std::atomic_thread_fence(std::memory_order_acquire);
             send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
+        }
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
 
         current = current->parent;
