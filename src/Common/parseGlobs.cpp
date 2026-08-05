@@ -389,7 +389,7 @@ std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ra
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Glob expansion would produce too many paths ({} * {} > {}). "
-                    "Consider simplifying the glob pattern.",
+                    "Consider simplifying the glob pattern or increasing the `glob_expansion_max_elements` setting.",
                     result.size(), enum_values.size(), max_expansion);
 
             std::vector<std::string> expanded;
@@ -412,7 +412,7 @@ std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ra
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Glob expansion would produce too many paths ({} * {} > {}). "
-                    "Consider simplifying the glob pattern.",
+                    "Consider simplifying the glob pattern or increasing the `glob_expansion_max_elements` setting.",
                     result.size(), range_size, max_expansion);
 
             const size_t pad_width = rangePadWidth(range);

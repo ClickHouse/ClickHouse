@@ -375,12 +375,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// group, no other brace text such as a literal "{0}" group, and no wildcards — including
     /// `?` inside an enum alternative, which `expand` would keep as literal text); everything
     /// else stays on the listing path, which skips absent alternatives instead of failing on
-    /// them.
+    /// them. There is deliberately no cardinality check here: falling back to the listing
+    /// path above `glob_expansion_max_elements` would silently relax the strict missing-key
+    /// contract of `KeysIterator` (with `*_ignore_file_doesnt_exist = 0`, a missing
+    /// alternative must throw, not be skipped), so `expand` below throws when the enum
+    /// exceeds the cap instead.
     bool can_expand = !match_web_paths_only
         && use_glob_ast
         && glob_string->hasExactlyOneEnum()
-        && !glob_string->hasQuestionOrAsterisk()
-        && glob_string->cardinality() <= max_expansion;
+        && !glob_string->hasQuestionOrAsterisk();
 
     if (!can_expand && !match_web_paths_only && !use_glob_ast && has_globs)
         can_expand = hasExactlyOneBracketsExpansion(reading_path.path);
