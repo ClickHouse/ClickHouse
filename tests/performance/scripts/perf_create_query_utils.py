@@ -174,22 +174,30 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
     """
 
     # Keywords that can follow the SETTINGS clause at the top level of a
-    # CREATE TABLE (`AS SELECT ...`, `AS other_table`, `COMMENT '...'`,
-    # `EMPTY AS SELECT ...`) and therefore terminate it.
-    trailing_clause_keywords = ("AS", "COMMENT", "EMPTY")
+    # CREATE TABLE (`AS SELECT ...`, `COMMENT '...'`, `EMPTY AS SELECT ...`,
+    # `... CLONE AS src`) and therefore terminate it.
+    trailing_clause_keywords = ("AS", "COMMENT", "EMPTY", "CLONE")
 
     def find_table_settings_keyword(text):
         """Return the index of the table's own top-level `SETTINGS` keyword,
         ignoring matches inside string/backtick literals or `--`/`#`/`/* */`
         comments and inside brackets. Return -1 when there is no table-level
-        SETTINGS clause -- including when a top-level `AS` / `COMMENT` /
-        `EMPTY` clause is reached first, in which case any later `SETTINGS` is
-        a query-level clause (e.g. on `AS SELECT ...`), not the table's own.
-        Treating that as "not found" makes the caller leave the query
-        unchanged so `perf.py` fails fast on a misplaced setting instead of
-        silently stripping a query-level clause. Bracket depth is tracked so a
-        column-level `COMMENT` inside the schema parens does not end the scan
-        early."""
+        SETTINGS clause.
+
+        A top-level `AS` is disambiguated the way `ParserCreateQuery.cpp`
+        does: when it is followed by `SELECT`, `WITH`, or `(`, it starts the
+        select query, so any later `SETTINGS` is a query-level clause (e.g.
+        on `AS SELECT ...`), not the table's own -- return -1 so the caller
+        leaves the query unchanged and `perf.py` fails fast on a misplaced
+        setting instead of silently stripping a query-level clause. When `AS`
+        is instead followed by a source table or table function (`CREATE
+        TABLE dst AS src ENGINE = MergeTree ... SETTINGS ...`), the storage
+        clause -- including the new table's own `SETTINGS` -- may still
+        follow, so the scan continues. `COMMENT '...'` and the `EMPTY` /
+        `CLONE` markers are scanned over for the same reason: the grammar
+        requires an `AS` after `EMPTY` / `CLONE`, and it is that `AS` which
+        decides. Bracket depth is tracked so a column-level `COMMENT` inside
+        the schema parens does not confuse the scan."""
         i = 0
         n = len(text)
         quote = None
@@ -247,11 +255,18 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
             if depth == 0:
                 if is_word_at(text, i, "SETTINGS"):
                     return i
-                # A top-level trailing clause reached before any table-level
-                # SETTINGS: the table has none of its own, so a following
-                # SETTINGS belongs to `AS SELECT ...` and must not be edited.
-                if any(is_word_at(text, i, kw) for kw in trailing_clause_keywords):
-                    return -1
+                if is_word_at(text, i, "AS"):
+                    j = skip_whitespace_and_comments(text, i + len("AS"))
+                    if j >= n or text[j] == "(" or is_word_at(text, j, "SELECT") or is_word_at(text, j, "WITH"):
+                        # `AS SELECT ...` / `AS WITH ...` / `AS (...)`: the
+                        # select query starts here, so a following SETTINGS is
+                        # query-level and the table has none of its own.
+                        return -1
+                    # `AS [db.]source_table` / `AS table_function(...)`: the
+                    # storage clause (with the table's own SETTINGS) may still
+                    # follow, so keep scanning from the source name.
+                    i = j
+                    continue
             i += 1
         return -1
 
@@ -323,11 +338,7 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
             depth -= 1
             i += 1
             continue
-        if (
-            depth == 0
-            and i > settings_pos + len("SETTINGS")
-            and any(is_word_at(query, i, kw) for kw in trailing_clause_keywords)
-        ):
+        if depth == 0 and i > settings_pos + len("SETTINGS") and any(is_word_at(query, i, kw) for kw in trailing_clause_keywords):
             # A trailing clause (`AS SELECT ...`, `COMMENT '...'`) ends the
             # SETTINGS clause. Stop the name scan here, exactly as the value
             # scan below does, so the setting name is only matched inside the
@@ -344,15 +355,9 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
             i += 1
             continue
         if depth == 0 and query[i : i + name_len].lower() == name_lower:
-            before_ok = i == settings_pos + len("SETTINGS") or not (
-                query[i - 1].isalnum() or query[i - 1] == "_"
-            )
+            before_ok = i == settings_pos + len("SETTINGS") or not (query[i - 1].isalnum() or query[i - 1] == "_")
             after_idx = i + name_len
-            if (
-                before_ok
-                and after_idx < n
-                and not (query[after_idx].isalnum() or query[after_idx] == "_")
-            ):
+            if before_ok and after_idx < n and not (query[after_idx].isalnum() or query[after_idx] == "_"):
                 # Comments are allowed anywhere whitespace is, including
                 # between the setting name and `=` and between `=` and the
                 # value, so skip them with the same comment-aware scanner
@@ -442,11 +447,7 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
             continue
         if depth == 0 and c in ",;":
             break
-        if (
-            depth == 0
-            and i > value_start
-            and any(is_word_at(query, i, kw) for kw in trailing_clause_keywords)
-        ):
+        if depth == 0 and i > value_start and any(is_word_at(query, i, kw) for kw in trailing_clause_keywords):
             # Leave the whitespace before the keyword in place so the
             # preceding token is not glued to the trailing clause.
             while i > value_start and query[i - 1] in " \t\r\n":
@@ -499,10 +500,7 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
                 continue
             if ch == "/" and nxt == "*":
                 pos += 2
-                while pos < length and not (
-                    text[pos] == "*"
-                    and (text[pos + 1] if pos + 1 < length else "") == "/"
-                ):
+                while pos < length and not (text[pos] == "*" and (text[pos + 1] if pos + 1 < length else "") == "/"):
                     pos += 1
                 pos += 2
                 continue

@@ -9,9 +9,7 @@ import pytest
 # to make it testable in isolation.
 sys.path.insert(
     0,
-    os.path.join(
-        os.path.dirname(__file__), "..", "..", "tests", "performance", "scripts"
-    ),
+    os.path.join(os.path.dirname(__file__), "..", "..", "tests", "performance", "scripts"),
 )
 
 from perf_create_query_utils import (  # noqa: E402
@@ -176,11 +174,7 @@ def test_setting_only_after_as_select_is_unchanged():
     # fails fast. Before the name scan honoured trailing clauses, it ran past
     # `AS SELECT` and cut from a comma in the SELECT column list, silently
     # rewriting `SELECT a, b FROM src ...` down to `SELECT a`.
-    query = (
-        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() "
-        "SETTINGS index_granularity = 8192 "
-        f"AS SELECT a, b FROM src SETTINGS {SETTING} = 0"
-    )
+    query = f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192 AS SELECT a, b FROM src SETTINGS {SETTING} = 0"
     assert strip_setting_from_query(query, SETTING) == query
 
 
@@ -188,14 +182,8 @@ def test_setting_in_table_settings_wins_over_occurrence_after_as():
     # The real setting is in the table SETTINGS and the name also appears in the
     # SELECT after `AS`. Only the table setting is stripped; the SELECT (commas
     # and all) is preserved intact.
-    query = (
-        f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0, "
-        f"index_granularity = 8192 AS SELECT a, b, c FROM src SETTINGS {SETTING} = 0"
-    )
-    expected = (
-        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS "
-        f"index_granularity = 8192 AS SELECT a, b, c FROM src SETTINGS {SETTING} = 0"
-    )
+    query = f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0, index_granularity = 8192 AS SELECT a, b, c FROM src SETTINGS {SETTING} = 0"
+    expected = f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192 AS SELECT a, b, c FROM src SETTINGS {SETTING} = 0"
     assert strip_setting_from_query(query, SETTING) == expected
 
 
@@ -204,28 +192,16 @@ def test_setting_name_inside_comment_literal_is_preserved():
     # real setting. Only the real setting must be removed; the literal text
     # (which mentions the setting and even a comma) is part of the table schema
     # and must survive unchanged.
-    query = (
-        f"CREATE TABLE t (a UInt64 COMMENT 'set {SETTING} = 1 here, ok') "
-        f"ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1, index_granularity = 8192"
-    )
-    expected = (
-        f"CREATE TABLE t (a UInt64 COMMENT 'set {SETTING} = 1 here, ok') "
-        "ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
-    )
+    query = f"CREATE TABLE t (a UInt64 COMMENT 'set {SETTING} = 1 here, ok') ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1, index_granularity = 8192"
+    expected = f"CREATE TABLE t (a UInt64 COMMENT 'set {SETTING} = 1 here, ok') ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
     assert strip_setting_from_query(query, SETTING) == expected
 
 
 def test_settings_keyword_inside_comment_literal_is_not_matched():
     # A literal containing the word `SETTINGS` before the real clause must not
     # be picked up as the clause to edit.
-    query = (
-        f"CREATE TABLE t (a UInt64 COMMENT 'SETTINGS {SETTING} = 9') "
-        f"ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1"
-    )
-    expected = (
-        f"CREATE TABLE t (a UInt64 COMMENT 'SETTINGS {SETTING} = 9') "
-        "ENGINE = MergeTree ORDER BY tuple()"
-    )
+    query = f"CREATE TABLE t (a UInt64 COMMENT 'SETTINGS {SETTING} = 9') ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1"
+    expected = f"CREATE TABLE t (a UInt64 COMMENT 'SETTINGS {SETTING} = 9') ENGINE = MergeTree ORDER BY tuple()"
     assert strip_setting_from_query(query, SETTING) == expected
 
 
@@ -237,27 +213,90 @@ def test_no_table_settings_only_query_settings_after_as_select_is_unchanged():
     # query-level clause, letting `perf.py` continue with the PR side on the new
     # default and the baseline on the old one -- invalidating the comparison
     # instead of surfacing the fixture bug. The query must be byte-for-byte.
-    query = (
-        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() "
-        f"AS SELECT a, b FROM src SETTINGS {SETTING} = 0"
-    )
+    query = f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() AS SELECT a, b FROM src SETTINGS {SETTING} = 0"
     assert strip_setting_from_query(query, SETTING) == query
 
 
-def test_no_table_settings_as_other_table_query_settings_is_unchanged():
-    # `CREATE TABLE t AS src SETTINGS ...`: the trailing SETTINGS is query-level
-    # (there is no table-level clause), so the helper must leave it untouched.
+def test_as_source_table_trailing_settings_is_table_level():
+    # `CREATE TABLE t AS src SETTINGS ...`: `ParserStorage` accepts a bare
+    # `SETTINGS` clause as the storage of the new table (`SHOW CREATE` places
+    # it in the table's own SETTINGS), so the scanner strips it. `perf.py`
+    # still fails fast on this shape, because without an `ENGINE` clause
+    # `create_query_engine` cannot know the engine inherited from `src`.
     query = f"CREATE TABLE t AS src SETTINGS {SETTING} = 0"
+    assert strip_setting_from_query(query, SETTING) == "CREATE TABLE t AS src"
+    assert not is_mergetree_create_query(query)
+
+
+def test_storage_after_as_source_table_is_stripped():
+    # `CREATE TABLE dst AS src ENGINE = MergeTree ... SETTINGS ...`: in the
+    # no-column-list branch of `ParserCreateQuery.cpp` the storage clause may
+    # follow `AS [db.]source_table`, so this SETTINGS belongs to the new
+    # table and must be stripped (`tests/performance/polymorphic_parts_*.xml`
+    # use this shape).
+    query = f"CREATE TABLE dst AS src ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0"
+    expected = "CREATE TABLE dst AS src ENGINE = MergeTree ORDER BY tuple()"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+    assert is_mergetree_create_query(query)
+
+
+def test_storage_after_as_source_table_keeps_other_settings():
+    query = f"CREATE TABLE dst AS db.src ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, {SETTING} = 0"
+    expected = "CREATE TABLE dst AS db.src ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+
+
+def test_as_parenthesized_subquery_is_query_level():
+    # `AS (` starts a parenthesized select query, so a SETTINGS after it is
+    # query-level: the query must be byte-for-byte unchanged.
+    query = f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() AS (SELECT a FROM src) SETTINGS {SETTING} = 0"
     assert strip_setting_from_query(query, SETTING) == query
+
+
+def test_as_with_cte_select_is_query_level():
+    # `AS WITH ... SELECT ...` also starts the select query; the trailing
+    # SETTINGS is query-level and must not be edited.
+    query = f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() AS WITH c AS (SELECT 1) SELECT * FROM c SETTINGS {SETTING} = 0"
+    assert strip_setting_from_query(query, SETTING) == query
+
+
+def test_clone_as_terminates_settings_clause():
+    # `CREATE TABLE dst ENGINE = ... SETTINGS ... CLONE AS src`: `CLONE` is a
+    # post-`SETTINGS` boundary (`ParserCreateQuery.cpp` parses it after the
+    # storage clause), so the only setting is stripped and `CLONE AS src`
+    # survives untouched.
+    query = f"CREATE TABLE dst ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0 CLONE AS src"
+    expected = "CREATE TABLE dst ENGINE = MergeTree ORDER BY tuple() CLONE AS src"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+    assert is_mergetree_create_query(query)
+
+
+def test_clone_as_with_preceding_setting():
+    query = f"CREATE TABLE dst ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, {SETTING} = 0 CLONE AS src"
+    expected = "CREATE TABLE dst ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192 CLONE AS src"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+
+
+def test_clone_as_enabled_value_is_unchanged():
+    # The value scan must stop at `CLONE`, so the value compares as `1` (not
+    # `1 CLONE`) against the allowlist and the query is left unchanged for
+    # the fail-fast path.
+    query = f"CREATE TABLE dst ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1 CLONE AS src"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == query
+
+
+def test_empty_as_source_table_settings_after_as_is_stripped():
+    # `EMPTY AS src` followed by a storage clause: like the plain `AS src`
+    # form, the SETTINGS after the source table belongs to the new table.
+    query = f"CREATE TABLE dst EMPTY AS src ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0"
+    expected = "CREATE TABLE dst EMPTY AS src ENGINE = MergeTree ORDER BY tuple()"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
 
 
 def test_no_table_settings_empty_as_select_query_settings_is_unchanged():
     # `EMPTY AS SELECT` also terminates the table definition; a SETTINGS after it
     # is query-level and must not be stripped.
-    query = (
-        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() "
-        f"EMPTY AS SELECT a FROM src SETTINGS {SETTING} = 0"
-    )
+    query = f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() EMPTY AS SELECT a FROM src SETTINGS {SETTING} = 0"
     assert strip_setting_from_query(query, SETTING) == query
 
 
@@ -265,14 +304,8 @@ def test_table_settings_after_column_comment_is_still_found():
     # A column-level COMMENT inside the schema parens must not be mistaken for a
     # top-level trailing clause that ends the search early: the real table-level
     # SETTINGS still follows and its target setting must be stripped.
-    query = (
-        "CREATE TABLE t (a UInt64 COMMENT 'note') ENGINE = MergeTree "
-        f"ORDER BY tuple() SETTINGS {SETTING} = 1, index_granularity = 8192"
-    )
-    expected = (
-        "CREATE TABLE t (a UInt64 COMMENT 'note') ENGINE = MergeTree "
-        "ORDER BY tuple() SETTINGS index_granularity = 8192"
-    )
+    query = f"CREATE TABLE t (a UInt64 COMMENT 'note') ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1, index_granularity = 8192"
+    expected = "CREATE TABLE t (a UInt64 COMMENT 'note') ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
     assert strip_setting_from_query(query, SETTING) == expected
 
 
@@ -296,9 +329,7 @@ VALUE_AWARE_CASES = [
 ]
 
 
-@pytest.mark.parametrize(
-    "case", VALUE_AWARE_CASES, ids=[c[0] for c in VALUE_AWARE_CASES]
-)
+@pytest.mark.parametrize("case", VALUE_AWARE_CASES, ids=[c[0] for c in VALUE_AWARE_CASES])
 def test_value_aware_only_strips_baseline_default(case):
     _name, value, should_strip = case
     base = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()"
@@ -311,23 +342,15 @@ def test_value_aware_only_strips_baseline_default(case):
         assert result == query
 
 
-@pytest.mark.parametrize(
-    "case", VALUE_AWARE_CASES, ids=[c[0] for c in VALUE_AWARE_CASES]
-)
+@pytest.mark.parametrize("case", VALUE_AWARE_CASES, ids=[c[0] for c in VALUE_AWARE_CASES])
 def test_value_aware_first_of_two(case):
     # The value-aware guard must also apply when the setting is not the only
     # entry: a non-default value leaves the whole SETTINGS clause intact.
     _name, value, should_strip = case
-    query = (
-        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
-        f"SETTINGS {SETTING} = {value}, index_granularity = 8192"
-    )
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = {value}, index_granularity = 8192"
     result = strip_setting_from_query(query, SETTING, ALLOWED)
     if should_strip:
-        assert result == (
-            "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
-            "SETTINGS index_granularity = 8192"
-        )
+        assert result == ("CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192")
     else:
         assert result == query
 
@@ -335,10 +358,7 @@ def test_value_aware_first_of_two(case):
 def test_value_aware_none_strips_regardless_of_value():
     # Without `allowed_values` the value is not inspected, so an enabled value
     # is still stripped. This preserves the default (name-only) behavior.
-    query = (
-        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
-        f"SETTINGS {SETTING} = 1"
-    )
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1"
     expected = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()"
     assert strip_setting_from_query(query, SETTING) == expected
 
@@ -393,10 +413,7 @@ def test_value_aware_commented_enabled_value_is_unchanged():
     # A commented *enabled* value must still fail the guard: comments are
     # normalized out, leaving `1`, which is not a baseline default, so the
     # query is returned byte-for-byte and `perf.py` fails fast.
-    query = (
-        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
-        f"SETTINGS {SETTING} = 1 /* keep */"
-    )
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1 /* keep */"
     assert strip_setting_from_query(query, SETTING, ALLOWED) == query
 
 
@@ -405,10 +422,7 @@ def test_value_aware_comment_markers_inside_string_value_are_kept():
     # comments, so the normalizer must keep them: the value `'0 /* x */'` (a
     # string) normalizes to `'0 /* x */'`, which is not a baseline default, so
     # the query is returned unchanged rather than mis-stripped as a bare `0`.
-    query = (
-        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
-        f"SETTINGS {SETTING} = '0 /* x */'"
-    )
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = '0 /* x */'"
     assert strip_setting_from_query(query, SETTING, ALLOWED) == query
 
 
@@ -417,14 +431,8 @@ def test_value_aware_comment_between_name_and_eq_is_stripped():
     # mismatch (the name scan only skipped whitespace before `=`), so the query
     # was returned unchanged and `perf.py` re-raised `UNKNOWN_SETTING` on the
     # baseline even though the fixture pinned a baseline-equivalent value.
-    query = (
-        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
-        f"SETTINGS {SETTING} /* keep */ = 0, index_granularity = 8192"
-    )
-    expected = (
-        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
-        "SETTINGS index_granularity = 8192"
-    )
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} /* keep */ = 0, index_granularity = 8192"
+    expected = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
     assert strip_setting_from_query(query, SETTING, ALLOWED) == expected
 
 
@@ -432,14 +440,8 @@ def test_value_aware_comment_between_eq_and_value_is_stripped():
     # Same regression on the other side of `=`: a comment between `=` and the
     # value must not shift `value_start` onto the comment text, which would
     # make the baseline-default value miss the allowlist.
-    query = (
-        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
-        f"SETTINGS {SETTING} = -- keep\n 0, index_granularity = 8192"
-    )
-    expected = (
-        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
-        "SETTINGS index_granularity = 8192"
-    )
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = -- keep\n 0, index_granularity = 8192"
+    expected = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
     assert strip_setting_from_query(query, SETTING, ALLOWED) == expected
 
 
