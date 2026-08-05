@@ -48,3 +48,25 @@ INSERT INTO t_04695_materialized (id, a) VALUES (1, 21), (2, 3);
 SELECT 'materialized', id, m FROM t_04695_materialized ORDER BY id;
 
 DROP TABLE t_04695_materialized;
+
+-- Regression: under `optimize_respect_aliases = 0`, creating the alias-projection shape used to fail
+-- with `UNKNOWN_IDENTIFIER`, because the implicit minmax index over the projection's inherited ALIAS
+-- column was analyzed against the projection's own columns, and the alias expression names `b`, which
+-- the projection does not carry. The implicit index is now skipped for inherited ALIAS columns, so the
+-- projection metadata no longer depends on the session's alias handling.
+SET optimize_respect_aliases = 0;
+
+CREATE TABLE t_04695_alias_no_respect
+(
+    id     UInt64,
+    a      UInt32,
+    b      UInt32,
+    ab_sum UInt64 ALIAS a + b,
+    PROJECTION p (SELECT ab_sum ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns = 1;
+
+SELECT 'create-no-respect-aliases-ok';
+
+DROP TABLE t_04695_alias_no_respect;
