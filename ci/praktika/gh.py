@@ -787,6 +787,72 @@ class GH:
             os.unlink(temp_file_path)
 
     @classmethod
+    def _get_authenticated_login(cls):
+        cmd = (
+            "gh api graphql "
+            "-f 'query=query { viewer { login } }' "
+            "--jq '.data.viewer.login'"
+        )
+        output = cls.get_output_with_retries(cmd)
+        if not output:
+            raise RuntimeError("Failed to retrieve the authenticated GitHub login")
+        return output.strip()
+
+    @classmethod
+    def _get_team_review_request_owners(cls, pr, repo):
+        cmd = (
+            'gh api --paginate -H "Accept: application/vnd.github+json" '
+            f'"/repos/{repo}/issues/{pr}/events?per_page=100" '
+            "--jq '[.[] | select((.event == \"review_requested\" or "
+            ".event == \"review_request_removed\") and "
+            ".requested_team.slug != null) | {id, event, "
+            "requester: .review_requester.login, team: .requested_team.slug}]'"
+        )
+        output = cls.get_output_with_retries(cmd)
+        if not output:
+            raise RuntimeError(
+                f"Failed to retrieve review request events for pull request [{pr}]"
+            )
+
+        events = []
+        try:
+            for page in output.splitlines():
+                page_events = json.loads(page)
+                if not isinstance(page_events, list):
+                    raise TypeError("expected a list of events")
+                events.extend(page_events)
+        except (json.JSONDecodeError, TypeError) as e:
+            raise RuntimeError(
+                f"Failed to parse review request events for pull request [{pr}]: {e}"
+            ) from e
+
+        for event in events:
+            if not isinstance(event, dict) or not isinstance(event.get("id"), int):
+                raise RuntimeError(
+                    f"Unexpected review request event for pull request [{pr}]"
+                )
+
+        owners = {}
+        for event in sorted(events, key=lambda item: item["id"]):
+            event_type = event.get("event")
+            team = event.get("team")
+            requester = event.get("requester")
+            if (
+                event_type not in ("review_requested", "review_request_removed")
+                or not isinstance(team, str)
+                or (event_type == "review_requested" and not isinstance(requester, str))
+            ):
+                raise RuntimeError(
+                    f"Unexpected review request event for pull request [{pr}]"
+                )
+            if event_type == "review_requested":
+                owners[team] = requester
+            else:
+                owners.pop(team, None)
+
+        return owners
+
+    @classmethod
     def sync_team_review_requests(
         cls, desired_teams, managed_teams, pr=None, repo=None
     ):
@@ -827,7 +893,16 @@ class GH:
 
         current = set(requested_teams)
         teams_to_request = sorted(desired - current)
-        teams_to_remove = sorted((current & managed) - desired)
+        removal_candidates = (current & managed) - desired
+        teams_to_remove = []
+        if removal_candidates:
+            authenticated_login = cls._get_authenticated_login()
+            request_owners = cls._get_team_review_request_owners(pr, repo)
+            teams_to_remove = sorted(
+                team
+                for team in removal_candidates
+                if request_owners.get(team) == authenticated_login
+            )
 
         if teams_to_request:
             cls._change_team_review_requests("POST", teams_to_request, pr, repo)
