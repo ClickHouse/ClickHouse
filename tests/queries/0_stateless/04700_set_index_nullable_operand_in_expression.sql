@@ -15,6 +15,13 @@ ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
 
 INSERT INTO t_113234 SELECT number FROM numbers(100);
 
+-- The queries below only cover the fix while the skip index is actually consulted, so pin the
+-- setting and assert that the index is in the plan rather than inferring it from the row counts.
+SET use_skip_indexes = 1;
+
+SELECT 'index_used', countIf(explain LIKE '%Name: t_set%') > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % 19 = 16);
+
 SELECT 'plain', count() FROM t_113234 WHERE t % 19 = 16;
 SELECT 'to_nullable', count() FROM t_113234 WHERE t % toNullable(19) = 16;
 SELECT 'null_if', count() FROM t_113234 WHERE t % nullIf(19, 0) = 16;
