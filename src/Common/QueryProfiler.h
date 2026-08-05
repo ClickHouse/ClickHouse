@@ -32,8 +32,11 @@ namespace Poco
 /// header line, with no stack trace, no `SUMMARY` and no origin - so a real bug found under MSan
 /// carries no information at all about where it is. Other sanitizers are unaffected: their checks
 /// fire only on genuinely invalid accesses, which the handler does not perform.
+///
+/// Emscripten declares `SIGEV_THREAD_ID` but its `sigevent` has no `_sigev_un`, and a
+/// WebAssembly sandbox has no signals to deliver a timer expiry with in the first place.
 #if (defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)) && !(defined(THREAD_SANITIZER) && defined(OS_DARWIN)) \
-    && !defined(MEMORY_SANITIZER)
+    && !defined(MEMORY_SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
 #    define QUERY_PROFILER_SUPPORTED 1
 #endif
 
@@ -52,7 +55,7 @@ namespace DB
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
 
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
 class Timer
 {
 public:
@@ -70,7 +73,7 @@ private:
     LoggerPtr log;
     std::optional<timer_t> timer_id;
 };
-#endif // defined(SIGEV_THREAD_ID)
+#endif // defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
 
 template <typename ProfilerImpl>
 class QueryProfilerBase
@@ -88,7 +91,7 @@ private:
 
     LoggerPtr log;
 
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
     inline static thread_local Timer timer = Timer();
 #endif
 
