@@ -203,7 +203,26 @@ if timeout 15 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE" > /de
     ")
     echo "patch-read-interruptible spurious-part-checks=$spurious"
 else
+    # A timed-out WAIT does not by itself prove the read never paused, and DISABLE FAILPOINT
+    # RELEASES a thread that is already parked. Disabling before the query's fate is known would
+    # therefore let a read that paused just after the bound finish with status 0 and be reported
+    # as a pass. So establish that the query is gone while the failpoint is still ARMED, where a
+    # parked read provably cannot exit, and make "still running" its own failure.
+    # Bound: a cold-cache run of this OPTIMIZE measures ~0.13 s and the WAIT above already gave
+    # it 15 s, so 10 s more is ample.
+    reaped=0
+    for _ in {1..100}; do
+        kill -0 "$patch_pid" 2>/dev/null || { reaped=1; break; }
+        sleep 0.1
+    done
+    if [ "$reaped" = "0" ]; then
+        echo "FAIL: the patch-read query is still running, so it paused at the failpoint"
+    fi
+
+    # After the verdict above, so that releasing a parked read can no longer hide it. Also lets
+    # the wait below return instead of blocking until the test timeout in the parked case.
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP"
+
     # Not reaching the failpoint is only meaningful if the read actually ran, so keep the
     # query's outcome instead of discarding it: an uncancelled DRY RUN must succeed.
     patch_status=0
