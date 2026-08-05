@@ -33,8 +33,13 @@ EOF
 for enable_analyzer in 0 1; do
     for _ in {1..10}; do
         (! ${CLICKHOUSE_CLIENT} --enable_analyzer="$enable_analyzer" --query "SELECT n * 0.123 FROM (SELECT * FROM tbl_03971_a)" 2>&1 | grep LOGICAL_ERROR) &
+        select_pid=$!
         ${CLICKHOUSE_CLIENT} --query "RENAME TABLE tbl_03971_a TO tbl_03971_tmp, tbl_03971_b TO tbl_03971_a, tbl_03971_tmp TO tbl_03971_b" 2>/dev/null &
-        wait 2>/dev/null
+        rename_pid=$!
+        # Wait on each PID explicitly: a bare `wait` returns 0 regardless of child status, so
+        # set -e would never see a LOGICAL_ERROR from the SELECT branch or a failed RENAME.
+        wait "$select_pid"
+        wait "$rename_pid"
     done
 done
 
