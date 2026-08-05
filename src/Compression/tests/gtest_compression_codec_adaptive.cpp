@@ -2,7 +2,6 @@
 #include <cstring>
 #include <thread>
 #include <vector>
-#include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
@@ -282,7 +281,7 @@ TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
     EXPECT_TRUE(ok);
 }
 
-TEST(GetCompressedBlockSize, CalculateMatchesCompressForT64)
+TEST(TryGetCompressedSize, MatchesCompressForT64)
 {
     std::vector<UInt32> values(50000);
     for (size_t i = 0; i < values.size(); ++i)
@@ -295,11 +294,11 @@ TEST(GetCompressedBlockSize, CalculateMatchesCompressForT64)
     const auto & t64 = pool[2];
     ASSERT_EQ(t64->getMethodByte(), T64);
 
-    PODArray<char> scratch;
-    const UInt32 calculated = CompressedSizeCalculator::getCompressedBlockSize(*t64, bytes.data(), size, scratch);
+    const auto calculated = t64->tryGetCompressedSize(bytes.data(), size);
+    ASSERT_TRUE(calculated.has_value());
 
-    /// Re-derive size from a real compress: calculation must match exactly
+    /// Re-derive size from a real compress.
     PODArray<char> encoded(t64->getCompressedReserveSize(size));
     const UInt32 actual = t64->compress(bytes.data(), size, encoded.data());
-    EXPECT_EQ(calculated, actual);
+    EXPECT_EQ(ICompressionCodec::getHeaderSize() + *calculated, actual);
 }
