@@ -424,28 +424,43 @@ void StorageBuffer::read(
             else
             {
                 auto src_table_query_info = query_info;
-                ActionsDAG converting_dag;
-                if (src_table_query_info.prewhere_info || src_table_query_info.row_level_filter)
-                {
-                    converting_dag = ActionsDAG::makeConvertingActions(
-                        header_after_adding_defaults.getColumnsWithTypeAndName(),
-                        header.getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Name,
-                        local_context);
-                }
+
+                /// Columns a previously built prefix already converted and kept as an output of its
+                /// filter. Forwarded filters become consecutive prewhere steps over one block that
+                /// carries each step's outputs forward, so such a column reaches the next prefix
+                /// already holding this table's type and must not be converted a second time.
+                /// The call order below must match the step order in
+                /// MergeTreeSelectProcessor::getPrewhereActions (row-level filter, then PREWHERE).
+                NameSet already_converted;
 
                 /// The prefix converts the whole sample block, but the filter runs inside the
                 /// destination read, where only its own columns are known to have the declared
                 /// types. Keep just the filter's outputs; the rest converts after the read as usual.
                 auto merge_converting_prefix = [&](ActionsDAG filter_dag)
                 {
+                    auto source_columns = header_after_adding_defaults.getColumnsWithTypeAndName();
+                    for (auto & source_column : source_columns)
+                        if (already_converted.contains(source_column.name))
+                            source_column.type = header.getByName(source_column.name).type;
+
+                    auto converting_dag = ActionsDAG::makeConvertingActions(
+                        source_columns,
+                        header.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name,
+                        local_context);
+
                     Names filter_outputs;
                     filter_outputs.reserve(filter_dag.getOutputs().size());
                     for (const auto * output : filter_dag.getOutputs())
                         filter_outputs.push_back(output->result_name);
 
-                    auto merged = ActionsDAG::merge(converting_dag.clone(), std::move(filter_dag));
+                    auto merged = ActionsDAG::merge(std::move(converting_dag), std::move(filter_dag));
                     merged.removeUnusedActions(filter_outputs);
+
+                    for (const auto & filter_output : filter_outputs)
+                        if (header.has(filter_output))
+                            already_converted.insert(filter_output);
+
                     return merged;
                 };
 
