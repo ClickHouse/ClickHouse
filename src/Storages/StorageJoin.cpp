@@ -1,4 +1,5 @@
 #include <Storages/StorageJoin.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
@@ -168,6 +169,9 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
+
+    /// As in `StorageSet::truncate`: accounted on the global tracker, so do not credit this query.
+    MemoryTrackerBlockerInThread not_credited_to_the_query;
     join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
 }
 
