@@ -29,13 +29,16 @@ WORKFLOW = os.path.join(
 RUN_ID = 42
 
 GH_STUB = """#!/usr/bin/env bash
-if [ "$1" = "run" ] && [ "$2" = "list" ]; then
-    # Evaluate the caller's own --jq expression against the fixture listing.
+# The caller's own --jq expression, so the stub answers the field that was asked for rather
+# than a fixed string: requesting anything but .conclusion must be observable.
+_jq_expr() {
     while [ $# -gt 0 ]; do
-        if [ "$1" = "--jq" ]; then jq_expr="$2"; fi
+        if [ "$1" = "--jq" ]; then echo "$2"; return; fi
         shift
     done
-    jq -r "$jq_expr" "$FIXTURE"
+}
+if [ "$1" = "run" ] && [ "$2" = "list" ]; then
+    jq -r "$(_jq_expr "$@")" "$FIXTURE"
     exit 0
 fi
 if [ "$1" = "run" ] && [ "$2" = "rerun" ]; then
@@ -44,7 +47,13 @@ if [ "$1" = "run" ] && [ "$2" = "rerun" ]; then
     exit 0
 fi
 case "$*" in
-    *attempts/1*) echo "$ATTEMPT1_CONCLUSION" ;;
+    *attempts/1*)
+        if [ -n "${ATTEMPT1_FAIL:-}" ]; then
+            echo "stub: simulated attempt-1 API error" >&2
+            exit 1
+        fi
+        echo "$ATTEMPT1_JSON" | jq -r "$(_jq_expr "$@")"
+        ;;
     *'/jobs?'*) echo "$JOBS_JSON" ;;
     *) echo '{}' ;;
 esac
@@ -97,10 +106,23 @@ def test_selector_admits_gated_fork_runs():
     assert r'\"\(.databaseId):\(.attempt)\"' in step, "projection must emit id:attempt"
     assert 'run_id="${run_entry%%:*}"' in step, "run id must come from the head field"
     assert 'run_attempt="${run_entry##*:}"' in step, "attempt must come from the tail field"
+    # A gated attempt 1 has status "completed" and conclusion "action_required", so a probe
+    # reading any other field rejects every fork candidate while the asserts above still pass.
+    assert "--jq '.conclusion'" in step, "the probe must read the conclusion field"
+    # Without the fallback a transient API error aborts the step under "set -euo pipefail",
+    # taking down the whole hourly retry rather than skipping one run.
+    assert '2>/dev/null || echo ""' in step, "the probe must fail closed on an API error"
 
 
-def _run_step(tmp_path, attempt, attempt1_conclusion, age_hours, jobs_json):
-    """Run the real step over a one-row fixture. Returns (proc, rerun_log_text)."""
+def _run_step(
+    tmp_path, attempt, attempt1_conclusion, age_hours, jobs_json, attempt1_fail=False
+):
+    """Run the real step over a one-row fixture. Returns (proc, rerun_log_text).
+
+    ``attempt1_conclusion`` becomes the ``conclusion`` of a full attempt payload whose
+    ``status`` is always ``completed`` (what the real API returns for a gated attempt), so a
+    probe reading the wrong field gets ``completed`` rather than the expected value.
+    """
     created_at = (
         datetime.datetime.now(datetime.timezone.utc)
         - datetime.timedelta(hours=age_hours)
@@ -125,7 +147,14 @@ def _run_step(tmp_path, attempt, attempt1_conclusion, age_hours, jobs_json):
             "GH_REPO": "ClickHouse/ClickHouse",
             "GH_TOKEN": "stub",
             "FIXTURE": str(fixture),
-            "ATTEMPT1_CONCLUSION": attempt1_conclusion,
+            "ATTEMPT1_JSON": json.dumps(
+                {
+                    "status": "completed",
+                    "conclusion": attempt1_conclusion,
+                    "run_attempt": 1,
+                }
+            ),
+            "ATTEMPT1_FAIL": "1" if attempt1_fail else "",
             "JOBS_JSON": jobs_json,
             "RERUN_LOG": str(rerun_log),
         },
@@ -178,3 +207,21 @@ def test_gated_fork_run_is_actually_rerun(tmp_path, attempt1_conclusion, rerun_e
     if rerun_expected:
         # The fixture is attempt 2, so the rerun it triggers is attempt 3.
         assert "/attempts/3" in proc.stdout, proc.stdout
+
+
+@pytest.mark.skipif(
+    not shutil.which("jq"),
+    reason="needs jq; absent from the CI Tests image, so CI relies on the static asserts",
+)
+def test_attempt1_probe_fails_closed_on_api_error(tmp_path):
+    """A failing attempt-1 API call must skip the run, not abort the whole tick: the empty
+    fallback value is not ``action_required``, so the candidate is rejected and the loop
+    continues. Without the fallback, ``set -euo pipefail`` would kill the step instead."""
+    proc, rerun_log = _run_step(
+        tmp_path, 2, "action_required", 1, INFRA_JOBS, attempt1_fail=True
+    )
+    # _run_step already asserts returncode 0, i.e. the step survived the API error.
+    # The empty conclusion in the skip message is the fallback's own value, so this also
+    # proves the probe was reached rather than the run being dropped earlier.
+    assert f"Skipping run {RUN_ID}: attempt 1 concluded ''" in proc.stdout, proc.stdout
+    assert f"run rerun {RUN_ID}" not in rerun_log, rerun_log
