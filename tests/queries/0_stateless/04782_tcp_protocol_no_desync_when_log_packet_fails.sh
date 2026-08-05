@@ -11,6 +11,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The query of case 2 goes through a file: it is far too long to pass as an argument.
+QUERY_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.sql"
+
+# The failpoints are process-global, so an abnormal exit anywhere below would leave one armed and
+# every later query that asks for logs would lose its log packet.
+trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT native_writer_throw_memory_limit_mid_block" || true
+      ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT native_writer_throw_memory_limit_after_flush" || true
+      rm -f "${QUERY_FILE:-}"' EXIT
+
 # Both cases below run a query that fails during analysis, so the log packet is the first block
 # written to the connection, and a failpoint makes serializing it throw MEMORY_LIMIT_EXCEEDED
 # part-way through. grep -a: a desynchronized response carries raw packet bytes, which makes grep
@@ -23,6 +32,13 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=error -q \
     "SELECT * FROM ${CLICKHOUSE_DATABASE}.table_that_does_not_exist" 2>&1 \
     | grep -aoE 'UNKNOWN_TABLE|Unrecognized token|SYNTAX_ERROR' | sort -u
 
+# The failpoint must actually have fired: when it does the log packet is rolled back and never
+# reaches the client, so the server-side log line it carries is absent. Without this the case
+# above would pass even if the failpoint were renamed or stopped being reached.
+${CLICKHOUSE_CLIENT} --send_logs_level=error -q \
+    "SELECT * FROM ${CLICKHOUSE_DATABASE}.table_that_does_not_exist" 2>&1 \
+    | grep -ac '<Error> executeQuery'
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT native_writer_throw_memory_limit_mid_block"
 
 # 2. The log block is larger than the output buffer, so part of it has already been sent and the
@@ -30,8 +46,6 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT native_writer_throw_memory_lim
 # that, the client waits for the rest of the aborted packet until the socket timeout.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT native_writer_throw_memory_limit_after_flush"
 
-# The query goes through a file: it is far too long to pass as a command line argument.
-QUERY_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.sql"
 python3 -c "print('SELECT * FROM ${CLICKHOUSE_DATABASE}.nonexistent_' + 'x' * 2000000)" > "$QUERY_FILE"
 
 ${CLICKHOUSE_CLIENT} --send_logs_level=error --max_query_size=100000000 --receive_timeout=30 \
