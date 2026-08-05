@@ -10,6 +10,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <Formats/NativeWriter.h>
 
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
@@ -25,6 +26,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char native_writer_throw_memory_limit_mid_block[];
+    extern const char native_writer_throw_memory_limit_after_flush[];
 }
 
 
@@ -175,6 +183,14 @@ size_t NativeWriter::write(const Block & block)
         /// Name
         writeStringBinary(column.name, ostr);
 
+        /// The column name is on the buffer but the type is not: the exact state in which a
+        /// throw leaves a half-serialized block behind. Restricted to the log block, so that
+        /// enabling the failpoint cannot disturb queries running concurrently.
+        fiu_do_on(FailPoints::native_writer_throw_memory_limit_mid_block, {
+            if (column.name == "event_time_microseconds")
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory tracker: fault injected");
+        });
+
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
         setVersionToAggregateFunctions(column.type, include_version, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 
@@ -212,6 +228,13 @@ size_t NativeWriter::write(const Block & block)
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.
             writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
+
+        /// Same as above, but only once the block has grown past the output buffer and been
+        /// partly flushed, so that the write can no longer be rolled back.
+        fiu_do_on(FailPoints::native_writer_throw_memory_limit_after_flush, {
+            if (column.name == "text" && ostr.count() - written_before > ostr.internalBuffer().size())
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory tracker: fault injected");
+        });
 
         if (index)
         {
