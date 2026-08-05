@@ -206,7 +206,18 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /// subquery --> (SELECT aggregate_function(*) FROM subquery)
     auto aggregate_function = makeASTFunction(aggregate_function_name, make_intrusive<ASTAsterisk>());
     auto subquery_node = function->children[0]->children[1];
-    auto subquery_node_clone = subquery_node->clone(); /// clone before it gets moved, needed for COUNT subquery
+
+    /// `x op ALL (empty set)` must be TRUE (vacuous truth), but the aggregate functions used for the rewrite
+    /// cannot express it: `singleValueOrNull` returns NULL for an empty set, so `x IN (NULL)` is FALSE, and
+    /// `min` / `max` return the default value of the type. So for ALL we also need to know whether the
+    /// right-hand side is empty. To avoid evaluating the right-hand side twice - which is observable with
+    /// non-deterministic subqueries - `count` and the aggregate are computed in a single SELECT, and the two
+    /// values are taken apart with `tupleElement` afterwards.
+    const bool vacuous_truth = type == SubqueryFunctionType::ALL;
+
+    ASTPtr projection = aggregate_function;
+    if (vacuous_truth)
+        projection = makeASTFunction("tuple", makeASTFunction("count", make_intrusive<ASTAsterisk>()), aggregate_function);
 
     auto table_expression = make_intrusive<ASTTableExpression>();
     table_expression->subquery = std::move(subquery_node);
@@ -220,7 +231,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     tables_in_select->children.push_back(std::move(tables_in_select_element));
 
     auto select_exp_list = make_intrusive<ASTExpressionList>();
-    select_exp_list->children.push_back(aggregate_function);
+    select_exp_list->children.push_back(std::move(projection));
 
     auto select_query = make_intrusive<ASTSelectQuery>();
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
@@ -232,50 +243,34 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
     auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
-    ast->children[0]->children.back() = std::move(new_subquery);
 
-    if (type == SubqueryFunctionType::ALL)
+    if (!vacuous_truth)
     {
-        /// Vacuous truth: x op ALL (empty set) must return TRUE.
-        /// The singleValueOrNull rewrite returns NULL for an empty set, making x IN (NULL) = FALSE.
-        /// Fix by wrapping: (SELECT count() FROM subquery) = 0 OR (x in/notIn singleValueOrNull subquery)
-
-        auto count_table_expression = make_intrusive<ASTTableExpression>();
-        count_table_expression->subquery = std::move(subquery_node_clone);
-        count_table_expression->children.push_back(count_table_expression->subquery);
-
-        auto count_tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
-        count_tables_element->table_expression = std::move(count_table_expression);
-        count_tables_element->children.push_back(count_tables_element->table_expression);
-
-        auto count_tables = make_intrusive<ASTTablesInSelectQuery>();
-        count_tables->children.push_back(std::move(count_tables_element));
-
-        auto count_select_exp_list = make_intrusive<ASTExpressionList>();
-        count_select_exp_list->children.push_back(makeASTFunction("count", make_intrusive<ASTAsterisk>()));
-
-        auto count_select_query = make_intrusive<ASTSelectQuery>();
-        count_select_query->setExpression(ASTSelectQuery::Expression::SELECT, count_select_exp_list);
-        count_select_query->setExpression(ASTSelectQuery::Expression::TABLES, count_tables);
-
-        auto count_union = make_intrusive<ASTSelectWithUnionQuery>();
-        count_union->list_of_selects = make_intrusive<ASTExpressionList>();
-        count_union->list_of_selects->children.push_back(std::move(count_select_query));
-        count_union->children.push_back(count_union->list_of_selects);
-
-        auto count_subquery = make_intrusive<ASTSubquery>(std::move(count_union));
-        auto count_eq_zero = makeASTFunction("equals",
-            std::move(count_subquery),
-            make_intrusive<ASTLiteral>(UInt64{0}));
-
-        /// Mutate ast in place to become: or(count=0, in/notIn(...))
-        auto in_clone = ast->clone();
-        auto * or_node = assert_cast<ASTFunction *>(ast.get());
-        or_node->name = "or";
-        or_node->arguments = make_intrusive<ASTExpressionList>();
-        or_node->arguments->children = {std::move(count_eq_zero), std::move(in_clone)};
-        or_node->children = {or_node->arguments};
+        ast->children[0]->children.back() = std::move(new_subquery);
+        return true;
     }
+
+    /// subquery --> (SELECT (count(*), aggregate_function(*)) FROM subquery)
+    ///  x op ALL subquery --> tupleElement(subquery, 1) = 0 OR x op tupleElement(subquery, 2)
+    ///
+    /// Both occurrences of the scalar subquery are textually identical, and scalar subqueries are cached by the
+    /// hash of the subquery (`ExecuteScalarSubqueriesVisitor` for the old analyzer and `evaluateScalarSubqueryIfNeeded`
+    /// for the new one), so the right-hand side is evaluated exactly once - even if it is non-deterministic,
+    /// both `tupleElement` calls observe the same evaluation.
+    auto is_empty = makeASTFunction("equals",
+        makeASTFunction("tupleElement", new_subquery->clone(), make_intrusive<ASTLiteral>(UInt64{1})),
+        make_intrusive<ASTLiteral>(UInt64{0}));
+
+    ast->children[0]->children.back()
+        = makeASTFunction("tupleElement", std::move(new_subquery), make_intrusive<ASTLiteral>(UInt64{2}));
+
+    /// Mutate ast in place to become: or(is_empty, <the original comparison>)
+    auto comparison = ast->clone();
+    auto * or_node = assert_cast<ASTFunction *>(ast.get());
+    or_node->name = "or";
+    or_node->arguments = make_intrusive<ASTExpressionList>();
+    or_node->arguments->children = {std::move(is_empty), std::move(comparison)};
+    or_node->children = {or_node->arguments};
 
     return true;
 }
