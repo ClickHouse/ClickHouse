@@ -266,12 +266,20 @@ def main():
                 # `libarchive-dev 3.6.0-1ubuntu1.7`) that Ubuntu already removed
                 # from the mirror pool, which makes `apt-get install` fail with a
                 # 404. Refreshing the index first resolves to the current version.
-                "command -v createrepo_c || (sudo apt-get update && sudo apt-get install -y createrepo-c) ||:",
+                #
+                # `-o DPkg::Lock::Timeout=300` on every apt-get: a freshly booted
+                # runner may still be running `unattended-upgrades`, which holds
+                # `/var/lib/dpkg/lock-frontend`. Without a timeout `apt-get install`
+                # aborts immediately ("Could not get lock ... held by process
+                # unattended-upgr"); swallowed by the trailing `||:`, it leaves the
+                # tools uninstalled and the fail-close check below aborts the whole
+                # release. The timeout makes apt wait for the lock instead.
+                "command -v createrepo_c || (sudo apt-get update -o DPkg::Lock::Timeout=300 && sudo apt-get install -o DPkg::Lock::Timeout=300 -y createrepo-c) ||:",
                 # reprepro 5.4.4+ is required for the 'Limit' field in distributions config.
                 # Ubuntu Jammy only has 5.3.0, so build from source if needed.
                 "reprepro --version 2>&1 | grep -qE '5\\.[4-9]' || ("
-                "  sudo apt-get update &&"
-                "  sudo apt-get install -y dpkg-dev fakeroot libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper &&"
+                "  sudo apt-get update -o DPkg::Lock::Timeout=300 &&"
+                "  sudo apt-get install -o DPkg::Lock::Timeout=300 -y dpkg-dev fakeroot libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper &&"
                 "  git clone https://salsa.debian.org/debian/reprepro.git /tmp/reprepro-src &&"
                 "  cd /tmp/reprepro-src &&"
                 "  dpkg-buildpackage -b --no-sign &&"
