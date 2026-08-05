@@ -888,7 +888,7 @@ void PostgreSQLHandler::cancelRequest()
     /// PostgreSQL answers a cancel request with nothing at all and closes the connection, whatever the
     /// outcome, so that a caller cannot probe for live backends. Report the outcome to the log only.
     String query_id = queryIdFor(msg->process_id, msg->secret_key);
-    CancellationCode code = server.context()->getProcessList().sendCancelToQueryOfAnyUser(query_id);
+    CancellationCode code = server.context()->getProcessList().sendCancelToPostgreSQLQuery(query_id);
     LOG_DEBUG(log, "Cancellation of query {}: {}", query_id, code == CancellationCode::CancelSent ? "sent" : "not sent");
 }
 

@@ -813,7 +813,7 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 }
 
 
-CancellationCode ProcessList::sendCancelToQueryOfAnyUser(const String & current_query_id)
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(const String & current_query_id)
 {
     String current_user;
 
@@ -822,6 +822,17 @@ CancellationCode ProcessList::sendCancelToQueryOfAnyUser(const String & current_
         auto query_user = queries_to_user.find(current_query_id);
         if (query_user == queries_to_user.end())
             return CancellationCode::NotFound;
+
+        /// The caller identifies the target only by the `postgres:<connection id>:<secret key>` query id
+        /// that the server itself assigns to statements of a PostgreSQL connection. That string is not
+        /// reserved to the PostgreSQL interface, though: other interfaces let a client pick an arbitrary
+        /// query id (e.g. the HTTP `query_id` parameter), so a query of another user could impersonate the
+        /// shape. The secret key is only a credential for ids the server assigned, so a query that did not
+        /// arrive through the PostgreSQL interface is treated as not found rather than cancelled.
+        auto elem = tryGetProcessListElement(current_query_id, query_user->second);
+        if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
+            return CancellationCode::NotFound;
+
         current_user = query_user->second;
     }
 
