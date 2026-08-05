@@ -9,6 +9,11 @@ node = cluster.add_instance("node", main_configs=["configs/config.d/tcp_connecti
 def started_cluster():
     try:
         cluster.start()
+        # `cluster.start` only waits until the TCP port completes a handshake, which the
+        # kernel does as soon as the socket is listening - the server can still be starting
+        # up and not accepting yet. Wait until a query actually goes through, so that the
+        # connection of a test is not queued behind the rest of the startup.
+        node.query("SELECT 1")
         yield cluster
     finally:
         cluster.shutdown()
