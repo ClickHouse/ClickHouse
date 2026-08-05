@@ -6,26 +6,114 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # `_shard_num` is shipped by the initiator of a distributed query, while the view's own SETTINGS name a
-# different `cluster_for_parallel_replicas`. Applying that shard number to the view's cluster used to
-# throw "Shard number is greater than shard count" (shard 2 of a 1-shard cluster).
+# different `cluster_for_parallel_replicas`. A shard number produced for one cluster does not index
+# another: out of range it threw "Shard number is greater than shard count", in range it silently read
+# the wrong shard.
 
+# Every arm pins the settings that select the code path under test:
+#   prefer_localhost_replica = 0     -- a local replica ships no `_shard_num` over the wire at all
+#   parallel_replicas_plan_based = 0 -- the plan-based path builds locally and never applies a shard scope
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE t_04727 (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_04727 SELECT number FROM numbers(100);
 
-CREATE VIEW v_04727 AS SELECT a FROM t_04727
+-- The view's parallel-replicas cluster has ONE shard, so a shipped shard_num=2 is out of range.
+CREATE VIEW v_out_of_range_04727 AS SELECT a FROM t_04727
+  SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+           parallel_replicas_for_non_replicated_merge_tree = 1,
+           automatic_parallel_replicas_mode = 0,
+           cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+
+-- ... and here it has TWO, so shard_num=2 is in range: the bounds check passes and the read is
+-- silently scoped to an unrelated shard of a cluster the outer query never addressed.
+CREATE VIEW v_in_range_04727 AS SELECT a FROM t_04727
+  SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+           parallel_replicas_for_non_replicated_merge_tree = 1,
+           automatic_parallel_replicas_mode = 0,
+           cluster_for_parallel_replicas = 'test_cluster_two_shard_three_replicas_localhost';
+
+-- Without the analyzer the storage decides the processing stage, so the work the view's own plan is
+-- expected to do must actually happen there: a WHERE, and an aggregate whose partial state the
+-- initiator merges.
+CREATE VIEW v_filter_04727 AS SELECT a FROM t_04727 WHERE a >= 50
+  SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+           parallel_replicas_for_non_replicated_merge_tree = 1,
+           automatic_parallel_replicas_mode = 0,
+           cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+
+CREATE VIEW v_aggregate_04727 AS SELECT sum(a) AS s FROM t_04727 WHERE a >= 50
   SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
            parallel_replicas_for_non_replicated_merge_tree = 1,
            automatic_parallel_replicas_mode = 0,
            cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 "
 
-# prefer_localhost_replica=0 makes both shards read over the network, which is what ships _shard_num.
-# Each shard of test_cluster_two_shards_localhost points at this same server, so the expected answer is
-# the view's sum counted twice.
+# Reports whether parallel replicas were actually used by the arm tagged with $1, so that an arm cannot
+# pass by silently falling back to a plain local read. Same shape as
+# 02875_parallel_replicas_cluster_all_replicas.
+parallel_replicas_used() {
+    $CLICKHOUSE_CLIENT -q "
+    SELECT countIf(ProfileEvents['ParallelReplicasQueryCount'] > 0) > 0 FROM system.query_log
+    WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+      AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+          AND event_date >= yesterday() AND log_comment = '$1')
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0"
+}
+
+# Each shard of test_cluster_two_shards_localhost points at this same server and table, so the value is
+# the view's sum counted twice on every arm; it is `parallel_replicas_used` that tells the arms apart.
+echo '-- out-of-range foreign shard scope: declined, so no abort'
 $CLICKHOUSE_CLIENT -q "
-SELECT sum(a) FROM cluster('test_cluster_two_shards_localhost', currentDatabase(), v_04727)
-SETTINGS prefer_localhost_replica = 0;
+SELECT sum(a) FROM cluster('test_cluster_two_shards_localhost', currentDatabase(), v_out_of_range_04727)
+SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
+         log_comment = '04727_out_of_range_${CLICKHOUSE_DATABASE}';
 "
 
-$CLICKHOUSE_CLIENT -q "DROP VIEW v_04727; DROP TABLE t_04727;"
+echo '-- in-range foreign shard scope: declined, so the wrong shard is never read'
+$CLICKHOUSE_CLIENT -q "
+SELECT sum(a) FROM cluster('test_cluster_two_shards_localhost', currentDatabase(), v_in_range_04727)
+SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
+         log_comment = '04727_in_range_${CLICKHOUSE_DATABASE}';
+"
+
+echo '-- matching shard scope: still honoured, i.e. the feature is declined and not disabled'
+$CLICKHOUSE_CLIENT -q "
+SELECT sum(a) FROM cluster('test_cluster_two_shard_three_replicas_localhost', currentDatabase(), v_in_range_04727)
+SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
+         log_comment = '04727_matching_${CLICKHOUSE_DATABASE}';
+"
+
+# Without the analyzer the storage decides both the processing stage and whether to read through
+# parallel replicas, and the two decisions must agree. A stage of WithMergeableState above a plan that
+# was in fact built locally makes the initiator treat raw rows as partial aggregate states and skip the
+# first-stage work: the filter below is then not applied, and the aggregate below is not found at all.
+echo '-- out-of-range foreign shard scope, old analyzer: the view filter is applied'
+$CLICKHOUSE_CLIENT -q "
+SELECT sum(a) FROM cluster('test_cluster_two_shards_localhost', currentDatabase(), v_filter_04727)
+SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
+         enable_analyzer = 0, parallel_replicas_only_with_analyzer = 0,
+         log_comment = '04727_old_analyzer_filter_${CLICKHOUSE_DATABASE}';
+"
+
+echo '-- out-of-range foreign shard scope, old analyzer: the view aggregate is computed'
+$CLICKHOUSE_CLIENT -q "
+SELECT sum(s) FROM cluster('test_cluster_two_shards_localhost', currentDatabase(), v_aggregate_04727)
+SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
+         enable_analyzer = 0, parallel_replicas_only_with_analyzer = 0,
+         log_comment = '04727_old_analyzer_aggregate_${CLICKHOUSE_DATABASE}';
+"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+
+echo '-- parallel replicas used? out_of_range / in_range / matching / old analyzer filter, aggregate'
+parallel_replicas_used "04727_out_of_range_${CLICKHOUSE_DATABASE}"
+parallel_replicas_used "04727_in_range_${CLICKHOUSE_DATABASE}"
+parallel_replicas_used "04727_matching_${CLICKHOUSE_DATABASE}"
+parallel_replicas_used "04727_old_analyzer_filter_${CLICKHOUSE_DATABASE}"
+parallel_replicas_used "04727_old_analyzer_aggregate_${CLICKHOUSE_DATABASE}"
+
+$CLICKHOUSE_CLIENT -q "
+DROP VIEW v_aggregate_04727; DROP VIEW v_filter_04727;
+DROP VIEW v_in_range_04727; DROP VIEW v_out_of_range_04727; DROP TABLE t_04727;"

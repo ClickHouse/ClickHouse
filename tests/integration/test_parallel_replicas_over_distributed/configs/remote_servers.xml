@@ -32,6 +32,40 @@
                 </replica>
             </shard>
         </test_multiple_shards_multiple_replicas>
+        <!-- Used by test_foreign_shard_scope_is_not_applied. Shard 2 is the n4 group, which the outer
+             read never addresses and which holds different rows, so a `_shard_num` shipped by the outer
+             read must not be applied here. Each shard needs more than one replica or parallel replicas
+             are disabled for the hop and the test would measure nothing. -->
+        <test_foreign_shard_scope>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica><host>n1</host><port>9000</port></replica>
+                <replica><host>n2</host><port>9000</port></replica>
+                <replica><host>n3</host><port>9000</port></replica>
+            </shard>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica><host>n4</host><port>9000</port></replica>
+                <replica><host>n5</host><port>9000</port></replica>
+                <replica><host>n6</host><port>9000</port></replica>
+            </shard>
+        </test_foreign_shard_scope>
+        <!-- The outer distributed read for that test: two shards, both the n1 group, so its own result
+             never depends on anything the n4 group holds. -->
+        <test_outer_two_shards_same_node>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica><host>n1</host><port>9000</port></replica>
+                <replica><host>n2</host><port>9000</port></replica>
+                <replica><host>n3</host><port>9000</port></replica>
+            </shard>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica><host>n1</host><port>9000</port></replica>
+                <replica><host>n2</host><port>9000</port></replica>
+                <replica><host>n3</host><port>9000</port></replica>
+            </shard>
+        </test_outer_two_shards_same_node>
         <test_single_shard_multiple_replicas>
             <shard>
                 <internal_replication>true</internal_replication>

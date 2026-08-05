@@ -51,6 +51,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -10314,8 +10315,10 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
         if (query_context->getClientInfo().collaborate_with_initiator)
             return QueryProcessingStage::Enum::FetchColumns;
 
-        /// Parallel replicas
-        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
+        /// Parallel replicas. The scope check must match the one in the storages' `read`, or the stage
+        /// promised here and the plan actually built disagree.
+        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState
+            && !ClusterProxy::hasForeignShardScope(query_context))
         {
             /// ReplicatedMergeTree
             if (supportsReplication())
