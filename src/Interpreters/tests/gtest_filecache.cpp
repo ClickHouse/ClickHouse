@@ -3145,6 +3145,85 @@ TEST_F(FileCacheTest, EvictionMetricsRuntimeToggle)
     EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), before_redisabled);
 }
 
+TEST_F(FileCacheTest, UsageMetricsSettingIsStartupOnly)
+{
+    /// Counterpart of `EvictionMetricsRuntimeToggle` for the usage gauges:
+    /// `expose_prometheus_cache_usage_metrics_per_user` is deliberately *not* reloadable,
+    /// because usage is accounted per cache entry from the moment the entry is created,
+    /// so a cache populated while the setting was off cannot be accounted retroactively.
+    /// `applySettingsIfPossible` must therefore refuse the change (without throwing) and
+    /// leave both the behaviour and the reported (actual) value at the startup value.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    auto make_settings = [&](const std::string & path, bool expose)
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = path;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 10;
+        settings[FileCacheSetting::max_file_segment_size] = 10;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user] = expose;
+        return settings;
+    };
+
+    /// Populate a cache so that there is something to account for.
+    auto populate = [&](DB::FileCache & cache, const std::string & key_name)
+    {
+        auto key = FileCacheKey::fromPath(key_name);
+        auto holder = cache.getOrSet(key, 0, 10, static_cast<size_t>(-1), {}, 0, FileCache::getCommonOrigin());
+        ASSERT_EQ(holder->size(), 1u);
+        download(*holder->begin());
+    };
+
+    /// 1) Started with the feature ON: a runtime disable must not drain the accounting.
+    {
+        auto settings = make_settings((caches_dir / "usage_metrics_startup_only_on").string(), true);
+        DB::FileCache cache("usage_metrics_startup_only_on", settings);
+        cache.initialize();
+        ASSERT_TRUE(cache.exposesUsageMetricsPerUser());
+
+        populate(cache, "usage_metrics_startup_only_on_key");
+        ASSERT_FALSE(cache.getUsageStatPerClient().empty());
+
+        DB::FileCacheSettings current = settings;
+        DB::FileCacheSettings new_settings = current;
+        new_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user] = false;
+        ASSERT_NO_THROW(cache.applySettingsIfPossible(new_settings, current));
+
+        /// The reported value stays at what the cache really does, and usage is still accounted.
+        EXPECT_TRUE(current[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user]);
+        EXPECT_TRUE(cache.exposesUsageMetricsPerUser());
+        EXPECT_FALSE(cache.getUsageStatPerClient().empty());
+    }
+
+    /// 2) Started with the feature OFF: a runtime enable must not silently pretend to work.
+    {
+        auto settings = make_settings((caches_dir / "usage_metrics_startup_only_off").string(), false);
+        DB::FileCache cache("usage_metrics_startup_only_off", settings);
+        cache.initialize();
+        ASSERT_FALSE(cache.exposesUsageMetricsPerUser());
+
+        populate(cache, "usage_metrics_startup_only_off_key");
+        ASSERT_TRUE(cache.getUsageStatPerClient().empty());
+
+        DB::FileCacheSettings current = settings;
+        DB::FileCacheSettings new_settings = current;
+        new_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user] = true;
+        ASSERT_NO_THROW(cache.applySettingsIfPossible(new_settings, current));
+
+        EXPECT_FALSE(current[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user]);
+        EXPECT_FALSE(cache.exposesUsageMetricsPerUser());
+        /// No half-enabled state: entries cached before the reload are not accounted,
+        /// and no new tracker was installed behind them.
+        EXPECT_TRUE(cache.getUsageStatPerClient().empty());
+        populate(cache, "usage_metrics_startup_only_off_key_2");
+        EXPECT_TRUE(cache.getUsageStatPerClient().empty());
+    }
+}
+
 namespace
 {
     /// Creators for SplitFileCachePriority inner queues used by the split-cache tests below.

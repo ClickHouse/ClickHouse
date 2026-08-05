@@ -3015,6 +3015,25 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         expose_eviction_metrics_per_user.store(new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user], std::memory_order_relaxed);
         actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user] = new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user];
     }
+
+    /// Unlike the eviction metrics above, this one is startup-only.
+    /// Usage counters are attached to a priority queue entry when the entry is created, so
+    /// enabling the feature on a live cache would never account for the entries which are
+    /// already cached: the gauges would keep under-reporting the real usage until every
+    /// pre-existing entry happens to be evicted. An unnoticeably wrong gauge is worse than
+    /// an absent one, so refuse the change instead and say so in the log.
+    /// `actual_settings` is deliberately left at the effective value, so that
+    /// `system.filesystem_cache_settings` keeps showing what the cache actually does.
+    if (new_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user]
+        != actual_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user])
+    {
+        LOG_WARNING(
+            log,
+            "Setting `expose_prometheus_cache_usage_metrics_per_user` was changed to {} in the configuration, "
+            "but it cannot be changed without a server restart, therefore it stays {}",
+            new_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user].value,
+            actual_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user].value);
+    }
 }
 
 FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & prev_limits, const SizeLimits & desired_limits)
