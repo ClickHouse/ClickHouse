@@ -109,7 +109,30 @@ def test_selector_admits_gated_fork_runs():
     # The probe must interrogate attempt 1: reading any other attempt makes it meaningless.
     assert "/attempts/1" in step, "the probe must read attempt 1"
     # It must be reached only for a candidate that is NOT attempt 1.
-    assert 'if [ "$run_attempt" != "1" ]; then' in step, "probe must guard on attempt != 1"
+    GUARD = 'if [ "$run_attempt" != "1" ]; then'
+    assert GUARD in step, "probe must guard on attempt != 1"
+    # Text presence is not reachability: wrapping the whole probe block in `if false; then`
+    # keeps every assertion above true while the never-retried invariant stops holding.
+    # So pin that the guard IS the condition gating the probe -- loop-body level, with no
+    # enclosing conditional still open.
+    lines = step.splitlines()
+    loop = next(i for i, l in enumerate(lines) if l.strip().startswith("for run_entry in"))
+    guard = next(i for i, l in enumerate(lines) if GUARD in l)
+    assert loop < guard, (loop, guard)
+    depth = 0
+    for l in lines[loop + 1 : guard]:
+        s = l.strip()
+        if re.match(r"^(if|while|until)\b", s):
+            depth += 1
+        elif s in ("fi", "done"):
+            depth -= 1
+    assert depth == 0, f"probe is nested inside an enclosing conditional (depth {depth})"
+    body_indent = min(
+        len(l) - len(l.lstrip()) for l in lines[loop + 1 : guard] if l.strip()
+    )
+    assert len(lines[guard]) - len(lines[guard].lstrip()) == body_indent, (
+        "the probe's guard must sit at loop-body level, not nested one level deeper"
+    )
     # And its reject branch must actually skip the run, not merely log. Scope the search to
     # that branch's own body: a "continue" belonging to a later loop would satisfy this too.
     reject_branch = re.split(
