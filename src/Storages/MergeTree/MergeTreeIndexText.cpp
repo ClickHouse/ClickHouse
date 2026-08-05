@@ -812,10 +812,26 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
     using enum PostingsSerialization::Flags;
     const auto & token_infos = analyzer->getAllTokenInfos();
 
-    /// Process regular tokens.
+    std::vector<std::pair<std::string_view, TokenPostingsInfoPtr>> tokens_to_read;
+    tokens_to_read.reserve(token_infos.size());
+
     for (const auto & [token, token_info] : token_infos)
     {
         if (token_info->offsets.size() == 1 && analyzer->isTokenNeeded(token) && !analyzer->hasReadPostings(token))
+            tokens_to_read.emplace_back(token, token_info);
+    }
+
+    /// Sort tokens by cardinality to read the most rare ones first.
+    std::ranges::sort(tokens_to_read, [](const auto & lhs, const auto & rhs)
+    {
+        return lhs.second->cardinality < rhs.second->cardinality;
+    });
+
+    for (const auto & [token, token_info] : tokens_to_read)
+    {
+        /// Check one more time, because query with this token may have been
+        /// discarded by the analyzer after reading postings for previous tokens.
+        if (analyzer->isTokenNeeded(token))
         {
             auto block = readPostingsBlock(stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
             analyzer->addPostings(token, std::move(block));
@@ -1207,7 +1223,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         else
         {
             auto postings = postings_serialization->deserialize(istr, info.header, info.cardinality);
-            if (postings && postings->cardinality() > 0)
+            if (postings && !postings->isEmpty())
             {
                 info.offsets.emplace_back(static_cast<UInt64>(0));
                 info.ranges.emplace_back(postings->minimum(), postings->maximum());
