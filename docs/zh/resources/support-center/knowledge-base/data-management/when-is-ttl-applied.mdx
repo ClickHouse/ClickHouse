@@ -10,7 +10,7 @@ keywords: ['TTL']
   ## 生存时间 (TTL) 规则与控制
 </div>
 
-生存时间 (TTL) 终究会被应用。这是什么意思？`MergeTree` 表设置 [`merge_with_ttl_timeout`](/zh/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) 用于设置再次执行带删除 TTL 的合并前的最短延迟时间，单位为秒。默认值为 14400 秒 (4 小时) 。但这只是最短延迟，实际触发删除 TTL 合并可能还需要更长时间。
+生存时间 (TTL) 终究会被应用。这是什么意思？`MergeTree` 表设置 [`merge_with_ttl_timeout`](/zh/reference/settings/merge-tree-settings#merge_with_ttl_timeout) 用于设置再次执行带删除 TTL 的合并前的最短延迟时间，单位为秒。默认值为 14400 秒 (4 小时) 。但这只是最短延迟，实际触发删除 TTL 合并可能还需要更长时间。
 
 你可以使用以下查询查看当前所有 TTL 设置 (例如 `merge_with_ttl_timeout`) ：
 
@@ -24,13 +24,13 @@ WHERE name like '%ttl%'
 
 ```response
 ┌─name───────────────────────────────────────────────────────────┬─value───┬─changed─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┬─type───┐
-│ max_replicated_merges_with_ttl_in_queue                        │ 1       │       0 │ ReplicatedMergeTree 队列中允许同时执行的带 TTL 的 parts 合并任务数量。                                                                                                                    │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
-│ max_number_of_merges_with_ttl_in_pool                          │ 2       │       0 │ 当池中带 TTL 的合并条目数超过指定数量时，不再分配新的带 TTL 的合并任务。此设置旨在为常规合并保留空闲线程，避免出现"parts 过多"的问题。                                                  │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
-│ merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds │ 2592000 │       1 │ 若损坏的 detached parts 在后台超过本设置指定的时长未被访问，则将其删除。                                                                                                                  │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
-│ merge_with_ttl_timeout                                         │ 14400   │       0 │ 重复执行带删除 TTL 的合并操作所需的最短时间间隔（秒）。                                                                                                                                    │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
-│ merge_with_recompression_ttl_timeout                           │ 14400   │       0 │ 重复执行带重新压缩 TTL 的合并操作所需的最短时间间隔（秒）。                                                                                                                                │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
-│ ttl_only_drop_parts                                            │ 0       │       0 │ 仅整体删除已过期的 parts，而不对其进行部分裁剪。                                                                                                                                           │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
-│ materialize_ttl_recalculate_only                               │ 0       │       0 │ 执行 MATERIALIZE TTL 时仅重新计算 TTL 信息。                                                                                                                                               │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+│ max_replicated_merges_with_ttl_in_queue                        │ 1       │       0 │ How many tasks of merging parts with TTL are allowed simultaneously in ReplicatedMergeTree queue.                                                                                          │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ max_number_of_merges_with_ttl_in_pool                          │ 2       │       0 │ When there is more than specified number of merges with TTL entries in pool, do not assign new merge with TTL. This is to leave free threads for regular merges and avoid "Too many parts" │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds │ 2592000 │       1 │ Remove old broken detached parts in the background if they remained intouched for a specified by this setting period of time.                                                              │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_with_ttl_timeout                                         │ 14400   │       0 │ Minimal time in seconds, when merge with delete TTL can be repeated.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ merge_with_recompression_ttl_timeout                           │ 14400   │       0 │ Minimal time in seconds, when merge with recompression TTL can be repeated.                                                                                                                │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ ttl_only_drop_parts                                            │ 0       │       0 │ Only drop altogether the expired parts and not partially prune them.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+│ materialize_ttl_recalculate_only                               │ 0       │       0 │ Only recalculate ttl info when MATERIALIZE TTL                                                                                                                                             │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
 └────────────────────────────────────────────────────────────────┴─────────┴─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┴────────┘
 ```
 

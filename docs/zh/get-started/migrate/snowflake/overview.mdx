@@ -54,13 +54,13 @@ Snowflake 的架构通常被描述为共享存储 (shared-disk)
 
 因此，ClickHouse Cloud 采用了一种
 在理念上与 Snowflake 相似的共享存储架构。数据仅在对象存储中保存一次
-(单副本) ，例如 S3 或 GCS，从而提供几乎无限的存储能力，并具备
+(单副本)，例如 S3 或 GCS，从而提供几乎无限的存储能力，并具备
 很强的冗余保障。每个节点都可以访问这唯一的一份
 数据副本，同时拥有各自用于缓存的 Local SSD。节点则可以
 按需扩展，以提供额外的 CPU 和内存资源。与 Snowflake 一样，
 S3 的可扩展性解决了共享磁盘
-架构的经典局限 (磁盘 I/O 和网络瓶颈) ，具体方式是确保
-cluster 中当前节点可用的 I/O 吞吐量不会因新增节点而
+架构的经典局限 (磁盘 I/O 和网络瓶颈)，具体方式是确保
+集群 中当前节点可用的 I/O 吞吐量不会因新增节点而
 受到影响。
 
 <Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="ClickHouse Cloud 架构" />
