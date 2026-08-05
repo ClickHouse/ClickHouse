@@ -26,6 +26,32 @@ def _write_metadata(instance, meta, path):
         ["bash", "-c", f"cat > {path} << 'JSONEOF'\n{json.dumps(meta, indent=4)}\nJSONEOF"]
     )
 
+
+def _read_live_metadata(instance, table_name):
+    """Read the live metadata JSON via `system.iceberg_metadata_log`.
+
+    Unlike `_read_latest_metadata` this does not assume the metadata sits on the node's
+    local filesystem, so it works for object-store tables too.
+    """
+    query_id = f"{table_name}_meta_{get_uuid_str()}"
+    instance.query(
+        f"SELECT count() FROM {table_name}",
+        query_id=query_id,
+        settings={"iceberg_metadata_log_level": "metadata"},
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    content = instance.query(
+        f"SELECT DISTINCT content FROM system.iceberg_metadata_log "
+        f"WHERE query_id = '{query_id}' AND content_type = 'Metadata' FORMAT TSVRaw"
+    )
+    # The logged JSON is single-line, and one SELECT resolves one metadata version, so
+    # anything other than exactly one row means the read is ambiguous.
+    versions = [line for line in content.split("\n") if line]
+    assert len(versions) == 1, (
+        f"expected exactly one logged metadata version for {table_name}, got {len(versions)}"
+    )
+    return json.loads(versions[0])
+
 # Force the writer to roll the data over into several files so that a single
 # manifest ends up referencing more than one live data file. This exercises the
 # multi-file-manifest path that Spark/Flink/Trino output routinely produces.
@@ -305,7 +331,7 @@ def test_optimize_preserves_partition_spec(
     # The persisted spec is the contract, and query results cannot stand in for it: `part` is a
     # stored column, so `WHERE part = ...` returns the right rows even out of an unpartitioned file
     # (pruning is an optimization, not a correctness mechanism). Assert the metadata itself.
-    meta_after, _ = _read_latest_metadata(instance, TABLE_NAME)
+    meta_after = _read_live_metadata(instance, TABLE_NAME)
     specs = meta_after.get("partition-specs") or []
     default_spec_id = meta_after.get("default-spec-id")
     default_spec = next((s for s in specs if s.get("spec-id") == default_spec_id), None)
