@@ -2,6 +2,13 @@
     <!-- Configuration the documented examples assume, on top of the default server configuration
          and the fragments in `programs/server/config.d`. See tests/docs_examples/runner.py. -->
 
+    <!-- Many examples convert between a date with time and a number, or hash a `DateTime` value,
+         without naming a time zone, and the documented response is the one of a server running in
+         `UTC`. Without pinning it here, the run would depend on the time zone of the machine, and
+         the baseline would only be reproducible on a machine that shares it. The name is spelled
+         `Etc/UTC` rather than `UTC` because `serverTimeZone` and `timezoneOf` return it verbatim. -->
+    <timezone>Etc/UTC</timezone>
+
     <!-- `cutToFirstSignificantSubdomainCustom` and the other `*Custom*` URL functions take the name
          of a top level domain list, and every example names `public_suffix_list`. The list itself
          is copied next to the server from tests/config/top_level_domains. -->
