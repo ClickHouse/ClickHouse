@@ -20,9 +20,7 @@ Esta guía asume que ya ha completado [Setting up your OpenTelemetry Collector](
 Para una carga de trabajo que se ejecuta en Kubernetes, el propio collector gateway debe desplegarse **dentro del mismo clúster usando el gráfico de Helm upstream de OpenTelemetry con la imagen del collector de ClickStack**. Siga la ruta de Helm en [Deploying the collector](/es/clickstack/ingesting-data/collector#configuring-the-collector) para instalarlo. **Asegúrese de haber guardado este endpoint de OTLP**.
 
 <Steps>
-  <Step>
-    ## Reúne los requisitos previos
-
+  <Step title="Reúne los requisitos previos" id="gather-prerequisites">
     Necesitarás lo siguiente:
 
     * Un **clúster de Kubernetes** (se recomienda v1.20+) con `kubectl` configurado para acceder a él.
@@ -37,9 +35,7 @@ Para una carga de trabajo que se ejecuta en Kubernetes, el propio collector gate
     </Info>
   </Step>
 
-  <Step>
-    ## Crea el secreto de autenticación y el ConfigMap
-
+  <Step title="Crea el secreto de autenticación y el ConfigMap" id="create-secret-and-configmap">
     Elige el espacio de nombres en el que quieres que se ejecuten los colectores y, a continuación, crea un secreto que contenga el `OTLP_AUTH_TOKEN` y un ConfigMap que apunte a tu gateway:
 
     ```shell
@@ -61,18 +57,14 @@ Para una carga de trabajo que se ejecuta en Kubernetes, el propio collector gate
     Ambos colectores siguientes leen estos valores mediante `extraEnvs`, por lo que reutilizan el mismo secret y ConfigMap.
   </Step>
 
-  <Step>
-    ## Añade el repositorio de Helm de OpenTelemetry
-
+  <Step title="Añade el repositorio de Helm de OpenTelemetry" id="add-otel-helm-repo">
     ```shell
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
     helm repo update
     ```
   </Step>
 
-  <Step>
-    ## Despliega el recolector del clúster
-
+  <Step title="Despliega el recolector del clúster" id="deploy-cluster-collector">
     Esta es una Implementación de una sola réplica que recopila **eventos de Kubernetes** y **métricas de todo el clúster** (recuentos de nodos, fases de los pods, estado de las implementaciones, etc.). Ejecutar más de una réplica produciría datos duplicados.
 
     Guarda lo siguiente como `k8s_deployment.yaml`:
@@ -141,9 +133,7 @@ Para una carga de trabajo que se ejecuta en Kubernetes, el propio collector gate
     ```
   </Step>
 
-  <Step>
-    ## Despliega el collector del nodo
-
+  <Step title="Despliega el collector del nodo" id="deploy-node-collector">
     Este es un conjunto de daemon que se ejecuta en cada nodo para recopilar **logs de contenedor**, **métricas del host** y **métricas del agente kubelet** (utilización de CPU y memoria por pod y por contenedor con respecto a las solicitudes y los límites).
 
     Guarda lo siguiente como `k8s_daemonset.yaml`:
@@ -260,9 +250,7 @@ Para una carga de trabajo que se ejecuta en Kubernetes, el propio collector gate
     Deberías ver un pod de Kubernetes de la Implementación y un pod de Kubernetes del conjunto de daemon en cada nodo, todos en estado `Running`.
   </Step>
 
-  <Step>
-    ## Reenvía atributos de Kubernetes a tus aplicaciones (recomendado)
-
+  <Step title="Reenvía atributos de Kubernetes a tus aplicaciones (recomendado)" id="forward-k8s-attributes">
     Para correlacionar los logs, las métricas y las trazas de tu aplicación con los metadatos de Kubernetes (nombre del pod de Kubernetes, espacio de nombres, nodo, implementación), reenvía esos metadatos a tu aplicación mediante `OTEL_RESOURCE_ATTRIBUTES`. El procesador `k8sattributes` del conjunto de daemon enriquecerá la telemetría entrante con los atributos correspondientes del pod de Kubernetes y del nodo.
 
     ```yaml
@@ -311,9 +299,7 @@ Para una carga de trabajo que se ejecuta en Kubernetes, el propio collector gate
     ```
   </Step>
 
-  <Step>
-    ## Confirmar en la UI de ClickStack
-
+  <Step title="Confirmar en la UI de ClickStack" id="confirm-in-ui">
     Abre tu servicio en la [ClickHouse Cloud console](https://console.clickhouse.cloud) y selecciona **ClickStack** en el menú de la izquierda.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Abrir ClickStack" border />
@@ -333,9 +319,7 @@ Para una carga de trabajo que se ejecuta en Kubernetes, el propio collector gate
     * Comprueba que `OTLP_AUTH_TOKEN` del secret coincida con el valor configurado en el collector gateway.
   </Step>
 
-  <Step>
-    ## Más información
-
+  <Step title="Más información" id="further-reading">
     * [Referencia de integración de Kubernetes](/es/clickstack/integration-examples/kubernetes) para ver el conjunto completo de receivers, procesadores y opciones de ajuste.
     * [Reenvío de etiquetas de recurso a pods](/es/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) para obtener más información sobre el enriquecimiento del lado de la aplicación.
     * [Protección del collector](/es/clickstack/ingesting-data/collector#securing-the-collector) con TLS en el endpoint de OTLP y usuarios de ingestión con privilegios mínimos.

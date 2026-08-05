@@ -57,7 +57,7 @@ public:
     /// Directory Read Methods
 
     std::vector<std::string> listDirectory(const std::string & path) const;
-    std::pair<bool, std::optional<DirectoryRemoteInfo>> existsDirectory(const std::string & path) const;
+    bool existsDirectory(const std::string & path) const;
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> getSubtreeRemoteInfo(const std::string & path) const;
     std::optional<DirectoryRemoteInfo> getDirectoryRemoteInfo(const std::string & path) const;
 
