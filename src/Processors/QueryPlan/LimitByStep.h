@@ -38,6 +38,12 @@ public:
     /// partition sets so no `LIMIT BY` group spans two streams.
     void skipStreamMerging() { skip_stream_merging = true; }
 
+    /// Row count an outer `LIMIT` needs from this step, recorded by `tryPushDownLimit`, which cannot push
+    /// the limit itself. `pushLimitByIntoSort` forwards it to the sort below as a group bound. 0 means no
+    /// outer limit. Not serialized: like `sorted_columns_descr`, it is an optimizer hint.
+    void updateOuterLimitHint(UInt64 hint) { outer_limit_hint = hint; }
+    UInt64 getOuterLimitHint() const { return outer_limit_hint; }
+
 private:
     void updateOutputHeader() override
     {
@@ -52,6 +58,8 @@ private:
     SortDescription sorted_columns_descr;
 
     bool skip_stream_merging = false;
+
+    UInt64 outer_limit_hint = 0;
 };
 
 }
