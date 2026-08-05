@@ -92,6 +92,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool per_part_index_stats;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
@@ -1551,6 +1552,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
             || !settings[Setting::allow_experimental_analyzer]
+            /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
+            /// by normal reads: those may exclude a granule whose only matching rows are deleted.
+            || !settings[Setting::apply_deleted_mask]
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
