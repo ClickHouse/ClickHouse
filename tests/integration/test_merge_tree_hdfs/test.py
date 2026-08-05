@@ -333,7 +333,12 @@ def test_table_manipulations(cluster):
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("RENAME TABLE hdfs_renamed TO hdfs_test")
-    assert node.query("CHECK TABLE hdfs_test FORMAT Values") == "(1)"
+    assert (
+        node.query(
+            "CHECK TABLE hdfs_test FORMAT Values SETTINGS check_query_single_value_result = 1"
+        )
+        == "(1)"
+    )
 
     node.query("DETACH TABLE hdfs_test")
     node.query("ATTACH TABLE hdfs_test")
