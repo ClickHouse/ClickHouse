@@ -44,6 +44,11 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT file_segment_pause_before_write;
 "
 
+# The failpoint is server-global, so it must be disabled even if the script aborts before reaching
+# the explicit disable below. Otherwise every filesystem cache write on the server stays paused and
+# the following tests hang behind it, masking the failure that happened here.
+trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT file_segment_pause_before_write" > /dev/null 2>&1 || true' EXIT
+
 # The downloader pauses inside its first cache write, holding the file segment in DOWNLOADING state.
 $CLICKHOUSE_CLIENT --max_threads 1 \
     --enable_filesystem_cache 1 \
