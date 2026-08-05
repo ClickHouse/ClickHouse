@@ -118,7 +118,31 @@ TEST_F(MergeMemoryReservationTest, HugeEstimateSaturatesInsteadOfWrappingNegativ
         ASSERT_EQ(getReservedMergeMemory(), std::numeric_limits<Int64>::max());
     }
 
-    /// Releases are symmetric with what was actually accounted, so the counter returns to zero.
+    /// Releases are symmetric with what each reservation added, so the counter returns to zero.
+    ASSERT_EQ(getReservedMergeMemory(), 0);
+}
+
+TEST_F(MergeMemoryReservationTest, OverlappingHugeReservationsReleasedOutOfOrder)
+{
+    background_memory_tracker.setSoftLimit(1000);
+
+    {
+        /// Two overlapping huge reservations, and the first one finishes before the second.
+        auto first = std::make_optional(MergeMemoryReservation::reserve(std::numeric_limits<UInt64>::max()));
+        auto second = MergeMemoryReservation::reserve(std::numeric_limits<UInt64>::max());
+        ASSERT_EQ(getReservedMergeMemory(), std::numeric_limits<Int64>::max());
+
+        /// Releasing the first reservation must not reopen the gate: the second huge merge is
+        /// still running, so the published counter must remain saturated (a single saturated
+        /// counter would drop to zero here and admit merges against the still-running reservation).
+        first.reset();
+        ASSERT_EQ(getReservedMergeMemory(), std::numeric_limits<Int64>::max());
+        ASSERT_FALSE(canEnqueueBackgroundTask());
+
+        auto rejected = MergeMemoryReservation::tryReserve(1);
+        ASSERT_FALSE(rejected.has_value());
+    }
+
     ASSERT_EQ(getReservedMergeMemory(), 0);
 }
 

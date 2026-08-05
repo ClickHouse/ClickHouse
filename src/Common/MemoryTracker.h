@@ -349,9 +349,11 @@ bool isTotalMemoryTrackerInitialized();
 /// Returns the currently reserved amount (bytes) for background merges.
 Int64 getReservedMergeMemory();
 
-/// Account `bytes` as reserved. Used by `MergeMemoryReservation`. The addition saturates so that
-/// concurrent huge reservations can never overflow (and thereby wrap negative and loosen the gate);
-/// returns the amount actually accounted, which is what must be passed to `releaseMergeMemory`.
+/// Account `bytes` as reserved. Used by `MergeMemoryReservation`. The true total is kept in a
+/// 128-bit accumulator, so concurrent huge reservations can never overflow it, and each release
+/// subtracts exactly what the matching reservation added — the published (clamped) counter stays
+/// saturated for as long as any huge reservation is alive, whatever the release order.
+/// Returns `bytes`, which is what must be passed to `releaseMergeMemory`.
 Int64 reserveMergeMemory(Int64 bytes);
 void releaseMergeMemory(Int64 bytes);
 
