@@ -1266,4 +1266,3 @@ ALTER TABLE ONLY public.ducklake_snapshot
 --
 
 \unrestrict 0MgBS2FGsf7MPclRqhdJyRAFEJaEFd5d1lwFwwaADzKla8dRSjKffLJWzxQMdyf
-
