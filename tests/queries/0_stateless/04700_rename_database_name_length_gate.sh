@@ -31,6 +31,30 @@ rename_outcome() {
     else echo "$label-unexpected-error"; fi
 }
 
+# After a rejected rename the catalog must be untouched: the target name must not exist and the
+# source must still be addressable under its old name. These two see the catalog rename
+# (updateDatabaseName / database_name = new_name); recover_after_reject below sees the on-disk
+# half, which happens earlier and is invisible here.
+reject_postcondition() {
+    local label="$1" src="$2" target="$3"
+    local target_present source_ok
+    target_present=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.databases WHERE name = '$target'" 2>&1)
+    source_ok=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.databases WHERE name = '$src'" 2>&1)
+    echo "$label-postcondition target=$target_present source=$source_ok"
+}
+
+# After a rejected rename the documented recovery path must still work: renaming the source to a
+# short name. The check runs before the metadata moveFile, so the source's metadata/<name>.sql is
+# still where the catalog says it is. A check relocated below that moveFile throws the same
+# ARGUMENT_OUT_OF_BOUND after the file has already been renamed away, and only this assertion
+# notices -- the catalog columns above cannot, because the catalog rename happens later still.
+recover_after_reject() {
+    local label="$1" src="$2" out rc
+    out=$($CLICKHOUSE_CLIENT -q "RENAME DATABASE \`$src\` TO \`${src}_ok\`" 2>&1); rc=$?
+    if [ "$rc" == "0" ]; then echo "$label-recoverable"
+    else echo "$label-recovery-failed rc=$rc"; fi
+}
+
 # Report whether a table could really be dropped. The success marker is emitted only on a zero
 # exit status, so a drop that fails without printing a diagnostic, or with one that carries no
 # error code, cannot be laundered into a success.
@@ -83,7 +107,10 @@ long_tbl=ttttttttttttttttttt0
 src="${CLICKHOUSE_DATABASE}_s1"
 new_db_with_table "$src" t0
 rename_outcome deps-off-into-long "RENAME DATABASE \`$src\` TO \`$long_a\`" "$CLIENT_NO_DEPS"
+reject_postcondition deps-off-into-long "$src" "$long_a"
+recover_after_reject deps-off-into-long "$src"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`${src}_ok\`" >/dev/null 2>&1
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$long_a\`" >/dev/null 2>&1
 
 # 2. Control: the guard-TRUE path was already correct and must stay so.
@@ -125,7 +152,13 @@ src="${CLICKHOUSE_DATABASE}_s6"
 new_db_with_table "$src" t0
 $CLICKHOUSE_CLIENT -q "DETACH TABLE \`$src\`.t0"
 rename_outcome detached-into-long "RENAME DATABASE \`$src\` TO \`$long_c\`" "$CLIENT_NO_DEPS"
+reject_postcondition detached-into-long "$src" "$long_c"
+# The detached table must also still be bound to the OLD database name. That binding is what the
+# snapshot rewrite would corrupt, and the two counts above cannot see it.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.detached_tables WHERE database = '$src' AND table = 't0'"
+recover_after_reject detached-into-long "$src"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`${src}_ok\`" >/dev/null 2>&1
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$long_c\`" >/dev/null 2>&1
 
 # 7. The same at DEFAULT settings: the attached-tables map is empty, so the pre-existing
@@ -157,12 +190,14 @@ $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$edge_b\`" >/dev/null 2>&1
 #       own outcome.
 new_replicated_db_with_table "${CLICKHOUSE_DATABASE}_r9"
 rename_outcome replicated-into-long "RENAME DATABASE \`${CLICKHOUSE_DATABASE}_r9\` TO \`$repl_long\`" "$CLIENT_NO_DEPS"
+reject_postcondition replicated-into-long "${CLICKHOUSE_DATABASE}_r9" "$repl_long"
+recover_after_reject replicated-into-long "${CLICKHOUSE_DATABASE}_r9"
 
 new_replicated_db_with_table "${CLICKHOUSE_DATABASE}_r10"
 rename_outcome replicated-accept "RENAME DATABASE \`${CLICKHOUSE_DATABASE}_r10\` TO \`$repl_edge\`" "$CLIENT_NO_DEPS"
 drop_outcome replicated-droppable-after-accept "\`$repl_edge\`.t0"
 
-for db in "${CLICKHOUSE_DATABASE}_r9" "${CLICKHOUSE_DATABASE}_r10" "$repl_edge" "$repl_long"; do
+for db in "${CLICKHOUSE_DATABASE}_r9" "${CLICKHOUSE_DATABASE}_r9_ok" "${CLICKHOUSE_DATABASE}_r10" "$repl_edge" "$repl_long"; do
     $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$db\` SYNC" >/dev/null 2>&1
 done
 
