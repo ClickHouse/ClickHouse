@@ -379,8 +379,10 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
     {
         /// Maybe MEMORY_LIMIT_EXCEEDED is possible here. We currently don't handle it, and the
         /// caller doesn't handle it.
-        DB::tryLogCurrentException(log, "Unexpected exception");
-        std::abort();
+        /// Put the exception message into the fatal report: the text log may not survive the
+        /// process death, and the crash report is often the only thing test harnesses collect.
+        DB::abortOnFailedAssertion(fmt::format(
+            "Unexpected exception in StorageState::appendCommittedNode: {}", DB::getCurrentExceptionMessage(/*with_stacktrace=*/ true)));
     }
 }
 
@@ -545,8 +547,10 @@ NodeRef StorageState::appendUncommittedNode(FullNode & node, int64_t zxid)
     {
         /// Maybe MEMORY_LIMIT_EXCEEDED is possible here. We currently don't handle it, and the
         /// caller doesn't handle it.
-        DB::tryLogCurrentException(log, "Unexpected exception");
-        std::abort();
+        /// Put the exception message into the fatal report: the text log may not survive the
+        /// process death, and the crash report is often the only thing test harnesses collect.
+        DB::abortOnFailedAssertion(fmt::format(
+            "Unexpected exception in StorageState::appendUncommittedNode: {}", DB::getCurrentExceptionMessage(/*with_stacktrace=*/ true)));
     }
 }
 
