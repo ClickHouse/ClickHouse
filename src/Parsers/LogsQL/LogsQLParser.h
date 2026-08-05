@@ -155,6 +155,7 @@ private:
     ASTPtr makeRegexpFilter(const String & field_name, const String & regexp);
     ASTPtr makeExactFilter(const String & field_name, const String & value);
     ASTPtr makeValueLiteral(const String & text, bool quoted);
+    ASTPtr makeComparisonFilter(const String & field_name, const String & function_name, const String & value, bool quoted);
 
     /// A time bound: an expression for an instant, possibly with a second instant for the end
     /// of the period when the timestamp has a coarse precision (e.g. `2023-04Z` covers the whole month).

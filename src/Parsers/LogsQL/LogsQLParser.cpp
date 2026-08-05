@@ -583,7 +583,7 @@ ASTPtr LogsQLParser::parseFilterGT(const String & field_name)
 
     bool quoted = lex.isQuoted();
     String value = lex.nextCompoundToken();
-    return makeASTFunction(inclusive ? "greaterOrEquals" : "greater", columnExpr(field_name), makeValueLiteral(value, quoted));
+    return makeComparisonFilter(field_name, inclusive ? "greaterOrEquals" : "greater", value, quoted);
 }
 
 ASTPtr LogsQLParser::parseFilterLT(const String & field_name)
@@ -602,7 +602,7 @@ ASTPtr LogsQLParser::parseFilterLT(const String & field_name)
 
     bool quoted = lex.isQuoted();
     String value = lex.nextCompoundToken();
-    return makeASTFunction(inclusive ? "lessOrEquals" : "less", columnExpr(field_name), makeValueLiteral(value, quoted));
+    return makeComparisonFilter(field_name, inclusive ? "lessOrEquals" : "less", value, quoted);
 }
 
 ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
@@ -645,10 +645,10 @@ ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
     ASTs conditions;
     if (!std::isinf(*min_value))
         conditions.push_back(makeASTFunction(include_min ? "greaterOrEquals" : "greater",
-            columnExpr(field_name), make_intrusive<ASTLiteral>(Field(*min_value))));
+            numericColumnExpr(field_name), make_intrusive<ASTLiteral>(Field(*min_value))));
     if (!std::isinf(*max_value))
         conditions.push_back(makeASTFunction(include_max ? "lessOrEquals" : "less",
-            columnExpr(field_name), make_intrusive<ASTLiteral>(Field(*max_value))));
+            numericColumnExpr(field_name), make_intrusive<ASTLiteral>(Field(*max_value))));
 
     return makeAnd(std::move(conditions));
 }
@@ -1435,6 +1435,23 @@ ASTPtr LogsQLParser::makeRegexpFilter(const String & field_name, const String & 
         throwSyntaxError(fmt::format("invalid regexp {}: {}", regexp, checked_regexp.error()));
 
     return makeASTFunction("match", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(regexp)));
+}
+
+ASTPtr LogsQLParser::numericColumnExpr(const String & field_name) const
+{
+    /// In VictoriaLogs every field is a string, and a numeric comparison filter compares
+    /// the numeric value of the field, skipping rows where the field is not a number.
+    /// The cast makes such comparisons work for string columns as well as for numeric ones:
+    /// a non-numeric value becomes NULL, and the comparison filters it out.
+    return makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Float64"))));
+}
+
+ASTPtr LogsQLParser::makeComparisonFilter(const String & field_name, const String & function_name, const String & value, bool quoted)
+{
+    ASTPtr literal = makeValueLiteral(value, quoted);
+    bool is_numeric = literal->as<ASTLiteral>()->value.getType() != Field::Types::String;
+    ASTPtr column = is_numeric ? numericColumnExpr(field_name) : columnExpr(field_name);
+    return makeASTFunction(function_name, std::move(column), std::move(literal));
 }
 
 ASTPtr LogsQLParser::makeValueLiteral(const String & text, bool quoted)
