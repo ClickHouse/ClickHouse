@@ -87,6 +87,11 @@ public:
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
+    /// Format changed `.idx` (v1) -> `.idx2` (v2); a part may hold either.
+    MergeTreeIndexSubstreams getPotentialSubstreams() const override
+    {
+        return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}, {MergeTreeIndexSubstream::Type::Regular, "", ".idx"}};
+    }
     MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
     MergeTreeIndexSubstreams getAllSubstreamsInPart(
         const MergeTreeDataPartChecksums & checksums,

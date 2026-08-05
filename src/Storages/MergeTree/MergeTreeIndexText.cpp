@@ -1803,6 +1803,19 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     return substreams;
 }
 
+MergeTreeIndexSubstreams MergeTreeIndexText::getPotentialSubstreams() const
+{
+    /// `.pos` unconditionally: whether a part holds it is a property of that part, not of the
+    /// current `params.positions`.
+    return
+    {
+        {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"}
+    };
+}
+
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
     for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())

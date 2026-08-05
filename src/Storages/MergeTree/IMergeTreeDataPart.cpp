@@ -929,12 +929,9 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
-        auto index_format = skip_index->getDeserializedFormat(*this, index_name);
 
-        if (!index_format)
-            continue;
-
-        for (const auto & substream : index_format.substreams)
+        /// Must not do I/O: this runs during part destruction. Evicting an absent key is a no-op.
+        for (const auto & substream : skip_index->getPotentialSubstreams())
         {
             auto full_stream_name = index_name + substream.suffix;
             auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);

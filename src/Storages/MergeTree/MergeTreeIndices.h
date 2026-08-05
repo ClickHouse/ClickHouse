@@ -266,6 +266,7 @@ struct IMergeTreeIndex
     /// getDeserializedFormat() should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
+    /// and so should getPotentialSubstreams(), listing every previous extension.
     virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
     /// Returns substreams and version for deserialization. @storage is consulted so that packed
@@ -281,6 +282,10 @@ struct IMergeTreeIndex
         const MergeTreeDataPartChecksums & checksums,
         const std::string & relative_path_prefix,
         const IDataPartStorage * storage) const;
+
+    /// Superset: every substream any version of this index could have written, whatever a given
+    /// part holds. Takes no part and must do no I/O, so it is safe during part destruction.
+    virtual MergeTreeIndexSubstreams getPotentialSubstreams() const { return getSubstreams(); }
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
