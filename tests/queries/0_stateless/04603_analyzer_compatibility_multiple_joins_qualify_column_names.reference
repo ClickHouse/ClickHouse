@@ -132,3 +132,11 @@ toString(a.y)	String
 === describe: COLUMNS(qualified), unrelated toString(qualified) does not leak the qualifier, setting ON ===
 ll.Date	String					
 toString(Date)	String					
+=== describe: COLUMNS(qualified) with group_by_use_nulls + ROLLUP, setting ON ===
+ll.Date	Nullable(String)					
+=== family2: outer ref, COLUMNS(qualified) with group_by_use_nulls + ROLLUP, setting ON ===
+D
+\N
+=== describe: COLUMNS(alias) keeps the written alias, setting ON ===
+z	String					
+z	String					

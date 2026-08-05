@@ -2171,10 +2171,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
         result.reserve(identifiers.size());
 
         /// Old-analyzer parity: under two or more JOINs a list-form `COLUMNS` item keeps the written
-        /// identifier. It goes into `node_to_projection_name` because the name returned below is
-        /// what `EXCEPT`/`REPLACE` transformers match against. Clone the node first: `tryResolveIdentifier`
-        /// returns a shared `ColumnNode` also used by unrelated expressions referencing the same column
-        /// (e.g. a sibling `toString(a.x)`), and those must keep their own, ambiguity-driven name.
+        /// identifier. Recorded on a clone, so the shared resolved node keeps its own name.
         bool keep_written_names = nearest_query_scope->joins_count >= 2
             && scope.context->getSettingsRef()[Setting::analyzer_compatibility_multiple_joins_qualify_column_names];
 

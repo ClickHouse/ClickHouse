@@ -134,10 +134,10 @@ SELECT ll.Date FROM remote('127.0.0.{1,2}', view(SELECT * FROM (SELECT 1 AS k, '
 -- ============================================================
 -- `COLUMNS` matcher: the identifier-list form `COLUMNS(col1, col2)` is not a
 -- matcher expansion (it is resolved as a plain list of column references), so
--- each column keeps the name exactly as its identifier was written. The setting
--- never adds a qualifier here, unlike the regexp form `COLUMNS('<regexp>')`,
--- which goes through the same expansion as `*`. An item written without a
--- qualifier therefore stays bare, on the old analyzer as well.
+-- with the setting on each column keeps the name exactly as its identifier was
+-- written. The setting never adds a qualifier here, unlike the regexp form
+-- `COLUMNS('<regexp>')`, which goes through the same expansion as `*`. An item
+-- written without a qualifier therefore stays bare, on the old analyzer as well.
 -- ============================================================
 
 SET analyzer_compatibility_multiple_joins_qualify_column_names = 1;
@@ -244,3 +244,16 @@ DESCRIBE (SELECT COLUMNS(a.x, a.y) APPLY(toString) FROM (SELECT 1 AS k, 'X' AS x
 -- expression referencing the same column.
 SELECT '=== describe: COLUMNS(qualified), unrelated toString(qualified) does not leak the qualifier, setting ON ===';
 DESCRIBE (SELECT COLUMNS(ll.Date), toString(ll.Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+-- The previous commit on this branch fixed matcher projection names being dropped by the
+-- `group_by_use_nulls` rewrite; the clone this branch introduces must survive it too.
+SELECT '=== describe: COLUMNS(qualified) with group_by_use_nulls + ROLLUP, setting ON ===';
+DESCRIBE (SELECT COLUMNS(ll.Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k GROUP BY ll.Date WITH ROLLUP) SETTINGS group_by_use_nulls = 1;
+
+SELECT '=== family2: outer ref, COLUMNS(qualified) with group_by_use_nulls + ROLLUP, setting ON ===';
+SELECT ll.Date FROM (SELECT COLUMNS(ll.Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k GROUP BY ll.Date WITH ROLLUP) ORDER BY 1 NULLS LAST SETTINGS group_by_use_nulls = 1;
+
+-- A list item that resolves through a `SELECT`-list alias also keeps the written name, which is
+-- what the old analyzer did; without the setting it would be named after the underlying column.
+SELECT '=== describe: COLUMNS(alias) keeps the written alias, setting ON ===';
+DESCRIBE (SELECT ll.Date AS z, COLUMNS(z) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
