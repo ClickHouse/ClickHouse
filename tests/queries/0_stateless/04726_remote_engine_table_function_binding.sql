@@ -23,8 +23,11 @@ SELECT x FROM remote_loop LIMIT 4;
 -- A `Remote` table over a table function carries its own declared structure, so the initiator must not
 -- resolve the target locally: the target here is not resolvable on the initiator at all, and the only
 -- shard is unavailable, so with `skip_unavailable_shards` the read returns no rows instead of failing.
+-- `enable_parallel_replicas = 0` and `serialize_query_plan = 0` pin the read to the plain path the skip
+-- behavior applies to: both variants resolve the remote target on the initiator, for the classic
+-- named-table form and the table-function form alike (see 04621_distributed_over_table_function_2).
 CREATE TABLE remote_declared (x UInt64) ENGINE = Remote('127.0.0.1:1', merge(db_04726_does_not_exist, '^t$'));
-SELECT * FROM remote_declared SETTINGS skip_unavailable_shards = 1, enable_analyzer = 1, send_logs_level = 'error';
+SELECT * FROM remote_declared SETTINGS skip_unavailable_shards = 1, enable_analyzer = 1, send_logs_level = 'error', enable_parallel_replicas = 0, serialize_query_plan = 0;
 
 DROP TABLE remote_declared;
 DROP TABLE remote_loop;
