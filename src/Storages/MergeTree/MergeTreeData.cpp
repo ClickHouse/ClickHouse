@@ -5137,6 +5137,22 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (new_merging_params.mode == MergingParams::Graphite)
                 checkGraphiteSchema(new_merging_params.graphite_params, metadata_for_check);
 
+            /// VersionedCollapsing is the only mode whose reload appends the version column to the sorting
+            /// key, and existing parts are not rewritten, so merging them under the wider key would read
+            /// unsorted input. Appending is a no-op once the column is already there.
+            if (new_merging_params.mode == MergingParams::VersionedCollapsing)
+            {
+                const auto & sorting_key_columns = metadata_for_check.getSortingKeyColumns();
+                if (!std::ranges::contains(sorting_key_columns, new_merging_params.version_column))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "MODIFY ENGINE to VersionedCollapsingMergeTree requires the version column '{}' to "
+                        "be part of the sorting key ({}), because that engine sorts by it and the existing "
+                        "parts are not rewritten. Add it with 'ALTER TABLE ... MODIFY ORDER BY' first, or "
+                        "create a new table with the desired engine and copy the data.",
+                        new_merging_params.version_column, fmt::join(sorting_key_columns, ", "));
+            }
+
             /// registerStorageMergeTree rejects a special-mode MergeTree with projections under
             /// deduplicate_merge_projection_mode = throw; reject here too rather than on the next ATTACH.
             if (new_merging_params.mode != MergingParams::Mode::Ordinary

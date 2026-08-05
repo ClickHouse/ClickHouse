@@ -249,7 +249,8 @@ DROP TABLE t_graphite;
 -- (v) merge semantics, not just the persisted engine name, change for the remaining supported targets.
 -- Plain MergeTree rejects FINAL outright, so a change that persisted the name without switching the
 -- merge mode would fail these instead of passing them.
-CREATE TABLE t_vcollapse (k UInt32, sign Int8, ver UInt32) ENGINE = MergeTree ORDER BY k;
+-- The version column is in the sorting key, as the check below requires.
+CREATE TABLE t_vcollapse (k UInt32, sign Int8, ver UInt32) ENGINE = MergeTree ORDER BY (k, ver);
 INSERT INTO t_vcollapse VALUES (1, 1, 1);
 INSERT INTO t_vcollapse VALUES (1, -1, 1);
 INSERT INTO t_vcollapse VALUES (2, 1, 1);
@@ -257,6 +258,19 @@ ALTER TABLE t_vcollapse MODIFY ENGINE = VersionedCollapsingMergeTree(sign, ver);
 DETACH TABLE t_vcollapse;
 ATTACH TABLE t_vcollapse;
 SELECT 'vcollapsing final', k FROM t_vcollapse FINAL ORDER BY k;
+DROP TABLE t_vcollapse;
+
+-- (v2) VersionedCollapsingMergeTree is rejected when the version column is outside the sorting key.
+-- Its reload would append the column to the key, but the parts inserted above were written under the
+-- narrower key, so merging them would read unsorted input. The rows exist before the switch, so this
+-- case fails if the check goes away: the ALTER succeeds and the OPTIMIZE below aborts the merge.
+CREATE TABLE t_vcollapse (k UInt32, sign Int8, ver UInt32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_vcollapse VALUES (1, 1, 5);
+INSERT INTO t_vcollapse VALUES (1, -1, 2);
+ALTER TABLE t_vcollapse MODIFY ENGINE = VersionedCollapsingMergeTree(sign, ver); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_vcollapse FINAL;
+SELECT 'vcollapsing key guard', engine, sorting_key FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_vcollapse';
 DROP TABLE t_vcollapse;
 
 CREATE TABLE t_coalesce (k UInt32, a Nullable(UInt32), b Nullable(UInt32)) ENGINE = MergeTree ORDER BY k;
@@ -383,15 +397,21 @@ SELECT 'graphite nullable path rejected', engine, count() FROM t_graphite_null, 
 DROP TABLE t_graphite_null;
 
 -- A nullable version column stays allowed: the rollup compares it with `compareAt` and copies it with
--- `insertFrom`, both of which handle NULL.
-CREATE TABLE t_graphite_null (key UInt32, Path String, Time DateTime, Value Float64, Version Nullable(UInt32)) ENGINE = MergeTree ORDER BY key;
-INSERT INTO t_graphite_null VALUES (1, 'max_a', '2020-01-01 00:00:10', 5, NULL);
+-- `insertFrom`, both of which handle NULL. The two rows must share the same path and the same unrounded
+-- time, because the version comparison is only reached for rows the algorithm considers the same key; two
+-- rows merely landing in one retention window skip it. A NULL version sorts below a set one, so the
+-- asserted Value and Version change if that comparison is wrong rather than only the row count.
+CREATE TABLE t_graphite_null (key UInt32, Path String, Time DateTime('UTC'), Value Float64, Version Nullable(UInt32))
+    ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_null VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:10', 'UTC'), 1, NULL);
+INSERT INTO t_graphite_null VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:10', 'UTC'), 5, 2);
 ALTER TABLE t_graphite_null MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
 DETACH TABLE t_graphite_null;
 ATTACH TABLE t_graphite_null;
 OPTIMIZE TABLE t_graphite_null FINAL;
-SELECT 'graphite nullable version accepted', engine, count() FROM t_graphite_null, system.tables
-    WHERE database = currentDatabase() AND name = 't_graphite_null' GROUP BY engine;
+SELECT 'graphite nullable version accepted', Path, toString(Time), Value, Version FROM t_graphite_null ORDER BY Time;
+SELECT 'graphite nullable version engine', engine FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_null';
 DROP TABLE t_graphite_null;
 
 -- (s) the engine clause survives a round trip through the `clickhouse_json` AST dialect.

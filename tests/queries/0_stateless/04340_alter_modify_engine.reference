@@ -19,6 +19,7 @@ pending projection guard	ReplacingMergeTree
 projection rebuild	ReplacingMergeTree
 graphite valid	GraphiteMergeTree
 vcollapsing final	2
+vcollapsing key guard	MergeTree	k
 coalescing final	1	10	20
 collapsing final	2
 aggregating final	1	12
@@ -30,7 +31,8 @@ graphite time Date	GraphiteMergeTree
 graphite time UInt32	GraphiteMergeTree
 graphite nullable time rejected	MergeTree	1
 graphite nullable path rejected	MergeTree	1
-graphite nullable version accepted	GraphiteMergeTree	1
+graphite nullable version accepted	max_a	2020-01-01 00:00:00	1	\N
+graphite nullable version engine	GraphiteMergeTree
 ALTER TABLE t (MODIFY ENGINE ReplacingMergeTree)
 ALTER TABLE t (MODIFY ENGINE ReplacingMergeTree(v))
 ALTER TABLE t (MODIFY ENGINE SummingMergeTree((x, y)))
