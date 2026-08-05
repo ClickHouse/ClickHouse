@@ -5558,8 +5558,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "AST depth exceeded while fuzzing ({})", current_ast_depth);
     }
 
-    // Check for loops.
-    auto [_, inserted] = debug_visited_nodes.insert(ast.get());
+    // Check for loops. The node is kept alive by the map until the end of this fuzzMain call, so
+    // that an address freed in the meantime cannot be reused and mistaken for a loop.
+    auto [_, inserted] = debug_visited_nodes.emplace(ast.get(), ast);
     if (!inserted)
     {
 #pragma clang diagnostic push
@@ -5805,17 +5806,16 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (stream.cursor && fuzz_rand() % 2 == 0)
                     stream.cursor.reset();
                 else
-                    stream.cursor = buildCursorTree(make_random_cursor());
+                    stream.setCursor(buildCursorTree(make_random_cursor()));
             }
         }
         else if (table_expr->database_and_table_name && fuzz_rand() % 200 == 0)
         {
             /// Add STREAM [CURSOR {...}]. A bare STREAM read tails new data until
             /// max_execution_time, so keep the probability low.
-            ASTStreamSettings new_stream_settings;
+            auto stream_node = make_intrusive<ASTStreamSettings>();
             if (fuzz_rand() % 2 == 0)
-                new_stream_settings.cursor = buildCursorTree(make_random_cursor());
-            auto stream_node = make_intrusive<ASTStreamSettings>(std::move(new_stream_settings));
+                stream_node->setCursor(buildCursorTree(make_random_cursor()));
             table_expr->stream_settings = stream_node;
             table_expr->children.push_back(stream_node);
         }
