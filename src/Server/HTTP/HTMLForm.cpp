@@ -67,6 +67,28 @@ void HTMLForm::applyBodyLimits(const Settings & settings)
 }
 
 
+void HTMLForm::checkFieldLimits(const Settings & settings) const
+{
+    const size_t max_fields = settings[Setting::http_max_fields];
+    const size_t max_name_size = settings[Setting::http_max_field_name_size];
+    const size_t max_value_size = settings[Setting::http_max_field_value_size];
+
+    size_t fields = 0;
+    for (const auto & [name, value] : *this)
+    {
+        /// The limits are checked exactly as in readQuery: a name or a value of the maximum size
+        /// is accepted, while the (limit + 1)-th field is not.
+        if (max_fields && fields == max_fields)
+            throw Poco::Net::HTMLFormException("Too many form fields");
+        if (name.size() > max_name_size)
+            throw Poco::Net::HTMLFormException("Field name too long");
+        if (value.size() > max_value_size)
+            throw Poco::Net::HTMLFormException("Field value too long");
+        ++fields;
+    }
+}
+
+
 HTMLForm::HTMLForm(const Settings & settings, const std::string & encoding_) : HTMLForm(settings)
 {
     encoding = encoding_;

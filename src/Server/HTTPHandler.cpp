@@ -238,6 +238,16 @@ void HTTPHandler::processQuery(
     /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
     SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
+    /// The URL query string was parsed with the server default settings, because the name of the
+    /// user is one of its parameters and therefore it has to be parsed before authentication.
+    /// Re-validate the parsed parameters against the authenticated user's limits before any of them
+    /// is used below and before the query context applies the settings they carry. The session
+    /// context is the earliest point where the user's settings are known, so the parameters that
+    /// select the session itself ('session_id', 'session_timeout', 'session_check') and the
+    /// parameters read before authentication ('user', 'password', 'quota_key', 'stacktrace') remain
+    /// bounded by the server defaults only.
+    params.checkFieldLimits(session->sessionContext()->getSettingsRef());
+
     auto context = session->makeQueryContext();
 
     auto roles = params.getAll("role");

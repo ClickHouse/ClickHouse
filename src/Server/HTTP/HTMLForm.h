@@ -92,6 +92,16 @@ public:
     /// corresponding check.
     void applyBodyLimits(const Settings & settings);
 
+    /// Re-validates the fields that are already in the form against `http_max_fields`,
+    /// `http_max_field_name_size` and `http_max_field_value_size` of the given settings.
+    /// The URL query string of an HTTP request has to be parsed before authentication, because the
+    /// name of the user is one of its parameters, so it is bounded by the server default settings.
+    /// This method re-validates the result once the authenticated user's settings are known, so
+    /// that a user whose profile lowers these limits does not have the server act on parameters
+    /// that exceed them. Names and values are checked after percent-decoding, i.e. as the server
+    /// holds them. A zero `http_max_fields` disables the check of the number of fields.
+    void checkFieldLimits(const Settings & settings) const;
+
     static const std::string ENCODING_URL; /// "application/x-www-form-urlencoded"
     static const std::string ENCODING_MULTIPART; /// "multipart/form-data"
     static const int UNKNOWN_CONTENT_LENGTH;
