@@ -42,12 +42,16 @@ ALTER TABLE t_column_comment_order MODIFY COLUMN f SETTINGS (max_compress_block_
 -- Both `ADD COLUMN` and `MODIFY COLUMN` carry per-column `SETTINGS` into the column description.
 SHOW CREATE TABLE t_column_comment_order FORMAT TSVRaw;
 
--- `ALTER` cannot apply `STATISTICS`, `COLLATE` and `PRIMARY KEY`, so they are rejected rather
--- than silently dropped. Use `ALTER TABLE ... ADD STATISTICS / MODIFY STATISTICS` for statistics.
-ALTER TABLE t_column_comment_order ADD COLUMN z UInt64 STATISTICS(tdigest) COMMENT 'z comment'; -- { serverError BAD_ARGUMENTS }
+-- A declared `STATISTICS` is applied by `ADD COLUMN` and `MODIFY COLUMN`, like in `CREATE`
+-- (and like the other declared column properties), rather than being silently dropped.
+ALTER TABLE t_column_comment_order ADD COLUMN s UInt64 STATISTICS(tdigest) COMMENT 's comment';
+ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 STATISTICS(uniq) COMMENT 'g new comment';
+
+SHOW CREATE TABLE t_column_comment_order FORMAT TSVRaw;
+
+-- `ALTER` cannot apply `COLLATE` and `PRIMARY KEY`, so they are rejected rather than silently dropped.
 ALTER TABLE t_column_comment_order ADD COLUMN z String COLLATE utf8_bin COMMENT 'z comment'; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE t_column_comment_order ADD COLUMN z UInt64 PRIMARY KEY COMMENT 'z comment'; -- { serverError BAD_ARGUMENTS }
-ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 STATISTICS(tdigest) COMMENT 'g new comment'; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 COLLATE utf8_bin COMMENT 'g new comment'; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 PRIMARY KEY COMMENT 'g new comment'; -- { serverError BAD_ARGUMENTS }
 

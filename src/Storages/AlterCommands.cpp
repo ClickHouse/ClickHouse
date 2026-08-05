@@ -147,10 +147,6 @@ void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null
 /// `ColumnDescription`. Reject the ones ALTER cannot apply instead of silently dropping them.
 void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_col_decl, std::string_view alter_name)
 {
-    if (ast_col_decl.getStatisticsDesc())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Cannot specify STATISTICS in ALTER TABLE ... {}. Use ALTER TABLE ... ADD STATISTICS or MODIFY STATISTICS instead",
-            alter_name);
     if (ast_col_decl.getCollation())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot support collation in ALTER TABLE ... {}", alter_name);
     if (ast_col_decl.primary_key_specifier)
@@ -206,6 +202,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getSettings())
             command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
+
+        if (ast_col_decl.getStatisticsDesc())
+            command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
 
         command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
@@ -264,6 +263,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getSettings())
             command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
+
+        if (ast_col_decl.getStatisticsDesc())
+            command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
 
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
@@ -659,6 +661,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             column.settings = settings_changes;
         }
 
+        /// The declared statistics are transferred like in CREATE (the types are validated against the
+        /// column data type by the storage in `checkAlterIsPossible`).
+        if (column_statistics_decl)
+            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, data_type);
+
         /// The exact columns this ADD materializes (flatten_nested expansion + IF NOT EXISTS filter).
         /// Empty means a whole-command no-op. validate() advances its snapshot with the same set so
         /// apply() and validate() never disagree on what a (nested) ADD introduces.
@@ -740,6 +747,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                     metadata.dropImplicitIndicesForColumn(column_name);
                     metadata.addImplicitIndicesForColumn(column, context);
                 }
+
+                /// The declared statistics replace the explicit statistics of the column, like the other
+                /// declared properties (implicit statistics from `auto_statistics_types` are re-added by
+                /// the storage). The types are validated by the storage in `checkAlterIsPossible`.
+                if (column_statistics_decl)
+                    column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, column.type);
 
                 if (!settings_changes.empty())
                 {
@@ -1336,7 +1349,7 @@ bool AlterCommand::isCommentAlter() const
         /// /columns (ColumnsDescription::operator== compares column order and
         /// settings, ignoring only the comment), so they are not comment-only.
         return comment.has_value() && codec == nullptr && data_type == nullptr && default_expression == nullptr && ttl == nullptr
-            && settings_changes.empty() && settings_resets.empty() && after_column.empty() && !first;
+            && settings_changes.empty() && settings_resets.empty() && column_statistics_decl == nullptr && after_column.empty() && !first;
     }
     return false;
 }
