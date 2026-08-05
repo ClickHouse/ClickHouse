@@ -474,7 +474,8 @@ void StorageTimeSeriesSelector::readImpl(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
     auto samples_storage = DatabaseCatalog::instance().getTable(samples_table_id, context);
-    bool has_is_stale_marker = samples_storage->getInMemoryMetadataPtr()->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
+    auto samples_storage_metadata = samples_storage->getInMemoryMetadataPtr(context, false);
+    bool has_is_stale_marker = samples_storage_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
 
     ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
         samples_table_id,
