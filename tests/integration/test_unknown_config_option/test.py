@@ -310,6 +310,25 @@ node_users_include_from_set_then_remove = (
     )
 )
 
+# Regression case: removing the first `<include_from>` node must reveal a later sibling. An
+# earlier fragment appends TWO `<include_from>` siblings (the first one is effective), and a later
+# fragment's `<include_from remove=.../>` pairs with the first tree node only - after the removal
+# the second sibling becomes the first, and hence effective, node. The validator must keep that
+# revealed source's top-level tag (under `config.d`) exempted, so startup must succeed.
+cluster_users_include_from_remove_reveals_sibling = ClickHouseCluster(
+    __file__, name="users_include_from_remove_reveals_sibling"
+)
+node_users_include_from_remove_reveals_sibling = (
+    cluster_users_include_from_remove_reveals_sibling.add_instance(
+        "node_users_include_from_remove_reveals_sibling",
+        main_configs=["configs/config.d/users_new_include_source.xml"],
+        user_configs=[
+            "configs/users.d/a_two_include_from_siblings.xml",
+            "configs/users.d/z_remove_include_from.xml",
+        ],
+    )
+)
+
 # Negative case: a non-static handler (e.g. `redirect`) ignores `response_content`. Only a
 # `static` handler consumes a `config://` reference, so the validator must NOT exempt a top-level
 # key referenced from `response_content` on a non-static handler — doing so would let a genuinely
@@ -721,6 +740,13 @@ def start_users_include_from_set_then_remove_cluster():
     cluster_users_include_from_set_then_remove.start()
     yield
     cluster_users_include_from_set_then_remove.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_remove_reveals_sibling_cluster():
+    cluster_users_include_from_remove_reveals_sibling.start()
+    yield
+    cluster_users_include_from_remove_reveals_sibling.shutdown()
 
 
 @pytest.fixture
@@ -1262,6 +1288,18 @@ def test_users_include_from_set_then_remove_source_still_exempted(
     # source's top-level tag exempted, or this valid startup fails.
     assert (
         node_users_include_from_set_then_remove.query("SELECT 1").strip() == "1"
+    )
+
+
+def test_users_include_from_remove_reveals_later_sibling(
+    start_users_include_from_remove_reveals_sibling_cluster,
+):
+    # An earlier fragment appends two `<include_from>` siblings; a later fragment's `remove`
+    # pairs with the first tree node only, so the second sibling becomes the effective source.
+    # The validator must keep the revealed source's top-level tag exempted, or this valid
+    # startup fails with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    assert (
+        node_users_include_from_remove_reveals_sibling.query("SELECT 1").strip() == "1"
     )
 
 
