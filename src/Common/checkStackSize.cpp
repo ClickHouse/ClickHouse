@@ -1,33 +1,27 @@
 #include <Common/checkStackSize.h>
 
+#include <base/defines.h> /// THREAD_SANITIZER
+#include <base/scope_guard.h>
+#include <Common/Exception.h>
+#include <Common/Fiber.h>
+#include <cstdint>
+
 #if defined(OS_WINDOWS)
 
-/// A no-op on Windows for now. Getting this right needs the thread's real stack bounds, which
-/// live in the TIB (`NT_TIB::StackBase`/`StackLimit`) rather than behind `getrlimit`/
-/// `pthread_getattr_np`. Until then the recursion guards that call this - the parser and the
-/// analyzer passes - do not fire, so deeply nested input overflows the stack instead of throwing
-/// TOO_DEEP_RECURSION. The 8 MiB stack the link reserves (see cmake/windows/default_libs.cmake)
-/// makes that unlikely rather than impossible.
-
-void checkStackSize()
-{
-}
+#include <Poco/UnWindows.h>
 
 #else
 
 #include <base/getThreadId.h>
-#include <base/defines.h> /// THREAD_SANITIZER
-#include <base/scope_guard.h>
-#include <Common/Exception.h>
 #include <Common/ErrnoException.h>
-#include <Common/Fiber.h>
 #include <sys/resource.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <cstdint>
 
 #if defined(OS_FREEBSD)
 #   include <pthread_np.h>
+#endif
+
 #endif
 
 
@@ -68,7 +62,18 @@ static NO_INLINE size_t getStackSize(void ** out_address)
     size_t size = 0;
     void * address = nullptr;
 
-#if defined(OS_DARWIN)
+#if defined(OS_WINDOWS)
+    /// Reports the full stack reservation of the current thread (the reserve size from the PE
+    /// header for the main thread - see cmake/windows/default_libs.cmake - or the size passed to
+    /// `CreateThread`), not just the currently committed part, so it is the same "maximum stack"
+    /// the POSIX branches below compute. Guard pages live inside the reservation; the free-ratio
+    /// margin in `checkStackSize` keeps the check far away from them.
+    ULONG_PTR low_limit = 0;
+    ULONG_PTR high_limit = 0;
+    GetCurrentThreadStackLimits(&low_limit, &high_limit);
+    address = reinterpret_cast<void *>(low_limit);
+    size = high_limit - low_limit;
+#elif defined(OS_DARWIN)
     // pthread_get_stacksize_np() returns a value too low for the main thread on
     // OSX 10.9, http://mail.openjdk.java.net/pipermail/hotspot-dev/2013-October/011369.html
     //
@@ -183,5 +188,3 @@ void checkStackSize()
     if (unlikely(stack_size > max_stack_size_allowed))
         throwTooDeepRecursion(stack_bounds.address, frame_address, stack_size, stack_bounds.max_size);
 }
-
-#endif
