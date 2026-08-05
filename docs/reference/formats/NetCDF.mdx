@@ -50,7 +50,8 @@ in the file needs it as a dimension of the row space: it has no variable of its 
 unlimited dimension, and it is used nowhere but as the last dimension of a `char` variable. This is
 the same condition that the `concat_characters` option of `xarray` documents. Otherwise, as in
 `char station(station)`, the dimension stays in the row space and the variable is read as one
-character per row.
+character per row, whose byte is kept as it is even when it is zero: only the strings that a length
+dimension holds are padded, so only they are trimmed.
 
 Attributes of the file and of the variables are not part of the table, with the exception of
 `_FillValue` and `missing_value`, which are used by the setting

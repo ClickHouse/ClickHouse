@@ -35,6 +35,10 @@ struct NetCDFTableLayout
 
         /// A `char` variable is read as a String whose length is the last dimension of the variable.
         bool is_string = false;
+        /// Whether the last dimension of the variable was taken as the length of the strings. Only
+        /// such a variable pads a shorter string with zero bytes, so only its values are trimmed.
+        /// A `char` variable whose dimensions all stay in the row space keeps its bytes as they are.
+        bool has_string_length_dimension = false;
         /// The number of bytes of one value.
         UInt64 element_size = 1;
         /// The number of values in the variable.

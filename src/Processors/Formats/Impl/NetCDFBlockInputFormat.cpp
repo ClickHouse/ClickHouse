@@ -170,6 +170,7 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
 
     std::vector<std::vector<size_t>> effective_dimensions(header.variables.size());
     std::vector<UInt64> string_lengths(header.variables.size(), 1);
+    std::vector<bool> has_string_length_dimension(header.variables.size(), false);
 
     for (size_t i = 0; i < header.variables.size(); ++i)
     {
@@ -181,6 +182,7 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         {
             string_lengths[i] = header.dimensions[effective_dimensions[i].back()].length;
             effective_dimensions[i].pop_back();
+            has_string_length_dimension[i] = true;
         }
 
         std::unordered_set<size_t> distinct(effective_dimensions[i].begin(), effective_dimensions[i].end());
@@ -259,6 +261,7 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         column.name = variable.name;
         column.variable = &variable;
         column.is_string = variable.type == NetCDFType::Char;
+        column.has_string_length_dimension = has_string_length_dimension[i];
         column.element_size = column.is_string ? string_lengths[i] : netCDFTypeSize(variable.type);
         column.dimension_ids = effective_dimensions[i];
         column.type = getDataType(variable.type);
@@ -620,10 +623,13 @@ void NetCDFBlockInputFormat::fillColumn(const ColumnState & state, IColumn & col
         {
             const char * from = data + (index - state.buffer_first_element) * description.element_size;
 
-            /// A string shorter than the dimension that holds it is padded with zero bytes.
+            /// A string shorter than the dimension that holds it is padded with zero bytes. A `char`
+            /// variable whose dimensions all stay in the row space holds one character per row, not
+            /// padded strings, so a zero byte there is data and is kept.
             size_t length = description.element_size;
-            while (length != 0 && from[length - 1] == '\0')
-                --length;
+            if (description.has_string_length_dimension)
+                while (length != 0 && from[length - 1] == '\0')
+                    --length;
 
             string_column.insertData(from, length);
         }
@@ -839,7 +845,8 @@ in the file needs it as a dimension of the row space: it has no variable of its 
 unlimited dimension, and it is used nowhere but as the last dimension of a `char` variable. This is
 the same condition that the `concat_characters` option of `xarray` documents. Otherwise, as in
 `char station(station)`, the dimension stays in the row space and the variable is read as one
-character per row.
+character per row, whose byte is kept as it is even when it is zero: only the strings that a length
+dimension holds are padded, so only they are trimmed.
 
 Attributes of the file and of the variables are not part of the table, with the exception of
 `_FillValue` and `missing_value`, which are used by the setting
