@@ -13,7 +13,6 @@ CI Tests image, so in CI only the static assertions execute and they are what mu
 the step's semantics.
 """
 
-import collections
 import datetime
 import json
 import os
@@ -39,6 +38,35 @@ PROBE_CMD = (
     "--jq '.conclusion' 2>/dev/null || echo \"\")"
 )
 REJECT_COND = 'if [ "$attempt1_conclusion" != "action_required" ]; then'
+
+# Every command of the candidate's data path, from the listing to the reject condition,
+# normalized. A census of ASSIGNMENTS has to enumerate the separators one can follow, and
+# that enumeration keeps leaking: `&&`, `||`, `&`, a `{ ... }` group, `read -r var`,
+# `printf -v var` and `declare "${v}=2"` all introduce one without a separator the census
+# looks for, and each forges run_id, run_attempt or attempt1_conclusion -- either removing
+# the never-retried invariant or making the gate inert. A closed whitelist of the region's
+# commands refuses every such form, including the ones no regex can name.
+EXPECTED_DATA_PATH = [
+    'run_entries=$(gh run list --repo "$GH_REPO" --workflow pull_request.yml '
+    "--status failure --limit 50 --json databaseId,attempt,createdAt "
+    '--jq ".[] | select(.attempt <= 2 and .createdAt >= \\"$cutoff\\") '
+    '| \\"\\(.databaseId):\\(.attempt)\\"")',
+    'if [ -z "$run_entries" ]; then',
+    'echo "No recent failed runs found."',
+    "exit 0",
+    "fi",
+    "for run_entry in $run_entries; do",
+    'if [ "$rerun_count" -ge "$MAX_RERUNS" ]; then',
+    'echo "Reached maximum of $MAX_RERUNS reruns, stopping."',
+    "break",
+    "fi",
+    'run_id="${run_entry%%:*}"',
+    'run_attempt="${run_entry##*:}"',
+    'if [ "$run_attempt" != "1" ]; then',
+    'attempt1_conclusion=$(gh api "repos/$GH_REPO/actions/runs/$run_id/attempts/1" '
+    "--jq '.conclusion' 2>/dev/null || echo \"\")",
+    'if [ "$attempt1_conclusion" != "action_required" ]; then',
+]
 
 GH_STUB = """#!/usr/bin/env bash
 # The caller's own --jq expression, so the stub answers the field that was asked for rather
@@ -165,6 +193,27 @@ def _reject_branch_body(step):
     return body
 
 
+def _data_path_commands(step):
+    """The significant commands of the candidate's data path, comments dropped.
+
+    The region runs from the ``run_entries`` assignment to the reject condition inclusive:
+    starting at the loop header instead would leave the listing and the empty-listing guard
+    outside it, where an assignment can neutralize the selector unseen. Continuations are
+    joined and whitespace runs collapsed BEFORE splitting, so a re-wrap is not a refusal.
+    """
+    lines = step.splitlines()
+    start = next(i for i, l in enumerate(lines) if "run_entries=$(gh run list" in l)
+    end = next(i for i, l in enumerate(lines) if '!= "action_required" ]; then' in l)
+    assert start < end, (start, end)
+    joined = "\n".join(lines[start : end + 1]).replace("\\\n", " ")
+    body = []
+    for l in joined.splitlines():
+        s = " ".join(l.split())
+        if s and not s.startswith("#"):
+            body.append(s)
+    return body
+
+
 def test_selector_admits_gated_fork_runs():
     step = _retry_step()
     # The probe spans continuation lines, so its assertions below read this NORMALIZED
@@ -263,27 +312,17 @@ def test_selector_admits_gated_fork_runs():
     # run and rejects every gated candidate while every assert above still passes.
     assert 'run_id="${run_entry%%:*}"' in step, "run id must come from the head field"
     assert 'run_attempt="${run_entry##*:}"' in step, "attempt must come from the tail field"
-    # Every assignment between the loop header and the reject condition, by name. A
-    # whitelist of named variables cannot see a name it does not list: `run_entry` is the
-    # loop variable this change introduces and BOTH splits derive from it, so rewriting it
-    # forges both at once, upstream of both, and forces the guard's condition false.
-    # The region ends at the REJECT condition, not at `guard`: ending at the outer
-    # `run_attempt != "1"` line would leave the probe's own assignment outside it.
-    guard_reject_index = next(
-        i for i, l in enumerate(lines) if '!= "action_required" ]; then' in l
+    # The candidate's data path, whitelisted whole. Censusing the ASSIGNMENTS in it has to
+    # enumerate the separators one can follow, and that enumeration leaks the same way the
+    # `continue` depth-tracking above did: an assignment after `&&`, `||` or `&`, inside a
+    # `{ ... }` group, or via `read`/`printf -v`/`declare` carries no separator the census
+    # looks for. Forging run_attempt (to 1) makes EVERY attempt-2 candidate eligible, so the
+    # never-retried contract this PR adds goes unpinned; forging run_id or
+    # attempt1_conclusion makes the gate inert instead. So pin the region's commands.
+    assert _data_path_commands(step) == EXPECTED_DATA_PATH, (
+        "the candidate's data path must be exactly EXPECTED_DATA_PATH",
+        _data_path_commands(step),
     )
-    region = "\n".join(lines[loop : guard_reject_index + 1])
-    assigned = collections.Counter(
-        re.findall(r"(?:^|;|\bthen\b|\bdo\b)\s*([A-Za-z_][A-Za-z0-9_]*)=", region, re.M)
-    )
-    assert dict(assigned) == {
-        "run_id": 1,
-        "run_attempt": 1,
-        "attempt1_conclusion": 1,
-    }, f"unexpected assignments in the candidate's data path: {dict(assigned)}"
-    # `run_entries` is assigned BEFORE the loop, so the region census cannot see a second
-    # assignment to it; keep an explicit bound on that one.
-    assert len(re.findall(r"(?:^|;)\s*run_entries=", step, re.M)) == 1
     # A gated attempt 1 has status "completed" and conclusion "action_required", so a probe
     # reading any other field rejects every fork candidate while the asserts above still pass.
     assert (
