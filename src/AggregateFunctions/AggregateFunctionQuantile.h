@@ -58,7 +58,7 @@ class AggregateFunctionQuantile final
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
-    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
+    static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
@@ -245,8 +245,7 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        /// const_cast is required because some data structures apply finalizaton (like compactization) before serializing.
-        this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
+        this->data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
