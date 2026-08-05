@@ -454,28 +454,8 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p.communicate()
 
 
-async def check_nats_is_available(cluster, connect_timeout=10):
-    # `nats.connect` reports a TLS or an authentication failure through its error callback
-    # and then keeps retrying, so an unbounded await hangs until the pytest timeout instead
-    # of telling us what went wrong. Bound the attempt and log what the client saw.
-    client_errors = []
-
-    async def collect_error(error):
-        client_errors.append(error)
-
-    try:
-        nc = await asyncio.wait_for(
-            nats_connect_ssl(cluster, max_reconnect_attempts=1, error_cb=collect_error),
-            connect_timeout,
-        )
-    except asyncio.TimeoutError:
-        logging.warning(
-            "Cannot connect to NATS in %s seconds, client errors: %s",
-            connect_timeout,
-            client_errors,
-        )
-        return False
-
+async def check_nats_is_available(cluster):
+    nc = await nats_connect_ssl(cluster, max_reconnect_attempts=1)
     available = nc.is_connected
     await nc.close()
     return available
@@ -2907,7 +2887,6 @@ class ClickHouseCluster:
     def wait_mysql8_to_start(self, timeout=180):
         self.mysql8_ip = self.get_instance_ip("mysql80")
         start = time.time()
-        errors = []
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
@@ -2920,11 +2899,10 @@ class ClickHouseCluster:
                 logging.debug("Mysql 8 Started")
                 return
             except Exception as ex:
-                errors += [str(ex)]
+                logging.debug("Can't connect to MySQL 8 " + str(ex))
                 time.sleep(0.5)
 
         run_and_check(["docker", "ps", "--all"])
-        logging.error("Can't connect to MySQL 8:{}".format(errors))
         raise Exception("Cannot wait MySQL 8 container")
 
     def wait_mysql_cluster_to_start(self, timeout=180):
@@ -4342,28 +4320,6 @@ class ClickHouseCluster:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
-                            break
-
-            if not sanitizer_assert_instance and not ignore_sanitizer and self.use_keeper:
-                # Keeper (zooN) containers are not in self.instances, so the per-instance
-                # scan above never covers them. Sanitizers write to raw stderr, which the
-                # keeper entrypoint redirects (via --logger.stderr) to a host-mounted
-                # stderr.log; scan it so a Keeper sanitizer report is detected reliably
-                # and ends up in the collected logs.
-                for i in range(1, 4):
-                    keeper_stderr = os.path.join(
-                        self.keeper_instance_dir_prefix + f"{i}", "log", "stderr.log"
-                    )
-                    if not os.path.exists(keeper_stderr):
-                        continue
-                    with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN in line for line in f):
-                            sanitizer_assert_instance = f"zoo{i}"
-                            logging.error(
-                                "Sanitizer in Keeper instance zoo%s log %s",
-                                i,
-                                keeper_stderr,
-                            )
                             break
         else:
             logging.warning(

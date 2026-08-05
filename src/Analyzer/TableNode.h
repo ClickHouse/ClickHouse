@@ -30,7 +30,7 @@ using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
 struct MaterializedCTE;
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
 
-class TableNode : public ITableExpressionNode
+class TableNode : public IQueryTreeNode
 {
 public:
     /// Construct table node with storage, storage id, storage lock, storage snapshot

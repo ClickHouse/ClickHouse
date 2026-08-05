@@ -119,7 +119,7 @@ private:
         /// prefix can match at more than one offset (greedy `^.*` selects the last occurrence, while
         /// the stripped pattern selects the first). Be conservative and skip the rewrite for patterns
         /// containing a NUL, so this fix does not change `extract` results for such patterns.
-        if (regexp.contains('\0'))
+        if (regexp.find('\0') != String::npos)
             return;
 
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(regexp);

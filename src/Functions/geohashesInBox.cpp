@@ -7,8 +7,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 
 #include <memory>
 #include <string>
@@ -21,7 +19,6 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_ARRAY_SIZE;
-extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -31,12 +28,7 @@ class FunctionGeohashesInBox final : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGeohashesInBox>(context); }
-
-    explicit FunctionGeohashesInBox(ContextPtr context)
-        : process_list_element(context ? context->getProcessListElement() : nullptr)
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashesInBox>(); }
 
     String getName() const override { return name; }
 
@@ -81,12 +73,6 @@ public:
         size_t input_rows_count) const
     {
         static constexpr size_t max_array_size = 10'000'000;
-        /// The span between two checkpoints is the work a cancelled query still has to finish, so it
-        /// is what the caller waits for. 100k items are ~1.2 MB of geohashes: tens of milliseconds
-        /// of work against a check that costs a clock read and an uncontended lock. A million items,
-        /// the first choice here, was over three seconds of uninterruptible work on a loaded
-        /// sanitizer build, which is not what "cancelled promptly" should mean.
-        static constexpr UInt64 items_between_cancellation_checks = 100'000;
 
         const auto * lon_min_const = typeid_cast<const ColumnConst *>(lon_min_column);
         const auto * lat_min_const = typeid_cast<const ColumnConst *>(lat_min_column);
@@ -124,8 +110,6 @@ public:
         ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
-        UInt64 items_since_check = 0;
-
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const LonAndLatType lon_min_value = lon_min->getElement(lon_min_const ? 0 : row);
@@ -144,17 +128,6 @@ public:
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "{} would produce {} array elements, "
                                 "which is bigger than the allowed maximum of {}",
                                 getName(), prepared_args.items_count, max_array_size);
-            }
-
-            /// The whole block's rows run inside one `executeImpl` call, so the pipeline's
-            /// between-blocks cancellation check cannot interrupt them. Throttle on accumulated work
-            /// units rather than rows, counting each row as at least one: a row can hold up to
-            /// max_array_size items, and a degenerate box (reversed bounds or NaN) holds none.
-            items_since_check += std::max<UInt64>(1, prepared_args.items_count);
-            if (items_since_check >= items_between_cancellation_checks)
-            {
-                items_since_check = 0;
-                checkQueryTimeLimit();
             }
 
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
@@ -202,18 +175,6 @@ public:
             execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
 
         return res;
-    }
-
-private:
-    QueryStatusPtr process_list_element;
-
-    /// `checkTimeLimit` throws for `KILL QUERY` and the 'throw' overflow mode; for the 'break' mode it
-    /// returns false instead. A half-filled `Array(String)` result is a wrong value, not a smaller one,
-    /// so we throw on the false return too; the pipeline absorbs it into a clean cancellation.
-    void checkQueryTimeLimit() const
-    {
-        if (process_list_element && !process_list_element->checkTimeLimit())
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
     }
 };
 

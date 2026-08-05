@@ -555,7 +555,7 @@ service:
   ### 使用异步插入
 </div>
 
-通常，当 collector 的吞吐量较低时，用户往往不得不发送更小的批次，但同时仍希望数据能以尽可能低的端到端延迟到达 ClickHouse。在这种情况下，当batch 处理器的 `timeout` 到期时，就会发送小批次。这可能会带来问题，此时就需要使用异步插入。如果你将数据发送到以 Gateway 角色运行的 ClickStack collector，这种情况通常较少见——由于它们充当聚合器，可以缓解这一问题——请参见 [Collector 角色](#collector-roles)。
+通常，当 collector 的吞吐量较低时，用户往往不得不发送更小的批次，但同时仍希望数据能以尽可能低的端到端延迟到达 ClickHouse。在这种情况下，当batch processor的 `timeout` 到期时，就会发送小批次。这可能会带来问题，此时就需要使用异步插入。如果你将数据发送到以 Gateway 角色运行的 ClickStack collector，这种情况通常较少见——由于它们充当聚合器，可以缓解这一问题——请参见 [Collector 角色](#collector-roles)。
 
 如果无法保证使用大批次，可以通过 [异步插入](/zh/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts) 将批处理交给 ClickHouse。启用异步插入后，数据会先写入缓冲区，随后再异步写入数据库存储。
 
@@ -626,9 +626,9 @@ OTel collector 的资源需求取决于事件吞吐量、消息大小以及执�
 | 10k/秒 | 1 CPU, 1GiB        |
 
 <div id="schema-choice">
-  ## schema 选择：Map 与 JSON
+  ## Schema 选择：Map vs JSON
 </div>
 
-ClickStack collector 默认创建的表会将属性存储在 `Map(LowCardinality(String), String)` 列中。这是可观测性工作负载推荐使用的 schema。Beta 版 `JSON` 类型 schema 可用于评估属性键集合较小且稳定的工作负载。
+ClickStack collector 默认创建的表会将属性存储在 `Map(LowCardinality(String), String)` 列中。这是可观测性工作负载推荐使用的 schema。对于属性键集合较小且稳定的工作负载，也提供了处于 Beta 阶段的 `JSON` 类型 schema 供评估。
 
-如需了解完整对比、各自的适用场景、启用 `JSON` 类型 schema 所需的环境变量，以及迁移演练，请参阅 [Map vs JSON type](/zh/clickstack/ingesting-data/schema/map-vs-json)。
+如需查看完整对比、了解各自的适用场景、启用 `JSON` 类型 schema 所需的环境变量以及迁移演练，请参阅 [Map vs JSON type](/zh/clickstack/ingesting-data/schema/map-vs-json)。

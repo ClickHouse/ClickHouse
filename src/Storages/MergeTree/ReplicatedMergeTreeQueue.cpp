@@ -1915,27 +1915,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    /// A fetched part keeps its own metadata version, so it can be ahead of this replica's table until
-    /// this replica applies its own ALTER_METADATA. MergeFromLogEntryTask::prepare has the same rule.
-    if (entry.type == LogEntry::MUTATE_PART && !entry.source_parts.empty())
-    {
-        if (auto part = data.getPartIfExists(entry.source_parts[0],
-            {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated}))
-        {
-            const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-            int32_t part_metadata_version = part->getMetadataVersion();
-            int32_t table_metadata_version = metadata_snapshot->getMetadataVersion();
-            if (part_metadata_version > table_metadata_version)
-            {
-                constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because source part {} metadata version {} "
-                                            "is newer than the table metadata version {}. ALTER_METADATA is still in progress.";
-                LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(),
-                          entry.new_part_name, part->name, part_metadata_version, table_metadata_version);
-                return false;
-            }
-        }
-    }
-
     /// DROP_RANGE, DROP_PART and REPLACE_RANGE entries remove other entries, which produce parts in the range.
     /// If such part producing operations are currently executing, then DROP/REPLACE RANGE wait them to finish.
     /// Deadlock is possible if multiple DROP/REPLACE RANGE entries are executing in parallel and wait each other.

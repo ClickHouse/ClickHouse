@@ -229,32 +229,6 @@ def test_custom_id_algorithm():
     ) == TSV([["FixedString(16)", ""]])
 
 
-# Checks that a multi-component identifier `Tuple(F, S)` can be used.
-def test_multi_component_id():
-    # Case 1: the identifier expression is specified as a DEFAULT expression of the `id` column.
-    node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "TAGS INNER COLUMNS (id Tuple(UInt64, UInt64) DEFAULT tuple(xxHash64(metric_name), xxHash64(all_tags)))"
-    )
-    check()
-
-    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
-    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
-
-    drop_prometheus_table()
-
-    # Case 2: the identifier expression is specified in the `id_generator` setting.
-    node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SETTINGS id_generator = 'tuple(xxHash64(metric_name), xxHash64(all_tags))' "
-        "TAGS INNER COLUMNS (id Tuple(UInt64, UInt64))"
-    )
-    check()
-
-    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
-    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
-
-
 # Checks that timestamps can be stored with microsecond precision (`DateTime64(6)`).
 def test_microsecond_precision():
     node.query("CREATE TABLE prometheus (time_series Array(Tuple(DateTime64(6), Float64))) ENGINE=TimeSeries")

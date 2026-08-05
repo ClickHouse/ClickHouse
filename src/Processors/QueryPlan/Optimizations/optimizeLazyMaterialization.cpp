@@ -416,38 +416,18 @@ static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & b
     return nullptr;
 }
 
-/// A computed node can carry the same name as one of the DAG's inputs, e.g. a storage-level
-/// row policy filter merged with a schema-conversion cast that reuses the source column name
-/// (`CAST(x, ...) AS x` over input `x`). When such a DAG is split into the main and the lazy
-/// halves, `ActionsDAG::split` has to rename the node promoted to the lazy half's input
-/// (`avoid_duplicate_inputs`), and the main half's output no longer matches the following
-/// main-branch step's inputs, which are bound by name at reassembly. Detect the shadowing
-/// upfront and leave such plans alone.
-static bool hasInputNameShadowedByComputedNode(const ActionsDAG & dag)
-{
-    std::unordered_set<std::string_view> input_names;
-    for (const auto * input : dag.getInputs())
-        input_names.insert(input->result_name);
-
-    for (const auto & node : dag.getNodes())
-        if (node.type != ActionsDAG::ActionType::INPUT && input_names.contains(node.result_name))
-            return true;
-
-    return false;
-}
-
 static bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
 {
     while (!node->children.empty())
     {
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(node->step.get()))
         {
-            if (expr_step->getExpression().hasArrayJoin() || hasInputNameShadowedByComputedNode(expr_step->getExpression()))
+            if (expr_step->getExpression().hasArrayJoin())
                 return false;
         }
         else if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
-            if (filter_step->getExpression().hasArrayJoin() || hasInputNameShadowedByComputedNode(filter_step->getExpression()))
+            if (filter_step->getExpression().hasArrayJoin())
                 return false;
         }
         else
@@ -697,11 +677,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         main_plan.addStep(std::move(new_sorting_step));
     }
 
-    /// The replacement plan must produce the header `root` produces. Capture it here, before the
-    /// next line: `LimitStep::updateOutputHeader` mirrors its input header, so `updateInputHeader`
-    /// overwrites it with the main branch header, and `root.step` is moved away right after.
-    auto expected_header = root.step->getOutputHeader();
-
     limit_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(root.step));
 
@@ -762,7 +737,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         result_plan.addStep(std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag)));
     }
 
-    query_plan.replaceNodeWithPlan(&root, std::move(result_plan), std::move(expected_header));
+    query_plan.replaceNodeWithPlan(&root, std::move(result_plan));
 
     return true;
 }

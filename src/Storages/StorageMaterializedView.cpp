@@ -1,7 +1,6 @@
 #include <thread>
 #include <Storages/StorageMaterializedView.h>
 
-#include <Storages/ColumnDefault.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -1083,40 +1082,18 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
         return std::nullopt;
 
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
-    const auto & view_columns_description = view_metadata->getColumns();
+    auto view_columns = view_metadata->getColumns().getAll();
     auto target_table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
     auto target_table_columns = target_table_metadata->getColumns();
     NameSet supported_columns;
-    for (const auto & [name, type] : view_columns_description.getAll())
+    for (const auto & [name, type] : view_columns)
     {
         auto target_column = target_table_columns.tryGetColumn(GetColumnsOptions::All, name);
-        if (!target_column || !target_column->type->equals(*type))
-            continue;
-        /// The filter is forwarded into the raw target read, so the column must be physical there
-        /// just like here (same rule as StorageMerge): an ALIAS twin has no input it binds to.
-        const auto view_kind = view_columns_description.getDefault(name).value_or(ColumnDefault{}).kind;
-        const auto target_kind = target_table_columns.getDefault(name).value_or(ColumnDefault{}).kind;
-        if (columnDefaultKindHasSameType(view_kind, target_kind))
+        if (target_column && target_column->type->equals(*type))
             supported_columns.insert(name);
     }
 
-    /// The loop above only compares against the target's *declared* columns. When the target
-    /// aggregates other tables itself (a `Merge`, another `MaterializedView`, ...), its declared
-    /// type can match while a leaf's differs, and the read delegated down to that leaf would then
-    /// re-derive PREWHERE against a type the plan did not expect. Intersect with what the target
-    /// itself allows so the constraint holds transitively. Target chains cannot cycle: a
-    /// self-target is rejected with BAD_ARGUMENTS and a loop with INFINITE_LOOP, both at DDL time.
-    if (const auto target_supported_columns = table->supportedPrewhereColumns())
-        std::erase_if(supported_columns, [&](const auto & name) { return !target_supported_columns->contains(name); });
-
     return supported_columns;
-}
-
-bool StorageMaterializedView::supportedPrewhereColumnsIncludeSubcolumns() const
-{
-    if (auto table = tryGetTargetTable())
-        return table->supportedPrewhereColumnsIncludeSubcolumns();
-    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory);

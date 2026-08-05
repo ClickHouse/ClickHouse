@@ -94,8 +94,6 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/geo)";
         else if (type == "Point")
             result += "`](/sql-reference/data-types/geo#point)";
-        else if (type == "MultiPoint")
-            result += "`](/sql-reference/data-types/geo#multipoint)";
         else if (type == "Ring")
             result += "`](/sql-reference/data-types/geo#ring)";
         else if (type == "LineString")

@@ -13,7 +13,6 @@ namespace DB
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(ARROW_FLIGHT_EXPR, "ArrowFlightExpr") \
     M(ARROW_FLIGHT_SERVER, "ArrowFlightSrv") \
-    M(AST_FUZZER, "ASTFuzzer") \
     M(ASYNC_COPY, "AsyncCopy") \
     M(ASYNC_INSERT_QUEUE, "AsyncInsertQue") \
     M(ASYNC_LOGGER, "AsyncLogger") \
@@ -55,7 +54,6 @@ namespace DB
     M(DISTRIBUTED_FLUSH, "DistFlush") \
     M(DISTRIBUTED_INIT, "DistInit") \
     M(DISTRIBUTED_SCHEDULE_POOL, "BgDistSchPool") \
-    M(DISTRIBUTED_CACHE_WRITE, "DistrCacheWrite") \
     M(DISTRIBUTED_SINK, "DistrOutStrProc") \
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
     M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
@@ -176,8 +174,6 @@ namespace DB
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
-    M(DISTRIBUTED_CACHE, "DistribCache") \
-    M(DISTRIBUTED_CACHE_DROP, "DropDistCache") \
 
 
 enum class ThreadName : uint8_t

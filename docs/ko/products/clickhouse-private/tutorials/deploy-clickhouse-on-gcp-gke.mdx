@@ -30,7 +30,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
 ***
 
 <Steps>
-  <Step stepNumber={0} title="0단계: 서비스 계정 설정" id="step-0-service-account-setup">
+  <Step stepNumber={0}>
+    ## 0단계: 서비스 계정 설정
+
     사용자 직접 인증이 제한되는 FedRAMP 환경에서는 가장에 사용할 서비스 계정을 생성합니다.
 
     ### 옵션 1: GCP Console을 통해
@@ -107,7 +109,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={1} title={<>1단계: 환경 변수 설정 (<code>00-env.sh</code>)</>} id="step-1-set-environment-variables-00-envsh">
+  <Step stepNumber={1}>
+    ## 1단계: 환경 변수 설정 (`00-env.sh`)
+
     이 파일을 생성한 후 다른 스크립트를 실행하기 전에 소스로 불러오십시오. 환경에 맞게 모든 값을 업데이트하십시오.
 
     ```bash expandable
@@ -221,7 +225,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={2} title={<>2단계: Artifact Registry 생성 (<code>01-artifact-registry.sh</code>)</>} id="step-2-create-artifact-registry-01-artifact-registrysh">
+  <Step stepNumber={2}>
+    ## 2단계: Artifact Registry 생성 (`01-artifact-registry.sh`)
+
     ```bash expandable
     #!/bin/bash
     set -e
@@ -263,7 +269,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={3} title={<>3단계: 컨테이너 image 복사 (<code>02-copy-images.sh</code>)</>} id="step-3-copy-container-images-02-copy-imagessh">
+  <Step stepNumber={3}>
+    ## 3단계: 컨테이너 image 복사 (`02-copy-images.sh`)
+
     모든 아키텍처를 유지하려면 [skopeo](https://github.com/containers/skopeo)가 필요합니다.
 
     ```bash expandable
@@ -340,7 +348,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={4} title={<>단계 4: VPC 및 서브넷 구성 (<code>03-vpc-subnet.sh</code>)</>} id="step-4-configure-vpc-and-subnet-03-vpc-subnetsh">
+  <Step stepNumber={4}>
+    ## 단계 4: VPC 및 서브넷 구성 (`03-vpc-subnet.sh`)
+
     이 스크립트는 기존 VPC와 배스천 호스트가 있다고 가정합니다. 필요한 보조 범위(secondary ranges)가 포함되도록 GKE 서브넷을 생성하거나 업데이트합니다.
 
     **중요: CIDR 경계 요구 사항** - `/14` 블록: 세 번째 옥텟은 4의 배수여야 합니다(예: `10.244.0.0`, `10.245.0.0`은 아님) - `/20` 블록: 네 번째 옥텟은 0이어야 하며, 세 번째 옥텟은 16의 배수 경계에 있어야 합니다(예: `10.252.0.0`)
@@ -423,7 +433,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={5} title={<>5단계: Cloud NAT 생성 (<code>04-cloud-nat.sh</code>)</>} id="step-5-create-cloud-nat-04-cloud-natsh">
+  <Step stepNumber={5}>
+    ## 5단계: Cloud NAT 생성 (`04-cloud-nat.sh`)
+
     프라이빗 GKE 노드가 외부 인터넷에 아웃바운드로 액세스하려면 Cloud NAT가 필요합니다.
 
     ```bash expandable
@@ -477,7 +489,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={6} title={<>6단계: GCP 서비스 계정 생성 (<code>05-service-account.sh</code>)</>} id="step-6-create-gcp-service-account-05-service-accountsh">
+  <Step stepNumber={6}>
+    ## 6단계: GCP 서비스 계정 생성 (`05-service-account.sh`)
+
     ```bash
     #!/bin/bash
     set -e
@@ -508,7 +522,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={7} title={<>7단계: GCS 버킷 만들기 (<code>06-gcs-bucket.sh</code>)</>} id="step-7-create-gcs-bucket-06-gcs-bucketsh">
+  <Step stepNumber={7}>
+    ## 7단계: GCS 버킷 만들기 (`06-gcs-bucket.sh`)
+
     ```bash expandable
     #!/bin/bash
     set -e
@@ -557,7 +573,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={8} title={<>8단계: GKE 클러스터 생성 (<code>07-gke-cluster.sh</code>)</>} id="step-8-create-gke-cluster-07-gke-clustersh">
+  <Step stepNumber={8}>
+    ## 단계 8: GKE 클러스터 생성 (`07-gke-cluster.sh`)
+
     **완전한 비공개 GKE 클러스터**를 생성합니다 -- 워커 노드는 내부 IP만 사용하며, 컨트롤 플레인에는 퍼블릭 엔드포인트가 없고, 모든 액세스는 배스천을 통해 VPC 내부에서만 이루어져야 합니다.
 
     ```bash expandable
@@ -637,7 +655,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={9} title={<>단계 9: 노드 풀 생성 (<code>08-node-pools.sh</code>)</>} id="step-9-create-node-pools-08-node-poolssh">
+  <Step stepNumber={9}>
+    ## 단계 9: 노드 풀 생성 (`08-node-pools.sh`)
+
     | 노드 풀   | 머신 유형                                       | 디스크                       | 레이블                      | 테인트                                         |
     | ------ | ------------------------------------------- | ------------------------- | ------------------------ | ------------------------------------------- |
     | Keeper | n2-standard-4 (dev) / n2-standard-8 (prod)  | 20GB pd-ssd               | `clickhouseGroup=keeper` | `clickhouse.com/do-not-schedule:NoSchedule` |
@@ -712,7 +732,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={10} title={<>10단계: 로컬 SSD 데몬셋 배포 (<code>09-local-ssd-daemonset.sh</code>)</>} id="step-10-deploy-local-ssd-daemonset-09-local-ssd-daemonsetsh">
+  <Step stepNumber={10}>
+    ## 10단계: 로컬 SSD 데몬셋 배포 (`09-local-ssd-daemonset.sh`)
+
     GKE Container-Optimized OS는 루트 파일 시스템이 읽기 전용이므로 `/nvme`를 생성할 수 없습니다. 이 데몬셋은 로컬 SSD를 포맷한 뒤 `/mnt/disks/ssd0`에 마운트합니다.
 
     **중요:** 레이스 컨디션을 방지하려면 ClickHouse 클러스터를 배포하기 **전**에 이 데몬셋을 배포하십시오.
@@ -812,7 +834,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={11} title={<>11단계: 토폴로지 레이블 추가 (<code>10-topology-labels.sh</code>)</>} id="step-11-add-topology-labels-10-topology-labelssh">
+  <Step stepNumber={11}>
+    ## 11단계: 토폴로지 레이블 추가 (`10-topology-labels.sh`)
+
     ```bash
     #!/bin/bash
     set -e
@@ -847,7 +871,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={12} title="12단계: Kubernetes 필수 구성 요소 설치" id="step-12-install-kubernetes-prerequisites">
+  <Step stepNumber={12}>
+    ## 12단계: Kubernetes 필수 구성 요소 설치
+
     ### VolumeSnapshot CRDs 설치 (`11-volumesnapshot-crds.sh`)
 
     ```bash
@@ -1001,7 +1027,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={13} title="단계 13: FIPS 단계(조건부)" id="step-13-fips-steps-conditional">
+  <Step stepNumber={13}>
+    ## 단계 13: FIPS 단계(조건부)
+
     `ENABLE_FIPS=false`인 경우 이 섹션을 건너뛰십시오.
 
     ### FIPS 인증서 생성 (`14-create-fips-certs.sh`)
@@ -1071,7 +1099,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={14} title={<>14단계: Operator 설치 (<code>16-install-operator.sh</code>)</>} id="step-14-install-operator-16-install-operatorsh">
+  <Step stepNumber={14}>
+    ## 14단계: Operator 설치 (`16-install-operator.sh`)
+
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1124,7 +1154,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={15} title={<>15단계: ClickHouse 클러스터 배포 (<code>17-install-cluster.sh</code>)</>} id="step-15-deploy-clickhouse-cluster-17-install-clustersh">
+  <Step stepNumber={15}>
+    ## 15단계: ClickHouse 클러스터 배포 (`17-install-cluster.sh`)
+
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1238,7 +1270,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={16} title={<>16단계: Workload Identity 바인딩 (<code>18-bind-helm-workload-identity.sh</code>)</>} id="step-16-bind-workload-identity-18-bind-helm-workload-identitysh">
+  <Step stepNumber={16}>
+    ## 단계 16: Workload Identity 바인딩 (`18-bind-helm-workload-identity.sh`)
+
     Helm 차트는 자체 서비스 계정(`ch-${CLUSTER_NAME}-sa`)을 생성합니다. GCS에 액세스하려면 이 SA에 Workload Identity를 바인딩해야 합니다.
 
     **중요:** 15단계에서 생성된 Keeper 및 server 파드는 이 바인딩이 적용되기 전에 시작되므로 GCS 403 오류로 실패합니다. 이 스크립트는 바인딩한 후 해당 파드를 다시 시작합니다.
@@ -1339,7 +1373,9 @@ description: "이 튜토리얼에서는 Google Kubernetes Engine(GKE)을 사용�
     ***
   </Step>
 
-  <Step stepNumber={17} title="17단계: 설치 확인" id="step-17-verify-installation">
+  <Step stepNumber={17}>
+    ## 17단계: 설치 확인
+
     ### 표준 모드(TLS 비사용)
 
     ```text

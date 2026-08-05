@@ -29,7 +29,6 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -312,7 +311,7 @@ namespace
         if (!scalar_type)
             scalar_type = std::make_shared<DataTypeFloat64>();
         if (!id_type)
-            id_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUUID>()});
+            id_type = std::make_shared<DataTypeUUID>();
 
         /// Validate types.
         {
@@ -328,13 +327,13 @@ namespace
                     table_id.getNameForLogs(), scalar_type->getName(), TimeSeriesColumnNames::Value);
         }
         {
-            /// Identifiers can be of any comparable type: the id column is used in the sorting keys of the inner tables
-            /// and in JOINs between them.
-            bool id_ok = id_type->isComparable() && !id_type->isNullable() && !id_type->isLowCardinalityNullable()
-                && !isNothing(*id_type) && !isVariant(*id_type) && !id_type->hasDynamicSubcolumns();
+            WhichDataType id_which{*id_type};
+            bool id_ok = id_which.isUInt64()
+                || (id_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
+                || id_which.isUUID()
+                || id_which.isUInt128();
             if (!id_ok)
-                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-                    "{}: Unexpected type {} of the {} column, it must be a comparable non-Nullable type",
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
                     table_id.getNameForLogs(), id_type->getName(), TimeSeriesColumnNames::ID);
         }
 
@@ -366,22 +365,22 @@ namespace
         auto new_list = make_intrusive<ASTExpressionList>();
         bool changed = false;
 
-        /// If `name` exists in `original`, move it to new_list (erasing from map) and return nullptr.
-        /// Otherwise create a new column with `type_ast`, mark `changed`, and return the new declaration.
-        auto add_column_if_missing = [&](const String & name, ASTPtr type_ast) -> ASTColumnDeclaration *
+        /// If `name` exists in `original`, move it to new_list (erasing from map) and return false.
+        /// Otherwise create a new column with `type_ast`, mark `changed`, and return true.
+        auto add_column_if_missing = [&](const String & name, ASTPtr type_ast) -> bool
         {
             if (auto it = original.find(name); it != original.end())
             {
                 new_list->children.push_back(it->second);
                 original.erase(it);
-                return nullptr;
+                return false;
             }
             auto decl = make_intrusive<ASTColumnDeclaration>();
             decl->name = name;
             decl->setType(std::move(type_ast));
             new_list->children.push_back(decl);
             changed = true;
-            return decl.get();
+            return true;
         };
 
         switch (inner_table_kind)
@@ -392,22 +391,8 @@ namespace
                 /// inner table because it depends on columns like "metric_name" or "all_tags" which don't
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
-
-                /// Auto-created "timestamp" and "value" columns get time-series codecs: under generic LZ4
-                /// near-monotonic millisecond timestamps barely compress and dominate the table size
-                /// (>90% of on-disk bytes on a scrape-like corpus). All types accepted by the validation
-                /// above are compatible: DoubleDelta takes DateTime64/DateTime/UInt32, Gorilla takes
-                /// Float64/Float32. Explicitly declared columns keep whatever the user wrote.
-                auto make_codec = [](const char * codec_name)
-                {
-                    return makeASTFunction("CODEC",
-                        make_intrusive<ASTIdentifier>(codec_name),
-                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1})));
-                };
-                if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
-                    timestamp_decl->setCodec(make_codec("DoubleDelta"));
-                if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
-                    value_decl->setCodec(make_codec("Gorilla"));
+                add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type));
+                add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type));
 
                 break;
             }
@@ -449,11 +434,15 @@ namespace
                 /// Column "all_tags" is ephemeral - only used to calculate the "id" column.
                 if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
                 {
-                    if (auto * all_tags_decl = add_column_if_missing(TimeSeriesColumnNames::AllTags,
+                    if (add_column_if_missing(TimeSeriesColumnNames::AllTags,
                         makeASTDataType("Map", makeASTDataType("String"), makeASTDataType("String"))))
                     {
-                        all_tags_decl->default_specifier = ColumnDefaultSpecifier::Ephemeral;
-                        all_tags_decl->ephemeral_default = true;
+                        auto & column = new_list->children.back();
+                        column = column->clone();
+                        auto & new_decl = column->as<ASTColumnDeclaration &>();
+                        new_decl.default_specifier = ColumnDefaultSpecifier::Ephemeral;
+                        new_decl.ephemeral_default = true;
+                        changed = true;
                     }
                 }
 
@@ -719,7 +708,7 @@ namespace
     /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
     void allowOffKeyDimensionsForAggregatingTagsEngine(ASTStorage & storage)
     {
-        if (!storage.engine || !storage.engine->name.contains("Aggregating"))
+        if (!storage.engine || storage.engine->name.find("Aggregating") == std::string::npos)
             return;
 
         if (storage.settings)

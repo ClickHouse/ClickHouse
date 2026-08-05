@@ -7,7 +7,7 @@ keywords: ['Managed Postgres', 'Prometheus', 'Grafana', 'Datadog', 'المقاي
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
@@ -130,22 +130,28 @@ scrape_configs:
 </div>
 
 <Steps>
-  <Step title="تنزيل ملف JSON الخاص بلوحة المعلومات" id="download">
+  <Step>
+    #### تنزيل ملف JSON الخاص بلوحة المعلومات
+
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">تنزيل ملف JSON الخاص بلوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step title="فتح مسار الاستيراد في Grafana" id="open-import">
+  <Step>
+    #### فتح مسار الاستيراد في Grafana
+
     انتقل إلى **Dashboards → New → Import**. حمّل ملف JSON أو الصق محتوياته.
   </Step>
 
-  <Step title="اختيار مصدر بيانات Prometheus" id="pick-datasource">
+  <Step>
+    #### اختيار مصدر بيانات Prometheus
+
     عندما يُطلب منك إدخال `DS_PROMETHEUS`، حدِّد مصدر بيانات Prometheus الذي يجمع المقاييس من نقطة النهاية المهيّأة في [القسم السابق](#configuring-prometheus).
   </Step>
 </Steps>
 
 بالنسبة إلى عمليات نشر Grafana المُهيّأة مسبقًا، ضع ملف JSON في
 مسار تهيئة لوحات المعلومات لديك. يطابق Grafana المرجع `${DS_PROMETHEUS}`
-مع مصدر بيانات Prometheus متاح في المثيل.
+مع مصدر بيانات Prometheus متاح في الـ instance.
 
 <div id="template-variables">
   ### متغيرات القالب

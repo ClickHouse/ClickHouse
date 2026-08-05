@@ -7,7 +7,7 @@ keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'métricas', 
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
@@ -129,16 +129,22 @@ deadlocks.
 </div>
 
 <Steps>
-  <Step title="Baixe o JSON do dashboard" id="download">
+  <Step>
+    #### Baixe o JSON do dashboard
+
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Baixe o JSON do dashboard</TrackedLink>.
   </Step>
 
-  <Step title="Abra o fluxo de importação no Grafana" id="open-import">
+  <Step>
+    #### Abra o processo de importação no Grafana
+
     Vá para **Dashboards → New → Import**. Faça upload do arquivo JSON ou cole seu conteúdo.
   </Step>
 
-  <Step title="Escolha sua fonte de dados do Prometheus" id="pick-datasource">
-    Quando o campo `DS_PROMETHEUS` for solicitado, selecione a fonte de dados do Prometheus que faz a coleta do endpoint configurado na [seção anterior](#configuring-prometheus).
+  <Step>
+    #### Escolha sua fonte de dados do Prometheus
+
+    Quando o campo `DS_PROMETHEUS` for solicitado, selecione a fonte de dados do Prometheus que coleta do endpoint configurado na [seção anterior](#configuring-prometheus).
   </Step>
 </Steps>
 

@@ -11,11 +11,13 @@ Private APIを使用して、ClickHouseクラスターのCPUとメモリのリ�
   ## 前提条件
 </div>
 
-* ClickHouse Private API がインストール済みで、アクセス可能であること (例: `http://localhost:8080/` へのポートフォワード経由)
-* 少なくとも 1 つの ClickHouse クラスターがデプロイされていること (このガイドでは `default-xx-01` を使用)
+* ClickHouse Private API がインストール済みで、アクセス可能であること (例: `http://localhost:8080/` へのポートフォワード経由) 
+* 少なくとも 1 つの ClickHouse クラスターがデプロイされていること (このガイドでは `default-xx-01` を使用) 
 
 <Steps>
-  <Step title="1. スケールリクエストを作成する" id="1-create-the-scale-request">
+  <Step>
+    ## 1. スケールリクエストを作成する
+
     必要なリソース割り当てを指定した JSON ファイルを作成します。
 
     ```json
@@ -32,7 +34,9 @@ Private APIを使用して、ClickHouseクラスターのCPUとメモリのリ�
     これを `scale.json` として保存します。
   </Step>
 
-  <Step title="2. リクエストを送信する" id="2-send-the-request">
+  <Step>
+    ## 2. リクエストを送信する
+
     ```bash
     curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
         -H "Content-Type: application/json" \
@@ -40,7 +44,9 @@ Private APIを使用して、ClickHouseクラスターのCPUとメモリのリ�
     ```
   </Step>
 
-  <Step title="3. CPU:メモリ比率の制約" id="3-cpumemory-ratio-enforcement">
+  <Step>
+    ## 3. CPU:メモリ比率の制約
+
     API では、**CPU とメモリの比率を 1:4** (CPU 1 コアあたりメモリ 4 GiB) にする制約があり、5% の許容幅が設けられています。
 
     どちらか一方のリソース種別だけを指定した場合、API がもう一方を自動的に算出します。たとえば、`"memory": "16Gi"` のみを指定すると、CPU は 4 コアに設定されます。
@@ -55,7 +61,9 @@ Private APIを使用して、ClickHouseクラスターのCPUとメモリのリ�
     メモリにはバイナリ単位 (Ki、Mi、Gi) の使用を推奨します。
   </Step>
 
-  <Step title="4. スケーリングの進行状況を監視する" id="4-monitor-scaling-progress">
+  <Step>
+    ## 4. スケーリングの進行状況を監視する
+
     スケーリング処理の進行状況を確認するには、クラスターのステータスを確認します。
 
     ```bash

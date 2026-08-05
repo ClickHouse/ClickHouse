@@ -52,7 +52,6 @@ add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 
 if (USE_MUSL)
     add_contrib (musl-cmake musl)
-    add_contrib (libucontext-cmake libucontext)
 endif()
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
@@ -198,11 +197,6 @@ if (ENABLE_NLP)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
     add_contrib (cld2-cmake cld2)
-endif()
-
-option(ENABLE_MECAB "Enable MeCab (Japanese morphological analyzer) support" ${ENABLE_LIBRARIES})
-if (ENABLE_MECAB)
-    add_contrib (MeCab-cmake MeCab)
 endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)

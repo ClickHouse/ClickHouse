@@ -10,7 +10,7 @@ ClickHouse can automatically determine the structure of JSON data. This can be u
 
 ## When to use type inference {#when-to-use-type-inference}
 
-* **Consistent structure** - The data from which you're going to infer types contains all the keys that you're interested in. Type inference is based on sampling the data up to a [maximum number of rows](/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) or [bytes](/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference). Data after the sample, with additional columns, will be ignored and can't be queried.
+* **Consistent structure** - The data from which you're going to infer types contains all the keys that you're interested in. Type inference is based on sampling the data up to a [maximum number of rows](/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) or [bytes](/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference). Data after the sample, with additional columns, will be ignored and can't be queried.
 * **Consistent types** - Data types for specific keys need to be compatible i.e. it must be possible to coerce one type to the other automatically.
 
 If you have more dynamic JSON, to which new keys are added and multiple types are possible for the same path, see ["Working with semi-structured and dynamic data"](/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data).
@@ -94,7 +94,7 @@ SETTINGS describe_compact_output = 1
 <Info>
 **Avoid nulls**
 
-You can see a lot of the columns are detected as Nullable. We [don't recommend using the Nullable](/reference/data-types/nullable#storage-features) type when not absolutely needed. You can use [schema_inference_make_columns_nullable](/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) to control the behavior of when Nullable is applied.
+You can see a lot of the columns are detected as Nullable. We [don't recommend using the Nullable](/reference/data-types/nullable#storage-features) type when not absolutely needed. You can use [schema_inference_make_columns_nullable](/reference/settings/formats#schema_inference_make_columns_nullable) to control the behavior of when Nullable is applied.
 </Info>
 
 We can see that most columns have automatically been detected as `String`, with `update_date` column correctly detected as a `Date`. The `versions` column has been created as an `Array(Tuple(created String, version String))` to store a list of objects, with `authors_parsed` being defined as `Array(Array(String))` for nested arrays.
@@ -102,7 +102,7 @@ We can see that most columns have automatically been detected as `String`, with 
 <Info>
 **Controlling type detection**
 
-The auto-detection of dates and datetimes can be controlled through the settings [`input_format_try_infer_dates`](/reference/settings/formats/input-format#input_format_try_infer_dates) and [`input_format_try_infer_datetimes`](/reference/settings/formats/input-format#input_format_try_infer_datetimes) respectively (both enabled by default). The inference of objects as tuples is controlled by the setting [`input_format_json_try_infer_named_tuples_from_objects`](/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Other settings which control schema inference for JSON, such as the auto-detection of numbers, can be found [here](/concepts/features/interfaces/schema-inference#text-formats).
+The auto-detection of dates and datetimes can be controlled through the settings [`input_format_try_infer_dates`](/reference/settings/formats#input_format_try_infer_dates) and [`input_format_try_infer_datetimes`](/reference/settings/formats#input_format_try_infer_datetimes) respectively (both enabled by default). The inference of objects as tuples is controlled by the setting [`input_format_json_try_infer_named_tuples_from_objects`](/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects). Other settings which control schema inference for JSON, such as the auto-detection of numbers, can be found [here](/concepts/features/interfaces/schema-inference#text-formats).
 </Info>
 
 ## Querying JSON {#querying-json}
@@ -192,7 +192,7 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-The above is the correct schema for this data. Schema inference is based on sampling the data and reading the data row by row. Column values are extracted according to the format, with recursive parsers and heuristics used to determine the type for each value. The maximum number of rows and bytes read from the data in schema inference is controlled by the settings [`input_format_max_rows_to_read_for_schema_inference`](/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (25000 by default) and [`input_format_max_bytes_to_read_for_schema_inference`](/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (32MB by default). In the event detection isn't correct, you can provide hints as described [here](/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable).
+The above is the correct schema for this data. Schema inference is based on sampling the data and reading the data row by row. Column values are extracted according to the format, with recursive parsers and heuristics used to determine the type for each value. The maximum number of rows and bytes read from the data in schema inference is controlled by the settings [`input_format_max_rows_to_read_for_schema_inference`](/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (25000 by default) and [`input_format_max_bytes_to_read_for_schema_inference`](/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (32MB by default). In the event detection isn't correct, you can provide hints as described [here](/reference/settings/formats#schema_inference_make_columns_nullable).
 
 ### Creating tables from snippets {#creating-tables-from-snippets}
 
@@ -287,7 +287,7 @@ FORMAT PrettyJSONEachRow
 
 ## Handling errors {#handling-errors}
 
-Sometimes, you might have bad data. For example, specific columns that don't have the right type or an improperly formatted JSON object. For this, you can use the settings [`input_format_allow_errors_num`](/reference/settings/formats/input-format#input_format_allow_errors_num) and [`input_format_allow_errors_ratio`](/reference/settings/formats/input-format#input_format_allow_errors_ratio) to allow a certain number of rows to be ignored if the data is triggering insert errors. Additionally, [hints](/reference/settings/formats/schema-inference#schema_inference_hints) can be provided to assist inference.
+Sometimes, you might have bad data. For example, specific columns that don't have the right type or an improperly formatted JSON object. For this, you can use the settings [`input_format_allow_errors_num`](/reference/settings/formats#input_format_allow_errors_num) and [`input_format_allow_errors_ratio`](/reference/settings/formats#input_format_allow_errors_ratio) to allow a certain number of rows to be ignored if the data is triggering insert errors. Additionally, [hints](/reference/settings/formats#schema_inference_hints) can be provided to assist inference.
 
 ## Working with semi-structured and dynamic data {#working-with-semi-structured-data}
 
@@ -372,7 +372,7 @@ SETTINGS describe_compact_output = 1
 <Info>
 **Type coercion**
 
-This type coercion can be controlled through a number of settings. The above example is dependent on the setting [`input_format_json_read_numbers_as_strings`](/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings).
+This type coercion can be controlled through a number of settings. The above example is dependent on the setting [`input_format_json_read_numbers_as_strings`](/reference/settings/formats#input_format_json_read_numbers_as_strings).
 </Info>
 
 However, some types are incompatible. Consider the following example:

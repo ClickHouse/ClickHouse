@@ -835,7 +835,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
     {
         auto it = distributed_plan.stage_depends_on.find(stage.first);
         const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : std::unordered_map<String, String>{};
-        LOG_TEST(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
+        LOG_TRACE(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
             stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
@@ -927,9 +927,6 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {
             Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id));
-            /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
-            /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
-            read_result_from.addTransform(makeSkipZeroRowChunksTransform(result_header));
             QueryPipelineBuilder builder;
             builder.init(std::move(read_result_from));
             return builder;

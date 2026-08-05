@@ -26,7 +26,9 @@ SQL 콘솔 사용자는 각 세션마다 생성되며, 자동으로 교체되는
 SQL 콘솔 사용자를 위한 사용자 지정 역할을 만들고 일반 역할을 부여하려면 다음 명령을 실행하십시오. 이메일 주소는 콘솔에 등록된 사용자의 이메일 주소와 일치해야 합니다.
 
 <Steps>
-  <Step title={<>`database_developer` 생성 및 권한 부여</>} id="create-role-grant-permissions">
+  <Step>
+    #### `database_developer` 생성 및 권한 부여
+
     `database_developer` 역할을 생성하고 `SHOW`, `CREATE`, `ALTER`, `DELETE` 권한을 부여합니다.
 
     ```sql
@@ -38,7 +40,9 @@ SQL 콘솔 사용자를 위한 사용자 지정 역할을 만들고 일반 역�
     ```
   </Step>
 
-  <Step title="SQL 콘솔 사용자 역할 생성" id="create-sql-console-user-role">
+  <Step>
+    #### SQL 콘솔 사용자 역할 생성
+
     SQL 콘솔 사용자 my.user@domain.com용 역할을 생성하고 `database_developer` 역할을 할당합니다.
 
     ```sql
@@ -47,7 +51,9 @@ SQL 콘솔 사용자를 위한 사용자 지정 역할을 만들고 일반 역�
     ```
   </Step>
 
-  <Step title="사용자가 SQL 콘솔을 사용할 때 새 역할이 할당됩니다" id="use-assigned-new-role">
+  <Step>
+    #### 사용자가 SQL 콘솔을 사용할 때 새 역할이 할당됩니다
+
     사용자가 SQL 콘솔을 사용할 때마다 이메일 주소에 연결된 역할이 할당됩니다.
   </Step>
 </Steps>
@@ -91,9 +97,9 @@ ClickHouse Cloud 데이터베이스 사용자에 SSH 인증을 설정하는 방�
 
 SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데이터베이스에서 다음 항목을 구성하십시오.
 
-| 역할     | 설명                                                           |
-| :----- | :----------------------------------------------------------- |
-| 기본     | 서비스에 대한 전체 관리자 액세스                                           |
+| 역할     | 설명                                                        |
+| :----- | :-------------------------------------------------------- |
+| 기본     | 서비스에 대한 전체 관리자 액세스                                        |
 | 사용자 지정 | SQL [`GRANT`](/ko/reference/statements/grant) 문을 사용하여 구성하십시오 |
 
 * 데이터베이스 역할은 누적됩니다. 즉, 사용자가 두 역할의 구성원인 경우 두 역할 중 더 높은 수준의 액세스 권한이 부여됩니다. 역할을 추가해도 기존 액세스 권한이 사라지지 않습니다.
@@ -130,7 +136,9 @@ SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데
 다음 절차를 사용하면 조직의 SQL 콘솔과 데이터베이스 전반에 대한 전체 액세스 목록을 생성할 수 있습니다.
 
 <Steps>
-  <Step title="모든 데이터베이스 권한 부여 목록 가져오기" id="get-a-list-of-all-database-grants">
+  <Step>
+    #### 모든 데이터베이스 권한 부여 목록 가져오기
+
     다음 쿼리를 실행하여 데이터베이스의 모든 권한 부여 목록을 가져오십시오.
 
     ```sql
@@ -156,12 +164,14 @@ SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데
     ```
   </Step>
 
-  <Step title="SQL 콘솔에 액세스할 수 있는 콘솔 사용자와 권한 부여 목록 연결" id="associate-grant-list-to-console-users-with-access-to-sql-console">
+  <Step>
+    #### SQL 콘솔에 액세스할 수 있는 콘솔 사용자와 권한 부여 목록 연결
+
     이 목록을 SQL 콘솔에 액세스할 수 있는 콘솔 사용자와 연결합니다.
 
     a. 콘솔로 이동합니다.
 
-    b. 관련 서비스를 선택합니다.
+    b. 관련 service를 선택합니다.
 
     c. 왼쪽에서 설정을 선택합니다.
 
@@ -172,7 +182,7 @@ SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데
 </Steps>
 
 <div id="warehouse-users">
-  ## Warehouse 사용자
+  ## 웨어하우스 사용자
 </div>
 
-Warehouse 사용자는 동일한 warehouse 내의 서비스 전반에서 공유됩니다. 자세한 내용은 [warehouse의 액세스 제어](/ko/products/cloud/features/infrastructure/warehouses#access-controls)를 참조하십시오.
+웨어하우스 사용자는 동일한 웨어하우스 내의 서비스 간에 공유됩니다. 자세한 내용은 [웨어하우스 액세스 제어](/ko/products/cloud/features/infrastructure/warehouses#access-controls)를 참조하십시오.

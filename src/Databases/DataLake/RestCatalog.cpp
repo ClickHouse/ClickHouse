@@ -1312,14 +1312,10 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (const DB::HTTPException & ex)
+    catch (const DB::Exception & ex)
     {
-        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
-        {
-            LOG_DEBUG(log, "Table {}.{} does not exist: {}", namespace_name, table_name, ex.displayText());
-            return false;
-        }
-        throw;
+        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
+        return false;
     }
 }
 

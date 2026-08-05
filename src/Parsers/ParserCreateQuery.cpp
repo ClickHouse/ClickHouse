@@ -47,12 +47,8 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
     ParserStringLiteral string_literal_parser;
     ASTPtr comment;
 
-    auto begin = pos;
-    if (s_comment.ignore(pos, expected))
-    {
-        if (!string_literal_parser.parse(pos, comment, expected))
-            pos = begin;
-    }
+    s_comment.ignore(pos, expected) && string_literal_parser.parse(pos, comment, expected);
+
     return comment;
 }
 
@@ -770,9 +766,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
-    /// Parse the table function after AS in the table-function mode, so that a trailing
-    /// SETTINGS clause is accepted: CREATE TABLE ... AS remote(..., SETTINGS skip_unavailable_shards = 1)
-    ParserFunction table_function_p{/*allow_function_parameters_=*/ true, /*is_table_function_=*/ true};
+    ParserFunction table_function_p;
     ParserNameList names_p;
     ParserSQLSecurity sql_security_p;
 

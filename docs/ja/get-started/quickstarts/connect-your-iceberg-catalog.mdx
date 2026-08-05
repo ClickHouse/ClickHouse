@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Iceberg カタログに接続する'
 title: 'ClickHouse Cloud で Iceberg カタログに接続する方法'
-useCases: ['データウェアハウジング']
+useCases: ['Data warehousing']
 products: ['Cloud']
 skillLevel: 'Beginner'
 description: 'ClickHouse Cloud をデータカタログに接続し、Iceberg テーブルをクエリする方法を学びます。'
@@ -31,8 +31,8 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <CloudPrerequisites />
 
 * **Iceberg互換のデータレイク** へのアクセス
-* **データレイクカタログ** (URL + 認証情報) 
-* データレイクカタログの種類に応じたオブジェクトストレージの認証情報 (例: S3互換ストレージ) 
+* **データレイクカタログ** (URL + 認証情報)
+* データレイクカタログの種類に応じたオブジェクトストレージの認証情報 (例: S3互換ストレージ)
 * カタログに登録済みのIcebergテーブルが少なくとも1つ
 
 Icebergカタログにまだデータがない場合は、このデータセットをアップロードできます。ここではこのデータセットを使用して説明します。
@@ -51,12 +51,14 @@ Icebergカタログにまだデータがない場合は、このデータセッ�
 完了すると、ClickHouse Cloud が Iceberg カタログに接続され、データをコピーすることなく Iceberg テーブルに対して SQL クエリを実行できるようになります。
 
 <Steps titleSize="h3">
-  <Step title="DataLakeCatalog 接続を作成する" id="create-a-datalakecatalog-connection">
-    このステップでは、ClickHouse Cloud で データレイクカタログ に接続します。
+  <Step>
+    ### DataLakeCatalog 接続を作成する
+
+    このステップでは、ClickHouse Cloud で Data Lake Catalog に接続します。
 
     1. ClickHouse Cloud サービスを開きます。
 
-    2. **Data Sources â Connect to your Data Lake Catalog** に移動します。
+    2. **Data Sources → Connect to your Data Lake Catalog** に移動します。
 
     3. ドロップダウンでデータカタログを選択します。
 
@@ -75,7 +77,9 @@ Icebergカタログにまだデータがない場合は、このデータセッ�
     5. カタログを保存します。すると、Data Sources ページに データカタログ が読み込まれ、データベース内で利用可能なテーブル数が表示されます。
   </Step>
 
-  <Step title="Iceberg テーブルをクエリする" id="query-iceberg-table">
+  <Step>
+    ### Iceberg テーブルをクエリする
+
     このステップでは、データカタログ から Iceberg テーブルをクエリします。
 
     1. `Show Tables` または `SQL Console` のいずれかをクリックすると、SQL Console が開き、データレイクに接続された新しいデータベースが表示されます。`SQL Console` から開いた場合は、データベースのドロップダウンを Iceberg データベースに変更してください。
@@ -89,9 +93,7 @@ Icebergカタログにまだデータがない場合は、このデータセッ�
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ
 
 データレイクへの接続が完了したので、次は ClickHouse で Icebergテーブルへの書き込みを試すことができます。
 

@@ -178,10 +178,6 @@ private:
         /// Already has database.
         if (identifier.compound())
             return;
-        /// A parameterized name is only known when the view is called, and it has no
-        /// resolvable name to qualify here.
-        if (identifier.isParam())
-            return;
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
             return;
@@ -212,11 +208,6 @@ private:
                         {
                             /// Identifier already qualified
                             if (identifier->compound())
-                                continue;
-
-                            /// A parameterized name is only known when the view is called, and it
-                            /// has no resolvable name to qualify here.
-                            if (identifier->isParam())
                                 continue;
 
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
