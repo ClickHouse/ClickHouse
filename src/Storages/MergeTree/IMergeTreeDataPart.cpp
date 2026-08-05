@@ -244,27 +244,38 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 
     WrittenFiles written_files;
 
+    /// This index is materialized as a prefix of `columns_to_write`, never as an arbitrary subset of it.
+    /// The columns come in a fixed order, grouped into segments that are appended as the index is extended -
+    /// see the note on `MergeTreePartMinMaxIndexColumns` in `Core/SettingsEnums.h` - and everything that
+    /// reads the index expresses "how much of it this part has" as a single width rather than as a set of
+    /// columns: `merge` truncates to the shorter of two indices, `getProbablyWrittenFiles` derives the file
+    /// names from the leading columns, and `KeyCondition::checkInHyperrectangle` treats every column past
+    /// the width as unknown. So both loops below stop rather than skip ahead: a part that materialized
+    /// column `k + 1` but not column `k` cannot be described by a width.
     size_t i = 0;
     for (const auto & [column_name, column_type] : columns_to_write)
     {
+        /// The caller's index is narrower than the current set of minmax columns: it was built before the
+        /// index was extended, and the columns it does not know about are not materialized yet.
         if (i >= hyperrectangle.size())
             break;
 
         /// An unknown range: `load` gives the whole universe to a column whose file is missing, and its
-        /// infinite bounds cannot be serialized into a non-nullable column. There is nothing to write - the
-        /// range stays the whole universe on the next load anyway - so skip this column instead of stopping,
-        /// and let the remaining columns still get their files.
+        /// infinite bounds cannot be serialized into a non-nullable column. Stopping here is not only what
+        /// the prefix rule demands, it is also the only sound thing to do, because this guard is per column
+        /// type: a `Nullable` column further down the list would not hit it, and its whole-universe range
+        /// would serialize as `NULL, NULL` - which `load` reads back, under `NULL_LAST`, as `[+inf, +inf]`,
+        /// the range of a part holding nothing but `NULL`s, and the part would be pruned away from queries
+        /// whose result it belongs to.
         if (!isNullableOrLowCardinalityNullable(column_type) && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
-        {
-            ++i;
-            continue;
-        }
+            break;
 
         String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
 
         /// The caller may have carried the file over already — a mutation that does not rewrite the whole
         /// part hardlinks the source part's files, so the file in the new part shares its inode with the
-        /// source part and writing through it would corrupt the source part.
+        /// source part and writing through it would corrupt the source part. The column is materialized
+        /// either way, so the prefix does not end here and the remaining columns are still written.
         if (out_checksums.files.contains(file_name))
         {
             ++i;
