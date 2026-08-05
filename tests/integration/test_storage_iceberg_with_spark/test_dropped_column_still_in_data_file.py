@@ -3,6 +3,8 @@ import os
 import re
 
 import pytest
+from avro.datafile import DataFileReader
+from avro.io import DatumReader
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -20,6 +22,8 @@ MERGE_PROPERTIES = (
     "'commit.manifest.min-count-to-merge' = '1'"
 )
 FAR_FUTURE = "2099-12-31 23:59:59"
+# ManifestEntryStatus::EXISTING in ManifestFile.h: a carried-forward entry.
+MANIFEST_ENTRY_EXISTING = 0
 
 
 def _metadata_version_from_name(filename):
@@ -28,8 +32,8 @@ def _metadata_version_from_name(filename):
     return int(match.group(1)) if match else 0
 
 
-def _snapshot_ids(table_name):
-    """Snapshot ids recorded in the table's latest metadata file.
+def _latest_metadata(table_name):
+    """The table's latest metadata JSON.
 
     A tie on `last-updated-ms` is broken by the metadata version, so the answer does not depend on
     os.listdir order.
@@ -46,7 +50,61 @@ def _snapshot_ids(table_name):
         if best_key is None or key > best_key:
             best_key = key
             best = data
-    return {snap.get("snapshot-id") for snap in (best or {}).get("snapshots", [])}
+    return best or {}
+
+
+def _snapshot_ids(table_name):
+    """Snapshot ids recorded in the table's latest metadata file."""
+    metadata = _latest_metadata(table_name)
+    return {snap.get("snapshot-id") for snap in metadata.get("snapshots", [])}
+
+
+def _read_avro(path):
+    """Return an Avro file's decoded file-level metadata and its records."""
+    with open(path, "rb") as f:
+        reader = DataFileReader(f, DatumReader())
+        try:
+            meta = {}
+            for key, value in reader.meta.items():
+                key = key.decode("utf-8") if isinstance(key, bytes) else key
+                if isinstance(value, bytes):
+                    value = value.decode("utf-8")
+                meta[key] = value
+            return meta, list(reader)
+        finally:
+            reader.close()
+
+
+def _assert_pre_drop_entry_carries_post_drop_schema(table_name):
+    """Pin the manifest-MERGING half of the precondition.
+
+    The bug needs a carried-forward (EXISTING) entry for the pre-drop data file to live in a
+    manifest whose own Avro `schema` header records the POST-drop schema id: that header is what
+    ManifestFileIterator falls back to once the pre-drop snapshot is gone. Without merging the entry
+    stays in a manifest whose header still carries the pre-drop schema, the fallback resolves
+    correctly, and the fixture stops reproducing the bug while every other assertion still passes.
+
+    MERGE_PROPERTIES and the rewrite_manifests call each produce that state on their own, so this
+    checks the state itself rather than either mechanism.
+    """
+    metadata = _latest_metadata(table_name)
+    current_schema_id = metadata["current-schema-id"]
+    seen = []
+    for snapshot in metadata.get("snapshots", []):
+        _, manifest_entries = _read_avro(snapshot["manifest-list"])
+        for manifest_entry in manifest_entries:
+            manifest_meta, records = _read_avro(manifest_entry["manifest_path"])
+            schema_id = json.loads(manifest_meta["schema"])["schema-id"]
+            statuses = {record["status"] for record in records}
+            seen.append((schema_id, sorted(statuses)))
+            if schema_id == current_schema_id and MANIFEST_ENTRY_EXISTING in statuses:
+                return
+    raise AssertionError(
+        f"no merged manifest carries the pre-drop data file under the post-drop schema id "
+        f"{current_schema_id}; neither MERGE_PROPERTIES nor rewrite_manifests merges manifests "
+        f"any more, so the fixture does not reproduce the bug "
+        f"(manifest schema-id / entry statuses found: {seen})"
+    )
 
 
 def _prepare(spark, table_name, readd_dropped_name):
@@ -86,6 +144,7 @@ def _prepare(spark, table_name, readd_dropped_name):
         "no longer reproduces the bug, because the pre-drop snapshot still resolves the old "
         "file's schema"
     )
+    _assert_pre_drop_entry_carries_post_drop_schema(table_name)
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
