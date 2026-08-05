@@ -326,10 +326,21 @@ inline void bindSQLiteValue(
 /// ClickHouse while SQLite orders every TEXT value after every numeric value and otherwise compares TEXT
 /// byte-wise (`x > 2` on a text-stored number treats `'10'` as smaller than `'2'`). Such columns must be
 /// filtered by ClickHouse only.
+///
+/// A `LowCardinality(...)` wrapper also disqualifies a column, whatever it wraps: the storage read path
+/// (`SQLiteStatementReader` in its native read mode) routes every `LowCardinality` column through the text
+/// path instead of the native accessors, so the locally read value is SQLite's *text rendering* of the
+/// cell, not the cell itself. Nothing pins that rendering to be exact: it depends on the SQLite version
+/// (only 3.43+ renders a REAL cell with round-trip precision; older versions shorten
+/// `1.2345678901234567` to `1.23456789012346`), so a predicate matching the locally read value could be
+/// false against the remote cell. Eligibility must follow the read path actually taken, hence fail closed
+/// and filter `LowCardinality` columns locally.
 inline bool isPushdownSafeType(const DataTypePtr & type)
 {
-    auto nested_type = removeLowCardinalityAndNullable(type);
-    WhichDataType which(nested_type);
+    if (type->lowCardinality())
+        return false;
+
+    WhichDataType which(removeNullable(type));
 
     return which.isInt64() || which.isFloat64() || which.isString();
 }
@@ -443,7 +454,8 @@ inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const 
     /// written, in any letter case), so exact token comparison suffices.
     const String declared = Poco::toUpper(String(declared_type ? declared_type : ""));
 
-    WhichDataType which(removeLowCardinalityAndNullable(type));
+    /// `LowCardinality` wrappers never get this far: `isPushdownSafeType` above rejects them.
+    WhichDataType which(removeNullable(type));
     if (which.isString())
         return declared == "TEXT" && collation && Poco::toUpper(String(collation)) == "BINARY";
 
