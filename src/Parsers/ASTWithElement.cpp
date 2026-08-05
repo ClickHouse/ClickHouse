@@ -79,7 +79,9 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
         for (const auto & alias : aliases->children)
             if (!alias || !alias->as<ASTIdentifier>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`WithElement` aliases must be identifiers during AST JSON deserialization");
-        children.push_back(aliases);
+        /// `ParserWithElement` and `clone` keep `aliases` out of `children`, and
+        /// `updateTreeHashImpl` hashes the member explicitly, so adding it here would make a
+        /// JSON-built copy of the same definition hash the aliases twice and compare unequal.
     }
 }
 

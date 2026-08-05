@@ -19,6 +19,7 @@ struct ASTStreamSettings : public IAST
 public:
     String getID(char) const override { return "ASTStreamSettings"; }
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
     bool hasTweaks() const;
 
     void setCursor(CursorTreeNodePtr cursor_);
