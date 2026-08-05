@@ -238,8 +238,10 @@ SYSTEM FLUSH LOGS query_log;
 SELECT read_rows < 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_asc' AND current_database = currentDatabase() AND type = 'QueryFinish';
 
 -- Not optimized: the LIMIT BY key is not a sort prefix, so groups are not contiguous and no group count
--- bounds the read. The hash variant runs and reads the whole table.
-SELECT count() FROM (SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (z) LIMIT 10 SETTINGS log_comment = '04238_outer_limit_nonkey');
+-- bounds the read. The hash variant runs. `c` has only 7 distinct values, so 7 groups can never satisfy
+-- the outer LIMIT 10 and the whole table is read regardless of thread count. Do not raise the
+-- cardinality of this key: that is what keeps the assertion below sound.
+SELECT count() FROM (SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (c) LIMIT 10) SETTINGS log_comment = '04238_outer_limit_nonkey';
 SYSTEM FLUSH LOGS query_log;
 SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_nonkey' AND current_database = currentDatabase() AND type = 'QueryFinish';
 
