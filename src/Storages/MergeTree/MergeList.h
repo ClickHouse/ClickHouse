@@ -10,9 +10,11 @@
 #include <Storages/MergeTree/BackgroundProcessList.h>
 #include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <atomic>
+#include <vector>
 
 
 namespace CurrentMetrics
@@ -95,6 +97,13 @@ struct MergeListElement : boost::noncopyable
     std::atomic<Float64> progress{};
     std::atomic<bool> is_cancelled{};
 
+    /// Optional hook to cancel the running merge/mutation pipeline when the entry
+    /// is cancelled (e.g. KILL MUTATION). Set and cleared by the owning task; invoked
+    /// under pipeline_cancel_hook_mutex so the owning task can safely release it
+    /// before the pipeline is destroyed.
+    std::function<void()> pipeline_cancel_hook;
+    mutable std::mutex pipeline_cancel_hook_mutex;
+
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_bytes_uncompressed{};
     UInt64 total_size_marks{};
@@ -172,15 +181,27 @@ public:
 
     void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
     {
-        std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
+        /// Collect hooks under the merge list mutex and invoke them after it is released:
+        /// the hook cancels a running pipeline, which must not touch the merge list under a lock.
+        std::vector<std::function<void()>> hooks_to_invoke;
         {
-            if ((partition_id.empty() || merge_element.partition_id == partition_id)
-                && merge_element.table_id == table_id
-                && merge_element.source_data_version < mutation_version
-                && merge_element.result_part_info.getDataVersion() >= mutation_version)
-                merge_element.is_cancelled = true;
+            std::lock_guard lock{mutex};
+            for (auto & merge_element : entries)
+            {
+                if ((partition_id.empty() || merge_element.partition_id == partition_id)
+                    && merge_element.table_id == table_id
+                    && merge_element.source_data_version < mutation_version
+                    && merge_element.result_part_info.getDataVersion() >= mutation_version)
+                {
+                    merge_element.is_cancelled = true;
+                    std::lock_guard hook_lock{merge_element.pipeline_cancel_hook_mutex};
+                    if (merge_element.pipeline_cancel_hook)
+                        hooks_to_invoke.push_back(merge_element.pipeline_cancel_hook);
+                }
+            }
         }
+        for (const auto & hook : hooks_to_invoke)
+            hook();
     }
 
     void cancelAll()

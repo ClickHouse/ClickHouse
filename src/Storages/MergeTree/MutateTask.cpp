@@ -1598,7 +1598,7 @@ static void finalizeMutatedPart(
 
 }
 
-struct MutationContext
+struct MutationContext : public std::enable_shared_from_this<MutationContext>
 {
     MergeTreeData * data{};
     MergeTreeDataMergerMutator * mutator{};
@@ -1699,13 +1699,38 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
-            || (*mutate_entry)->is_cancelled)
+        bool blocker_cancelled = new_data_part
+            ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId())
+            : merges_blocker->isCancelled();
+        if (blocker_cancelled || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
         }
 
         return true;
+    }
+
+    /// Register a hook that cancels the running mutation pipeline when the merge list entry
+    /// is cancelled (e.g. KILL MUTATION). The hook is invoked under
+    /// pipeline_cancel_hook_mutex, so it is safe to set and clear it while the pipeline runs.
+    /// It captures the context weakly to avoid a reference cycle: the context owns a reference
+    /// to the merge list entry, so capturing the context strongly would keep the entry alive
+    /// forever even after the hook has served its purpose.
+    void setPipelineCancelHook()
+    {
+        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_hook_mutex};
+        (*mutate_entry)->pipeline_cancel_hook = [weak_ctx = weak_from_this()]()
+        {
+            if (auto ctx = weak_ctx.lock())
+                if (ctx->mutating_executor)
+                    ctx->mutating_executor->cancel();
+        };
+    }
+
+    void clearPipelineCancelHook()
+    {
+        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_hook_mutex};
+        (*mutate_entry)->pipeline_cancel_hook = {};
     }
 
     /// Whether we need to count lightweight delete rows in this mutation
@@ -1895,6 +1920,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
         if (!ctx->checkOperationIsNotCanceled() || !ctx->mutating_executor->pull(cur_block))
         {
+            /// If the pipeline ended early, the mutation may have been cancelled while pulling
+            /// (KILL MUTATION). Detect this and abort, otherwise an empty or partial part would
+            /// be committed in place of the original.
+            ctx->checkOperationIsNotCanceled();
             finalizeTempProjectionsAndIndexes();
             return false;
         }
@@ -2320,6 +2349,9 @@ public:
         {
             ctx->out->cancel();
         }
+
+        if (ctx->mutating_executor)
+            ctx->mutating_executor->cancel();
     }
 
 private:
@@ -2611,6 +2643,7 @@ private:
         /// Is calculated inside MergeProgressCallback.
         ctx->mutating_pipeline.disableProfileEventUpdate();
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+        ctx->setPipelineCancelHook();
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
@@ -2620,6 +2653,7 @@ private:
         bool noop = false;
         ctx->new_data_part->setMinMaxIndex(std::move(ctx->minmax_idx));
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
+        ctx->clearPipelineCancelHook();
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
@@ -2695,6 +2729,9 @@ public:
         {
             ctx->out->cancel();
         }
+
+        if (ctx->mutating_executor)
+            ctx->mutating_executor->cancel();
     }
 
 private:
@@ -2991,6 +3028,7 @@ private:
             /// Is calculated inside MergeProgressCallback.
             ctx->mutating_pipeline.disableProfileEventUpdate();
             ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+            ctx->setPipelineCancelHook();
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
@@ -3006,6 +3044,7 @@ private:
 
         if (ctx->mutating_executor)
         {
+            ctx->clearPipelineCancelHook();
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
 
