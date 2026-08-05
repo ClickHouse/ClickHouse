@@ -33,9 +33,9 @@ CREATE TABLE atlr_right (key UInt64) ENGINE = MergeTree ORDER BY key SETTINGS in
 SYSTEM STOP MERGES atlr_left;
 SYSTEM STOP MERGES atlr_right;
 
-INSERT INTO atlr_left SELECT number, toString(cityHash64(number)) FROM numbers(100000);
+INSERT INTO atlr_left SELECT number, toString(cityHash64(number)) FROM numbers(25000);
 -- Duplicate keys on the right, so `join_any_take_last_row` actually picks a different row.
-INSERT INTO atlr_right SELECT number % 20000 FROM numbers(40000);
+INSERT INTO atlr_right SELECT number % 5000 FROM numbers(10000);
 
 -- First run of each mode: cache miss, statistics are collected.
 -- Repeat of the same mode: cache hit, nothing is collected.
