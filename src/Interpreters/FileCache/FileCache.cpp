@@ -74,6 +74,9 @@ namespace CurrentMetrics
     extern const Metric FilesystemCacheEvictionThreads;
     extern const Metric FilesystemCacheEvictionThreadsActive;
     extern const Metric FilesystemCacheEvictionThreadsScheduled;
+    extern const Metric FilesystemCacheDropCacheThreads;
+    extern const Metric FilesystemCacheDropCacheThreadsActive;
+    extern const Metric FilesystemCacheDropCacheThreadsScheduled;
 }
 
 
@@ -135,6 +138,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool expose_prometheus_cache_usage_metrics_per_user;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
+    extern const FileCacheSettingsNonZeroUInt64 drop_cache_threads;
 }
 
 namespace
@@ -307,6 +311,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
     , keep_up_free_space_eviction_threads(settings[FileCacheSetting::keep_free_space_eviction_threads])
+    , drop_cache_threads(settings[FileCacheSetting::drop_cache_threads])
     , invalidated_entries_cleanup_threshold(settings[FileCacheSetting::invalidated_entries_cleanup_threshold])
     , invalidated_entries_cleanup_interval_ms(settings[FileCacheSetting::invalidated_entries_cleanup_interval_ms])
     , invalidated_entries_cleanup_remove_batch(settings[FileCacheSetting::invalidated_entries_cleanup_remove_batch])
@@ -639,6 +644,19 @@ void FileCache::initializeImpl(bool load_metadata)
         keep_up_free_space_ratio_task->schedule();
     }
 
+    if (drop_cache_threads > 1)
+    {
+        /// Concurrent drop requests share the pool: with the queue limited to
+        /// `max_threads`, a request whose workers do not fit blocks in scheduling
+        /// until the previous request's workers finish.
+        drop_cache_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::FilesystemCacheDropCacheThreads,
+            CurrentMetrics::FilesystemCacheDropCacheThreadsActive,
+            CurrentMetrics::FilesystemCacheDropCacheThreadsScheduled,
+            /* max_threads */drop_cache_threads,
+            /* max_free_threads */0,
+            /* queue_size */drop_cache_threads);
+    }
 
     is_initialized = true;
     LOG_TEST(log, "Initialized cache from {}", metadata.getBaseDirectory());
@@ -2134,7 +2152,7 @@ void FileCache::removeAllReleasable(const UserID & user_id)
     assertInitialized();
     assertCacheCorrectness();
 
-    metadata.removeAllKeys(user_id);
+    metadata.removeAllKeys(user_id, drop_cache_pool.get());
 }
 
 void FileCache::loadMetadata()
