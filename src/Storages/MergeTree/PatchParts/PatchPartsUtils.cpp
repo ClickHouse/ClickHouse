@@ -399,22 +399,16 @@ Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch)
     return columns;
 }
 
-static NameSet getSortingKeyColumnsImpl(const KeyDescription & sorting_key)
-{
-    NameSet columns(sorting_key.column_names.begin(), sorting_key.column_names.end());
-
-    if (sorting_key.expression)
-    {
-        for (const auto & name : sorting_key.expression->getRequiredColumns())
-            columns.insert(name);
-    }
-
-    return columns;
-}
-
 NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata)
 {
-    return getSortingKeyColumnsImpl(patch_metadata->getSortingKey());
+    const auto & sorting_key = patch_metadata->getSortingKey();
+    if (!sorting_key.expression)
+        return {};
+
+    /// Patch parts store only the input columns of the sorting key expression.
+    /// Result names of key elements (e.g. `intHash32(id)`) are not stored and may collide with a regular updated column.
+    auto required_columns = sorting_key.expression->getRequiredColumns();
+    return NameSet(required_columns.begin(), required_columns.end());
 }
 
 bool isPatchPartitionId(const String & partition_id)
