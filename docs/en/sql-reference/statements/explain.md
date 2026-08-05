@@ -805,6 +805,10 @@ Most of these numbers fall out of data the join builds anyway and are reported b
 - the **left** side of `ALL LEFT` and `ALL FULL`.
 
 :::note
+The option is off by default because the extra bookkeeping is not free, and what it costs is measurement fidelity. The work is done inside the probe loop and grows with the number of output rows. Use `matches = 1` when you need to know the exact matches that left and right rows found on the other side.
+:::
+
+:::note
 `matches = 1` does not make every combination collectable. Which side a join can report follows from what the join has to do anyway:
 
 | Join | `matched` left | `matched` right |
