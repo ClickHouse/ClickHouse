@@ -8,7 +8,9 @@ attempt 1 for a same-repo run, attempt 2 behind an approval gate.
 
 The step is read as text (like ``test_create_release.py``) so no YAML parser is needed,
 and the behavioural test feeds the step's own ``--jq`` expression to real ``jq``, so the
-listing filter is covered as well as the per-run probe.
+listing filter is covered as well as the per-run probe -- but ``jq`` is absent from the
+CI Tests image, so in CI only the static assertions execute and they are what must pin
+the step's semantics.
 """
 
 import datetime
@@ -133,6 +135,32 @@ def test_selector_admits_gated_fork_runs():
     assert len(lines[guard]) - len(lines[guard].lstrip()) == body_indent, (
         "the probe's guard must sit at loop-body level, not nested one level deeper"
     )
+    # The scan above spans only the lines BEFORE the guard, so it cannot see a conditional
+    # opened INSIDE it: wrapping the probe in `if false; then` immediately after the guard
+    # line keeps every assertion so far true while the probe never runs. So pin that the
+    # probe IS the guard's body -- its first significant line, at depth 0.
+    guard_indent = len(lines[guard]) - len(lines[guard].lstrip())
+    guard_body = []
+    for l in lines[guard + 1 :]:
+        if l.strip() and len(l) - len(l.lstrip()) <= guard_indent:
+            break  # the guard's own matching `fi`
+        guard_body.append(l)
+    significant = [
+        l.strip() for l in guard_body if l.strip() and not l.strip().startswith("#")
+    ]
+    body_depth = 0
+    for s in significant:
+        if '!= "action_required" ]; then' in s:
+            break
+        if re.match(r"^(if|while|until|case)\b", s):
+            body_depth += 1
+        elif s in ("fi", "done", "esac"):
+            body_depth -= 1
+    assert (
+        significant
+        and significant[0].startswith("attempt1_conclusion=$(gh api")
+        and body_depth == 0
+    ), "the attempt-1 probe must BE the guard's body, not sit behind another conditional"
     # And its reject branch must actually skip the run, not merely log. Scope the search to
     # that branch's own body: a "continue" belonging to a later loop would satisfy this too.
     reject_branch = re.split(
