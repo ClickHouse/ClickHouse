@@ -1755,7 +1755,10 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(
             return validateDefaultsWithAnalyzer(default_expr_list, columns, context, get_sample_block, insert_time_default_columns);
         else
         {
-            auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, columns.getAll(), {}, {}, false, /* allow_self_aliases = */ false);
+            /// Self-aliases are allowed: matcher expansion of `REPLACE (expr AS name)` produces
+            /// expressions like `a + 1 AS a`, which the analyzer path accepts. Genuine cyclic
+            /// defaults are rejected by detectRecursiveDefaultCycles above.
+            auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, columns.getAll(), {}, {}, false, /* allow_self_aliases = */ true);
             const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
             for (const auto & action : actions->getActions())
                 if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
