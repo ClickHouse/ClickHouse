@@ -7,6 +7,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <base/arithmeticOverflow.h>
+#include <base/unaligned.h>
 
 #include <roaring/roaring.hh>
 
@@ -26,7 +27,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -44,6 +44,9 @@ struct ScopedPuffinFileReadProfileEvent
 };
 
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
+/// Matches Iceberg DeleteLoader / Puffin format absolute blob-size ceiling.
+constexpr size_t PUFFIN_DV_MAX_BLOB_SIZE = 2ULL * 1024 * 1024 * 1024;
+constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
 constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
 
@@ -68,11 +71,11 @@ roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 k
     }
     catch (const std::exception & e)
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
     }
 }
 
-std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
+std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes, std::optional<UInt64> expected_cardinality)
 {
     if (bytes.size() < sizeof(Int64))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is too small");
@@ -80,8 +83,8 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
     const char * ptr = bytes.data();
     size_t remaining = bytes.size();
 
-    Int64 bitmap_count = 0;
-    std::memcpy(&bitmap_count, ptr, sizeof(Int64));
+    /// Iceberg deletion-vector roaring layout stores count and keys as little-endian.
+    const Int64 bitmap_count = unalignedLoadLittleEndian<Int64>(ptr);
     ptr += sizeof(Int64);
     remaining -= sizeof(Int64);
 
@@ -91,14 +94,14 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
     std::vector<UInt64> positions;
     Int32 last_key = -1;
     Int32 remaining_count = static_cast<Int32>(bitmap_count);
+    UInt64 running_cardinality = 0;
 
     while (remaining_count > 0)
     {
         if (remaining < sizeof(Int32))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is truncated while reading key");
 
-        Int32 key = 0;
-        std::memcpy(&key, ptr, sizeof(Int32));
+        const Int32 key = unalignedLoadLittleEndian<Int32>(ptr);
         ptr += sizeof(Int32);
         remaining -= sizeof(Int32);
 
@@ -112,6 +115,26 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
         const size_t bitmap_size = bitmap.getSizeInBytes(/*portable=*/true);
         if (bitmap_size > remaining)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector roaring bitmap at key {} exceeds blob size", key);
+
+        if (expected_cardinality.has_value())
+        {
+            const UInt64 bitmap_cardinality = bitmap.cardinality();
+            UInt64 new_running_cardinality = 0;
+            if (common::addOverflow(running_cardinality, bitmap_cardinality, new_running_cardinality))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Deletion vector cardinality exceeds declared cardinality {}",
+                    *expected_cardinality);
+
+            if (new_running_cardinality > *expected_cardinality)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Deletion vector cardinality {} exceeds declared cardinality {}",
+                    new_running_cardinality,
+                    *expected_cardinality);
+
+            running_cardinality = new_running_cardinality;
+        }
 
         for (UInt32 sub_position : bitmap)
         {
@@ -129,6 +152,13 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
 
     if (remaining != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap has {} trailing bytes", remaining);
+
+    if (expected_cardinality.has_value() && running_cardinality != *expected_cardinality)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} does not match deserialized row count {}",
+            *expected_cardinality,
+            running_cardinality);
 
     return positions;
 }
@@ -179,19 +209,36 @@ void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t file_size, std:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: offset/length out of bounds", context);
 }
 
-std::vector<UInt64> deserializeDeletionVectorV1Blob(std::string_view blob_bytes)
+std::vector<UInt64> deserializeDeletionVectorV1Blob(std::string_view blob_bytes, std::optional<UInt64> expected_cardinality)
 {
+    if (expected_cardinality.has_value() && *expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} exceeds materialization limit {}",
+            *expected_cardinality,
+            PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
+
     const std::string_view vector_bytes = extractDeletionVectorPayload(blob_bytes);
-    return deserializeRoaringPositionBitmap(vector_bytes);
+    return deserializeRoaringPositionBitmap(vector_bytes, expected_cardinality);
 }
 
-std::vector<UInt64> readDeletionVectorFromPuffin(ReadBuffer & file, Int64 offset, Int64 length)
+std::vector<UInt64> readDeletionVectorFromPuffin(ReadBuffer & file, Int64 offset, Int64 length, std::optional<UInt64> expected_cardinality)
 {
     ScopedPuffinFileReadProfileEvent profile_event;
 
+    if (length < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob length is negative");
+
+    if (static_cast<UInt64>(length) > PUFFIN_DV_MAX_BLOB_SIZE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector blob length {} exceeds absolute limit {}",
+            length,
+            PUFFIN_DV_MAX_BLOB_SIZE);
+
     if (auto file_size = tryGetFileSizeFromReadBuffer(file))
         validatePuffinBlobBounds(offset, length, *file_size);
-    else if (offset < 0 || length < 0)
+    else if (offset < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin deletion vector offset {} or length {}", offset, length);
 
     if (static_cast<UInt64>(length) < 12)
@@ -230,7 +277,7 @@ std::vector<UInt64> readDeletionVectorFromPuffin(ReadBuffer & file, Int64 offset
     std::memcpy(blob_data.data(), header, sizeof(header));
     file.readStrict(blob_data.data() + sizeof(header), blob_data.size() - sizeof(header));
 
-    return deserializeDeletionVectorV1Blob(blob_data);
+    return deserializeDeletionVectorV1Blob(blob_data, expected_cardinality);
 }
 
 }
