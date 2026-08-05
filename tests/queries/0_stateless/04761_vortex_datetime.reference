@@ -1,0 +1,12 @@
+Schema inference:
+dt	DateTime64(0, \'UTC\')					
+dt_nullable	Nullable(DateTime64(0, \'Asia/Istanbul\'))					
+dt_arr	Array(DateTime64(0, \'UTC\'))					
+Round trip:
+2020-01-01 01:02:03	\N	['2020-01-01 01:02:03']
+2020-01-01 01:02:04	2020-01-01 01:02:04	['2020-01-01 01:02:04']
+2020-01-01 01:02:05	\N	['2020-01-01 01:02:05']
+Round trip with an explicit DateTime schema:
+2020-01-01 01:02:03	\N
+2020-01-01 01:02:04	2020-01-01 01:02:04
+2020-01-01 01:02:05	\N

@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -1138,11 +1139,28 @@ namespace DB
         const String & format_name,
         arrow::ArrayBuilder* array_builder,
         size_t start,
-        size_t end)
+        size_t end,
+        bool as_timestamp)
     {
         const auto & internal_data = assert_cast<const ColumnVector<UInt32> &>(*write_column).getData();
-        arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
         arrow::Status status;
+
+        if (as_timestamp)
+        {
+            arrow::TimestampBuilder & builder = assert_cast<arrow::TimestampBuilder &>(*array_builder);
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if (null_bytemap && (*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                    status = builder.Append(static_cast<Int64>(internal_data[value_i]));
+
+                checkStatus(status, write_column->getName(), format_name);
+            }
+            return;
+        }
+
+        arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
 
         if (null_bytemap)
         {
@@ -1341,7 +1359,7 @@ namespace DB
                 fillArrowArrayWithDateColumnData(column, null_bytemap, format_name, array_builder, start, end, settings.output_date_as_uint16);
                 break;
             case TypeIndex::DateTime:
-                fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end, settings.output_datetime_as_timestamp);
                 break;
             case TypeIndex::Date32:
                 fillArrowArrayWithDate32ColumnData(column, null_bytemap, format_name, array_builder, start, end);
@@ -1637,6 +1655,12 @@ namespace DB
         {
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_type.get());
             return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
+        }
+
+        if (isDateTime(column_type) && settings.output_datetime_as_timestamp)
+        {
+            const auto * datetime_type = assert_cast<const DataTypeDateTime *>(column_type.get());
+            return arrow::timestamp(arrow::TimeUnit::SECOND, datetime_type->getTimeZone().getTimeZone());
         }
 
         if (isTime64(column_type))

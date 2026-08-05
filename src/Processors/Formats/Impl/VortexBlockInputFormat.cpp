@@ -382,7 +382,7 @@ in `INSERT` and `SELECT` queries.
 | `Binary`                            | [FixedString](/reference/data-types/fixedstring)              | `Binary`                    |
 | `Decimal`                           | [Decimal](/reference/data-types/decimal)                      | `Decimal`                   |
 | `vortex.date`                       | [Date32](/reference/data-types/date32)                        | `vortex.date`               |
-| `vortex.timestamp`                  | [DateTime64](/reference/data-types/datetime64)                | `vortex.timestamp`          |
+| `vortex.timestamp`                  | [DateTime](/reference/data-types/datetime)/[DateTime64](/reference/data-types/datetime64) | `vortex.timestamp` |
 | `vortex.time`                       | [Time64](/reference/data-types/time64)                        | `vortex.time`               |
 | `List`                              | [Array](/reference/data-types/array)                          | `List`                      |
 | `Struct`                            | [Tuple](/reference/data-types/tuple)                          | `Struct`                    |
@@ -396,6 +396,8 @@ arbitrary byte sequences, while Vortex requires `Utf8` values to be valid UTF-8.
 fixed-size binary type, so [FixedString](/reference/data-types/fixedstring) is also written as `Binary`,
 and [LowCardinality](/reference/data-types/lowcardinality) columns are written as their underlying type
 (Vortex chooses dictionary and other encodings adaptively by itself).
+[DateTime](/reference/data-types/datetime) columns are written as `vortex.timestamp` with second precision,
+so they are read back as [DateTime64](/reference/data-types/datetime64) with scale 0.
 
 The data types of ClickHouse table columns do not have to match the corresponding Vortex data fields.
 When inserting data, ClickHouse interprets data types according to the table above and then

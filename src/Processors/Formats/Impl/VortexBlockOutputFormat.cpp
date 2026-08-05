@@ -84,6 +84,9 @@ void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
     arrow_settings.output_string_as_string = false;
     /// Vortex has no fixed-size binary type.
     arrow_settings.output_fixed_string_as_fixed_byte_array = false;
+    /// Write `DateTime` as `vortex.timestamp` with second precision instead of the generic `U32`,
+    /// so the temporal type is preserved on round-trip (it is read back as `DateTime64(0)`).
+    arrow_settings.output_datetime_as_timestamp = true;
 
     ch_column_to_arrow_column
         = std::make_unique<CHColumnToArrowColumn>(getPort(PortKind::Main).getHeader(), "Vortex", arrow_settings);
