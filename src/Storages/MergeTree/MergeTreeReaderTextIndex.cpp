@@ -660,7 +660,7 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
         else if (query.getSearchMode() == TextSearchMode::Any)
             *result |= large_postings;
 
-        if (query.getSearchMode() == TextSearchMode::All && result && result->cardinality() == 0)
+        if (query.getSearchMode() == TextSearchMode::All && result && result->isEmpty())
             return {};
     }
 

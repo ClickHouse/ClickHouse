@@ -236,6 +236,7 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSpatialPredicate() const override { return true; }
 
     /// `pointInPolygon((x, y), ring | rings | nested_rings...)` accepts a single
     /// point tuple followed by one or more polygon/hole arrays. The polygon
