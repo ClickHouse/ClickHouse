@@ -76,8 +76,6 @@ public:
 
     virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
 
-    virtual bool isSystemColumnInvalidated(const String & column_name) const = 0;
-
     virtual String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const = 0;
 
     virtual const MergeTreeDataPartChecksums & getChecksums() const = 0;
@@ -99,8 +97,6 @@ public:
     virtual String getTableName() const = 0;
 
     virtual void reportBroken() = 0;
-
-    virtual size_t getRowCount() const = 0;
 
     virtual void setReadHints(const RangesInDataPartReadHints & /*read_hints_*/, const NamesAndTypesList & /*read_columns*/)
     {

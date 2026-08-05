@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class WindowViewSource final : public ISource
+class WindowViewSource : public ISource
 {
 public:
     WindowViewSource(
@@ -49,7 +49,7 @@ protected:
     Chunk generate() override
     {
         Block block;
-        UInt32 watermark = 0;
+        UInt32 watermark;
         std::tie(block, watermark) = generateImpl();
         if (block.empty())
             return Chunk();

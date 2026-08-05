@@ -35,8 +35,6 @@ public:
     ASTPtr getParam() const;
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     void collectIdentifierNames(IdentifierNameSet & set) const override { set.insert(name()); }
 
@@ -54,8 +52,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_alias) const override;
 
     void restoreTable();  // TODO(ilezhankin): get rid of this
-    /// Returns |nullptr| if identifier is not table, or if it is parameterized (see `isParam`).
-    boost::intrusive_ptr<ASTTableIdentifier> createTable() const;
+    std::shared_ptr<ASTTableIdentifier> createTable() const;  // returns |nullptr| if identifier is not table.
 
     String full_name;
     std::vector<String> name_parts;
@@ -86,14 +83,8 @@ public:
 
     String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     UUID uuid = UUIDHelpers::Nil;  // FIXME(ilezhankin): make private
-    /// True iff the parser saw an explicit `UUID '...'` clause, set even when the parsed value is `Nil`.
-    /// Use this (not `uuid != UUIDHelpers::Nil`) when you need to distinguish "user wrote `UUID '...'`"
-    /// from "no UUID clause": explicit `UUID '00000000-0000-0000-0000-000000000000'` parses to `Nil`.
-    bool has_uuid = false;
 
     StorageID getTableId() const;
     String getDatabaseName() const;

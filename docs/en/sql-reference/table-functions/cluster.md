@@ -5,8 +5,9 @@ sidebar_label: 'cluster'
 sidebar_position: 30
 slug: /sql-reference/table-functions/cluster
 title: 'clusterAllReplicas'
-doc_type: 'reference'
 ---
+
+# clusterAllReplicas Table Function
 
 Allows accessing all shards (configured in the `remote_servers` section) of a cluster without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. Only one replica of each shard is queried.
 
@@ -19,10 +20,10 @@ All available clusters are listed in the [system.clusters](../../operations/syst
 ## Syntax {#syntax}
 
 ```sql
-cluster(['cluster_name', db.table, sharding_key][, SETTINGS name = value, ...])
-cluster(['cluster_name', db, table, sharding_key][, SETTINGS name = value, ...])
-clusterAllReplicas(['cluster_name', db.table, sharding_key][, SETTINGS name = value, ...])
-clusterAllReplicas(['cluster_name', db, table, sharding_key][, SETTINGS name = value, ...])
+cluster(['cluster_name', db.table, sharding_key])
+cluster(['cluster_name', db, table, sharding_key])
+clusterAllReplicas(['cluster_name', db.table, sharding_key])
+clusterAllReplicas(['cluster_name', db, table, sharding_key])
 ```
 ## Arguments {#arguments}
 
@@ -31,7 +32,6 @@ clusterAllReplicas(['cluster_name', db, table, sharding_key][, SETTINGS name = v
 | `cluster_name`              | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers, set `default` if not specified. |
 | `db.table` or `db`, `table` | Name of a database and a table.                                                                                                                   |
 | `sharding_key`              | A sharding key. Optional. Needs to be specified if the cluster has more than one shard.                                                           |
-| `SETTINGS name = value, ...` | [Settings of the Distributed table](../../engines/table-engines/special/distributed.md#distributed-settings) created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. |
 
 ## Returned value {#returned_value}
 
@@ -39,7 +39,7 @@ The dataset from clusters.
 
 ## Using macros {#using_macros}
 
-`cluster_name` can contain macros — substitution in `{}`. The substituted value is taken from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration file.
+`cluster_name` can contain macros — substitution in curly brackets. The substituted value is taken from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration file.
 
 Example:
 

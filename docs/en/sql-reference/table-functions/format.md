@@ -4,8 +4,9 @@ slug: /sql-reference/table-functions/format
 sidebar_position: 65
 sidebar_label: 'format'
 title: 'format'
-doc_type: 'reference'
 ---
+
+# format Table Function
 
 Parses data from arguments according to specified input format. If structure argument is not specified, it's extracted from the data.
 
@@ -29,7 +30,8 @@ A table with data parsed from `data` argument according to specified format and 
 
 Without `structure` argument:
 
-```sql title="Query"
+**Query:**
+```sql
 SELECT * FROM format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
@@ -39,7 +41,9 @@ $$
 $$)
 ```
 
-```response title="Response"
+**Result:**
+
+```response
 ┌───b─┬─a─────┐
 │ 111 │ Hello │
 │ 123 │ World │
@@ -48,7 +52,8 @@ $$)
 └─────┴───────┘
 ```
 
-```sql title="Query"
+**Query:**
+```sql
 DESC format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
@@ -58,7 +63,9 @@ $$
 $$)
 ```
 
-```response title="Response"
+**Result:**
+
+```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ b    │ Nullable(Float64) │              │                    │         │                  │                │
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
@@ -67,7 +74,8 @@ $$)
 
 With `structure` argument:
 
-```sql title="Query"
+**Query:**
+```sql
 SELECT * FROM format(JSONEachRow, 'a String, b UInt32',
 $$
 {"a": "Hello", "b": 111}
@@ -77,7 +85,8 @@ $$
 $$)
 ```
 
-```response title="Response"
+**Result:**
+```response
 ┌─a─────┬───b─┐
 │ Hello │ 111 │
 │ World │ 123 │

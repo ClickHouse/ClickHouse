@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class ReplicatedMergeTreeSinkPatch final : public ReplicatedMergeTreeSink
+class ReplicatedMergeTreeSinkPatch : public ReplicatedMergeTreeSink
 {
 public:
     ReplicatedMergeTreeSinkPatch(
@@ -14,12 +14,10 @@ public:
         LightweightUpdateHolderInKeeper update_holder_,
         ContextPtr context_);
 
-    ~ReplicatedMergeTreeSinkPatch() override;
-
     String getName() const override { return "ReplicatedMergeTreeSinkPatch"; }
 
 private:
-    void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper) override;
+    void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper) override;
     TemporaryPartPtr writeNewTempPart(BlockWithPartition & block) override;
     UInt64 getDataVersionInPartition(const String & original_partition_id) const;
 

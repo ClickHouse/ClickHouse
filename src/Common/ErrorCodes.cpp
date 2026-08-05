@@ -636,35 +636,11 @@
     M(754, UDF_EXECUTION_FAILED) \
     M(755, TOO_LARGE_LIGHTWEIGHT_UPDATES) \
     M(756, CANNOT_PARSE_PROMQL_QUERY) \
-    M(757, CANNOT_GET_THREAD_PRIORITY) \
-    M(758, TOO_MANY_NAMED_COLLECTIONS) \
-    M(759, LICENSING_EXCEPTION) \
-    M(760, UNICODE_ERROR) \
-    M(761, ACME_ERROR) \
-    M(762, HTTP_CONNECTION_LIMIT_REACHED) \
-    M(763, SESSION_REFUSED) \
-    M(764, DEDUPLICATION_IS_NOT_POSSIBLE) \
-    M(765, UNKNOWN_MASKING_POLICY) \
-    M(766, INSTRUMENTATION_ERROR) \
-    M(767, REQUIRED_SECOND_FACTOR) \
-    M(768, CANNOT_EXECUTE_PROMQL_QUERY) \
-    M(769, NAMED_COLLECTION_IS_USED) \
-    M(770, WASM_ERROR) \
-    M(771, CACHE_CANNOT_WRITE_TO_CACHE_DISK) \
-    M(772, INCOMPATIBLE_SCHEMA) \
-    M(773, MALFORMED_AI_PROVIDER_RESPONSE) \
-    M(774, TABLE_IS_PERMANENTLY_READ_ONLY) \
-    M(775, STATELESS_WORKER_DISCOVERY_ERROR) \
-    M(776, RESOURCE_LIMIT_EXCEEDED) \
-    M(777, MEMORY_RESERVATION_KILLED) \
-    M(778, MEMORY_RESERVATION_FAILED) \
-    M(779, UNSUPPORTED_MEDIA_TYPE) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
     M(902, PROTOCOL_VERSION_MISMATCH) \
-    M(903, DISTRIBUTED_CACHE_REGISTRY_SHUTDOWN) \
-    M(904, TOO_MANY_UNAVAILABLE_SHARDS) \
+    M(903, LICENSE_EXPIRED) \
 \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
@@ -672,12 +648,6 @@
     M(1002, UNKNOWN_EXCEPTION) \
     M(1003, SSH_EXCEPTION) \
     M(1004, STARTUP_SCRIPTS_ERROR) \
-    M(1005, STALE_VERSION) \
-    M(1006, INVALID_CURSOR_LOOKUP) \
-    M(1007, ILLEGAL_STREAM) \
-    M(1008, TEMPORARY_DATA_NOT_IN_CACHE) \
-    M(1009, S3_OBJECT_CHANGED_DURING_READ) \
-    M(1010, UNIQUE_KEY_DENSE_INDEX_UNREADABLE) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -694,16 +664,8 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1010;
-
-#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
-    /** One `ErrorPairHolder` per error code, each holding two `Error` structs - the last message,
-      * format string, query id and captured stack trace, local and remote - plus a mutex. That is
-      * around 150 KB of data for the whole table, which the server wants for `system.errors` but a
-      * standalone build of the parser has nothing to do with: the names above are all it needs.
-      */
+    constexpr ErrorCode END = 1004;
     ErrorPairHolder values[END + 1]{};
-#endif
 
     struct ErrorCodesNames
     {
@@ -740,19 +702,6 @@ namespace ErrorCodes
 
     ErrorCode end() { return END + 1; }
 
-#if defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
-
-    size_t increment(ErrorCode, bool, const std::string &, const std::string &, const FramePointers &)
-    {
-        return 0;
-    }
-
-    void extendedMessage(ErrorCode, bool, size_t, const std::string &)
-    {
-    }
-
-#else
-
     size_t increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
     {
         if (error_code < 0 || error_code >= end())
@@ -776,8 +725,6 @@ namespace ErrorCodes
 
         values[error_code].extendedMessage(remote, error_index, message);
     }
-
-#endif
 
     size_t ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
     {
