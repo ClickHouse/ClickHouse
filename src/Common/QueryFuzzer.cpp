@@ -5937,8 +5937,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "AST depth exceeded while fuzzing ({})", current_ast_depth);
     }
 
-    // Check for loops.
-    auto [_, inserted] = debug_visited_nodes.insert(ast.get());
+    // Check for loops. The node is kept alive by the map until the end of this fuzzMain call, so
+    // that an address freed in the meantime cannot be reused and mistaken for a loop.
+    auto [_, inserted] = debug_visited_nodes.emplace(ast.get(), ast);
     if (!inserted)
     {
 #pragma clang diagnostic push
