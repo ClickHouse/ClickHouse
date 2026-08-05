@@ -178,20 +178,21 @@ $CLICKHOUSE_CLIENT --query_id "$patch_query_id" \
 patch_pid=$!
 
 # Not reaching the failpoint is the CORRECT post-fix outcome, so it is a pass with its own token.
-if timeout 60 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE" > /dev/null 2>&1; then
+# Bound: a cold-cache run of this OPTIMIZE measures ~0.12 s, so 15 s is ample.
+if timeout 15 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE" > /dev/null 2>&1; then
     $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$patch_query_id' ASYNC FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT $FP"
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP"
     wait $patch_pid 2>/dev/null || true
 
     # The part is healthy, so it is reported as "looks good" and never as "looks broken": the
-    # observable harm is that a check was requested for it at all.
+    # observable harm is that a check was requested for it at all. ReplicatedPartChecks counts
+    # requested checks; the private parts_queue of the check thread has no system table.
     for _ in {1..300}; do
         checked=$($CLICKHOUSE_CLIENT --query "
-            SELECT count() FROM system.replication_queue
-            WHERE database = currentDatabase() AND table = 't_patch_cancel'
+            SELECT value FROM system.events WHERE event = 'ReplicatedPartChecks'
         " 2>/dev/null || echo 0)
-        [ "$checked" != "0" ] && break
+        [ -n "$checked" ] && [ "$checked" != "0" ] && break
         sleep 0.1
     done
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
@@ -203,7 +204,33 @@ if timeout 60 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE" > /de
     echo "patch-read-interruptible spurious-part-checks=$spurious"
 else
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP"
-    wait $patch_pid 2>/dev/null || true
+    # Not reaching the failpoint is only meaningful if the read actually ran, so keep the
+    # query's outcome instead of discarding it: an uncancelled DRY RUN must succeed.
+    patch_status=0
+    wait $patch_pid || patch_status=$?
+    if [ "$patch_status" != "0" ]; then
+        echo "FAIL: the patch-read query failed with status $patch_status instead of completing"
+    fi
+
+    # Positive control. Without one, this branch is a proof of a negative: any other reason the
+    # read never reached the failpoint (a parse error, a missing patch part, a read that never
+    # started) would print the same token. PatchesJoinRowsAddedToHashTable is incremented in
+    # PatchJoinCache::Entry::addBlock, reached only via getEntries, which runs after the
+    # getStatsEntry call that performs the patch minmax read - so a non-zero value proves the
+    # governed read executed. AnalyzePatchRangesMicroseconds would NOT do: it is also
+    # incremented by addPart/optimize/getRanges, which run for a Merge-mode patch that never
+    # reads the minmax index at all (measured: 14 microseconds with no such read).
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    join_rows=$($CLICKHOUSE_CLIENT --query "
+        SELECT sum(ProfileEvents['PatchesJoinRowsAddedToHashTable'])
+        FROM system.query_log
+        WHERE query_id = '$patch_query_id' AND current_database = currentDatabase()
+          AND type != 'QueryStart'
+    ")
+    if [ -z "$join_rows" ] || [ "$join_rows" = "0" ]; then
+        echo "FAIL: the patch minmax read never ran, so the arm proves nothing (join_rows='$join_rows')"
+    fi
+
     echo "patch-read-not-interruptible"
 fi
 
