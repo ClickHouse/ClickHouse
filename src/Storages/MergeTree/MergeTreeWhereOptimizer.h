@@ -86,8 +86,8 @@ private:
         /// Computed as: columns_size / max(1, total_rows - estimated_row_count).
         /// This implements the classic conjunctive filter ordering rule:
         /// put cheaper-per-rejected-row conditions first.
-        /// When statistics are unavailable (estimated_row_count=0, total_rows=0),
-        /// degrades to columns_size.
+        /// When per-column sizes are unavailable (columns_size=0, e.g. compact parts),
+        /// falls back to estimated_row_count so ordering by selectivity is preserved.
         double cost_with_selectivity = 0;
 
         /// Does the condition contain primary key column?

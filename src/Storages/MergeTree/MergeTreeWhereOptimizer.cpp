@@ -514,9 +514,15 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 
             /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:
             /// sort by cost / (1 - selectivity), i.e. cost per rejected row.
-            /// When total_rows or estimated_row_count are unavailable (both 0), degrades to columns_size.
-            cond.cost_with_selectivity = static_cast<double>(cond.columns_size)
-                / std::max(1.0, static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count));
+            /// Compact parts don't track per-column compressed sizes, so columns_size is 0 there.
+            /// In that case fall back to pure selectivity (estimated_row_count) so that the ordering
+            /// is not lost - otherwise every condition would collapse to cost 0 and keep its original
+            /// position regardless of how selective it is.
+            if (cond.columns_size == 0)
+                cond.cost_with_selectivity = static_cast<double>(cond.estimated_row_count);
+            else
+                cond.cost_with_selectivity = static_cast<double>(cond.columns_size)
+                    / std::max(1.0, static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count));
 
             res.emplace_back(std::move(cond));
         }
