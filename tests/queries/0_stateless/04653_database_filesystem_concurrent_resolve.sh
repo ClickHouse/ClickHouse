@@ -26,33 +26,36 @@ CREATE DATABASE ${DB} ENGINE = Filesystem;
 # `DatabaseFilesystem::getTableImpl`. The loser of that race used to reach a throw whose message
 # re-locked the already-held non-recursive `IDatabase::mutex`, wedging the database forever.
 #
-# The oracle is the deadlock itself: that all 16 clients return at all, and that the database is
-# still usable afterwards. Which of the racing storages a loser receives is deliberately not
-# asserted, because a `Filesystem` database exposes no table cache to SQL - `loaded_tables` has no
-# reference outside the engine and `getTablesIterator` returns an empty snapshot, so winner and
-# loser are indistinguishable from a query. The glob name is chosen for the width of the race
-# window, not for cache residency: `tryGetTableFromCache` invalidates an entry whenever
-# `fs::exists` fails on the table path, and that path is the literal glob pattern, so a glob
-# entry is dropped again on every lookup.
+# The oracle is the deadlock itself: that all 16 racing queries finish, that each returns the
+# expected count, and that the database is still usable afterwards. Which of the racing storages a
+# loser receives is deliberately not asserted, because a `Filesystem` database exposes no table
+# cache to SQL - `loaded_tables` has no reference outside the engine and `getTablesIterator`
+# returns an empty snapshot, so winner and loser are indistinguishable from a query. The glob name
+# is chosen for the width of the race window, not for cache residency: `tryGetTableFromCache`
+# invalidates an entry whenever `fs::exists` fails on the table path, and that path is the literal
+# glob pattern, so a glob entry is dropped again on every lookup.
 TABLE="${unique_name}/**/*.csv"
-QUERY="SELECT count(DISTINCT _path) FROM ${DB}.\`${TABLE}\` SETTINGS optimize_count_from_files = 1"
 
-out="${CLICKHOUSE_TMP}/${unique_name}_04653_out.txt"
-: > "${out}"
-for _ in {1..16}; do
-    ${CLICKHOUSE_CLIENT} --query "${QUERY}" >> "${out}" 2>&1 &
-done
-wait
+# Keep this to ONE driver process: the flaky check runs `nproc-1` copies of this test at once, so
+# a client per racing query multiplies into enough concurrent clients to exhaust the runner's
+# memory cgroup. Benchmark's `--concurrency` connections are independent, so they still race.
+#
+# `throwIf` is what asserts the count, because benchmark reads result blocks only for its
+# statistics and discards the values. Do not add `--ignore-error`, or a failing query stops
+# aborting the run.
+QUERY="SELECT throwIf(count(DISTINCT _path) != 4) FROM ${DB}.\`${TABLE}\` SETTINGS optimize_count_from_files = 1"
 
-# Every query must have returned the same count. A wedged database shows up as missing lines:
-# the clients never return and `clickhouse-test` kills the test on its own timeout.
-echo "distinct results:"
-sort -u "${out}"
-echo "result count: $(grep -c . "${out}")"
+# The report goes to stderr, and only after every query has finished, so a failed or wedged run
+# has no `Queries executed` line at all.
+log="${CLICKHOUSE_TMP}/${unique_name}_04653_bench.log"
+${CLICKHOUSE_BENCHMARK} --delay 0 --iterations 16 --concurrency 16 --query "${QUERY}" >/dev/null 2>"${log}"
+
+grep -o 'Queries executed: 16' "${log}"
+echo "exceptions: $(grep -c 'Exception' "${log}")"
 
 # The database must still be usable. With `mutex` held forever, this query never returns.
 echo "still usable: $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${DB}.\`${TABLE}\`")"
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB}"
-rm -f "${out}"
+rm -f "${log}"
 rm -rd "${user_files_tmp_dir}"
