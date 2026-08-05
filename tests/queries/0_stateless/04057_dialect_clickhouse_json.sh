@@ -76,6 +76,19 @@ echo "=== With gate, SET in plain SQL works under clickhouse_json dialect (HTTP)
 ${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json" --data-binary "SET dialect = 'clickhouse'"
 echo "OK"
 
+# `SET` is the only plain-SQL form that stays valid: everything else must be read
+# as a JSON AST, with no fallback to the SQL parser. Assert both halves - that the
+# error is reported, and that the query did not execute as SQL anyway.
+echo "=== With gate, plain SQL other than SET is rejected under clickhouse_json (client) ==="
+OUT=$($CLICKHOUSE_CLIENT --allow_experimental_json_ast_dialect=1 --dialect=clickhouse_json --query="SELECT 1" 2>&1 || true)
+echo "$OUT" | grep -qm1 "BAD_ARGUMENTS" && echo "error_reported" || echo "NO_ERROR"
+echo "$OUT" | grep -qxF "1" && echo "SQL_FALLBACK" || echo "no_sql_fallback"
+
+echo "=== With gate, plain SQL other than SET is rejected under clickhouse_json (HTTP) ==="
+OUT=$(${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json" --data-binary "SELECT 1" 2>&1 || true)
+echo "$OUT" | grep -qm1 "BAD_ARGUMENTS" && echo "error_reported" || echo "NO_ERROR"
+echo "$OUT" | grep -qxF "1" && echo "SQL_FALLBACK" || echo "no_sql_fallback"
+
 # ============================================================================
 # Server-side JSON-AST path over HTTP
 # ============================================================================
