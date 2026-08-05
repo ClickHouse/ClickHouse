@@ -25,6 +25,17 @@ allow_experimental_json_ast_dialect
 2	3
 === With gate, SET in plain SQL works under clickhouse_json dialect (HTTP) ===
 OK
+=== With gate, server-side HTTP accepts a round-trip JSON-AST body ===
+7
+=== With gate, server-side HTTP rejects malformed JSON with BAD_ARGUMENTS ===
+Code: 36
+BAD_ARGUMENTS
+=== With gate, server-side HTTP rejects an empty JSON object with BAD_ARGUMENTS ===
+Code: 36
+BAD_ARGUMENTS
+=== With gate, server-side HTTP rejects an unknown AST type with BAD_ARGUMENTS ===
+Code: 36
+BAD_ARGUMENTS
 === With gate, malformed JSON yields BAD_ARGUMENTS ===
 Code: 36
 BAD_ARGUMENTS

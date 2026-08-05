@@ -77,7 +77,27 @@ ${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialec
 echo "OK"
 
 # ============================================================================
-# Errors
+# Server-side JSON-AST path over HTTP
+# ============================================================================
+# The cases above submit the JSON AST through `clickhouse-client`. The requests
+# below post the JSON body straight to the HTTP interface, so the deserialization
+# and its validation are exercised in `executeQuery` on the server, without a
+# client in between.
+echo "=== With gate, server-side HTTP accepts a round-trip JSON-AST body ==="
+JSON=$($CLICKHOUSE_CLIENT --query "SELECT parseQueryToJSON('SELECT 7 AS srv') FORMAT TSVRaw")
+${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json" --data-binary "$JSON"
+
+echo "=== With gate, server-side HTTP rejects malformed JSON with BAD_ARGUMENTS ==="
+{ ${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json" --data-binary 'not json' 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+
+echo "=== With gate, server-side HTTP rejects an empty JSON object with BAD_ARGUMENTS ==="
+{ ${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json" --data-binary '{}' 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+
+echo "=== With gate, server-side HTTP rejects an unknown AST type with BAD_ARGUMENTS ==="
+{ ${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json" --data-binary '{"type":"NoSuchASTNode"}' 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+
+# ============================================================================
+# Errors (client-side parse)
 # ============================================================================
 echo "=== With gate, malformed JSON yields BAD_ARGUMENTS ==="
 { $CLICKHOUSE_CLIENT --allow_experimental_json_ast_dialect=1 --dialect=clickhouse_json --query="not json" 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
