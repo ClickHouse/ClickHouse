@@ -96,6 +96,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 
 }
 
@@ -118,6 +119,7 @@ namespace FailPoints
 {
     extern const char lightweight_show_tables[];
     extern const char datalake_try_get_table_return_nullptr[];
+    extern const char datalake_get_tables_throw[];
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -745,10 +747,17 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     /// It must not fail on case of some datalake error.
     try
     {
+        fiu_do_on(FailPoints::datalake_get_tables_throw,
+        {
+            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
+        });
+
         iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {
+        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -828,7 +837,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 }
 
 std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIterator(
-    ContextPtr /*context_*/,
+    ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
     bool /*skip_not_loaded*/) const
 {
@@ -839,10 +848,17 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     /// It must not fail on case of some datalake error.
     try
     {
+        fiu_do_on(FailPoints::datalake_get_tables_throw,
+        {
+            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
+        });
+
         iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {
+        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 

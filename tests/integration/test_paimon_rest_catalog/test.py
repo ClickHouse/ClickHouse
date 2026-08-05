@@ -6,6 +6,7 @@ import time
 import pytest
 import requests
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
@@ -155,4 +156,11 @@ def test_paimon_rest_catalog(started_cluster):
         f" region='cn-hangzhou';",
         settings={"allow_experimental_database_paimon_rest_catalog": 1},
     )
-    assert "" == node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
+    # In 26.5 `CREATE DATABASE` does not validate credentials eagerly, so the
+    # 401 from the catalog surfaces on first access. `SHOW TABLES` no longer
+    # swallows catalog errors as an empty listing.
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
+    message = str(exc_info.value)
+    assert "Code: 86" in message, message
+    assert "401" in message, message

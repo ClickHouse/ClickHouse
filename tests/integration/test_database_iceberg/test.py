@@ -867,7 +867,14 @@ def test_not_specified_catalog_type(started_cluster):
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
-    assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    # In 26.5 `CREATE DATABASE` does not validate `catalog_type` eagerly, so the
+    # error surfaces on first catalog access. `SHOW TABLES` no longer swallows
+    # catalog errors as an empty listing.
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    message = str(exc_info.value)
+    assert "Unspecified catalog type" in message, message
+    assert "Code: 36" in message, message
 
 
 def test_system_tables_with_nullptr_table(started_cluster):
@@ -991,3 +998,68 @@ def test_invalid_auth_header_format(started_cluster):
             """
         )
     assert "Invalid auth header format" in str(err.value)
+
+
+def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
+    """
+    Regression test: an error from the catalog while listing tables (e.g. expired
+    catalog credentials) must not be silently turned into an empty listing when the
+    user explicitly opted into showing datalake catalogs in system tables with
+    show_data_lake_catalogs_in_system_tables=1. Without the opt-in the old tolerant
+    behaviour is kept (system tables must not fail because of one broken catalog).
+
+    `system.iceberg_files` does not exist in this release, so `system.iceberg_history`
+    stands in for it: both list datalake catalogs regardless of
+    `show_data_lake_catalogs_in_system_tables`, which is what makes it possible to
+    reach the swallowing branch at all. `system.tables` filters datalake databases out
+    before listing them when the setting is off, so it can only cover the throwing
+    branch: selecting `name` goes through the lightweight iterator, `engine` through
+    the full one.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_listing_error"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, "table_x")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_get_tables_throw")
+    try:
+        assert (
+            node.query(
+                f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}'"
+            ).strip()
+            == "0"
+        )
+
+        error = node.query_and_get_error(
+            f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+
+        error = node.query_and_get_error(
+            f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_get_tables_throw")
+
+    result = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+    )
+    assert "table_x" in result
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
