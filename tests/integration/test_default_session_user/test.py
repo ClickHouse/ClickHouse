@@ -559,6 +559,23 @@ def test_custom_webterminal_rule_default_session_user():
         assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
 
 
+def test_webterminal_anonymous_logins_disabled():
+    # The `/webterminal` default handler is also served by the endpoint that
+    # prohibits anonymous logins (the empty `default_session_user` override on
+    # port 8129), so an auth message without a "user" field must fail closed:
+    # the server answers with a close frame (0x08) instead of PTY data, and the
+    # reject is recorded as a `LoginFailure` row with an empty user name in
+    # `system.session_log`, keeping the prohibition auditable.
+    with assert_anonymous_login_failure("HTTP"):
+        opcode = webterminal_auth_opcode(8129, json.dumps({"type": "auth", "password": ""}))
+        assert opcode == 0x08, f"Expected close frame after rejected auth, got opcode={opcode}"
+
+    # An explicitly specified user still works on the same endpoint.
+    with assert_login_success("explicit_user", "HTTP"):
+        opcode = webterminal_auth_opcode(8129, json.dumps({"type": "auth", "user": "explicit_user", "password": ""}))
+        assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
+
+
 def scrape_prometheus_status(port):
     """GET /metrics on a prometheus listener and return the HTTP status code."""
     url = f"http://{node1.ip_address}:{port}/metrics"
