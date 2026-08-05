@@ -15,10 +15,10 @@ MatchedRowsStats::MatchedRowsStats(JoinKind kind, JoinStrictness strictness, Joi
 {
 }
 
-void MatchedRowsStats::prepareRightFlagsIfNeeded(const HashJoin::StoredBlocksList & stored_blocks)
+void MatchedRowsStats::prepareRightFlagsIfNeeded(const std::vector<HashJoin::WorkerStoredData> & workers)
 {
     if (analyze_mode == JoinAnalyzeMode::Exact && rightMatchedSource(join_kind, join_strictness) == RightMatchedSource::RefsFlags)
-        prepareRightFlags(stored_blocks);
+        prepareRightFlags(workers);
 }
 
 void MatchedRowsStats::collectProbeBlock(UInt64 probed_block_size, std::optional<UInt64> matched_left)
@@ -47,6 +47,14 @@ void MatchedRowsStats::prepareRightFlags(const HashJoin::StoredBlocksList & stor
     right_rows_flags = std::make_unique<MatchedRightFlags>();
     for (const auto & block : stored_blocks)
         right_rows_flags->allocate(block.block_no, rowsAddressableBySelector(block.selector));
+}
+
+void MatchedRowsStats::prepareRightFlags(const std::vector<HashJoin::WorkerStoredData> & workers)
+{
+    right_rows_flags = std::make_unique<MatchedRightFlags>();
+    for (const auto & worker : workers)
+        for (const auto & block : worker.columns)
+            right_rows_flags->allocate(block.block_no, rowsAddressableBySelector(block.selector));
 }
 
 void MatchedRowsStats::collectNonJoined(UInt64 non_joined_rows)

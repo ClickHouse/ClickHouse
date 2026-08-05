@@ -304,12 +304,22 @@ public:
 
     static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val);
 
+    static bool isHashFamilyEnabled(const std::vector<JoinAlgorithm> & join_algorithms)
+    {
+        return isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+            || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH);
+    }
+
+    bool isHashFamilyEnabled() const
+    {
+        return isHashFamilyEnabled(join_algorithms);
+    }
+
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
         return isEnabledAlgorithm(join_algorithms, val);
     }
 
-    bool allowParallelHashJoin() const;
     void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }
@@ -494,9 +504,14 @@ public:
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
-bool allowParallelHashJoin(
+/// Covers both `hash` and `parallel_hash`, because which of the two was listed decides nothing now.
+bool allowHashJoinCacheKeys(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
     bool is_special_storage,
     bool one_disjunct);
+
+/// Unlike `allowHashJoinCacheKeys` this ignores the algorithm list and special storages: whether
+/// the layout is usable is a correctness question, not a user choice.
+bool preferParallelHashLayout(JoinKind kind, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold);
 }

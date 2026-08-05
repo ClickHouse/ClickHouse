@@ -25,6 +25,10 @@ WHERE trim(explain) LIKE 'Algorithm%';
 
 SET join_algorithm = 'hash';
 SET max_threads = 1;
+-- The counters below must not depend on which layout the join picked, and a join whose right
+-- side has no row estimate picks the parallel one - the estimate here comes from a size hint
+-- cache that other queries populate. Turning the parallel path off pins them either way.
+SET parallel_non_joined_rows_processing = 0;
 -- Test 1: Small INNER JOIN that fits in memory.
 SELECT 'inner join small';
 SELECT count(), sum(t2.v)
@@ -112,11 +116,16 @@ ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_10';
 
 -- ====================================================================
--- Concurrent path: SpillingHashJoin wrapping ConcurrentHashJoin.
+-- ====================================================================
+-- Same joins with `join_algorithm = 'parallel_hash'` (an alias of `hash`).
+-- ====================================================================
 -- ====================================================================
 SET max_bytes_before_external_join = 1000000000;
 SET join_algorithm = 'parallel_hash';
 SET max_threads = 4;
+-- The name no longer selects a layout, so ask for the parallel one by its threshold; without
+-- this the right sides below are too small for it and the join would fill a single slot.
+SET parallel_hash_join_threshold = 0;
 
 -- Test 11: Small INNER JOIN that fits in memory (concurrent, no spill).
 SELECT 'concurrent inner join small';

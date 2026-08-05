@@ -3,8 +3,7 @@
 
 -- The `parallel_hash` counterpart of `04648_spilling_hash_join_keep_left_order`: with
 -- `join_algorithm = 'parallel_hash'` the spill-capable join is a `SpillingHashJoin` backed by
--- `ConcurrentHashJoin` rather than by a single-threaded `HashJoin`, which is a separate transition
--- path inside `SpillingHashJoin`. Ratio-based auto-spill stays enabled: the effective threshold is
+-- a parallel `HashJoin`, which is a separate transition path inside `SpillingHashJoin`. Ratio-based auto-spill stays enabled: the effective threshold is
 -- the minimum of the ratio-derived value and the absolute `max_bytes_before_external_join`, so the
 -- 1-byte absolute value keeps the test deterministic while the ratio branch is exercised too.
 

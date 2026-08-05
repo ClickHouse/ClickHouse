@@ -95,7 +95,7 @@ private:
 class FillingRightJoinSideTransform final : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
+    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, size_t build_worker_id_);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
@@ -109,6 +109,7 @@ public:
 private:
     JoinPtr join;
     FinishCounterPtr finish_counter;
+    size_t build_worker_id;
     Chunk chunk;
     bool stop_reading = false;
     bool for_totals = false;

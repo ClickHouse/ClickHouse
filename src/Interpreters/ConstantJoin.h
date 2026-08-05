@@ -44,8 +44,7 @@ public:
         return std::make_shared<ConstantJoin>(table_join_, right_sample_block_, any_take_last_row);
     }
 
-    bool addBlockToJoin(const Block & source_block, bool check_limits) override;
-    bool addBlockToJoin(const Block & source_block, size_t num_rows, bool check_limits) override;
+    bool addBlockToJoin(const Block & source_block, size_t num_rows, size_t worker_id, bool check_limits) override;
 
     void checkTypesOfKeys(const Block &) const override {}
 

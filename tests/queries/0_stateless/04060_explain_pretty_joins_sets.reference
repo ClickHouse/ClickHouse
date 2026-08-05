@@ -3,7 +3,7 @@ Output: a, b, x, y
 
 Join (JOIN FillRightFirst)
 │  t1 ⋈ t2
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Join conditions: a = x
 │  Output:
 │    Left:  a, b
@@ -21,7 +21,7 @@ Output: a, b, x, y
 
 Join (JOIN FillRightFirst)
 │  t1 ⋈ t2
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Join conditions: a <=> x
 │  Output:
 │    Left:  a, b

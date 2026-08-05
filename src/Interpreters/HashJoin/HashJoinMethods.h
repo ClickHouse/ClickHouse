@@ -10,6 +10,10 @@
 #include <Interpreters/castColumn.h>
 #include <base/types.h>
 
+#include <memory>
+#include <optional>
+#include <typeinfo>
+
 namespace DB
 {
 
@@ -21,30 +25,49 @@ size_t getMinBytesForPrefetchInJoin();
 template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
-    static ALWAYS_INLINE bool
-    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
+    /// `new_keys` counts keys the map lacked, not rows accepted: `any_take_last_row` overwrites.
+    static ALWAYS_INLINE bool insertOne(
+        const HashJoin & join,
+        HashMap & map,
+        KeyGetter & key_getter,
+        UInt32 stored_block_no,
+        size_t key_row,
+        size_t row_no,
+        Arena & pool,
+        size_t & new_keys)
     {
-        auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        auto emplace_result = key_getter.emplaceKey(map, key_row, pool);
 
-        if (emplace_result.isInserted() || join.anyTakeLastRow())
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
-        return emplace_result.isInserted() || join.anyTakeLastRow();
+        const bool inserted = emplace_result.isInserted();
+        new_keys += inserted;
+        if (inserted || join.anyTakeLastRow())
+            new (&emplace_result.getMapped()) HashMap::mapped_type(stored_block_no, row_no);
+        return inserted || join.anyTakeLastRow();
     }
 
-    static ALWAYS_INLINE bool
-    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
+    static ALWAYS_INLINE bool insertAll(
+        const HashJoin &,
+        HashMap & map,
+        KeyGetter & key_getter,
+        UInt32 stored_block_no,
+        size_t key_row,
+        size_t row_no,
+        Arena & pool,
+        size_t & new_keys)
     {
-        auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        auto emplace_result = key_getter.emplaceKey(map, key_row, pool);
 
-        if (emplace_result.isInserted())
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
+        const bool inserted = emplace_result.isInserted();
+        new_keys += inserted;
+        if (inserted)
+            new (&emplace_result.getMapped()) HashMap::mapped_type(stored_block_no, row_no);
         else
         {
             /// A single ref is stored inline in the value of the hash table; the first duplicate
             /// switches the value to a pointer to an arena-allocated list of refs.
-            emplace_result.getMapped().insert(RowRef(stored_block_no, i).encode(), pool);
+            emplace_result.getMapped().insert(RowRef(stored_block_no, row_no).encode(), pool);
         }
-        return emplace_result.isInserted();
+        return inserted;
     }
 
     static ALWAYS_INLINE bool insertAsof(
@@ -52,39 +75,77 @@ struct Inserter
         HashMap & map,
         KeyGetter & key_getter,
         UInt32 stored_block_no,
-        size_t i,
+        size_t key_row,
+        size_t row_no,
         Arena & pool,
+        size_t & new_keys,
         const IColumn & asof_column)
     {
-        auto emplace_result = key_getter.emplaceKey(map, i, pool);
-        typename HashMap::mapped_type * time_series_map = &emplace_result.getMapped();
+        auto emplace_result = key_getter.emplaceKey(map, key_row, pool);
+        auto * time_series_map = &emplace_result.getMapped();
 
+        const bool inserted = emplace_result.isInserted();
+        new_keys += inserted;
         TypeIndex asof_type = *join.getAsofType();
-        if (emplace_result.isInserted())
-            time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
-        (*time_series_map)->insert(asof_column, stored_block_no, i);
-        return emplace_result.isInserted();
+        if (inserted)
+            time_series_map = new (time_series_map) HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
+        (*time_series_map)->insert(asof_column, stored_block_no, row_no);
+        return inserted;
     }
 };
+
+/// The one key getter shared by a block's slots, for the getters whose construction reads the whole
+/// block. Type-erased because the concrete type is only known inside the per-key-type dispatch.
+class BlockKeyGetter
+{
+public:
+    template <typename KeyGetter, typename Build>
+    KeyGetter & getOrBuild(Build && build)
+    {
+        if (!getter)
+        {
+            getter = std::make_shared<KeyGetter>(build());
+            built_type = &typeid(KeyGetter);
+        }
+        chassert(*built_type == typeid(KeyGetter));
+        return *static_cast<KeyGetter *>(getter.get());
+    }
+
+private:
+    std::shared_ptr<void> getter;
+    const std::type_info * built_type = nullptr;
+};
+
+template <typename KeyGetter>
+constexpr bool shareKeyGetterAcrossBuckets()
+{
+    if constexpr (requires { KeyGetter::reads_whole_block_at_construction; })
+        return KeyGetter::reads_whole_block_at_construction;
+    else
+        return false;
+}
 
 /// MapsTemplate is one of MapsOne, MapsAll and MapsAsof
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate> // NOLINT(readability-identifier-naming)
 class HashJoinMethods
 {
+    static constexpr bool needs_offset = JoinFeatures<KIND, STRICTNESS, MapsTemplate>::need_flags;
+
 public:
     static void insertFromBlockImpl(
         HashJoin & join,
         HashJoin::Type type,
         MapsTemplate & maps,
+        BlockKeyGetter & block_key_getter,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         UInt32 stored_block_no,
         const ScatteredBlock::Selector & selector,
+        const Columns * dense_keys,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,
-        bool & is_inserted,
-        bool & all_values_unique);
+        BuildResult & result);
 
     using MapsTemplateVector = std::vector<const MapsTemplate *>;
 
@@ -106,19 +167,24 @@ private:
     template <typename KeyGetter, bool is_asof_join>
     static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {});
 
+    template <typename KeyGetter, bool is_asof_join>
+    static KeyGetter & blockKeyGetter(
+        BlockKeyGetter & block_key_getter, std::optional<KeyGetter> & own, const ColumnRawPtrs & key_columns, const Sizes & key_sizes);
+
     template <typename KeyGetter, typename HashMap, typename Selector>
     static void insertFromBlockImplTypeCase(
         HashJoin & join,
         HashMap & map,
+        BlockKeyGetter & block_key_getter,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         UInt32 stored_block_no,
         const Selector & selector,
+        const Columns * dense_keys,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,
-        bool & is_inserted,
-        bool & all_values_unique);
+        BuildResult & result);
 
     template <typename AddedColumns>
     static size_t switchJoinRightColumns(

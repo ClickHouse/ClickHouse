@@ -2,7 +2,7 @@ Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Result rows: 100
 │  Join conditions: id = id
 │  Output:
@@ -20,7 +20,7 @@ Output: id, value, id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100] ⋈ t3[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Result rows: 100
 │  Join conditions: id = id
 │  Output:
@@ -28,7 +28,7 @@ Join (JOIN FillRightFirst)
 │    Right: id, value
 ├──Join (JOIN FillRightFirst)
 │  │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  │  Type: inner | Strictness: all | Algorithm: HashJoin
 │  │  Result rows: 100
 │  │  Join conditions: id = id
 │  │  Output:

@@ -121,8 +121,9 @@ public:
 
     void collectNonJoined(UInt64 non_joined_rows);
 
-    void prepareRightFlagsIfNeeded(const HashJoin::StoredBlocksList & stored_blocks);
+    void prepareRightFlagsIfNeeded(const std::vector<HashJoin::WorkerStoredData> & workers);
     void prepareRightFlags(const HashJoin::StoredBlocksList & stored_blocks);
+    void prepareRightFlags(const std::vector<HashJoin::WorkerStoredData> & workers);
     bool hasRightFlags() const { return right_rows_flags != nullptr; }
 
     UInt64 getInputLeft() const { return left_rows_total.load(std::memory_order_relaxed); }
