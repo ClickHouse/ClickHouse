@@ -215,7 +215,11 @@ ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on
 
 Nested messages are suitable for input or output of a [nested data structures](/sql-reference/data-types/nested-data-structures/index.md).
 
-Default values defined in a protobuf schema like the one that follows are not applied, rather the [table defaults](/sql-reference/statements/create/table#default_values) are used instead of them:
+For **mapped** fields that are missing on the wire, ClickHouse uses the protobuf schema field default (`proto2` `[default = …]`, otherwise the type default) during parsing — not the table `DEFAULT` expression.
+
+Table `DEFAULT` (and default expressions) apply to table columns that have **no** matching field in the message type when [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats#input_format_defaults_for_omitted_fields) is enabled (the default). If that setting is `0`, unmapped columns keep the data type default inserted during parsing instead of the table `DEFAULT` expression.
+
+Example of a proto2 schema field default (used for a mapped field absent from the message):
 
 ```capnp
 syntax = "proto2";
