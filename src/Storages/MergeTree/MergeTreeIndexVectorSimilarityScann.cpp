@@ -714,6 +714,12 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN index build failed: unknown exception");
     }
 
+    /// The bf16 and i8 reordering helpers own quantized copies of the vectors, and the
+    /// populated Tree-AH leaf searchers no longer need the original float dataset. Release it
+    /// before extracting persistent artifacts, which temporarily creates additional copies.
+    if (params.precision != "f32")
+        searcher->inner->MaybeReleaseDataset();
+
     if (!config.SerializeToString(&serialized_config_proto))
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ScaNN index build failed: could not serialize ScaNN config");
@@ -769,17 +775,14 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     }
 
     /// For non-f32 precision, persist the quantized exact-reordering vectors that ScaNN derived
-    /// from the float dataset (extracted above), and drop the float vectors so they are neither
-    /// kept in memory nor written to disk. The index is built entirely in float (AH codebook and
-    /// IVF centroids train on the float dataset); only the reordering representation is quantized.
+    /// from the float dataset. The index is built entirely in float (AH codebook and IVF centroids
+    /// train on the float dataset); only the reordering representation is quantized.
     if (params.precision == "bf16")
     {
         if (!opts.bfloat16_dataset || opts.bfloat16_dataset->empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN bf16 reorder dataset was not produced");
         const auto span = opts.bfloat16_dataset->data();
         bf16_data.assign(span.data(), span.data() + span.size());
-        vectors.clear();
-        vectors.shrink_to_fit();
     }
     else if (params.precision == "i8")
     {
@@ -792,8 +795,6 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
             int8_multipliers.assign(fp->multiplier_by_dimension->begin(), fp->multiplier_by_dimension->end());
         if (fp->squared_l2_norm_by_datapoint)
             int8_norms.assign(fp->squared_l2_norm_by_datapoint->begin(), fp->squared_l2_norm_by_datapoint->end());
-        vectors.clear();
-        vectors.shrink_to_fit();
     }
 
     searcher_owned_memory_bytes = estimateTreeAHSearcherMemoryBytes(datapoints_by_token, hashed_dim);
