@@ -345,6 +345,30 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ## Select column compression codecs {#column_compression_codec}
 
+{/* Landing anchors for links to sections that moved to /reference/statements/create/table/codec */}
+<a id="general-purpose-codecs"></a>
+<a id="none"></a>
+<a id="lz4"></a>
+<a id="lz4hc"></a>
+<a id="zstd"></a>
+<a id="zxc"></a>
+<a id="zstd_qat"></a>
+<a id="deflate_qpl"></a>
+<a id="specialized-codecs"></a>
+<a id="delta"></a>
+<a id="doubledelta"></a>
+<a id="gcd"></a>
+<a id="gorilla"></a>
+<a id="alp"></a>
+<a id="fpc"></a>
+<a id="sz3"></a>
+<a id="t64"></a>
+<a id="quantized"></a>
+<a id="encryption-codecs"></a>
+<a id="aes_128_gcm_siv"></a>
+<a id="aes-256-gcm-siv"></a>
+<a id="adaptive-codec-selection"></a>
+
 By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. You can also define the compression method for each individual column in the `CREATE TABLE` query:
 
 ```sql
@@ -367,6 +391,10 @@ For the available general purpose, specialized and encryption codecs, see [Colum
 ClickHouse supports temporary tables, which disappear when the session ends. For details, see [CREATE TEMPORARY TABLE](/reference/statements/create/table/temporary-table).
 
 ## Update a table atomically with REPLACE TABLE {#replace-table}
+
+{/* Landing anchors for links to sections that moved to /reference/statements/create/table/replace-table */}
+<a id="syntax"></a>
+<a id="examples"></a>
 
 The `REPLACE` statement allows you to update a table [atomically](/concepts/core-concepts/glossary#atomicity). For details, see [REPLACE TABLE](/reference/statements/create/table/replace-table).
 
