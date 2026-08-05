@@ -24,7 +24,7 @@ keywords: ['مجموعة بيانات تجريبية', 'JOB', 'join order benchm
 
 مجموعة بيانات JOB هي لقطة من IMDb تضم 21 جدولًا. تتوفر تعريفات الجداول في [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) في مستودع ClickHouse.
 
-يستخدم كل جدول المحرّك [`MergeTree`](/engines/table-engines/mergetree-family/mergetree)، ويُرتَّب حسب عمود المفتاح الأساسي `id`، بما يعكس مخطط PostgreSQL الأصلي حيث يعرّف كل جدول `id integer NOT NULL PRIMARY KEY`. وتُعيَّن أعمدة PostgreSQL التي تقبل NULL إلى الأنواع `Nullable(...)`.
+يستخدم كل جدول المحرّك [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree)، ويُرتَّب حسب عمود المفتاح الأساسي `id`، بما يعكس مخطط PostgreSQL الأصلي حيث يعرّف كل جدول `id integer NOT NULL PRIMARY KEY`. وتُعيَّن أعمدة PostgreSQL التي تقبل NULL إلى الأنواع `Nullable(...)`.
 
 أنشئ الجداول:
 

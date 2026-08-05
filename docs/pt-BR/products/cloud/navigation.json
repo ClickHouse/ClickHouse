@@ -1,0 +1,356 @@
+{
+  "groups": [
+    {
+      "group": "ClickHouse Cloud",
+      "pages": [
+        {
+          "group": "Primeiros passos",
+          "pages": [
+            "pt-BR/products/cloud/getting-started/intro",
+            "pt-BR/products/cloud/getting-started/resource-tour"
+          ],
+          "root": "pt-BR/products/cloud/getting-started/cloud-get-started"
+        },
+        {
+          "group": "Recursos",
+          "pages": [
+            "pt-BR/products/cloud/features/cloud-tiers",
+            "pt-BR/products/cloud/features/cli",
+            "pt-BR/products/cloud/features/integrations",
+            "pt-BR/products/cloud/features/data-catalogs",
+            "pt-BR/products/cloud/reference/architecture",
+            "pt-BR/products/cloud/reference/supported-regions",
+            {
+              "expanded": false,
+              "group": "Console SQL",
+              "pages": [
+                "pt-BR/products/cloud/features/sql-console-features/sql-console",
+                "pt-BR/products/cloud/features/sql-console-features/query-insights",
+                "pt-BR/products/cloud/features/sql-console-features/query-endpoints",
+                "pt-BR/products/cloud/features/sql-console-features/dashboards",
+                "pt-BR/products/cloud/features/sql-console-features/clickstack",
+                "pt-BR/products/cloud/features/sql-console-features/user-defined-functions"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Infraestrutura",
+              "pages": [
+                {
+                  "group": "Escalonamento automático",
+                  "pages": [
+                    "pt-BR/products/cloud/features/autoscaling/vertical",
+                    "pt-BR/products/cloud/features/autoscaling/horizontal",
+                    "pt-BR/products/cloud/features/autoscaling/make-before-break",
+                    "pt-BR/products/cloud/features/autoscaling/idling",
+                    "pt-BR/products/cloud/features/autoscaling/scaling-recommendations",
+                    "pt-BR/products/cloud/features/autoscaling/scheduled-scaling"
+                  ],
+                  "root": "pt-BR/products/cloud/features/autoscaling/overview"
+                },
+                "pt-BR/products/cloud/features/infrastructure/parallel-replicas",
+                "pt-BR/products/cloud/features/infrastructure/deployment-options",
+                "pt-BR/products/cloud/features/infrastructure/shared-catalog",
+                "pt-BR/products/cloud/features/infrastructure/shared-merge-tree",
+                "pt-BR/products/cloud/features/infrastructure/warehouses"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Admin",
+              "pages": [
+                {
+                  "group": "Cloud API",
+                  "pages": [
+                    "pt-BR/products/cloud/features/admin-features/api/api-overview",
+                    "pt-BR/products/cloud/features/admin-features/api/openapi",
+                    "pt-BR/products/cloud/features/admin-features/api/postman"
+                  ],
+                  "root": "pt-BR/products/cloud/features/admin-features/api/index"
+                },
+                "pt-BR/products/cloud/features/admin-features/upgrades"
+              ]
+            },
+            "pt-BR/products/cloud/features/security",
+            {
+              "expanded": false,
+              "group": "Monitoramento",
+              "pages": [
+                "pt-BR/products/cloud/features/monitoring/overview",
+                "pt-BR/products/cloud/features/monitoring/cloud-console",
+                "pt-BR/products/cloud/features/monitoring/advanced-dashboard",
+                "pt-BR/products/cloud/features/monitoring/notifications",
+                "pt-BR/products/cloud/features/monitoring/prometheus",
+                "pt-BR/products/cloud/features/monitoring/system-tables",
+                "pt-BR/products/cloud/features/monitoring/integrations"
+              ]
+            },
+            {
+              "group": "Backups",
+              "pages": [
+                "pt-BR/products/cloud/features/backups/faq"
+              ],
+              "root": "pt-BR/products/cloud/features/backups/overview"
+            },
+            "pt-BR/products/cloud/features/support",
+            {
+              "expanded": false,
+              "group": "IA/ML",
+              "pages": [
+                "pt-BR/products/cloud/features/ai-ml/ask-ai",
+                "pt-BR/products/cloud/features/ai-ml/aichat/using-ai-chat",
+                "pt-BR/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+                "pt-BR/products/cloud/features/ai-ml/langfuse",
+                "pt-BR/products/cloud/features/ai-ml/remote-mcp",
+                "pt-BR/products/cloud/features/ai-ml/mcp/remote-mcp",
+                {
+                  "group": "ClickHouse Agents",
+                  "pages": [
+                    "pt-BR/products/cloud/features/ai-ml/agents/quickstart",
+                    "pt-BR/products/cloud/features/ai-ml/agents/chat",
+                    {
+                      "group": "Agent Builder",
+                      "pages": [
+                        "pt-BR/products/cloud/features/ai-ml/agents/builder/model-parameters",
+                        "pt-BR/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+                        "pt-BR/products/cloud/features/ai-ml/agents/builder/web-search",
+                        "pt-BR/products/cloud/features/ai-ml/agents/builder/image-generation",
+                        "pt-BR/products/cloud/features/ai-ml/agents/builder/vision",
+                        "pt-BR/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+                        "pt-BR/products/cloud/features/ai-ml/agents/builder/skills",
+                        "pt-BR/products/cloud/features/ai-ml/agents/builder/subagents"
+                      ],
+                      "root": "pt-BR/products/cloud/features/ai-ml/agents/builder/index"
+                    },
+                    "pt-BR/products/cloud/features/ai-ml/agents/prompts",
+                    "pt-BR/products/cloud/features/ai-ml/agents/memory",
+                    "pt-BR/products/cloud/features/ai-ml/agents/marketplace",
+                    "pt-BR/products/cloud/features/ai-ml/agents/sharing-and-access"
+                  ],
+                  "root": "pt-BR/products/cloud/features/ai-ml/agents/index"
+                },
+                "pt-BR/products/cloud/features/ai-ml/model-developer-terms"
+              ],
+              "root": "pt-BR/products/cloud/features/ai-ml/index"
+            }
+          ]
+        },
+        {
+          "group": "Referência da Cloud",
+          "pages": [
+            "pt-BR/products/cloud/reference/service-uptime",
+            "pt-BR/products/cloud/reference/account-close",
+            "pt-BR/products/cloud/reference/data-resiliency",
+            "pt-BR/products/cloud/reference/settings",
+            "pt-BR/products/cloud/reference/security/console-roles",
+            "pt-BR/products/cloud/reference/security/audit-logging",
+            "pt-BR/products/cloud/reference/security/compliance-overview",
+            "pt-BR/products/cloud/reference/security/ai-compliance",
+            "pt-BR/products/cloud/reference/personal-data-access"
+          ],
+          "root": "pt-BR/products/cloud/reference/index"
+        },
+        {
+          "group": "Faturamento",
+          "pages": [
+            "pt-BR/products/cloud/reference/billing/billing-overview",
+            {
+              "expanded": false,
+              "group": "Marketplace",
+              "pages": [
+                "pt-BR/products/cloud/reference/billing/marketplace/overview",
+                "pt-BR/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
+                "pt-BR/products/cloud/reference/billing/marketplace/aws-marketplace-payg",
+                "pt-BR/products/cloud/reference/billing/marketplace/azure-marketplace-committed",
+                "pt-BR/products/cloud/reference/billing/marketplace/azure-marketplace-payg",
+                "pt-BR/products/cloud/reference/billing/marketplace/gcp-marketplace-committed",
+                "pt-BR/products/cloud/reference/billing/marketplace/gcp-marketplace-payg",
+                "pt-BR/products/cloud/reference/billing/marketplace/migrate-marketplace-payg-committed"
+              ],
+              "root": "pt-BR/products/cloud/reference/billing/marketplace/index"
+            },
+            {
+              "expanded": false,
+              "group": "ClickPipes",
+              "pages": [
+                "pt-BR/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
+                "pt-BR/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage"
+              ],
+              "root": "pt-BR/products/cloud/reference/billing/clickpipes/index"
+            },
+            "pt-BR/products/cloud/reference/billing/network-data-transfer",
+            "pt-BR/products/cloud/reference/billing/payment-thresholds",
+            "pt-BR/products/cloud/reference/billing/spend-alerts",
+            "pt-BR/products/cloud/reference/billing/managing-payment-methods",
+            "pt-BR/products/cloud/reference/billing/billing-compliance"
+          ],
+          "root": "pt-BR/products/cloud/reference/billing/index"
+        },
+        {
+          "group": "Guias",
+          "pages": [
+            {
+              "group": "Boas práticas",
+              "pages": [
+                "pt-BR/products/cloud/guides/best-practices/multitenancy",
+                "pt-BR/products/cloud/guides/best-practices/usagelimits"
+              ],
+              "root": "pt-BR/products/cloud/guides/best-practices/index"
+            },
+            {
+              "expanded": false,
+              "group": "Geral",
+              "pages": [
+                "pt-BR/products/cloud/guides/cloud-compatibility",
+                "pt-BR/products/cloud/guides/production-readiness"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Migração",
+              "pages": [
+                "pt-BR/products/cloud/guides/migration/upload-a-csv-file",
+                "pt-BR/products/cloud/guides/migration/oss-to-cloud-backup-restore"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Console SQL",
+              "pages": [
+                "pt-BR/products/cloud/guides/sql-console/connection-details",
+                "pt-BR/products/cloud/guides/sql-console/query-endpoints"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Backups",
+              "pages": [
+                "pt-BR/products/cloud/guides/backups/review-and-restore-backups",
+                "pt-BR/products/cloud/guides/backups/configurable-backups",
+                {
+                  "expanded": false,
+                  "group": "Use seu próprio backup",
+                  "pages": [
+                    "pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
+                    "pt-BR/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
+                    "pt-BR/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands"
+                  ]
+                }
+              ],
+              "root": "pt-BR/products/cloud/guides/backups/index"
+            },
+            {
+              "expanded": false,
+              "group": "Fontes de dados",
+              "pages": [
+                "pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api",
+                "pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely",
+                "pt-BR/products/cloud/guides/data-sources/secure-azure",
+                "pt-BR/products/cloud/guides/data-sources/secure-gcs",
+                "pt-BR/products/cloud/guides/data-sources/accessing-iceberg-data-securely"
+              ],
+              "root": "pt-BR/products/cloud/guides/data-sources/index"
+            },
+            {
+              "expanded": false,
+              "group": "Infraestrutura",
+              "pages": [
+                {
+                  "expanded": false,
+                  "group": "Modos de implantação",
+                  "pages": [
+                    "pt-BR/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
+                    "pt-BR/products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
+                    "pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                  ]
+                }
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Segurança",
+              "pages": [
+                {
+                  "expanded": false,
+                  "group": "Gerenciamento de acesso à Cloud",
+                  "pages": [
+                    "pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account",
+                    "pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+                    "pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                    "pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+                    "pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users",
+                    "pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
+                    "pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup",
+                    "pt-BR/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
+                    "pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
+                    "pt-BR/products/cloud/guides/security/saml-sso-removal"
+                  ],
+                  "root": "pt-BR/products/cloud/guides/security/cloud-access-management/index"
+                },
+                {
+                  "expanded": false,
+                  "group": "Conectividade",
+                  "pages": [
+                    "pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters",
+                    {
+                      "expanded": false,
+                      "group": "Rede privada",
+                      "pages": [
+                        "pt-BR/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
+                        "pt-BR/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
+                        "pt-BR/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
+                      ],
+                      "root": "pt-BR/products/cloud/guides/security/connectivity/private-networking/index"
+                    }
+                  ]
+                },
+                {
+                  "expanded": false,
+                  "group": "Logs de auditoria",
+                  "pages": [
+                    "pt-BR/products/cloud/guides/security/audit-logging/console-audit-log",
+                    "pt-BR/products/cloud/guides/security/audit-logging/database-audit-log",
+                    "pt-BR/products/cloud/guides/security/audit-logging/byoc-security-playbook"
+                  ],
+                  "root": "pt-BR/products/cloud/guides/security/audit-logging/index"
+                },
+                {
+                  "expanded": false,
+                  "group": "Segurança de dados",
+                  "pages": [
+                    "pt-BR/products/cloud/guides/security/data-masking",
+                    "pt-BR/products/cloud/guides/security/cmek"
+                  ]
+                },
+                {
+                  "expanded": false,
+                  "group": "Conformidade",
+                  "pages": [
+                    "pt-BR/products/cloud/guides/security/compliance/hipaa-onboarding",
+                    "pt-BR/products/cloud/guides/security/compliance/pci-onboarding"
+                  ]
+                }
+              ]
+            }
+          ],
+          "root": "pt-BR/products/cloud/guides/index"
+        },
+        {
+          "group": "Referência da API",
+          "openapi": {
+            "directory": "pt-BR/products/cloud/api-reference",
+            "source": "_specs/cloud-openapi.json"
+          },
+          "pages": {
+            "$ref": "./api-reference/navigation.json"
+          }
+        }
+      ]
+    },
+    {
+      "$ref": "../bring-your-own-cloud/navigation.json"
+    }
+  ],
+  "icon": "/images/icons/icon-clickhouse-cloud.svg",
+  "item": "ClickHouse Cloud"
+}
