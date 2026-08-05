@@ -599,7 +599,16 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        /// `pull` returns `false` both at the real end of the file and when the read was cancelled -
+        /// for example, by the soft `max_execution_time` with the `break` overflow mode, with which
+        /// the query succeeds with its partial result - see cancel. The rows read by an interrupted
+        /// read are not the row count of the file and must not poison the count cache.
+        const auto reader_status = reader->getExecutionStatus();
+        const bool read_whole_file = !isCancelled()
+            && reader_status != PipelineExecutor::ExecutionStatus::CancelledByUser
+            && reader_status != PipelineExecutor::ExecutionStatus::CancelledByTimeout;
+
+        if (read_whole_file && input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
