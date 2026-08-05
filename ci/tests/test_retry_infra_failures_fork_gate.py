@@ -91,6 +91,12 @@ def test_selector_admits_gated_fork_runs():
     assert re.search(
         r"\n\s*continue\b", reject_branch
     ), "the reject branch must continue, or the gate is inert"
+    # The projection and the two splits must agree on field order: transposing either makes
+    # run_id and run_attempt swap, so the probe reads a nonexistent run and rejects every
+    # gated candidate while every assert above still passes.
+    assert r'\"\(.databaseId):\(.attempt)\"' in step, "projection must emit id:attempt"
+    assert 'run_id="${run_entry%%:*}"' in step, "run id must come from the head field"
+    assert 'run_attempt="${run_entry##*:}"' in step, "attempt must come from the tail field"
 
 
 def _run_step(tmp_path, attempt, attempt1_conclusion, age_hours, jobs_json):
@@ -169,3 +175,6 @@ def test_gated_fork_run_is_actually_rerun(tmp_path, attempt1_conclusion, rerun_e
         proc.stdout,
         rerun_log,
     )
+    if rerun_expected:
+        # The fixture is attempt 2, so the rerun it triggers is attempt 3.
+        assert "/attempts/3" in proc.stdout, proc.stdout
