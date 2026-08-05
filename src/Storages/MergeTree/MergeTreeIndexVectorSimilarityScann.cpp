@@ -734,7 +734,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
             "ScaNN index build failed: could not extract trained artifacts: {}",
             opts_or.status().ToString());
 
-    const auto & opts = opts_or.value();
+    auto & opts = opts_or.value();
 
     if (opts.serialized_partitioner)
         opts.serialized_partitioner->SerializeToString(&serialized_partitioner_proto);
@@ -747,13 +747,14 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     /// vectors). The codes come from the extracted options: ExtractSingleMachineFactoryOptions
     /// unpacks them from the leaf searchers' packed LUT16 format. They cannot be read back from
     /// the tree searcher's top-level hashed_dataset() during serializeBinary - it is null for
-    /// Tree-AH, where the codes live in the per-leaf searchers - so copy them into the granule's
-    /// hashed_data member here.
+    /// Tree-AH, where the codes live in the per-leaf searchers - so transfer the extracted flat
+    /// data into the granule's hashed_data member here.
+    size_t hashed_rows_extracted = 0;
     if (opts.hashed_dataset && !opts.hashed_dataset->empty())
     {
+        hashed_rows_extracted = opts.hashed_dataset->size();
         hashed_dim = opts.hashed_dataset->dimensionality();
-        const auto span = opts.hashed_dataset->data();
-        hashed_data.assign(span.data(), span.data() + span.size());
+        hashed_data = opts.hashed_dataset->ClearRecyclingDataVector();
     }
 
     /// SOAR: persist the secondary-partition AH codes too. Same shape as hashed_dataset
@@ -762,8 +763,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     /// stored here.
     if (opts.soar_hashed_dataset && !opts.soar_hashed_dataset->empty())
     {
-        const auto span = opts.soar_hashed_dataset->data();
-        soar_hashed_data.assign(span.data(), span.data() + span.size());
+        soar_hashed_data = opts.soar_hashed_dataset->ClearRecyclingDataVector();
     }
 
     if (opts.datapoints_by_token)
@@ -799,7 +799,6 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
             searcher_owned_memory_bytes += fp->squared_l2_norm_by_datapoint->size() * sizeof(float);
     }
 
-    const size_t hashed_rows_extracted = (opts.hashed_dataset && hashed_dim > 0) ? opts.hashed_dataset->size() : 0;
     LOG_DEBUG(log, "Extracted ScaNN artifacts: partitioner={} bytes, codebook={} bytes, "
         "hashed_dataset={}×{} bytes, {} IVF tokens",
         serialized_partitioner_proto.size(), serialized_codebook_proto.size(),
