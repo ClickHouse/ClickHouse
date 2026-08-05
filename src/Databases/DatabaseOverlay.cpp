@@ -1088,12 +1088,20 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         /// `RESTORE`) we skip that check and rely on lazy resolution.
         const bool validate_sources_exist = (args.mode == LoadingStrictnessLevel::CREATE);
 
+        /// An explicit `ATTACH DATABASE ... ENGINE = Overlay(...)` (mode `ATTACH`) is user-facing
+        /// DDL just like `CREATE`, and it persists metadata: letting it attach a facade over another
+        /// read-only facade would write a database that fails every later lookup in
+        /// `resolveDatabases`. Unlike `CREATE`, sources may legitimately be missing at this point
+        /// (databases can be reattached in a different order than they were detached), so only the
+        /// nested-facade rejection applies, and only when the source is currently resolvable.
+        const bool validate_no_nested_facade = validate_sources_exist || (args.mode == LoadingStrictnessLevel::ATTACH);
+
         for (const auto & source_name : sources)
         {
-            if (validate_sources_exist)
+            if (validate_sources_exist || validate_no_nested_facade)
             {
                 const auto source_db = DatabaseCatalog::instance().tryGetDatabase(source_name);
-                if (!source_db)
+                if (!source_db && validate_sources_exist)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "{} database requires existing underlying database '{}', but it was not found",
@@ -1101,12 +1109,13 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
 
                 /// Reject nesting one read-only `Overlay` inside another up front. Lazy resolution
                 /// rejects it later too (see `resolveDatabases`), but an immediate error on CREATE
-                /// is friendlier than a failure on the first query through the facade.
-                if (const auto * nested = typeid_cast<const DatabaseOverlay *>(source_db.get()); nested && nested->isReadOnly())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "{} database cannot use another Overlay database '{}' as a source",
-                        engine_name, source_name);
+                /// or ATTACH is friendlier than a failure on the first query through the facade.
+                if (source_db)
+                    if (const auto * nested = typeid_cast<const DatabaseOverlay *>(source_db.get()); nested && nested->isReadOnly())
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "{} database cannot use another Overlay database '{}' as a source",
+                            engine_name, source_name);
             }
             overlay->registerNextDatabaseByName(source_name);
         }
