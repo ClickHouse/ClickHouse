@@ -123,7 +123,7 @@ TEST(HashJoin, AddBlockToJoinAfterDataReleaseThrows)
 TEST(GraceHashJoin, CountReadersToleratePendingRehash)
 {
     DiskPtr disk;
-    SCOPE_EXIT_SAFE(destroyDisk(disk));
+    SCOPE_EXIT_SAFE(if (disk) destroyDisk(disk));
     disk = createDisk("grace_hash_join_pending_rehash_test_dir");
 
     /// Cap the temporary data so that flushing a bucket throws. The cap is inherited by the
