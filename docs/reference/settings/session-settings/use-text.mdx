@@ -39,6 +39,15 @@ Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dict
 Whether to cache text index tokens that are absent from a data part.
 The negative tokens cache uses the text index tokens cache and avoids repeated dictionary lookups for absent tokens.
 
+## use_text_index_pattern_bypass_cache {#use_text_index_pattern_bypass_cache}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to cache text index pattern dictionary scans that exceeded the posting-list threshold."}]}]}/>
+
+Whether to cache text index pattern dictionary scans that exceed `text_index_like_max_postings_to_read`.
+The pattern bypass cache uses the text index tokens cache and avoids repeating dictionary scans that previously fell back to evaluating the original predicate.
+
 ## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

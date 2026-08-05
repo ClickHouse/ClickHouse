@@ -1262,6 +1262,7 @@
     "use_text_index_header_cache": "/reference/settings/session-settings/use-text",
     "use_text_index_like_evaluation_by_dictionary_scan": "/reference/settings/session-settings/use-text",
     "use_text_index_negative_tokens_cache": "/reference/settings/session-settings/use-text",
+    "use_text_index_pattern_bypass_cache": "/reference/settings/session-settings/use-text",
     "use_text_index_postings_cache": "/reference/settings/session-settings/use-text",
     "use_text_index_tokens_cache": "/reference/settings/session-settings/use-text",
     "use_top_k_dynamic_filtering": "/reference/settings/session-settings/use-top-k-dynamic-filtering",
