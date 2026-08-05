@@ -360,6 +360,20 @@ namespace
             return "number";
     }
 
+    bool isOctalFormat(std::string_view input)
+    {
+        if (input.size() < 2 || input[0] != '0')
+            return false;
+
+        for (char c : input.substr(1))
+        {
+            if (c < '0' || c > '7')
+                return false;
+        }
+
+        return true;
+    }
+
     /// Parses an unsigned scalar in number format, for example "1000" or "1_000" or "5.67" or "2e10" or "Inf" or "Nan".
     /// Underscores between digits are ignored.
     template <typename T>
@@ -367,6 +381,27 @@ namespace
     {
         /// Remove underscores between digits if necessary.
         String str = removeUnderscoresBetweenDigits</* is_hex = */ false>(input);
+
+        /// Prometheus tries parsing integer literals with base 0 before falling back to floating-point parsing.
+        /// In particular, integer literals with a leading zero are interpreted as octal.
+        if (isOctalFormat(str))
+        {
+            Int64 value = 0;
+            if (tryParseIntInBase<8>(value, str))
+            {
+                if constexpr (is_decimal<T>)
+                {
+                    result = T(value);
+                    result *= DecimalUtils::scaleMultiplier<Decimal64>(scale);
+                }
+                else
+                {
+                    result = static_cast<T>(value);
+                }
+
+                return true;
+            }
+        }
 
         if constexpr (is_decimal<T>)
         {

@@ -1302,6 +1302,60 @@ PrometheusQueryTree(INSTANT_VECTOR):
 }
 
 
+TEST(PromQLParser, OctalLiterals)
+{
+    EXPECT_EQ(parse("0755"), R"(
+493
+
+PrometheusQueryTree(SCALAR):
+    Scalar(493)
+)");
+
+    EXPECT_EQ(parse("-0755"), R"(
+-493
+
+PrometheusQueryTree(SCALAR):
+    UnaryOperator(-)
+        Scalar(493)
+)");
+
+    EXPECT_EQ(parse("0_755"), R"(
+493
+
+PrometheusQueryTree(SCALAR):
+    Scalar(493)
+)");
+
+    EXPECT_EQ(parse("08"), R"(
+8
+
+PrometheusQueryTree(SCALAR):
+    Scalar(8)
+)");
+
+    EXPECT_EQ(parse("0759"), R"(
+759
+
+PrometheusQueryTree(SCALAR):
+    Scalar(759)
+)");
+
+    EXPECT_EQ(parse("0755.0"), R"(
+755
+
+PrometheusQueryTree(SCALAR):
+    Scalar(755)
+)");
+
+    EXPECT_EQ(parse("0755e1"), R"(
+7550
+
+PrometheusQueryTree(SCALAR):
+    Scalar(7550)
+)");
+}
+
+
 TEST(PromQLParser, OtherQueries)
 {
     EXPECT_EQ(parse("0.74"), R"(
