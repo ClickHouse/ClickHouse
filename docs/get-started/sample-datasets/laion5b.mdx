@@ -1,5 +1,5 @@
 ---
-description: 'Dataset containing 100 million vectors from the LAION 5B dataset'
+description: 'Dataset containing 10 million vectors from the LAION 5B dataset'
 sidebarTitle: 'LAION 5B dataset'
 slug: /getting-started/example-datasets/laion-5b-dataset
 title: 'LAION 5B dataset'
@@ -23,8 +23,8 @@ image to image search.
 
 The complete dataset can be downloaded using [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
 
-ClickHouse has made available a subset of 100 million vectors in a `S3` bucket.
-The `S3` bucket contains 10 `Parquet` files, each `Parquet` file is filled with 10 million rows.
+ClickHouse has made available a subset of 10 million vectors in a public `S3` bucket.
+The subset is stored in one `Parquet` file.
 
 We recommend users first run a sizing exercise to estimate the storage and memory requirements for this dataset by referring to the [documentation](/reference/engines/table-engines/mergetree-family/annindexes).
 
@@ -33,10 +33,10 @@ We recommend users first run a sizing exercise to estimate the storage and memor
 <Steps>
 <Step title="Create table" id="create-table">
 
-Create the `laion_5b_100m` table to store the embeddings and their associated attributes:
+Create the `laion_5b_10m` table to store the embeddings and their associated attributes:
 
 ```sql
-CREATE TABLE laion_5b_100m
+CREATE TABLE laion_5b_10m
 (
     id UInt32,
     image_path String,
@@ -62,21 +62,13 @@ vector similarity search combined with post-filtering/pre-filtering as explained
 </Step>
 <Step title="Load data" id="load-table">
 
-To load the dataset from all `Parquet` files, run the following SQL statement:
+To load the dataset, run the following SQL statement:
 
 ```sql
-INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_*.parquet');
+INSERT INTO laion_5b_10m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet', NOSIGN);
 ```
 
-The loading of 100 million rows into the table will take a few minutes.
-
-Alternatively, individual SQL statements can be run to load a specific number of files / rows.
-
-```sql
-INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet');
-INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_2_of_10.parquet');
-⋮
-```
+The loading of 10 million rows into the table will take a few minutes.
 </Step>
 <Step title="Run a brute-force vector similarity search" id="run-a-brute-force-vector-similarity-search">
 
@@ -86,8 +78,8 @@ from the dataset itself as the search vector. For example:
 
 ```sql title="Query"
 SELECT id, url 
-FROM laion_5b_100m
-ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+FROM laion_5b_10m
+ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
 LIMIT 20
 
 The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
@@ -121,16 +113,16 @@ The vector in the row with id = 9999 is the embedding for an image of a Deli res
 ```
 
 Note down the query latency so that we can compare it with the query latency of ANN (using vector index).
-With 100 million rows, the above query without a vector index could take a few seconds/minutes to complete.
+With 10 million rows, the above query without a vector index could take a few seconds/minutes to complete.
 </Step>
 <Step title="Build a vector similarity index" id="build-vector-similarity-index">
 
-Run the following SQL to define and build a vector similarity index on the `vector` column of the `laion_5b_100m` table :
+Run the following SQL to define and build a vector similarity index on the `vector` column of the `laion_5b_10m` table:
 
 ```sql
-ALTER TABLE laion_5b_100m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
+ALTER TABLE laion_5b_10m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
 
-ALTER TABLE laion_5b_100m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+ALTER TABLE laion_5b_10m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
 ```
 
 The parameters and performance considerations for index creation and search are described in the [documentation](/reference/engines/table-engines/mergetree-family/annindexes).
@@ -138,7 +130,7 @@ The statement above uses values of 64 and 512 respectively for the HNSW hyperpar
 You need to carefully select optimal values for these parameters by evaluating index build time and search results quality
 corresponding to selected values.
 
-Building and saving the index could even take a few hours for the full l00 million dataset, depending on the number of CPU cores available and the storage bandwidth. 
+Building and saving the index can take significant time for the 10 million row subset, depending on the number of CPU cores available and the storage bandwidth.
 </Step>
 <Step title="Perform ANN search" id="perform-ann-search">
 
@@ -146,8 +138,8 @@ Once the vector similarity index has been built, vector search queries will auto
 
 ```sql title="Query"
 SELECT id, url 
-FROM laion_5b_100m
-ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+FROM laion_5b_10m
+ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
 LIMIT 20
 
 ```
@@ -185,7 +177,7 @@ with torch.no_grad():
     chclient = clickhouse_connect.get_client()
 
     params = {'v1': list(np_arr[0])}
-    result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
+    result = chclient.query("SELECT id, url FROM laion_5b_10m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
                             parameters=params)
 
     # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
