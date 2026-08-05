@@ -5644,7 +5644,10 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// then free to merge them, so an expression written by the invoker would decide about rows
     /// the view does not expose. Reading the view through `StorageView::read` instead builds a
     /// subplan whose filtering steps are marked with `IQueryPlanStep::isSecurityBarrier`.
-    if (StorageView::isSecurityBarrier(*storage_snapshot->metadata, scope.context))
+    /// A view that provably hides no rows keeps being inlined — there is nothing below it for a
+    /// merged predicate to observe.
+    if (StorageView::isSecurityBarrier(*storage_snapshot->metadata, scope.context)
+        && StorageView::canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, scope.context))
         return;
 
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);

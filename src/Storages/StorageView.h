@@ -67,6 +67,13 @@ public:
     /// below its own filtering. See `IQueryPlanStep::isSecurityBarrier`.
     static bool isSecurityBarrier(const StorageInMemoryMetadata & metadata, const ContextPtr & context);
 
+    /// Whether the view's inner query can drop or collapse rows at all. `false` is returned only
+    /// when the query provably preserves every row of a plainly readable source, so that a
+    /// projection-only view keeps the fully optimizable path even when `isSecurityBarrier` holds;
+    /// anything unproven counts as able to hide rows. The plan-level marking stays exact either
+    /// way — `readImpl` marks only the steps that actually drop rows.
+    static bool canHideRows(const ASTPtr & inner_query, const ContextPtr & context);
+
 protected:
     bool is_parameterized_view;
 };

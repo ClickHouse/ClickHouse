@@ -1,4 +1,5 @@
 #include <Access/DefinerDependencies.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -130,6 +131,25 @@ bool markSecurityBarriers(QueryPlan::Node * node)
         marked |= markSecurityBarriers(child);
 
     return marked;
+}
+
+/// An aggregation without `GROUP BY` collapses all rows into one, so for the purpose of
+/// `StorageView::canHideRows` it hides rows just like a filter does. Subqueries have their own
+/// scope: an aggregate inside one does not collapse the rows of the enclosing query.
+bool hasAggregatesOutsideSubqueries(const IAST & ast)
+{
+    if (const auto * function = ast.as<ASTFunction>())
+        if (!function->isWindowFunction() && AggregateUtils::isAggregateFunction(*function))
+            return true;
+
+    for (const auto & child : ast.children)
+    {
+        if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
+            continue;
+        if (hasAggregatesOutsideSubqueries(*child))
+            return true;
+    }
+    return false;
 }
 
 bool isNullableOrLcNullable(DataTypePtr type)
@@ -405,7 +425,14 @@ void StorageView::readImpl(
     /// skip unused shards. For a security barrier view it must stay outside: the analysis it feeds
     /// reaches the inner tables' index analysis, which then skips parts and granules by the values
     /// of the rows the view hides, and the `read_rows` of the query tells the invoker about them.
-    const ActionsDAG * post_filter = security_barrier ? nullptr : query_info.filter_actions_dag.get();
+    /// A view that provably hides no rows keeps it — there is nothing below it to observe.
+    ///
+    /// The decision looks at the view's definition and not at `current_inner_query`: with
+    /// `enable_analyzer = 0` the latter is the rewritten query, into which the outer predicate
+    /// has already been pushed, and the invoker's own predicate is not something to protect.
+    const bool hides_rows = security_barrier
+        && canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, context);
+    const ActionsDAG * post_filter = hides_rows ? nullptr : query_info.filter_actions_dag.get();
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
@@ -463,8 +490,11 @@ void StorageView::readImpl(
     /// Mark the steps that do the filtering so the optimizer keeps the outer query above them.
     ///
     /// `INVOKER` views need no barrier: their inner query runs with the invoker's own rights, so
-    /// there is nothing the invoker could learn that they are not already entitled to.
-    if (security_barrier)
+    /// there is nothing the invoker could learn that they are not already entitled to. Neither
+    /// does a view that provably hides no rows — and with `enable_analyzer = 0` its subplan may
+    /// contain the outer predicate already pushed into it, which must not be mistaken for the
+    /// view's own filtering.
+    if (hides_rows)
     {
         auto * root = query_plan.getRootNode();
         /// Marking the individual filtering steps lets an outer predicate still sink through the
@@ -643,6 +673,87 @@ bool StorageView::isSecurityBarrier(const StorageInMemoryMetadata & metadata, co
         return false;
 
     return context->getServerSettings()[ServerSetting::sql_security_views_are_optimization_barriers];
+}
+
+bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & context)
+{
+    if (!inner_query)
+        return true;
+
+    const auto * union_query = inner_query->as<ASTSelectWithUnionQuery>();
+    if (!union_query || !union_query->list_of_selects)
+        return true;
+
+    /// `UNION DISTINCT`, `INTERSECT` and `EXCEPT` drop rows. `UNION ALL` does not, but a view
+    /// made of several selects is not worth proving.
+    if (union_query->list_of_selects->children.size() != 1)
+        return true;
+
+    const auto * select = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+    if (!select)
+        return true;
+
+    if (select->distinct
+        || select->where() || select->prewhere() || select->having() || select->qualify()
+        || select->groupBy()
+        || select->limitLength() || select->limitOffset() || select->limitByLength() || select->limitByOffset())
+        return true;
+
+    /// `ARRAY JOIN` drops rows with an empty array (and `LEFT ARRAY JOIN` is not worth
+    /// distinguishing), an aggregation without `GROUP BY` collapses all rows into one.
+    if (select->arrayJoinExpressionList().first || hasAggregatesOutsideSubqueries(*select))
+        return true;
+
+    const auto & tables = select->tables();
+    if (!tables || tables->children.empty())
+        return false;   /// A `SELECT` without `FROM` reads nothing it could hide.
+
+    /// Any `JOIN` changes which rows are observable below the view.
+    if (tables->children.size() != 1)
+        return true;
+
+    const auto * element = tables->children.front()->as<ASTTablesInSelectQueryElement>();
+    if (!element || element->table_join || element->array_join || !element->table_expression)
+        return true;
+
+    const auto * table_expression = element->table_expression->as<ASTTableExpression>();
+    if (!table_expression)
+        return true;
+
+    /// `SAMPLE` drops rows, and `FINAL` hides the overwritten versions of a row.
+    if (table_expression->sample_size || table_expression->final)
+        return true;
+
+    if (table_expression->subquery)
+    {
+        const auto & subquery_children = table_expression->subquery->children;
+        return subquery_children.empty() || canHideRows(subquery_children.front(), context);
+    }
+
+    /// A table function may wrap another view (`view`, `viewIfPermitted`, `merge`, ...).
+    if (!table_expression->database_and_table_name)
+        return true;
+
+    const auto * identifier = table_expression->database_and_table_name->as<ASTTableIdentifier>();
+    if (!identifier)
+        return true;
+
+    /// `CREATE VIEW` qualifies the table names of the inner query, so an unqualified name is an
+    /// oddity not worth resolving against the right current database here.
+    auto table_id = identifier->getTableId();
+    if (table_id.database_name.empty())
+        return true;
+
+    auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    if (!table)
+        return true;
+
+    /// A view can hide rows of its own, and these engines read other tables, which may be views.
+    const auto & engine = table->getName();
+    if (table->isView() || table->isRemote() || engine == "Merge" || engine == "Buffer")
+        return true;
+
+    return false;
 }
 
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
