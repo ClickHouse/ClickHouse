@@ -25,12 +25,12 @@ FROM t_join_const_prune AS t
 JOIN bounds ON t.d >= bounds.lo AND t.d <= bounds.hi
 SETTINGS max_rows_to_read = 150;
 
--- SELECT 'bounds in WHERE over a CROSS JOIN';
--- WITH bounds AS (SELECT toDate('2025-06-01') AS lo, toDate('2025-06-10') AS hi)
--- SELECT count(), sum(v)
--- FROM t_join_const_prune AS t, bounds
--- WHERE t.d >= bounds.lo AND t.d <= bounds.hi
--- SETTINGS max_rows_to_read = 50;
+SELECT 'bounds in WHERE over a CROSS JOIN';
+WITH bounds AS (SELECT toDate('2025-06-01') AS lo, toDate('2025-06-10') AS hi)
+SELECT count(), sum(v)
+FROM t_join_const_prune AS t, bounds
+WHERE t.d >= bounds.lo AND t.d <= bounds.hi
+SETTINGS max_rows_to_read = 50;
 
 SELECT 'bounds as plain literals';
 SELECT count(), sum(v)
@@ -84,12 +84,12 @@ SELECT count(), sum(v)
 FROM t_join_const_prune AS t
 JOIN bounds ON t.d = bounds.dd;
 
--- SELECT 'bounds shared by a chain of joins';
--- WITH bounds AS (SELECT toDate('2025-06-01') AS lo, toDate('2025-06-10') AS hi)
--- SELECT count(), sum(t1.v)
--- FROM t_join_const_prune AS t1
--- JOIN t_join_const_prune AS t2 ON t1.d = t2.d, bounds
--- WHERE t1.d >= bounds.lo AND t1.d <= bounds.hi
--- SETTINGS max_rows_to_read = 100;
+SELECT 'bounds shared by a chain of joins';
+WITH bounds AS (SELECT toDate('2025-06-01') AS lo, toDate('2025-06-10') AS hi)
+SELECT count(), sum(t1.v)
+FROM t_join_const_prune AS t1
+JOIN t_join_const_prune AS t2 ON t1.d = t2.d, bounds
+WHERE t1.d >= bounds.lo AND t1.d <= bounds.hi
+SETTINGS max_rows_to_read = 100;
 
 DROP TABLE t_join_const_prune;
