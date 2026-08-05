@@ -79,7 +79,11 @@ UInt64 BackupWriterDisk::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBuffer> BackupWriterDisk::readFile(const String & file_name, size_t expected_file_size)
 {
-    return disk->readFile(root_path / file_name, read_settings.adjustBufferSize(expected_file_size));
+    /// This reads back a file this process just wrote, so it must observe the filesystem
+    /// rather than a read cache that may still hold the previous contents at the same path.
+    auto settings = read_settings.adjustBufferSize(expected_file_size);
+    settings.disableCaches();
+    return disk->readFile(root_path / file_name, settings);
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_name)
