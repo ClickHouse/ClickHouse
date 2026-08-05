@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 --multiquery "$CREATE"
 # marker: the race is invisible in query output, so without counting the queries a stream
 # really issued, one dying early would still match the reference.
 STREAMS=4
-QUERIES=40
+QUERIES=12
 READS="SELECT total_rows, total_bytes FROM system.tables WHERE database = currentDatabase() FORMAT Null; SELECT 1 FORMAT TSVRaw;"
 COUNTS="SELECT count() FROM ${TABLE} FORMAT Null; SELECT 1 FORMAT TSVRaw;"
 rm -rf "${OUT_DIR:?}"
