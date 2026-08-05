@@ -41,14 +41,28 @@ public:
     bool hasIcebergStringInfo() const { return has_iceberg_string_info; }
     bool isIcebergStringPath(const String & path) const { return iceberg_string_paths.contains(path); }
 
+    /// Paths whose Iceberg field is `optional` (required=false). A complex container
+    /// (list/map/struct) is never wrapped in Nullable in the ClickHouse type, so its optionality
+    /// is not recoverable from the type; a writer emitting Iceberg `required` (ORC iceberg.required)
+    /// consults this. hasIcebergRequiredInfo() lets a field-id-only mapper fall back to the default.
+    void setIcebergOptionalPaths(std::unordered_set<String> && iceberg_optional_paths_)
+    {
+        iceberg_optional_paths = std::move(iceberg_optional_paths_);
+        has_iceberg_required_info = true;
+    }
+    bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
+    bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
-    std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding);
+    std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding) const;
 
 private:
     std::unordered_map<String, Int64> storage_encoding;
     std::unordered_map<Int64, String> field_id_to_clickhouse_name;
     std::unordered_set<String> iceberg_string_paths;
     bool has_iceberg_string_info = false;
+    std::unordered_set<String> iceberg_optional_paths;
+    bool has_iceberg_required_info = false;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
@@ -85,6 +99,14 @@ struct FormatFilterInfo
     Block additional_columns;
 
     ColumnMapperPtr column_mapper;
+
+    /// Only set when `column_mapper` above was swapped for a per-file mapper (data lake schema
+    /// evolution, e.g. Iceberg): the CURRENT/query-side mapper, i.e. the one `column_mapper` held
+    /// before the swap. Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
+    /// extracted from it) reference columns by their current/query-side name, not the name they had
+    /// in the schema this particular file was written under, so resolving a filter's column name back
+    /// to a `field_id` requires this mapper, not the per-file one.
+    ColumnMapperPtr current_schema_column_mapper;
 
     std::optional<size_t> condition_hash;
 private:
