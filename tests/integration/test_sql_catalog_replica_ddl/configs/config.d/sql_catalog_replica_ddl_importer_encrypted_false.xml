@@ -1,0 +1,10 @@
+<clickhouse>
+    <cluster_metadata>
+        <path>/clickhouse/test_sql_catalog_replica_ddl</path>
+        <encrypted>false</encrypted>
+        <replica_group>importer</replica_group>
+        <imports>
+            <replica_group>default</replica_group>
+        </imports>
+    </cluster_metadata>
+</clickhouse>

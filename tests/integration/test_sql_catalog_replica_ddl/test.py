@@ -1,6 +1,10 @@
 """
 SQL cluster catalog integration tests (`CREATE` / `ALTER` / `DROP` for ENDPOINT, SHARD, CLUSTER).
 
+Also covers `ClusterMetadataImporter` (`<cluster_metadata><imports>`): a node in another
+replica group can observe SQL `CLUSTER` definitions published by the source group as read-only
+entries in `system.clusters`.
+
 Cluster-catalog metadata requires Keeper-backed `cluster_metadata` in the server config.
 Parametrized over `<encrypted>false</encrypted>` and `<encrypted>true</encrypted>`.
 """
@@ -49,6 +53,17 @@ ENCRYPTED_MAIN_CONFIGS = {
     "false": "configs/config.d/sql_catalog_replica_ddl_encrypted_false.xml",
     "true": "configs/config.d/sql_catalog_replica_ddl_encrypted_true.xml",
 }
+
+# Same Keeper `path` / encryption as `ENCRYPTED_MAIN_CONFIGS`, but `replica_group=importer` with
+# `<imports><replica_group>default</replica_group></imports>` for ClusterMetadataImporter coverage.
+ENCRYPTED_IMPORTER_CONFIGS = {
+    "false": "configs/config.d/sql_catalog_replica_ddl_importer_encrypted_false.xml",
+    "true": "configs/config.d/sql_catalog_replica_ddl_importer_encrypted_true.xml",
+}
+
+# Importer polls `snapshot_digest` every 5s (`ClusterMetadataImporter::REFRESH_INTERVAL_MS`).
+IMPORTER_RETRY_COUNT = 30
+IMPORTER_RETRY_SLEEP_TIME = 1.0
 
 
 def assert_query_error_contains(node, sql, *needles):
@@ -183,6 +198,53 @@ def start_two_node_cluster(test_file, encrypted, cluster_name):
         cluster.shutdown()
         raise
     return cluster, ch1, ch2
+
+
+def start_import_cluster(test_file, encrypted, cluster_name):
+    """
+    One source node in replica group `default` plus one importer node that read-only imports it.
+    """
+    source_configs = [
+        "configs/config.d/sql_catalog_replica_ddl_common.xml",
+        ENCRYPTED_MAIN_CONFIGS[encrypted],
+    ]
+    importer_configs = [
+        "configs/config.d/sql_catalog_replica_ddl_common.xml",
+        ENCRYPTED_IMPORTER_CONFIGS[encrypted],
+    ]
+    cluster = ClickHouseCluster(test_file, name=cluster_name)
+    ch_src = cluster.add_instance("ch_src", main_configs=source_configs, with_zookeeper=True)
+    ch_imp = cluster.add_instance("ch_imp", main_configs=importer_configs, with_zookeeper=True)
+    try:
+        cluster.start()
+    except Exception:
+        cluster.shutdown()
+        raise
+    return cluster, ch_src, ch_imp
+
+
+def assert_imported_cluster(node, cluster_name, host, port, **kwargs):
+    """Wait until an imported (or local) SQL cluster is visible via `system.clusters`."""
+    kwargs.setdefault("retry_count", IMPORTER_RETRY_COUNT)
+    kwargs.setdefault("sleep_time", IMPORTER_RETRY_SLEEP_TIME)
+    assert_eq_with_retry(
+        node,
+        f"SELECT host_name, port FROM system.clusters "
+        f"WHERE cluster = '{cluster_name}' ORDER BY shard_num, replica_num FORMAT TabSeparated",
+        f"{host}\t{port}\n",
+        **kwargs,
+    )
+
+
+def assert_imported_cluster_absent(node, cluster_name, **kwargs):
+    kwargs.setdefault("retry_count", IMPORTER_RETRY_COUNT)
+    kwargs.setdefault("sleep_time", IMPORTER_RETRY_SLEEP_TIME)
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.clusters WHERE cluster = '{cluster_name}' FORMAT TabSeparated",
+        "0\n",
+        **kwargs,
+    )
 
 
 @pytest.mark.parametrize("encrypted", [pytest.param(v, id=f"encrypted_{v}") for v in ENCRYPTED])
@@ -886,4 +948,135 @@ def test_sql_catalog_property_validation_errors(encrypted):
         )
         for suffix in ("str", "big", "neg", "flt", "wide", "prio"):
             drop_endpoint_safely(ch1, f"{p}_ep_{suffix}")
+        cluster.shutdown()
+
+
+@pytest.mark.parametrize("encrypted", [pytest.param(v, id=f"encrypted_{v}") for v in ENCRYPTED])
+def test_cluster_metadata_importer(encrypted):
+    """
+    `ClusterMetadataImporter` refresh path:
+
+    - Source replica group `default` owns ENDPOINT / SHARD / CLUSTER DDL.
+    - Importer replica group imports `default` read-only and materializes imported clusters into
+      `ClusterFactory` (`system.clusters`).
+    - Imported objects do not appear in the importer's local catalog tables / `SHOW CREATE`.
+    - A local cluster of the same name shadows the imported one.
+    """
+    p = f"imp_{encrypted}"
+    ep = f"{p}_ep"
+    shard = f"{p}_shard"
+    cluster_name = f"{p}_cluster"
+    local_ep = f"{p}_local_ep"
+    local_shard = f"{p}_local_shard"
+
+    cluster, ch_src, ch_imp = start_import_cluster(__file__, encrypted, f"scrd_imp_{encrypted}")
+
+    try:
+        drop_catalog_topology_safely(
+            ch_src,
+            clusters=(cluster_name,),
+            shards=(shard,),
+            endpoints=(ep,),
+        )
+        drop_catalog_topology_safely(
+            ch_imp,
+            clusters=(cluster_name,),
+            shards=(local_shard,),
+            endpoints=(local_ep,),
+        )
+
+        ch_src.query(
+            f"CREATE ENDPOINT {ep} PROPERTIES (host = '10.1.2.3', port = 9440, secure = 0)"
+        )
+        ch_src.query(f"CREATE SHARD {shard} REPLICA {ep}")
+        ch_src.query(f"CREATE CLUSTER {cluster_name} ({shard})")
+
+        assert_eq_with_retry(
+            ch_src,
+            f"SELECT name, host, port FROM system.endpoints WHERE name = '{ep}' FORMAT TabSeparated",
+            f"{ep}\t10.1.2.3\t9440\n",
+        )
+        assert_eq_with_retry(
+            ch_src,
+            f"SHOW CREATE CLUSTER {cluster_name}",
+            f"CREATE CLUSTER {cluster_name} ({shard}) "
+            f"PROPERTIES (allow_distributed_ddl_queries = true)\n",
+        )
+
+        # Importer sees the published cluster via ClusterFactory, not via local catalog tables.
+        assert_imported_cluster(ch_imp, cluster_name, "10.1.2.3", 9440)
+        assert (
+            ch_imp.query(
+                f"SELECT count() FROM system.endpoints WHERE name = '{ep}' FORMAT TabSeparated"
+            ).strip()
+            == "0"
+        )
+        assert (
+            ch_imp.query(
+                f"SELECT count() FROM system.shards WHERE name = '{shard}' FORMAT TabSeparated"
+            ).strip()
+            == "0"
+        )
+        assert_query_error_contains(
+            ch_imp,
+            f"SHOW CREATE CLUSTER {cluster_name}",
+            "CLUSTER_DEFINITION_DOESNT_EXIST",
+            "does not exist",
+        )
+        assert_query_error_contains(
+            ch_imp,
+            f"DROP CLUSTER {cluster_name}",
+            "CLUSTER_DEFINITION_DOESNT_EXIST",
+            "does not exist",
+        )
+
+        # Digest change on the source (endpoint ALTER) must refresh the imported materialization.
+        ch_src.query(f"ALTER ENDPOINT {ep} MODIFY PROPERTIES (port = 9441)")
+        assert_imported_cluster(ch_imp, cluster_name, "10.1.2.3", 9441)
+
+        ch_src.query(f"DROP CLUSTER {cluster_name}")
+        ch_src.query(f"DROP SHARD {shard}")
+        ch_src.query(f"DROP ENDPOINT {ep}")
+        assert_imported_cluster_absent(ch_imp, cluster_name)
+
+        # Recreate on the source, then shadow with a local cluster of the same name on the importer.
+        ch_src.query(
+            f"CREATE ENDPOINT {ep} PROPERTIES (host = '10.1.2.3', port = 9440, secure = 0)"
+        )
+        ch_src.query(f"CREATE SHARD {shard} REPLICA {ep}")
+        ch_src.query(f"CREATE CLUSTER {cluster_name} ({shard})")
+        assert_imported_cluster(ch_imp, cluster_name, "10.1.2.3", 9440)
+
+        ch_imp.query(
+            f"CREATE ENDPOINT {local_ep} PROPERTIES (host = '10.9.9.9', port = 9550, secure = 0)"
+        )
+        ch_imp.query(f"CREATE SHARD {local_shard} REPLICA {local_ep}")
+        ch_imp.query(f"CREATE CLUSTER {cluster_name} ({local_shard})")
+        assert_imported_cluster(ch_imp, cluster_name, "10.9.9.9", 9550)
+        assert_eq_with_retry(
+            ch_imp,
+            f"SHOW CREATE CLUSTER {cluster_name}",
+            f"CREATE CLUSTER {cluster_name} ({local_shard}) "
+            f"PROPERTIES (allow_distributed_ddl_queries = true)\n",
+        )
+        # Source still owns its own definition; shadowing is importer-local only.
+        assert_eq_with_retry(
+            ch_src,
+            f"SHOW CREATE CLUSTER {cluster_name}",
+            f"CREATE CLUSTER {cluster_name} ({shard}) "
+            f"PROPERTIES (allow_distributed_ddl_queries = true)\n",
+        )
+    finally:
+        drop_catalog_topology_safely(
+            ch_imp,
+            clusters=(cluster_name,),
+            shards=(local_shard,),
+            endpoints=(local_ep,),
+        )
+        drop_catalog_topology_safely(
+            ch_src,
+            clusters=(cluster_name,),
+            shards=(shard,),
+            endpoints=(ep,),
+        )
         cluster.shutdown()
