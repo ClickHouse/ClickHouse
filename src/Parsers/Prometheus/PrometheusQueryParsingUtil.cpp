@@ -765,6 +765,13 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
         return false;
     }
 
+    if (res_range <= 0)
+    {
+        setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
+        setErrorPos(error_pos, start_pos);
+        return false;
+    }
+
     return true;
 }
 
@@ -837,6 +844,13 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         return false;
     }
 
+    if (res_range <= 0)
+    {
+        setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
+        setErrorPos(error_pos, range_start_pos);
+        return false;
+    }
+
     res_step.reset();
 
     if (step_start_pos != step_end_pos)
@@ -845,6 +859,13 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         {
             if (error_pos)
                 *error_pos += step_start_pos;
+            return false;
+        }
+
+        if (*res_step <= 0)
+        {
+            setErrorMessage(error_message, "Cannot parse time range {}: Expected a step greater than zero", quoteString(input));
+            setErrorPos(error_pos, step_start_pos);
             return false;
         }
     }
