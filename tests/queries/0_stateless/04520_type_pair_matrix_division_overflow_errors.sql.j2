@@ -93,5 +93,14 @@ SELECT materialize(toFloat32(1)) * materialize(toInt128(1)); -- { serverError IL
 SELECT intDiv(materialize(toUInt256(1)), materialize(toFloat64(1)));
 SELECT modulo(materialize(toInt128(1)), materialize(toFloat32(1)));
 
-SELECT '-- isDistinctFrom does not support Decimal vs wide integer';
-SELECT isDistinctFrom(materialize(toDecimal32('1.00', 2)), materialize(toUInt128(1))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Decimal vs a wide integer has no least common supertype, but the values are still comparable
+-- by value, exactly like the regular `=` / `!=` operators, so the null-safe comparisons compare by
+-- value in every constness shape instead of throwing. `1.00` equals `1`, so isDistinctFrom is 0.
+SELECT '-- isDistinctFrom of Decimal vs wide integer compares by value, like !=';
+SELECT
+    isDistinctFrom(materialize(toDecimal32('1.00', 2)), materialize(toUInt128(1))),
+    isDistinctFrom(toDecimal32('1.00', 2), materialize(toUInt128(1))),
+    isDistinctFrom(materialize(toDecimal32('1.00', 2)), toUInt128(1)),
+    isDistinctFrom(identity(toDecimal32('1.00', 2)), identity(toUInt128(1))),
+    isDistinctFrom(materialize(toDecimal32('2.00', 2)), materialize(toUInt128(1))),
+    isNotDistinctFrom(materialize(toDecimal32('1.00', 2)), materialize(toUInt128(1)));
