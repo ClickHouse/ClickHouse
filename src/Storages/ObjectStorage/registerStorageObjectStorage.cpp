@@ -756,11 +756,20 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
         StorageObjectStorageConfigurationPtr configuration;
-#if USE_GOOGLE_CLOUD
         if (name == GCSDefinition::storage_engine_name && args.getLocalContext()->getSettingsRef()[Setting::use_native_gcs])
+        {
+#if USE_GOOGLE_CLOUD
             configuration = std::make_shared<StorageGCSConfiguration>();
-        else
+#else
+            /// The setting must fail closed on builds without the Google Cloud SDK rather than
+            /// silently falling through to the S3-compatibility path.
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The setting `use_native_gcs` is enabled, but ClickHouse was built without Google Cloud support. "
+                "Unset `use_native_gcs` to use the S3-compatibility path");
 #endif
+        }
+        else
             configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },

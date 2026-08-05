@@ -48,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace DataLakeStorageSetting
@@ -315,17 +316,28 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     return storage;
 }
 
-#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+#if USE_AWS_S3
 /// `gcs()` table function. Picks the backend per query: the native GCS configuration when
 /// `use_native_gcs` is set, otherwise the S3-compatibility configuration (the default, unchanged).
 /// The argument grammar is identical to `s3()` in both cases.
+/// On builds without the Google Cloud SDK the setting must fail closed rather than silently
+/// falling through to the S3-compatibility path.
 class TableFunctionGCS : public TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>
 {
 public:
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override
     {
         if (context->getSettingsRef()[Setting::use_native_gcs])
+        {
+#if USE_GOOGLE_CLOUD
             configuration = std::make_shared<StorageGCSConfiguration>();
+#else
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The setting `use_native_gcs` is enabled, but ClickHouse was built without Google Cloud support. "
+                "Unset `use_native_gcs` to use the S3-compatibility path");
+#endif
+        }
         else
             configuration = std::make_shared<StorageS3Configuration>();
 
@@ -1024,17 +1036,10 @@ As a result, the data is written into three files in different buckets: `my_buck
 - [S3 table function](/reference/functions/table-functions/s3)
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
 )DOCS_MD";
-#if USE_GOOGLE_CLOUD
     factory.registerFunction<TableFunctionGCS>(
         {.description = gcs_description, .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = false}
     );
-#else
-    factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>>(
-        {.description = gcs_description, .category = FunctionDocumentation::Category::TableFunction},
-        {.allow_readonly = false}
-    );
-#endif
 
     factory.registerFunction<TableFunctionObjectStorage<COSNDefinition, StorageS3Configuration>>(
         {
