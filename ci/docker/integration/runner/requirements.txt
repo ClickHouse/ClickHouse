@@ -70,6 +70,7 @@ pycparser==2.22
 pycryptodome==3.23.0
 pydantic==2.12.5
 pydantic_core==2.41.5
+PyHDFS==0.3.1
 pyasn1-modules==0.4.2
 pyiceberg==0.11.1
 pyiceberg[glue]==0.11.1
