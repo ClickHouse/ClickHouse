@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -36,12 +37,14 @@ public:
     struct Step
     {
         FunctionBasePtr function;
-        std::vector<size_t> arguments;
+        VectorWithMemoryTracking<size_t> arguments;
         size_t result;
     };
 
-    FunctionKQLBinNumeric(std::vector<Slot> slots_, std::vector<Step> steps_, DataTypes argument_types_)
-        : slots(std::move(slots_)), steps(std::move(steps_)), argument_types(std::move(argument_types_))
+    FunctionKQLBinNumeric(VectorWithMemoryTracking<Slot> slots_, VectorWithMemoryTracking<Step> steps_, DataTypes argument_types_)
+        : slots(std::move(slots_))
+        , steps(std::move(steps_))
+        , argument_types(std::move(argument_types_))
     {
     }
 
@@ -54,16 +57,17 @@ public:
         return steps.front().function->isSuitableForShortCircuitArgumentsExecution(arguments);
     }
 
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
-    {
-        return std::make_unique<Executable>(slots, steps);
-    }
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override { return std::make_unique<Executable>(slots, steps); }
 
 private:
     class Executable final : public IExecutableFunction
     {
     public:
-        Executable(std::vector<Slot> slots_, std::vector<Step> steps_) : slots(std::move(slots_)), steps(std::move(steps_)) { }
+        Executable(VectorWithMemoryTracking<Slot> slots_, VectorWithMemoryTracking<Step> steps_)
+            : slots(std::move(slots_))
+            , steps(std::move(steps_))
+        {
+        }
 
         String getName() const override { return "kqlBin"; }
 
@@ -76,7 +80,7 @@ private:
         ColumnPtr
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
-            std::vector<ColumnWithTypeAndName> columns(slots.size());
+            ColumnsWithTypeAndName columns(slots.size());
             for (size_t i = 0; i < slots.size(); ++i)
             {
                 if (i < arguments.size())
@@ -100,12 +104,12 @@ private:
         }
 
     private:
-        std::vector<Slot> slots;
-        std::vector<Step> steps;
+        VectorWithMemoryTracking<Slot> slots;
+        VectorWithMemoryTracking<Step> steps;
     };
 
-    std::vector<Slot> slots;
-    std::vector<Step> steps;
+    VectorWithMemoryTracking<Slot> slots;
+    VectorWithMemoryTracking<Step> steps;
     DataTypes argument_types;
 };
 
@@ -125,7 +129,10 @@ class FunctionKQLBinOverloadResolver final : public IFunctionOverloadResolver, W
 public:
     static constexpr auto name = "kqlBin";
 
-    explicit FunctionKQLBinOverloadResolver(ContextPtr context_) : WithContext(context_) { }
+    explicit FunctionKQLBinOverloadResolver(ContextPtr context_)
+        : WithContext(context_)
+    {
+    }
 
     static FunctionOverloadResolverPtr create(ContextPtr context_)
     {
@@ -136,15 +143,9 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
-    {
-        return delegate(arguments);
-    }
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override { return delegate(arguments); }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        return delegate(arguments)->getResultType();
-    }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return delegate(arguments)->getResultType(); }
 
 private:
     FunctionBasePtr delegate(const ColumnsWithTypeAndName & arguments) const
@@ -190,10 +191,10 @@ private:
 
         /// Numbers: `floor(value / roundTo) * roundTo`. Integers divide exactly, so they skip
         /// the detour through floating point.
-        std::vector<FunctionKQLBinNumeric::Slot> slots{{arguments[0].type, {}}, {arguments[1].type, {}}};
-        std::vector<FunctionKQLBinNumeric::Step> steps;
+        VectorWithMemoryTracking<FunctionKQLBinNumeric::Slot> slots{{arguments[0].type, {}}, {arguments[1].type, {}}};
+        VectorWithMemoryTracking<FunctionKQLBinNumeric::Step> steps;
 
-        const auto add_step = [&](const String & function_name, std::vector<size_t> step_arguments)
+        const auto add_step = [&](const String & function_name, VectorWithMemoryTracking<size_t> step_arguments)
         {
             ColumnsWithTypeAndName built_over;
             for (size_t argument : step_arguments)
