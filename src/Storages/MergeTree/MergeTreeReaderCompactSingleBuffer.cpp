@@ -35,7 +35,7 @@ bool isQueryCancellation(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
             || e.code() == ErrorCodes::TIMEOUT_EXCEEDED;
     }
-    catch (...)
+    catch (...) /// Ok: only DB::Exception carries an error code, so nothing else can be a cancellation.
     {
         return false;
     }
