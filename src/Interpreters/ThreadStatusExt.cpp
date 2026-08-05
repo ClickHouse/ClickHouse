@@ -131,8 +131,8 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for method createForMaterializedView
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
+// c-tor for methods createForMaterializedView and createForWorkNotChargedToTheQuery
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent, bool charge_memory_to_parent)
     : master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
@@ -140,7 +140,10 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
-    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , memory_tracker(
+          charge_memory_to_parent ? &parent->memory_tracker : &total_memory_tracker,
+          VariableContext::Process,
+          /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
 }
@@ -260,6 +263,11 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     }
     res_group->memory_tracker.setDescription("MaterializeView");
     return res_group;
+}
+
+ThreadGroupPtr ThreadGroup::createForWorkNotChargedToTheQuery(ThreadGroupPtr parent)
+{
+    return std::make_shared<ThreadGroup>(std::move(parent), /*charge_memory_to_parent=*/ false);
 }
 
 ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)

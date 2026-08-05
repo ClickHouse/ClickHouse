@@ -75,7 +75,7 @@ class ThreadGroup
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
-    explicit ThreadGroup(ThreadGroupPtr parent);
+    explicit ThreadGroup(ThreadGroupPtr parent, bool charge_memory_to_parent = true);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
@@ -133,6 +133,13 @@ public:
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
+
+    /// For server-side work that a query only triggers, such as loading a dictionary: profile events still roll
+    /// up to the parent group, but memory is accounted globally instead of on the query's user, because the work
+    /// outlives the query and is released by threads that cannot uncharge it. Unlike
+    /// `MemoryTrackerBlockerInThread`, this also covers the threads the work spawns, since they inherit the
+    /// group rather than the thread-local blocker.
+    static ThreadGroupPtr createForWorkNotChargedToTheQuery(ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
