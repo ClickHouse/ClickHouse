@@ -25,7 +25,10 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
-        MergeTreeReaderSettings settings_);
+        MergeTreeReaderSettings settings_,
+        /// Only readers whose caller tolerates a cancellation exception may pass true: a throw
+        /// from the marks read is reported as a corrupt part by readers that validate or load parts.
+        bool interruptible_marks_read_);
     virtual ~MergeTreeIndexReader();
 
     void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges);
@@ -44,6 +47,7 @@ private:
     UncompressedCache * uncompressed_cache;
     VectorSimilarityIndexCache * vector_similarity_index_cache;
     MergeTreeReaderSettings settings;
+    const bool interruptible_marks_read;
 
     StreamMap streams;
     std::vector<std::unique_ptr<MergeTreeReaderStream>> stream_holders;

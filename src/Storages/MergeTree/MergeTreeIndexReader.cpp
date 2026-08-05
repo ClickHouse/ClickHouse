@@ -20,15 +20,15 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const MarkRanges & all_mark_ranges,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    MergeTreeReaderSettings settings)
+    MergeTreeReaderSettings settings,
+    bool interruptible_marks_read)
 {
     auto context = part->storage.getContext();
     auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
-    /// The cancellation exception is reported as a broken part by readers that validate or load
-    /// parts, so the opt-in stays on this copy and never reaches the index data stream below.
+    /// Kept on this copy so the opt-in never reaches the index data stream below.
     auto marks_read_settings = settings.read_settings;
-    marks_read_settings.remote_fs_settings.interruptible_reads = true;
+    marks_read_settings.remote_fs_settings.interruptible_reads = interruptible_marks_read;
 
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
         std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>()),
@@ -68,7 +68,8 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     MarkCache * mark_cache_,
     UncompressedCache * uncompressed_cache_,
     VectorSimilarityIndexCache * vector_similarity_index_cache_,
-    MergeTreeReaderSettings settings_)
+    MergeTreeReaderSettings settings_,
+    bool interruptible_marks_read_)
     : index(index_)
     , part(std::move(part_))
     , marks_count(marks_count_)
@@ -77,6 +78,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     , uncompressed_cache(uncompressed_cache_)
     , vector_similarity_index_cache(vector_similarity_index_cache_)
     , settings(std::move(settings_))
+    , interruptible_marks_read(interruptible_marks_read_)
 {
 }
 
@@ -109,7 +111,8 @@ void MergeTreeIndexReader::initStreamIfNeeded()
             all_mark_ranges,
             mark_cache,
             uncompressed_cache,
-            patchSettings(settings, substream.type));
+            patchSettings(settings, substream.type),
+            interruptible_marks_read);
 
         stream->adjustRightMark(last_mark);
         stream->seekToStart();
