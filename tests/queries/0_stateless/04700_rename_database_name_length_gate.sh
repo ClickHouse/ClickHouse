@@ -70,7 +70,7 @@ if [ "$probe" != "0" ]; then
     exit 0
 fi
 
-# 214 is the first escaped length whose prefix alone leaves a table-name limit of 0.
+# At 214 the prefix alone leaves a table-name limit of 0 (213 is the first such length).
 # 211 is the largest one that still admits a 2-character table name.
 # 200 leaves a limit of 13, which separates a 2-character from a 20-character table name.
 long_a=$(mkdb a 214); long_b=$(mkdb b 214); long_c=$(mkdb c 214); long_d=$(mkdb d 214)
