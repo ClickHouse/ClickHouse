@@ -59,6 +59,10 @@ TEST(StackTraceCollapseNames, KeepsOrdinaryStdFunctionMembers)
               "std::function<void ()>::target_type() const");
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::operator bool() const"),
               "std::function<void ()>::operator bool() const");
+    /// Unlike the copy and move assignment, assigning `nullptr` does not copy a captured callable around:
+    /// it just resets the object, and its name is short and says exactly that, so it stays visible.
+    EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::operator=(std::nullptr_t)"),
+              "std::function<void ()>::operator=(std::nullptr_t)");
 }
 
 /// The file of a frame is the source line the faulting instruction maps to, and an ordinary function can

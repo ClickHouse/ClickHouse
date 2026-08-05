@@ -625,10 +625,12 @@ constexpr std::string_view std_function_plumbing[] = {
 /// own and is a normal frame, so it keeps its name. The constructor is spelled both as `function(` (the
 /// copy and move constructors) and as `function<` (the constructor taking a callable, which is a function
 /// template, so its own template arguments follow the name: `function<MyCallable, void>(MyCallable&&)`);
-/// the assignment operator likewise as `operator=(` and as `operator=<` (the callable-taking overload:
+/// the assignment operator likewise as `operator=(std::function<` (the copy and move assignment - spelled
+/// with the argument so that `operator=(std::nullptr_t)`, which merely resets the object and has a short,
+/// informative name, is not caught) and as `operator=<` (the callable-taking overload:
 /// `operator=<MyCallable, void>(MyCallable&&)`).
 constexpr std::string_view std_function_noisy_members[]
-    = {"operator()", "function(", "function<", "~function(", "operator=(", "operator=<"};
+    = {"operator()", "function(", "function<", "~function(", "operator=(std::function<", "operator=<"};
 
 static bool isStdFunctionPlumbing(const String & symbol_name)
 {
