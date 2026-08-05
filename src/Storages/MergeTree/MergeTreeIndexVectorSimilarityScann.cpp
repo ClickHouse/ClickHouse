@@ -297,9 +297,9 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
 {
     size_t total = 0;
 
-    /// Reorder vectors. Before build/restore they live in the granule members; afterwards they
-    /// are moved into the searcher's reorder helper. The members are empty in the latter case,
-    /// so fall back to the size implied by the precision when the searcher holds them.
+    /// Reorder vectors. Before build/restore they live in the granule members. Afterwards they
+    /// live in the searcher's reorder helper. Fall back to the size implied by the precision
+    /// when only the searcher holds them.
     const size_t reorder_member_bytes =
         vectors.size() * sizeof(float)
         + bf16_data.size() * sizeof(int16_t)
@@ -385,9 +385,9 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
     }
     else
     {
-        /// bf16/i8: the quantized reorder vectors. Use the granule members when populated
-        /// (freshly built), otherwise read them back from the searcher's reordering helper
-        /// (after buildIndexFromSerialized moved the members into ScaNN).
+        /// bf16/i8: the quantized reorder vectors. Use the granule members when populated;
+        /// otherwise read them from the searcher's reordering helper. Freshly built quantized
+        /// indexes deliberately keep no granule copy.
         research_scann::SingleMachineFactoryOptions extracted;
         const bool from_members = (precision_tag == 1) ? !bf16_data.empty() : !int8_data.empty();
         if (!from_members)
@@ -774,38 +774,29 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
             datapoints_by_token.emplace_back(token.begin(), token.end());
     }
 
-    /// For non-f32 precision, persist the quantized exact-reordering vectors that ScaNN derived
-    /// from the float dataset. The index is built entirely in float (AH codebook and IVF centroids
-    /// train on the float dataset); only the reordering representation is quantized.
+    /// Freshly built quantized indexes are serialized directly from the searcher's reordering
+    /// helper, avoiding a second full copy in the granule. The restored path still reads the
+    /// persisted data into the granule and moves it into ScaNN in buildIndexFromSerialized.
     if (params.precision == "bf16")
     {
         if (!opts.bfloat16_dataset || opts.bfloat16_dataset->empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN bf16 reorder dataset was not produced");
-        const auto span = opts.bfloat16_dataset->data();
-        bf16_data.assign(span.data(), span.data() + span.size());
     }
     else if (params.precision == "i8")
     {
         const auto & fp = opts.pre_quantized_fixed_point;
         if (!fp || !fp->fixed_point_dataset || fp->fixed_point_dataset->empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN i8 reorder dataset was not produced");
-        const auto span = fp->fixed_point_dataset->data();
-        int8_data.assign(span.data(), span.data() + span.size());
-        if (fp->multiplier_by_dimension)
-            int8_multipliers.assign(fp->multiplier_by_dimension->begin(), fp->multiplier_by_dimension->end());
-        if (fp->squared_l2_norm_by_datapoint)
-            int8_norms.assign(fp->squared_l2_norm_by_datapoint->begin(), fp->squared_l2_norm_by_datapoint->end());
     }
 
     searcher_owned_memory_bytes = estimateTreeAHSearcherMemoryBytes(datapoints_by_token, hashed_dim);
-    if (params.precision == "bf16")
+    if (params.precision == "i8")
     {
-        searcher_owned_memory_bytes += bf16_data.size() * sizeof(int16_t);
-    }
-    else if (params.precision == "i8")
-    {
-        searcher_owned_memory_bytes += int8_data.size() * sizeof(int8_t)
-            + (int8_multipliers.size() + int8_norms.size()) * sizeof(float);
+        const auto & fp = opts.pre_quantized_fixed_point;
+        if (fp->multiplier_by_dimension)
+            searcher_owned_memory_bytes += fp->multiplier_by_dimension->size() * sizeof(float);
+        if (fp->squared_l2_norm_by_datapoint)
+            searcher_owned_memory_bytes += fp->squared_l2_norm_by_datapoint->size() * sizeof(float);
     }
 
     const size_t hashed_rows_extracted = (opts.hashed_dataset && hashed_dim > 0) ? opts.hashed_dataset->size() : 0;
