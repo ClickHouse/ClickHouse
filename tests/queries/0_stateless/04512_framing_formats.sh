@@ -93,8 +93,20 @@ ${CLICKHOUSE_CURL} -sS --compressed "${URL}&framing_output_format=JSONEachPacket
 echo '--- EventStream content type'
 ${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" -d "SELECT 1"
 
+# The two `JSONEachPacket` variants encode the `data` field differently, so their content types
+# differ: the `payload` parameter says how to decode it, and only the base64 variant, which makes
+# the whole stream valid UTF-8 regardless of the payload bytes, promises `charset=UTF-8`.
 echo '--- JSONEachPacket content type'
 ${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=JSONEachPacketString" -d "SELECT 1"
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=JSONEachPacketBase64" -d "SELECT 1"
+
+# The payload encoding is a property of the framing format, not of the data: a non-UTF-8 payload
+# does not change the advertised content type, and `JSONEachPacketString` never claims UTF-8 even
+# for a payload that is valid UTF-8.
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=JSONEachPacketBase64" \
+    -d "SELECT unhex('FF') AS s FORMAT JSONEachRow"
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT 'Hello' AS s FORMAT JSONEachRow"
 
 echo '--- progress packets are sent'
 progress_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&interactive_delay=0" \

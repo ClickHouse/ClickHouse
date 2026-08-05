@@ -49,7 +49,10 @@ byte-exact round trip: OK
 --- EventStream content type
 text/event-stream; charset=UTF-8; payload=base64
 --- JSONEachPacket content type
-application/x-ndjson; charset=UTF-8
+application/x-ndjson; payload=string
+application/x-ndjson; charset=UTF-8; payload=base64
+application/x-ndjson; charset=UTF-8; payload=base64
+application/x-ndjson; payload=string
 --- progress packets are sent
 progress packets: OK
 --- None framing format works as if no framing is used
