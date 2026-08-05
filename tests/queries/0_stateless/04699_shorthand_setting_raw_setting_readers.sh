@@ -35,6 +35,19 @@ CRAFTED_WASM="replaceAll(parseQueryToJSON(\$\$CREATE FUNCTION test_04699_wasm LA
 CRAFTED_WASM_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_WASM FORMAT TSVRaw")
 $CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_WASM_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 
+# The dictionary and WASM function settings grammar mandates `name = value`, so the valueless
+# form is parser-impossible there whatever the value - even the mandatory `true` is rejected.
+# For a WASM function letting it through would persist `SETTINGS max_instances` (the temporary
+# `ASTSetQuery` used by `formatImpl` elides `= true` for the valueless form), which the SQL
+# grammar then fails to parse back when the function is reloaded.
+CRAFTED_WASM_TRUE="replaceAll(parseQueryToJSON(\$\$CREATE FUNCTION test_04699_wasm LANGUAGE WASM FROM 'mod' ARGUMENTS (UInt32) RETURNS UInt32 SETTINGS webassembly_udf_enable_fuel = true\$\$), '{\"name\":\"webassembly_udf_enable_fuel\"', '{\"name\":\"webassembly_udf_enable_fuel\",\"shorthand\":true')"
+CRAFTED_WASM_TRUE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_WASM_TRUE FORMAT TSVRaw")
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_WASM_TRUE_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+
+CRAFTED_DICT_TRUE="replaceAll(parseQueryToJSON(\$\$CREATE DICTIONARY test_04699_dict (k UInt64, v UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 'test_04699')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(check_dictionary_primary_key = 1)\$\$), '{\"name\":\"check_dictionary_primary_key\"', '{\"name\":\"check_dictionary_primary_key\",\"shorthand\":true')"
+CRAFTED_DICT_TRUE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_DICT_TRUE FORMAT TSVRaw")
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_DICT_TRUE_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+
 # The genuine valueless form for a Bool engine setting is untouched: it round-trips through the
 # JSON dialect and still executes.
 GENUINE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON(\$\$CREATE TABLE test_04699 (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k) SETTINGS persistent\$\$) FORMAT TSVRaw")

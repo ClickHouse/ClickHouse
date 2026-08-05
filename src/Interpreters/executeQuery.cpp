@@ -1183,15 +1183,32 @@ static void checkValuelessSettingChanges(const IAST & ast)
                 BaseSettingsHelpers::throwValuelessSettingHasValue(change.name);
     };
 
+    /// Dictionary and WASM function settings mandate `name = value` in their grammar, so the
+    /// valueless form itself is parser-impossible there, whatever the value. It cannot be let
+    /// through even with the mandatory `true`: `ASTCreateWasmFunctionQuery::formatImpl` renders
+    /// its settings via a temporary `ASTSetQuery`, which elides `= true` for the valueless form,
+    /// so a surviving flag would be persisted as `SETTINGS name` that the SQL grammar then fails
+    /// to parse back when the function is reloaded.
+    const auto check_no_shorthand = [](const SettingsChanges & changes)
+    {
+        for (const auto & change : changes)
+            if (change.shorthand)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting '{}' is marked as written without a value, "
+                    "but the valueless form is not part of the syntax here. Write '{} = <value>'",
+                    change.name, change.name);
+    };
+
     /// Most settings ride in an `ASTSetQuery`, but dictionary and WASM function settings
     /// store `SettingsChanges` directly in their own nodes, and their `readJSON` restores
     /// the `shorthand` flag just like `ASTSetQuery::readJSON` does.
     if (const auto * set_query = ast.as<ASTSetQuery>())
         check(set_query->changes);
     else if (const auto * dictionary_settings = ast.as<ASTDictionarySettings>())
-        check(dictionary_settings->changes);
+        check_no_shorthand(dictionary_settings->changes);
     else if (const auto * create_wasm_function = ast.as<ASTCreateWasmFunctionQuery>())
-        check(create_wasm_function->getSettings());
+        check_no_shorthand(create_wasm_function->getSettings());
 
     for (const auto & child : ast.children)
         checkValuelessSettingChanges(*child);
