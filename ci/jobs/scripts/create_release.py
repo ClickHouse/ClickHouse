@@ -126,6 +126,51 @@ def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool
     return latest_branch == branch
 
 
+def find_orphaned_changelog_pr(
+    release_branch: str, current_release_tag: str, repo: str = GITHUB_REPOSITORY
+) -> str:
+    """URL of an OPEN changelog PR for an *earlier* release on `release_branch`,
+    or '' if there is none.
+
+    Such a PR is the signature of an orphaned release: a previous release on
+    this branch was published (tag, packages, docker images) but never
+    finalized because its `Update version_date.tsv and changelog` PR was never
+    merged. Cutting the next patch on top of it strands that changelog for good
+    — the new release supersedes the old tag, so no rerun will ever re-open and
+    merge it (this is exactly how v26.6.2.158 was stranded when a rerun minted
+    v26.6.2.160 instead of recovering it).
+
+    Changelog PR branches are `auto/v{major}.{minor}.{patch}.{tweak}-{codename}`
+    and are deleted when their PR merges, so a surviving `auto/v{branch}.` head
+    branch with an OPEN PR is the orphan. The branch listing uses
+    `git/matching-refs` — authoritative, unlike the eventually-consistent PR
+    search index (`gh pr list --search "head:..."` misses recently-created PRs)
+    — and each candidate's state is confirmed with the retried, fail-close
+    `get_pr_state_by_branch`, so a transient GitHub error raises rather than
+    being mistaken for 'no orphan'. `matching-refs` on a zero-match prefix
+    returns `[]` (HTTP 200), so an empty command output means the read failed."""
+    prefix = f"auto/v{release_branch}."
+    api_path = f"/repos/{repo}/git/matching-refs/heads/{prefix}"
+    raw = GH.get_output_with_retries(f"gh api {shlex.quote(api_path)} --jq '[.[].ref]'")
+    if not raw:
+        raise RuntimeError(
+            f"gh api matching-refs failed for [{prefix}] in repo [{repo}] after "
+            f"retries; refusing to treat a failed lookup as 'no orphaned release'"
+        )
+    own_branch = f"auto/{current_release_tag}"
+    for ref in json.loads(raw):
+        branch = ref.removeprefix("refs/heads/")
+        # Defensive: never flag this release's own changelog branch. It cannot
+        # reach this path anyway (the create branch runs before the changelog PR
+        # is opened, and a rerun with an existing tag recovers instead), but
+        # excluding it keeps the guard correct if that ordering ever changes.
+        if branch == own_branch:
+            continue
+        if GH.get_pr_state_by_branch(branch, repo=repo) == "OPEN":
+            return GH.get_pr_url_by_branch(branch, repo=repo)
+    return ""
+
+
 def update_contributors(raise_error: bool = False) -> None:
     if Git.is_shallow():
         msg = "The repository is shallow, refusing to update contributors"
@@ -427,6 +472,21 @@ class ReleaseInfo:
                     f"from [{commit_ref}]: version [{version.string}] has tweak 1, "
                     f"so the only commit since the previous release is the "
                     f"automated version bump — there is nothing to release."
+                )
+            # Refuse to create a new patch release while a previous release on
+            # this branch is orphaned — published but with its changelog PR
+            # never merged. Cutting the next patch supersedes and permanently
+            # strands that earlier changelog (see find_orphaned_changelog_pr).
+            # A branch/SHA ref reaches this create path; recovering or rerunning
+            # an existing tag does not, so this never blocks the fix itself.
+            if release_type == "patch":
+                orphaned_pr = find_orphaned_changelog_pr(release_branch, release_tag)
+                assert not orphaned_pr, (
+                    f"Refusing to create patch release [{release_tag}] from "
+                    f"[{commit_ref}]: branch [{release_branch}] has an orphaned "
+                    f"release whose changelog PR [{orphaned_pr}] is still open. "
+                    f"Finalize it first — dispatch that release's tag to recover "
+                    f"it (ref=<tag>), or merge the PR — then retry."
                 )
             recover = False
         self.create_new_release = not recover

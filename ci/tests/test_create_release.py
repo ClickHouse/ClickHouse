@@ -413,6 +413,118 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert "New release" in final.stdout
 
 
+def test_prepare_refuses_when_previous_release_is_orphaned(tmp_path):
+    """Creating the next patch is refused while a prior release is orphaned.
+
+    An orphaned release is one that was published but whose
+    ``Update version_date.tsv and changelog`` PR (head ``auto/v<tag>``) was
+    never merged. Here the branch tip would mint ``26.6.2.2`` while the earlier
+    ``v26.6.2.1-stable`` release still has an OPEN changelog PR, so ``prepare``
+    must fail closed rather than supersede (and permanently strand) it — the
+    scenario that stranded v26.6.2.158 when a rerun minted v26.6.2.160. Recovery
+    by tag ref is unaffected (it never reaches this create path).
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit")
+    git("tag", "-a", "v26.6.1.1-stable", "-m", "Release v26.6.1.1-stable")
+    prev = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    # Point the githash at the previous release so the tweak counts real commits
+    # (two here) — a non-empty patch (26.6.2.2) that reaches the create path.
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, prev), encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Point version githash at previous release")
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Post-release commit")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
+
+    # `gh` stub: report an OPEN changelog PR for the earlier v26.6.2.1 release.
+    #   * matching-refs lists the surviving `auto/v26.6.2.1-stable` head branch;
+    #   * `pr list --head <that> --state open` returns a PR, `--state merged` none
+    #     (so get_pr_state_by_branch reports OPEN);
+    #   * everything else (e.g. is_latest_release_branch) returns `[]`.
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        'a = " ".join(sys.argv[1:])\n'
+        'if "matching-refs" in a:\n'
+        "    print('[\"refs/heads/auto/v26.6.2.1-stable\"]')\n"
+        'elif "pr list" in a and "--head auto/v26.6.2.1-stable" in a '
+        'and "--state open" in a:\n'
+        '    print(\'[{"url": "https://github.com/test/clickhouse/pull/999"}]\')\n'
+        "else:\n"
+        "    print('[]')\n",
+        encoding="utf-8",
+    )
+    gh_stub.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            "26.6",  # branch ref -> create path
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, "orphaned previous release should have failed"
+    out = result.stdout + result.stderr
+    assert "orphaned" in out, out
+    assert "pull/999" in out, out
+
+
 def test_prepare_recovers_from_tag(tmp_path):
     """Dispatching an existing release tag recovers (re-publishes) that release.
 
