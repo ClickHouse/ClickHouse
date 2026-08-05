@@ -54,9 +54,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
 <br />
 
 <Steps>
-  <Step>
-    #### Configuración
-
+  <Step title="Configuración" id="create-a-table">
     Cree la siguiente base de datos y tabla, e inserte algunos datos aleatorios:
 
     ```sql
@@ -78,9 +76,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Crear una copia de seguridad base
-
+  <Step title="Crear una copia de seguridad base" id="create-a-base-initial-backup">
     Las copias de seguridad incrementales requieren una copia de seguridad *base* como punto de partida. El primer parámetro
     del destino S3 es el endpoint de S3, seguido del directorio dentro del bucket
     que se usará para esta copia de seguridad. En este ejemplo, el directorio se llama `my_backup`.
@@ -102,9 +98,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Agregar más datos
-
+  <Step title="Agregar más datos" id="add-more-data">
     Las copias de seguridad incrementales contienen la diferencia entre la copia de seguridad base y
     el contenido actual de la tabla de la que se está haciendo una copia de seguridad. Agregue más datos antes de realizar la
     copia de seguridad incremental:
@@ -116,9 +110,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Hacer una copia de seguridad incremental
-
+  <Step title="Hacer una copia de seguridad incremental" id="take-an-incremental-backup">
     Este comando de copia de seguridad es similar al de la copia de seguridad base, pero añade `SETTINGS base_backup` y la ubicación de la copia de seguridad base. Ten en cuenta que el destino de la copia de seguridad incremental no es el mismo directorio que el de la base, sino el mismo endpoint con un directorio de destino distinto dentro del bucket. La copia de seguridad base está en `my_backup`, y la incremental se escribirá en `my_incremental`:
 
     ```sql
@@ -141,9 +133,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Restaurar desde la copia de seguridad incremental
-
+  <Step title="Restaurar desde la copia de seguridad incremental" id="restore-from-the-incremental-backup">
     Este comando restaura la copia de seguridad incremental en una tabla nueva, `test_table_restored`.
     Ten en cuenta que, al restaurar una copia de seguridad incremental, también se incluye la copia de seguridad base.
     Al restaurar, especifica solo la **copia de seguridad incremental**:
@@ -163,9 +153,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Verifique el recuento
-
+  <Step title="Verifique el recuento" id="verify-the-count">
     Hubo dos inserciones en la tabla original `data`: una de 1.000 filas y otra de 100, para un total de 1.100.
     Verifique que la tabla restaurada tenga 1.100 filas:
 
@@ -181,9 +169,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Verifique el contenido
-
+  <Step title="Verifique el contenido" id="verify-the-content">
     Aquí se compara el contenido de la tabla original, `test_table`, con el de la tabla restaurada `test_table_restored`:
 
     ```sql

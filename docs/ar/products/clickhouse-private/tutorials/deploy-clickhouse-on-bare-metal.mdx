@@ -27,9 +27,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
 ***
 
 <Steps>
-  <Step>
-    ## المرحلة 1: تثبيت Terraform
-
+  <Step title="المرحلة 1: تثبيت Terraform" id="phase-1-install-terraform">
     ```text
     dnf install -y unzip git
     ```
@@ -62,9 +60,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 2: تنزيل البرامج النصية الخاصة بالأمثلة
-
+  <Step title="المرحلة 2: تنزيل البرامج النصية الخاصة بالأمثلة" id="phase-2-download-example-scripts">
     نزّل واستخرج البرامج النصية الخاصة بالأمثلة التي يوفّرها ClickHouse:
 
     ```text
@@ -77,9 +73,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 3: إعداد بيانات اعتماد AWS
-
+  <Step title="المرحلة 3: إعداد بيانات اعتماد AWS" id="phase-3-configure-aws-credentials">
     أنشئ ملفًا لبيانات الاعتماد يتضمن مفتاح الوصول والمفتاح السري لـ AWS IAM:
 
     ```bash
@@ -101,9 +95,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 4: تهيئة Terraform وتطبيقه
-
+  <Step title="المرحلة 4: تهيئة Terraform وتطبيقه" id="phase-4-initialize-and-apply-terraform">
     هيِّئ وحدة Terraform الخاصة بـ RKE2. أضف `-migrate-state` إذا كنت تنقل ملف الحالة من التخزين المحلي إلى S3.
 
     ```text
@@ -129,9 +121,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 5: تثبيت تبعيات Ansible
-
+  <Step title="المرحلة 5: تثبيت تبعيات Ansible" id="phase-5-install-ansible-dependencies">
     انتقل إلى مجلد Ansible وثبّت أدوار ومجموعات Galaxy المطلوبة:
 
     ```bash
@@ -149,9 +139,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 6: إعداد RKE2
-
+  <Step title="المرحلة 6: إعداد RKE2" id="phase-6-provision-rke2">
     ### تحقّق من جاهزية العقد
 
     ```text
@@ -189,9 +177,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 7: إعداد cert-manager والشهادات
-
+  <Step title="المرحلة 7: إعداد cert-manager والشهادات" id="phase-7-configure-cert-manager-and-certificates">
     ثبّت cert-manager وtrust-manager، وأنشئ شهادات لـ ClickHouse باستخدام ملف Ansible playbook:
 
     ```bash
@@ -220,9 +206,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 8: تثبيت وحدة التخزين المحلية
-
+  <Step title="المرحلة 8: تثبيت وحدة التخزين المحلية" id="phase-8-install-local-storage">
     ### تثبيت local-path-provisioner
 
     ```bash
@@ -268,9 +252,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 9: تسمية العقد
-
+  <Step title="المرحلة 9: تسمية العقد" id="phase-9-label-nodes">
     أضِف إلى العقد تسميات مجموعة ClickHouse وتسميات منطقة الطوبولوجيا التي يتطلبها المشغّل:
 
     ```bash
@@ -286,9 +268,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 10: تثبيت ClickHouse Operator والكلاستر
-
+  <Step title="المرحلة 10: تثبيت ClickHouse Operator والكلاستر" id="phase-10-install-clickhouse-operator-and-cluster">
     ### ضبط متغيرات البيئة
 
     أنشئ سكريبت متغيرات Helm واستورده. حدِّث جميع قيم العناصر النائبة:
@@ -323,7 +303,7 @@ description: "يرشدك هذا الدليل إلى كيفية نشر ClickHouse
     export CACHE_DISK_SIZE_GI=379Gi
     ```
 
-    قم بتنفيذ السكريبت:
+    نفِّذ البرنامج النصي:
 
     ```bash
     source ./set_helm_vars.sh

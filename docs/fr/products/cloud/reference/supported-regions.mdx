@@ -7,7 +7,7 @@ slug: /cloud/reference/supported-regions
 doc_type: 'reference'
 ---
 
-import EnterprisePlanFeatureBadge from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="aws-regions">
   ## Régions AWS
@@ -25,10 +25,10 @@ import EnterprisePlanFeatureBadge from "/snippets/fr/components/EnterprisePlanFe
 * us-east-2 (Ohio)
 * us-west-2 (Oregon)
 * il-central-1 (Israël, Tel Aviv)
+* ca-central-1 (Canada)
 
 **Région privée :**
 
-* ca-central-1 (Canada)
 * af-south-1 (Afrique du Sud)
 * eu-north-1 (Stockholm)
 * sa-east-1 (Amérique du Sud)
@@ -85,7 +85,6 @@ Points importants à prendre en compte pour les régions privées :
 
 * Les services ne bénéficient pas de la mise à l’échelle automatique ; en revanche, la mise à l’échelle verticale et horizontale manuelle est prise en charge.
 * Les services ne peuvent pas être mis en veille.
-* La page d’état n’est pas disponible pour les régions privées.
 
 Des exigences supplémentaires peuvent s’appliquer pour la conformité HIPAA (y compris la signature d’un BAA). Notez que HIPAA est actuellement disponible uniquement pour les services du niveau Enterprise
 
@@ -98,13 +97,13 @@ Des exigences supplémentaires peuvent s’appliquer pour la conformité HIPAA (
 Les clients doivent signer un Business Associate Agreement (BAA) et demander l’onboarding auprès des équipes commerciales ou du support afin de mettre en place des services dans des régions conformes à HIPAA. La conformité HIPAA est prise en charge dans les régions suivantes :
 
 * AWS af-south-1 (Afrique du Sud) **Région privée**
-* AWS ca-central-1 (Canada) **Région privée**
+* AWS ca-central-1 (Canada)
 * AWS eu-central-1 (Francfort)
 * AWS eu-north-1 (Stockholm) **Région privée**
 * AWS eu-west-1 (Irlande)
 * AWS eu-west-2 (Londres)
 * AWS sa-east-1 (Amérique du Sud) **Région privée**
-* AWS us-east-1 (N. Virginia)
+* AWS us-east-1 (Virginie du Nord)
 * AWS us-east-2 (Ohio)
 * AWS us-west-2 (Oregon)
 * GCP europe-west4 (Pays-Bas)
@@ -120,14 +119,14 @@ Les clients doivent signer un Business Associate Agreement (BAA) et demander l�
 Les clients doivent demander un onboarding auprès des équipes commerciales ou du support afin de configurer des services dans des régions conformes PCI. Les régions suivantes prennent en charge la conformité PCI :
 
 * AWS af-south-1 (Afrique du Sud) **Région privée**
-* AWS ca-central-1 (Canada) **Région privée**
+* AWS ca-central-1 (Canada)
 * AWS eu-central-1 (Francfort)
 * AWS eu-north-1 (Stockholm) **Région privée**
 * AWS eu-west-1 (Irlande)
 * AWS eu-west-2 (Londres)
 * AWS mx-central-1 (Mexique) **Région privée**
 * AWS sa-east-1 (Amérique du Sud) **Région privée**
-* AWS us-east-1 (N. Virginia)
+* AWS us-east-1 (Virginie du Nord)
 * AWS us-east-2 (Ohio)
 * AWS us-west-2 (Oregon)
 * GCP europe-west4 (Pays-Bas)

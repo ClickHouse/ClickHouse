@@ -1015,7 +1015,7 @@ TEST(PostingListCursorTest, BruteForceIntersectThree)
 
 TEST(PostingListCursorTest, BruteForceVsLeapfrogConsistency)
 {
-    std::mt19937 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     std::uniform_int_distribution<uint32_t> dist(0, 999);
 
     for (int trial = 0; trial < 10; ++trial)
@@ -1241,7 +1241,7 @@ TEST(PostingListCursorTest, UnionZeroCursors)
 
 TEST(PostingListCursorTest, StressRandomIntersectTwo)
 {
-    std::mt19937 rng(12345); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(12345); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 20; ++trial)
     {
@@ -1275,7 +1275,7 @@ TEST(PostingListCursorTest, StressRandomIntersectTwo)
 
 TEST(PostingListCursorTest, StressRandomIntersectFour)
 {
-    std::mt19937 rng(54321); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(54321); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 10; ++trial)
     {
@@ -1315,7 +1315,7 @@ TEST(PostingListCursorTest, StressRandomIntersectFour)
 
 TEST(PostingListCursorTest, StressRandomUnion)
 {
-    std::mt19937 rng(99999); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(99999); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 10; ++trial)
     {
@@ -3138,7 +3138,7 @@ TEST(PostingListCursorTest, ArithmeticMixedNonArithThenArith)
 
     /// Block 0: 128 docs with variable gaps (non-constant delta).
     uint32_t prev = 0;
-    std::mt19937 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (int i = 0; i < 128; ++i)
     {
         prev += 1 + (rng() % 5);  // gap 1-5 (variable → non-constant delta)
@@ -3166,7 +3166,7 @@ TEST(PostingListCursorTest, ArithmeticSeekFromNonArithToArith)
     docs.push_back(0);
 
     uint32_t prev = 0;
-    std::mt19937 rng(123); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(123); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (int i = 0; i < 128; ++i)
     {
         prev += 1 + (rng() % 10);
