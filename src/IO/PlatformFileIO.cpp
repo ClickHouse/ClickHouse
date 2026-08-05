@@ -176,9 +176,13 @@ int platformTruncate(const std::string & path, UInt64 size)
 
 int platformOpenDirectory(const std::string & path)
 {
+    /// The only consumer of this descriptor is `platformFDataSync`, i.e. `_commit`, i.e.
+    /// `FlushFileBuffers` - which requires the handle to have the `GENERIC_WRITE` access
+    /// right. A read-only handle would make every directory sync (`LocalDirectorySyncGuard`)
+    /// fail with `EBADF` instead of flushing the directory's metadata.
     auto * handle = CreateFileW(
         pathFromString(path).c_str(),
-        GENERIC_READ,
+        GENERIC_READ | GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr,
         OPEN_EXISTING,
@@ -191,7 +195,7 @@ int platformOpenDirectory(const std::string & path)
         return -1;
     }
 
-    const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY);
+    const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(handle), 0);
     if (fd == -1)
     {
         CloseHandle(handle);
