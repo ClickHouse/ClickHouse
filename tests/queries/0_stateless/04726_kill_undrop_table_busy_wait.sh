@@ -33,7 +33,10 @@ do
     sleep 0.3
 done
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_undrop_kill"
+# The test config sets database_atomic_wait_for_drop_and_detach_synchronously = 1, which would make
+# this DROP wait for the SELECT to release the storage and finally drop the table, leaving nothing
+# to undrop. Disable it so the DROP returns while the storage is still referenced.
+${CLICKHOUSE_CLIENT} --database_atomic_wait_for_drop_and_detach_synchronously=0 --query "DROP TABLE t_undrop_kill"
 
 # UNDROP moves the metadata back, then busy-waits for the storage pointer held by the SELECT.
 ${CLICKHOUSE_CLIENT} --query_id "$undrop_query_id" --query "UNDROP TABLE t_undrop_kill" 2>&1 \
