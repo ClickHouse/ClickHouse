@@ -45,6 +45,16 @@ SELECT count()
 FROM (EXPLAIN actions = 1 SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC)
 WHERE explain ILIKE '%Virtual row conversions%';
 
+-- A constant first ORDER BY key (the stress-test query fuzzer produces such shapes from
+-- `ORDER BY 1 ASC, ...`) adds a constant output to the virtual row conversion, so a check based
+-- on the conversion's output width miscounts the covered key prefix: the conversion announces
+-- (const, CounterID) but nothing for EventDate, which the widened distinct-in-order read
+-- default-filled, tripping the boundary check in reverse order (STID 2651-3359 in stress tests).
+-- Must not throw and must return the correct distinct set.
+SELECT
+    (SELECT arraySort(groupArray((CounterID, EventDate))) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY toIntervalMinute(1) > toIntervalWeek(59) ASC, CounterID DESC))
+  = (SELECT arraySort(groupArray((CounterID, EventDate))) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY toIntervalMinute(1) > toIntervalWeek(59) ASC, CounterID DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
 DROP TABLE t_virtual_row_distinct;
 
 -- Same widening on key (a, b): ORDER BY a builds a one-column virtual row for a, then
