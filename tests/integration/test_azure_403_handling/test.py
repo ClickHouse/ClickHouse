@@ -157,6 +157,50 @@ def test_sdk_retry_isolates_forbidden_on_direct_call(started_cluster):
         node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response_once")
 
 
+def test_auth_retry_isolates_on_direct_call(started_cluster):
+    # Companion to the SDK-403 isolation test above, for the auth half: an AuthenticationException is
+    # thrown by the credential layer around the transport, so the SDK RetryPolicy never sees it — the
+    # only thing that can absorb a one-shot auth failure on this INSERT's direct metadata calls (the
+    # container existence check, then exists() for the blob) is the ClickHouse-level
+    # retryAzureOnAuthError wrapper. Without it this INSERT fails with the injected auth error.
+    # Runs early, while the node is otherwise Azure-quiet, like the test above.
+    endpoint = started_cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_auth_failure_on_request_once")
+    try:
+        node.query(
+            f"""
+            INSERT INTO TABLE FUNCTION azureBlobStorage(
+                '{endpoint}', '{CONTAINER}', 'auth_direct_probe.csv',
+                '{AZURITE_ACCOUNT}', '{AZURITE_KEY}', 'CSV', 'auto', 'k UInt64')
+            VALUES (1)
+            """
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_auth_failure_on_request_once")
+
+
+def test_permanent_auth_failure_on_direct_call_fails_bounded(started_cluster):
+    # The auth retry must stay bounded: a never-clearing AuthenticationException still fails the query
+    # with the real auth error after the small retry budget instead of looping forever.
+    endpoint = started_cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_auth_failure_on_request")
+    try:
+        err = node.query_and_get_error(
+            f"""
+            INSERT INTO TABLE FUNCTION azureBlobStorage(
+                '{endpoint}', '{CONTAINER}', 'auth_direct_probe_permanent.csv',
+                '{AZURITE_ACCOUNT}', '{AZURITE_KEY}', 'CSV', 'auto', 'k UInt64')
+            VALUES (1)
+            """
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_auth_failure_on_request")
+
+    assert "AuthenticationException" in err, f"expected an auth error, got:\n{err}"
+
+
 @pytest.mark.parametrize("kind", list(ERROR_KINDS))
 def test_transient_error_read_succeeds(started_cluster, kind):
     # One transient failure must be absorbed by the retry budget: data still returned, part never broken.

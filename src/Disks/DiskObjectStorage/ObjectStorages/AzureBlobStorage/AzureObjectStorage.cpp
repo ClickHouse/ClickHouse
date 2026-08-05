@@ -18,6 +18,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
+#include <IO/AzureBlobStorage/retryAzureOnAuthError.h>
 
 #include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
@@ -162,10 +163,12 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     try
     {
         auto blob_client = client_ptr->GetBlobClient(object.remote_path);
-        blob_client.GetProperties();
+        /// A transient credential failure must not be mistaken for absence; only a real NotFound
+        /// (handled below) means the object is absent.
+        getBlobPropertiesWithRetry(blob_client, settings.get()->max_single_download_retries, object.remote_path, log);
         return true;
     }
-    catch (const Azure::Storage::StorageException & e)
+    catch (const Azure::Core::RequestFailedException & e)
     {
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
@@ -359,12 +362,14 @@ void AzureObjectStorage::removeObjectImpl(
     {
         if (isAdlsGen2Endpoint(connection_params.endpoint))
         {
-            buildDataLakeFileClient(path)->Delete();
+            retryAzureOnAuthError([&] { buildDataLakeFileClient(path)->Delete(); },
+                settings.get()->max_single_download_retries, path, log);
             success = true;
         }
         else
         {
-            auto delete_info = client_ptr->GetBlobClient(path).Delete();
+            auto delete_info = retryAzureOnAuthError([&] { return client_ptr->GetBlobClient(path).Delete(); },
+                settings.get()->max_single_download_retries, path, log);
             success = delete_info.Value.Deleted;
             if (!if_exists && !delete_info.Value.Deleted)
                 throw Exception(
@@ -372,7 +377,7 @@ void AzureObjectStorage::removeObjectImpl(
                     path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
         }
     }
-    catch (const Azure::Storage::StorageException & e)
+    catch (const Azure::Core::RequestFailedException & e)
     {
         error_code = static_cast<Int32>(e.StatusCode);
         error_message = e.Message;
@@ -472,7 +477,20 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         for (const auto & object : object_batch)
             responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
 
-        client_ptr->SubmitBatch(requests);
+        try
+        {
+            /// Retry a transient batch-level credential failure before giving up.
+            retryAzureOnAuthError([&] { client_ptr->SubmitBatch(requests); },
+                settings.get()->max_single_download_retries, container, log);
+        }
+        catch (...)
+        {
+            /// A batch-level failure skips the per-object loop below, so record the delete attempts before rethrowing.
+            const auto batch_error = getCurrentExceptionMessage(false);
+            for (const auto & object : object_batch)
+                add_log_entry(object, watch.elapsedMicroseconds() / object_batch.size(), -1, batch_error);
+            throw;
+        }
 
         ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
         if (is_disk)
@@ -487,7 +505,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
                 deferred_response.GetResponse();
                 add_log_entry(object, avg_elapsed_us);
             }
-            catch (const Azure::Storage::StorageException & e)
+            catch (const Azure::Core::RequestFailedException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                 {
@@ -564,7 +582,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
 {
     auto client_ptr = client.get();
     auto blob_client = client_ptr->GetBlobClient(path);
-    auto properties = blob_client.GetProperties().Value;
+    auto properties = getBlobPropertiesWithRetry(blob_client, settings.get()->max_single_download_retries, path, log);
 
     ProfileEvents::increment(ProfileEvents::AzureGetProperties);
     if (client_ptr->IsClientForDisk())
@@ -588,7 +606,7 @@ try
 {
     return getObjectMetadata(path, with_tags);
 }
-catch (const Azure::Storage::StorageException & e)
+catch (const Azure::Core::RequestFailedException & e)
 {
     if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
         return {};
