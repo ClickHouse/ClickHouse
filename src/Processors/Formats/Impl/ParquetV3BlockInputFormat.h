@@ -69,8 +69,10 @@ struct ParquetBucketSplitter : public IBucketSplitter
 
 /// Digest of a parsed Parquet footer, used to tie a single-file bucket assignment to the file
 /// generation it was computed from (see `ParquetFileBucketInfo::footer_digest`). Computed over the
-/// re-serialized thrift representation, so a footer parsed from the file and the same footer
-/// returned by `ParquetMetadataCache` produce the same value. Never returns 0 (the "unknown"
+/// footer's layout - schema shape, row-group and column-chunk row counts, sizes and offsets - so a
+/// footer parsed from the file and the same footer returned by `ParquetMetadataCache` produce the
+/// same value. Thrift enum fields are deliberately not read (a malformed file can hold an
+/// out-of-range enumerator, whose load is undefined behavior). Never returns 0 (the "unknown"
 /// marker).
 UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_metadata);
 

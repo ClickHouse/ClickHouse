@@ -17,10 +17,8 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Common/SipHash.h>
-#include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <parquet/file_reader.h>
 
 namespace DB
@@ -714,14 +712,80 @@ void setFooterDigest(std::vector<FileBucketInfoPtr> & buckets, const parquet::fo
 
 UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_metadata)
 {
-    /// Thrift serialization of the same in-memory struct is deterministic (fields are written in a
-    /// fixed order), so a footer parsed from the file and the same footer returned by
-    /// `ParquetMetadataCache` re-serialize identically. The digest distinguishes file generations
-    /// through the full footer contents - row-group and column-chunk offsets, sizes, statistics -
-    /// not just the row-group count.
-    WriteBufferFromOwnString out;
-    Parquet::serializeThriftStruct(file_metadata, out);
-    const UInt64 digest = sipHash64(out.str().data(), out.str().size());
+    /// Hashes the footer's layout: the schema shape, and every row group's and column chunk's row
+    /// counts, byte sizes and file offsets. That is what a bucket assignment is computed from, so two
+    /// generations of a file that differ in any of it produce different digests, while the same
+    /// in-memory struct - whether freshly parsed or returned by `ParquetMetadataCache` - always
+    /// produces the same one.
+    ///
+    /// Deliberately hand-rolled instead of re-serializing the thrift struct: `FileMetaData` carries
+    /// thrift enums (`SchemaElement::type`, `ColumnMetaData::codec`, `PageEncodingStats::page_type`,
+    /// ...) whose in-memory value can be out of range for a malformed or future-writer file, and the
+    /// generated `write` loads them as enumerators - undefined behavior that `-fsanitize=enum`
+    /// reports, aborting a read that otherwise succeeds. `Reader::columnChunkCanUseDictionaryFilter`
+    /// reads such fields through `isValidThriftEnum` for the same reason. Only integer and string
+    /// fields are hashed here, so advisory garbage in an enum cannot turn a readable file into a hard
+    /// failure. Optional fields contribute a presence flag so a set-to-zero field cannot collide with
+    /// an absent one.
+    SipHash hash;
+    auto update_optional = [&](bool is_set, Int64 value)
+    {
+        hash.update(is_set);
+        if (is_set)
+            hash.update(value);
+    };
+
+    hash.update(file_metadata.version);
+    hash.update(file_metadata.num_rows);
+    hash.update(file_metadata.schema.size());
+    for (const auto & element : file_metadata.schema)
+    {
+        hash.update(element.name);
+        update_optional(element.__isset.num_children, element.num_children);
+        update_optional(element.__isset.type_length, element.type_length);
+        update_optional(element.__isset.precision, element.precision);
+        update_optional(element.__isset.scale, element.scale);
+        update_optional(element.__isset.field_id, element.field_id);
+    }
+
+    hash.update(file_metadata.row_groups.size());
+    for (const auto & row_group : file_metadata.row_groups)
+    {
+        hash.update(row_group.num_rows);
+        hash.update(row_group.total_byte_size);
+        update_optional(row_group.__isset.file_offset, row_group.file_offset);
+        update_optional(row_group.__isset.total_compressed_size, row_group.total_compressed_size);
+        update_optional(row_group.__isset.ordinal, row_group.ordinal);
+        hash.update(row_group.columns.size());
+        for (const auto & column : row_group.columns)
+        {
+            hash.update(column.file_offset);
+            hash.update(column.__isset.file_path);
+            if (column.__isset.file_path)
+                hash.update(column.file_path);
+            update_optional(column.__isset.offset_index_offset, column.offset_index_offset);
+            update_optional(column.__isset.offset_index_length, column.offset_index_length);
+            update_optional(column.__isset.column_index_offset, column.column_index_offset);
+            update_optional(column.__isset.column_index_length, column.column_index_length);
+            hash.update(column.__isset.meta_data);
+            if (!column.__isset.meta_data)
+                continue;
+            const auto & meta = column.meta_data;
+            hash.update(meta.num_values);
+            hash.update(meta.total_uncompressed_size);
+            hash.update(meta.total_compressed_size);
+            hash.update(meta.data_page_offset);
+            update_optional(meta.__isset.index_page_offset, meta.index_page_offset);
+            update_optional(meta.__isset.dictionary_page_offset, meta.dictionary_page_offset);
+            update_optional(meta.__isset.bloom_filter_offset, meta.bloom_filter_offset);
+            update_optional(meta.__isset.bloom_filter_length, meta.bloom_filter_length);
+            hash.update(meta.path_in_schema.size());
+            for (const auto & part : meta.path_in_schema)
+                hash.update(part);
+        }
+    }
+
+    const UInt64 digest = hash.get64();
     /// 0 is the "unknown" marker in `ParquetFileBucketInfo::footer_digest`; never return it.
     return digest == 0 ? 1 : digest;
 }

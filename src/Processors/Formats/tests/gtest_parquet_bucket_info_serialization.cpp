@@ -9,6 +9,8 @@
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Core/ProtocolDefines.h>
 
+#include <cstring>
+
 using namespace DB;
 
 namespace
@@ -198,6 +200,53 @@ TEST(ParquetFileBucketInfoSerialization, CacheFilteredPrototypeMarksOmittedAsPru
 
     /// A split bucket stays accountable for its own row groups only.
     EXPECT_FALSE(ParquetFileBucketInfo({0, 1}, /*file_num_row_groups=*/4).omitted_row_groups_are_pruned);
+}
+
+/// The footer digest must not read the footer's thrift enums: a malformed or future-writer file can
+/// carry an out-of-range enumerator there (`encoding_stats` is advisory metadata that
+/// `Reader::columnChunkCanUseDictionaryFilter` deliberately reads through `isValidThriftEnum`), and
+/// loading it as an enumerator is undefined behavior that `-fsanitize=enum` turns into an aborted
+/// query. Digesting such a footer must be well-defined and stable.
+TEST(ParquetFileBucketInfoSerialization, FooterDigestIgnoresOutOfRangeThriftEnums)
+{
+    parquet::format::FileMetaData metadata;
+    metadata.num_rows = 200;
+    metadata.schema.resize(1);
+    metadata.schema[0].name = "root";
+    metadata.schema[0].__set_num_children(1);
+
+    metadata.row_groups.resize(1);
+    auto & row_group = metadata.row_groups[0];
+    row_group.num_rows = 200;
+    row_group.total_byte_size = 1000;
+    row_group.columns.resize(1);
+    auto & column = row_group.columns[0];
+    column.file_offset = 4;
+    column.__isset.meta_data = true;
+    auto & meta = column.meta_data;
+    meta.num_values = 200;
+    meta.total_compressed_size = 500;
+    meta.total_uncompressed_size = 900;
+    meta.data_page_offset = 100;
+    meta.path_in_schema = {"s"};
+
+    /// An out-of-range `page_type` / `encoding`, written through `memcpy` so this test itself does
+    /// not create the enumerator value it is guarding against.
+    meta.encoding_stats.resize(1);
+    meta.__isset.encoding_stats = true;
+    meta.encoding_stats[0].count = 1;
+    const Int32 invalid = -64;
+    memcpy(&meta.encoding_stats[0].page_type, &invalid, sizeof(invalid));
+    memcpy(&meta.encoding_stats[0].encoding, &invalid, sizeof(invalid));
+
+    const UInt64 digest = computeParquetFooterDigest(metadata);
+    EXPECT_NE(digest, 0u);
+    EXPECT_EQ(digest, computeParquetFooterDigest(metadata));
+
+    /// A different generation of the file (here: a different row-group size) digests differently.
+    parquet::format::FileMetaData other = metadata;
+    other.row_groups[0].total_byte_size = 1001;
+    EXPECT_NE(computeParquetFooterDigest(other), digest);
 }
 
 #endif
