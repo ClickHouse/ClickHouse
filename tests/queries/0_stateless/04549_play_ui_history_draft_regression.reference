@@ -6,6 +6,10 @@ close: the closed tab entry carries the latest draft
 close: the draft entry does not carry run=1
 close+back: the recreated tab restores the draft
 close+back: the run result snapshot is kept
+legacy entry: Back binds it to the live tab
+legacy entry: the entry is adopted with the tab id
+legacy entry + close: the fold lands the draft in the adopted entry
+legacy entry + close + back: the recreated tab restores the draft
 close others: only the active tab survives
 close others: the surviving tab keeps its draft
 close others: the current entry carries the draft

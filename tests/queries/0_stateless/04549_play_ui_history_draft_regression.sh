@@ -595,6 +595,30 @@ async function openRunUrl(query, tab_name)
     assert_eq('close+back: the recreated tab restores the draft', active().query, 'SELECT 1 -- draft');
     assert_eq('close+back: the run result snapshot is kept', active().result && active().result.query, 'SELECT 1');
 
+    /// A LEGACY pre-`tabId` history entry (title-only `{tabName, query}` state, written by an
+    /// older page) navigated to via Back must be ADOPTED by the tab `resolveTabForState` binds it
+    /// to: the structural folds recognize the current entry by `tabId`, so without the adoption
+    /// `closeTab`'s fold (`refreshCurrentHistoryEntry`) would bail on it, the entry would keep its
+    /// stale query, and Back after the close would recreate the tab without the draft.
+    reset();
+    await run('SELECT 1');
+    const legacy_title = active().title;
+    /// An older legacy entry for the same tab, sitting BEHIND the current run entry in the stack.
+    sandbox.history.stack.unshift({ state: { tabName: legacy_title, query: 'SELECT 1' },
+        url: '/play?tab=' + encodeURIComponent(legacy_title) + '#' + sandbox.toBase64('SELECT 1') });
+    sandbox.history.idx++;
+    sandbox.history.back();
+    await drain();
+    assert_eq('legacy entry: Back binds it to the live tab', active().title, legacy_title);
+    assert_eq('legacy entry: the entry is adopted with the tab id', sandbox.history.state.tabId, active().id);
+    type('SELECT 1 -- draft');
+    sandbox.closeTab(sandbox.activeTabId);
+    await drain();
+    assert_eq('legacy entry + close: the fold lands the draft in the adopted entry', sandbox.history.stack[0].state.query, 'SELECT 1 -- draft');
+    sandbox.history.back();
+    await drain();
+    assert_eq('legacy entry + close + back: the recreated tab restores the draft', active().query, 'SELECT 1 -- draft');
+
     /// `Close other tabs` is a structural boundary of the same kind: the SURVIVING active tab's
     /// latest unrun draft is folded into its own history entry — and into the URL — before the
     /// other tabs are dropped. Otherwise a reload before the debounced save fires, or simply

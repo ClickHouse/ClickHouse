@@ -9664,17 +9664,25 @@ window.onpopstate = function(event) {
     if (typeof event.state.runnableUrl === 'boolean') tab.runnableUrl = event.state.runnableUrl;
     else if (popped_url.searchParams.get('run') !== null) tab.runnableUrl = true;
     /// Keep this history entry's identity in sync with the tab it actually resolves to, restamping
-    /// BOTH the state's `tabId`/`tabName` and the URL's `tab=` key. Two cases need it:
+    /// BOTH the state's `tabId`/`tabName` and the URL's `tab=` key. Three cases need it:
     ///   - The entry named a now-closed tab and we recreated a fresh one (`tabId` changed): adopt
     ///     the new id so repeated Back/Forward lands on the same recreated tab instead of spawning
     ///     a duplicate each time.
     ///   - The entry's `tabId` still resolves to a live tab, but that tab's title has since changed
     ///     (e.g. the startup dirty-merge de-conflicted a live bootstrap tab's title): the entry/URL
     ///     still hold the stale `tabName`.
-    /// In both cases, without the restamp a later reload of this URL would make startup
+    ///   - A LEGACY title-only entry (written before `tabId` existed): `resolveTabForState` just
+    ///     bound it to a live tab, but every later "is this entry the active tab's?" check keys on
+    ///     `tabId` — `refreshCurrentHistoryEntry` would bail on it and `writeHistoryEntry` would
+    ///     push a fresh entry instead of replacing it. The structural folds (`closeTab`,
+    ///     `switchToTab`, `addTab`, a rename) rely on those to fold the latest unrun draft into the
+    ///     current entry, so an un-adopted legacy entry would keep its stale query and Back after a
+    ///     close would recreate the tab without the draft. Adopt the entry as the resolved tab's:
+    ///     stamp `tabId` (and the current title) into it right here.
+    /// In all cases, without the restamp a later reload of this URL would make startup
     /// reconciliation match a persisted tab by the stale title and overwrite it with this entry's
-    /// query. (Normal and legacy title-only entries already match and are left untouched.)
-    if (event.state.tabId && (event.state.tabId !== tab.id || event.state.tabName !== tab.title)) {
+    /// query. (Normal entries already match and are left untouched.)
+    if (!event.state.tabId || event.state.tabId !== tab.id || event.state.tabName !== tab.title) {
         const restamped_url = new URL(location.href);
         restamped_url.searchParams.set('tab', tab.title);
         history.replaceState({ ...event.state, tabId: tab.id, tabName: tab.title },
