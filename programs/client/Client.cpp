@@ -595,6 +595,9 @@ void Client::connect()
             /// a reconnect does not probe the ports again.
             std::optional<Poco::Net::SocketAddress> answering_address = hosts_and_ports[attempted_address_index].address;
 
+            /// The address to start the secure fallback candidate from, if it is known (see below).
+            std::optional<Poco::Net::SocketAddress> secure_answering_address;
+
             const bool port_unspecified = !hosts_and_ports[attempted_address_index].port.has_value() && !config().has("port");
             const bool secure_unspecified = !hosts_and_ports[attempted_address_index].secure.has_value() && !config().has("secure")
                 && !config().has("no-secure") && !isCloudEndpoint(host.toUnderType());
@@ -635,6 +638,19 @@ void Client::connect()
                     case PortsProbeResult::Choice::PreferPlain:
 #if USE_SSL
                         candidates.emplace_back(secure_port, Protocol::Secure::Enable);
+
+                        /// If the plain connection fails at the native protocol level and the secure
+                        /// fallback candidate is tried (see below), it has to start from an address that
+                        /// is known to answer as well, and not from the first resolved address of the
+                        /// host: the address of the secure probe if one succeeded, or the address that
+                        /// answered on the plain port otherwise (the same backend is the best guess for
+                        /// its secure port). Otherwise the fallback pays a whole connection timeout for
+                        /// every unresponsive address in front of the working one, which is exactly the
+                        /// delay the probing exists to avoid.
+                        if (probe.secure_address)
+                            secure_answering_address = probe.secure_address;
+                        else if (probe.address)
+                            secure_answering_address = Poco::Net::SocketAddress(probe.address->host(), secure_port);
 #endif
                         break;
                     case PortsProbeResult::Choice::SecureOnly:
@@ -660,11 +676,13 @@ void Client::connect()
                 connection_parameters.port = candidates[candidate_index].first;
                 connection_parameters.security = candidates[candidate_index].second;
 
-                /// Connect to the address that is known to answer, but only on the port it has answered on:
-                /// the fallback candidate (the secure port) was not probed successfully.
+                /// Connect to the address that is known to answer, but only on the port it has answered
+                /// on: the secure fallback candidate has its own answering address (see above).
                 connection_parameters.preferred_address.reset();
                 if (answering_address && answering_address->port() == connection_parameters.port)
                     connection_parameters.preferred_address = answering_address;
+                else if (secure_answering_address && secure_answering_address->port() == connection_parameters.port)
+                    connection_parameters.preferred_address = secure_answering_address;
 
                 const bool secure_auto_detected = secure_unspecified && connection_parameters.security == Protocol::Secure::Enable;
 

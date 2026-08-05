@@ -107,7 +107,12 @@ PortsProbeResult probePlainAndSecurePorts(
         }
 
         if (plain_connected)
-            return chosen(PortsProbeResult::Choice::PreferPlain, *plain_connected);
+        {
+            auto result = chosen(PortsProbeResult::Choice::PreferPlain, *plain_connected);
+            if (secure_connected)
+                result.secure_address = secure_connected->address;
+            return result;
+        }
 
         const UInt64 elapsed_us = watch.elapsedMicroseconds();
 

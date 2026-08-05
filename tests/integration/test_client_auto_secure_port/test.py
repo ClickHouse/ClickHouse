@@ -456,6 +456,64 @@ def test_the_probed_address_is_used_for_the_connection():
         blackhole_address(blackhole, add=False)
 
 
+def test_the_probed_address_is_used_for_the_secure_fallback():
+    # The plain port of the server accepts TCP but only serves TLS (see
+    # test_secure_port_chosen_when_plain_serves_tls), and the host resolves to a black hole first
+    # and to that server second. The probe prefers the plain port and learns which address answered;
+    # the native handshake on it then fails and the client falls back to TLS on the secure port.
+    # The fallback has to start from the address that answered as well: if it walked the resolved
+    # addresses from the start, it would pay a whole connection timeout on the black hole, which is
+    # exactly the delay the probing exists to avoid. The connect timeout is raised to 60 seconds, so
+    # the query cannot possibly finish in time unless the fallback skips the black hole.
+    redirect_plain_port_to_secure(add=True)
+    blackhole = unresponsive_address()
+    blackhole_address(blackhole, add=True)
+    node_plain_only.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf '%s tlsproxyhost\\n%s tlsproxyhost\\n' {blackhole} {node_both_ports.ip_address} >> /etc/hosts",
+        ],
+        user="root",
+    )
+    try:
+        query_id = str(uuid.uuid4())
+        start = time.time()
+        output = node_plain_only.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "clickhouse client --host tlsproxyhost --accept-invalid-certificate"
+                f" --connect_timeout 60 --query_id {query_id}"
+                " --query 'SELECT 1' 2>&1 || true",
+            ]
+        )
+        elapsed = time.time() - start
+        assert output == "1\n", output
+        assert elapsed < 30, f"Connecting took {elapsed} seconds: {output}"
+        node_both_ports.query("SYSTEM FLUSH LOGS query_log")
+        assert (
+            int(
+                node_both_ports.query(
+                    f"SELECT is_secure FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' LIMIT 1"
+                )
+            )
+            == 1
+        )
+    finally:
+        # `/etc/hosts` is bind-mounted into the container, so it can only be rewritten in place.
+        node_plain_only.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "grep -v tlsproxyhost /etc/hosts > /tmp/hosts && cat /tmp/hosts > /etc/hosts && rm /tmp/hosts",
+            ],
+            user="root",
+        )
+        blackhole_address(blackhole, add=False)
+        redirect_plain_port_to_secure(add=False)
+
+
 def firewall_plain_port_of(server, add, action, extra=()):
     """Apply an iptables rule on `server` to packets from node_plain_only to its plain port."""
     server.exec_in_container(

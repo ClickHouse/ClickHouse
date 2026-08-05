@@ -77,6 +77,20 @@ TEST(PortsProbe, ReportsTheAddressThatAnswered)
     EXPECT_EQ(result.address->toString(), plain.address().toString());
 }
 
+/// When the plain port is chosen but the secure port has also answered, the secure address is
+/// reported too: if the connection to the plain port then fails at the native protocol level
+/// (e.g. a proxy accepts TCP on the plain port but only serves TLS there), the fallback over TLS
+/// starts from an address that is known to answer instead of the first resolved one.
+TEST(PortsProbe, ReportsTheSecureAddressForTheFallback)
+{
+    auto plain = listenOnLoopback();
+    auto secure = listenOnLoopback();
+    auto result = probe(plain.address().port(), secure.address().port());
+    ASSERT_EQ(result.choice, PortsProbeResult::Choice::PreferPlain);
+    ASSERT_TRUE(result.secure_address.has_value());
+    EXPECT_EQ(result.secure_address->toString(), secure.address().toString());
+}
+
 /// When nothing answers, the failure of every probed address is reported.
 TEST(PortsProbe, NeitherWhenBothRefused)
 {

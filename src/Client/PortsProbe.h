@@ -27,6 +27,14 @@ struct PortsProbeResult
     /// that the probe has already found unresponsive.
     std::optional<Poco::Net::SocketAddress> address;
 
+    /// The address that answered on the secure port when the plain port was chosen, if a secure
+    /// probe had also connected by that time (with Choice::SecureOnly the secure address is
+    /// `address` itself). When the connection to the plain port fails at the native protocol
+    /// level (e.g. a proxy accepts TCP on the plain port but only serves TLS there) and the
+    /// caller falls back to TLS on the secure port, the fallback has to start from this address,
+    /// for the same reason as above.
+    std::optional<Poco::Net::SocketAddress> secure_address;
+
     /// A description of the per-address failures, for Choice::Neither.
     String failure_reason;
 
