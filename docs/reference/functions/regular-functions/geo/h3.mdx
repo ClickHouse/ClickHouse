@@ -1211,7 +1211,7 @@ h3HexRing(index, k)
 
 ## h3GetUnidirectionalEdge {#h3getunidirectionaledge}
 
-Returns a unidirectional edge H3 index based on the provided origin and destination and returns 0 on error.
+Returns a unidirectional edge H3 index based on the provided origin and destination. Throws an exception if either input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting).
 
 **Syntax**
 
@@ -1352,7 +1352,7 @@ A tuple consisting of two values `tuple(origin,destination)`:
 - `origin` — Origin Hexagon index number. [UInt64](/reference/data-types/int-uint).
 - `destination` — Destination Hexagon index number. [UInt64](/reference/data-types/int-uint).
 
-Returns `(0,0)` if the provided input is not valid.
+Throws an exception if the provided input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting); returns `(0,0)` only when that setting is enabled.
 
 **Example**
 
