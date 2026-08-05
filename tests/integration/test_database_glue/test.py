@@ -1375,6 +1375,61 @@ def test_sts_smoke(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
 
 
+def test_sts_smoke_no_opt_in(started_cluster):
+    """A Glue DataLakeCatalog with aws_role_arn set, no explicit aws_access_key_id/aws_secret_access_key,
+    and no s3_allow_server_credentials_in_user_queries opt-in. GlueCatalog routes through the same
+    getCredentialsProvider chokepoint as the s3()/s3Cluster() table functions, so role_arn-based STS
+    assume-role must work here too."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_smoke_no_opt_in_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    data = [
+        {"id": "row1", "value": 10.0},
+        {"id": "row2", "value": 20.0},
+        {"id": "row3", "value": 30.0},
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    db_name = f"db_no_opt_in_{test_ref.replace('-', '_')}"
+    settings = {
+        "catalog_type": "glue",
+        "warehouse": "test",
+        "storage_endpoint": "http://minio1:9001/warehouse-glue",
+        "region": "us-east-1",
+        "aws_role_arn": "arn::role",
+        "aws_role_session_name": "miniorole",
+    }
+    node.query(
+        f"""
+DROP DATABASE IF EXISTS {db_name};
+CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{BASE_URL}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}
+    """,
+        settings={
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    result = node.query(f"SELECT sum(value) FROM {db_name}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 def test_sts_external_id(started_cluster):
     """Test that `aws_external_id` reaches the STS AssumeRole request from the
     Glue catalog database engine. The mock STS only vends working credentials
