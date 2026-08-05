@@ -214,7 +214,7 @@ REGISTER_FUNCTION(Serial)
 Generates and returns sequential numbers starting from the previous counter value.
 This function takes a string argument - a series identifier, and an optional starting value.
 The server should be configured with Keeper.
-The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/reference/settings/server-settings/settings/other#series_keeper_path) in the server configuration.
+The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/operations/server-configuration-parameters/settings#series_keeper_path) in the server configuration.
     )";
     FunctionDocumentation::Syntax syntax = "generateSerialID(series_identifier[, start_value])";
     FunctionDocumentation::Arguments arguments = {

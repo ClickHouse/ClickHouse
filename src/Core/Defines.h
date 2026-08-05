@@ -116,15 +116,10 @@ static constexpr auto DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES = 1'000'000;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
-static constexpr auto DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE = 256_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO = 0.5;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES = 1000;
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE = 1_GiB;
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_SIZE_RATIO = 0.5;
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES = 1000;
 static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE = 512_MiB;
 static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_SIZE_RATIO = 0.5;
@@ -132,9 +127,6 @@ static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES = 5000;
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE = 100_MiB;
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE = 50_MiB;
-static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE = 1_GiB;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES = 1024uz;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES = 1_MiB;
@@ -151,8 +143,6 @@ static constexpr auto DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT = 1000uz;
 
 static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS = 1'000'000uz;
 
-/// Not `uz`: the value does not fit into `size_t` on 32-bit platforms, and it is compared against
-/// a row count read from the wire as `UInt64`.
-static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS = 1'000'000'000'000ULL;
+static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS = 1'000'000'000'000uz;
 
 }

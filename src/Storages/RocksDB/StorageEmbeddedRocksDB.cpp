@@ -350,8 +350,8 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
         Block block;
         while (executor.pull(block))
         {
-            Columns columns;
-            DataTypes types;
+            std::vector<ColumnPtr> columns;
+            std::vector<DataTypePtr> types;
             columns.reserve(primary_key_pos.size());
             types.reserve(primary_key_pos.size());
             for (const auto pos : primary_key_pos)
@@ -501,11 +501,11 @@ public:
             std::array<char, 1024> stack; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - written by `vsnprintf` before read
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
-                va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
+                va_end(backup_ap);
                 LOG_IMPL(log, level.first, level.second, "{}", stack.data());
                 return;
             }
-            va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
+            va_end(backup_ap);
         }
 
         /// let's try with a bigger dynamic buffer (but not too huge, since
@@ -946,16 +946,16 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     {
         std::string & serialized_key = raw_keys.emplace_back();
         WriteBufferFromString wb(serialized_key);
-        for (size_t pk_idx = 0; pk_idx < keys.size(); ++pk_idx)
+        for (const auto & key : keys)
         {
             Field field;
-            keys[pk_idx].column->get(i, field);
+            key.column->get(i, field);
             if (field.isNull())
             {
                 null_map[i] = 0;
                 break;
             }
-            primary_key_types[pk_idx]->getDefaultSerialization()->serializeBinary(field, wb, {});
+            key.type->getDefaultSerialization()->serializeBinary(field, wb, {});
         }
         wb.finalize();
     }
@@ -1290,7 +1290,7 @@ ORDER BY key ASC
 ```
 
 ### More information on Joins {#more-information-on-joins}
-- [`join_algorithm` setting](/reference/settings/session-settings/join#join_algorithm)
+- [`join_algorithm` setting](/operations/settings/settings.md#join_algorithm)
 - [JOIN clause](/sql-reference/statements/select/join.md)
 )DOCS_MD",
         .syntax = "ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(key)",

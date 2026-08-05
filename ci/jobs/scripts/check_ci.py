@@ -12,7 +12,6 @@ sys.path.append(".")
 
 from ci.praktika.cidb import CIDB
 from ci.praktika.gh import GH
-from ci.praktika.git import Git
 from ci.praktika.interactive import UserPrompt
 from ci.praktika.issue import Issue, IssueLabels, TestCaseIssueCatalog
 from ci.praktika.result import Result
@@ -419,7 +418,7 @@ class CommitStatusCheck:
         if commit_status_data.state in (Result.GHStatus.SUCCESS,):
             pass
         elif commit_status_data.state in (Result.GHStatus.FAILURE,):
-            if commit_status_data.description.startswith("tests failed"):
+            if commit_status_data.description == "tests failed":
                 print(
                     f"\nCH Sync failed for commit, description: {commit_status_data.description}"
                 )
@@ -1041,8 +1040,48 @@ def main():
         mergeable_check_status, sha=head_sha
     )
 
-    if not Git.enqueue_pull_request(pr_number, "ClickHouse/ClickHouse"):
+    # `gh pr merge --auto` calls the `enablePullRequestAutoMerge` mutation,
+    # which the repo disables in favor of a merge queue on `master`. Call
+    # `enqueuePullRequest` directly: it is the mutation the "Merge when ready"
+    # button on github.com uses.
+    pr_node_id = Shell.get_output(
+        f"gh pr view {pr_number} --json id --jq '.id' --repo ClickHouse/ClickHouse"
+    ).strip()
+    if not pr_node_id:
+        print(f"ERROR: Failed to fetch node ID for PR #{pr_number}")
         sys.exit(1)
+
+    enqueue_cmd = (
+        "gh api graphql "
+        "-f 'query=mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id})"
+        "{mergeQueueEntry{position state}}}' "
+        f"-f id={pr_node_id}"
+    )
+    if not Shell.check(enqueue_cmd, verbose=True):
+        print(
+            f"ERROR: Failed to add PR #{pr_number} to the merge queue. "
+            f"This often happens when mergeStateStatus is UNKNOWN "
+            f"(GitHub is still computing mergeability after a recent push) "
+            f"or the PR is not yet eligible (failing required checks, "
+            f"missing approvals, out of date with base). "
+            f"Retry manually:\n  {enqueue_cmd}"
+        )
+        sys.exit(1)
+
+    # Give GitHub a moment to update the PR's merge state, then verify it
+    # actually landed in the queue.
+    time.sleep(5)
+    merge_status = Shell.get_output(
+        f"gh pr view {pr_number} --json mergeStateStatus --jq '.mergeStateStatus' --repo ClickHouse/ClickHouse"
+    )
+    if merge_status == "QUEUED":
+        print(f"OK: PR #{pr_number} added to the merge queue")
+    else:
+        print(
+            f"WARNING: PR #{pr_number} enqueue mutation succeeded but "
+            f"mergeStateStatus is {merge_status} (expected QUEUED). "
+            f"Check the PR on github.com."
+        )
 
 
 if __name__ == "__main__":
