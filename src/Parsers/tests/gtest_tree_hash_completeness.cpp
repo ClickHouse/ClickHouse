@@ -134,3 +134,46 @@ TEST(TreeHashCompleteness, SetQueryStandaloneFlagIsSignificant)
 
     EXPECT_NE(hashOf("SET max_threads = 1"), hashOf("SELECT 1 SETTINGS max_threads = 1"));
 }
+
+TEST(TreeHashCompleteness, OutputOptionFlagsAreSignificant)
+{
+    /// `APPEND` / `TRUNCATE` / `AND STDOUT` live in `ASTQueryWithOutput`'s flags, not in `children`,
+    /// and every query with an output suffix inherits them.
+    const std::string plain = "SELECT 1 INTO OUTFILE 'x'";
+    EXPECT_NE(hashOf(plain), hashOf("SELECT 1 INTO OUTFILE 'x' APPEND"));
+    EXPECT_NE(hashOf(plain), hashOf("SELECT 1 INTO OUTFILE 'x' TRUNCATE"));
+    EXPECT_NE(hashOf(plain), hashOf("SELECT 1 INTO OUTFILE 'x' AND STDOUT"));
+    EXPECT_NE(hashOf("SELECT 1 INTO OUTFILE 'x' APPEND"), hashOf("SELECT 1 INTO OUTFILE 'x' TRUNCATE"));
+
+    /// Roots other than `SELECT` reach the same flags through their own parsers.
+    EXPECT_NE(hashOf("SHOW TABLES INTO OUTFILE 'x'"), hashOf("SHOW TABLES INTO OUTFILE 'x' APPEND"));
+    EXPECT_NE(hashOf("EXPLAIN SELECT 1 INTO OUTFILE 'x'"), hashOf("EXPLAIN SELECT 1 INTO OUTFILE 'x' TRUNCATE"));
+    EXPECT_NE(hashOf("CHECK TABLE t INTO OUTFILE 'x'"), hashOf("CHECK TABLE t INTO OUTFILE 'x' AND STDOUT"));
+
+    EXPECT_EQ(hashOfJSONRoundTrip("SELECT 1 INTO OUTFILE 'x' APPEND"), hashOf("SELECT 1 INTO OUTFILE 'x' APPEND"));
+}
+
+TEST(TreeHashCompleteness, TemporaryFlagIsSignificant)
+{
+    /// `TEMPORARY` lives in `ASTQueryWithTableAndOutput`'s flags, so it is not a child either, and it
+    /// names a different object rather than formatting the same one differently.
+    EXPECT_NE(hashOf("CREATE TABLE t (a UInt64) ENGINE = Memory"),
+              hashOf("CREATE TEMPORARY TABLE t (a UInt64) ENGINE = Memory"));
+    EXPECT_NE(hashOf("DROP TABLE t"), hashOf("DROP TEMPORARY TABLE t"));
+    EXPECT_NE(hashOf("EXISTS TABLE t"), hashOf("EXISTS TEMPORARY TABLE t"));
+
+    EXPECT_EQ(hashOfJSONRoundTrip("CREATE TEMPORARY TABLE t (a UInt64) ENGINE = Memory"),
+              hashOf("CREATE TEMPORARY TABLE t (a UInt64) ENGINE = Memory"));
+}
+
+TEST(TreeHashCompleteness, ExplicitUuidIsSignificant)
+{
+    /// `uuid` is a plain member of `ASTQueryWithTableAndOutput`, and the `database` / `table`
+    /// children are plain identifiers, so nothing else brings it into the hash.
+    const std::string one = "CREATE TABLE db.t UUID '00000000-0000-0000-0000-000000000001' (a UInt64) ENGINE = Memory";
+    const std::string two = "CREATE TABLE db.t UUID '00000000-0000-0000-0000-000000000002' (a UInt64) ENGINE = Memory";
+    const std::string none = "CREATE TABLE db.t (a UInt64) ENGINE = Memory";
+
+    EXPECT_NE(hashOf(one), hashOf(two));
+    EXPECT_NE(hashOf(one), hashOf(none));
+}

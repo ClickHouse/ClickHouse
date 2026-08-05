@@ -41,6 +41,8 @@ public:
     void setTable(const String & name);
 
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const;
+
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 };
 
 

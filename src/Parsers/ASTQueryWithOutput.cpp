@@ -1,5 +1,6 @@
 #include <Parsers/ASTQueryWithOutput.h>
 
+#include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -94,6 +95,16 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
     if (compression_level && !compression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Output 'compression_level' requires 'compression' during AST JSON deserialization");
+}
+
+void ASTQueryWithOutput::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The three `INTO OUTFILE` modifiers are not children, so the default implementation does not
+    /// see them: without hashing them, `INTO OUTFILE 'x'` and `INTO OUTFILE 'x' APPEND` hash equally.
+    hash_state.update(isOutfileAppend());
+    hash_state.update(isOutfileTruncate());
+    hash_state.update(isIntoOutfileWithStdout());
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const

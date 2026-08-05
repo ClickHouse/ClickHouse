@@ -71,7 +71,7 @@ void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
     hash_state.update(list_of_modes.size());
     for (auto mode : list_of_modes)
         hash_state.update(mode);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
