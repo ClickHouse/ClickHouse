@@ -151,7 +151,7 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_post
 
     /// `All` mode fails as soon as the running intersection of readable postings becomes empty.
     bool need_all_tokens = query->getSearchMode() == TextSearchMode::All || query->getSearchMode() == TextSearchMode::Phrase;
-    if (need_all_tokens && postings->cardinality() == 0)
+    if (need_all_tokens && postings->isEmpty())
         markFailed();
 }
 
@@ -243,7 +243,7 @@ void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr posti
     {
         clipped_postings = readable_rows->clipPostings(*postings);
 
-        if (clipped_postings->cardinality() == 0)
+        if (clipped_postings->isEmpty())
         {
             processTokenOperation(token, [&](QueryBuilder & query_builder)
             {

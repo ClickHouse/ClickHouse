@@ -1,6 +1,6 @@
 ok
 Array(Tuple(UInt32, Float32))
-`id` UUID, `timestamp` UInt32 CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(Gorilla, ZSTD(1))
+`id` Tuple(UInt64, UUID), `timestamp` UInt32 CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(Gorilla, ZSTD(1))
 metric_name	String
 tags	Map(String, String)
 time_series	Array(Tuple(DateTime64(3), Float64))
