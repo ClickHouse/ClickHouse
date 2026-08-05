@@ -3317,7 +3317,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
         priority.add(key_metadata, 10, 10, write_lock, &state_lock);
     }
     ASSERT_EQ(priority.getSize(state_guard.lock()), 20);
-    const auto usage = priority.getUsageStatPerClient().at(system_origin.user_id);
+    const auto usage = priority.getUsageStatPerClient(state_guard.lock()).at(system_origin.user_id);
     ASSERT_EQ(usage.size, 20);
     ASSERT_EQ(usage.elements, 2);
 
@@ -3597,7 +3597,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
             it = priority.add(key_metadata, 0, 10, write_lock, &state_lock);
         }
         ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before + delta);
-        const auto usage = priority.getUsageStatPerClient();
+        const auto usage = priority.getUsageStatPerClient(state_guard.lock());
         if (queue_type == IFileCachePriority::QueueType::Main)
         {
             ASSERT_EQ(usage.at(origin.user_id).size, 10);
@@ -3664,7 +3664,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
 
     const auto & user_id = origin.user_id;
-    auto usage = priority.getUsageStatPerClient();
+    auto usage = priority.getUsageStatPerClient(state_guard.lock());
     ASSERT_EQ(usage.at(user_id).size, 20);
     ASSERT_EQ(usage.at(user_id).elements, 2);
 
@@ -3676,7 +3676,86 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
-    usage = priority.getUsageStatPerClient();
+    usage = priority.getUsageStatPerClient(state_guard.lock());
+    ASSERT_EQ(usage.at(user_id).size, 20);
+    ASSERT_EQ(usage.at(user_id).elements, 2);
+}
+
+TEST_F(FileCacheTest, UsageSnapshotConsistentDuringSLRUMove)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    /// An SLRU queue move charges the segment's usage counters for the new queue entry
+    /// before discharging the old one. Both steps happen under the state lock, and
+    /// `getUsageStatPerClient` takes the same lock, so a concurrent sampler must never
+    /// observe the intermediate state where the moved segment is counted twice.
+
+    /// protected = 10 bytes / 1 element, probationary = 20 bytes / 2 elements.
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 30, 3, 1.0 / 3, "test_move_snapshot");
+    priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
+
+    const auto cache_path = caches_dir / "test_slru_move_snapshot";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    const auto key = DB::FileCacheKey::fromPath("move_snapshot_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType qtype)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.addForRestore(key_metadata, offset, size, qtype, write_lock, &state_lock);
+        }
+        const auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
+        if (fs::exists(path))
+            fs::remove(path);
+        fs::create_directories(fs::path(path).parent_path());
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(std::string(size, '0'), wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        return it;
+    };
+
+    auto it_a = add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);
+    auto it_b = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
+
+    const auto & user_id = origin.user_id;
+
+    std::atomic<bool> done = false;
+    std::atomic<size_t> violations = 0;
+    std::thread sampler([&]
+    {
+        while (!done.load(std::memory_order_relaxed))
+        {
+            const auto usage = priority.getUsageStatPerClient(state_guard.lock());
+            const auto it = usage.find(user_id);
+            if (it == usage.end() || it->second.size != 20 || it->second.elements != 2)
+                violations.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    /// Each iteration promotes the probationary segment into the full protected queue,
+    /// which downgrades the other segment, so the two segments keep swapping queues.
+    for (size_t i = 0; i < 500; ++i)
+    {
+        auto & it = (i % 2 == 0) ? it_b : it_a;
+        ASSERT_TRUE(priority.tryIncreasePriority(*it, true, cache_guard, state_guard));
+    }
+
+    done = true;
+    sampler.join();
+
+    ASSERT_EQ(violations.load(), 0);
+    const auto usage = priority.getUsageStatPerClient(state_guard.lock());
     ASSERT_EQ(usage.at(user_id).size, 20);
     ASSERT_EQ(usage.at(user_id).elements, 2);
 }
@@ -3712,7 +3791,7 @@ TEST_F(FileCacheTest, UsageAccounting)
 
     ASSERT_TRUE(it_a->getEntry()->tracksUsage());
     ASSERT_TRUE(it_b->getEntry()->tracksUsage());
-    auto usage = priority.getUsageStatPerClient();
+    auto usage = priority.getUsageStatPerClient(state_guard.lock());
     ASSERT_EQ(usage.at(user_a.user_id).size, 10);
     ASSERT_EQ(usage.at(user_a.user_id).elements, 1);
     ASSERT_EQ(usage.at(user_b.user_id).size, 7);
@@ -3723,14 +3802,14 @@ TEST_F(FileCacheTest, UsageAccounting)
         it_a->incrementSize(5, state_lock);
     }
     it_a->decrementSize(3);
-    ASSERT_EQ(priority.getUsageStatPerClient().at(user_a.user_id).size, 12);
+    ASSERT_EQ(priority.getUsageStatPerClient(state_guard.lock()).at(user_a.user_id).size, 12);
 
     it_a->invalidate();
-    ASSERT_FALSE(priority.getUsageStatPerClient().contains(user_a.user_id));
+    ASSERT_FALSE(priority.getUsageStatPerClient(state_guard.lock()).contains(user_a.user_id));
     it_a->remove(cache_guard.writeLock());
 
     it_b->remove(cache_guard.writeLock());
-    ASSERT_TRUE(priority.getUsageStatPerClient().empty());
+    ASSERT_TRUE(priority.getUsageStatPerClient(state_guard.lock()).empty());
 }
 
 TEST_F(FileCacheTest, SharedCacheAliasesHaveOneInstance)

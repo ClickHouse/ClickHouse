@@ -437,7 +437,11 @@ public:
     virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
 
     using UsageStat = FileCacheUsageStat;
-    virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
+    /// Requires the state lock: SLRU queue moves charge the segment's usage counters
+    /// for the new queue entry before discharging the old one, and both steps happen
+    /// under the state lock. Snapshotting under the same lock guarantees the sampler
+    /// cannot observe the intermediate state where a moved segment is counted twice.
+    virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient(const CacheStateGuard::Lock &);
 
     class HoldSpace;
     using HoldSpacePtr = std::unique_ptr<HoldSpace>;

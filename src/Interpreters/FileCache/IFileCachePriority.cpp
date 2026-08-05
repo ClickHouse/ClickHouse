@@ -158,7 +158,7 @@ void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 }
 
-std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriority::getUsageStatPerClient()
+std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriority::getUsageStatPerClient(const CacheStateGuard::Lock &)
 {
     if (!usage_tracker)
         return {};

@@ -2769,7 +2769,11 @@ IFileCachePriority::Type FileCache::getEvictionPolicyType()
 std::unordered_map<std::string, FileCache::UsageStat> FileCache::getUsageStatPerClient()
 {
     assertInitialized();
-    return main_priority->getUsageStatPerClient();
+    /// Take the state lock so that a concurrent SLRU queue move (which charges the new
+    /// entry before discharging the old one, both under this lock) cannot be observed
+    /// in its intermediate state, where the moved segment would be counted twice.
+    auto state_lock = cache_state_guard.lock();
+    return main_priority->getUsageStatPerClient(state_lock);
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
