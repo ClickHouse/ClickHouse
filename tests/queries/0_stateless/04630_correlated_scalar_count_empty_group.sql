@@ -15,8 +15,9 @@ SELECT o.k, (SELECT uniqExact(i.flag) FROM values('k UInt8, flag UInt8', (1, 0),
 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
 ORDER BY o.k;
 
--- sum() empty group stays NULL: a scalar subquery over an empty set is NULL, and this keeps
--- `WHERE outer > (SELECT sum ...)` filtering empty groups (deliberate, see QueryNode::getResultType).
+-- sum() empty group stays NULL, so `WHERE outer > (SELECT sum ...)` keeps filtering empty groups
+-- (deliberate, see QueryNode::getResultType). Not restored here: this PR restores only the bare
+-- returns_default_when_only_null aggregates.
 SELECT o.k, (SELECT sum(i.flag) FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS s
 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
 ORDER BY o.k;
@@ -34,11 +35,36 @@ SELECT o.k,
 FROM values('k UInt8', (1), (2), (9)) AS o
 ORDER BY o.k;
 
--- Wrapped projection (count() + 100) is not a bare aggregate: a scalar subquery over an empty set is NULL,
--- so the empty group stays NULL (only a bare count()/uniqExact() is restored).
+-- Wrapped projection (count() + 100) is not a bare aggregate, so the restore does not apply and the
+-- empty group keeps the join's NULL. This asserts current behavior: `(SELECT count() + 100 FROM <empty>)`
+-- is 100, so the NULL is a pre-existing decorrelation gap for non-bare projections, unchanged here.
 SELECT o.k, (SELECT count() + 100 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS c
 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
 ORDER BY o.k;
+
+-- FunctionToSubcolumnsPass rewrites count(<Nullable column>) to sum(not(col.null)) before the planner
+-- runs, and `sum` does not carry returns_default_when_only_null, so the rewritten form is not restored.
+-- The restore therefore depends on optimize_functions_to_subcolumns for this spelling. Ground truth for
+-- the empty group is 0; both values are asserted to track it.
+DROP TABLE IF EXISTS t04630_inner;
+DROP TABLE IF EXISTS t04630_outer;
+CREATE TABLE t04630_inner (k UInt8, v Nullable(Int32)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t04630_inner VALUES (1, NULL), (2, 5);
+CREATE TABLE t04630_outer (k UInt8) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t04630_outer VALUES (1), (2), (9);
+
+SELECT o.k, (SELECT count(i.v) FROM t04630_inner AS i WHERE i.k = o.k) AS c
+FROM t04630_outer AS o
+ORDER BY o.k
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT o.k, (SELECT count(i.v) FROM t04630_inner AS i WHERE i.k = o.k) AS c
+FROM t04630_outer AS o
+ORDER BY o.k
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE t04630_inner;
+DROP TABLE t04630_outer;
 
 -- empty_result_for_aggregation_by_empty_set = 1 makes an empty aggregation produce no row, so even count()
 -- over an empty group is NULL; the restore must be disabled in that mode.
