@@ -1507,6 +1507,8 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     else
     {
         metadata = snapshot_it->second;
+        /// Re-derive from the pinned handle, so the branch below describes the object it came from.
+        materialized_view = dynamic_cast<StorageMaterializedView *>(storages.at(current).get());
     }
 
     auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
