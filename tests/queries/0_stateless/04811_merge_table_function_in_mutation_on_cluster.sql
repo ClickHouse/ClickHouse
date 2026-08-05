@@ -37,4 +37,7 @@ SELECT
     countIf(command ILIKE '%currentDatabase%')
 FROM system.mutations WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't_merge_mutation';
 
+-- The mutations belong to the database of the mutated table, not to the database of the session.
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_merge_mutation';
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
