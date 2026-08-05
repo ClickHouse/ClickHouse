@@ -109,6 +109,11 @@ def _listing_select_conjuncts(step):
 
 def test_selector_admits_gated_fork_runs():
     step = _retry_step()
+    # The probe spans continuation lines, so its assertions below read this NORMALIZED
+    # form (continuations joined, whitespace runs collapsed). A raw-substring form
+    # refuses a harmless re-wrap while the probe still reads .conclusion and still
+    # fails closed.
+    normalized = " ".join(step.replace("\\\n", " ").split())
     # A substring assertion cannot see an ADDED conjunct: `select(.attempt <= 2 and
     # .attempt == 1 ...)` keeps every fork run out while still containing
     # "select(.attempt <= 2".
@@ -118,7 +123,8 @@ def test_selector_admits_gated_fork_runs():
     }, "the listing filter must be exactly the attempt bound and the cutoff"
     assert 'attempt1_conclusion" != "action_required"' in step, "missing attempt-1 probe"
     # The probe must interrogate attempt 1: reading any other attempt makes it meaningless.
-    assert "/attempts/1" in step, "the probe must read attempt 1"
+    # Against `normalized` (hoisted above), so a re-wrap is not a false refusal.
+    assert "/attempts/1" in normalized, "the probe must read attempt 1"
     # It must be reached only for a candidate that is NOT attempt 1.
     GUARD = 'if [ "$run_attempt" != "1" ]; then'
     assert GUARD in step, "probe must guard on attempt != 1"
@@ -175,8 +181,11 @@ def test_selector_admits_gated_fork_runs():
     reject_branch = re.split(
         r"\n\s*fi\b", step.split('!= "action_required" ]; then', 1)[1], maxsplit=1
     )[0]
+    # `\s*continue\b` also accepts `continue=false`, an assignment that does not skip the
+    # iteration. Require `continue` as the command word: `(?!=)` rejects the assignment
+    # while `continue 1` and a trailing no-op stay accepted, both being equivalent.
     assert re.search(
-        r"\n\s*continue\b", reject_branch
+        r"^[ \t]*continue\b(?!=)", reject_branch, re.M
     ), "the reject branch must continue, or the gate is inert"
     # The projection and the two splits must agree on field order: transposing either makes
     # run_id and run_attempt swap, so the probe reads a nonexistent run and rejects every
@@ -191,19 +200,27 @@ def test_selector_admits_gated_fork_runs():
         assert assigns == [expansion], (var, assigns)
     # A gated attempt 1 has status "completed" and conclusion "action_required", so a probe
     # reading any other field rejects every fork candidate while the asserts above still pass.
-    assert "--jq '.conclusion'" in step, "the probe must read the conclusion field"
+    assert (
+        "--jq '.conclusion'" in normalized
+    ), "the probe must read the conclusion field"
     # Without the fallback a transient API error aborts the step under "set -euo pipefail",
     # taking down the whole hourly retry rather than skipping one run.
-    assert '2>/dev/null || echo ""' in step, "the probe must fail closed on an API error"
+    assert (
+        '2>/dev/null || echo ""' in normalized
+    ), "the probe must fail closed on an API error"
     # The assertions above pin the probe's PARTS but not the whole: swapping the run
     # identifier ($run_id -> $run_attempt) keeps "/attempts/1" present while the probe reads
     # a nonexistent run (404 -> empty -> every gated fork candidate skipped), and extending
     # the reject condition with an always-true disjunct keeps its substring present while
     # skipping every attempt-2 candidate. Both leave the fix inert with CI green.
-    normalized = " ".join(step.replace("\\\n", " ").split())
     assert (
         PROBE_CMD in normalized
     ), "the attempt-1 probe command must be exactly PROBE_CMD"
+    # ...and it must be the SOLE assignment: appending `attempt1_conclusion="failure"`
+    # after the correct command satisfies the substring check above while the reject
+    # branch then skips every attempt-2 candidate.
+    assigns = re.findall(r"^\s*attempt1_conclusion=(.*)$", step, re.M)
+    assert len(assigns) == 1, assigns
     # ...and it must be the SOLE test of the probe's result: an added disjunct would
     # otherwise satisfy the equality above while making the branch unconditional.
     conds = [
