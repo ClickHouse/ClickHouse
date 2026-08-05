@@ -22,8 +22,13 @@ extern const Event PuffinFilesCacheWeightLost;
 namespace DB
 {
 
+class IObjectStorage;
+
 struct PuffinFilesCacheKey
 {
+    /// Distinguishes object-storage backends that share the same relative path (and possibly etag).
+    /// Built via `makeStorageIdentity` from storage type + namespace + common key prefix.
+    String storage_identity;
     String file_path;
     String etag;
     Int64 content_offset = 0;
@@ -71,7 +76,11 @@ public:
 
     PuffinFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio);
 
+    /// Stable backend identity for cache keys: `getName()://getObjectsNamespace()/getCommonKeyPrefix()`.
+    static String makeStorageIdentity(const IObjectStorage & object_storage);
+
     static std::optional<PuffinFilesCacheKey> tryCreateKey(
+        const String & storage_identity,
         const String & file_path,
         const String & etag,
         Int64 content_offset,
@@ -96,7 +105,8 @@ public:
             {
                 LOG_TRACE(
                     log,
-                    "Cached empty puffin deletion vector for {} | {} at offset {} length {} for data file {}",
+                    "Cached empty puffin deletion vector for {} | {} | {} at offset {} length {} for data file {}",
+                    key.storage_identity,
                     key.file_path,
                     key.etag,
                     key.content_offset,
@@ -107,7 +117,8 @@ public:
             {
                 LOG_TRACE(
                     log,
-                    "Loaded puffin deletion vector into cache for {} | {} at offset {} length {} for data file {}",
+                    "Loaded puffin deletion vector into cache for {} | {} | {} at offset {} length {} for data file {}",
+                    key.storage_identity,
                     key.file_path,
                     key.etag,
                     key.content_offset,
@@ -127,7 +138,8 @@ public:
             {
                 LOG_TRACE(
                     log,
-                    "Puffin files cache miss (load discarded by concurrent clear) for {} | {} at offset {} length {} for data file {}",
+                    "Puffin files cache miss (load discarded by concurrent clear) for {} | {} | {} at offset {} length {} for data file {}",
+                    key.storage_identity,
                     key.file_path,
                     key.etag,
                     key.content_offset,
@@ -138,7 +150,8 @@ public:
             {
                 LOG_TRACE(
                     log,
-                    "Puffin files cache miss (waited for load discarded by concurrent clear) for {} | {} at offset {} length {} for data file {}",
+                    "Puffin files cache miss (waited for load discarded by concurrent clear) for {} | {} | {} at offset {} length {} for data file {}",
+                    key.storage_identity,
                     key.file_path,
                     key.etag,
                     key.content_offset,
@@ -149,7 +162,8 @@ public:
             {
                 LOG_TRACE(
                     log,
-                    "Puffin files cache miss for {} | {} at offset {} length {} for data file {}",
+                    "Puffin files cache miss for {} | {} | {} at offset {} length {} for data file {}",
+                    key.storage_identity,
                     key.file_path,
                     key.etag,
                     key.content_offset,
@@ -160,12 +174,28 @@ public:
         }
         else if (result.first->is_empty_deletion_vector)
         {
-            LOG_TRACE(log, "Puffin files cache hit (empty deletion vector) for {} | {} at offset {} length {} for data file {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes, key.referenced_data_file);
+            LOG_TRACE(
+                log,
+                "Puffin files cache hit (empty deletion vector) for {} | {} | {} at offset {} length {} for data file {}",
+                key.storage_identity,
+                key.file_path,
+                key.etag,
+                key.content_offset,
+                key.content_size_in_bytes,
+                key.referenced_data_file);
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheHits);
         }
         else
         {
-            LOG_TRACE(log, "Puffin files cache hit for {} | {} at offset {} length {} for data file {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes, key.referenced_data_file);
+            LOG_TRACE(
+                log,
+                "Puffin files cache hit for {} | {} | {} at offset {} length {} for data file {}",
+                key.storage_identity,
+                key.file_path,
+                key.etag,
+                key.content_offset,
+                key.content_size_in_bytes,
+                key.referenced_data_file);
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheHits);
         }
 

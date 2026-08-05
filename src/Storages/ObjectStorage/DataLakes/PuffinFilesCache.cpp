@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Common/CurrentMetrics.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace CurrentMetrics
 {
@@ -29,7 +30,8 @@ DataLakeObjectMetadata::ExcludedRowsPtr PuffinFilesCache::cloneExcludedRows(cons
 
 bool PuffinFilesCacheKey::operator==(const PuffinFilesCacheKey & other) const
 {
-    return file_path == other.file_path
+    return storage_identity == other.storage_identity
+        && file_path == other.file_path
         && etag == other.etag
         && content_offset == other.content_offset
         && content_size_in_bytes == other.content_size_in_bytes
@@ -41,6 +43,7 @@ bool PuffinFilesCacheKey::operator==(const PuffinFilesCacheKey & other) const
 size_t PuffinFilesCacheKeyHash::operator()(const PuffinFilesCacheKey & key) const
 {
     size_t hash = 0;
+    boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.storage_identity.data(), key.storage_identity.size()));
     boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.file_path.data(), key.file_path.size()));
     boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.etag.data(), key.etag.size()));
     boost::hash_combine(hash, key.content_offset);
@@ -87,7 +90,13 @@ PuffinFilesCache::PuffinFilesCache(
 {
 }
 
+String PuffinFilesCache::makeStorageIdentity(const IObjectStorage & object_storage)
+{
+    return object_storage.getName() + "://" + object_storage.getObjectsNamespace() + "/" + object_storage.getCommonKeyPrefix();
+}
+
 std::optional<PuffinFilesCacheKey> PuffinFilesCache::tryCreateKey(
+    const String & storage_identity,
     const String & file_path,
     const String & etag,
     Int64 content_offset,
@@ -100,6 +109,7 @@ std::optional<PuffinFilesCacheKey> PuffinFilesCache::tryCreateKey(
         return std::nullopt;
 
     return PuffinFilesCacheKey{
+        storage_identity,
         file_path,
         etag,
         content_offset,

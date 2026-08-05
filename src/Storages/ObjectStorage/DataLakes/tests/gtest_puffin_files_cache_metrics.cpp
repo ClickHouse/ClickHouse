@@ -35,7 +35,8 @@ TEST(PuffinFilesCacheMetrics, ClearDuringLoadCountsAsMissNotHit)
 {
     PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
 
-    const auto key = PuffinFilesCache::tryCreateKey("puffin.bin", "etag-1", 100, 200, "data/file-a.parquet", 1, 100);
+    const auto key = PuffinFilesCache::tryCreateKey(
+        "Local:///test-prefix", "puffin.bin", "etag-1", 100, 200, "data/file-a.parquet", 1, 100);
     ASSERT_TRUE(key.has_value());
 
     auto & counters = CurrentThread::getProfileEvents();
@@ -76,7 +77,8 @@ TEST(PuffinFilesCacheMetrics, WaiterOfClearDiscardedLoadCountsAsMiss)
 {
     PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
 
-    const auto key = PuffinFilesCache::tryCreateKey("puffin.bin", "etag-waiter", 100, 200, "data/file-w.parquet", 1, 100);
+    const auto key = PuffinFilesCache::tryCreateKey(
+        "Local:///test-prefix", "puffin.bin", "etag-waiter", 100, 200, "data/file-w.parquet", 1, 100);
     ASSERT_TRUE(key.has_value());
 
     const auto hits_before = ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheHits];
@@ -140,7 +142,8 @@ TEST(PuffinFilesCacheMetrics, OrdinaryHitAndMissCounters)
 {
     PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
 
-    const auto key = PuffinFilesCache::tryCreateKey("puffin.bin", "etag-2", 100, 200, "data/file-b.parquet", 1, 100);
+    const auto key = PuffinFilesCache::tryCreateKey(
+        "Local:///test-prefix", "puffin.bin", "etag-2", 100, 200, "data/file-b.parquet", 1, 100);
     ASSERT_TRUE(key.has_value());
 
     auto & counters = CurrentThread::getProfileEvents();

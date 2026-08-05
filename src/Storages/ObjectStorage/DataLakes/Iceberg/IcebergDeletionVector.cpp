@@ -206,7 +206,27 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
     if (!puffin_object.metadata)
         puffin_object.metadata = object_storage->getObjectMetadata(puffin_object.getPath(), /*with_tags=*/ false);
 
+    if (!puffin_object.metadata->isEtagUsableAsCacheKey())
+    {
+        LOG_TRACE(
+            log,
+            "Not using Puffin files cache for '{}', because etag is empty or not a strong content identifier",
+            puffin_path);
+        return loadDeletionVectorUncached(
+            object_storage,
+            puffin_path,
+            content_offset,
+            content_size_in_bytes,
+            expected_data_file,
+            expected_cardinality_u64,
+            data_file_record_count,
+            context,
+            log,
+            false);
+    }
+
     auto cache_key = PuffinFilesCache::tryCreateKey(
+        PuffinFilesCache::makeStorageIdentity(*object_storage),
         puffin_path,
         puffin_object.metadata->etag,
         content_offset,
