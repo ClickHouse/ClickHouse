@@ -2656,7 +2656,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 /// a bare `currentDatabase()`) by evaluating it to a literal below. The normalized form
                 /// is persisted in the table metadata, so loading from existing metadata needs no
                 /// rebinding, and re-running the normalization on a user-issued `ATTACH` is a no-op.
-                ApplyWithSubqueryVisitor(local_context).visit(engine_args[1]);
+                ApplyWithSubqueryVisitor::visit(engine_args[1]);
                 AddDefaultDatabaseVisitor add_default_database_visitor(local_context, local_context->getCurrentDatabase());
                 add_default_database_visitor.visit(engine_args[1]);
                 add_default_database_visitor.visitDDL(engine_args[1]);
@@ -3205,7 +3205,7 @@ void registerStorageRemote(StorageFactory & factory)
         /// (it was normalized when first created, and must not be re-bound to the attaching session).
         if (parsed.remote_table_function_ptr && !loading_from_existing_metadata)
         {
-            ApplyWithSubqueryVisitor(args.getLocalContext()).visit(parsed.remote_table_function_ptr);
+            ApplyWithSubqueryVisitor::visit(parsed.remote_table_function_ptr);
             AddDefaultDatabaseVisitor add_default_database_visitor(
                 args.getLocalContext(), args.getLocalContext()->getCurrentDatabase());
             add_default_database_visitor.visit(parsed.remote_table_function_ptr);
