@@ -1,0 +1,64 @@
+shipped side owns the alias
+58
+56
+54
+56
+52
+48
+30	Nullable(Int64)
+29	Nullable(Int64)
+27	Nullable(Int64)
+6	LowCardinality(String)
+6	LowCardinality(String)
+6	LowCardinality(String)
+30	Int32
+29	Int32
+28	Int32
+59
+57
+55
+291
+281
+271
+alias only in a clause, not in the projection
+29
+28
+27
+0	5
+1	5
+2	4
+870
+9
+same-named ALIAS column on both sides
+1	2
+2	3
+3	4
+58	58
+56	56
+54	54
+parallel replicas pushed into a subquery
+58
+56
+54
+870
+right-side join kinds with a local join declined
+56
+52
+48
+query shipped as SQL instead of a plan
+58
+56
+54
+1	2
+2	3
+3	4
+30	Int32
+29	Int32
+28	Int32
+same-named ALIAS column on both sides, shipped by remote()
+1	2
+2	3
+3	4
+2
+3
+4
