@@ -143,9 +143,20 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     }
 
     /// Read the request headers.
+    /// RecordingReader keeps every byte received so far to replay the request head to the backend,
+    /// so the per-line limit alone does not bound memory: cap the total size of the request head,
+    /// or a client could stream an unbounded number of headers before a backend is even chosen.
+    constexpr size_t max_request_head_bytes = 1024 * 1024;
     String header;
     while (reader.readLine(header, 64 * 1024) && !header.empty())
     {
+        if (reader.received().size() > max_request_head_bytes)
+        {
+            sendResponse(client, 431, "Request Header Fields Too Large", "text/plain; charset=UTF-8",
+                "The request head exceeds " + std::to_string(max_request_head_bytes) + " bytes\n");
+            return;
+        }
+
         const size_t colon = header.find(':');
         if (colon == String::npos)
             continue;
