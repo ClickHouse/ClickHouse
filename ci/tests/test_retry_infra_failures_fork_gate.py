@@ -83,10 +83,28 @@ def _retry_step():
     return step
 
 
+def _listing_select_conjuncts(step):
+    """The conjuncts of the ``gh run list --jq`` listing filter's ``select()``.
+
+    Anchored to that invocation: the step has nine ``select(`` occurrences and only the
+    first belongs to the listing filter.
+    """
+    assert "gh run list" in step, step
+    invocation = step.split("gh run list", 1)[1].split("\n\n", 1)[0]
+    m = re.search(r"select\((.*?)\)", invocation)
+    assert m, invocation
+    return {c.strip() for c in m.group(1).split(" and ")}
+
+
 def test_selector_admits_gated_fork_runs():
     step = _retry_step()
-    assert "select(.attempt <= 2" in step, "listing filter must not exclude attempt 2"
-    assert not re.search(r"select\(\.attempt == 1\b", step), "attempt == 1 is fork-blind"
+    # A substring assertion cannot see an ADDED conjunct: `select(.attempt <= 2 and
+    # .attempt == 1 ...)` keeps every fork run out while still containing
+    # "select(.attempt <= 2".
+    assert _listing_select_conjuncts(step) == {
+        ".attempt <= 2",
+        r".createdAt >= \"$cutoff\"",
+    }, "the listing filter must be exactly the attempt bound and the cutoff"
     assert 'attempt1_conclusion" != "action_required"' in step, "missing attempt-1 probe"
     # The probe must interrogate attempt 1: reading any other attempt makes it meaningless.
     assert "/attempts/1" in step, "the probe must read attempt 1"
@@ -106,6 +124,11 @@ def test_selector_admits_gated_fork_runs():
     assert r'\"\(.databaseId):\(.attempt)\"' in step, "projection must emit id:attempt"
     assert 'run_id="${run_entry%%:*}"' in step, "run id must come from the head field"
     assert 'run_attempt="${run_entry##*:}"' in step, "attempt must come from the tail field"
+    # Presence is not enough: a later `run_id="${run_entry##*:}"` would overwrite the correct
+    # value from the wrong field while every assertion above still passes.
+    for var, expansion in (("run_id", "%%:*"), ("run_attempt", "##*:")):
+        assigns = re.findall(rf'^\s*{var}="\$\{{run_entry([^}}]*)\}}"', step, re.M)
+        assert assigns == [expansion], (var, assigns)
     # A gated attempt 1 has status "completed" and conclusion "action_required", so a probe
     # reading any other field rejects every fork candidate while the asserts above still pass.
     assert "--jq '.conclusion'" in step, "the probe must read the conclusion field"
