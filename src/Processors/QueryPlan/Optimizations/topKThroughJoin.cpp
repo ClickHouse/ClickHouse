@@ -108,8 +108,21 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// if that join were ever to opt in. For
 /// `JoinStepLogical` the algorithm is chosen later from `JoinSettings::join_algorithms`,
 /// so we conservatively flag any configured `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` /
-/// `FULL_SORTING_MERGE`. `GRACE_HASH` / `AUTO` are already covered by
-/// `joinMayHaveDelayedBlocks`. See issues #110662 and #109216.
+/// `FULL_SORTING_MERGE` / `PARALLEL_FULL_SORTING_MERGE` (the parallel variant
+/// physicalizes to the same `FullSortingMergeJoin` with the same pre-JOIN sort).
+/// `GRACE_HASH` / `AUTO` are already covered by `joinMayHaveDelayedBlocks`.
+///
+/// The `JoinStepLogical` check is by *list membership*, so listing a merge join as a
+/// lower-priority fallback (e.g. `join_algorithm = 'hash,parallel_full_sorting_merge'`)
+/// already disables the deferral even though the selected join is plain `hash`: the
+/// query then gets `topKThroughJoin`'s own `Sort + Limit` instead of preserved-side
+/// read-in-order. This is a plan-shape pessimization, not a wrong result, and it is
+/// exactly the pre-existing behavior of `join_algorithm = 'hash,full_sorting_merge'` -
+/// adding the new algorithm to the list introduces no divergence from it. Pinned by
+/// `04651_parallel_full_sorting_merge_join_fallback_top_k`; the analogous strict-key
+/// fallback side effect is pinned by
+/// `04602_parallel_full_sorting_merge_join_fallback_strict_keys`.
+/// See issues #110662 and #109216.
 bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -125,7 +138,8 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
         {
             return a == JoinAlgorithm::PARTIAL_MERGE
                 || a == JoinAlgorithm::PREFER_PARTIAL_MERGE
-                || a == JoinAlgorithm::FULL_SORTING_MERGE;
+                || a == JoinAlgorithm::FULL_SORTING_MERGE
+                || a == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE;
         });
     }
     /// Unknown step kind - be conservative.
