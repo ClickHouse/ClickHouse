@@ -543,6 +543,7 @@ set(PARQUET_SRCS
         "${LIBRARY_DIR}/benchmark_util.cc"
         "${LIBRARY_DIR}/bloom_filter.cc"
         "${LIBRARY_DIR}/bloom_filter_reader.cc"
+        "${LIBRARY_DIR}/bloom_filter_writer.cc"
         "${LIBRARY_DIR}/chunker_internal.cc"
         "${LIBRARY_DIR}/column_reader.cc"
         "${LIBRARY_DIR}/column_scanner.cc"
