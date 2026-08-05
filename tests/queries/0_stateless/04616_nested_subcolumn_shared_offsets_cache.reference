@@ -1,0 +1,6 @@
+part type	Wide
+wide prefetch single block	30000	0	0
+wide multi block	30000	0	0
+compact type	Compact
+compact control	100	0	0
+no shared offsets	0	0

@@ -464,22 +464,21 @@ using NameToDataType = std::map<String, DataTypePtr>;
 NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 {
     std::unordered_map<String, NamesAndTypesList> nested;
+    std::unordered_map<String, NameSet> added_members;
+
+    /// Unite flat arrays (`n.a`, `n.b`) into a Nested type. A member reached only via a subcolumn
+    /// (e.g. `n.a.null`) is taken from its storage column, so it too shares the Nested offsets.
     for (const auto & name_type : names_and_types)
     {
-        /// Skip subcolumns (e.g. `c0.c2.null` derived from `c0.c2 Array(Nullable(Tuple()))`).
-        /// They are not real flat-nested columns like `n.a Array(T)`, `n.b Array(T)`.
-        if (name_type.isSubcolumn())
+        const auto & type = name_type.isSubcolumn() ? name_type.getTypeInStorage() : name_type.type;
+        const auto * type_arr = typeid_cast<const DataTypeArray *>(type.get());
+        if (isNested(type) || !type_arr)
             continue;
 
-        const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
-
-        /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
-        if (!isNested(name_type.type) && type_arr)
-        {
-            auto split = splitName(name_type.name);
-            if (!split.second.empty())
-                nested[split.first].emplace_back(split.second, type_arr->getNestedType());
-        }
+        /// Dedup: a member may be reached by both its full column and a subcolumn of it.
+        auto split = splitName(name_type.getNameInStorage());
+        if (!split.second.empty() && added_members[split.first].insert(split.second).second)
+            nested[split.first].emplace_back(split.second, type_arr->getNestedType());
     }
 
     std::map<String, DataTypePtr> nested_types;
@@ -512,6 +511,8 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
 
 NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
 {
+    /// Includes members reached only via a subcolumn, so `arr.nested.b` is remapped onto Nested
+    /// `arr` (and shares its offsets cache) even when the full `arr.nested` is absent or missing.
     auto nested_types = getSubcolumnsOfNested(names_and_types);
     auto res = names_and_types;
 
@@ -697,18 +698,30 @@ DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
 {
     auto it = tuple_elements.begin();
 
-    /// Get underlying type for array, but w/o processing tuple elements that are not part of the nested, so it is done in 3 steps:
-    /// 1. Find Nested type (since it can be part of Tuple/Array)
-    /// 2. Process all Nested types (this is Array(Tuple()), it is responsibility of the caller to re-create proper Array nesting)
-    /// 3. Strip all nested arrays (it is responsibility of the caller to re-create proper Array nesting)
-
-    /// 1. Find Nested type (since it can be part of Tuple/Array)
+    /// Strip Array levels and descend the named Tuple / flattened-Nested elements until the tuple
+    /// elements are consumed. Navigating all kinds in one loop matters because a Nested member can
+    /// itself be a plain Tuple with a deeper subcolumn (e.g. `nested.b`). The caller re-creates the
+    /// stripped Array nesting from `num_empty_dimensions`.
     while (true)
     {
         if (type->hasCustomName())
-            break;
+        {
+            const auto * type_nested = typeid_cast<const DataTypeNestedCustomName *>(type->getCustomName());
+            if (!type_nested || it == tuple_elements.end())
+                break;
+
+            const auto & names = type_nested->getNames();
+            auto pos = std::find(names.begin(), names.end(), *it);
+            if (pos == names.end())
+                break;
+            ++it;
+
+            type = type_nested->getElements().at(std::distance(names.begin(), pos));
+        }
         else if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        {
             type = type_array->getNestedType();
+        }
         else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
         {
             if (it == tuple_elements.end())
@@ -724,30 +737,6 @@ DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
         else
             break;
     }
-
-    /// 2. Process all Nested types (this is Array(Tuple()), it is responsibility of the caller to re-create proper Array nesting)
-    while (type->hasCustomName())
-    {
-        if (const auto * type_nested = typeid_cast<const DataTypeNestedCustomName *>(type->getCustomName()))
-        {
-            if (it == tuple_elements.end())
-                break;
-
-            const auto & names = type_nested->getNames();
-            auto pos = std::find(names.begin(), names.end(), *it);
-            if (pos == names.end())
-                break;
-            ++it;
-
-            type = type_nested->getElements().at(std::distance(names.begin(), pos));
-        }
-        else
-            break;
-    }
-
-    /// 3. Strip all nested arrays (it is responsibility of the caller to re-create proper Array nesting)
-    while (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-        type = type_array->getNestedType();
 
     return type;
 }
