@@ -48,7 +48,8 @@ ERROR_KINDS = {
 }
 
 ALL_FAILPOINTS = [fp for triple in ERROR_KINDS.values() for fp in triple[:2]] + [
-    "azure_inject_bad_request"
+    "azure_inject_bad_request",
+    "azure_inject_forbidden_on_upload",
 ]
 
 # The OSS-observable signal that reportBroken() was taken (part-check thread).
@@ -315,3 +316,50 @@ def test_transient_forbidden_on_write_succeeds(started_cluster):
         "Write at attempt"
     ), "the CH-level write retry loop was never exercised"
     assert not node.contains_in_log(BROKEN_PART_LOG)
+
+
+def test_azure_403_on_upload_read_write_copy_is_retried(started_cluster):
+    # The read+write copy fallback (UploadHelper in copyAzureBlobStorageFile) must retry a transient
+    # destination error on its write ops, the same way the read side already does. Force the
+    # read+write path with allow_azure_native_copy = 0 and inject one transient 403 on the upload;
+    # the backup must still succeed. Before the fix the first upload write threw and failed the copy.
+    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
+
+    node.query("DROP TABLE IF EXISTS t_upload SYNC")
+    node.query("DROP TABLE IF EXISTS t_upload_restored SYNC")
+    node.query(
+        """
+        CREATE TABLE t_upload (k UInt64, v String)
+        ENGINE = MergeTree() ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    node.query("INSERT INTO t_upload SELECT number, toString(number) FROM numbers(100)")
+
+    cont = "backupcont" + str(time.time_ns())
+    backup_dest = f"AzureBlobStorage('{connection_string}', '{cont}', 't_upload_backup')"
+
+    count_native = "SELECT sum(value) FROM system.events WHERE event = 'AzureCopyObject'"
+    native_before = int(node.query(count_native).strip() or 0)
+
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_on_upload")
+    try:
+        node.query(
+            f"BACKUP TABLE t_upload TO {backup_dest} SETTINGS allow_azure_native_copy = 0"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_on_upload")
+
+    # Guard against a false pass: the copy must have gone through the read+write (UploadHelper) path,
+    # not a server-side native copy (which would never reach the injected write failpoint). Any
+    # native-copy attempt bumps AzureCopyObject before issuing the request.
+    assert int(node.query(count_native).strip() or 0) == native_before
+
+    node.query(
+        f"RESTORE TABLE t_upload AS t_upload_restored FROM {backup_dest} "
+        f"SETTINGS allow_azure_native_copy = 0"
+    )
+    assert node.query("SELECT count() FROM t_upload_restored").strip() == "100"
+
+    node.query("DROP TABLE IF EXISTS t_upload SYNC")
+    node.query("DROP TABLE IF EXISTS t_upload_restored SYNC")
