@@ -154,6 +154,35 @@ SELECT r.key FROM (
 RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
 ORDER BY r.key;
 
+-- Now that a RIGHT JOIN can be offloaded, its left side is the one materialized into a temporary
+-- table before the query is sent to the replicas. A left side that is not a MergeTree has to force
+-- a global join, otherwise every replica would read its own copy of it and produce a different
+-- result. Merge is used here because the stress runner rewrites Log/TinyLog/StripeLog/Memory to
+-- MergeTree, which would silently turn these assertions into controls.
+
+CREATE TABLE t_merge_left (key UInt64) ENGINE = Merge(currentDatabase(), '^t_mid$');
+
+SELECT '-- non-MergeTree left, right eligible: left is materialized into a temporary table';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM t_merge_left) AS l
+    RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_prefer_local_join = 1
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%' AND explain ILIKE '%_data_%';
+
+SELECT '-- non-MergeTree left, right eligible: the raw left read is not sent to the replicas';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM t_merge_left) AS l
+    RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_prefer_local_join = 1
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%t_merge_left%';
+
+SELECT '-- non-MergeTree left, right eligible: results are correct';
+SELECT r.key FROM (SELECT key FROM t_merge_left WHERE key < 5) AS l
+RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+ORDER BY r.key
+SETTINGS parallel_replicas_prefer_local_join = 1;
+
+DROP TABLE t_merge_left;
 DROP TABLE t_left;
 DROP TABLE t_mid;
 DROP TABLE t_right;

@@ -928,12 +928,23 @@ public:
         return true;
     }
 
+    /// The side buildQueryTreeForShard materializes into a temporary table: the right one, except
+    /// for a RIGHT JOIN, where it is the left one.
+    static QueryTreeNodePtr & getMaterializedTableExpressionNode(JoinNode & join_node)
+    {
+        if (join_node.getKind() == JoinKind::Right)
+            return join_node.getLeftTableExpressionNode();
+
+        return join_node.getRightTableExpressionNode();
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * join_node = node->as<JoinNode>())
         {
             bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
-            bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpressionNode());
+            bool should_use_global_join
+                = !prefer_local_join || !allStoragesAreMergeTree(getMaterializedTableExpressionNode(*join_node));
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);
         }
@@ -942,7 +953,7 @@ public:
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getRightTableExpressionNode() == child)
+        if (join_node && getMaterializedTableExpressionNode(*join_node) == child)
             return false;
 
         return true;
