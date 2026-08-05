@@ -77,6 +77,7 @@ FILES_OVERHEAD_PER_PART_COMPACT = (
     + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
     - FILES_SAVED_BY_PACKED_SKIP_INDEX
 )
+FILES_OVERHEAD_PER_INVALIDATED_COLUMN = 1
 
 
 @pytest.fixture(scope="module")
@@ -260,8 +261,12 @@ def test_attach_detach_partition(cluster):
     node.query("ALTER TABLE hdfs_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = list_hdfs_objects(fs)
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    wait_for_delete_hdfs_objects(
+        cluster,
+        FILES_OVERHEAD
+        + FILES_OVERHEAD_PER_PART_WIDE * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN,
+    )
 
     node.query("ALTER TABLE hdfs_test DROP PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
@@ -399,7 +404,8 @@ def test_move_replace_partition_to_another_table(cluster):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
@@ -422,7 +428,8 @@ def test_move_replace_partition_to_another_table(cluster):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 6
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     node.query("ALTER TABLE hdfs_test REPLACE PARTITION '2020-01-03' FROM hdfs_clone")
@@ -437,7 +444,8 @@ def test_move_replace_partition_to_another_table(cluster):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 4,
     )
 
     node.query("DROP TABLE hdfs_clone SYNC")
@@ -454,5 +462,6 @@ def test_move_replace_partition_to_another_table(cluster):
         cluster,
         FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
