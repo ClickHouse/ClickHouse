@@ -92,9 +92,8 @@ public:
     template <typename LoadFunc>
     DataLakeObjectMetadata::ExcludedRowsPtr getOrSetDeletionVector(const PuffinFilesCacheKey & key, LoadFunc && load_fn)
     {
-        /// True if this caller's load_fn ran. Needed together with `contains()` because
-        /// CacheBase::getOrSet returns `{value, false}` for hits, for a clear()-discarded
-        /// producer, and for stampede waiters of that discarded load.
+        /// True if this caller's load_fn ran. Used only for tracing; hit/miss metrics use the
+        /// atomic CacheGetOrSetOutcome from getOrSetWithOutcome (not a follow-up contains()).
         bool loaded = false;
         auto load_fn_wrapper = [&]()
         {
@@ -128,13 +127,11 @@ public:
             return std::make_shared<PuffinFilesCacheCell>(std::move(excluded_rows));
         };
 
-        auto result = Base::getOrSet(key, load_fn_wrapper);
-        /// `result.second` means inserted. A concurrent clear() can leave producer and stampede
-        /// waiters with a value that is not resident — those must count as misses, not hits.
-        const bool served_from_cache = !result.second && !loaded && contains(key);
+        auto [cell, outcome] = Base::getOrSetWithOutcome(key, load_fn_wrapper);
+        const bool served_from_cache = outcome == CacheGetOrSetOutcome::Hit;
         if (!served_from_cache)
         {
-            if (loaded && !result.second)
+            if (loaded && outcome == CacheGetOrSetOutcome::MissNotResident)
             {
                 LOG_TRACE(
                     log,
@@ -146,7 +143,7 @@ public:
                     key.content_size_in_bytes,
                     key.referenced_data_file);
             }
-            else if (!result.second && !loaded)
+            else if (!loaded && outcome == CacheGetOrSetOutcome::MissNotResident)
             {
                 LOG_TRACE(
                     log,
@@ -172,7 +169,7 @@ public:
             }
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheMisses);
         }
-        else if (result.first->is_empty_deletion_vector)
+        else if (cell->is_empty_deletion_vector)
         {
             LOG_TRACE(
                 log,
@@ -199,7 +196,7 @@ public:
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheHits);
         }
 
-        return cloneExcludedRows(*result.first);
+        return cloneExcludedRows(*cell);
     }
 
 private:

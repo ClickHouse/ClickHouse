@@ -164,3 +164,36 @@ TEST(PuffinFilesCacheMetrics, OrdinaryHitAndMissCounters)
     EXPECT_EQ(counters[ProfileEvents::PuffinFilesCacheMisses] - misses_before, 1u);
     EXPECT_EQ(counters[ProfileEvents::PuffinFilesCacheHits] - hits_before, 1u);
 }
+
+TEST(PuffinFilesCacheMetrics, HitRemainsHitWhenCacheClearedAfterLookup)
+{
+    PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
+
+    const auto key = PuffinFilesCache::tryCreateKey(
+        "Local:///test-prefix", "puffin.bin", "etag-hit-clear", 100, 200, "data/file-c.parquet", 1, 100);
+    ASSERT_TRUE(key.has_value());
+
+    auto & counters = CurrentThread::getProfileEvents();
+    size_t load_calls = 0;
+    auto load_fn = [&]()
+    {
+        ++load_calls;
+        return makeExcludedRows({3});
+    };
+
+    ASSERT_NE(cache.getOrSetDeletionVector(*key, load_fn), nullptr);
+
+    const auto hits_before = counters[ProfileEvents::PuffinFilesCacheHits];
+    const auto misses_before = counters[ProfileEvents::PuffinFilesCacheMisses];
+
+    ASSERT_NE(cache.getOrSetDeletionVector(*key, load_fn), nullptr);
+    EXPECT_EQ(load_calls, 1u);
+    EXPECT_EQ(counters[ProfileEvents::PuffinFilesCacheHits] - hits_before, 1u);
+    EXPECT_EQ(counters[ProfileEvents::PuffinFilesCacheMisses] - misses_before, 0u);
+
+    /// Clearing after the hit must not rewrite the already-recorded hit as a miss. The old
+    /// contains()-after-getOrSet path could race here with SYSTEM DROP PUFFIN FILES CACHE.
+    cache.clear();
+    EXPECT_EQ(counters[ProfileEvents::PuffinFilesCacheHits] - hits_before, 1u);
+    EXPECT_EQ(counters[ProfileEvents::PuffinFilesCacheMisses] - misses_before, 0u);
+}
