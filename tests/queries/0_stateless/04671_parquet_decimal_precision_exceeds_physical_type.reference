@@ -1,0 +1,4 @@
+-- INT32 physical with declared precision 18 (exceeds 9): rejected
+INCORRECT_DATA
+-- INT64 physical with declared precision 38 (exceeds 18): rejected
+INCORRECT_DATA
