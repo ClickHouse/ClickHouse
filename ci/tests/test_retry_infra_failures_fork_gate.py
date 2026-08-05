@@ -231,6 +231,14 @@ def test_selector_admits_gated_fork_runs():
     # `$((run_attempt + 1))`.
     m = re.search(r"--json\s+([A-Za-z0-9_,]+)", listing_invocation)
     assert m and "attempt" in m.group(1).split(","), listing_invocation
+    # The `<LISTING>` sentinel intentionally does not pin the invocation's flag SPELLING, but
+    # the three flags below are semantics, not spelling: `--status success`, another
+    # `--workflow`, or another `--repo` all leave the whole static test green while the job
+    # retries the wrong runs. Asserted against the normalized invocation, so a re-wrap or a
+    # flag reorder is not a false refusal. `--limit` is deliberately not pinned: it is a
+    # tuning knob, and the 6 hour cutoff bounds the window independently.
+    for flag in ('--repo "$GH_REPO"', "--workflow pull_request.yml", "--status failure"):
+        assert flag in listing_invocation, (flag, listing_invocation)
     assert 'attempt1_conclusion" != "action_required"' in step, "missing attempt-1 probe"
     # The probe must interrogate attempt 1: reading any other attempt makes it meaningless.
     # Against `normalized` (hoisted above), so a re-wrap is not a false refusal.
@@ -347,6 +355,32 @@ def test_selector_admits_gated_fork_runs():
         if "$attempt1_conclusion" in l and l.strip().startswith("if ")
     ]
     assert conds == [REJECT_COND], conds
+    # The asserts above pin the gate and everything up to the reject condition, but the region
+    # from the gate's own `fi` to `gh run rerun` is unconstrained: re-emitting the guard there
+    # with a bare `continue`, or forcing `should_rerun=false` for an attempt-2 candidate just
+    # before the rerun, skips every gated fork run while every assertion above still passes.
+    # So pin that exactly ONE line branches on run_attempt -- the gate -- and that run_attempt
+    # is assigned exactly once. Other reads (the rerun log line) are free.
+    attempt_reads = [
+        s
+        for s in (" ".join(l.split()) for l in step.splitlines())
+        if s
+        and not s.startswith("#")
+        and not re.match(r"^run_attempt=", s)
+        and re.search(r"\brun_attempt\b", s)
+    ]
+    branching = [
+        s
+        for s in attempt_reads
+        if re.search(r"^(if|while|until|case|elif)\b|&&|\|\||\bcontinue\b|\bbreak\b|\breturn\b", s)
+    ]
+    assert branching == [GUARD], (
+        "exactly one line may branch on run_attempt (the gate); a second one makes it inert",
+        branching,
+    )
+    assert (
+        len(re.findall(r"^\s*run_attempt=", step, re.M)) == 1
+    ), "run_attempt must be assigned once"
 
 
 def _run_step(
