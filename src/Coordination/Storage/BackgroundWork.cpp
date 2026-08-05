@@ -37,8 +37,8 @@ namespace ProfileEvents
 
 namespace DB::CoordinationSetting
 {
-    extern const CoordinationSettingsUInt64 flush_threads;
-    extern const CoordinationSettingsUInt64 merge_threads;
+    extern const CoordinationSettingsNonZeroUInt64 flush_threads;
+    extern const CoordinationSettingsNonZeroUInt64 merge_threads;
     extern const CoordinationSettingsUInt64 min_files_to_merge;
     extern const CoordinationSettingsUInt64 max_files_to_merge;
     extern const CoordinationSettingsFloat max_size_ratio;

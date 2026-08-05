@@ -79,8 +79,8 @@ namespace ErrorCodes
     DECLARE(UInt64, file_block_size, 32 * 1024, "LSMT: target size of blocks in files, in bytes.", HOT_RELOAD) \
     DECLARE(UInt64, file_block_group_compressed_size, 512 * 1024, "LSMT: target size of compressed group of blocks that are read together.", HOT_RELOAD) \
     DECLARE(UInt64, sorted_file_uncompressed_size, 32 * 1024 * 1024, "LSMT: target uncompressed size of a single file within a sorted run, in bytes.", HOT_RELOAD) \
-    DECLARE(UInt64, flush_threads, 2, "LSMT: number of background threads flushing memtables to files.", 0) \
-    DECLARE(UInt64, merge_threads, 3, "LSMT: number of background threads merging files.", 0) \
+    DECLARE(NonZeroUInt64, flush_threads, 2, "LSMT: number of background threads flushing memtables to files.", 0) \
+    DECLARE(NonZeroUInt64, merge_threads, 3, "LSMT: number of background threads merging files.", 0) \
     DECLARE(UInt64, min_files_to_merge, 3, "LSMT: background merge will merge at least this many sorted runs at once.", HOT_RELOAD) \
     DECLARE(UInt64, max_files_to_merge, 20, "LSMT: background merge will merge at most this many sorted runs at once.", HOT_RELOAD) \
     DECLARE(Float, max_size_ratio, 0.7f, "LSMT: background merge will merge a range of sorted runs if the ratio [bytes in the lowest-numbered selected sorted run] / [bytes in all selected sorted runs] is less than this. Smaller values reduce write amplification, bigger values reduce the number of sorted runs.", HOT_RELOAD) \
