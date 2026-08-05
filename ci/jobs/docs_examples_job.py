@@ -4,8 +4,10 @@
 The runner itself is `tests/docs_examples/runner.py`, which is plain Python and can be pointed at
 any server. This job only provides that server: the shipped configuration plus the fragments in
 `programs/server/config.d` (macros, the legacy geobase, the natural language processing data,
-Keeper, the test clusters) and the fragment in `tests/docs_examples/config.d`, so that the features
-the examples demonstrate are actually configured."""
+Keeper, the test clusters) and `programs/server/users.d` (the localhost-only network of the default
+user, access management, query logging), and the fragments in `tests/docs_examples/config.d` and
+`tests/docs_examples/users.d`, so that the features the examples demonstrate are actually
+configured, and so that they are configured the way the shipped server configures them."""
 
 import os
 import subprocess
@@ -33,8 +35,9 @@ class Server:
         commands = [
             f"rm -rf {SERVER_DIR} && mkdir -p {SERVER_DIR}",
             f"cp ./programs/server/config.xml ./programs/server/users.xml {SERVER_DIR}/",
-            f"cp -r --dereference ./programs/server/config.d {SERVER_DIR}/",
+            f"cp -r --dereference ./programs/server/config.d ./programs/server/users.d {SERVER_DIR}/",
             f"cp ./tests/docs_examples/config.d/*.xml {SERVER_DIR}/config.d/",
+            f"cp ./tests/docs_examples/users.d/*.xml {SERVER_DIR}/users.d/",
             f"cp -r ./tests/config/top_level_domains {SERVER_DIR}/",
             f"chmod +x {TEMP_DIR}/clickhouse",
             f"ln -sf {TEMP_DIR}/clickhouse {TEMP_DIR}/clickhouse-server",

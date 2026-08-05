@@ -1632,6 +1632,8 @@ class JobConfigs:
                 "./tests/config/top_level_domains/",
                 "./programs/server/config.xml",
                 "./programs/server/config.d/",
+                "./programs/server/users.xml",
+                "./programs/server/users.d/",
             ],
         ),
         requires=[ArtifactNames.CH_ARM_RELEASE],
