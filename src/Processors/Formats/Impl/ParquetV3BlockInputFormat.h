@@ -104,6 +104,11 @@ public:
     /// regardless of `input_format_skip_unknown_fields`.
     bool alwaysSkipsUnknownFields() const override { return true; }
 
+    /// The parser casts a decoded numeric column to the requested destination type, and a cast
+    /// from an integer to the `UInt32`-backed `IPv4` is valid, so a numeric source value is
+    /// accepted into an `IPv4` column.
+    bool readsNumericValueIntoIPv4Column() const override { return true; }
+
 private:
     void initializeIfNeeded();
 

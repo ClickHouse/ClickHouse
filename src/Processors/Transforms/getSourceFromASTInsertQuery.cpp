@@ -273,10 +273,11 @@ String getInsertDataSchemaMismatchDescription(
         /// because `IPv4` is backed by a `UInt32` and does share a least supertype with a widened numeric
         /// type, so the supertype rule would otherwise wrongly treat it as compatible. The binary formats
         /// that store typed values are an exception for `IPv4`: `BSONEachRow` reads a BSON `Int32` and
-        /// `MsgPack` reads an integer straight into the `UInt32`-backed `IPv4` column
-        /// (`format_reads_numeric_into_ipv4`), so a numeric value is valid there and flagging it would be a
-        /// false positive (`UUID` and `IPv6` still require binary data of the exact size in those formats,
-        /// so they stay a mismatch). `FixedString` also rejects a bare number, but only in the typed-token
+        /// `MsgPack` reads an integer straight into the `UInt32`-backed `IPv4` column, and the columnar
+        /// formats (`Parquet`, `Arrow`, `ORC`) cast a decoded numeric column to the requested type, which
+        /// is valid for the `UInt32`-backed `IPv4` (`format_reads_numeric_into_ipv4`), so a numeric value
+        /// is valid there and flagging it would be a false positive (`UUID` and `IPv6` still require
+        /// binary data of the exact size in those formats, so they stay a mismatch). `FixedString` also rejects a bare number, but only in the typed-token
         /// JSON formats (`SerializationFixedString::deserializeTextJSON` requires a quoted string,
         /// regardless of the `input_format_json_read_numbers_as_strings` setting, which covers only the
         /// plain `String` destination); `TSV` / `CSV` read the raw field verbatim into a `FixedString`
