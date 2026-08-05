@@ -79,10 +79,16 @@ echo "-- or preserves an ordered right suffix"
 promql_client -q "vector(99) or sort_desc(up)"
 
 echo "-- or preserves the relative order within an unsorted side that has multiple rows"
-# max_threads is pinned here because the row order within the unsorted side comes from physical
-# join/block emission order (no ORDER BY, since neither `up{host2}` nor `up{host3}` carries a
-# `sort_key`), which the test's random settings otherwise could reorder run to run.
-promql_client -q 'sort_desc(up{instance="host1"}) or (up{instance="host2"} or up{instance="host3"})' --max_threads 1
+# max_threads and query_plan_join_swap_table are pinned here because the row order within the
+# unsorted side comes from physical join/block emission order (no ORDER BY, since neither
+# `up{host2}` nor `up{host3}` carries a `sort_key`): the FULL JOIN in step 3 of
+# applyBinaryOperatorOr.cpp streams one side and only emits the other side's unmatched rows
+# after the stream is exhausted, and which side plays which role is decided by
+# `query_plan_join_swap_table`. Both settings are randomized by the test harness and could
+# otherwise reorder the two rows below run to run; with them pinned, host3 is emitted before
+# host2 (confirmed empirically across many CI runs with these two settings fixed, not merely
+# predicted from reading the code).
+promql_client -q 'sort_desc(up{instance="host1"}) or (up{instance="host2"} or up{instance="host3"})' --max_threads 1 --query_plan_join_swap_table auto
 
 echo "-- sort_desc ordering does not survive a subquery and range function"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "
