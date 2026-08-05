@@ -4,6 +4,8 @@ code TIMEOUT_EXCEEDED, options attempted: 1
 --- cancelled, three options ---
 reported as a cancellation
 code TIMEOUT_EXCEEDED, options attempted: 1
+--- cancelled, one option, schema inference ---
+code TIMEOUT_EXCEEDED, options attempted: 1
 --- KILL QUERY while the last option is in flight ---
 reported as a cancellation
 code QUERY_WAS_CANCELLED, options attempted: 2

@@ -244,6 +244,21 @@ ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_THREE" --query "
 " 2>&1 | grep -c -m1 'All uri' | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
 outcome "$QUERY_ID_THREE"
 
+# A single option reaches the handler only through schema inference: the read path passes
+# delay_initialization = options == 1, so for one option no request is issued inside the failover try,
+# while both schema-inference callers pass false. Omitting the structure argument routes the query
+# there. Without the fix the cancellation is swallowed and schema inference wraps the transport error
+# as CANNOT_EXTRACT_TABLE_STRUCTURE. The 'TSV' argument is load-bearing for that pre-fix code.
+echo "--- cancelled, one option, schema inference ---"
+QUERY_ID_INFER="04674_infer_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_INFER" --query "
+    SELECT * FROM url('http://127.0.0.1:$DEAD_PORT/a', 'TSV')
+    SETTINGS max_execution_time = 2, http_receive_timeout = 5, http_max_tries = 1,
+             http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
+             send_logs_level = 'fatal'
+" > /dev/null 2>&1 ||:
+outcome "$QUERY_ID_INFER"
+
 # The last option has no successor, so only reporting the cancellation from the handler itself can
 # keep the code: a check at the top of the failover loop is never reached again. The kill is fired
 # once the query's own request counter reaches 2, so option 2 is in flight by observation, not by timing.
