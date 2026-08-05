@@ -845,10 +845,12 @@ void validateIcebergFieldIds(
 ///     required binary metadata;
 ///     required binary value;
 ///   }
-/// Dynamic nulls are encoded as Variant nulls, so the group and both leaves are required.
+/// Dynamic nulls are encoded as Variant nulls, so both leaves remain required. The group is
+/// optional only when required by Iceberg field metadata.
 void prepareColumnVariant(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id,
+    const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     /// Serialize each row into the Variant binary encoding (metadata + value).
     /// The metadata dictionary is cached per Dynamic variant type: for variant types whose
@@ -917,8 +919,10 @@ void prepareColumnVariant(
         value_column->insertData(value.data(), value.size());
     }
 
+    const bool optional = iceberg_optionality.isOptional(column_path);
+
     auto & group_schema = schemas.emplace_back();
-    group_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    group_schema.__set_repetition_type(optional ? parq::FieldRepetitionType::OPTIONAL : parq::FieldRepetitionType::REQUIRED);
     group_schema.__set_name(name);
     group_schema.__set_num_children(2);
     group_schema.__isset.logicalType = true;
@@ -941,6 +945,9 @@ void prepareColumnVariant(
     {
         Strings & path = states[i].column_chunk.meta_data.path_in_schema;
         path.insert(path.begin(), name);
+
+        if (optional)
+            updateDefLevelsForAlwaysPresentOptionalGroup(states[i]);
     }
 }
 
@@ -960,7 +967,8 @@ void prepareColumnRecursive(
         case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
         case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
         case TypeIndex::Dynamic:
-            prepareColumnVariant(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+            prepareColumnVariant(
+                column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path, iceberg_optionality);
             break;
         case TypeIndex::LowCardinality:
         {
