@@ -65,8 +65,9 @@ Alias: authUser()
         .examples{
             {"Usage example",
             R"(
-            EXECUTE as u1;
-            SELECT currentUser(), authenticatedUser();
+CREATE USER IF NOT EXISTS u1;
+EXECUTE AS u1 SELECT currentUser(), authenticatedUser();
+DROP USER IF EXISTS u1;
             )",
             R"(
 ┌─currentUser()─┬─authenticatedUser()─┐
