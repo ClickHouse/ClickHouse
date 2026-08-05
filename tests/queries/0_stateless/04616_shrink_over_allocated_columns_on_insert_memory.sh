@@ -47,7 +47,18 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=${qid_on}&query=${ENC_QUERY}&
 
 rm -f "${DATA_FILE}"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+# The query_log entry is written asynchronously, after the HTTP response is sent
+# (https://github.com/ClickHouse/ClickHouse/issues/84364), so a single FLUSH LOGS races the
+# log write. Retry FLUSH until both QueryFinish rows have landed.
+for _ in {1..60}; do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+    landed=$(${CLICKHOUSE_CLIENT} -q "
+        SELECT countIf(query_id = '$qid_off') > 0 AND countIf(query_id = '$qid_on') > 0
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()")
+    [ "$landed" = "1" ] && break
+    sleep 0.5
+done
 
 # Shrinking must reduce peak memory by more than 10% (measured ~17%).
 ${CLICKHOUSE_CLIENT} -q "
