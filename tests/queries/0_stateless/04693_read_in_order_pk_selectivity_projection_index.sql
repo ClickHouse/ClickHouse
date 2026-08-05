@@ -45,10 +45,11 @@ SELECT count() > 0 FROM (
     SETTINGS use_projection_index_in_read_pools = 1, read_in_order_max_primary_key_ratio = 0.5
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
--- Control: with the projection index not used in the read pools no refiner is installed, the read really
--- is the whole table and the guard must still fire. This also shows that the exemption is what keeps
--- read-in-order in the case above, rather than the table being too small for the guard to consider.
-SELECT 'no_read_pool_refinement_full_sort';
+-- With `use_projection_index_in_read_pools = 0` the pool-level refiner is not installed, but the same
+-- projection-index bitmap is still applied during reading (`MergeTreeReaderIndex` skips the fully
+-- filtered granules), so the mark count the guard sees is still only a pre-pruning upper bound and the
+-- exemption must apply here too.
+SELECT 'reader_side_pruning_keeps_in_order';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_read_in_order_projection_index
     WHERE region = 'rare'
@@ -66,13 +67,20 @@ SELECT count() > 0 FROM (
     SETTINGS use_projection_index_in_read_pools = 1, read_in_order_max_primary_key_ratio = 0.5
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
--- Correctness: the exempted read-in-order query returns all matching rows, sorted.
+-- Correctness: the exempted read-in-order query returns all matching rows, sorted — with the
+-- pool-level refinement both enabled and disabled (reader-side pruning only).
 SELECT 'correctness';
 SELECT count(), min(id), max(id) FROM (
     SELECT id FROM t_read_in_order_projection_index
     WHERE region = 'rare'
     ORDER BY id
     SETTINGS use_projection_index_in_read_pools = 1, read_in_order_max_primary_key_ratio = 0.5
+);
+SELECT count(), min(id), max(id) FROM (
+    SELECT id FROM t_read_in_order_projection_index
+    WHERE region = 'rare'
+    ORDER BY id
+    SETTINGS use_projection_index_in_read_pools = 0, read_in_order_max_primary_key_ratio = 0.5
 );
 
 DROP TABLE t_read_in_order_projection_index;
