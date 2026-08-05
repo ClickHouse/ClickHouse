@@ -1154,6 +1154,15 @@ def _restart_nats(nats_cluster, attempts = 4):
             "restart attempt %s raced a re-subscribe, retrying so the restart exercises the recovery",
             attempt)
 
+        # The discarded attempt leaves the subscription it raced holding no request: the restart
+        # destroyed that request broker side while the client kept a handle it has no status for, so
+        # nothing reports it closed and the recovery this fix adds never fires for it. Retrying
+        # against it would poll `num_waiting` forever, so rebuild the subscription first and require
+        # a fresh streaming cycle before the next attempt reads the precondition again.
+        instance.query("SYSTEM STOP test.consume")
+        instance.query("SYSTEM START test.consume")
+        nats_helpers.wait_for_streaming_started(instance, "test.consume")
+
     raise AssertionError(
         "every one of {} restarts raced a re-subscribe, so the recovery was never exercised".format(
             attempts))
