@@ -451,6 +451,14 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
     if (is_parameterized_view)
         return {};
 
+    /// Without a table UUID (a view in an `Ordinary` database) we cannot distinguish incarnations of a
+    /// same-named view: a DROP + CREATE resets the per-lifetime metadata version folded below, so a
+    /// definition change that keeps the same columns and stored SELECT (e.g. `SQL SECURITY INVOKER` ->
+    /// `DEFINER`, which changes the visible rows under row policies) could repeat an earlier hash.
+    /// Fail closed, matching the other engines.
+    if (!getStorageID().hasUUID())
+        return {};
+
     try
     {
         /// The stored SELECT was CTE-expanded and database-qualified at CREATE time
@@ -464,10 +472,19 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
             return {};
 
         SipHash hash;
+        /// Per-incarnation identity: a DROP + CREATE in an `Atomic` database gets a fresh UUID, so a
+        /// re-created view never repeats the hash of an earlier incarnation even when the definition,
+        /// columns and referenced tables are identical.
+        hash.update(getStorageID().uuid);
         hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
         /// Loop-free metadata version for this view's own column metadata (a reverted metadata-only `ALTER`
         /// would otherwise repeat the column string above). See `IStorage::getMetadataVersionForModificationHash`.
         hash.update(getMetadataVersionForModificationHash());
+        /// The execution security context is part of what the view returns (under row policies an
+        /// `INVOKER` and a `DEFINER` view over the same tables can see different rows), but it is not
+        /// part of the stored SELECT tree hashed below - fold it explicitly.
+        hash.update(storage_snapshot->metadata->sql_security_type ? static_cast<Int8>(*storage_snapshot->metadata->sql_security_type) : Int8(-1));
+        hash.update(storage_snapshot->metadata->definer.value_or(""));
         /// A view in a database without UUIDs (`Ordinary`) can be re-created with a different definition
         /// but the same identity, and the new definition may read the same tables. Fold the stored SELECT
         /// so that a definition change is detected as a modification.

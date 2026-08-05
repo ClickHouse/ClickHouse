@@ -362,6 +362,24 @@ std::optional<UInt128> computeTableModificationHashForConsistency(const StorageI
             return {};
     }
 
+    /// Some engines apply metadata lazily on the first use of the table (e.g. object storage resolves
+    /// the deferred Hive-partitioning sample path through `setInMemoryMetadata`, which advances the
+    /// metadata version folded into the hash). Trigger that update now - the same call the interpreter
+    /// makes before analysis - so the hash computed before the query reads the table agrees with the
+    /// one computed at finalization, after the read has performed the update. Runs after the access
+    /// check above because it may perform credentialed I/O (an object listing).
+    try
+    {
+        storage->updateExternalDynamicMetadataIfExists(context);
+    }
+    catch (...)
+    {
+        /// Ok to ignore: the metadata update failed, so we cannot verify consistency and
+        /// conservatively bail out.
+        return {};
+    }
+    metadata = storage->getInMemoryMetadataPtr(context, false);
+
     auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
     std::optional<UInt128> table_hash = storage->getModificationHash(snapshot, context);
 
@@ -395,6 +413,14 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
         /// later, so just report that consistency cannot be verified.
         return {};
     }
+
+    /// A non-deterministic function (`now64`, `rand`, a SQL UDF, ...) changes the result without any
+    /// referenced table changing, so an unchanged set of referenced tables is not proof that the result
+    /// is unchanged - fail closed. This also covers a view whose stored SELECT uses such a function and
+    /// is reached through the view-transparent path (`StorageView::getModificationHash` recurses into
+    /// here with the view's stored SELECT).
+    if (astContainsNonDeterministicFunctions(ast, context))
+        return {};
 
     CollectReferencedTablesMatcher::Data finder_data;
     CollectReferencedTablesVisitor(finder_data).visit(ast);

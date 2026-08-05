@@ -964,6 +964,13 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         return {};
     SCOPE_EXIT({ views_being_hashed.erase(this); });
 
+    /// Without a table UUID (a materialized view in an `Ordinary` database) we cannot distinguish
+    /// incarnations of a same-named view: a DROP + CREATE resets the per-lifetime metadata version
+    /// folded below, so a definition change that keeps the same columns and target (e.g. a security
+    /// change) could repeat an earlier hash. Fail closed, matching `StorageView` and the other engines.
+    if (!getStorageID().hasUUID())
+        return {};
+
     try
     {
         /// `computeTableModificationHashForConsistency` checks the invoker's `SELECT` access on the target
@@ -973,10 +980,17 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
             return {};
 
         SipHash hash;
+        /// Per-incarnation identity: a DROP + CREATE in an `Atomic` database gets a fresh UUID, so a
+        /// re-created view never repeats the hash of an earlier incarnation. See `StorageView`.
+        hash.update(getStorageID().uuid);
         hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
         /// Loop-free metadata version for this view's own column metadata. See
         /// `IStorage::getMetadataVersionForModificationHash`.
         hash.update(getMetadataVersionForModificationHash());
+        /// The execution security context is part of what the view returns (under row policies an
+        /// `INVOKER` and a `DEFINER` view can see different rows of the target table). See `StorageView`.
+        hash.update(storage_snapshot->metadata->sql_security_type ? static_cast<Int8>(*storage_snapshot->metadata->sql_security_type) : Int8(-1));
+        hash.update(storage_snapshot->metadata->definer.value_or(""));
         hash.update(*target_hash);
         return hash.get128();
     }
