@@ -72,7 +72,31 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     }
 
     for (const auto & [table_name, storage_info] : storages_info_)
-        storages.emplace(table_name, StorageData(storage_info, log));
+    {
+        try
+        {
+            storages.emplace(table_name, StorageData(storage_info, log));
+        }
+        catch (const Exception & e)
+        {
+            /// The structure of the PostgreSQL table might no longer match the structure of
+            /// the nested ClickHouse table (for example, a column was added or dropped in
+            /// PostgreSQL while the server was down). Do not fail the whole consumer because
+            /// of a single out-of-sync table: skip it (the user can bring it back with
+            /// DETACH/ATTACH) and keep replicating the rest of the tables. Only the expected
+            /// structure-mismatch error is handled this way; any other error is a real problem
+            /// and must propagate.
+            if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+                throw;
+
+            tryLogCurrentException(
+                log,
+                fmt::format("Table {} is skipped from replication because its structure does not match "
+                            "the structure of the nested ClickHouse table. "
+                            "Please perform manual DETACH and ATTACH of the table to bring it back",
+                            table_name));
+        }
+    }
 
     LOG_TRACE(log, "Starting replication. LSN: {} (last: {}), storages: {}",
               getLSNValue(current_lsn), getLSNValue(final_lsn), storages.size());
@@ -88,10 +112,15 @@ MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & sto
     , array_info(createArrayInfos(metadata_snapshot->getColumns().getAllPhysical(), table_description))
 {
     auto columns_num = table_description.sample_block.columns();
-    /// +2 because of _sign and _version columns
+    /// +2 because of _sign and _version columns.
+    /// This is an expected condition (the PostgreSQL table structure no longer matches the
+    /// nested ClickHouse table, e.g. a column was added/dropped in PostgreSQL while the server
+    /// was down), not an internal logic error, so it must not be a LOGICAL_ERROR (which aborts
+    /// the server in debug/sanitizer builds). It is caught when constructing the consumer and
+    /// the affected table is skipped from replication.
     if (columns_attributes.size() + 2 != columns_num)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                         "Columns number mismatch for table {}. Attributes: {}, buffer: {}",
                         storage_info.storage->getStorageID().getNameForLogs(),
                         columns_attributes.size(), columns_num);
@@ -221,6 +250,21 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
     {
         LOG_ERROR(log, "Conversion failed while inserting PostgreSQL value {}, "
                   "will insert default value. Error: {}", value, e.what());
+
+        insertDefaultPostgreSQLValue(*column, *column_type_and_name.column);
+    }
+    catch (const Exception & e)
+    {
+        /// insertPostgreSQLValue translates a foreign pqxx::conversion_error into a DB::Exception with
+        /// BAD_ARGUMENTS, so a bad source value now surfaces here as that instead of the raw pqxx error.
+        /// Keep handling it exactly like the raw conversion error: log and insert a default so replication
+        /// keeps advancing. Letting it propagate would leave the WAL position unadvanced and cause the
+        /// buffered row to be re-inserted on every retry (indefinite row duplication).
+        if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+            throw;
+
+        LOG_ERROR(log, "Conversion failed while inserting PostgreSQL value {}, "
+                  "will insert default value. Error: {}", value, e.message());
 
         insertDefaultPostgreSQLValue(*column, *column_type_and_name.column);
     }
@@ -685,7 +729,20 @@ void MaterializedPostgreSQLConsumer::syncTables()
     while (!tables_to_sync.empty())
     {
         auto table_name = *tables_to_sync.begin();
-        auto & storage_data = storages.find(table_name)->second;
+
+        /// The storage might have been removed after the table was queued in `tables_to_sync`: a
+        /// `Relation` message adds the table there, but a later structure change (`markTableAsSkipped`)
+        /// or a `DETACH TABLE` (`removeNested`) erases the storage. Dereferencing the result of
+        /// `storages.find` past `end()` in that case reads uninitialized memory and crashes the server
+        /// (https://github.com/ClickHouse/ClickHouse/issues/68032). The queued buffers of a table without
+        /// a storage cannot be inserted anywhere, so just drop the stale entry.
+        auto storage_iter = storages.find(table_name);
+        if (storage_iter == storages.end())
+        {
+            tables_to_sync.erase(table_name);
+            continue;
+        }
+        auto & storage_data = storage_iter->second;
 
         while (auto buffer = storage_data.popBuffer())
         {
@@ -826,6 +883,9 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
 {
     skip_list.insert({relation_id, ""}); /// Empty lsn string means - continue waiting for valid lsn.
     storages.erase(relation_name);
+    /// The storage is gone, so its queued buffers can no longer be flushed. Drop them to keep
+    /// `tables_to_sync` consistent with `storages` (`syncTables` looks the table up there).
+    tables_to_sync.erase(relation_name);
     LOG_WARNING(
         log,
         "Table {} is skipped from replication stream because its structure has changes. "
@@ -842,6 +902,21 @@ void MaterializedPostgreSQLConsumer::addNested(
     auto it = deleted_tables.find(postgres_table_name);
     if (it != deleted_tables.end())
         deleted_tables.erase(it);
+
+    /// The table might already be in the skip list - for example, it was skipped at startup because
+    /// its structure did not match the nested table and then received WAL (the `Relation` message
+    /// stored an empty `skip_list` entry for it), or its structure changed in the replication stream.
+    /// Now that the table is brought back (DETACH/ATTACH reloads its structure), drop the stale
+    /// skip-list entry. Otherwise `isSyncAllowed` would keep skipping the table indefinitely once the
+    /// `waiting_list` entry set below is consumed, so the promised DETACH/ATTACH recovery would not work.
+    for (auto skip_it = skip_list.begin(); skip_it != skip_list.end();)
+    {
+        const auto name_it = relation_id_to_name.find(skip_it->first);
+        if (name_it != relation_id_to_name.end() && name_it->second == postgres_table_name)
+            skip_it = skip_list.erase(skip_it);
+        else
+            ++skip_it;
+    }
 
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
     /// changes to this table.
@@ -862,6 +937,10 @@ void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_
     auto it = storages.find(postgres_table_name);
     if (it != storages.end())
         storages.erase(it);
+    /// Same reason as in `markTableAsSkipped`: with the storage removed, any buffers still queued for
+    /// this table must be dropped so `syncTables` does not look up (and dereference) a missing storage
+    /// (https://github.com/ClickHouse/ClickHouse/issues/68032).
+    tables_to_sync.erase(postgres_table_name);
     deleted_tables.insert(postgres_table_name);
 }
 

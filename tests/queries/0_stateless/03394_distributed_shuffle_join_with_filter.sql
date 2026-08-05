@@ -1,6 +1,7 @@
 -- Tags: no-old-analyzer
 
 -- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
+SET explain_query_plan_default = 'legacy';
 SET max_rows_to_group_by = 0;
 
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
@@ -17,6 +18,7 @@ INSERT INTO test SELECT number%30, (number+10)%30, number%50 FROM numbers(100, 1
 
 SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 1;
+SET join_runtime_filter_min_probe_rows = 0;
 
 SELECT '-------------------------';
 

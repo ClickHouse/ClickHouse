@@ -1,4 +1,7 @@
 SET enable_join_runtime_filters = 1;
+-- The probe sides here are single-row subqueries, so the randomized `join_runtime_filter_min_probe_rows`
+-- would skip building the runtime filter and the regression this test guards would not be exercised.
+SET join_runtime_filter_min_probe_rows = 0;
 
 -- Value 1 fits in Int8 but JSON stores it as Int64; this was the failing case.
 SELECT count() FROM (SELECT '{"a":1}'::JSON AS k) AS t1 JOIN (SELECT '{"a":1}'::JSON AS k) AS t2 USING (k);
