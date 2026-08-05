@@ -1687,9 +1687,12 @@ ReturnType readDateTimeTextFallback(
             }
             else
             {
-                /// DateTime cannot represent year 0, keep the historical mapping to the Unix epoch.
-                if (unlikely(year == 0))
+                /// DateTime can't represent calendar year 0. Zero-date placeholders
+                /// still map to the Unix epoch and real year-0 dates are rejected.
+                if (unlikely(year == 0 && (month == 0 || day == 0)))
                     datetime = 0;
+                else if (unlikely(year == 0))
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime: year 0 is out of supported range");
                 else
                     datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
             }
@@ -1708,8 +1711,12 @@ ReturnType readDateTimeTextFallback(
                 }
                 else
                 {
-                    if (unlikely(year == 0))
+                    /// Zero-date placeholders map to the Unix epoch.
+                    /// Real year-0 dates are not representable by DateTime.
+                    if (unlikely(year == 0 && (month == 0 || day == 0)))
                         datetime = 0;
+                    else if (unlikely(year == 0))
+                        return ReturnType(false);
                     else
                         datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
                 }
@@ -1733,14 +1740,22 @@ ReturnType readDateTimeTextFallback(
                 }
                 else
                 {
-                    auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-                    if (!datetime_maybe)
-                        return false;
+                    /// Placeholders still map to the epoch, real year-0 dates are out of DateTime range.
+                    if (unlikely(year == 0 && (month == 0 || day == 0)))
+                    {
+                        datetime = 0;
+                    }
+                    else
+                    {
+                        auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                        if (!datetime_maybe)
+                            return false;
 
-                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
-                        return false;
+                        if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                            return false;
 
-                    datetime = *datetime_maybe;
+                        datetime = *datetime_maybe;
+                    }
                 }
             }
         }

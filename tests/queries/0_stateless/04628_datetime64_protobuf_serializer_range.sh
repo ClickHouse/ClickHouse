@@ -184,7 +184,7 @@ SELECT *
 FROM format(TSV, 't DateTime64(3, \\'UTC\\')', '0000-00-00 00:00:00')
 SETTINGS date_time_input_format = 'basic'"
 
-echo '-- 0000-00-00 maps to the Unix epoch via parseDateTime64BestEffort, partial zeros are rejected'
+echo '-- explicit year-0 zero-date placeholders map to the Unix epoch via parseDateTime64BestEffort'
 ${CLICKHOUSE_LOCAL} --query "
 SELECT parseDateTime64BestEffortOrNull('0000-00-00 00:00:00', 3, 'UTC'),
        parseDateTime64BestEffortOrNull('0000-01-00 00:00:00', 3, 'UTC'),

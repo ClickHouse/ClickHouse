@@ -930,22 +930,19 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!has_year && !month && !day_of_month && !has_time)
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: neither Date nor Time was parsed successfully");
 
-    /// Only the full zero-date placeholder 0000-00-00 maps to the Unix epoch before month/day
-    /// defaulting. Partial zero dates (0000-01-00 / 0000-00-01) and year-only 0000 are rejected for
-    /// DateTime. DateTime64 accepts real calendar dates in year 0 (ex. 0000-01-01).
+    /// Explicit zero month/day components in year 0 denote a zero-date placeholder and map to the
+    /// Unix epoch before missing components are defaulted. DateTime rejects real calendar dates in
+    /// year 0, while DateTime64 accepts them. In non-strict DateTime64 parsing, genuinely missing
+    /// components are still defaulted below (ex. 0000-05 becomes 0000-05-01).
     if (has_year && year == 0)
     {
-        if (has_month && has_day && month == 0 && day_of_month == 0)
+        if ((has_month && month == 0) || (has_day && day_of_month == 0))
         {
             res = 0;
             return ReturnType(true);
         }
 
         if constexpr (!is_64)
-            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year 0 is out of supported range");
-
-        /// DateTime64 rejects incomplete or partial-zero year-0 forms. Continue only for real dates.
-        if (!has_month || !has_day || month == 0 || day_of_month == 0)
             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year 0 is out of supported range");
     }
 
