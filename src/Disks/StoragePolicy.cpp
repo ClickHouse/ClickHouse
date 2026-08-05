@@ -591,7 +591,7 @@ void StoragePolicySelector::addOrReplaceTemporary(StoragePolicyPtr storage_polic
 {
     const auto & name = storage_policy->getName();
 
-    /// Only temporary policies may be replaced; a configuration-defined one must stay untouched.
+    /// Only names in the temporary namespace may be replaced.
     if (!name.starts_with(TMP_STORAGE_POLICY_PREFIX))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

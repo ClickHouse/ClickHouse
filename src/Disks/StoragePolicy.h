@@ -136,8 +136,8 @@ public:
     void add(StoragePolicyPtr storage_policy);
 
     /// Insert a temporary storage policy, replacing an existing one under the same name.
-    /// Only TMP_STORAGE_POLICY_PREFIX names may be replaced, so a policy defined in the
-    /// configuration file can never be overwritten here.
+    /// Throws unless the name carries TMP_STORAGE_POLICY_PREFIX, the same predicate
+    /// updateFromConfig and checkCompatibleWith use to mean "temporary, not from config".
     void addOrReplaceTemporary(StoragePolicyPtr storage_policy);
 
 private:

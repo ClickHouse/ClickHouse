@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-encrypted-storage
 # Tag no-fasttest: requires S3
+# Tag no-encrypted-storage: DiskBackup cannot decrypt an encrypted source disk's backup
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
