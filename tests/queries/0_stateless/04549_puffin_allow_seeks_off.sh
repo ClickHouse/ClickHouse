@@ -23,6 +23,8 @@ SETTINGS input_format_allow_seeks = 0
 "
 
 # Non-seekable path must reject a wrong leading magic before buffering the rest of the stream.
+# Oversized valid-magic streams are covered by gtest_puffin_non_seekable_buffer_limit (absolute
+# buffer ceiling is ~2 GiB + footer; too large for a CI fixture).
 echo "--- non-Puffin magic allow_seeks=0 ---"
 NOT_PUFFIN="${CLICKHOUSE_TMP}/04549_not_puffin.bin"
 # Prefix is wrong; trailing bytes would only matter if we buffered first then validated.

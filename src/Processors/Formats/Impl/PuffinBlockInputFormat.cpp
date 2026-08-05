@@ -15,7 +15,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
-#include <Core/Defines.h>
 #include <IO/ReadBuffer.h>
 #include <base/types.h>
 #include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
@@ -70,12 +69,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
         checkMagic(result.data.data(), "header");
 
-        std::vector<UInt8> tmp(DEFAULT_BLOCK_SIZE);
-        while (!buf.eof())
-        {
-            size_t n = buf.read(reinterpret_cast<char *>(tmp.data()), tmp.size());
-            result.data.insert(result.data.end(), tmp.data(), tmp.data() + n);
-        }
+        appendReadBufferWithAbsoluteSizeLimit(buf, result.data, PUFFIN_NON_SEEKABLE_MAX_BUFFERED_SIZE);
 
         ReadBufferFromMemory mem_buf(result.data.data(), result.data.size());
         result.blobs = readPuffinFooterBlobsFromSeekable(mem_buf, result.data.size());
@@ -448,7 +442,7 @@ Fixed output columns:
 
 Optional top-level `FileMetadata.properties` in the footer (for example `created-by`) are type-checked when present but are not returned as columns. If the key is present it must be a JSON object with string values (null is rejected).
 
-LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation.
+LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation. Non-seekable input (pipes / `input_format_allow_seeks = 0`) buffers the file up to an absolute ceiling sized for one max deletion-vector blob plus max footer; larger inputs require seekable reads.
 
 ## Example usage {#example-usage}
 
@@ -488,7 +482,7 @@ Deletion vectors whose declared `cardinality` exceeds an absolute materializatio
 
 On-disk `deletion-vector-v1` blob length is bounded by an absolute ceiling (aligned with Iceberg's 2 GiB content-size check). When `deleted_rows` is requested, the reader peeks the envelope header (combined length and magic) before allocating the full payload; CRC is verified after the bounded read.
 
-LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation.
+LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation. Non-seekable input (pipes / `input_format_allow_seeks = 0`) buffers the file up to an absolute ceiling sized for one max deletion-vector blob plus max footer; larger inputs require seekable reads.
 
 Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
 

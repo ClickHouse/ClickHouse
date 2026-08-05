@@ -3,6 +3,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <base/arithmeticOverflow.h>
 
@@ -46,14 +47,9 @@ struct ScopedPuffinFileReadProfileEvent
 };
 
 constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
+static_assert(sizeof(PUFFIN_MAGIC) == PUFFIN_MAGIC_SIZE);
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
-constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
-/// Absolute cap on footer payload size (uncompressed JSON bytes, or declared LZ4 contentSize).
-/// Prevents crafted FooterPayloadSize / contentSize values from forcing huge allocations.
-/// Intentionally a compile-time safety ceiling (same class as other format hard caps), not a
-/// FormatSettings / input_format_puffin_* knob: oversized footers are never legitimate input.
-constexpr size_t PUFFIN_FOOTER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
 /// DV blob / materialization ceilings live in `PuffinDeletionVectorReader.h` (`PUFFIN_DV_MAX_*`)
 /// and are shared with the Iceberg deletion-vector reader. Applied only when `deleted_rows` is
 /// requested; subset reads that skip materialization do not enforce the materialization ceiling.
@@ -428,6 +424,47 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
 }
 
 } // namespace
+
+void appendReadBufferWithAbsoluteSizeLimit(ReadBuffer & buf, std::vector<UInt8> & out, size_t max_buffered_size)
+{
+    if (out.size() > max_buffered_size)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin non-seekable buffer size {} exceeds absolute limit {}",
+            out.size(),
+            max_buffered_size);
+    }
+
+    std::vector<UInt8> tmp(DBMS_DEFAULT_BUFFER_SIZE);
+    while (!buf.eof())
+    {
+        const size_t capacity = max_buffered_size - out.size();
+        if (capacity == 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin non-seekable input exceeds absolute buffer limit {} bytes; use seekable input for larger files",
+                max_buffered_size);
+        }
+
+        const size_t to_read = std::min(tmp.size(), capacity);
+        const size_t n = buf.read(reinterpret_cast<char *>(tmp.data()), to_read);
+        if (n == 0)
+            break;
+
+        out.insert(out.end(), tmp.data(), tmp.data() + n);
+
+        /// If we filled the remaining capacity and the stream still has data, fail closed.
+        if (n == capacity && !buf.eof())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin non-seekable input exceeds absolute buffer limit {} bytes; use seekable input for larger files",
+                max_buffered_size);
+        }
+    }
+}
 
 std::vector<PuffinBlob> readPuffinFooterBlobsFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
 {
