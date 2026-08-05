@@ -438,9 +438,16 @@ void MergeTreeTemporaryPart::finalize()
     for (auto & stream : streams)
         stream.finalizer.finish();
 
+    /// Optimize files layout in the storage for better caching
+    auto file_order_hint = part->getPreferredFileOrder();
+    part->getDataPartStorage().setPreferredFileOrder(file_order_hint);
+
     part->getDataPartStorage().precommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
+    {
+        projection->getDataPartStorage().setPreferredFileOrder(file_order_hint);
         projection->getDataPartStorage().precommitTransaction();
+    }
 
     /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
     /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
@@ -483,8 +490,13 @@ void MergeTreeTemporaryPart::prewarmCaches()
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector)
 {
+    /// out_selector is left empty when the block is not split (a single resulting partition);
+    /// the caller then knows every row belongs to the only partition.
+    if (out_selector)
+        out_selector->clear();
+
     BlocksWithPartition result;
     if (block.empty() || !block.rows())
     {
@@ -553,6 +565,10 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (auto & item : result)
         item.partition_id = item.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+
+    /// Hand the row -> partition-index mapping to the caller (deduplication uses it).
+    if (out_selector)
+        *out_selector = std::move(selector);
 
     return result;
 }
@@ -664,10 +680,14 @@ Block MergeTreeDataWriter::mergeBlock(
     return header->cloneWithColumns(status.chunk.getColumns());
 }
 
-MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context)
+MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
+    BlockWithPartition & block,
+    StorageMetadataPtr metadata_snapshot,
+    ContextPtr context,
+    bool may_exist)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get());
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get(), may_exist);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
@@ -675,9 +695,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
     SourcePartsSetForPatch source_parts_set,
-    ContextPtr context)
+    ContextPtr context,
+    bool may_exist)
 {
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get());
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get(), may_exist);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
@@ -686,7 +707,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     String partition_id,
     SourcePartsSetForPatch source_parts_set,
     ContextPtr context,
-    UInt64 block_number)
+    UInt64 block_number,
+    bool may_exist)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = *block_with_partition.block;
@@ -866,7 +888,26 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
+    /// The part directory name can be non-unique because of stale files from previous runs (an insert
+    /// interrupted or rolled back after the directory was created but before it was committed, then
+    /// retried with the same block/part name). Such a leftover must be removed BEFORE the part storage
+    /// is constructed: otherwise packed storage would seed its archive reader and snapshot the mark
+    /// layout (index_granularity_info) from the stale contents at construction, and a retry could
+    /// inherit them even though the directory is later reclaimed. The temporary-directory lock acquired
+    /// above guarantees no concurrent operation owns this name, so an existing directory can only be
+    /// such a stale leftover and is safe to remove.
+    if (may_exist)
+    {
+        auto data_part_disk = data_part_volume->getDisk();
+        auto relative_part_dir = fs::path(data.getRelativeDataPath()) / part_dir;
+        if (data_part_disk->existsDirectory(relative_part_dir))
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(data_part_disk->getPath()) / relative_part_dir).string());
+            data_part_disk->removeRecursive(relative_part_dir);
+        }
+    }
+
+    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), /*part_may_exist_on_disk=*/ may_exist)
         .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))
         .withPartInfo(new_part_info)
         .build();
@@ -912,21 +953,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     SyncGuardPtr sync_guard;
 
-    /// The name could be non-unique in case of stale files from previous runs.
-    String full_path = new_data_part->getDataPartStorage().getFullPath();
-
-    if (new_data_part->getDataPartStorage().exists())
-    {
-        LOG_WARNING(log, "Removing old temporary directory {}", full_path);
-        data_part_storage->removeRecursive();
-    }
-
     data_part_storage->createDirectories();
 
     if ((*data_settings)[MergeTreeSetting::fsync_part_directory])
     {
         const auto disk = data_part_volume->getDisk();
-        sync_guard = disk->getDirectorySyncGuard(full_path);
+        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getFullPath());
     }
 
     if (metadata_snapshot->hasRowsTTL())
@@ -1058,6 +1090,24 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
     part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection).part_type;
 
+    /// The projection temp directory name is deterministic (<projection>.tmp_proj), so a retried
+    /// materialization can hit a leftover directory from a failed earlier attempt. Remove it BEFORE
+    /// constructing the projection storage: getProjectionPartBuilder builds through the initializing
+    /// getProjection, which would seed a packed archive reader and snapshot the mark layout
+    /// (index_granularity_info) from the stale contents, and the subsequent write would proceed with
+    /// that stale layout. getProjectionNoInitialize gives a storage handle that does not seed the reader,
+    /// so removing through it is safe. Mirrors the base-part reclaim in writeTempPartImpl.
+    {
+        const char * projection_extension = is_temp ? ".tmp_proj" : ".proj";
+        auto stale_projection_storage = parent_part->getDataPartStorage().getProjectionNoInitialize(
+            part_name + projection_extension, /*use_parent_transaction=*/ false);
+        if (stale_projection_storage->exists())
+        {
+            LOG_WARNING(log, "Removing old temporary projection directory {}", stale_projection_storage->getFullPath());
+            stale_projection_storage->removeRecursive();
+        }
+    }
+
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
     auto data_settings = data.getSettings(&projection.settings_changes);
@@ -1083,13 +1133,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     infos.add(block);
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
-
-    /// The name could be non-unique in case of stale files from previous runs.
-    if (projection_part_storage->exists())
-    {
-        LOG_WARNING(log, "Removing old temporary directory {}", projection_part_storage->getFullPath());
-        projection_part_storage->removeRecursive();
-    }
 
     projection_part_storage->createDirectories();
 

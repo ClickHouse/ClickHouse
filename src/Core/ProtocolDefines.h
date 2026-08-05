@@ -63,7 +63,13 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 2 serializes a bucketed `ReadFromMergeTree` leaf read as just its bucket count; the per-bucket
 /// marks travel in the `read_bucket` task parameter. The deserializer rejects a version-1 bucketed step (its
 /// trailing part-name payload would desync the plan), so all `make_distributed_plan` nodes need one version.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 2;
+/// Version 3 adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
+/// replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and do a
+/// full non-parallel read, so the serializer fails closed when this flag is set below version 3.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 3;
+/// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
+/// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
@@ -161,6 +167,13 @@ static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485
 
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486;
 
+/// Authenticate interserver `TablesStatusRequest` with a cluster-secret hash
+/// (sent right after the request, validated before the response).
+static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS = 54487;
+
+/// Push the initiator's current roles to other nodes for consistent role-scoped access.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES = 54488;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -169,5 +182,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54486;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54488;
 }

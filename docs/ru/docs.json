@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "ru/products/cloud/guides/index"
-                },
-                {
-                  "group": "Справочник API",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },
@@ -2598,7 +2594,10 @@
             {
               "expanded": true,
               "group": "Справочник по API",
-              "openapi": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+              "openapi": {
+                "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+                "directory": "ru/clickstack/api-reference"
+              },
               "root": "ru/clickstack/api-reference"
             }
           ]

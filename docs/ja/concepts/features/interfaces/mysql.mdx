@@ -23,10 +23,10 @@ ClickHouse は MySQL wire protocol をサポートしています。これによ
 
 ネイティブな ClickHouse ドライバーを持たない特定のツールを MySQL インターフェイス経由で利用したいものの、何らかの非互換性が見つかった場合は、ClickHouse repository に [issue を作成](https://github.com/ClickHouse/ClickHouse/issues)してください。
 
-::::note
+<Note>
 上記の BI ツールの SQL dialect をより適切にサポートするため、ClickHouse の MySQL インターフェイスでは、暗黙的に [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/ja/reference/settings/session-settings#prefer_column_name_to_alias) を設定して SELECT クエリを実行します。
 この設定は無効にできず、まれなエッジケースでは、ClickHouse の通常のクエリ インターフェイスと MySQL クエリ インターフェイスに送られるクエリとで動作が異なる場合があります。
-::::
+</Note>
 
 <div id="enabling-the-mysql-interface-on-clickhouse-cloud">
   ## ClickHouse Cloud で MySQL インターフェイスを有効にする

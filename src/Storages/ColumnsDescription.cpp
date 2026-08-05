@@ -11,10 +11,13 @@
 #include <Core/Settings.h>
 #include <Core/Names.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
+#include <Compression/CompressionCodecQuantized.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -372,11 +375,43 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     return std::make_pair(begin, end);
 }
 
+namespace
+{
+
+/// If the column carries a `Quantized(...)` codec, attach the serialization that writes the quantized companion stream
+/// and exposes the `<column>.quantized` subcolumn. The customization is attached to this column's own (freshly parsed,
+/// non-shared) type instance, so it does not affect any other column of the same type.
+void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
+{
+    auto params = tryExtractQuantizedCodecParams(column.codec);
+    if (!params)
+        return;
+
+    /// Idempotent: do not wrap twice if the column is re-added (e.g. when copying a ColumnsDescription).
+    const auto * existing = column.type->getCustomSerialization();
+    if (existing && typeid(*existing) == typeid(SerializationQuantizedVector))
+        return;
+
+    const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
+    WhichDataType nested = array_type ? WhichDataType(array_type->getNestedType()) : WhichDataType(column.type);
+    if (!array_type || !(nested.isFloat32() || nested.isFloat64() || nested.isBFloat16()))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Column {} has a Quantized codec, which is only supported for Array(Float32), Array(Float64) or "
+            "Array(BFloat16) columns, but its type is {}", column.name, column.type->getName());
+
+    auto custom_serialization = std::make_shared<SerializationQuantizedVector>(column.type->getDefaultSerialization(), *params);
+    column.type->setCustomization(std::make_unique<DataTypeCustomDesc>(nullptr, std::move(custom_serialization)));
+}
+
+}
+
 void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
 {
     if (has(column.name))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot add column {}: column with this name already exists", column.name);
+
+    attachQuantizeSerializationIfNeeded(column);
 
     /// Normalize ASTs to be compatible with InterpreterCreateQuery.
     if (column.default_desc.expression)

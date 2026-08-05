@@ -1,0 +1,322 @@
+---
+title: 'Data lake best practices'
+sidebarTitle: 'Best practices'
+slug: /use-cases/data-lake/best-practices
+description: 'Production guidance for querying open table formats in ClickHouse: integration patterns, performance tuning, catalog setup, and debugging.'
+keywords: ['data lake', 'lakehouse', 'Iceberg', 'Delta Lake', 'DataLakeCatalog', 'partition pruning', 'metadata cache', 'Delta Kernel', 'change data feed', 'Parquet']
+doc_type: 'guide'
+---
+
+The [getting started guide](/use-cases/data-lake/getting-started) walks you through querying [Apache Iceberg](/engines/table-engines/integrations/iceberg), [Delta Lake](/engines/table-engines/integrations/deltalake), [Apache Hudi](/engines/table-engines/integrations/hudi), and [Apache Paimon](/sql-reference/table-functions/paimon) for the first time. Once you're past setup, use this page to choose the right access pattern, tune query performance, and debug lake queries in production.
+
+## Choose an access method {#choose-access-method}
+
+| Access method                     | When to use it                                                            | Examples                                                                                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table function                    | Ad hoc queries on a known path                                            | [icebergS3()](/sql-reference/table-functions/iceberg), [deltaLake()](/sql-reference/table-functions/deltalake), [hudi()](/sql-reference/table-functions/hudi), [paimon()](/sql-reference/table-functions/paimon) |
+| Table engine                      | Repeated queries on the same path without a catalog                       | [IcebergS3](/engines/table-engines/integrations/iceberg), [DeltaLake](/engines/table-engines/integrations/deltalake), [Hudi](/engines/table-engines/integrations/hudi)                                           |
+| `DataLakeCatalog` database engine | Production workloads with a catalog; federated queries across many tables | [AWS Glue](/use-cases/data-lake/glue-catalog), [Unity Catalog](/use-cases/data-lake/unity-catalog), [REST catalog](/use-cases/data-lake/rest-catalog)                                                            |
+
+### Table functions {#table-functions}
+
+Pass the storage path and credentials inline when you know the location and don't need a persistent table definition.
+
+```sql
+SELECT count()
+FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
+WHERE event_date >= today() - 7
+```
+
+Use the S3 variant for AWS S3 and GCS. Azure and local filesystem have dedicated variants (`icebergAzure`, `icebergLocal`, and equivalents for other formats). See [Querying directly](/use-cases/data-lake/getting-started/querying-directly) for the full list.
+
+[Paimon](/sql-reference/table-functions/paimon) has table functions only.
+
+### Table engines {#table-engines}
+
+Create a table with the table engine when you'll query the same path repeatedly. ClickHouse stores the path and credentials in table metadata, so you query a normal table name instead of reconstructing the function call each time.
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+
+SELECT count() FROM events WHERE event_date = today()
+```
+
+Table engines support the same read features as table functions, including [data caching](/engines/table-engines/integrations/iceberg#data-cache) and [metadata caching](/engines/table-engines/integrations/iceberg#metadata-cache). Data is never duplicated in ClickHouse. A table engine is useful when you share access with a team or run scheduled jobs against the same table.
+
+### `DataLakeCatalog` database engine {#datalakecatalog}
+
+Connect ClickHouse once when tables are registered in an external [data catalog](/use-cases/data-lake/getting-started/connecting-catalogs). Every catalog table appears as a ClickHouse table automatically, including tables added upstream after you create the connection.
+
+```sql
+CREATE DATABASE my_lake
+ENGINE = DataLakeCatalog
+SETTINGS
+    catalog_type = 'glue',
+    region = 'us-east-1',
+    aws_access_key_id = '<key>',
+    aws_secret_access_key = '<secret>'
+
+SELECT count() FROM my_lake.`analytics.events`
+```
+
+This scales better than creating individual table definitions when you manage many tables or multiple catalogs. See [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) and the [catalog guides](/use-cases/data-lake/reference).
+
+<Note>
+**Backticks for multi-part table names**
+
+Catalogs often use `database.table` naming. Surround the database-qualified name with backticks, as in the example above.
+</Note>
+
+## Required settings {#required-settings}
+
+Many integrations require a feature flag before first use. Check your service version if `CREATE DATABASE` fails with a permissions error.
+
+For catalog connections, each catalog type has its own flag. See [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) for an overview and the [DataLakeCatalog reference](/engines/database-engines/datalakecatalog) for setting details. Per-catalog setup lives in the [catalog guides](/use-cases/data-lake/reference).
+
+For writes, Iceberg requires [allow_insert_into_iceberg](/operations/settings/settings#allow_insert_into_iceberg) (25.7+, Beta from 26.2). See [Writing to data lakes](/use-cases/data-lake/getting-started/writing-data). Delta Lake requires [allow_delta_lake_writes](/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+). The [support matrix](/use-cases/data-lake/support-matrix) lists which flags apply to each format and operation.
+
+## Improve query performance {#query-performance}
+
+Version numbers on this page match ClickHouse release versions (Cloud and self-managed). Check your service version before enabling a setting or feature.
+
+Lake query performance depends on how much metadata and how many [Parquet](/interfaces/formats/Parquet) files ClickHouse reads from object storage. As with any ClickHouse table, query performance is improved by filtering on partition columns and selecting fewer columns.
+
+### Query habits {#query-habits}
+
+Filter on partition columns in `WHERE`. Iceberg and Delta Lake store partition metadata that lets ClickHouse skip irrelevant files during query planning. If your filter targets a column outside the partition spec, ClickHouse scans every matching file.
+
+For Iceberg tables with [hidden partitioning](https://iceberg.apache.org/docs/latest/partitioning/), filter on the **source column** in the table schema—not a separate partition column or transformed field name. If the table is partitioned by `day(event_time)`, add a predicate on `event_time`. ClickHouse derives partition pruning from that filter using the Iceberg partition spec. See [Partition pruning](/engines/table-engines/integrations/iceberg#partition-pruning) and the [Iceberg spec](https://iceberg.apache.org/spec/#partitioning).
+
+```sql
+SELECT count()
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+```
+
+List only the columns you need instead of `SELECT *`. ClickHouse reads [Parquet](/interfaces/formats/Parquet) column-by-column from object storage, so narrower selects reduce bytes transferred and decompressed.
+
+Put selective filters in `WHERE`. From ClickHouse 26.2+, [PREWHERE](/optimize/prewhere) is also supported on Iceberg and other lake table reads, where it filters at the Parquet layer before reading remaining columns. Partition pruning still depends on filtering partition source columns, not on PREWHERE alone.
+
+Iceberg tables with heavy [position or equality deletes](/engines/table-engines/integrations/iceberg#deleted-rows) apply merge-on-read filtering during scans. Expect more work per file than manifest pruning alone suggests.
+
+On multi-node deployments, use [cluster table functions](#parallel-cluster-reads) to distribute file reads across replicas.
+
+### Parallel reads on multi-node clusters {#parallel-cluster-reads}
+
+On ClickHouse Cloud and self-managed multi-node services, cluster variants of lake table functions distribute [Parquet](/interfaces/formats/Parquet) file reads across replicas. The initiator node dispatches files to workers in parallel. Use cluster variants for batch reads and scheduled loads over large tables. On single-node deployments, the standard table function is enough.
+
+Pass your cluster name as the first argument (`'default'` on ClickHouse Cloud). Cluster variants exist for all supported formats:
+
+| Format     | Cluster functions                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Iceberg    | [icebergS3Cluster()](/sql-reference/table-functions/icebergCluster), [icebergAzureCluster()](/sql-reference/table-functions/icebergCluster)       |
+| Delta Lake | [deltaLakeCluster()](/sql-reference/table-functions/deltalakeCluster), [deltaLakeAzureCluster()](/sql-reference/table-functions/deltalakeCluster) |
+| Hudi       | [hudiCluster()](/sql-reference/table-functions/hudiCluster)                                                                                       |
+| Paimon     | [paimonS3Cluster()](/sql-reference/table-functions/paimonCluster)                                                                                 |
+
+You can combine cluster reads with other performance settings.
+
+### Bound batch reads to snapshots {#snapshot-bounds}
+
+For repeated batch loads from lake tables, scope each run to a snapshot range instead of re-reading the full table. Without bounds, ClickHouse may scan all versions and files on every run, which increases object storage reads and query time.
+
+Store the snapshot identifier from your last successful load and use it as the lower bound on the next run.
+
+- For Iceberg, read a point-in-time view with [iceberg_snapshot_id](/operations/settings/settings#iceberg_snapshot_id) or [iceberg_timestamp_ms](/operations/settings/settings#iceberg_timestamp_ms) (25.4+). For append-only tables, combine snapshot settings with partition filters in `WHERE`. Use [system.iceberg_history](/operations/system-tables/iceberg_history) (25.6+) to look up snapshot IDs between runs.
+- For Delta Lake, read changes between two versions with [delta_lake_snapshot_start_version](/operations/settings/settings#delta_lake_snapshot_start_version) and [delta_lake_snapshot_end_version](/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). Read a single snapshot with [delta_lake_snapshot_version](/operations/settings/settings#delta_lake_snapshot_version) (25.8+). See [Delta change data feed](#delta-incremental-sync) for a CDF example.
+
+### Cache Parquet files locally {#filesystem-cache}
+
+Both formats honor [enable_filesystem_cache](/operations/settings/settings#enable_filesystem_cache) to keep hot [Parquet](/interfaces/formats/Parquet) files on local disk between queries. On self-managed deployments, configure a [filesystem cache disk](/operations/storing-data#using-local-cache) in server config so the setting has storage to write to. ClickHouse Cloud manages caching automatically. Set `enable_filesystem_cache = 0` when benchmarking so cache hits don't mask changes between runs.
+
+### Apache Iceberg {#iceberg-settings}
+
+Most Iceberg read optimizations are on by default. The settings below control partition pruning, metadata caching, and catalog roundtrips.
+
+#### Read settings {#iceberg-read-settings}
+
+| Setting                                                                                            | Since | Default       | Notes                                                                                                          |
+| -------------------------------------------------------------------------------------------------- | ----- | ------------- | -------------------------------------------------------------------------------------------------------------- |
+| [use_iceberg_partition_pruning](/operations/settings/settings#use_iceberg_partition_pruning)       | 25.1  | `1` from 25.6 | Skips data files using partition metadata in manifests                                                         |
+| [use_iceberg_metadata_files_cache](/operations/settings/settings#use_iceberg_metadata_files_cache) | 25.4  | `1`           | Caches manifest lists and metadata JSON in memory                                                              |
+| [iceberg_metadata_staleness_ms](/operations/settings/settings#iceberg_metadata_staleness_ms)       | 26.3  | `0`           | Query setting. Use cached metadata when fresher than this window instead of calling the catalog on every query |
+| [iceberg_use_version_hint](/sql-reference/table-functions/iceberg#writes-into-iceberg-table)      | 25.6  | —             | Reads `version-hint.text` for faster metadata resolution on direct path access                                 |
+
+#### Cut catalog latency {#iceberg-catalog-latency}
+
+Catalog-connected Iceberg tables pay a metadata fetch on each query unless you cache it. Pair two settings (26.4+):
+
+1. Set [iceberg_metadata_async_prefetch_period_ms](/engines/table-engines/integrations/iceberg#async-metadata-prefetch) at table creation to prefetch metadata in the background.
+2. Set [iceberg_metadata_staleness_ms](/operations/settings/settings#iceberg_metadata_staleness_ms) (26.3+) on queries to accept slightly stale metadata in exchange for skipping the catalog roundtrip.
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+SETTINGS iceberg_metadata_async_prefetch_period_ms = 60000;
+
+SELECT count()
+FROM events
+SETTINGS iceberg_metadata_staleness_ms = 60000;
+```
+
+A staleness value of `0` always fetches the latest metadata. Increase the window for read-heavy workloads where tables change infrequently.
+
+When ClickHouse picks the wrong metadata file (multiple `.metadata.json` files in the table path), pin resolution with [iceberg_metadata_file_path](/engines/table-engines/integrations/iceberg#metadata-file-resolution) (25.4+) or [iceberg_metadata_table_uuid](/engines/table-engines/integrations/iceberg#metadata-file-resolution) at table creation. See [Metadata file resolution](/engines/table-engines/integrations/iceberg#metadata-file-resolution).
+
+#### Time travel {#iceberg-time-travel}
+
+Read a historical snapshot with [iceberg_timestamp_ms](/operations/settings/settings#iceberg_timestamp_ms) or [iceberg_snapshot_id](/operations/settings/settings#iceberg_snapshot_id) (both 25.4+). Don't set both in the same query. Inspect snapshot lineage in [system.iceberg_history](/operations/system-tables/iceberg_history) (25.6+) before choosing an ID. For repeated batch loads, see [Bound batch reads to snapshots](#snapshot-bounds).
+
+```sql
+SELECT count()
+FROM my_iceberg_table
+SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+#### Iceberg writes {#iceberg-write-settings}
+
+Beyond [allow_insert_into_iceberg](/operations/settings/settings#allow_insert_into_iceberg) (25.7+, Beta from 26.2), control output file size and partition count on insert:
+
+| Setting                                                                                                      | Since | Purpose                                      |
+| ------------------------------------------------------------------------------------------------------------ | ----- | -------------------------------------------- |
+| [iceberg_insert_max_rows_in_data_file](/operations/settings/settings#iceberg_insert_max_rows_in_data_file)   | 25.9  | Row limit per output data file               |
+| [iceberg_insert_max_bytes_in_data_file](/operations/settings/settings#iceberg_insert_max_bytes_in_data_file) | 25.9  | Byte limit per output data file              |
+| [iceberg_insert_max_partitions](/operations/settings/settings#iceberg_insert_max_partitions)                 | 25.12 | Cap on partitions written in a single insert |
+
+See [Writing to data lakes](/use-cases/data-lake/getting-started/writing-data) and the [Iceberg engine reference](/engines/table-engines/integrations/iceberg).
+
+### Delta Lake {#delta-lake-settings}
+
+From version 25.6, ClickHouse reads Delta Lake on S3 and GCS through the Delta Lake Rust kernel ([allow_experimental_delta_kernel_rs](/operations/settings/settings#allow_experimental_delta_kernel_rs), 25.5+). On Azure Blob Storage, use [deltaLakeAzure()](/sql-reference/table-functions/deltalake) with the legacy reader because the kernel is disabled there. Without the kernel, partition pruning, change data feed, and snapshot version reads aren't available.
+
+#### Delta Kernel {#delta-kernel}
+
+[allow_experimental_delta_kernel_rs](/operations/settings/settings#allow_experimental_delta_kernel_rs) must be enabled for partition pruning, change data feed, and snapshot version reads. It's on by default on S3 and GCS from 25.5. Enable it explicitly on older versions or when troubleshooting:
+
+```sql
+SET allow_experimental_delta_kernel_rs = 1;
+```
+
+#### Read settings {#delta-read-settings}
+
+| Setting                                                                                                                                                                                                 | Since | Default | Notes                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------- | -------------------------------------------------------------------------------------------- |
+| [delta_lake_enable_engine_predicate](/operations/settings/settings#delta_lake_enable_engine_predicate)                                                                                                  | 25.8  | `1`     | Pushes filters into the kernel for partition pruning. Requires [Delta Kernel](#delta-kernel) |
+| [delta_lake_reload_schema_for_consistency](/operations/settings/settings#delta_lake_reload_schema_for_consistency)                                                                                      | 26.3  | `0`     | Reloads schema before each query when concurrent writers evolve schema                       |
+| [delta_lake_snapshot_start_version](/operations/settings/settings#delta_lake_snapshot_start_version) / [delta_lake_snapshot_end_version](/operations/settings/settings#delta_lake_snapshot_end_version) | 25.12 | `-1`    | Read CDF changes between two snapshot versions. Requires CDF enabled upstream                |
+| [delta_lake_snapshot_version](/operations/settings/settings#delta_lake_snapshot_version)                                                                                                                | 25.8  | `-1`    | Read a single historical snapshot. Set `-1` for latest (`0` is valid)                        |
+
+Tables with [deletion vectors](https://docs.delta.io/latest/delta-deletion-vectors.html) (26.2+) apply row-level filtering during reads. ClickHouse handles this automatically, but scans on DV-heavy tables do more work per file.
+
+#### Delta change data feed {#delta-incremental-sync}
+
+To read only the rows that changed between two Delta snapshots, set [delta_lake_snapshot_start_version](/operations/settings/settings#delta_lake_snapshot_start_version) and [delta_lake_snapshot_end_version](/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). The table must have change data feed enabled upstream (`delta.enableChangeDataFeed`). Set both start and end version in query settings. Setting only the end version produces an error.
+
+```sql
+SELECT *
+FROM deltaLake('s3://my-bucket/warehouse/ga4_events/')
+SETTINGS
+    delta_lake_snapshot_start_version = 42,
+    delta_lake_snapshot_end_version = 47
+```
+
+Store the end version after each successful load and pass it as the start version on the next run. The result includes CDF columns (`_change_type`, `_commit_version`, `_commit_timestamp`). Handle these before loading into your target table. For the general snapshot pattern, see [Bound batch reads to snapshots](#snapshot-bounds).
+
+#### Delta Lake writes {#delta-write-settings}
+
+Beyond [allow_delta_lake_writes](/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+), control output file size on insert:
+
+| Setting                                                                                                            | Since | Purpose                         |
+| ------------------------------------------------------------------------------------------------------------------ | ----- | ------------------------------- |
+| [delta_lake_insert_max_rows_in_data_file](/operations/settings/settings#delta_lake_insert_max_rows_in_data_file)   | 25.9  | Row limit per output data file  |
+| [delta_lake_insert_max_bytes_in_data_file](/operations/settings/settings#delta_lake_insert_max_bytes_in_data_file) | 25.9  | Byte limit per output data file |
+
+```sql
+SET allow_delta_lake_writes = 1;
+
+INSERT INTO my_delta_table
+SETTINGS
+    delta_lake_insert_max_rows_in_data_file = 1000000,
+    delta_lake_insert_max_bytes_in_data_file = 134217728
+SELECT * FROM source_table
+```
+
+Writes require the Delta Kernel on S3 or GCS. See the [DeltaLake engine reference](/engines/table-engines/integrations/deltalake) for examples.
+
+## Debug lake queries {#debug-system-tables}
+
+Lake queries that are slow or return unexpected results usually trace back to metadata reads, partition pruning, or catalog connectivity. Start with the checks below, then use format-specific metadata logs if needed.
+
+### Verify catalog connectivity {#debug-catalog}
+
+`CREATE DATABASE` with `DataLakeCatalog` doesn't validate credentials. A database can exist while the catalog connection is broken. From ClickHouse 26.4, run a lightweight health check:
+
+```sql
+CHECK DATABASE my_lake;
+```
+
+On earlier versions, confirm connectivity with `SHOW TABLES FROM my_lake` and inspect the error message. Use `SHOW CREATE TABLE` with a backtick-quoted table name to verify the resolved storage path and engine type:
+
+```sql
+SHOW CREATE TABLE my_lake.`db.table`;
+```
+
+If catalog tables don't appear in `system.tables`, enable [show_remote_databases_in_system_tables](/operations/settings/settings#show_remote_databases_in_system_tables) (25.8+). Catalog tables are hidden from system introspection by default. On versions before 26.6, use its former name, `show_data_lake_catalogs_in_system_tables`.
+
+### See which files are read {#debug-files}
+
+Iceberg and Delta Lake expose [virtual columns](/sql-reference/table-functions/iceberg#virtual-columns) (`_path`, `_file`, `_size`, `_time`, `_etag`) on every read. Group by `_path` to see whether partition pruning is working or a query is scanning more files than expected. For Iceberg tables with hidden partitioning, filter on the source column (for example `event_time`), not a separate partition column:
+
+```sql
+SELECT _path, count() AS rows
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+GROUP BY _path
+ORDER BY rows DESC;
+```
+
+### Check scan volume {#debug-query-log}
+
+Compare `read_rows` and `read_bytes` in [system.query_log](/operations/system-tables/query_log) before and after adding filters or tuning settings. ProfileEvents like `ReadBufferFromS3Bytes` and `CachedReadBufferReadFromCacheBytes` show how much data came from object storage versus the local cache. See [Query optimization](/optimize/query-optimization) for a full walkthrough of query_log and EXPLAIN.
+
+Disable [enable_filesystem_cache](/operations/settings/settings#enable_filesystem_cache) when benchmarking so cache hits don't mask changes between runs.
+
+### Metadata logs {#debug-metadata-logs}
+
+ClickHouse exposes three system tables for metadata-level debugging. Enable logging at query time only. They're not for continuous monitoring.
+
+| System table                                                                        | Format     | Since | Enable with                                                                                         | Use it to                                                 |
+| ----------------------------------------------------------------------------------- | ---------- | ----- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| [system.iceberg_metadata_log](/operations/system-tables/iceberg_metadata_log)       | Iceberg    | 25.9  | [iceberg_metadata_log_level](/operations/settings/settings#iceberg_metadata_log_level) on the query | Trace metadata files read and partition pruning decisions |
+| [system.iceberg_history](/operations/system-tables/iceberg_history)                 | Iceberg    | 25.6  | Populated automatically for Iceberg tables in ClickHouse                                            | Inspect snapshot lineage before time travel queries       |
+| [system.delta_lake_metadata_log](/operations/system-tables/delta_lake_metadata_log) | Delta Lake | 25.10 | [delta_lake_log_metadata](/operations/settings/settings#delta_lake_log_metadata) = `1` on the query | Trace Delta metadata files and snapshot resolution        |
+
+Run a query with logging enabled, flush the log, then inspect entries for that `query_id`:
+
+```sql
+SELECT count() FROM my_iceberg_table
+SETTINGS iceberg_metadata_log_level = 'manifest_file_entry';
+
+SYSTEM FLUSH LOGS iceberg_metadata_log;
+
+SELECT content_type, file_path, pruning_status
+FROM system.iceberg_metadata_log
+WHERE query_id = '<previous_query_id>';
+```
+
+On ClickHouse Cloud, log data is local to each node. Use `clusterAllReplicas` to see the full picture across replicas.
+
+Verbose Iceberg log levels disable metadata caching for manifest lists and files, which slows subsequent queries on the same table. Use high verbosity only while actively investigating. For Delta Lake predicate issues, enable [delta_lake_throw_on_engine_predicate_error](/operations/settings/settings#delta_lake_throw_on_engine_predicate_error) (25.8+) to fail fast when the kernel can't push a filter down.
+
+See the [iceberg_metadata_log](/operations/system-tables/iceberg_metadata_log) and [delta_lake_metadata_log](/operations/system-tables/delta_lake_metadata_log) reference pages for column details and verbosity options.
+
+## Next steps {#next-steps}
+
+- [Getting started](/use-cases/data-lake/getting-started) — End-to-end walkthrough from direct querying to writing back
+- [Querying directly](/use-cases/data-lake/getting-started/querying-directly) — Table functions, engines, and cluster variants for all four formats
+- [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) — `DataLakeCatalog` setup with Unity Catalog
+- [Writing to data lakes](/use-cases/data-lake/getting-started/writing-data) — Write data back to Iceberg and Delta Lake
+- [Support matrix](/use-cases/data-lake/support-matrix) — Feature comparison across formats, catalogs, and storage backends

@@ -2273,22 +2273,22 @@ void ZooKeeper::setupFaultDistributions()
     /// pushRequest (before request is sent) and receiveEvent (after request was executed).
     if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
     {
-        LOG_INFO(log, "ZK send fault: {}%", args.send_fault_probability * 100);
+        LOG_INFO(log, "ZK send fault: {:.3f}%", args.send_fault_probability * 100);
         send_inject_fault.emplace(args.send_fault_probability);
     }
     if (0 < args.recv_fault_probability && args.recv_fault_probability <= 1)
     {
-        LOG_INFO(log, "ZK recv fault: {}%", args.recv_fault_probability * 100);
+        LOG_INFO(log, "ZK recv fault: {:.3f}%", args.recv_fault_probability * 100);
         recv_inject_fault.emplace(args.recv_fault_probability);
     }
     if (0 < args.send_sleep_probability && args.send_sleep_probability <= 1)
     {
-        LOG_INFO(log, "ZK send sleep: {}% -> {}ms", args.send_sleep_probability * 100, args.send_sleep_ms);
+        LOG_INFO(log, "ZK send sleep: {:.3f}% -> {}ms", args.send_sleep_probability * 100, args.send_sleep_ms);
         send_inject_sleep.emplace(args.send_sleep_probability);
     }
     if (0 < args.recv_sleep_probability && args.recv_sleep_probability <= 1)
     {
-        LOG_INFO(log, "ZK recv sleep: {}% -> {}ms", args.recv_sleep_probability * 100, args.recv_sleep_ms);
+        LOG_INFO(log, "ZK recv sleep: {:.3f}% -> {}ms", args.recv_sleep_probability * 100, args.recv_sleep_ms);
         recv_inject_sleep.emplace(args.recv_sleep_probability);
     }
     inject_setup.test_and_set();

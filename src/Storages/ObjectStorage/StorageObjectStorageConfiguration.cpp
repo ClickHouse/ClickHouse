@@ -127,15 +127,14 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
     }
-    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && configuration_to_initialize.getRawPath().hasPartitionWildcard()
+        && local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value
+            == FileLikeEngineDefaultPartitionStrategy::WILDCARD)
     {
-        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
-        {
-            // Promote to wildcard in case it is not data lake to make it backwards compatible
-            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-        }
+        /// Backwards compatibility: promote to WILDCARD only when it is the effective default strategy.
+        configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
     }
-
     if (configuration_to_initialize.format == "auto")
     {
         if (configuration_to_initialize.isDataLakeConfiguration())
@@ -191,19 +190,37 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
     /// `partition_columns_in_data_file = 0` combined with strategy `none`) keep raising.
     if (partition_by && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
     {
-        switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+        if (!is_create_query)
         {
-            case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+            /// Backward compatibility on ATTACH / server startup / RESTORE / replicated-DDL replay:
+            /// for a table loaded from existing metadata the implicit strategy is deterministically
+            /// recoverable from the path alone, because the two strategies are mutually exclusive on
+            /// path shape — wildcard REQUIRES `{_partition_id}` in the path, hive FORBIDS it. Consulting
+            /// the mutable `file_like_engine_default_partition_strategy` default here instead would
+            /// refuse to load legitimately created tables whenever the default has changed since
+            /// creation (pre-26.6 wildcard tables under the 26.6 `hive` default, or implicit-hive
+            /// tables loaded under a `wildcard` default after a downgrade), aborting server startup
+            /// and breaking upgrades. Only a user-issued `CREATE` applies the default.
+            partition_strategy_type = getRawPath().hasPartitionWildcard()
+                ? PartitionStrategyFactory::StrategyType::WILDCARD
+                : PartitionStrategyFactory::StrategyType::HIVE;
+        }
+        else
+        {
+            switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
             {
-                /// Set the strategy unconditionally; `PartitionStrategyFactory::get` will raise
-                /// `BAD_ARGUMENTS` if the path is missing the `{_partition_id}` placeholder.
-                partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-                break;
-            }
-            case FileLikeEngineDefaultPartitionStrategy::HIVE:
-            {
-                partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
-                break;
+                case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+                {
+                    /// Set the strategy unconditionally; `PartitionStrategyFactory::get` will raise
+                    /// `BAD_ARGUMENTS` if the path is missing the `{_partition_id}` placeholder.
+                    partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+                    break;
+                }
+                case FileLikeEngineDefaultPartitionStrategy::HIVE:
+                {
+                    partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                    break;
+                }
             }
         }
 

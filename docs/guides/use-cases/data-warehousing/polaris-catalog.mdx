@@ -37,8 +37,7 @@ To connect to the Polaris catalog, you will need:
 For Open Catalog, Snowflake's managed Polaris offering, your URI will include `/polaris` while for self-hosted, it may not. 
 
 <Steps>
-<Step>
-## Creating a connection between Polaris and ClickHouse {#connecting}
+<Step title="Creating a connection between Polaris and ClickHouse" id="connecting">
 
 Create a database that connects ClickHouse to your Polaris catalog:
 
@@ -54,8 +53,7 @@ SETTINGS
     storage_endpoint = '<storage_endpoint>'
 ```
 </Step>
-<Step>
-## Query the Polaris catalog using ClickHouse {#query-polaris-catalog}
+<Step title="Query the Polaris catalog using ClickHouse" id="query-polaris-catalog">
 
 Once the connection is in place, you can query Polaris:
 
@@ -80,8 +78,7 @@ To inspect the table DDL:
 SHOW CREATE TABLE `polaris_db.my_iceberg_table`;
 ```
 </Step>
-<Step>
-## Loading data from Polaris into ClickHouse {#loading-data-into-clickhouse}
+<Step title="Loading data from Polaris into ClickHouse" id="loading-data-into-clickhouse">
 
 To load data from Polaris into a ClickHouse table, create the target table with your desired schema, then insert from the Polaris table:
 

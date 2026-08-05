@@ -63,8 +63,7 @@ Bindplane solves this by providing:
 ## Integrate ClickStack with Bindplane {#integrate-bindplane-clickstack}
 
 <Steps>
-<Step>
-#### Configure ClickStack as a destination {#configure-destination}
+<Step title="Configure ClickStack as a destination" id="configure-destination">
 
 1. Log in to your Bindplane account
 2. Navigate to **Library**
@@ -84,8 +83,7 @@ Bindplane solves this by providing:
 The ClickStack destination supports both HTTP and gRPC protocols. For high-volume scenarios, gRPC with compression (gzip, zstd, or snappy) is recommended for better performance.
 </Tip>
 </Step>
-<Step>
-#### Create a configuration {#create-configuration}
+<Step title="Create a configuration" id="create-configuration">
 
 Once your ClickStack destination is configured, create a configuration to process and route telemetry:
 
@@ -107,8 +105,7 @@ Once your ClickStack destination is configured, create a configuration to proces
 You can add processors for filtering, sampling, masking, enrichment, batching, and more to shape telemetry before it reaches ClickStack. This ensures consistent, structured data arrives in ClickHouse.
 </Tip>
 </Step>
-<Step>
-#### Add processors (optional) {#add-processors}
+<Step title="Add processors (optional)" id="add-processors">
 
 Bindplane provides pipeline intelligence and processor recommendations. You can add processors to:
 
@@ -120,8 +117,7 @@ Bindplane provides pipeline intelligence and processor recommendations. You can 
 
 These processors are applied consistently across your collector fleet before data reaches ClickStack.
 </Step>
-<Step>
-#### Deploy collectors and start rollout {#deploy-collectors}
+<Step title="Deploy collectors and start rollout" id="deploy-collectors">
 
 1. Add a collector (BDOT Collector) to your configuration:
    - Navigate to **Agents** in Bindplane
@@ -145,8 +141,7 @@ Bindplane provides safe, one-click rollouts with validation. You can monitor col
 
 <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Telemetry Signals in ClickStack via Bindplane" size="lg"/>
 </Step>
-<Step>
-#### Verify telemetry in ClickStack {#verify-telemetry}
+<Step title="Verify telemetry in ClickStack" id="verify-telemetry">
 
 Once the configuration is rolled out, telemetry starts flowing into ClickStack from your managed collector fleet:
 

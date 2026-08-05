@@ -182,8 +182,107 @@ StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr contex
 
 void registerTableFunctionGenerateSeries(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateSeries<0>>({}, {.allow_readonly = true});
-    factory.registerFunction<TableFunctionGenerateSeries<1>>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<0>>({.description = R"DOC(Returns a table with a single 'generate_series' column of integers from a start value to a stop value inclusive; an optional third argument sets the step (default 1). Same as generateSeries.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<1>>({.description = R"DOCS_MD(
+Alias: `generateSeries`
+
+## Syntax {#syntax}
+
+Returns a table with the single 'generate_series' column (`UInt64`) that contains integers from start to stop inclusively:
+
+```sql
+generate_series(START, STOP)
+```
+
+Returns a table with the single 'generate_series' column (`UInt64`) that contains integers from start to stop inclusively with spacing between values given by `STEP`:
+
+```sql
+generate_series(START, STOP, STEP)
+```
+
+`STEP` can be negative, in which case the series is generated in descending order from `START` down to `STOP`. If `STEP` is negative and `START < STOP`, the result is empty.
+
+## Examples {#examples}
+
+The following queries return tables with the same content but different column names:
+
+```sql
+SELECT * FROM numbers(10, 5);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     11 │
+│     12 │
+│     13 │
+│     14 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 14);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              11 │
+│              12 │
+│              13 │
+│              14 │
+└─────────────────┘
+```
+
+And the following queries return tables with the same content but different column names (but the second option is more efficient):
+
+```sql
+SELECT * FROM numbers(10, 11) WHERE number % 3 == (10 % 3);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     13 │
+│     16 │
+│     19 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 20, 3);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              13 │
+│              16 │
+│              19 │
+└─────────────────┘
+```
+
+Generate a descending series:
+
+```sql
+SELECT * FROM generate_series(9, 0, -1);
+```
+
+```response
+┌─generate_series─┐
+│               9 │
+│               8 │
+│               7 │
+│               6 │
+│               5 │
+│               4 │
+│               3 │
+│               2 │
+│               1 │
+│               0 │
+└─────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 }
 
 }

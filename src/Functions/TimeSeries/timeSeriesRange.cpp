@@ -198,7 +198,7 @@ public:
             const auto * array_column = checkAndGetColumn<ColumnArray>(values_column);
             if (!array_column || (values_are_nullable && !checkColumn<ColumnNullable>(array_column->getData())))
             {
-                auto full_column = values_column->convertToFullIfNeeded();
+                auto full_column = values_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
                 if (full_column.get() != values_column)
                 {
                     return doExecute<TimestampType, IntervalType>(start_timestamp_column, start_timestamp_multiplier,

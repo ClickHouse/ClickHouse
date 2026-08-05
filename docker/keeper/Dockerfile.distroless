@@ -16,11 +16,13 @@
 FROM ubuntu:22.04 AS ch-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
+# amd64 base images use archive.ubuntu.com, arm64 uses ports.ubuntu.com.
 ARG apt_archive="http://archive.ubuntu.com"
+ARG apt_ports_archive="http://ports.ubuntu.com"
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # The same uid/gid (101) is used both for alpine and ubuntu.
-RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
+RUN sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|http://ports.ubuntu.com|${apt_ports_archive}|g" /etc/apt/sources.list \
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
@@ -31,7 +33,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="26.6.1.1193"
+ARG VERSION="26.6.2.81"
 ARG PACKAGES="clickhouse-common-static clickhouse-keeper"
 
 ARG deb_location_url=""

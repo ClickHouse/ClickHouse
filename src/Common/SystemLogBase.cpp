@@ -229,6 +229,19 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
         if (is_shutdown)
             return PopResult{.is_shutdown = true};
 
+        /// Allocate the next batch's buffer outside the lock so a large reallocation
+        /// does not block producers, then hand it over with a cheap swap below.
+        if (!queue.empty())
+        {
+            const auto next_capacity = std::max(settings.reserved_size_rows, queue.size());
+            lock.unlock();
+            result.logs.reserve(next_capacity);
+            lock.lock();
+
+            if (is_shutdown)
+                return PopResult{.is_shutdown = true};
+        }
+
         const auto queue_size = queue.size();
         queue_front_index += queue_size;
         prev_ignored_logs = ignored_logs;
@@ -238,10 +251,6 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
         if (!queue.empty())
             result.logs.swap(queue);
         result.create_table_force = requested_prepare_tables > prepared_tables;
-
-        /// Preallocate same amount of memory for the next batch to minimize reallocations.
-        if (queue_size > queue.capacity())
-            queue.reserve(std::max(settings.reserved_size_rows, queue_size));
     }
 
     if (prev_ignored_logs)

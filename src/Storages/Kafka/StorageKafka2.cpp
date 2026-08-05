@@ -148,7 +148,7 @@ StorageKafka2::StorageKafka2(
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
-    : IStorage(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , keeper(getContext()->getZooKeeper())
     , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
@@ -582,6 +582,12 @@ void StorageKafka2::startup()
         }
     }
     activating_task->activateAndSchedule();
+}
+
+void StorageKafka2::scheduleStreamingTasksImpl()
+{
+    for (auto & task : tasks)
+        task->holder->schedule();
 }
 
 
@@ -1170,9 +1176,13 @@ void StorageKafka2::threadFunc(size_t idx)
     try
     {
         auto table_id = getStorageID();
-        // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views)
+        const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+        const UInt64 refresh_epoch = task->last_seen_refresh_epoch;
+        const bool deps_ready = num_views == 0 || StorageKafkaUtils::checkDependencies(table_id, getContext());
+        const bool run_cycle = deps_ready && stream_control.claimCycle(task->last_seen_refresh_epoch);
+
+        if (num_views && run_cycle)
         {
             /// Atomically check that no direct readers are active and register this MV streamer.
             /// This is done under consumers_mutex to prevent a TOCTOU race with makePipe,
@@ -1183,6 +1193,9 @@ void StorageKafka2::threadFunc(size_t idx)
                 if (active_direct_readers.load() > 0)
                 {
                     LOG_DEBUG(log, "Direct readers are active, skipping MV streaming this round");
+                    /// Give back a REFRESH permit consumed by `claimCycle`, so the refresh still
+                    /// runs once the readers drain, even if the table is stopped by then.
+                    task->last_seen_refresh_epoch = refresh_epoch;
                 }
                 else
                 {
@@ -1208,7 +1221,7 @@ void StorageKafka2::threadFunc(size_t idx)
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                     // Exit the loop & reschedule if some stream stalled
-                    if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
+                    if (maybe_stall_reason = streamToViews(idx, cycle_epoch); maybe_stall_reason.has_value())
                     {
                         LOG_TRACE(
                             log,
@@ -1216,6 +1229,9 @@ void StorageKafka2::threadFunc(size_t idx)
                             (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                         break;
                     }
+
+                    if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
+                        break;
 
                     auto ts = std::chrono::steady_clock::now();
                     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
@@ -1230,6 +1246,12 @@ void StorageKafka2::threadFunc(size_t idx)
                 }
             }
         }
+        else if (num_views && stream_control.isBlocked())
+            LOG_DEBUG(log, "Consumption is stopped");
+        else if (num_views)
+            ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
+        else
+            LOG_DEBUG(log, "No attached views");
     }
     catch (...)
     {
@@ -1249,9 +1271,10 @@ void StorageKafka2::threadFunc(size_t idx)
     }
 }
 
-std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
+std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx, UInt64 cycle_epoch)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
+
     // This function is written assuming that each consumer has their own thread. This means once this is changed, this
     // function should be revisited. The return values should be revisited, as stalling all consumers because of a
     // single one stalled is not a good idea.
@@ -1278,7 +1301,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
             return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
-        const auto maybe_rows = streamFromConsumer(*consumer, watch);
+        const auto maybe_rows = streamFromConsumer(*consumer, watch, cycle_epoch);
         if (maybe_rows.has_value())
         {
             const auto milliseconds = watch.elapsedMilliseconds();
@@ -1413,7 +1436,7 @@ void StorageKafka2::cleanConsumers()
     consumers.clear();
 }
 
-std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch)
+std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, UInt64 cycle_epoch)
 {
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();
@@ -1435,6 +1458,12 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
     auto block_io = interpreter.execute();
 
     auto maybe_blocks_and_guard = pollConsumer(consumer, watch, modified_context);
+
+    if (isConsumeCancelRequested(cycle_epoch))
+    {
+        block_io.onCancelOrConnectionLoss();
+        return std::nullopt;
+    }
 
     if (!maybe_blocks_and_guard.has_value() || maybe_blocks_and_guard->blocks.empty())
     {

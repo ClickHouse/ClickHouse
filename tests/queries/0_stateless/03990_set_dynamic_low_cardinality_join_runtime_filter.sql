@@ -1,6 +1,6 @@
 -- Regression test: Dynamic column with LowCardinality variant and enable_join_runtime_filters
 -- caused LOGICAL_ERROR "Bad cast from type DB::ColumnVector<int> to DB::ColumnLowCardinality"
--- because convertToFullIfNeeded recursively stripped LowCardinality from Dynamic's internal
+-- because convertToFullIfWrapped recursively stripped LowCardinality from Dynamic's internal
 -- variant columns without updating variant_info type metadata, causing column/type mismatches
 -- in Set::appendSetElements when serializing values into shared variant storage.
 -- max_threads=1 is needed to reliably trigger the runtime filter code path.

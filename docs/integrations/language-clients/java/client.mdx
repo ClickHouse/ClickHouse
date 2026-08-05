@@ -25,7 +25,6 @@ The library provides its own API to send requests to a server. The library also 
 
 - Maven Central (project web page): https://mvnrepository.com/artifact/com.clickhouse/client-v2
 - Nightly builds (repository link): https://central.sonatype.com/repository/maven-snapshots/
-- Old Nightly builds artifactory (repository link): https://s01.oss.sonatype.org/content/repositories/snapshots/
 <br/>
 <Tabs>
 <Tab title="Maven">
@@ -266,11 +265,11 @@ Configuration is defined during client creation. See `com.clickhouse.client.api.
 
 ### Client Identification {#client-identification}
 
-There are two fields in a query log that identify application originated a request: `client_name` and `http_user_agent`. Native TCP protocol uses 
-`client_name` to identify application. HTTP protocol uses `http_user_agent` to identify application. Client builder has method `setClientName` correct values 
-for both protocols. 
-The field `http_user_agent` is set according to `User-Agent` header common format: `application-name[/version] [(operating-system; architecture; ...)]`. 
-This set of values is repeated for each layer: application, client library, http client library. What is set by `setClientName` method comes first in the list. 
+There are two fields in a query log that identify application originated a request: `client_name` and `http_user_agent`. Native TCP protocol uses
+`client_name` to identify application. HTTP protocol uses `http_user_agent` to identify application. Client builder has method `setClientName` correct values
+for both protocols.
+The field `http_user_agent` is set according to `User-Agent` header common format: `application-name[/version] [(operating-system; architecture; ...)]`.
+This set of values is repeated for each layer: application, client library, http client library. What is set by `setClientName` method comes first in the list.
 
 For example:
 ```java showLineNumbers
@@ -794,10 +793,10 @@ Complete examples code is stored in the repo in a 'example` [folder](https://git
 
 There are two common ways to read data:
 
-- `query()` method that returns low-level `QueryResponse` object that contains `InputStream` with data. Usually combined with `ClickHouseBinaryFormatReader` for streaming reads but 
+- `query()` method that returns low-level `QueryResponse` object that contains `InputStream` with data. Usually combined with `ClickHouseBinaryFormatReader` for streaming reads but
 can be used with any other custom reader implementation. `QueryResponse` also provides access to the result set metadata and metrics.
 - `queryAll()` method and using `GenericRecord` for convenient row access. In this case the whole result set is loaded into memory.
-- `queryRecords()` method that returns `com.clickhouse.client.api.query.Records` - an iterator for `GenericRecord` objects. This method uses streaming approach 
+- `queryRecords()` method that returns `com.clickhouse.client.api.query.Records` - an iterator for `GenericRecord` objects. This method uses streaming approach
 (no data is loaded into memory) and utilises `GenericRecord` to access data.
 
 **Note:** streaming approach requires fast read otherwise it may cause server write timeout because data is read directly from the network stream.
@@ -811,14 +810,14 @@ can be used with any other custom reader implementation. `QueryResponse` also pr
 - `getStringArray(...)` - for `Array(String)` (and enum values represented as names).
 - `getObjectArray(...)` - generic option for any `Array(...)` element type, including nested arrays. Use to read arrays with nullable values and nested arrays.
 
-Index-based and name-based overloads are available for all methods. Index is 1-based. Index-based do dirrect access to a column. 
+Index-based and name-based overloads are available for all methods. Index is 1-based. Index-based do dirrect access to a column.
 Name-based methods require index lookup each time.
 
 ```java
 try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
     ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
     while (reader.next() != null) {
-        
+
         Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
         Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 
@@ -836,7 +835,7 @@ try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
 - `getStringArray(...)` - for `Array(String)` (and enum values represented as names).
 - `getObjectArray(...)` - generic option for any `Array(...)` element type, including nested arrays. Use to read arrays with nullable values and nested arrays.
 
-Index-based and name-based overloads are available for all methods. Index is 1-based. Index-based do dirrect access to a column. 
+Index-based and name-based overloads are available for all methods. Index is 1-based. Index-based do dirrect access to a column.
 Name-based methods require index lookup each time.
 
 ```java
@@ -1501,5 +1500,3 @@ properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickH
 ```
 
 </View>
-
-

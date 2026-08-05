@@ -1140,6 +1140,114 @@ TEST(ZipArchiveReaderTest, RethrowsCallbackExceptionAfterOpenSucceeded)
     }
 }
 
+
+/// A `SeekableReadBuffer` whose seeks always succeed but whose reads fail while a flag is
+/// set. A read failure goes through `ReadBuffer::next()`, which calls `cancel()` on this
+/// buffer (setting the terminal `canceled` flag) and rethrows -- exactly how a mid-stream
+/// read failure poisons the underlying archive buffer in production. `seek()` never sets
+/// `canceled`, so failing on read (not seek) is what reproduces the pooled-handle bug.
+class ReadFailingReadBuffer : public SeekableReadBuffer
+{
+public:
+    ReadFailingReadBuffer(const String & data_, std::shared_ptr<std::atomic<bool>> fail_flag_)
+        : SeekableReadBuffer(nullptr, 0)
+        , data(data_)
+        , fail_flag(std::move(fail_flag_))
+    {
+    }
+
+    off_t seek(off_t off, int whence) override
+    {
+        if (whence != SEEK_SET)
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET allowed");
+        if (off < 0 || static_cast<size_t>(off) > data.size())
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek out of bounds");
+        pos = nullptr;
+        working_buffer = Buffer(nullptr, nullptr);
+        position_in_file = off;
+        return off;
+    }
+
+    off_t getPosition() override { return static_cast<off_t>(position_in_file) - available(); }
+
+    bool nextImpl() override
+    {
+        if (fail_flag->load())
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Forced read failure");
+        if (position_in_file >= data.size())
+            return false;
+        size_t to_read = std::min<size_t>(data.size() - position_in_file, 1024);
+        buf.resize(to_read);
+        std::copy(data.begin() + position_in_file, data.begin() + position_in_file + to_read, buf.begin());
+        BufferBase::set(buf.data(), to_read, 0);
+        position_in_file += to_read;
+        return true;
+    }
+
+private:
+    const String & data;
+    std::shared_ptr<std::atomic<bool>> fail_flag;
+    std::vector<char> buf;
+    size_t position_in_file = 0;
+};
+
+
+/// Reproducer for the BuzzHouse-found `ReadBuffer is canceled. Can't read from it.`
+/// LOGICAL_ERROR (STID 2508-1f27) on the backup-restore zip path.
+///
+/// `ZipArchiveReader` pools its minizip handles in `free_handles` and reuses them for the
+/// next operation. When a read fails mid-stream, `ReadBuffer::next()` calls `cancel()` on
+/// the underlying archive buffer (setting the terminal `canceled` flag) and rethrows. The
+/// `stored_exception` guards added earlier stop the *current* operation, but the poisoned
+/// handle was still returned to the pool. On the next operation minizip re-reads through
+/// that same buffer, and `ReadBuffer::next()` trips `chassert(!isCanceled())`.
+///
+/// The fix closes (rather than pools) a handle whose underlying buffer is canceled, so the
+/// next operation opens a fresh handle. This test poisons a handle with a failing read, then
+/// does a normal read that must succeed rather than abort.
+TEST(ZipArchiveReaderTest, DoesNotReuseCanceledHandle)
+{
+    String archive_in_memory;
+    {
+        auto writer = createArchiveWriter("archive.zip", std::make_unique<WriteBufferFromString>(archive_in_memory));
+        auto out = writer->writeFile("file.txt");
+        writeString(getRandomASCIIString(16 * 1024), *out);
+        out->finalize();
+        writer->finalize();
+    }
+
+    auto fail_flag = std::make_shared<std::atomic<bool>>(false);
+    auto read_archive_func = [&]() -> std::unique_ptr<SeekableReadBuffer>
+    { return std::make_unique<ReadFailingReadBuffer>(archive_in_memory, fail_flag); };
+
+    auto reader = createArchiveReader("archive.zip", read_archive_func, archive_in_memory.size());
+    ASSERT_TRUE(reader->fileExists("file.txt"));
+
+    /// Step 1: a read fails mid-stream, cancelling the underlying buffer of the pooled handle.
+    fail_flag->store(true);
+    try
+    {
+        auto in = reader->readFile("file.txt", /*throw_on_not_found=*/true);
+        String content;
+        readStringUntilEOF(content, *in);
+        FAIL() << "Expected read failure was not thrown";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE) << e.displayText();
+    }
+
+    /// Step 2: recover and read normally. Before the fix this reused the canceled handle and
+    /// aborted with `ReadBuffer is canceled. Can't read from it.`; now a fresh handle is used.
+    fail_flag->store(false);
+    {
+        auto in = reader->readFile("file.txt", /*throw_on_not_found=*/true);
+        String content;
+        readStringUntilEOF(content, *in);
+        EXPECT_EQ(content.size(), 16u * 1024u);
+    }
+}
+
 #endif
 
 

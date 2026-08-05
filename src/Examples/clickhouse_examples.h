@@ -11,6 +11,8 @@
 int mainEntryExampleKerberosInit(int argc, char ** argv);
 int mainEntryExampleQuantileTDigest(int argc, char ** argv);
 int mainEntryExampleGroupArraySorted(int argc, char ** argv);
+int mainEntryExampleTimeSeriesToGridTwoStackVsRecompute(int argc, char ** argv);
+int mainEntryExampleTimeSeriesToGridRangeScanVsStdSort(int argc, char ** argv);
 int mainEntryExampleTestConnect(int argc, char ** argv);
 int mainEntryExampleZkutilTestCommands(int argc, char ** argv);
 int mainEntryExampleZkutilTestCommandsNewLib(int argc, char ** argv);

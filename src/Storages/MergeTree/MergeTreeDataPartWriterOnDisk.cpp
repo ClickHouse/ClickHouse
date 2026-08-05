@@ -15,6 +15,7 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
@@ -724,6 +725,26 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column)
+{
+    if (codec->needsVectorDimensionUpfront())
+    {
+        Field sample_field;
+        column->get(0, sample_field);
+        /// Only arrays carry a vector dimension here. A `Tuple` is serialized as one stream per element,
+        /// so each element stream is scalar; using the tuple arity as the dimension would make the codec
+        /// read several values from a single-value stream.
+        if (sample_field.getType() == Field::Types::Array)
+        {
+            for (size_t j = 0; j < column->size(); ++j)
+            {
+                column->get(j, sample_field);
+                codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
+            }
+        }
     }
 }
 

@@ -34,21 +34,24 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
 All clauses are optional, except for the required list of expressions immediately after `SELECT` which is covered in more detail [below](#select-clause).
 
-Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed:
+Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed (except for `SELECT` and `DISTINCT`, listed first for convenience: their expressions are evaluated only after the preceding clauses finish, as described [below](#select-clause)):
 
 - [WITH clause](/reference/statements/select/with)
 - [SELECT clause](#select-clause)
+- [ALL clause](/reference/statements/select/all)
 - [DISTINCT clause](/reference/statements/select/distinct)
 - [FROM clause](/reference/statements/select/from)
 - [SAMPLE clause](/reference/statements/select/sample)
+- [ARRAY JOIN clause](/reference/statements/select/array-join)
 - [JOIN clause](/reference/statements/select/join)
 - [PREWHERE clause](/reference/statements/select/prewhere)
 - [WHERE clause](/reference/statements/select/where)
-- [WINDOW clause](/reference/functions/window-functions/index)
 - [GROUP BY clause](/reference/statements/select/group-by)
-- [LIMIT BY clause](/reference/statements/select/limit-by)
 - [HAVING clause](/reference/statements/select/having)
+- [WINDOW clause](/reference/functions/window-functions/index)
 - [QUALIFY clause](/reference/statements/select/qualify)
+- [ORDER BY clause](/reference/statements/select/order-by)
+- [LIMIT BY clause](/reference/statements/select/limit-by)
 - [LIMIT clause](/reference/statements/select/limit)
 - [OFFSET clause](/reference/statements/select/offset)
 - [UNION clause](/reference/statements/select/union)

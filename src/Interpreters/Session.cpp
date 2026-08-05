@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int USER_EXPIRED;
+    extern const int ACCESS_DENIED;
 }
 
 
@@ -727,9 +728,28 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setInitialAddress(*query_context->getClientInfo().current_address);
     }
 
+    /// On a secret interserver query, enable the initiator's current roles (external, bypassing the grant check)
+    /// and drop defaults so row policies match. Gate on the session interface, not the client-controlled per-query one.
+    std::vector<UUID> effective_external_roles = external_roles;
+    const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
+        && query_context->getClientInfo().current_roles.has_value()
+        && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
+    if (apply_initiator_roles)
+    {
+        const auto & role_names = *query_context->getClientInfo().current_roles;
+        effective_external_roles = global_context->getAccessControl().find<Role>(role_names);
+        /// Fail closed: a role unknown here cannot be honored; dropping it could drop a restrictive policy.
+        if (effective_external_roles.size() != role_names.size())
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
+    }
+
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, external_roles);
+        query_context->setUser(*user_id, effective_external_roles);
+
+    if (apply_initiator_roles && user_id)
+        query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);
 
     /// Query context is ready.
     query_context_created = true;

@@ -28,8 +28,7 @@ If you would like to test the integration before configuring your production set
 - Access to modify JVM startup arguments
 
 <Steps>
-<Step>
-#### Get ClickStack API key {#get-api-key}
+<Step title="Get ClickStack API key" id="get-api-key">
 
 The OpenTelemetry Java agent sends data to ClickStack's OTLP endpoint, which requires authentication.
 
@@ -40,8 +39,7 @@ The OpenTelemetry Java agent sends data to ClickStack's OTLP endpoint, which req
 
 <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
 </Step>
-<Step>
-#### Download OpenTelemetry Java agent {#download-agent}
+<Step title="Download OpenTelemetry Java agent" id="download-agent">
 
 Download the OpenTelemetry Java agent JAR file:
 
@@ -51,8 +49,7 @@ curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/
 
 This downloads the agent to your current directory. You can place it wherever makes sense for your deployment (e.g., `/opt/opentelemetry/` or alongside your application JAR).
 </Step>
-<Step>
-#### Configure JVM startup arguments {#configure-jvm}
+<Step title="Configure JVM startup arguments" id="configure-jvm">
 
 Add the Java agent to your JVM startup command. The agent automatically collects JVM metrics and sends them to ClickStack.
 
@@ -111,8 +108,7 @@ The OpenTelemetry Java agent automatically collects these JVM metrics:
 - **CPU**: `jvm.cpu.time`, `jvm.cpu.count`
 </Tip>
 </Step>
-<Step>
-#### Verify metrics in HyperDX {#verifying-metrics}
+<Step title="Verify metrics in HyperDX" id="verifying-metrics">
 
 Once your application is running with the agent, verify metrics are flowing to ClickStack:
 
@@ -127,8 +123,7 @@ Once your application is running with the agent, verify metrics are flowing to C
 For users who want to test the JVM metrics integration before instrumenting their applications, we provide a sample dataset with pre-generated metrics showing realistic JVM behavior from a medium-sized microservice with steady moderate traffic.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 ```bash
 # Download gauge metrics (memory, threads, CPU, classes)
@@ -145,8 +140,7 @@ The dataset includes 24 hours of JVM metrics showing:
 - Class loading activity
 - CPU utilization patterns
 </Step>
-<Step>
-#### Start ClickStack {#start-clickstack}
+<Step title="Start ClickStack" id="start-clickstack">
 
 If you don't already have ClickStack running:
 
@@ -158,8 +152,7 @@ docker run -d --name clickstack \
 
 Wait a few moments for ClickStack to fully start up.
 </Step>
-<Step>
-#### Import the demo dataset {#import-demo-data}
+<Step title="Import the demo dataset" id="import-demo-data">
 
 ```bash
 # Import gauge metrics (memory, threads, CPU, classes)
@@ -175,8 +168,7 @@ docker exec -i clickstack clickhouse-client --query="
 
 This imports the metrics directly into ClickStack's metrics tables.
 </Step>
-<Step>
-#### Verify the demo data {#verify-demo-metrics}
+<Step title="Verify the demo data" id="verify-demo-metrics">
 
 Once imported:
 
@@ -200,11 +192,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you monitor JVM applications with ClickStack, we provide a pre-built dashboard with essential visualizations for JVM metrics.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/jvm-metrics-dashboard.json'} download="jvm-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/jvm-metrics-dashboard.json'} download="jvm-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Import the pre-built dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
@@ -215,8 +207,7 @@ To help you monitor JVM applications with ClickStack, we provide a pre-built das
 
 <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="Finish import"/>
 </Step>
-<Step>
-#### View the dashboard {#created-dashboard}
+<Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 

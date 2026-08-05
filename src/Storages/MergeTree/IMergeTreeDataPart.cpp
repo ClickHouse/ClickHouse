@@ -73,6 +73,7 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <ranges>
 
 
 namespace CurrentMetrics
@@ -277,11 +278,17 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
     {
         FieldRef min_value;
         FieldRef max_value;
-        const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_name);
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
-            column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
+        const ColumnWithTypeAndName & column_and_type = block.getColumnOrSubcolumnByName(column_name);
+        const auto & src_column = column_and_type.column;
+        /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
+        /// columns are untouched. LC(Nullable(T)) then takes getExtremesNullLast (keeps the +inf NULL
+        /// sentinel; otherwise mixed NULL/non-NULL parts lose it and IS NULL wrongly prunes). getExtremes
+        /// on LC materializes internally too, so this adds no extra work.
+        const auto column = src_column->lowCardinality() ? src_column->convertToFullColumnIfLowCardinality() : src_column;
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value, 0, column->size());
         else
-            column.column->getExtremes(min_value, max_value, 0, column.column->size());
+            column->getExtremes(min_value, max_value, 0, column->size());
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
@@ -327,6 +334,38 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
                 : hyperrectangle[i].right;
         }
     }
+}
+
+Names IMergeTreeDataPart::MinMaxIndex::getProbablyWrittenFiles(const IMergeTreeDataPart & part) const
+{
+    if (hyperrectangle.empty())
+        return {};
+
+    const auto metadata_snapshot = part.getMetadataSnapshot();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    const auto data_settings = part.storage.getSettings();
+    const auto & data_part_storage = part.getDataPartStorage();
+
+    auto to_file_names = [&](const NamesAndTypesList & minmax_columns)
+    {
+        return minmax_columns.getNames()
+            | std::views::transform([&](const auto & column_name) { return "minmax_" + getFileColumnName(column_name, data_settings, data_part_storage) + ".idx"; })
+            | std::ranges::to<Names>();
+    };
+
+    {
+        auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+        if (hyperrectangle.size() == minmax_columns.size())
+            return to_file_names(minmax_columns);
+    }
+
+    {
+        auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
+        if (hyperrectangle.size() == minmax_columns.size())
+            return to_file_names(minmax_columns);
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Part level Min-Max index was constructed from unexpected columns set.");
 }
 
 String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage)
@@ -465,7 +504,8 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreePartInfo & info_,
     const MutableDataPartStoragePtr & data_part_storage_,
     Type part_type_,
-    const IMergeTreeDataPart * parent_part_)
+    const IMergeTreeDataPart * parent_part_,
+    bool part_may_exist_on_disk)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
     , name(mutable_name)
@@ -494,7 +534,11 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         DimensionalMetrics::MergeTreeParts,
         {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
 
-    initializeIndexGranularityInfo(storage_settings);
+    if (part_may_exist_on_disk)
+        initializeIndexGranularityInfo(storage_settings);
+
+    /// By default set the order of common metadata files. Later on it can be changed by the part itself.
+    getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -3147,9 +3191,20 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
 {
     constexpr size_t size_hint = 4096; /// These files are small.
     auto read_settings = getReadSettings().adjustBufferSize(size_hint);
+
     /// Default read method is pread_threadpool, but there is not much point in it here.
     read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-    auto res = getDataPartStorage().readFile(file_name, read_settings, size_hint);
+
+    const auto & data_part_storage = getDataPartStorage();
+
+    if (isPackedPartStorage(data_part_storage)
+        && !read_settings.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage)
+    {
+        /// We do not want background download to read too much extra data during parts load/fetch.
+        read_settings.filesystem_cache_settings.allow_background_download = false;
+    }
+
+    auto res = data_part_storage.readFile(file_name, read_settings, size_hint);
 
     if (isCompressedFromFileName(file_name))
         return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
@@ -3159,8 +3214,22 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
 
 std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & file_name) const
 {
-    constexpr size_t size_hint = 4096;  /// These files are small.
-    if (auto res = getDataPartStorage().readFileIfExists(file_name, getReadSettings().adjustBufferSize(size_hint), size_hint))
+    constexpr size_t size_hint = 4096; /// These files are small.
+    auto read_settings = getReadSettings().adjustBufferSize(size_hint);
+
+    /// Default read method is pread_threadpool, but there is not much point in it here.
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    const auto & data_part_storage = getDataPartStorage();
+
+    if (isPackedPartStorage(data_part_storage)
+        && !read_settings.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage)
+    {
+        /// We do not want background download to read too much extra data during parts load/fetch.
+        read_settings.filesystem_cache_settings.allow_background_download = false;
+    }
+
+    if (auto res = data_part_storage.readFileIfExists(file_name, read_settings, size_hint))
     {
         if (isCompressedFromFileName(file_name))
             return std::make_unique<CompressedReadBufferFromFile>(std::move(res));

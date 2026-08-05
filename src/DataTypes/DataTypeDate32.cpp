@@ -26,7 +26,7 @@ void registerDataTypeDate32(DataTypeFactory & factory)
         "Date32", [] { return DataTypePtr(std::make_shared<DataTypeDate32>()); }, DataTypeFactory::Case::Insensitive,
         Documentation{
             .description = R"DOCS_MD(
-A date. Supports the date range same with [DateTime64](../../sql-reference/data-types/datetime64.md). Stored as a signed 32-bit integer in native byte order with the value representing the days since `1900-01-01`. **Important!** 0 represents `1970-01-01`, and negative values represent the days before `1970-01-01`.
+A date. Supports the date range from `1900-01-01` to `2299-12-31`. Stored as a signed 32-bit integer in native byte order with the value representing the days since `1900-01-01`. **Important!** 0 represents `1970-01-01`, and negative values represent the days before `1970-01-01`.
 
 **Examples**
 

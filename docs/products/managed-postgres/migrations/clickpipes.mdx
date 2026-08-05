@@ -37,7 +37,8 @@ ClickHouse Cloud now offers ClickPipes to migrate your external PostgreSQL datab
 If you run into issues during migration, check the [Managed Postgres Migrations FAQ](/products/managed-postgres/migrations/faq) for common errors and solutions.
 </Note>
 
-## Step 1: Connect to your source database {#step-1-connect}
+<Steps>
+<Step title="Connect to your source database" id="step-1-connect">
 
 Open the [ClickHouse Cloud console](https://clickhouse.cloud) and select your Managed Postgres service.
 
@@ -65,7 +66,8 @@ Choose an ingestion method:
 
 Click **Next**.
 
-## Step 2: Export your database schema {#step-2-export-schema}
+</Step>
+<Step title="Export your database schema" id="step-2-export-schema">
 
 The wizard displays a `pg_dump` command pre-filled with your source connection details. Run it in a terminal:
 
@@ -86,7 +88,8 @@ This creates `pg.sql` in your current directory.
 
 Click **Next**.
 
-## Step 3: Import the schema into your Managed Postgres service {#step-3-import-schema}
+</Step>
+<Step title="Import the schema into your Managed Postgres service" id="step-3-import-schema">
 
 Select the destination database from the dropdown, or click **Create a new database** to provision one.
 
@@ -107,7 +110,8 @@ psql \
 
 Click **Next**.
 
-## Step 4: Configure ingestion settings {#step-4-ingestion-settings}
+</Step>
+<Step title="Configure ingestion settings" id="step-4-ingestion-settings">
 
 Specify the publication to use for logical replication. If you leave this blank, a publication is created automatically.
 
@@ -125,13 +129,17 @@ Expand **Advanced replication settings** to tune throughput:
 
 Click **Next**.
 
-## Step 5: Select tables {#step-5-select-tables}
+</Step>
+<Step title="Select tables" id="step-5-select-tables">
 
 Select the tables you want to replicate. Tables are grouped by schema. Select individual tables or expand a schema to pick all of them.
 
 <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Step 5: table picker grouped by schema with Create migration button" size="lg" border />
 
 Click **Create migration**.
+
+</Step>
+</Steps>
 
 ## Monitor the migration {#monitor}
 

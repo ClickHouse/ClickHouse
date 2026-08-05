@@ -189,18 +189,42 @@ ClickHouse documentation can be divided up by the audience for the following par
 
 <a name="templates"/>
 
-### Description Templates
+### Templates
 
-When writing docs, you can use prepared templates. Copy the code of a template and use it in your contribution. Sometimes you just need to change level of headers.
+When writing docs, you can use prepared templates. Copy the code of a template and use it in your contribution. Sometimes you just need to change the level of headers.
 
-Templates:
+Reference templates (paste a section into a page):
 
-- [Function](_description_templates/template-function.md)
-- [Server Setting](_description_templates/template-server-setting.md)
-- [Database or Table engine](_description_templates/template-engine.md)
-- [System table](_description_templates/template-system-table.md)
-- [Data type](_description_templates/template-data-type.md)
-- [Statement](_description_templates/template-statement.md)
+- [Function](_templates/template-function.md)
+- [Server Setting](_templates/template-server-setting.md)
+- [Database or Table engine](_templates/template-engine.md)
+- [System table](_templates/template-system-table.md)
+- [Statement](_templates/template-statement.md)
+
+Narrative templates (full page):
+
+- [Setup guide](_templates/template-setup-guide.mdx) — how-to and setup guides
+
+#### Choosing components for narrative guides
+
+The section order in a narrative template is fixed; drop a section only if it genuinely doesn't apply. Classify the content's *shape* — the shape dictates the component:
+
+| Content shape | Component |
+|---|---|
+| Procedure with depth (screenshots, code, sub-steps) | `<Steps>` / `<Step title="…" id="…">` — the `id` makes a step deep-linkable via `#id` |
+| A step or section that differs by variant (provider, OS, deployment) | `<Tabs>` / `<Tab title="…" id="…">` — the `id` makes a variant deep-linkable via `#id` |
+| Selective-consult content — the reader wants one item (Troubleshooting, FAQ) | `<Accordion title="…">`, one per item |
+| Advisory list read in full (Best practices) | `### {#anchor}` subheadings, one per item |
+| Matrix — the reader scans a column *down* to compare values (action→result, source→target mappings) | markdown table |
+| Callout | `<Note>` / `<Warning>` / `<Tip>` |
+
+Guidelines:
+
+- **How it works** goes *before* the steps and describes the end-to-end *flow* (what happens, in order) — not behavioral or reference detail, which belongs in FAQ.
+- The main procedure can be **one or several `## {Task}` sections**.
+- **Verify**, **Best practices**, and **FAQ** are prompts as much as sections: include them when there's real content to add; don't fabricate to fill them.
+- Frontmatter uses `sidebarTitle` (no repeated `# H1`). Built-in components (`Steps`, `Accordion`, `Tabs`, `Note`, `Warning`, `Tip`) need no import.
+- Every `##` / `###` needs a unique `{#anchor}`; `<Step>` and `<Tab>` carry their anchor in an `id` prop.
 
 
 <a name="how-to-build-docs"/>
