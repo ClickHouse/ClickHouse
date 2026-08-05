@@ -5,7 +5,9 @@
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 #include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
 #include <algorithm>
+#include <string>
 #include <string_view>
+#include <vector>
 
 
 namespace DB
@@ -319,6 +321,15 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
     {
     } // NOLINT(bugprone-empty-catch)
 
+    struct CompletionCandidate
+    {
+        String full_completion;
+        String full_path;
+    };
+
+    std::vector<CompletionCandidate> candidates;
+    candidates.reserve(children.size());
+
     for (const auto & child : children)
     {
         if (!unescaped_child_prefix.empty()
@@ -355,25 +366,45 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
         else
             full_completion = typed_parent_str + formatKeeperNodeName(child);
 
-        /// Check if this node has children to decide the suffix:
-        ///   - has children  → append '/' so the user can Tab-complete the next segment
-        ///   - leaf node     → in quoted mode append closing quote, otherwise no suffix
         String full_path = parent_path;
         if (!full_path.ends_with('/'))
             full_path += '/';
         full_path += child;
 
-        bool has_children = false;
+        candidates.push_back(CompletionCandidate{std::move(full_completion), std::move(full_path)});
+    }
+
+    /// Decide '/' vs closing-quote suffix from Stat.numChildren via batched exists.
+    /// Avoids per-candidate getChildren (1 + N full list reads on every Tab).
+    std::vector<char> has_children(candidates.size(), 0);
+    if (!candidates.empty())
+    {
+        std::vector<std::string> paths_to_check;
+        paths_to_check.reserve(candidates.size());
+        for (const auto & candidate : candidates)
+            paths_to_check.push_back(candidate.full_path);
+
         try
         {
-            Strings sub = zookeeper->getChildren(full_path);
-            has_children = !sub.empty();
+            auto responses = zookeeper->exists(paths_to_check);
+            for (size_t i = 0; i < candidates.size(); ++i)
+            {
+                if (responses[i].error == Coordination::Error::ZOK)
+                    has_children[i] = responses[i].stat.numChildren > 0;
+            }
         }
         catch (Coordination::Exception &)
         {
         } // NOLINT(bugprone-empty-catch)
+    }
 
-        if (has_children)
+    for (size_t i = 0; i < candidates.size(); ++i)
+    {
+        String & full_completion = candidates[i].full_completion;
+
+        ///   - has children  → append '/' so the user can Tab-complete the next segment
+        ///   - leaf node     → in quoted mode append closing quote, otherwise no suffix
+        if (has_children[i])
             full_completion += '/';
         else if (quote_char)
             full_completion += quote_char;
