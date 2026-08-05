@@ -149,9 +149,10 @@ public:
 
     /// For the parse-error diagnostic above: the 1-based number of the input row the parser had
     /// reached when the error was thrown, counting the row whose parsing failed. Row-based formats
-    /// override this; `nullopt` means the format cannot tell (e.g. `ParallelParsingInputFormat`,
-    /// whose segmenting thread reads ahead of the parsers), in which case the diagnostic falls back
-    /// to sampling the data without a row bound.
+    /// override this, and `ParallelParsingInputFormat` propagates the value from the child parser
+    /// whose unit failed (its segmenting thread reads ahead of the parsers, but the child parsers
+    /// count rows globally); `nullopt` means the format cannot tell, in which case the diagnostic
+    /// falls back to sampling the data without a row bound.
     virtual std::optional<size_t> getRowsReachedOnParseError() const { return std::nullopt; }
 
 protected:

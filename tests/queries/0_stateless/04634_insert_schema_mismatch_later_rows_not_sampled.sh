@@ -10,9 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # row the parser never got to could widen the inferred type of a column (e.g. to `String`) and turn
 # a value-level parse error in an earlier row into a bogus "structure mismatch" explanation.
 #
-# `input_format_parallel_parsing` is pinned to 0: with parallel parsing the segmenting thread reads
-# ahead of the parsers, the failing row number is not known to the diagnostic, and it falls back to
-# sampling the data without a row bound.
+# `input_format_parallel_parsing` is pinned to 0 to exercise the serial path deterministically;
+# the parallel path (where the failing child parser's row count is propagated through
+# `ParallelParsingInputFormat`) is covered by 04761_insert_schema_mismatch_parallel_parsing_row_bound.
 
 PHRASE="does not match the structure expected by the query"
 

@@ -63,6 +63,10 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
     const auto parser_unit_number = current_ticket_number % processing_units.size();
     auto & unit = processing_units[parser_unit_number];
 
+    /// Declared outside the `try` so that the `catch` can ask the child parser which row it had
+    /// reached when it threw (see getRowsReachedOnParseError).
+    InputFormatPtr input_format;
+
     try
     {
         /*
@@ -74,7 +78,7 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
 
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
-        InputFormatPtr input_format = internal_parser_creator(read_buffer);
+        input_format = internal_parser_creator(read_buffer);
         input_format->setRowsReadBefore(unit.offset);
         input_format->setErrorsLogger(errors_logger);
         input_format->setSerializationHints(serialization_hints);
@@ -124,16 +128,19 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
     }
     catch (...)
     {
-        onBackgroundException();
+        onBackgroundException(input_format ? input_format->getRowsReachedOnParseError() : std::nullopt);
     }
 }
 
 
-void ParallelParsingInputFormat::onBackgroundException()
+void ParallelParsingInputFormat::onBackgroundException(std::optional<size_t> rows_reached_on_parse_error)
 {
     std::lock_guard lock(mutex);
     if (!background_exception)
+    {
         background_exception = std::current_exception();
+        background_exception_rows_reached = rows_reached_on_parse_error;
+    }
 
     if (is_server)
         tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -142,6 +149,12 @@ void ParallelParsingInputFormat::onBackgroundException()
     first_parser_finished.set();
     reader_condvar.notify_all();
     segmentator_condvar.notify_all();
+}
+
+std::optional<size_t> ParallelParsingInputFormat::getRowsReachedOnParseError() const
+{
+    std::lock_guard lock(mutex);
+    return background_exception_rows_reached;
 }
 
 Chunk ParallelParsingInputFormat::read()
