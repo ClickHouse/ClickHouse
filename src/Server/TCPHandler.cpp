@@ -570,6 +570,11 @@ void TCPHandler::runImpl()
         });
 
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
+        /// Declared before `query_scope` so it is released after the thread detaches. The query context is
+        /// created before the scope exists, so it is never charged to the query; releasing it while the thread
+        /// is still attached would credit the query for ~16 KB of `Settings` it never held, which pushes the
+        /// per-user tracker below what the user actually holds.
+        ContextMutablePtr query_context_to_release_after_detaching;
         /// Initialized later. It has to be destroyed after query_state is destroyed.
         std::optional<QueryScope> query_scope;
         /// QueryState should be cleared before QueryScope, since otherwise
@@ -611,6 +616,8 @@ void TCPHandler::runImpl()
             /// Fatal error callback can be called at any time, including when we already destroyed TCPHandler object that created the callback.
             /// To avoid accessing invalid memory, we capture all needed fields by value.
             /// If TCPHandler object is already destroyed, we don't need to send logs so we capture shared_ptrs as weak_ptrs.
+            query_context_to_release_after_detaching = query_state->query_context;
+
             query_scope = QueryScope::create(
                 query_state->query_context,
                 /* fatal_error_callback */
