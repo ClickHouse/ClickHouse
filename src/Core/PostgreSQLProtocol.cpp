@@ -1,9 +1,11 @@
 #include <Core/PostgreSQLProtocol.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 namespace DB::PostgreSQLProtocol::Messaging
 {
@@ -20,6 +22,67 @@ Int32 encodeNumericTypeModifier(UInt32 precision, UInt32 scale)
     return static_cast<Int32>(((precision << 16) | scale) + 4);
 }
 
+ColumnTypeSpec convertArrayTypeToPostgresColumnTypeSpec(const DataTypePtr & array_type)
+{
+    /// Find the innermost non-array element type. LowCardinality was already removed recursively by the
+    /// caller; Nullable can wrap the innermost element (`Array(Nullable(T))`) and does not change the OID.
+    DataTypePtr element = array_type;
+    while (const auto * array = typeid_cast<const DataTypeArray *>(element.get()))
+        element = removeNullable(array->getNestedType());
+
+    /// PostgreSQL arrays are variable-length, so `len` is always -1. The element mapping matches the
+    /// scalar branches of `convertDataTypeToPostgresColumnTypeSpec` and the `pg_attribute` emulation.
+    if (isBool(element))
+        return {ColumnType::BOOL_ARRAY, -1};
+
+    switch (element->getTypeId())
+    {
+        case TypeIndex::Int8:
+        case TypeIndex::UInt8:
+        case TypeIndex::Int16:
+            return {ColumnType::INT2_ARRAY, -1};
+
+        case TypeIndex::UInt16:
+        case TypeIndex::Int32:
+            return {ColumnType::INT4_ARRAY, -1};
+
+        case TypeIndex::UInt32:
+        case TypeIndex::Int64:
+            return {ColumnType::INT8_ARRAY, -1};
+
+        case TypeIndex::UInt64:
+            return {ColumnType::NUMERIC_ARRAY, -1, encodeNumericTypeModifier(20, 0)};
+        case TypeIndex::Int128:
+        case TypeIndex::UInt128:
+            return {ColumnType::NUMERIC_ARRAY, -1, encodeNumericTypeModifier(39, 0)};
+        case TypeIndex::Int256:
+        case TypeIndex::UInt256:
+            return {ColumnType::NUMERIC_ARRAY, -1, encodeNumericTypeModifier(78, 0)};
+
+        case TypeIndex::Float32:
+            return {ColumnType::FLOAT4_ARRAY, -1};
+        case TypeIndex::Float64:
+            return {ColumnType::FLOAT8_ARRAY, -1};
+
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+            return {ColumnType::DATE_ARRAY, -1};
+
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return {ColumnType::NUMERIC_ARRAY, -1, encodeNumericTypeModifier(getDecimalPrecision(*element), getDecimalScale(*element))};
+
+        case TypeIndex::UUID:
+            return {ColumnType::UUID_ARRAY, -1};
+
+        /// `String`, `FixedString`, `DateTime`, `DateTime64` and everything else: `text[]`.
+        default:
+            return {ColumnType::TEXT_ARRAY, -1};
+    }
+}
+
 }
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type_)
@@ -27,6 +90,15 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
     /// Unwrap LowCardinality and Nullable so that e.g. `Nullable(UInt64)` is described by the same OID and
     /// type modifier as `UInt64` (otherwise it would fall through to the `VARCHAR` default below).
     DataTypePtr data_type = removeNullable(recursiveRemoveLowCardinality(data_type_));
+
+    /// An `Array(...)` value is sent as a PostgreSQL array literal (`{...}`, see PostgreSQLOutputFormat),
+    /// so describe it with the array OID of its element type, mirroring the `pg_attribute` emulation in
+    /// PostgreSQLHandler: the OID is that of the array of the innermost non-array type (PostgreSQL has one
+    /// array type per element type regardless of dimensions), and for elements advertised as `numeric` the
+    /// type modifier carries the element's precision and scale. Elements without a PostgreSQL counterpart,
+    /// including `DateTime`/`DateTime64` (see the comment on the scalar branch below), fall back to `text[]`.
+    if (isArray(data_type))
+        return convertArrayTypeToPostgresColumnTypeSpec(data_type);
 
     // Check for Bool type first
     if (isBool(data_type))

@@ -5,6 +5,10 @@ import decimal
 import logging
 import os
 import random
+import socket
+import struct
+import threading
+import time
 import uuid
 from io import StringIO
 
@@ -577,4 +581,86 @@ def test_restricted_user_cannot_bypass_grants(started_cluster):
     )
     cur = ch.cursor()
     cur.execute("DROP USER IF EXISTS pg_restricted")
+    ch.close()
+
+
+def test_cancel_request_does_not_cancel_foreign_query(started_cluster):
+    """An unauthenticated PostgreSQL CancelRequest may only cancel queries that actually run on the
+    PostgreSQL interface. The query id string alone is not a credential: any other interface lets a
+    client pick an arbitrary query id, so a query that imitates the `postgres:<connection id>:<secret
+    key>` shape must not be cancellable this way."""
+    node = cluster.instances["node"]
+    query_id = "postgres:1:2"
+    result = {}
+
+    def run_http_query():
+        try:
+            # Several blocks of `sleepEachRow` give the query plenty of cancellation checkpoints,
+            # so a cancel that (wrongly) went through would reliably fail it.
+            result["output"] = node.http_query(
+                "SELECT count() FROM (SELECT sleepEachRow(0.3) FROM numbers(10))",
+                params={"query_id": query_id},
+            )
+        except Exception as e:
+            result["error"] = str(e)
+
+    thread = threading.Thread(target=run_http_query)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if (
+                node.query(
+                    f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+                ).strip()
+                == "1"
+            ):
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError(
+                f"The HTTP query did not show up in the process list: {result}"
+            )
+
+        # An unauthenticated cancel request naming exactly that (process id, secret key) pair.
+        with socket.create_connection((node.ip_address, server_port)) as sock:
+            sock.sendall(struct.pack("!iiii", 16, 80877102, 1, 2))
+    finally:
+        thread.join()
+
+    assert result == {"output": "10\n"}
+
+
+def test_array_type_oids_in_row_description(started_cluster):
+    """A `SELECT` over the PostgreSQL wire must advertise array columns with the array OID of their
+    element type in `RowDescription`, matching the emulated `pg_attribute`/`pg_type` catalog, so that
+    clients decode the `{...}` payload as an array rather than a string. `DateTime` arrays take the
+    `text[]` fallback, like the scalar type takes `text`."""
+    node = cluster.instances["node"]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    cur.execute(
+        "SELECT CAST([1, 2, 3], 'Array(Int32)') AS int4_arr,"
+        " CAST(['a', 'b'], 'Array(String)') AS text_arr,"
+        " CAST([[1], [2]], 'Array(Array(Int64))') AS int8_arr,"
+        " CAST([1.5], 'Array(Float64)') AS float8_arr,"
+        " CAST([toDateTime('2020-01-02 03:04:05', 'UTC')], 'Array(DateTime(\\'UTC\\'))') AS datetime_arr"
+    )
+    assert [d.type_code for d in cur.description] == [1007, 1009, 1016, 1022, 1009]
+    assert cur.fetchall() == [
+        (
+            [1, 2, 3],
+            ["a", "b"],
+            [[1], [2]],
+            [1.5],
+            ["2020-01-02 03:04:05"],
+        )
+    ]
     ch.close()

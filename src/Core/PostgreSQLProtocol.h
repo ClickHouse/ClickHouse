@@ -154,6 +154,19 @@ enum class ColumnType : Int32
     TIMESTAMP = 1114,
     NUMERIC = 1700,
     UUID = 2950,
+
+    /// Array types (`typcategory` = 'A'); each carries the OID of its element type in `typelem`.
+    /// The same OIDs are served by the `pg_type` emulation (see PostgreSQLHandler).
+    BOOL_ARRAY = 1000,
+    INT2_ARRAY = 1005,
+    INT4_ARRAY = 1007,
+    TEXT_ARRAY = 1009,
+    INT8_ARRAY = 1016,
+    FLOAT4_ARRAY = 1021,
+    FLOAT8_ARRAY = 1022,
+    DATE_ARRAY = 1182,
+    NUMERIC_ARRAY = 1231,
+    UUID_ARRAY = 2951,
 };
 
 class ColumnTypeSpec
