@@ -115,11 +115,11 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Requested task with idx {}, but there are only {} parts", task_idx, per_part_infos.size());
 
-    bool is_projection = per_part_infos[task_idx]->data_part->isProjectionPart();
+    bool is_projection = per_part_infos[task_idx]->data_part_info->isProjectionPart();
     chassert(!is_projection || per_part_infos[task_idx]->parent_part);
 
-    const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
-    const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
+    const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part_info->getPartInfo();
+    const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part_info->getPartName() : "";
 
     auto & marks_in_range = per_part_marks_in_range[task_idx];
     marks_in_range_before_cut = marks_in_range;
