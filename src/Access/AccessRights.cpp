@@ -692,10 +692,12 @@ public:
         }
     }
 
-    std::vector<Filter> getFilters(std::string_view parameter)
+    std::vector<Filter> getFilters(std::string_view parameter) const
     {
         std::vector<Filter> res;
-        auto & node = getLeaf(parameter, GLOBAL_WITH_PARAMETER);
+        /// `tryGetLeaf` returns by value and its light copy shares `children` with this tree,
+        /// so the node must outlive the loop: bind it to a named local, never to `auto &`.
+        const auto node = tryGetLeaf(parameter, GLOBAL_WITH_PARAMETER);
         for (auto it = node.begin(); it != node.end(); ++it)
             res.emplace_back(it->flags, it.getPath());
 
