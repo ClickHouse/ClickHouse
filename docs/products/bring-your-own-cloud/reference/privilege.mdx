@@ -66,3 +66,25 @@ In addition to the `clickhouse-management` service account created via Terraform
   - Target identity for the monitoring stack running in your cluster. Used to read/write long-term metric storage in a GCS bucket dedicated to this deployment.
 - **ClickHouse runtime management identity**
   - Used by ClickHouse's runtime data-plane management controller which handles day-2 operations such as Private Service Connect endpoint management, bucket lifecycle adjustments, and service-account rotations.
+
+## Azure roles and identities {#azure-roles-and-identities}
+
+### Onboarding service principal {#onboarding-service-principal}
+
+Onboarding with the [Terraform module for Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) provisions a multi-tenant application as an Enterprise Application (service principal) in your tenant, following Azure guidance for cross-tenant authentication. The service principal is assigned a least-privilege custom role scoped to the target subscription, with permissions covering:
+
+- **Networking**: Manage the VNet, subnets, public IPs, NAT gateways, network security groups, and DNS zones that host your BYOC infrastructure.
+- **Cluster**: Manage AKS clusters and node pools.
+- **Storage**: Manage the storage accounts and blob containers used for ClickHouse data, backups, and monitoring data.
+- **Identity**: Manage user-assigned managed identities and their federated identity credentials inside the subscription.
+- **Authorization**: Manage custom role definitions and role assignments. All permissions are scoped to the target subscription — the role cannot touch resources in other subscriptions or tenants.
+
+### Additional managed identities created by the controller {#additional-managed-identities-created-by-the-controller}
+
+When you provision BYOC services, ClickHouse's control plane creates user-assigned managed identities in your subscription. Each is federated to a specific Kubernetes service account (workload identity) with a narrow, single-purpose permission set:
+
+- **Per-service identity**
+  - Used by each ClickHouse service to access its own storage account for table data and backups, via a custom blob-storage role scoped to that storage account.
+  - When a service is restored from a backup, it additionally receives read-only access to the source service's backup container.
+- **Shared infrastructure identity**
+  - Used by ClickHouse's runtime data-plane management controller for day-2 operations such as Private Link service management.

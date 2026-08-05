@@ -7,7 +7,7 @@ doc_type: '참고'
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
-import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="컴퓨트-컴퓨트 분리" />
 
@@ -20,7 +20,7 @@ import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge
 각 ClickHouse Cloud 서비스에는 다음이 포함됩니다:
 
 * 전용 CPU 및 메모리 클러스터를 갖춘 ClickHouse 컴퓨트 노드(이를 **레플리카**라고 함)
-* 서비스에 연결하기 위한 endpoint(또는 ClickHouse Cloud UI 콘솔을 통해 생성한 여러 endpoint)로, 로컬 및 서드파티 앱 연결에 사용됩니다(예: `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
+* 서비스에 연결하기 위한 엔드포인트(또는 ClickHouse Cloud UI 콘솔을 통해 생성한 여러 엔드포인트)로, 로컬 및 서드파티 앱 연결에 사용됩니다(예: `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
 * 서비스의 모든 데이터와 일부 메타데이터를 저장하는 객체 스토리지 폴더:
 
 <Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud의 단일 서비스" />
@@ -32,7 +32,7 @@ import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge
 단일 서비스만 사용하는 대신, 동일한 공유 스토리지에 액세스하는 여러 서비스를 생성할 수 있습니다. 이를 통해 데이터를 복제하지 않고도 특정 워크로드에 리소스를 전용 할당할 수 있습니다.
 이 개념을 **컴퓨트-컴퓨트 분리**라고 합니다.
 
-컴퓨트-컴퓨트 분리에서는 각 서비스가 자체 레플리카 세트와 endpoint를 가지지만, 동일한 객체 스토리지 폴더를 사용하고 같은 테이블, 뷰 등에 액세스합니다.
+컴퓨트-컴퓨트 분리에서는 각 서비스가 자체 레플리카 세트와 엔드포인트를 가지지만, 동일한 객체 스토리지 폴더를 사용하고 같은 테이블, 뷰 등에 액세스합니다.
 즉, 각 워크로드에 맞는 적절한 크기의 컴퓨트를 선택할 수 있습니다. 일부 워크로드는 소형 레플리카 1개만으로도 충분할 수 있지만, 다른 워크로드는 완전한 고가용성(HA)과 여러 레플리카에 걸친 수백 GB의 메모리가 필요할 수 있습니다.
 
 또한 컴퓨트-컴퓨트 분리를 사용하면 읽기 작업과 쓰기 작업을 분리하여 서로 간섭하지 않도록 할 수 있습니다:
@@ -47,7 +47,7 @@ import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge
   ## 웨어하우스란 무엇입니까?
 </div>
 
-ClickHouse Cloud에서 *웨어하우스* 는 동일한 데이터를 공유하는 **서비스** 집합입니다.
+ClickHouse Cloud에서 *웨어하우스*는 동일한 데이터를 공유하는 **서비스** 집합입니다.
 각 웨어하우스에는 기본 서비스(가장 먼저 생성된 서비스)와 하나 이상의 보조 서비스가 있습니다.
 예를 들어, 아래 스크린샷에서는 두 개의 서비스로 구성된 웨어하우스 &quot;DWH Prod&quot;를 확인할 수 있습니다.
 
@@ -117,12 +117,12 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
   * 데이터를 외부로 내보낼 수 있습니다
 * **읽기 전용**
   * 데이터를 읽기만 할 수 있으며, ClickHouse에서 데이터를 쓰거나 수정할 수 없습니다
-  * system table 외부에서는 백그라운드 머지 작업을 수행하지 않으므로, 리소스를 읽기 쿼리에 온전히 사용할 수 있습니다
+  * 시스템 테이블 외부에서는 백그라운드 머지 작업을 수행하지 않으므로, 리소스를 읽기 쿼리에 온전히 사용할 수 있습니다
   * 여전히 데이터를 외부로 내보낼 수는 있지만(예: 테이블 함수 사용), ClickHouse 내부 데이터는 변경할 수 없습니다
   * 백그라운드 머지로 인해 활성 상태가 유지될 수 있는 읽기-쓰기 서비스와 달리, 지연 없이 유휴 상태로 전환됩니다
 
-중요한 읽기 workload를 쓰기/머지 오버헤드와 분리하기 위해 서비스를 읽기 전용으로 설정해야 할 때가 있습니다.
-이렇게 설정할 수 있는 대상은 두 번째 서비스와 그 이후에 추가로 생성하는 서비스이며, 첫 번째 서비스는 아래 그림과 같이 항상 읽기-쓰기입니다.
+중요한 읽기 워크로드를 쓰기/머지 오버헤드로부터 분리하기 위해 서비스를 읽기 전용으로 설정해야 할 때가 있습니다.
+이 설정은 두 번째 서비스와 그 이후에 추가로 생성하는 서비스에 적용할 수 있지만, 첫 번째 서비스는 아래 그림과 같이 항상 읽기-쓰기입니다.
 
 <Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="웨어하우스의 읽기-쓰기 및 읽기 전용 서비스" />
 

@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>
 
@@ -63,15 +64,37 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(
+const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
+{
+    return index.expression->getRequiredColumnsWithTypes();
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+{
+    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
+        if (part.isSystemColumnInvalidated(column))
+            return {0 /*unknown*/, {}};
+
+    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
+        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+
+    return {0 /*unknown*/, {}};
+}
+
+MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & relative_path_prefix,
     const IDataPartStorage * storage) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+    /// Not routed through `getDeserializedFormat`: that answers the read-time question and
+    /// reports nothing once a required system column is invalidated, while a file left on disk
+    /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
+    MergeTreeIndexSubstreams substreams;
+    for (const auto & substream : getSubstreams())
+        if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
+            substreams.push_back(substream);
 
-    return {0 /*unknown*/, {}};
+    return substreams;
 }
 
 void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
