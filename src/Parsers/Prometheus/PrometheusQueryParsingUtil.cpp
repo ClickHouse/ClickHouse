@@ -741,7 +741,10 @@ namespace
         String * error_message,
         size_t * error_pos)
     {
-        return tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, &is_positive);
+        bool result = tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, &is_positive);
+        if (result && is_positive && res_duration == 0)
+            res_duration = 1;
+        return result;
     }
 }
 

@@ -97,6 +97,16 @@ SELECT '--- prometheusQueryRange with various steps ---';
 SELECT count() FROM prometheusQueryRange('ts', 'up', 1000, 2000, 60);
 SELECT count() FROM prometheusQueryRange('ts', 'up', 1000, 2000, 1);
 
+SELECT '--- positive subsecond ranges with second-precision timestamps ---';
+DROP TABLE IF EXISTS ts_second_precision;
+CREATE TABLE ts_second_precision
+(
+    time_series Array(Tuple(DateTime64(0), Float64))
+) ENGINE = TimeSeries;
+SELECT count() FROM prometheusQuery('ts_second_precision', 'up[1ms]', 1000);
+SELECT count() FROM prometheusQuery('ts_second_precision', 'up[5m:1ms]', 1000);
+DROP TABLE ts_second_precision;
+
 SELECT '--- error: invalid syntax ---';
 SELECT * FROM prometheusQuery('ts', 'not valid!!!', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
 SELECT * FROM prometheusQuery('ts', 'rate(up[])', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
