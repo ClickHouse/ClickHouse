@@ -8,7 +8,7 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 
-# `configure` enables the server-side AST fuzzer for the `default` user
+# `configure_limits` enables the server-side AST fuzzer for the `default` user
 # (`ast_fuzzer_runs=5`, `ast_fuzzer_any_query=true`), which then also fires on the
 # maintenance queries of the test harness itself. The fuzzer runs as a query-finish
 # callback, so the connection thread executes the mutated follow-up queries before the
@@ -20,7 +20,11 @@ FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 # explicit value is marked `changed` even though it equals the default, so the client
 # sends it and it overrides the profile. `clickhouse-test` and `stress.py` pin it the
 # same way for their infrastructure queries.
-NO_AST_FUZZER="--ast_fuzzer_runs=0"
+#
+# Exported so that the helper scripts the runners invoke (`create_tpcds.sh`,
+# `create_tpch.sh`) get it too; they reference it as `${NO_AST_FUZZER:-}` because they
+# also run outside of the stress harness.
+export NO_AST_FUZZER="--ast_fuzzer_runs=0"
 
 function escaped()
 {
@@ -69,6 +73,20 @@ function install_packages()
     dpkg -i "$1"/clickhouse-common-static-dbg_*.deb
     dpkg -i "$1"/clickhouse-server_*.deb
     dpkg -i "$1"/clickhouse-client_*.deb
+
+    # `ast_fuzzer_runs` only exists since 26.2, and the upgrade check installs the
+    # previous release here - an older client would reject the unknown option and turn
+    # every harness query into a hard failure. Drop the option in that case; the older
+    # release has no server-side fuzzer to opt out of anyway. Keep the option whenever
+    # the probe does not say otherwise, so a broken probe cannot silently re-enable
+    # fuzzing of our own queries.
+    if [ "$(clickhouse local --query "SELECT count() FROM system.settings WHERE name = 'ast_fuzzer_runs'" 2>/dev/null)" = "0" ]
+    then
+        echo "The installed client does not know 'ast_fuzzer_runs', not passing it"
+        export NO_AST_FUZZER=""
+    else
+        export NO_AST_FUZZER="--ast_fuzzer_runs=0"
+    fi
 }
 
 function configure()

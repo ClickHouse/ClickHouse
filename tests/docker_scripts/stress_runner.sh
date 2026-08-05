@@ -64,15 +64,15 @@ start_server || { echo "Failed to start server"; exit 1; }
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || echo "ERROR: Failed to start log exports"
 
-clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client < /repo/tests/docker_scripts/create.sql
+clickhouse-client $NO_AST_FUZZER --query "CREATE DATABASE datasets"
+clickhouse-client $NO_AST_FUZZER < /repo/tests/docker_scripts/create.sql
 bash /repo/tests/docker_scripts/create_tpcds.sh
 bash /repo/tests/docker_scripts/create_tpch.sh
-clickhouse-client --query "SHOW TABLES FROM datasets"
-clickhouse-client --query "SHOW TABLES FROM tpcds"
-clickhouse-client --query "SHOW TABLES FROM tpch"
+clickhouse-client $NO_AST_FUZZER --query "SHOW TABLES FROM datasets"
+clickhouse-client $NO_AST_FUZZER --query "SHOW TABLES FROM tpcds"
+clickhouse-client $NO_AST_FUZZER --query "SHOW TABLES FROM tpch"
 
-clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
+clickhouse-client $NO_AST_FUZZER --query "CREATE DATABASE IF NOT EXISTS test"
 
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
@@ -93,12 +93,12 @@ fi
 
 start_server || { echo "Failed to start server"; exit 1; }
 
-clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
+clickhouse-client $NO_AST_FUZZER --query "SYSTEM STOP THREAD FUZZER"
 
-clickhouse-client --query "SHOW TABLES FROM datasets"
-clickhouse-client --query "SHOW TABLES FROM tpcds"
-clickhouse-client --query "SHOW TABLES FROM tpch"
-clickhouse-client --query "SHOW TABLES FROM test"
+clickhouse-client $NO_AST_FUZZER --query "SHOW TABLES FROM datasets"
+clickhouse-client $NO_AST_FUZZER --query "SHOW TABLES FROM tpcds"
+clickhouse-client $NO_AST_FUZZER --query "SHOW TABLES FROM tpch"
+clickhouse-client $NO_AST_FUZZER --query "SHOW TABLES FROM test"
 
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     TEMP_POLICY="s3_cache"
@@ -121,7 +121,7 @@ else
 fi
 
 
-clickhouse-client --query "CREATE TABLE test.hits_s3 (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,
+clickhouse-client $NO_AST_FUZZER --query "CREATE TABLE test.hits_s3 (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,
     EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,
     UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,
     Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),
@@ -147,7 +147,7 @@ clickhouse-client --query "CREATE TABLE test.hits_s3 (WatchID UInt64,  JavaEnabl
     ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),
     IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate)
     ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
-clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,
+clickhouse-client $NO_AST_FUZZER --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,
     EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,
     UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,
     RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),
@@ -173,7 +173,7 @@ clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable U
     ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),
     IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate)
     ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
-clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8,
+clickhouse-client $NO_AST_FUZZER --query "CREATE TABLE test.visits (CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8,
     VisitID UInt64,  UserID UInt64,  StartTime DateTime,  Duration UInt32,  UTCStartTime DateTime,  PageViews Int32,
     Hits Int32,  IsBounce UInt8,  Referer String,  StartURL String,  RefererDomain String,  StartURLDomain String,
     EndURL String,  LinkURL String,  IsDownload UInt8,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,
@@ -210,17 +210,17 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
 
 # Might fail in sanitizer runs, not very important
 set +e
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client $NO_AST_FUZZER --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client $NO_AST_FUZZER --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client $NO_AST_FUZZER --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 
-clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
-clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
+clickhouse-client $NO_AST_FUZZER --query "DROP TABLE datasets.visits_v1 SYNC"
+clickhouse-client $NO_AST_FUZZER --query "DROP TABLE datasets.hits_v1 SYNC"
 # Drop `tpch` before the storage policy switch below. Its tables live on the `default` disk which becomes unavailable under
 # `azure_cache`/`s3_cache`, preventing the server from starting. `tpcds` is not dropped because web disk survives policy changes.
-clickhouse-client --query "DROP DATABASE IF EXISTS tpch SYNC"
+clickhouse-client $NO_AST_FUZZER --query "DROP DATABASE IF EXISTS tpch SYNC"
 
-clickhouse-client --query "SHOW TABLES FROM test"
+clickhouse-client $NO_AST_FUZZER --query "SHOW TABLES FROM test"
 set -e
 
 

@@ -7,7 +7,11 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 INIT_SQL="$REPO_ROOT/tests/benchmarks/tpc-ds/init.sql"
 S3_BASE="https://tpc-ds-sf1.s3.amazonaws.com"
 
-clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tpcds"
+# The stress harness exports `NO_AST_FUZZER` (see `stress_tests.lib`) to keep the
+# server-side AST fuzzer off our own maintenance queries; it is empty when this script
+# runs outside of that harness.
+
+clickhouse-client ${NO_AST_FUZZER:-} --query "CREATE DATABASE IF NOT EXISTS tpcds"
 
 awk -v s3="$S3_BASE" '
 /^---/ { next }
@@ -27,4 +31,4 @@ awk -v s3="$S3_BASE" '
     next
 }
 { print }
-' "$INIT_SQL" | clickhouse-client -m --data_type_default_nullable=1
+' "$INIT_SQL" | clickhouse-client ${NO_AST_FUZZER:-} -m --data_type_default_nullable=1
