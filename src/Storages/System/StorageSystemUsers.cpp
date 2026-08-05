@@ -251,7 +251,7 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
             "The expiration date and time for user credentials."
         },
         {"auth_grants", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
-            "For each authentication method: the limit of the access rights specified in the GRANTS clause, "
+            "For each authentication method: the limit of the access rights specified in the `GRANTS` clause, "
             "or an empty string if the access rights are not limited."
         },
         {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
