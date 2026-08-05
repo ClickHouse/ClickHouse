@@ -45,15 +45,16 @@ UInt64 readLittleEndian(const char * p)
 UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size_t size, size_t header_size)
 {
     /// `LZ4F_getBlockSize` maps these, but is declared only in the static-linking section of
-    /// `lz4frame.h`, which does not compile here. The parsed header rejects any other value.
+    /// `lz4frame.h`, which does not compile here.
     UInt64 max_block_size = 0;
     switch (info.blockSizeID)
     {
-        case LZ4F_default: [[fallthrough]];
         case LZ4F_max64KB: max_block_size = 64 * 1024; break;
         case LZ4F_max256KB: max_block_size = 256 * 1024; break;
         case LZ4F_max1MB: max_block_size = 1024 * 1024; break;
         case LZ4F_max4MB: max_block_size = 4 * 1024 * 1024; break;
+        /// The parsed header accepts no other value; bound any by the smallest block size regardless.
+        default: max_block_size = 64 * 1024; break;
     }
 
     static constexpr UInt32 UNCOMPRESSED_BLOCK_FLAG = 0x80000000;
@@ -110,7 +111,7 @@ UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size
 }
 }
 
-std::optional<FrameContentBound> frameContentBound(CompressionCodec codec, const char * src, size_t size)
+FrameContentBound frameContentBound(CompressionCodec codec, const char * src, size_t size)
 {
     if (codec == CompressionCodec::Zstd)
     {

@@ -7,7 +7,6 @@
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <cstdint>
-#include <optional>
 #include <utility>
 #include <vector>
 
@@ -30,9 +29,9 @@ struct FrameContentBound
     bool exact;
 };
 
-/// The bound the codec frames of the whole of `src` imply, or nullopt when they imply none. Throws
-/// INCORRECT_DATA when the codec cannot parse `src` at all.
-std::optional<FrameContentBound> frameContentBound(CompressionCodec codec, const char * src, size_t size);
+/// The bound the codec frames of the whole of `src` imply. Throws INCORRECT_DATA when the codec
+/// cannot parse `src` at all.
+FrameContentBound frameContentBound(CompressionCodec codec, const char * src, size_t size);
 
 /// Compresses Arrow IPC buffers, reusing one codec context across all buffers (creating a fresh
 /// context per buffer — as a one-shot call would — dominates the cost when there are many buffers).

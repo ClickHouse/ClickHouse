@@ -1558,11 +1558,11 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         if (uncompressed_length >= 0 && length > 8)
         {
             const auto bound = frameContentBound(codec, src + 8, static_cast<size_t>(length - 8));
-            if (bound.has_value() && (bound->exact ? out_len != bound->size : out_len > bound->size))
+            if (bound.exact ? out_len != bound.size : out_len > bound.size)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC compressed buffer declares {} uncompressed bytes but its {}-byte codec frame "
-                    "declares {}", out_len, length - 8, bound->size);
+                    "declares {}", out_len, length - 8, bound.size);
         }
 
         if (out_len > std::numeric_limits<size_t>::max() - pos)
