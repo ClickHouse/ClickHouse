@@ -38,11 +38,14 @@ void TextIndexPhraseSearch::matchCandidatePositions(
             continuing.clear();
             for (UInt32 position : chain)
             {
-                while (next_position != end && *next_position < position + 1)
+                /// Phrased without `position + 1`, which would wrap at the maximum position and make it
+                /// falsely adjacent to 0. Past the advance `*next_position > position`, so the difference
+                /// is exact and the maximum position simply has no successor.
+                while (next_position != end && *next_position <= position)
                     ++next_position;
                 if (next_position == end)
                     break;
-                if (*next_position == position + 1)
+                if (*next_position - position == 1)
                 {
                     if (last)
                     {
