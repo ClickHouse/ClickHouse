@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorOr.h>
 
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -12,6 +13,11 @@
 
 namespace DB::PrometheusQueryToSQL
 {
+
+namespace
+{
+    constexpr const char * FallbackOrdinalColumn = "fallback_ordinal";
+}
 
 SQLQueryPiece applyBinaryOperatorOr(
     const PQT::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context)
@@ -40,6 +46,33 @@ SQLQueryPiece applyBinaryOperatorOr(
     right_argument = toVectorGrid(std::move(right_argument), context);
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
     String right = context.subqueries.back().name;
+
+    /// A side lacking `has_sort_order` would otherwise contribute the same constant fallback sort
+    /// key for every one of its rows in step 3 below, leaving their relative order unspecified by
+    /// `ORDER BY sort_key` in finalizeSQL.cpp. Materialize a stable per-row ordinal reflecting that
+    /// side's own existing row order, so ties between rows of that side are broken deterministically
+    /// (preserving the side's original relative order) instead of arbitrarily.
+    auto materializeFallbackOrdinal = [&](const String & table_name) -> String
+    {
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(make_intrusive<ASTAsterisk>());
+
+        auto ordinal = makeASTFunction("rowNumberInAllBlocks");
+        ordinal->setAlias(FallbackOrdinalColumn);
+        builder.select_list.push_back(std::move(ordinal));
+
+        builder.from_table = table_name;
+
+        ASTPtr ast = builder.getSelectQuery();
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(ast), SQLSubqueryType::TABLE});
+        return context.subqueries.back().name;
+    };
+
+    if (!left_argument.has_sort_order)
+        left = materializeFallbackOrdinal(left);
+
+    if (!right_argument.has_sort_order)
+        right = materializeFallbackOrdinal(right);
 
     /// Step 1: Count the non-NULL values per `join_group` on the left side, per timestamp.
     ///
@@ -111,6 +144,12 @@ SQLQueryPiece applyBinaryOperatorOr(
             auto sort_key = make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::SortKey});
             sort_key->setAlias(ColumnNames::SortKey);
             builder.select_list.push_back(std::move(sort_key));
+        }
+        else
+        {
+            auto fallback_ordinal = make_intrusive<ASTIdentifier>(Strings{right, FallbackOrdinalColumn});
+            fallback_ordinal->setAlias(FallbackOrdinalColumn);
+            builder.select_list.push_back(std::move(fallback_ordinal));
         }
 
         builder.from_table = step1;
@@ -187,7 +226,8 @@ SQLQueryPiece applyBinaryOperatorOr(
             if (left_argument.has_sort_order)
                 left_sort_key = make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::SortKey});
             else
-                left_sort_key = makeASTFunction("array", make_intrusive<ASTLiteral>(0.0));
+                left_sort_key = makeASTFunction(
+                    "array", makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(Strings{left, FallbackOrdinalColumn})));
             left_sort_key
                 = makeASTFunction("arrayConcat", makeASTFunction("array", make_intrusive<ASTLiteral>(0.0)), std::move(left_sort_key));
 
@@ -195,7 +235,8 @@ SQLQueryPiece applyBinaryOperatorOr(
             if (right_argument.has_sort_order)
                 right_sort_key = make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::SortKey});
             else
-                right_sort_key = makeASTFunction("array", make_intrusive<ASTLiteral>(0.0));
+                right_sort_key = makeASTFunction(
+                    "array", makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(Strings{step2, FallbackOrdinalColumn})));
             right_sort_key
                 = makeASTFunction("arrayConcat", makeASTFunction("array", make_intrusive<ASTLiteral>(1.0)), std::move(right_sort_key));
 

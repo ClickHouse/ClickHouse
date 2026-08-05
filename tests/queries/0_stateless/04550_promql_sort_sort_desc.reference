@@ -55,5 +55,9 @@
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
 [('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
 [('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+-- or preserves the relative order within an unsorted side that has multiple rows
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
 -- sort_desc ordering does not survive a subquery and range function
 1
