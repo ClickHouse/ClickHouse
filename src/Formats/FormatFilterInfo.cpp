@@ -36,7 +36,7 @@ void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> &&
 }
 
 std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
-    const std::unordered_map<Int64, String> & format_encoding)
+    const std::unordered_map<Int64, String> & format_encoding) const
 {
     std::unordered_map<String, String> clickhouse_to_parquet_names;
     std::unordered_map<String, String> parquet_names_to_clickhouse;
@@ -85,6 +85,23 @@ bool FormatFilterInfo::hasFilter() const
     return filter_actions_dag != nullptr;
 }
 
+namespace
+{
+    /// True if `base` already has a column that covers `name` - either `name` itself, or an
+    /// ancestor of it (e.g. `t` covers subcolumn `t.a`). Requesting both the ancestor and the
+    /// subcolumn from a format reader is redundant and some readers (e.g. Parquet's
+    /// SchemaConverter) reject it as COLUMN_QUERIED_MORE_THAN_ONCE.
+    bool isColumnCovered(const Block & base, const String & name)
+    {
+        if (base.has(name))
+            return true;
+        for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+            if (base.has(name.substr(0, pos)))
+                return true;
+        return false;
+    }
+}
+
 Block FormatFilterInfo::buildKeyConditionInputs(
     Block base,
     const PrewhereInfoPtr & prewhere_info,
@@ -93,7 +110,7 @@ Block FormatFilterInfo::buildKeyConditionInputs(
     auto add_required = [&](const ActionsDAG & dag)
     {
         for (const auto & col : dag.getRequiredColumns())
-            if (!base.has(col.name))
+            if (!isColumnCovered(base, col.name))
                 base.insert({col.type->createColumn(), col.type, col.name});
     };
     if (row_level_filter)
@@ -122,6 +139,15 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
                 Block all_inputs = buildKeyConditionInputs(keys, prewhere_info, row_level_filter);
+                /// `row_level_filter`/`prewhere_info` are usually derived from `filter_actions_dag`
+                /// (the WHERE clause) and so normally reference a superset of its columns, but that's
+                /// not guaranteed - e.g. in the data lake schema-changed path they may be null while
+                /// `filter_actions_dag` alone still drives spatial/row-group pruning. Make sure its
+                /// required columns (e.g. the geometry column) end up in `additional_columns` too, or
+                /// pruning code that looks the column up in the sample block silently no-ops.
+                for (const auto & col : filter_actions_dag->getRequiredColumns())
+                    if (!isColumnCovered(all_inputs, col.name))
+                        all_inputs.insert({col.type->createColumn(), col.type, col.name});
                 for (const auto & col : all_inputs)
                     if (!keys.has(col.name))
                         additional_columns.insert(col);
