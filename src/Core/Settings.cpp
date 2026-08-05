@@ -4985,6 +4985,8 @@ Replace 'multiIf' with only one condition to 'if'.
     DECLARE(Bool, optimize_if_transform_const_strings_to_lowcardinality, true, R"(
 If enabled, the `if`, `multiIf`, and `transform` functions with constant string result branches (and defaults) will return `LowCardinality(String)` instead of `String`.
 The optimization is not applied when the whole expression is constant (constant condition or input as well): a constant gains nothing from `LowCardinality`, and functions expecting constant `String` arguments (e.g. `arrayReduce`, `joinGet`, `tupleElement`) keep working.
+
+All the result branches have to be constants, so a nested `if` chain such as `if(cond1, 'a', if(cond2, 'b', 'c'))` keeps plain `String`: the else-branch of the outer `if` is another `if`, not a constant. Write it as `multiIf(cond1, 'a', cond2, 'b', 'c')` to get `LowCardinality(String)`.
 )", 0) \
     DECLARE(Bool, optimize_if_transform_strings_to_enum, false, R"(
 Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.

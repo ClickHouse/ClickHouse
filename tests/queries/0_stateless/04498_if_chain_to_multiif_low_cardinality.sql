@@ -24,3 +24,18 @@ SELECT 'result type and values, optimize_if_transform_const_strings_to_lowcardin
 SET optimize_if_transform_const_strings_to_lowcardinality = 1;
 SELECT number, if(number = 0, 'a', if(number = 1, 'b', 'c')) AS x, toTypeName(x) FROM numbers(3) ORDER BY number;
 SELECT number, if(number = 0, 'a', if(number = 1, NULL, 'c')) AS x, toTypeName(x) FROM numbers(3) ORDER BY number;
+
+-- The optimization requires all the result branches to be constants, so a nested `if` chain keeps plain
+-- `String`: the else-branch of the outer `if` is another `if`, not a constant (and `FunctionIf` strips
+-- `LowCardinality` from its arguments before inferring the return type). The equivalent explicit `multiIf`
+-- does see all the constant leaves and returns `LowCardinality(String)`. This asymmetry is what the
+-- description of the setting documents; pin it here for both syntaxes, with and without the chain rewrite.
+SELECT 'nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 1';
+SET optimize_if_chain_to_multiif = 1;
+SELECT toTypeName(if(number = 0, 'a', if(number = 1, 'b', 'c'))) FROM numbers(1);
+SELECT toTypeName(multiIf(number = 0, 'a', number = 1, 'b', 'c')) FROM numbers(1);
+
+SELECT 'nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 0';
+SET optimize_if_chain_to_multiif = 0;
+SELECT toTypeName(if(number = 0, 'a', if(number = 1, 'b', 'c'))) FROM numbers(1);
+SELECT toTypeName(multiIf(number = 0, 'a', number = 1, 'b', 'c')) FROM numbers(1);

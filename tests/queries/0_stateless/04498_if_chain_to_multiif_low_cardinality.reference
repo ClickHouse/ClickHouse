@@ -9,3 +9,9 @@ result type and values, optimize_if_transform_const_strings_to_lowcardinality = 
 0	a	Nullable(String)
 1	\N	Nullable(String)
 2	c	Nullable(String)
+nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 1
+String
+LowCardinality(String)
+nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 0
+String
+LowCardinality(String)
