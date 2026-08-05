@@ -15,8 +15,8 @@ top to bottom: one example commonly creates the table that a later example queri
 Each example gets one of three outcomes:
 
   * `ok`     - the example ran, and its output matches the documented response (or the example
-               documents no response, or it documents an exception and indeed threw);
-  * `error`  - the example failed to run (or succeeded while documenting an exception);
+               documents no response, or it documents an exception and indeed threw it);
+  * `error`  - the example failed to run (or documents an exception and did not throw it);
   * `output` - the example ran, but its output differs from the documented response.
 
 Examples that are not `ok` must be listed in the known-failures file, which records why each one
@@ -62,8 +62,10 @@ MIN_EXAMPLES = 1800
 
 # An example whose documented response is an exception demonstrates an error on purpose (`throwIf`,
 # `aggThrow`). It is expected to fail, and the text of the message is not compared: it carries a
-# version number and a query pipeline description that are not part of what the example teaches.
+# version number and a query pipeline description that are not part of what the example teaches. The
+# error code is compared, though, so that the example fails for the reason it is meant to show.
 DOCUMENTED_EXCEPTION_RE = re.compile(r"\A(Received exception|Code: \d+\. DB::Exception)")
+ERROR_CODE_RE = re.compile(r"Code:\s*(\d+)")
 
 # The documented responses show the plain rendering of the Pretty formats: no row numbers, no ANSI
 # colors, long column names spelled out in full, no readable-number tip next to a single large
@@ -273,9 +275,16 @@ def run_entity(client, entity_index, examples):
     return outcomes
 
 
+def error_code(message):
+    """The numeric code of an exception message, or None if it carries none."""
+    match = ERROR_CODE_RE.search(message)
+    return int(match.group(1)) if match else None
+
+
 def run_example(client, database, session, example):
+    statements = split_statements(example.query)
     output = []
-    for statement in split_statements(example.query):
+    for number, statement in enumerate(statements, 1):
         ok, body = client.query(
             statement,
             database=database,
@@ -283,11 +292,31 @@ def run_example(client, database, session, example):
             default_format=example.output_format,
             **OUTPUT_SETTINGS,
         )
-        if not ok:
-            if example.expects_exception:
-                return Outcome(example, OK)
+        if ok:
+            output.append(body)
+            continue
+        if not example.expects_exception:
             return Outcome(example, ERROR, body.strip())
-        output.append(body)
+        # An example that documents an exception documents it for its last statement: what comes
+        # before is the setup that has to succeed for the demonstration to show anything. Accepting
+        # a failure anywhere would turn a broken setup into a passing example.
+        if number != len(statements):
+            return Outcome(
+                example,
+                ERROR,
+                f"The example documents an exception, but statement {number} of {len(statements)}"
+                f" failed before the last one:\n{body.strip()}",
+            )
+        documented_code = error_code(example.result)
+        actual_code = error_code(body)
+        if documented_code is not None and documented_code != actual_code:
+            return Outcome(
+                example,
+                ERROR,
+                f"The example documents the error {documented_code}, and got {actual_code}"
+                f" instead:\n{body.strip()}",
+            )
+        return Outcome(example, OK)
 
     if example.expects_exception:
         return Outcome(example, ERROR, "The example documents an exception, but the query succeeded")
