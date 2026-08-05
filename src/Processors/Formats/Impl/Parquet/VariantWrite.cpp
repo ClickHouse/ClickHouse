@@ -382,9 +382,20 @@ std::vector<String> splitVariantObjectPath(std::string_view path)
 }
 
 size_t getVariantScalarEncodedSizeFromColumn(
-    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint);
+    const IColumn & column,
+    size_t row,
+    const IDataType & value_type,
+    bool from_dynamic,
+    const DataTypePtr & type_hint,
+    const FormatSettings & format_settings);
 void writeVariantScalarFromColumnToBuffer(
-    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint, char *& out);
+    const IColumn & column,
+    size_t row,
+    const IDataType & value_type,
+    bool from_dynamic,
+    const DataTypePtr & type_hint,
+    const FormatSettings & format_settings,
+    char *& out);
 size_t getVariantEncodedStringSize(std::string_view value);
 void writeVariantStringPayloadToBuffer(std::string_view value, char *& out);
 template <typename T>
@@ -1349,25 +1360,39 @@ void writeVariantSignedIntegralPrimitive(VariantPrimitiveType type, T value, Sin
 template <typename Target, typename Source>
 bool tryConvertNativeIntegralValue(Source source, Target & value)
 {
+    /// The range checks are compiled only when a `Source` value can actually fall outside
+    /// `Target`'s range: otherwise they are tautological, and casting `Target`'s limits to a
+    /// narrower `Source` would truncate them into garbage bounds.
     if constexpr (std::numeric_limits<Source>::is_signed)
     {
         if constexpr (std::numeric_limits<Target>::is_signed)
         {
-            if (source < static_cast<Source>(std::numeric_limits<Target>::min())
-                || source > static_cast<Source>(std::numeric_limits<Target>::max()))
-                return false;
+            if constexpr (std::numeric_limits<Source>::digits > std::numeric_limits<Target>::digits)
+            {
+                if (source < static_cast<Source>(std::numeric_limits<Target>::min())
+                    || source > static_cast<Source>(std::numeric_limits<Target>::max()))
+                    return false;
+            }
         }
         else
         {
-            using UnsignedSource = ::make_unsigned_t<Source>;
-            if (source < 0 || static_cast<UnsignedSource>(source) > static_cast<UnsignedSource>(std::numeric_limits<Target>::max()))
+            if (source < 0)
                 return false;
+            using UnsignedSource = ::make_unsigned_t<Source>;
+            if constexpr (std::numeric_limits<UnsignedSource>::digits > std::numeric_limits<Target>::digits)
+            {
+                if (static_cast<UnsignedSource>(source) > static_cast<UnsignedSource>(std::numeric_limits<Target>::max()))
+                    return false;
+            }
         }
     }
     else
     {
-        if (source > static_cast<Source>(std::numeric_limits<Target>::max()))
-            return false;
+        if constexpr (std::numeric_limits<Source>::digits > std::numeric_limits<Target>::digits)
+        {
+            if (source > static_cast<Source>(std::numeric_limits<Target>::max()))
+                return false;
+        }
     }
 
     value = static_cast<Target>(source);
@@ -1622,7 +1647,13 @@ void writeVariantDecimalFromColumn(VariantPrimitiveType type, const IColumn & co
 /// value type, mapping each through `NearestFieldType` to the matching `VARIANT` primitive.
 template <typename Sink>
 void encodeVariantScalarFromColumn(
-    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint, Sink & sink)
+    const IColumn & column,
+    size_t row,
+    const IDataType & value_type,
+    bool from_dynamic,
+    const DataTypePtr & type_hint,
+    const FormatSettings & format_settings,
+    Sink & sink)
 {
     /// `Bool` is `UInt8` under the hood. A value resolved from a `ColumnDynamic` whose declared type is
     /// `Bool` must encode as a boolean primitive, whereas a plain typed-path `UInt8`/`Bool` column falls
@@ -1701,6 +1732,30 @@ void encodeVariantScalarFromColumn(
                 "Cannot encode integer value of type {} as `Parquet` `VARIANT`: "
                 "the value does not fit the `DECIMAL16` primitive (38 decimal digits)",
                 value_type.getName());
+        }
+        case TypeIndex::Enum8:
+        case TypeIndex::Enum16:
+        {
+            /// The `VARIANT` encoding has no enum primitive; mirror the typed-path mapping driven by
+            /// `output_format_parquet_enum_as_byte_array`: the enum's name as a string, or its
+            /// underlying signed value widened to `Int64` (the residual convention for narrow integers).
+            if (value_type.getTypeId() == TypeIndex::Enum8)
+            {
+                const Int8 underlying = assert_cast<const ColumnVector<Int8> &>(column).getData()[row];
+                if (format_settings.parquet.output_enum_as_byte_array)
+                    sink.writeString(assert_cast<const DataTypeEnum8 &>(value_type).getNameForValue(underlying));
+                else
+                    writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, static_cast<Int64>(underlying), sink);
+            }
+            else
+            {
+                const Int16 underlying = assert_cast<const ColumnVector<Int16> &>(column).getData()[row];
+                if (format_settings.parquet.output_enum_as_byte_array)
+                    sink.writeString(assert_cast<const DataTypeEnum16 &>(value_type).getNameForValue(underlying));
+                else
+                    writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, static_cast<Int64>(underlying), sink);
+            }
+            return;
         }
         case TypeIndex::Float32:
         case TypeIndex::Float64:
@@ -1806,6 +1861,8 @@ bool isSupportedDirectVariantResidualScalarColumnType(const IDataType & value_ty
         case TypeIndex::Decimal32:
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
+        case TypeIndex::Enum8:
+        case TypeIndex::Enum16:
             return true;
         default:
             return false;
@@ -1813,18 +1870,29 @@ bool isSupportedDirectVariantResidualScalarColumnType(const IDataType & value_ty
 }
 
 size_t getVariantScalarEncodedSizeFromColumn(
-    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint)
+    const IColumn & column,
+    size_t row,
+    const IDataType & value_type,
+    bool from_dynamic,
+    const DataTypePtr & type_hint,
+    const FormatSettings & format_settings)
 {
     VariantScalarMeasureSink sink;
-    encodeVariantScalarFromColumn(column, row, value_type, from_dynamic, type_hint, sink);
+    encodeVariantScalarFromColumn(column, row, value_type, from_dynamic, type_hint, format_settings, sink);
     return sink.size;
 }
 
 void writeVariantScalarFromColumnToBuffer(
-    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint, char *& out)
+    const IColumn & column,
+    size_t row,
+    const IDataType & value_type,
+    bool from_dynamic,
+    const DataTypePtr & type_hint,
+    const FormatSettings & format_settings,
+    char *& out)
 {
     VariantScalarWriteSink sink(out);
-    encodeVariantScalarFromColumn(column, row, value_type, from_dynamic, type_hint, sink);
+    encodeVariantScalarFromColumn(column, row, value_type, from_dynamic, type_hint, format_settings, sink);
 }
 
 /// The types below implement the columnar `value`-payload cursor (`measureVariantColumnarValue` /
@@ -2666,7 +2734,7 @@ bool measureVariantColumnarValue(
 
     DataTypePtr scalar_type_hint = getVariantColumnarScalarTypeHint(type_hint, resolved_type);
     out_size = getVariantScalarEncodedSizeFromColumn(
-        *resolved_column, resolved_row, *normalized_type, resolved_from_dynamic, scalar_type_hint);
+        *resolved_column, resolved_row, *normalized_type, resolved_from_dynamic, scalar_type_hint, context.format_settings);
     return true;
 }
 
@@ -2784,7 +2852,7 @@ void writeVariantColumnarValue(
 
     DataTypePtr scalar_type_hint = getVariantColumnarScalarTypeHint(type_hint, resolved_type);
     writeVariantScalarFromColumnToBuffer(
-        *resolved_column, resolved_row, *normalized_type, resolved_from_dynamic, scalar_type_hint, out);
+        *resolved_column, resolved_row, *normalized_type, resolved_from_dynamic, scalar_type_hint, context.format_settings, out);
 }
 
 
