@@ -344,11 +344,22 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
         /// would silently drop the credential the operator configured, e.g. disable the verification
         /// of the server certificate against `ssl_ca`.
         if (named_collection.isQueryOverridden(key))
+        {
+            /// Outside the server configuration file the path key is not accepted at all, overridden
+            /// or not, so the override rejection would name the wrong remedy.
+            if (!from_config)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` can only be specified in a named collection defined in the server configuration file. "
+                    "Pass the contents of the file in `{}` instead",
+                    key, contents_key);
+
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "`{}` cannot be overridden in a query. "
                 "Pass the contents of the file in `{}` instead",
                 key, contents_key);
+        }
 
         if (value.empty())
             return value;
