@@ -21,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace Setting
@@ -32,10 +32,15 @@ namespace Setting
 namespace
 {
 
+/// `UNKNOWN_TABLE`, not `BAD_ARGUMENTS`: the arguments are well-formed, the backing tables are missing.
+/// The distinction matters for distributed reads, which treat `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` as
+/// "backing object missing on this replica" - skippable under `skip_unavailable_shards` and eligible for
+/// falling back to another replica - while any other error is a definition error that must surface
+/// (see `ClusterProxy::SelectStreamFactory::createForShard` and `RemoteQueryExecutor::shouldIgnoreShardException`).
 [[noreturn]] void throwNoTablesMatchRegexp(const String & source_database_regexp, const String & source_table_regexp)
 {
     throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
+        ErrorCodes::UNKNOWN_TABLE,
         "Error while executing table function merge. Either there is no database, which matches regular expression `{}`, or there are "
         "no tables in the database matches `{}`, which fit tables expression: {}",
         source_database_regexp,

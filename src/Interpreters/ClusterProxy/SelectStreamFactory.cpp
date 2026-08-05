@@ -50,7 +50,6 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_ARE_STALE;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
@@ -290,12 +289,14 @@ void SelectStreamFactory::createForShardImpl(
             /// arguments (e.g. `timeSeries*` resolve their source table via `resolveStorageID`), and
             /// `getActualTableStructureWithAccess(...)` resolves it for the rest (`loop`, `merge`,
             /// `dictionary`) - the same resolution `tryGetTable` performs for the named-table branch below.
-            /// A missing backing object surfaces as `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` (the set
+            /// A missing backing object surfaces as `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` - the set
             /// `skip_unavailable_shards_mode = unavailable_or_table_missing` treats as a skippable "table
-            /// missing" failure, see `RemoteQueryExecutor::shouldIgnoreShardException`), except a missing
-            /// dictionary: `dictionary('d')` loads through `ExternalDictionariesLoader`, which reports an
-            /// unknown dictionary as `BAD_ARGUMENTS` ("... not found") and has no dedicated error code, so
-            /// `BAD_ARGUMENTS` counts as "backing object missing" only for the `dictionary` table function.
+            /// missing" failure, see `RemoteQueryExecutor::shouldIgnoreShardException`. Table functions
+            /// whose backing object is not a catalog table report a missing one with the same codes
+            /// (e.g. `merge` with no matching tables and `dictionary` with an unknown dictionary throw
+            /// `UNKNOWN_TABLE`), so the classification is uniform and needs no per-function special case,
+            /// and covers nested targets like `loop(dictionary('d'))`, where the inner function's error
+            /// propagates through the outer one's structure resolution.
             ///
             /// `TableFunctionFactory::get` runs `parseArguments`, which resolves the arguments to literals in the
             /// AST it is given. Here that AST is the target definition owned by `StorageDistributed`, and this is
@@ -313,12 +314,8 @@ void SelectStreamFactory::createForShardImpl(
             }
             catch (const Exception & e)
             {
-                /// `dictionary` is registered case-sensitively, so an exact name match is enough.
-                const auto * table_function = table_func_ptr->as<ASTFunction>();
-                const bool is_dictionary = table_function && table_function->name == "dictionary";
                 const bool backing_object_missing = e.code() == ErrorCodes::UNKNOWN_TABLE
-                    || e.code() == ErrorCodes::UNKNOWN_DATABASE
-                    || (e.code() == ErrorCodes::BAD_ARGUMENTS && is_dictionary);
+                    || e.code() == ErrorCodes::UNKNOWN_DATABASE;
 
                 if (!backing_object_missing)
                     throw;

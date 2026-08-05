@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_TABLE;
 }
 
 void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -49,6 +50,16 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
+
+    /// `UNKNOWN_TABLE`, not the loader's `BAD_ARGUMENTS`: through this table function a dictionary is read
+    /// as a table, so a dictionary that does not exist is a missing backing object, same as a missing table.
+    /// The distinction matters for distributed reads, which treat `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` as
+    /// "backing object missing on this replica" - skippable under `skip_unavailable_shards` and eligible for
+    /// falling back to another replica - while any other error is a definition error that must surface
+    /// (see `ClusterProxy::SelectStreamFactory::createForShard` and `RemoteQueryExecutor::shouldIgnoreShardException`).
+    if (!external_loader.hasDictionary(dictionary_name, context))
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Dictionary ({}) not found", backQuote(dictionary_name));
+
     std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context->getCurrentDatabase());
     auto load_result = external_loader.load(resolved_name);
     if (load_result)

@@ -25,6 +25,10 @@ public:
 
     DictPtr tryGetDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
+    /// Whether a dictionary with this name exists (loaded or not), resolving the name against the
+    /// database catalog the same way `resolveDictionaryName` does, but without throwing.
+    bool hasDictionary(const std::string & dictionary_name, ContextPtr context) const;
+
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
     bool unloadDictionary(const std::string & dictionary_name, ContextPtr context) const;

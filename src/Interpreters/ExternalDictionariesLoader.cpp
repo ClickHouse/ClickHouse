@@ -147,6 +147,14 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary
     return dictionary;
 }
 
+bool ExternalDictionariesLoader::hasDictionary(const std::string & dictionary_name, ContextPtr local_context) const
+{
+    if (has(dictionary_name))
+        return true;
+
+    return has(resolveDictionaryNameFromDatabaseCatalog(dictionary_name, local_context->getCurrentDatabase()));
+}
+
 
 void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
