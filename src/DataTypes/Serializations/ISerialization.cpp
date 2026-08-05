@@ -683,6 +683,16 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
         || path[last_elem].type == Substream::SparseNullMap;
 }
 
+bool ISerialization::isPrefetchUnneededSubstream(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    const auto type = path[prefix_len - 1].type;
+    return type == Substream::ObjectSharedDataData || type == Substream::ObjectSharedDataSubstreams
+        || type == Substream::ObjectSharedDataSubstreamsMarks;
+}
+
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
 {
     if (prefix_len == 0 || prefix_len > path.size())

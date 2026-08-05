@@ -571,6 +571,12 @@ void MergeTreeReaderWide::prefetchForColumn(
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
+        /// Skip substreams that are read by seeking to a specific mark computed during deserialization
+        /// (JSON shared data Data/Substreams/SubstreamsMarks): a prefetch from the beginning of the
+        /// granule reads the wrong position and is always cancelled, so it only wastes read requests.
+        if (ISerialization::isPrefetchUnneededSubstream(substream_path, substream_path.size()))
+            return;
+
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
 
         if (stream_name && !prefetched_streams.contains(*stream_name))

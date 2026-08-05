@@ -694,6 +694,12 @@ public:
     /// Returns true if stream with specified path corresponds to dynamic subcolumn.
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
+    /// Returns true for substreams that are read by seeking to a per-path mark computed during
+    /// deserialization (JSON shared data Data/Substreams/SubstreamsMarks). Prefetching them from the
+    /// beginning of the granule reads the wrong position (it gets cancelled and re-read at the real
+    /// mark), so such substreams should not be prefetched.
+    static bool isPrefetchUnneededSubstream(const SubstreamPath & path, size_t prefix_len);
+
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isMetadataStream(const SubstreamPath & path);
 
