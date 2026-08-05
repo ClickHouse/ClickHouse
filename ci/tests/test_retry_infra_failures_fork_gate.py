@@ -30,6 +30,15 @@ WORKFLOW = os.path.join(
 
 RUN_ID = 42
 
+# The probe, normalized (line continuations and runs of whitespace collapsed). Pinning the
+# whole command at once covers the run identifier, the attempt read, the field, and the
+# fail-closed fallback: a substring assertion on any one of them leaves the others free.
+PROBE_CMD = (
+    'attempt1_conclusion=$(gh api "repos/$GH_REPO/actions/runs/$run_id/attempts/1" '
+    "--jq '.conclusion' 2>/dev/null || echo \"\")"
+)
+REJECT_COND = 'if [ "$attempt1_conclusion" != "action_required" ]; then'
+
 GH_STUB = """#!/usr/bin/env bash
 # The caller's own --jq expression, so the stub answers the field that was asked for rather
 # than a fixed string: requesting anything but .conclusion must be observable.
@@ -186,6 +195,23 @@ def test_selector_admits_gated_fork_runs():
     # Without the fallback a transient API error aborts the step under "set -euo pipefail",
     # taking down the whole hourly retry rather than skipping one run.
     assert '2>/dev/null || echo ""' in step, "the probe must fail closed on an API error"
+    # The assertions above pin the probe's PARTS but not the whole: swapping the run
+    # identifier ($run_id -> $run_attempt) keeps "/attempts/1" present while the probe reads
+    # a nonexistent run (404 -> empty -> every gated fork candidate skipped), and extending
+    # the reject condition with an always-true disjunct keeps its substring present while
+    # skipping every attempt-2 candidate. Both leave the fix inert with CI green.
+    normalized = " ".join(step.replace("\\\n", " ").split())
+    assert (
+        PROBE_CMD in normalized
+    ), "the attempt-1 probe command must be exactly PROBE_CMD"
+    # ...and it must be the SOLE test of the probe's result: an added disjunct would
+    # otherwise satisfy the equality above while making the branch unconditional.
+    conds = [
+        l.strip()
+        for l in step.splitlines()
+        if "$attempt1_conclusion" in l and l.strip().startswith("if ")
+    ]
+    assert conds == [REJECT_COND], conds
 
 
 def _run_step(
