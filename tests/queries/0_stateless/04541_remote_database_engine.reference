@@ -16,6 +16,8 @@ s	String
 2	b
 3	c
 4	d
+-- INSERT into a table of a multi-shard database works by default
+5
 -- SHOW CREATE TABLE preserves column defaults, aliases and materialized expressions
 ALIAS a + 2
 DEFAULT a + 1
@@ -41,7 +43,7 @@ MATERIALIZED a + 3
 1
 1
 1
-4
+5
 -- the password is masked in SHOW CREATE DATABASE (0 = not leaked, 1 = [HIDDEN] shown)
 0
 1

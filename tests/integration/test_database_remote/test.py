@@ -7,7 +7,11 @@ node1 = cluster.add_instance("node1")
 node2 = cluster.add_instance("node2")
 node3 = cluster.add_instance("node3")
 # A node with a configured host filter, to check which addresses the engine accepts.
-node4 = cluster.add_instance("node4", main_configs=["configs/remote_hosts.xml"])
+node4 = cluster.add_instance(
+    "node4",
+    main_configs=["configs/remote_hosts.xml", "configs/named_collections.xml"],
+    user_configs=["configs/users_named_collections.xml"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -203,6 +207,39 @@ def test_multi_shard_metadata_from_the_local_shard(started_cluster):
     node2.query("DROP DATABASE partial_src")
 
 
+def test_insert_into_a_multi_shard_database(started_cluster):
+    # A proxy table of a multi-shard database carries an implicit `rand()` sharding key, so it is
+    # writable by default: each row of an `INSERT` goes to a random shard. Without the key,
+    # `StorageDistributed::write` would reject the `INSERT` with `STORAGE_REQUIRES_PARAMETER`
+    # unless the caller set `insert_shard_id` or `insert_distributed_one_random_shard`.
+    for node in (node1, node2):
+        node.query("CREATE DATABASE ins_src")
+        node.query("CREATE TABLE ins_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+
+    node3.query(
+        "CREATE DATABASE ins_proxy ENGINE = Remote('node1,node2', 'ins_src', 'default', '')"
+    )
+
+    node3.query("INSERT INTO ins_proxy.t SELECT number FROM numbers(100)")
+    assert node3.query("SELECT count(), sum(x) FROM ins_proxy.t") == "100\t4950\n"
+    # Every row landed on exactly one of the shards.
+    assert (
+        int(node1.query("SELECT count() FROM ins_src.t"))
+        + int(node2.query("SELECT count() FROM ins_src.t"))
+        == 100
+    )
+
+    # An explicit `insert_shard_id` still pins the shard for a query.
+    node3.query(
+        "INSERT INTO ins_proxy.t VALUES (1000)", settings={"insert_shard_id": 2}
+    )
+    assert node2.query("SELECT count() FROM ins_src.t WHERE x = 1000") == "1\n"
+
+    node3.query("DROP DATABASE ins_proxy")
+    for node in (node1, node2):
+        node.query("DROP DATABASE ins_src")
+
+
 def test_local_replica_preferred(started_cluster):
     # When the local replica does have the database, the metadata comes from the local catalog
     # without a self-connection, and queries read the local replica.
@@ -275,6 +312,26 @@ def test_host_filter_understands_ipv6_addresses(started_cluster):
     # A plain host name keeps working.
     node4.query("CREATE DATABASE allowed ENGINE = Remote('node2', 'default')")
     node4.query("DROP DATABASE allowed")
+
+
+def test_named_collection_supports_ipv6_host_and_port(started_cluster):
+    # A named collection may supply the address as separate `host` / `port` keys. An IPv6 literal
+    # has to be bracketed before the port is appended: a naive concatenation would produce
+    # `2001:db8::1:9000`, which `parseAddress` rejects, so an address that works positionally as
+    # `Remote('[2001:db8::1]:9000', ...)` would be unusable through the equivalent collection.
+    # The collection `remote_ipv6_collection` is defined in configs/named_collections.xml, and the
+    # host is in node4's `remote_url_allow_hosts`, so the definition must be accepted (no
+    # connection is attempted by `CREATE DATABASE`).
+    node4.query(
+        "CREATE DATABASE nc_ipv6 ENGINE = Remote(remote_ipv6_collection)"
+    )
+    node4.query("DROP DATABASE nc_ipv6")
+
+    # The host filter sees the bare IPv6 host through the named-collection path as well: a
+    # collection pointing to a host that is not in the list is rejected, not misparsed.
+    assert "UNACCEPTABLE_URL" in node4.query_and_get_error(
+        "CREATE DATABASE nc_ipv6_denied ENGINE = Remote(remote_ipv6_denied_collection)"
+    )
 
 
 def test_hidden_local_table_is_not_served_by_a_remote_replica(started_cluster):

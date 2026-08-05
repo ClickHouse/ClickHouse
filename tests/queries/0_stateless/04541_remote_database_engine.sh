@@ -45,6 +45,18 @@ echo '-- INSERT is forwarded to the remote server'
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${REMOTE_DB}.t VALUES (4, 'd')"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${CLICKHOUSE_DATABASE}.t ORDER BY id"
 
+echo '-- INSERT into a table of a multi-shard database works by default'
+# The proxy tables of a multi-shard database carry an implicit rand() sharding key, so the INSERT
+# sends each row to a random shard instead of requiring insert_shard_id or
+# insert_distributed_one_random_shard. Here both shards point to the same local table, so exactly
+# one more row appears in it wherever the row goes.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE DATABASE ${REMOTE_DB}_sharded ENGINE = Remote('127.0.0.1,127.0.0.1', '${CLICKHOUSE_DATABASE}', 'default', '');
+    INSERT INTO ${REMOTE_DB}_sharded.t VALUES (5, 'e');
+    SELECT count() FROM ${CLICKHOUSE_DATABASE}.t;
+    DROP DATABASE ${REMOTE_DB}_sharded;
+"
+
 echo '-- SHOW CREATE TABLE preserves column defaults, aliases and materialized expressions'
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.m (a UInt32, b UInt32 DEFAULT a + 1, c UInt32 ALIAS a + 2, d UInt32 MATERIALIZED a + 3) ENGINE = MergeTree ORDER BY a;

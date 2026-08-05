@@ -522,6 +522,18 @@ StoragePtr DatabaseRemote::fetchTable(const String & table_name, ContextPtr loca
     /// enough for a proxy that can read and write local data (the `remote` table function performs
     /// the same check in `TableFunctionRemote::executeImpl`); it also rejects `TRUNCATE`, which
     /// would otherwise be a silent no-op of `StorageDistributed`.
+    ///
+    /// A proxy over more than one shard gets an implicit `rand()` sharding key, so that it is
+    /// writable by default: without a sharding key, `StorageDistributed::write` rejects an `INSERT`
+    /// into a multi-shard cluster (`STORAGE_REQUIRES_PARAMETER`) unless the caller sets
+    /// `insert_shard_id` or `insert_distributed_one_random_shard` for the query, while the engine
+    /// advertises that it forwards `INSERT` queries. Each row goes to a random shard, consistent
+    /// with resolving the metadata from an arbitrary shard; an explicit `insert_shard_id` still
+    /// pins the shard for a query.
+    ASTPtr sharding_key;
+    if (table_cluster->getShardsInfo().size() > 1)
+        sharding_key = makeASTFunction("rand");
+
     return std::make_shared<StorageDistributed>(
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -531,7 +543,7 @@ StoragePtr DatabaseRemote::fetchTable(const String & table_name, ContextPtr loca
         table_name,
         /* cluster_name_ = */ String{},
         getContext(),
-        /* sharding_key_ = */ nullptr,
+        sharding_key,
         /* storage_policy_name_ = */ "default",
         /* relative_data_path_ = */ String{},
         local_context->getDistributedSettings(),
@@ -982,7 +994,12 @@ void registerDatabaseRemote(DatabaseFactory & factory)
             addresses_expr = named_collection->getOrDefault<String>("addresses_expr", "");
             if (addresses_expr.empty())
             {
-                const String host = named_collection->getAny<String>({"host", "hostname"});
+                String host = named_collection->getAny<String>({"host", "hostname"});
+                /// An IPv6 literal has to be bracketed before a port can be appended: the addresses are
+                /// later split with `parseAddress`, which treats the first `:` of an unbracketed address
+                /// as the port separator, so a bare `2001:db8::1` would be torn apart.
+                if (host.find(':') != String::npos && !host.starts_with('['))
+                    host = '[' + host + ']';
                 addresses_expr = named_collection->has("port") ? host + ':' + toString(named_collection->get<UInt64>("port")) : host;
             }
             remote_database = named_collection->getAnyOrDefault<String>({"database", "db"}, "default");
@@ -1034,7 +1051,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
     const String common_description = R"DOCS_MD(
 The `Remote` and `RemoteSecure` database engines provide real-time access to the tables of a database on a remote ClickHouse server over the native TCP protocol. They are the ClickHouse-to-ClickHouse counterparts of the [`MySQL`](/engines/database-engines/mysql) and [`PostgreSQL`](/engines/database-engines/postgresql) database engines.
 
-The list of tables and their structure are fetched from the remote server on demand, so the database always reflects its current state. Each table is exposed as a [`Distributed`](/engines/table-engines/special/distributed) storage over an ad-hoc cluster built from the supplied addresses, which forwards `SELECT` and `INSERT` queries to the remote server. This is handy for federating several ClickHouse clusters or for plugging a larger cluster into `clickhouse-local` or a smaller cluster.
+The list of tables and their structure are fetched from the remote server on demand, so the database always reflects its current state. Each table is exposed as a [`Distributed`](/engines/table-engines/special/distributed) storage over an ad-hoc cluster built from the supplied addresses, which forwards `SELECT` and `INSERT` queries to the remote server. When the addresses describe several shards, an `INSERT` sends each row to a random shard (the proxy tables carry an implicit `rand()` sharding key); set `insert_shard_id` to pin the shard for a query. This is handy for federating several ClickHouse clusters or for plugging a larger cluster into `clickhouse-local` or a smaller cluster.
 )DOCS_MD";
 
     factory.registerDatabase(
