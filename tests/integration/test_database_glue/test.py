@@ -1690,3 +1690,45 @@ def test_glue_catalog_user_attach_under_restriction_is_rejected(started_cluster)
 
     # With the opt-in the database is usable again, so it can be cleaned up.
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC", settings=allow)
+
+
+def test_listing_tolerates_missing_namespace(started_cluster):
+    # A Glue table listing must treat a database that is absent from Glue as contributing no tables, instead
+    # of failing the whole query. `name = 'ns.table'` is pushed down to a single-namespace listing, so naming a
+    # namespace that does not exist reaches the GetTables error branch with no race.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_missing_namespace_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    missing_namespace = f"{test_ref}_absent_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name)
+    table.append(generate_arrow_data(10))
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    # T1: the missing namespace yields an empty listing, not an error.
+    assert (
+        ""
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND name = '{missing_namespace}.no_such_table' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    # T2: the same pushdown still resolves a table in a namespace that does exist.
+    assert (
+        f"{namespace}.{table_name}"
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND name = '{namespace}.{table_name}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    # T3: the unfiltered listing still reports the table.
+    assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
