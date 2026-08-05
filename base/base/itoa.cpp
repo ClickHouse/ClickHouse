@@ -340,6 +340,30 @@ ALWAYS_INLINE inline unsigned __int128 divmod_1e18(unsigned __int128 n, uint64_t
     return q;
 }
 
+/// Divides a 256-bit unsigned integer by 10^18, one limb per step. Returns the quotient and stores
+/// the remainder in `remainder`.
+///
+/// Every step is a 128 / 64 division by a constant, which `divmod_1e18` does with multiplications
+/// only. The quotient of a step fits in a limb because the remainder carried in from the previous
+/// step is below 10^18.
+///
+/// This is why the digit blocks are not stripped off with _BitInt(256) division: for that the
+/// compiler emits a generic bignum sequence, while here the divisor is a known constant spanning a
+/// single limb. It also produces the quotient and the remainder at once, so a block costs one
+/// division instead of two.
+ALWAYS_INLINE inline UInt256 divmod_1e18_256(UInt256 x, uint64_t & remainder)
+{
+    UInt256 quotient{};
+    uint64_t r = 0;
+    for (int i = 3; i >= 0; --i)
+    {
+        const unsigned __int128 current = (static_cast<unsigned __int128>(r) << 64) | x.items[UInt256::_impl::little(i)];
+        quotient.items[UInt256::_impl::little(i)] = static_cast<uint64_t>(divmod_1e18(current, r));
+    }
+    remainder = r;
+    return quotient;
+}
+
 /// Extract up to 9 digit pairs from a u64 value into the provided output buffer.
 ALWAYS_INLINE inline void extractDigitPairs(uint64_t remainder, uint8_t * two_values)
 {
@@ -416,26 +440,17 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
 
     /// Similar to writeUIntText(UInt128) only that in this case we will stop as soon as we reach the largest u128
     /// and switch to that function.
-    ///
-    /// The blocks are stripped off with UInt256 division rather than with _BitInt(256): the divisor spans
-    /// a single 64-bit limb, which `UInt256::_impl::divide` handles with one 128 / 64 division per limb,
-    /// while for _BitInt(256) the compiler emits a generic bignum sequence that is more than twenty times
-    /// slower. It also produces the quotient and the remainder at once, so a block costs one division
-    /// instead of two.
     uint8_t two_values[39] = {0}; // 78 Max characters / 2
     int current_pos = 0;
-
-    const UInt256 large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
 
     UInt256 x = _x;
     /// The loop condition is `x > std::numeric_limits<UInt128>::max()`, spelled out on the limbs
     /// to avoid a full 256-bit comparison.
     while (x.items[UInt256::_impl::little(3)] != 0 || x.items[UInt256::_impl::little(2)] != 0)
     {
-        /// Returns the quotient and leaves the remainder in its first argument.
-        const UInt256 quotient = UInt256::_impl::divide(x, large_divisor);
-        extractDigitPairs(x.items[UInt256::_impl::little(0)], two_values + current_pos);
-        x = quotient;
+        uint64_t block = 0;
+        x = divmod_1e18_256(x, block);
+        extractDigitPairs(block, two_values + current_pos);
         current_pos += max_multiple_of_hundred_blocks;
     }
 
