@@ -25,26 +25,36 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CORPUS="$CUR_DIR"/data_mongo/ferretdb_query_corpus.txt
 
-${CLICKHOUSE_CLIENT} --query "
-    DROP TABLE IF EXISTS corpus;
-    CREATE TABLE corpus (_id String, v Nullable(Int64), s String, arr Array(Int64)) ENGINE = MergeTree ORDER BY _id;
-    INSERT INTO corpus VALUES ('a', 42, 'foo', [1, 2, 3]), ('b', NULL, '', []);
-"
+# The corpus is split between a few clients running at the same time, because one client running
+# it whole takes longer than a test is allowed to under a sanitizer. Each slice gets a collection
+# of its own, so that the slices cannot interfere: the corpus drops, recreates and rewrites its
+# collection, and with a shared one the answers would depend on how the slices interleave.
+SLICES=4
 
-# The corpus runs as one multi query so that the whole of it costs one connection rather than one
-# per query. `--ignore-error` is what lets it continue past the queries that are rejected, which
-# is most of them. The temporary directory is shared with the tests running at the same time, so
-# the file names carry the database name, which is not.
-QUERIES="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.sql"
-{
-    echo "SET allow_experimental_mongo_dialect = 1;"
-    echo "SET dialect = 'mongo';"
-    grep -v '^#' "$CORPUS" | sed 's/$/;/'
-    # Switching back out of the dialect and reading the marker proves the whole file was consumed:
-    # a query that killed the client or the server would leave it unread.
-    echo "SET dialect = 'clickhouse';"
-    echo "SELECT 'corpus consumed';"
-} > "$QUERIES"
+for ((i = 0; i < SLICES; i++)); do
+    ${CLICKHOUSE_CLIENT} --query "
+        DROP TABLE IF EXISTS corpus_$i;
+        CREATE TABLE corpus_$i (_id String, v Nullable(Int64), s String, arr Array(Int64)) ENGINE = MergeTree ORDER BY _id;
+        INSERT INTO corpus_$i VALUES ('a', 42, 'foo', [1, 2, 3]), ('b', NULL, '', []);
+    "
+done
+
+# Each slice runs as one multi query so that it costs one connection rather than one per query.
+# `--ignore-error` is what lets it continue past the queries that are rejected, which is most of
+# them. The temporary directory is shared with the tests running at the same time, so the file
+# names carry the database name, which is not.
+for ((i = 0; i < SLICES; i++)); do
+    QUERIES="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus_$i.sql"
+    {
+        echo "SET allow_experimental_mongo_dialect = 1;"
+        echo "SET dialect = 'mongo';"
+        grep -v '^#' "$CORPUS" | awk "NR % $SLICES == $i" | sed "s/^db\.corpus\./db.corpus_$i./; s/\$/;/"
+        # Switching back out of the dialect and reading the marker proves the whole slice was
+        # consumed: a query that killed the client or the server would leave it unread.
+        echo "SET dialect = 'clickhouse';"
+        echo "SELECT 'corpus consumed';"
+    } > "$QUERIES"
+done
 
 echo "queries in the corpus: $(grep -vc '^#' "$CORPUS")"
 
@@ -53,10 +63,19 @@ echo "queries in the corpus: $(grep -vc '^#' "$CORPUS")"
 # back as a log entry, and every one of those ends with `Stack trace (when copying this message,
 # always include the lines below):` - which is what the crash detector below looks for. What is
 # examined here has to be the client's own output and nothing else.
-${CLICKHOUSE_CLIENT} --server_logs_file=/dev/null --multiquery --ignore-error --queries-file "$QUERIES" \
-    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.out" 2> "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.err"
+for ((i = 0; i < SLICES; i++)); do
+    ${CLICKHOUSE_CLIENT} --server_logs_file=/dev/null --multiquery --ignore-error \
+        --queries-file "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus_$i.sql" \
+        > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus_$i.out" \
+        2> "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus_$i.err" &
+done
+wait
 
-grep -qx 'corpus consumed' "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.out" && echo 'the whole corpus was consumed'
+cat "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus_"*.out > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.out"
+cat "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus_"*.err > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.err"
+
+[ "$(grep -cx 'corpus consumed' "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.out")" = "$SLICES" ] \
+    && echo 'the whole corpus was consumed'
 
 # Every exception must carry a code and a message. A truncated or garbled one would not, and
 # neither would a report that is not an exception at all. (A parse failure the client itself
@@ -79,5 +98,9 @@ grep -qE 'Segmentation fault|Sanitizer|Assertion .+ failed|Stack trace:' "${CLIC
 
 ${CLICKHOUSE_CLIENT} --query "SELECT 'the server is still there'"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE corpus"
-rm -f "$QUERIES" "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.out" "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.err"
+for ((i = 0; i < SLICES; i++)); do
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS corpus_$i"
+done
+rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus"*.sql \
+    "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus"*.out \
+    "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus"*.err
