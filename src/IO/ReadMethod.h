@@ -66,4 +66,10 @@ enum class RemoteFSReadMethod : uint8_t
 /// so they are not affected.
 LocalFSReadMethod resolveLocalFSReadMethod(LocalFSReadMethod requested, bool pread_no_wait_supported, bool direct_io);
 
+/// The same resolution with the support probed on demand (see `getPreadNoWaitSupport`).
+/// The probe is a raw `preadv2` system call, and a `seccomp` profile that kills the process
+/// on unknown system calls must only see it when 'pread_threadpool' is actually requested,
+/// so no other read method reaches the probe.
+LocalFSReadMethod resolveLocalFSReadMethod(LocalFSReadMethod requested, bool direct_io);
+
 }

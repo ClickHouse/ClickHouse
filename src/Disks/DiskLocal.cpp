@@ -13,7 +13,6 @@
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/ReadPipeline.h>
 #include <IO/ReadMethod.h>
-#include <IO/preadNoWait.h>
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
@@ -418,7 +417,7 @@ void DiskLocal::prepareRead(
     /// cannot be checked without waiting for the disk, 'pread_threadpool' reads with 'pread',
     /// and then the userspace page cache is usable as it is for 'pread'.
     const LocalFSReadMethod method
-        = resolveLocalFSReadMethod(settings.local_fs_settings.method, getPreadNoWaitSupport().supported, direct_io);
+        = resolveLocalFSReadMethod(settings.local_fs_settings.method, direct_io);
 
     /// Page cache is incompatible with several local read methods:
     ///   - async methods (io_uring, pread_fake_async, pread_threadpool): the

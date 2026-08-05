@@ -39,6 +39,28 @@ TEST(ReadMethod, OtherMethodsAreNotAffected)
     }
 }
 
+TEST(ReadMethod, OnDemandOverloadProbesOnlyForPreadThreadpool)
+{
+    /// The overload that probes the support on demand: methods other than 'pread_threadpool'
+    /// pass through unchanged (and never reach the probe, which a `seccomp` profile can kill on)...
+    for (auto method : {LocalFSReadMethod::read, LocalFSReadMethod::pread, LocalFSReadMethod::mmap,
+                        LocalFSReadMethod::io_uring, LocalFSReadMethod::pread_fake_async})
+    {
+        for (bool direct_io : {true, false})
+            EXPECT_EQ(resolveLocalFSReadMethod(method, direct_io), method);
+    }
+
+    /// ...and 'pread_threadpool' resolves from the probed support.
+    EXPECT_EQ(
+        resolveLocalFSReadMethod(LocalFSReadMethod::pread_threadpool, /*direct_io*/ false),
+        resolveLocalFSReadMethod(
+            LocalFSReadMethod::pread_threadpool, getPreadNoWaitSupport().supported, /*direct_io*/ false));
+
+    EXPECT_EQ(
+        resolveLocalFSReadMethod(LocalFSReadMethod::pread_threadpool, /*direct_io*/ true),
+        LocalFSReadMethod::pread_threadpool);
+}
+
 TEST(PreadNoWait, UnavailabilityIsRecognized)
 {
     /// The system call is missing, the flag is not supported, or a `seccomp` profile rejects it.

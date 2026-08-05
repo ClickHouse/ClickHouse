@@ -9,7 +9,6 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadMethod.h>
-#include <IO/preadNoWait.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
@@ -92,7 +91,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         /// 'pread_threadpool' is not usable on every system, and 'pread' is used instead - see `resolveLocalFSReadMethod`.
         const LocalFSReadMethod method
-            = resolveLocalFSReadMethod(settings.local_fs_settings.method, getPreadNoWaitSupport().supported, direct_io);
+            = resolveLocalFSReadMethod(settings.local_fs_settings.method, direct_io);
 
         if (method == LocalFSReadMethod::read)
         {

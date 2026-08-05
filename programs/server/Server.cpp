@@ -197,6 +197,7 @@ namespace Setting
 {
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
+    extern const SettingsString local_filesystem_read_method;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
 }
@@ -842,7 +843,13 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             PreformattedMessage::create(
                 "Server logging level is set to 'test' and performance is degraded. This cannot be used in production."));
 
-    if (const auto & pread_no_wait_support = getPreadNoWaitSupport(); !pread_no_wait_support.supported)
+    /// Only the 'pread_threadpool' read method depends on `preadNoWait`, and the probe
+    /// is a raw `preadv2` system call that a kill-on-deny `seccomp` profile terminates
+    /// the process for. So a server whose default profile selects another method never
+    /// reaches the probe; a session that switches to 'pread_threadpool' later gets the
+    /// same downgrade at read time, just without this startup warning.
+    if (server.context()->getSettingsRef()[Setting::local_filesystem_read_method].value == "pread_threadpool"
+        && !getPreadNoWaitSupport().supported)
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::PREAD_NO_WAIT_UNAVAILABLE,
             PreformattedMessage::create(
@@ -852,7 +859,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 "so queries that use that value read from local disks as if the setting was 'pread'. "
                 "Reads with O_DIRECT (see the `min_bytes_to_use_direct_io` setting) never check the page cache "
                 "and keep using the thread pool. Other values of the setting are not affected.",
-                pread_no_wait_support.unsupported_reason));
+                getPreadNoWaitSupport().unsupported_reason));
 
 #if defined(OS_LINUX)
     try
