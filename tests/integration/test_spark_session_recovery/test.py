@@ -4,6 +4,7 @@ import signal
 import pyspark
 from pyspark.context import SparkContext
 
+from helpers import spark_tools
 from helpers.spark_tools import ResilientSparkSession
 
 
@@ -49,41 +50,50 @@ def test_recovers_dead_gateway_and_reuses_live_one():
     """A jointly ordered scenario: pyspark caches the py4j gateway in class state
     and no stop() clears it, so a session built after the JVM died must discard
     that handle, while a session built while it still answers must reuse it."""
-    session = ResilientSparkSession(_create)
-    first_proc = _jvm_proc()
-    first_pid = _jvm_pid()
-    assert session.range(3).count() == 3
-    assert first_pid is not None
+    try:
+        session = ResilientSparkSession(_create)
+        first_proc = _jvm_proc()
+        first_pid = _jvm_pid()
+        assert session.range(3).count() == 3
+        assert first_pid is not None
 
-    # A stopped session leaves the gateway cached and the JVM running.
-    session.stop()
-    assert SparkContext._gateway is not None
-    assert _alive(first_pid)
+        # A stopped session leaves the gateway cached and the JVM running.
+        session.stop()
+        assert SparkContext._gateway is not None
+        assert _alive(first_pid)
 
-    # No leak: the next session must reuse that live JVM, not launch another.
-    reused = ResilientSparkSession(_create)
-    assert _jvm_pid() == first_pid
-    assert reused.range(2).count() == 2
+        # No leak: the next session must reuse that live JVM, not launch another.
+        reused = ResilientSparkSession(_create)
+        assert _jvm_pid() == first_pid
+        assert reused.range(2).count() == 2
 
-    # _restart() on a live gateway must also reuse it.
-    reused._restart()
-    assert _jvm_pid() == first_pid
-    assert reused.range(4).count() == 4
+        # _restart() on a live gateway must also reuse it.
+        reused._restart()
+        assert _jvm_pid() == first_pid
+        assert reused.range(4).count() == 4
 
-    # Recovery: with the JVM dead, the next session must relaunch it. Before the
-    # fix this raised "SparkConf does not exist in the JVM" from __init__.
-    _kill_jvm_and_reap(first_proc)
+        # Recovery: with the JVM dead, the next session must relaunch it. Before
+        # the fix this raised "... does not exist in the JVM" from __init__ -- for
+        # SparkSession$ here, not CI's SparkConf, because _restart above left
+        # SparkSession._instantiatedSession set and getOrCreate asks for it first.
+        _kill_jvm_and_reap(first_proc)
 
-    recovered = ResilientSparkSession(_create)
-    second_proc = _jvm_proc()
-    second_pid = _jvm_pid()
-    assert second_pid != first_pid
-    assert recovered.range(5).count() == 5
+        recovered = ResilientSparkSession(_create)
+        second_proc = _jvm_proc()
+        second_pid = _jvm_pid()
+        assert second_pid != first_pid
+        assert recovered.range(5).count() == 5
 
-    # Attribute access on a wrapper whose JVM has since died goes through
-    # __getattr__ -> _restart, which must recover the same way __init__ does.
-    _kill_jvm_and_reap(second_proc)
+        # Attribute access on a wrapper whose JVM has since died goes through
+        # __getattr__ -> _restart, which must recover the same way __init__ does.
+        _kill_jvm_and_reap(second_proc)
 
-    assert recovered.range(6).count() == 6
-    assert _jvm_pid() not in (first_pid, second_pid)
-    recovered.stop()
+        assert recovered.range(6).count() == 6
+        assert _jvm_pid() not in (first_pid, second_pid)
+        recovered.stop()
+    finally:
+        # A failure above can leave a dead gateway cached, breaking the next
+        # module in this worker that builds a session without the wrapper.
+        # Conditional: dropping a live gateway would orphan its JVM.
+        if SparkContext._gateway is not None and not spark_tools._gateway_is_live():
+            spark_tools._reset_pyspark_class_state()
