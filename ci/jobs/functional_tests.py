@@ -323,6 +323,9 @@ def main():
         elif "msan" in args.options:
             # MSan is slow
             nproc = int(Utils.cpu_count() * 0.4)
+        elif "debug" in args.options and nproc < 32:
+            # leave more room for clickhouse-server on medium runners.
+            nproc = int(Utils.cpu_count() * 0.4)
         elif is_azure_storage:
             # azure FT runs only under ASan; concurrent heavy queries overrun the
             # shared server memory cap, so the OvercommitTracker kills queries across
