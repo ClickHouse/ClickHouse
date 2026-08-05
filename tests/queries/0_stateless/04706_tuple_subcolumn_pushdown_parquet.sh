@@ -45,3 +45,22 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM file('${DATA_FILE}', Parquet) WHERE id = 55555;
     SELECT count() FROM file('${DATA_FILE}', Parquet) WHERE tup.1 = 55555;
     SELECT count() FROM file('${DATA_FILE}', Parquet) WHERE tup.2 = '7';"
+
+# `a.b` and the nested `a`.`b` flatten to the same name, and the Parquet reader rejects the
+# ambiguous name outright, so rewriting to it turns a valid query into DUPLICATE_COLUMN.
+echo '-- a dotted element name colliding with a nested path returns the dotted element'
+COLLISION_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_collision.parquet"
+COLLISION_STRUCTURE='t Tuple(a Tuple(b UInt64), `a.b` UInt64)'
+
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${COLLISION_FILE}', Parquet, '${COLLISION_STRUCTURE}')
+    SELECT tuple(tuple(111::UInt64), 999::UInt64) FROM numbers(2)
+    SETTINGS engine_file_truncate_on_insert = 1"
+
+${CLICKHOUSE_CLIENT} --query "
+    SELECT tupleElement(t, 'a.b'), tupleElement(tupleElement(t, 'a'), 'b')
+    FROM file('${COLLISION_FILE}', Parquet, '${COLLISION_STRUCTURE}') LIMIT 1
+    SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, input_format_parquet_filter_push_down = 1;
+    SELECT countIf(tupleElement(t, 'a.b') = 999), countIf(tupleElement(t, 'a.b') = 111)
+    FROM file('${COLLISION_FILE}', Parquet, '${COLLISION_STRUCTURE}')
+    SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, input_format_parquet_filter_push_down = 1"

@@ -368,6 +368,22 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getStride() + 7) / 8)};
 }
 
+/// True when `element_name` and some nested path of `tuple` flatten to the same dotted name, so
+/// `<column>.<element_name>` no longer identifies one element: an exact element-name lookup binds
+/// the dotted element while a prefix walk over a file schema binds the nested one.
+bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
+{
+    std::string_view name = element_name;
+    for (size_t dot = name.find('.'); dot != std::string_view::npos; dot = name.find('.', dot + 1))
+    {
+        auto head = name.substr(0, dot);
+        auto tail = name.substr(dot + 1);
+        if (!head.empty() && !tail.empty() && tuple.tryGetPositionByName(head))
+            return true;
+    }
+    return false;
+}
+
 template <typename DataType>
 void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
@@ -387,6 +403,10 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
 
     if (!subcolumn)
         return;
+
+    if constexpr (std::is_same_v<DataType, DataTypeTuple>)
+        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name))
+            return;
 
     NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
     if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))

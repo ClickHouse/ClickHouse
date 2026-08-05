@@ -69,3 +69,30 @@ run_and_report nested_natural '' 'has(n.na, 55555)'
 run_and_report nested_flattened 'id Int64, n Nested(na UInt64, nb String)' 'has(n.na, 55555)'
 run_and_report nested_flattened_array 'id Int64, n Nested(na UInt64, nb String)' 'n.na = [55555]'
 run_and_report nested_flattened_string 'id Int64, n Nested(na UInt64, nb String)' "n.nb = ['7']"
+
+# `a.b` and the nested `a`.`b` flatten to the same name. The CH side matches an element name
+# exactly while the ORC side resolves that name by walking prefixes of the schema, so the
+# flattened name does not identify one field and the rewrite must not happen. Both field orders
+# are covered because the prefix walk returns the first match, so only one order misbinds.
+echo '-- a dotted element name colliding with a nested path returns the dotted element'
+COLLISION_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_collision.orc"
+
+check_collision() {
+    local structure="$1"
+    local value="$2"
+
+    ${CLICKHOUSE_CLIENT} --query "
+        INSERT INTO FUNCTION file('${COLLISION_FILE}', ORC, '${structure}')
+        SELECT ${value} FROM numbers(2) SETTINGS engine_file_truncate_on_insert = 1"
+
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT tupleElement(t, 'a.b'), tupleElement(tupleElement(t, 'a'), 'b')
+        FROM file('${COLLISION_FILE}', ORC, '${structure}') LIMIT 1
+        SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1;
+        SELECT countIf(tupleElement(t, 'a.b') = 999), countIf(tupleElement(t, 'a.b') = 111)
+        FROM file('${COLLISION_FILE}', ORC, '${structure}')
+        SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1"
+}
+
+check_collision 't Tuple(a Tuple(b UInt64), `a.b` UInt64)' 'tuple(tuple(111::UInt64), 999::UInt64)'
+check_collision 't Tuple(`a.b` UInt64, a Tuple(b UInt64))' 'tuple(999::UInt64, tuple(111::UInt64))'

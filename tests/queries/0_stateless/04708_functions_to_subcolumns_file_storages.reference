@@ -17,3 +17,9 @@
 33
 1000
 250
+-- a dotted element name colliding with a nested path is not rewritten
+0
+0
+-- a dotted element name with no colliding nested path is still rewritten
+1
+1

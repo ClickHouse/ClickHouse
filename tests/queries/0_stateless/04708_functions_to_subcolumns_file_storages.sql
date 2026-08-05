@@ -60,3 +60,26 @@ SELECT count() FROM t_file WHERE length(arr) = 2;
 
 DROP TABLE t_merge;
 DROP TABLE t_file;
+
+-- A tuple that holds both `a.b` and an `a` with a `b` element flattens two different elements to
+-- the same name `t.a.b`. An exact element-name lookup binds the dotted element, a prefix walk over
+-- a file schema binds the nested one, so the rewrite must be refused for the dotted element.
+SELECT '-- a dotted element name colliding with a nested path is not rewritten';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT 1 FROM file('nonexistent_04708.parquet', Parquet, 't Tuple(a Tuple(b UInt64), `a.b` UInt64)')
+    WHERE tupleElement(t, 'a.b') = 5)
+WHERE explain ILIKE '%column_name: t.a.b%';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT 1 FROM file('nonexistent_04708.parquet', Parquet, 't Tuple(`a.b` UInt64, a Tuple(b UInt64))')
+    WHERE tupleElement(t, 'a.b') = 5)
+WHERE explain ILIKE '%column_name: t.a.b%';
+
+SELECT '-- a dotted element name with no colliding nested path is still rewritten';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT 1 FROM file('nonexistent_04708.parquet', Parquet, 't Tuple(`a.b` UInt64, c UInt64)')
+    WHERE tupleElement(t, 'a.b') = 5)
+WHERE explain ILIKE '%column_name: t.a.b%';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT 1 FROM file('nonexistent_04708.parquet', Parquet, 't Tuple(a Tuple(b UInt64), c UInt64)')
+    WHERE tupleElement(tupleElement(t, 'a'), 'b') = 5)
+WHERE explain ILIKE '%column_name: t.a%';

@@ -30,3 +30,8 @@ nested_flattened	200000
 nested_flattened_array	200000
 3226
 nested_flattened_string	200000
+-- a dotted element name colliding with a nested path returns the dotted element
+999	111
+2	0
+999	111
+2	0
