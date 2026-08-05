@@ -661,7 +661,7 @@ topK(N, load_factor, 'counts')(column)
         "Usage example",
         R"(
 SELECT topK(3)(AirlineID) AS res
-FROM ontime;
+FROM VALUES('AirlineID UInt32', (19393), (19393), (19393), (19393), (19790), (19790), (19790), (19805), (19805), (20304));
         )",
         R"(
 ┌─res─────────────────┐
