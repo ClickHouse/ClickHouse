@@ -8,6 +8,8 @@
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 
+#include <thread>
+
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -19,33 +21,45 @@ namespace
 /// reallocation. A push_back loop instead walks the doubling chain, and Allocator::realloc charges the new
 /// block before releasing the old one, so its last step holds both at once. Peak is what separates the two:
 /// the final capacity is identical. Returns the peak the tracker observed while `body` ran.
+///
+/// `body` runs in a dedicated thread so current_thread starts as nullptr, independent of whatever
+/// ThreadStatus other gtests in unit_tests_dbms left behind -- and so this file leaves none behind either.
 template <typename F>
 Int64 peakOf(F && body)
 {
-    MainThreadStatus::getInstance();
-    auto & thread_tracker = CurrentThread::get().memory_tracker;
-    /// An own tracker between the thread and the total one, so only what `body` allocates is measured.
-    MemoryTracker scope_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/false);
-    MemoryTracker * prev_parent = thread_tracker.getParent();
-    Int64 prev_untracked_limit = CurrentThread::get().untracked_memory_limit;
+    Int64 peak = 0;
 
-    CurrentThread::flushUntrackedMemory();
-    SCOPE_EXIT_SAFE({
+    std::thread measured([&]
+    {
+        ThreadStatus thread_status;
+        auto & thread_tracker = CurrentThread::get().memory_tracker;
+        /// An own tracker between the thread and the total one, so only what `body` allocates is measured.
+        MemoryTracker scope_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/false);
+        MemoryTracker * prev_parent = thread_tracker.getParent();
+        Int64 prev_untracked_limit = CurrentThread::get().untracked_memory_limit;
+
+        /// Whatever the ThreadStatus constructor itself deferred must not be charged to `scope_tracker`.
         CurrentThread::flushUntrackedMemory();
-        CurrentThread::get().untracked_memory_limit = prev_untracked_limit;
-        thread_tracker.setParent(prev_parent);
+        SCOPE_EXIT_SAFE({
+            CurrentThread::flushUntrackedMemory();
+            CurrentThread::get().untracked_memory_limit = prev_untracked_limit;
+            thread_tracker.setParent(prev_parent);
+        });
+
+        /// Without this the offsets' reallocations are batched below the 4 MiB default and never reach the tracker.
+        /// The tracker's counters are deliberately not reset: resetCounters would also drop its limits, and the
+        /// peak is read from `scope_tracker` anyway.
+        CurrentThread::get().untracked_memory_limit = 1;
+        thread_tracker.setParent(&scope_tracker);
+
+        body();
+
+        CurrentThread::flushUntrackedMemory();
+        peak = scope_tracker.getPeak();
     });
+    measured.join();
 
-    /// Without this the offsets' reallocations are batched below the 4 MiB default and never reach the tracker.
-    /// The thread tracker's own counters are deliberately not reset: the peak is read from `scope_tracker`, and
-    /// zeroing them here would leave the amount negative once the caller frees the column (Thread does not saturate).
-    CurrentThread::get().untracked_memory_limit = 1;
-    thread_tracker.setParent(&scope_tracker);
-
-    body();
-
-    CurrentThread::flushUntrackedMemory();
-    return scope_tracker.getPeak();
+    return peak;
 }
 
 /// Large enough that the offsets array (8 bytes per element) dwarfs everything else the body allocates.
