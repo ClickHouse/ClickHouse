@@ -227,6 +227,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(
                 storage->getStorageID().getNameForLogs());
     }
 
+    if (select_query_info.table_expression_modifiers)
+        snapshot = snapshot->clone(extendMetadataWithModifiers(snapshot->metadata, *select_query_info.table_expression_modifiers), snapshot->data);
+
     auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     ASTPtr query;
