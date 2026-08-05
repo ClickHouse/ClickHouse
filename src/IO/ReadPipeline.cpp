@@ -223,16 +223,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         return nullptr;
     }
 
-    /// The executor has no interruption point, so serving this read would silently drop the
-    /// caller's opt-in. Fall back to the gather path, which honors it.
-    if (settings.remote_fs_settings.interruptible_reads)
-    {
-        LOG_DEBUG(log,
-            "use_reader_executor: falling back to the legacy read path "
-            "(interruptible reads not yet supported by the executor)");
-        return nullptr;
-    }
-
     /// Only local files and object storage are supported; other sources fall back.
     std::shared_ptr<IFileBasedSourceReader> source_reader;
     size_t block_size = 0;
@@ -245,6 +235,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
+        /// The executor has no interruption point, so serving this read would silently drop
+        /// the caller's opt-in. Fall back to the gather path, which honors it.
+        if (settings.remote_fs_settings.interruptible_reads)
+        {
+            LOG_DEBUG(log,
+                "use_reader_executor: falling back to the legacy read path "
+                "(interruptible reads not yet supported by the executor)");
+            return nullptr;
+        }
+
         /// An object of unknown size (HEAD without Content-Length) arrives with
         /// `bytes_size` 0 — indistinguishable from a genuinely empty object — and
         /// the executor cannot stream to EOF yet, so fall back rather than read it
