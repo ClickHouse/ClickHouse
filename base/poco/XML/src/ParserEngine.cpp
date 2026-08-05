@@ -800,12 +800,13 @@ int ParserEngine::handleExternalEntityRef(XML_Parser parser, const XML_Char* con
 		{
 			pThis->parseExternal(extParser, pInputSource);
 		}
-		catch (XMLException&)
+		catch (...)
 		{
 			pEntityResolver->releaseInputSource(pInputSource);
 			// The exception may have unwound out of the external parser's XML_Parse, skipping
 			// expat's handler-call-depth bookkeeping; rebalance it or XML_ParserFree is a no-op
-			// and the external parser leaks.
+			// and the external parser leaks. Any handler exception (not just XMLException)
+			// can unwind through parseExternal, so clean up on every exception type.
 			XML_ResetHandlerCallDepth(extParser);
 			XML_ParserFree(extParser);
 			throw;
