@@ -141,6 +141,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
+    PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
