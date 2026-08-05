@@ -51,16 +51,20 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    /// Fails closed: a Merge over a child that opts out (e.g. Distributed) must not let the
+    /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
+    bool supportsOptimizationToSubcolumns() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -147,6 +151,7 @@ private:
         const IStorage * ignore_self);
 
     ColumnSizeByName getColumnSizes() const override;
+    ColumnSizeByName getColumnSizes(const Names & columns) const override;
 
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
 

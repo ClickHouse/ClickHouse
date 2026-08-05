@@ -141,30 +141,76 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     const size_t min_marks_per_task = getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos);
     min_marks_per_request = min_marks_per_task * pool_settings.threads;
 
-    const size_t mark_segment_size = chooseSegmentSize(
+    mark_segment_size = chooseSegmentSize(
         log,
         context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size],
         min_marks_per_task,
         pool_settings.threads,
         pool_settings.sum_marks,
         extension.getTotalNodesCount());
-
-    /// Build descriptions with per-part `min_marks_per_task` so the coordinator can propagate
-    /// them to other replicas that may not have done primary key analysis.
-    auto descriptions = parts_ranges.getDescriptions();
-    chassert(descriptions.size() == per_part_infos.size());
-    for (size_t i = 0; i < descriptions.size(); ++i)
-        descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
-
-    extension.sendInitialRequest(coordination_mode, std::move(descriptions), mark_segment_size, min_marks_per_request);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_idx*/, MergeTreeReadTask * previous_task)
 {
+    while (true)
+    {
+        size_t part_idx = 0;
+        size_t need_marks = 0;
+        MarkRanges cut_ranges;
+
+        if (!cutRangesToRead(part_idx, need_marks, cut_ranges))
+            return nullptr;
+
+        MarkRanges task_ranges;
+        if (!ranges_refiner)
+        {
+            task_ranges = std::move(cut_ranges);
+        }
+        else
+        {
+            /// Marks dropped by the refiner do not count towards the task size: keep cutting
+            /// more marks while the coordinator assignment continues with the same part.
+            /// Refinement may block (e.g. building a projection index bitmap on the first use
+            /// for the part), so it always happens outside of the mutex.
+            while (true)
+            {
+                auto refined = refineReadRanges(*per_part_infos[part_idx], std::move(cut_ranges));
+                for (const auto & range : refined)
+                {
+                    if (!task_ranges.empty() && task_ranges.back().end == range.begin)
+                        task_ranges.back().end = range.end;
+                    else
+                        task_ranges.push_back(range);
+                }
+
+                size_t marks_collected = task_ranges.getNumberOfMarks();
+                if (marks_collected >= need_marks)
+                    break;
+
+                MarkRanges more_ranges;
+                if (!cutMoreRangesToRead(part_idx, need_marks - marks_collected, more_ranges))
+                    break;
+
+                cut_ranges = std::move(more_ranges);
+            }
+        }
+
+        /// Everything was refined away, take the next portion (possibly of another part).
+        if (task_ranges.empty())
+            continue;
+
+        /// Count only the marks that reach a reader: the ones dropped by the refiner are not read.
+        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, task_ranges.getNumberOfMarks());
+        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task);
+    }
+}
+
+bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(size_t & part_idx, size_t & need_marks, MarkRanges & ranges_to_read)
+{
     std::lock_guard lock(mutex);
 
     if (no_more_tasks_available)
-        return nullptr;
+        return false;
 
     /// The following unfortunate scenario is possible:
     /// 1. Thread T1 found no `buffered_ranges` left to read and initiated a read request to the coordinator.
@@ -177,18 +223,14 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     ///    Coordinator throws logical error: "Got request from replica N after ranges assignment has been completed for the replica."
     ///    To prevent this we set `failed_to_get_task` flag once we catch an exception from `sendReadRequest`.
     if (failed_to_get_task)
-        return nullptr;
+        return false;
 
     if (buffered_ranges.empty())
     {
         std::optional<ParallelReadResponse> response;
         try
         {
-            response = extension.sendReadRequest(
-                coordination_mode,
-                min_marks_per_request,
-                /// For Default coordination mode we don't need to pass part names.
-                RangesInDataPartsDescription{});
+            response = extension.sendReadRequest(coordination_mode, min_marks_per_request);
         }
         catch (...)
         {
@@ -208,7 +250,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
             no_more_tasks_available = true;
         }
         if (no_more_tasks_available)
-            return nullptr;
+            return false;
 
         buffered_ranges = std::move(response->description);
     }
@@ -216,34 +258,63 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     if (buffered_ranges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No tasks to read. This is a bug");
 
-    auto & current_task = buffered_ranges.front();
+    const auto & current_task = buffered_ranges.front();
 
     auto part_it
         = std::ranges::find_if(
             per_part_infos,
             [&current_task](const auto & part)
             {
-                if (!part->data_part->isProjectionPart())
-                    return part->data_part->info == current_task.info;
+                if (!part->data_part_info->isProjectionPart())
+                    return part->data_part_info->getPartInfo() == current_task.info;
 
                 chassert(part->parent_part && !current_task.projection_name.empty());
-                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name;
+                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part_info->getPartName();
             });
     if (part_it == per_part_infos.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());
-    const size_t part_idx = std::distance(per_part_infos.begin(), part_it);
+    part_idx = std::distance(per_part_infos.begin(), part_it);
 
     /// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK, the coordinator propagates per-part
     /// `min_marks_per_task` computed by the initiator after primary key analysis.
     /// Fall back to locally computed value for old initiators.
-    const size_t effective_min_marks_per_task
-        = current_task.min_marks_per_task > 0 ? current_task.min_marks_per_task : (*part_it)->min_marks_per_task;
+    need_marks = current_task.min_marks_per_task > 0 ? current_task.min_marks_per_task : (*part_it)->min_marks_per_task;
 
-    MarkRanges ranges_to_read;
+    cutFromCurrentTask(need_marks, ranges_to_read);
+    return true;
+}
+
+bool MergeTreeReadPoolParallelReplicas::cutMoreRangesToRead(size_t part_idx, size_t need_marks, MarkRanges & ranges_to_read)
+{
+    std::lock_guard lock(mutex);
+
+    /// Continue only while the coordinator assignment goes on with the same part: a read task
+    /// must not span multiple parts. Do not request more ranges from the coordinator here.
+    if (buffered_ranges.empty())
+        return false;
+
+    const auto & current_task = buffered_ranges.front();
+    const auto & part = per_part_infos[part_idx];
+
+    bool same_part = !part->data_part_info->isProjectionPart()
+        ? part->data_part_info->getPartInfo() == current_task.info
+        : (part->parent_part->info == current_task.info && current_task.projection_name == part->data_part_info->getPartName());
+
+    if (!same_part)
+        return false;
+
+    cutFromCurrentTask(need_marks, ranges_to_read);
+    return true;
+}
+
+void MergeTreeReadPoolParallelReplicas::cutFromCurrentTask(size_t need_marks, MarkRanges & ranges_to_read)
+{
+    auto & current_task = buffered_ranges.front();
+
     size_t current_sum_marks = 0;
-    while (current_sum_marks < effective_min_marks_per_task && !current_task.ranges.empty())
+    while (current_sum_marks < need_marks && !current_task.ranges.empty())
     {
-        auto diff = effective_min_marks_per_task - current_sum_marks;
+        auto diff = need_marks - current_sum_marks;
         auto range = current_task.ranges.front();
         if (range.getNumberOfMarks() > diff)
         {
@@ -264,9 +335,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
 
     if (current_task.ranges.empty())
         buffered_ranges.pop_front();
-
-    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, current_sum_marks);
-    return createTask(per_part_infos[part_idx], std::move(ranges_to_read), previous_task);
 }
 
 }

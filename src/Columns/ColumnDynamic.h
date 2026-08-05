@@ -332,12 +332,6 @@ public:
 
     void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
 
-    /// Dynamic columns manage their own variant_info type metadata.
-    /// The default convertToFullIfNeeded recurses into subcolumns and strips LowCardinality
-    /// from variant columns, but cannot update variant_info, creating column/type mismatches.
-    /// Override to skip recursion — Dynamic is a self-contained typed container.
-    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
-
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
@@ -387,7 +381,9 @@ public:
 
     /// Apply null map to a nested Variant column.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
-    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())`: the affected range must end
+    /// at the last row. Otherwise `null_map` must cover the whole column.
+    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     const VariantInfo & getVariantInfo() const { return variant_info; }
 

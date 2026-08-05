@@ -4,7 +4,7 @@ import mimetypes
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 from urllib.parse import quote
 
 from ._environment import _Environment
@@ -235,7 +235,7 @@ class S3:
             f"aws s3api put-object --bucket {bucket} --key {key} --body {local_path}"
         )
         if if_none_matched:
-            command += f' --if-none-match "*"'
+            command += ' --if-none-match "*"'
         if if_match:
             command += f' --if-match "{if_match}"'
         if metadata:
@@ -273,11 +273,16 @@ class S3:
                 break
             elif "Unknown options" in stderr:
                 print("ERROR: Invalid AWS CLI command or CLI client version:")
-                print(f"  | awc error: {stderr}")
+                print(f"  | aws error: {stderr}")
                 break
-            elif "PreconditionFailed" in stderr:
-                print("ERROR: AWS API Call Precondition Failed")
-                print(f"  | awc error: {stderr}")
+            elif (
+                "PreconditionFailed" in stderr
+                or "ConditionalRequestConflict" in stderr
+            ):
+                # Lost optimistic-lock race. Suppress the raise and return False so the caller retries.
+                no_strict = True
+                print("AWS API conditional request failed (concurrent write detected)")
+                print(f"  | aws error: {stderr}")
                 break
             if ret_code != 0:
                 print(
@@ -622,7 +627,7 @@ class S3:
                     if version == 0:
                         # DESTRUCTIVE: Version 0 overwrites without conditions (NOT safe for concurrent use)
                         print(
-                            f"Uploading file with version 0 (destructive reset) using boto3"
+                            "Uploading file with version 0 (destructive reset) using boto3"
                         )
                         client.upload_file(
                             str(local_path), bucket, key, ExtraArgs=extra_args
@@ -670,8 +675,8 @@ class S3:
 
             except ClientError as e:
                 error_code = e.response.get("Error", {}).get("Code", "")
-                if error_code == "PreconditionFailed":
-                    print("Precondition failed (concurrent write detected)")
+                if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
+                    print(f"{error_code} (concurrent write detected)")
                     return False
                 print(f"ERROR: Failed to upload file using boto3: {error_code}")
                 if not no_strict:
@@ -691,7 +696,7 @@ class S3:
             if version == 0:
                 # DESTRUCTIVE: Version 0 uploads without conditions (NOT safe for concurrent use)
                 print(
-                    f"Uploading file with version 0 (destructive reset) using AWS CLI"
+                    "Uploading file with version 0 (destructive reset) using AWS CLI"
                 )
                 result_uploaded = cls.put(
                     s3_path=s3_path,

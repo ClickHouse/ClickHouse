@@ -265,11 +265,6 @@ public:
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
-    /// Variant columns pair variant sub-columns with DataTypeVariant's sorted type list.
-    /// The default convertToFullIfNeeded recurses into sub-columns and strips LowCardinality
-    /// from variant columns, but cannot update the corresponding DataTypeVariant, creating
-    /// column/type position mismatches. Override to skip recursion.
-    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
     bool structureEquals(const IColumn & rhs) const override;
     ColumnPtr compress(bool force_compression) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
@@ -345,7 +340,9 @@ public:
     /// Replace corresponding discriminators with NULL_DISCRIMINATOR
     /// and filter out rows in variants if needed.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
-    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())`: the affected range must end
+    /// at the last row. Otherwise `null_map` must cover the whole column.
+    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     /// Create a null map column from the discriminators: 1 for NULL_DISCRIMINATOR rows, 0 otherwise.
     ColumnPtr createNullMap() const;
@@ -363,7 +360,7 @@ public:
     bool hasStatistics() const override;
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
-    void validateState() const;
+    void validateState(bool allow_logical_error = true) const;
 
 private:
     void insertFromImpl(const IColumn & src_, size_t n, const VectorWithMemoryTracking<ColumnVariant::Discriminator> * global_discriminators_mapping);
@@ -373,8 +370,10 @@ private:
     void initIdentityGlobalToLocalDiscriminatorsMapping();
     void constructOffsetsFromDiscriminators();
 
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())` (the range must end at the
+    /// last row); otherwise it must cover the whole column.
     template <bool inverted>
-    void applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map);
+    void applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     WrappedPtr local_discriminators;
     WrappedPtr offsets;

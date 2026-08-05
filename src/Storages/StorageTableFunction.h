@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -85,6 +86,45 @@ public:
             nested->drop();
     }
 
+    /// File-like table functions rebuild the nested storage from the current external schema and
+    /// ignore the columns cached at DDL time, while `read()` below hands PREWHERE to the nested
+    /// storage and only converts types afterwards. `StorageProxy`'s forward is by name, so it
+    /// cannot catch a column whose cached type drifted: drop those columns from the contract.
+    std::optional<NameSet> supportedPrewhereColumns() const override
+    {
+        auto storage = getNested();
+        auto query_context = CurrentThread::tryGetQueryContext();
+        auto supported = storage->supportedPrewhereColumns();
+
+        auto actual_metadata = storage->getInMemoryMetadataPtr(query_context, false);
+        auto cached_metadata = getInMemoryMetadataPtr(query_context, false);
+        const auto & actual_columns = actual_metadata->getColumns();
+        auto cached_columns = cached_metadata->getColumns().getAllPhysical();
+
+        NameSet drifted;
+        for (const auto & cached : cached_columns)
+        {
+            auto actual = actual_columns.tryGetPhysical(cached.name);
+            if (!actual || !actual->type->equals(*cached.type))
+                drifted.insert(cached.name);
+        }
+
+        if (drifted.empty())
+            return supported;
+
+        if (!supported)
+        {
+            NameSet result;
+            for (const auto & cached : cached_columns)
+                if (!drifted.contains(cached.name))
+                    result.insert(cached.name);
+            return result;
+        }
+
+        std::erase_if(*supported, [&](const auto & name) { return drifted.contains(name); });
+        return supported;
+    }
+
     void read(
             QueryPlan & query_plan,
             const Names & column_names,
@@ -96,7 +136,8 @@ public:
             size_t num_streams) override
     {
         auto storage = getNested();
-        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto nested_snapshot = storage->getStorageSnapshot(nested_metadata, context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
@@ -128,7 +169,8 @@ public:
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
-        auto actual_structure = storage->getInMemoryMetadataPtr(context, false)->getSampleBlock();
+        auto nested_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        auto actual_structure = nested_metadata_snapshot->getSampleBlock();
         if (!blocksHaveEqualStructure(actual_structure, cached_structure) && add_conversion)
         {
             throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");
@@ -147,6 +189,10 @@ public:
 
     bool isView() const override { return false; }
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override {}
+    /// Table functions store no data on disk, so there is nothing for the size guard to
+    /// reject. Override (instead of inheriting StorageProxy's forward) to avoid loading
+    /// the nested table, matching `checkTableCanBeDropped` above.
+    void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override {}
 
 private:
     mutable std::recursive_mutex nested_mutex;
