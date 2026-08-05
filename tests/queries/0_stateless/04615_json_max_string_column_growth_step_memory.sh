@@ -42,7 +42,16 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=${qid_on}&query=${ENC_QUERY}&
 
 rm -f "${DATA_FILE}"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+# Retry loop to handle the race between the HTTP response and the query_log entry being written.
+for _ in {1..60}; do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+    count=$(${CLICKHOUSE_CLIENT} -q "
+        SELECT count() FROM system.query_log
+        WHERE query_id IN ('$qid_off', '$qid_on') AND type = 'QueryFinish'
+          AND event_date >= yesterday() AND current_database = currentDatabase()")
+    [ "$count" -ge 2 ] && break
+    sleep 0.5
+done
 
 # The cap must reduce peak memory by more than 10% (measured ~15%).
 ${CLICKHOUSE_CLIENT} -q "
