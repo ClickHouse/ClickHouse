@@ -21,7 +21,7 @@ def started_cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        fs = HdfsClient(hosts=cluster.hdfs_ip)
+        fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
         fs.mkdirs("/clickhouse")
 
         yield cluster
@@ -31,7 +31,7 @@ def started_cluster():
 
 def assert_objects_count(started_cluster, objects_count, num_tries=30):
     # Removal of blobs is asynchronous, so wait until the count converges.
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     while num_tries > 0:
         hdfs_objects = fs.listdir("/clickhouse")
         if objects_count == len(hdfs_objects):

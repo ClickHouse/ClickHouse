@@ -85,7 +85,7 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        fs = HdfsClient(hosts=cluster.hdfs_ip)
+        fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
         fs.mkdirs("/clickhouse")
 
         logging.info("Created HDFS directory")
@@ -96,7 +96,7 @@ def cluster():
 
 
 def wait_for_delete_hdfs_objects(cluster, expected, num_tries=30):
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
     while num_tries > 0:
         num_hdfs_objects = len(fs.listdir("/clickhouse"))
         if num_hdfs_objects == expected:
@@ -110,7 +110,7 @@ def wait_for_delete_hdfs_objects(cluster, expected, num_tries=30):
 def drop_table(cluster):
     node = cluster.instances["node"]
 
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
     hdfs_objects = fs.listdir("/clickhouse")
     print("Number of hdfs objects to delete:", len(hdfs_objects), sep=" ")
 
@@ -149,7 +149,7 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
         node.query("SELECT * FROM hdfs_test order by dt, id FORMAT Values") == values1
     )
 
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
     hdfs_objects = fs.listdir("/clickhouse")
     print(hdfs_objects)
@@ -222,7 +222,7 @@ def test_attach_detach_partition(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -273,7 +273,7 @@ def test_move_partition_to_another_disk(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -303,7 +303,7 @@ def test_table_manipulations(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -339,7 +339,7 @@ def test_move_replace_partition_to_another_table(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))

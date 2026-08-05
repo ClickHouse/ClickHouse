@@ -150,7 +150,7 @@ def test_url_reconnect(started_cluster):
             "source_port": 50075,
             "action": "REJECT",
         }
-        pm._add_rule(pm_rule)
+        pm.add_rule(pm_rule)
 
         def select():
             global result

@@ -49,11 +49,14 @@ def test_read_write_storage(started_cluster):
 def test_read_write_storage_with_globs(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
+    # An enum glob expands into concrete paths without listing, and every expanded
+    # path must exist (see the `test_s3_enum_glob_should_not_list` counterpart),
+    # so the ranges reference only the files created below.
     node1.query(
-        "create table HDFSStorageWithRange (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1..5}', 'TSV')"
+        "create table HDFSStorageWithRange (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1..3}', 'TSV')"
     )
     node1.query(
-        "create table HDFSStorageWithEnum (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1,2,3,4,5}', 'TSV')"
+        "create table HDFSStorageWithEnum (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1,2,3}', 'TSV')"
     )
     node1.query(
         "create table HDFSStorageWithQuestionMark (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage?', 'TSV')"
@@ -376,7 +379,7 @@ def test_virtual_columns(started_cluster):
 def test_read_files_with_spaces(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     dir = "/test_spaces"
     exists = fs.exists(dir)
     if exists:
@@ -396,7 +399,7 @@ def test_read_files_with_spaces(started_cluster):
 
 
 def test_write_files_with_spaces(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     dir = "/itime=2024-10-24 10%3A02%3A04"
     fs.mkdirs(dir)
 
@@ -429,7 +432,7 @@ def test_truncate_table(started_cluster):
 
 
 def test_partition_by(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     id = uuid.uuid4()
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     dir = f"partition_{id}"
@@ -541,7 +544,7 @@ def test_schema_inference(started_cluster):
 
 def test_hdfsCluster(started_cluster):
     hdfs_api = started_cluster.hdfs_api
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     dir = "/test_hdfsCluster"
     exists = fs.exists(dir)
     if exists:
@@ -595,7 +598,7 @@ def test_overwrite(started_cluster):
 
 
 def test_multiple_inserts(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     id = uuid.uuid4()
     fs.mkdirs(f"/{id}/", permission=777)
 
@@ -645,7 +648,7 @@ def test_format_detection_from_file_name(started_cluster):
 
 
 def test_schema_inference_with_globs(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     dir = "/test_schema_inference_with_globs"
     fs.mkdirs(dir)
     node1.query(
@@ -690,7 +693,7 @@ def test_schema_inference_with_globs(started_cluster):
 
 
 def test_insert_select_schema_inference(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
 
     node1.query(
         "insert into table function hdfs('hdfs://hdfs1:9000/test.native.zst') select toUInt64(1) as x"
@@ -732,7 +735,7 @@ def test_cluster_macro(started_cluster):
 
 
 def test_virtual_columns_2(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
 
     table_function = (
         "hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
@@ -1095,7 +1098,7 @@ def test_read_subcolumn_time(started_cluster):
 
 def test_union_schema_inference_mode(started_cluster):
     id = uuid.uuid4()
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
 
     dir = f"union_{id}"
     fs.mkdirs(f"/{dir}/", permission=777)
@@ -1150,7 +1153,7 @@ def test_union_schema_inference_mode(started_cluster):
 
 def test_format_detection(started_cluster):
     node = started_cluster.instances["node1"]
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     id = uuid.uuid4()
     dir = f"{id}"
     fs.mkdirs(f"/{dir}/", permission=777)
