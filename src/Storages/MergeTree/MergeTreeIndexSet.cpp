@@ -663,7 +663,10 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     {
         /// Check result type of node equals column type. If they are different, we fall back
         /// to nullptr since executeAction in ExpressionActions will otherwise error.
-        if (!node.result_type->equals(*key_column_it->second))
+        /// INPUT cannot be re-typed: a second input under the same name would be
+        /// left unbound, because `ExpressionActions::execute` maps each name to one block column.
+        const auto & index_type = key_column_it->second;
+        if (node.type == ActionsDAG::ActionType::INPUT && !node.result_type->equals(*index_type))
             return nullptr;
 
         /// Check if we already created an INPUT for this key column
@@ -673,8 +676,9 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
 
         const auto * result_node = node_to_check;
 
+        /// Bind to the type the granule block holds, not the query-side type.
         if (node.type != ActionsDAG::ActionType::INPUT)
-            result_node = &result_dag.addInput(column_name, node.result_type);
+            result_node = &result_dag.addInput(column_name, index_type);
 
         key_column_inputs[column_name] = result_node;
         return result_node;
@@ -696,7 +700,22 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return nullptr;
     }
 
-    return &result_dag.addFunction(node.function_base, children, {});
+    /// Re-resolve against the granule-side argument types instead of reusing the query-side
+    /// `IFunctionBase`, whose return type was resolved for the query's types. Functions absent from
+    /// the factory (internal casts, lambdas, parametric functions) and argument types the function
+    /// rejects both fall back to `UNKNOWN_FIELD`.
+    auto resolver = FunctionFactory::instance().tryGet(node.function_base->getName(), context);
+    if (!resolver)
+        return nullptr;
+
+    try
+    {
+        return &result_dag.addFunction(resolver, children, {});
+    }
+    catch (const Exception &)
+    {
+        return nullptr;
+    }
 }
 
 const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const ActionsDAG::Node & node,
