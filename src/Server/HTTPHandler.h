@@ -72,12 +72,18 @@ protected:
     /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
     void setConsumesRequestBody(bool value)
     {
+        body_contract_known = true;
         consumes_request_body = value;
         feeds_request_body_to_query = value;
     }
 
 private:
     String introspection_handler_name;
+
+    /// Whether `consumes_request_body` carries a definitive answer. Only SQL-defined handlers set it: for them a
+    /// `POST` request needs `Content-Length` up front only when the body is actually consumed. For the other
+    /// handlers `POST` requires the length unconditionally, as it did before SQL-defined handlers existed.
+    bool body_contract_known = false;
 
     /// Whether a body-carrying method must come with a length up front. Defaults to `false`: for the handlers that
     /// do not set it, only `POST` requires the length, as it did before SQL-defined handlers existed.

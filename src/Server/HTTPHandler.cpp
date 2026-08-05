@@ -825,10 +825,17 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// (`consumes_request_body`) or by the form/multipart parsing that the handler layer itself performs. A
         /// handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
         /// demanding `Content-Length: 0` from every ordinary HTTP client would make that class of handlers unusable.
+        /// The same applies to `POST` when the handler's body contract is known (a SQL-defined handler): a plain
+        /// `curl -X POST` sends neither a body nor `Content-Length`, and a handler that never reads the body must
+        /// accept it. For the other handlers `POST` keeps the historical unconditional requirement: their body may
+        /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
         const auto & method = request.getMethod();
-        const bool method_requires_content_length = method == HTTPRequest::HTTP_POST
-            || ((method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE)
-                && (consumes_request_body || requestDeclaresFormBody(request)));
+        const bool is_body_carrying_method
+            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        const bool body_may_be_consumed = body_contract_known
+            ? (consumes_request_body || requestDeclaresFormBody(request))
+            : (method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
+        const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
         if (method_requires_content_length && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
