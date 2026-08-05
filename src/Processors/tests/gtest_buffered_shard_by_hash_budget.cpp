@@ -744,7 +744,7 @@ TEST(BufferedShardByHashTransform, AggregateFunctionArenaChargedOncePerBlock)
 /// as unsafe. The budget walk therefore must not measure it: only the owned arena - grown exclusively through
 /// the column being walked, which the transform holds immutably - is charged. This deliberately leaves an
 /// externally attached arena uncharged (it cannot be sized without a data race), which this test pins down.
-TEST(BufferedShardByHashTransform, ExternallyAttachedForeignArenaIsNotCharged)
+TEST(BufferedShardByHashTransform, ExternallyAttachedForeignArenaIsChargedOncePerBlock)
 {
     tryRegisterAggregateFunctions();
 
@@ -772,8 +772,10 @@ TEST(BufferedShardByHashTransform, ExternallyAttachedForeignArenaIsNotCharged)
 
     const Int64 arena_bytes = static_cast<Int64>(arena.allocatedBytes());
 
-    /// An external arena much larger than everything else in the block. If the walk read (and billed) foreign
-    /// arenas, the counter would jump by this amount.
+    /// An external arena much larger than everything else in the block, attached the way
+    /// `FunctionBinaryArithmetic` and the `Aggregator` output attach theirs: `addArena` alone, owned by no
+    /// column. Its states are resident for as long as the block is buffered, so the budget must bill it -
+    /// and, since every shard view of the block shares the same arena, bill it exactly once.
     auto external_arena = std::make_shared<Arena>();
     external_arena->alloc(64 * 1024 * 1024);
     const Int64 external_bytes = static_cast<Int64>(external_arena->allocatedBytes());
@@ -789,9 +791,10 @@ TEST(BufferedShardByHashTransform, ExternallyAttachedForeignArenaIsNotCharged)
     Columns columns{makeDistinctKeyColumn(num_rows), std::move(states)};
     const Int64 buffered = bufferedBytesAfterSplit(header, std::move(columns), num_shards, ColumnNumbers{0});
 
-    /// The owned arena (the states) is still charged once, but the external arena is not measured at all.
-    EXPECT_GE(buffered, arena_bytes);
-    EXPECT_LT(buffered, external_bytes);
+    /// The external arena is billed on top of the owned one (dropping it would leave the states of an
+    /// `addArena`-only column entirely uncounted), and billed once - not once per shard view that shares it.
+    EXPECT_GE(buffered, external_bytes + arena_bytes);
+    EXPECT_LT(buffered, 2 * external_bytes);
 }
 
 /// The same invariant for a shared `ColumnConst` payload: `ColumnConst::scatter` wraps the same backing `data`

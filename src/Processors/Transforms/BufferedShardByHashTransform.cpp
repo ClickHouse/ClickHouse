@@ -166,25 +166,25 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
         /// shard a *view* of this column - the view's `getData` holds the very same state pointers, the source's
         /// arena becomes one of the view's foreign arenas, and the view keeps the source column alive.
         /// `allocatedBytes` counts an owned arena in full, so two columns that reach the same arena would each
-        /// charge it whole. Registering the arena as a shared object in its own right, keyed by the `Arena`
+        /// charge it whole. Registering each arena as a shared object in its own right, keyed by the `Arena`
         /// address, bills it exactly once, for exactly as long as some buffered chunk still reaches it.
         ///
-        /// Only the *owned* arena is measured. Reading a foreign arena is a data race by this column's own
-        /// contract - it may still be grown concurrently by whoever created it - so its size must never be
-        /// touched here. That loses nothing for view chains: a view's foreign arenas are exactly the owned
-        /// arenas along its source chain, and the source is walked below (its bytes - the state pointer array -
-        /// stay resident because this column holds it), so each of those arenas is still charged exactly once,
-        /// through the column that owns it and for which the read is safe. An arena attached from outside any
-        /// column (`addArena`, e.g. an aggregator pool) stays uncharged: it cannot be measured safely, and it
-        /// does not occur on this pre-aggregation path.
-        if (const Arena * owned_arena = aggregate->getOwnedArena())
+        /// The foreign arenas must be measured too: a column produced by aggregate-state arithmetic
+        /// (`FunctionBinaryArithmetic`) or emitted by an upstream aggregation (`AggregationUtils`, `Aggregator`)
+        /// carries its states in arenas attached via `addArena` only - it owns none - so skipping foreign arenas
+        /// would charge nothing for its states at all. Sizing a foreign arena is safe: `Arena::allocatedBytes` is
+        /// an atomic snapshot, readable while the arena's creator still grows it (nothing else of a foreign arena
+        /// is touched here). A shared arena that keeps growing after the charge is under-counted by the growth -
+        /// the budget bills what the block references when it is buffered, which is the bound it enforces.
+        aggregate->forEachArena([&](const Arena & arena, bool is_owned)
         {
-            const Int64 arena_bytes = static_cast<Int64>(owned_arena->allocatedBytes());
-            /// An owned arena is inside `allocatedBytes` and has to come out of this column's own bytes.
-            if (is_new)
+            const Int64 arena_bytes = static_cast<Int64>(arena.allocatedBytes());
+            /// An owned arena is inside this column's `allocatedBytes` and has to come out of its own bytes;
+            /// a foreign one never is.
+            if (is_new && is_owned)
                 self_bytes -= arena_bytes;
-            chargeSharedObject(owned_arena, arena_bytes, touched, total_bytes);
-        }
+            chargeSharedObject(&arena, arena_bytes, touched, total_bytes);
+        });
 
         if (const ColumnPtr & source = aggregate->getSourceColumn())
             charge_subobject(*source, false);
