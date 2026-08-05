@@ -1813,6 +1813,55 @@ def test_early_abort_after_the_graceful_stop_keeps_our_sigterm_out(workspace):
     )
 
 
+def test_reap_watchdog_without_a_stop_keeps_a_real_server_signal(workspace):
+    # The failing-write case, end to end: the reap watchdog is written while the
+    # server is still healthy and untouched, and the `echo > server_stopping.txt`
+    # that would record a stop never happens (`set -e` aborts first -- the two
+    # unguarded `} > server_memory_stuck.txt` redirections in the probe loop are the
+    # concrete sites, and they run after the reap line). So the run reaches the early
+    # abort with a watchdog, no marker, no shutdown record, and a genuine server
+    # termination as the ONLY evidence in the log.
+    #
+    # The oracle is the reported failure row, not the verdict: accepting any watchdog
+    # here made the parser drop the signal and report 'Unknown error', so a real
+    # server abort was classified as self-inflicted.
+    server_log = workspace / "server.log"
+    server_log.write_text(
+        "2026.08.05 10:20:00.000000 [ 1 ] {} <Fatal> BaseDaemon: (version 26.8) "
+        "Received signal 15\n"
+        "2026.08.05 10:20:00.100000 [ 1 ] {} <Fatal> BaseDaemon: Received "
+        "termination signal (Terminated)\n",
+        encoding="utf-8",
+    )
+    (workspace / "stderr.log").write_text("", encoding="utf-8")
+    (workspace / "fuzzer.log").write_text("SELECT 1;\n", encoding="utf-8")
+    (workspace / "harness_watchdog.txt").write_text(
+        "stage=reap reason=client_unreapable waited=900s\n", encoding="utf-8"
+    )
+    assert not (workspace / "server_stopping.txt").exists(), (
+        "fixture must model the failed shutdown-record write"
+    )
+    watchdog = _fail("Fuzzer harness watchdog fired", Result.Status.ERROR)
+    stopped = job._early_abort_stopped_by_harness(None, watchdog)
+    assert stopped is False, (
+        "a reap-stage watchdog killed client-side processes only; claiming the "
+        "harness stopped the server suppresses a genuine signal"
+    )
+    selected = job._parse_and_select_failure(
+        server_log,
+        workspace / "stderr.log",
+        workspace / "fuzzer.log",
+        False,
+        None,
+        watchdog,
+        server_stopped_by_harness=stopped,
+    )
+    assert selected is not None and "Received signal 15" in selected.name, (
+        "the genuine server signal must stay the reported failure; got "
+        f"{getattr(selected, 'name', None)!r}"
+    )
+
+
 def test_shutdown_witness_decides_both_ways(workspace):
     # Drive the PRODUCTION decision helper, both polarities. The behavioral test
     # above passes server_stopped_by_harness=True directly, so it cannot see the
@@ -1828,16 +1877,27 @@ def test_shutdown_witness_decides_both_ways(workspace):
         "the shutdown witness must mark the stop as ours, or our own SIGTERM becomes "
         "the failure row"
     )
-    # A marker or watchdog is a witness on its own (status.tsv is written after the
-    # stop), independent of the file.
+    # A marker is a witness on its own (status.tsv is written after the stop),
+    # independent of the file.
     (workspace / "server_stopping.txt").unlink()
     assert job._early_abort_stopped_by_harness(_fail(job.MEMORY_STUCK_NAME), None) is True
-    assert (
-        job._early_abort_stopped_by_harness(
-            None, _fail("Fuzzer harness watchdog fired", Result.Status.ERROR)
+
+    # A watchdog is NOT a witness on its own: its STAGE decides. run-fuzzer.sh writes
+    # the reap line while the server is untouched and healthy, and both the probes and
+    # teardown lines only where it goes on to stop it. Accepting any watchdog turned a
+    # genuine "Received signal 15" on a reap-only run into "Unknown error".
+    wd = workspace / "harness_watchdog.txt"
+    watchdog = _fail("Fuzzer harness watchdog fired", Result.Status.ERROR)
+    expected = {"reap": False, "probes": True, "teardown": True}
+    for stage, stopped in expected.items():
+        wd.write_text(f"stage={stage} reason=x\n", encoding="utf-8")
+        assert job._early_abort_stopped_by_harness(None, watchdog) is stopped, (
+            f"stage={stage}: the harness "
+            + ("does" if stopped else "does not")
+            + " stop the server there, so a log SIGTERM is "
+            + ("ours" if stopped else "the only evidence a real one leaves")
         )
-        is True
-    )
+    wd.unlink()
 
 
 def test_shutdown_witness_is_consulted_and_cleaned():

@@ -665,13 +665,14 @@ def _early_abort_stopped_by_harness(marker_result, watchdog_result) -> bool:
     """True when the harness had already stopped the server before the early abort.
 
     Tells the parser whether a "Received signal 15" in the log is self-inflicted.
-    Three witnesses, all meaning "we got at least as far as stopping it": a
-    memory-stuck marker, a harness watchdog, or the shutdown record run-fuzzer.sh
-    writes immediately BEFORE the graceful stop (status.tsv is written only after,
-    so an abort in that window has no marker of its own).
+    A witness must imply the stop already happened: a memory-stuck marker, the
+    shutdown record run-fuzzer.sh writes immediately BEFORE the graceful stop
+    (status.tsv is written only after), or a watchdog whose STAGE stops the server.
+    A reap-stage watchdog kills client-side processes only, so `watchdog_result`
+    alone is not sufficient -- the stage decides.
 
-    False only for an abort BEFORE the shutdown phase -- a startup failure, where no
-    stop ever ran and a genuine server signal may be the only evidence there is.
+    False for an abort before any stop ran (a startup failure, or a reap escalation
+    on a healthy server), where a genuine server signal may be the only evidence.
 
     Extracted so both polarities are testable: `run_fuzz_job` drives docker and
     cannot run from the unit suite, and inlining this made an inverted witness test
@@ -679,8 +680,9 @@ def _early_abort_stopped_by_harness(marker_result, watchdog_result) -> bool:
     """
     return (
         marker_result is not None
-        or watchdog_result is not None
         or SERVER_STOPPING.exists()
+        or _watchdog_stage_teardown()
+        or _watchdog_stage_probes()
     )
 
 
