@@ -31,3 +31,16 @@ L2Distance is rewritten with the sqrt that usearch skips
 0
 1
 2
+a WHERE above the read that needs the vector column keeps bailing out
+0
+0
+1
+a WHERE that does not touch the vector column is still rewritten
+1
+0
+an explicit PREWHERE under FINAL keeps bailing out
+0
+0
+1
+0
+1

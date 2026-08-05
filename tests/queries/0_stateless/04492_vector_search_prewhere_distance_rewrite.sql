@@ -209,5 +209,110 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS use_skip_indexes = 0;
 
+SELECT 'a WHERE above the read that needs the vector column keeps bailing out';
+-- The rewrite drops `vec` from the read list, so a filter above the read that still consumes it
+-- would reference a column that is no longer produced (NOT_FOUND_COLUMN_IN_BLOCK). Note a filter
+-- that does not touch the vector column stays eligible, covered by the next case.
+SELECT count()
+FROM
+(
+    EXPLAIN actions = 1
+    WITH [0.0, 1.0] AS reference_vec
+    SELECT id
+    FROM tab_cosine
+    PREWHERE cosineDistance(vec, reference_vec) < 0.5
+    WHERE length(vec) = 2
+    ORDER BY cosineDistance(vec, reference_vec)
+    LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0
+)
+WHERE explain LIKE '%_distance%';
+
+WITH [0.0, 1.0] AS reference_vec
+SELECT id
+FROM tab_cosine
+PREWHERE cosineDistance(vec, reference_vec) < 0.5
+WHERE length(vec) = 2
+ORDER BY cosineDistance(vec, reference_vec)
+LIMIT 3
+SETTINGS vector_search_with_rescoring = 0;
+
+SELECT 'a WHERE that does not touch the vector column is still rewritten';
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    WITH [0.0, 1.0] AS reference_vec
+    SELECT id
+    FROM tab_cosine
+    PREWHERE cosineDistance(vec, reference_vec) < 0.5
+    WHERE id % 2 = 0
+    ORDER BY cosineDistance(vec, reference_vec)
+    LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0
+)
+WHERE explain LIKE '%Prewhere filter column:%_distance%';
+
+WITH [0.0, 1.0] AS reference_vec
+SELECT id
+FROM tab_cosine
+PREWHERE cosineDistance(vec, reference_vec) < 0.5
+WHERE id % 2 = 0
+ORDER BY cosineDistance(vec, reference_vec)
+LIMIT 3
+SETTINGS vector_search_with_rescoring = 0;
+
+SELECT 'an explicit PREWHERE under FINAL keeps bailing out';
+-- FINAL may add PK-overlapping ranges after vector index analysis, and the vector row hints
+-- describe only the pre-FINAL candidates. Rewriting there tripped a LOGICAL_ERROR in
+-- MergeTreeRangeReader; the rescoring row filter is disabled under FINAL for the same reason.
+DROP TABLE IF EXISTS tab_final;
+
+CREATE TABLE tab_final
+(
+    id UInt64,
+    ver UInt64,
+    vec Array(Float32),
+    INDEX idx_vec vec TYPE vector_similarity('hnsw', 'cosineDistance', 2) GRANULARITY 100000000
+)
+ENGINE = ReplacingMergeTree(ver)
+ORDER BY id
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_final SELECT number, 1, [toFloat32(number), 1] FROM numbers(32);
+INSERT INTO tab_final SELECT number, 2, [toFloat32(number + 100), 1] FROM numbers(16);
+
+SELECT count()
+FROM
+(
+    EXPLAIN actions = 1
+    WITH [0.0, 1.0] AS reference_vec
+    SELECT id
+    FROM tab_final FINAL
+    PREWHERE cosineDistance(vec, reference_vec) < 0.5
+    ORDER BY cosineDistance(vec, reference_vec)
+    LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0
+)
+WHERE explain LIKE '%_distance%';
+
+-- Must agree with the rescoring path, which bails out under FINAL already.
+WITH [0.0, 1.0] AS reference_vec
+SELECT id
+FROM tab_final FINAL
+PREWHERE cosineDistance(vec, reference_vec) < 0.5
+ORDER BY cosineDistance(vec, reference_vec)
+LIMIT 3
+SETTINGS vector_search_with_rescoring = 0;
+
+WITH [0.0, 1.0] AS reference_vec
+SELECT id
+FROM tab_final FINAL
+PREWHERE cosineDistance(vec, reference_vec) < 0.5
+ORDER BY cosineDistance(vec, reference_vec)
+LIMIT 3
+SETTINGS vector_search_with_rescoring = 1;
+
 DROP TABLE tab_cosine;
 DROP TABLE tab_l2;
+DROP TABLE tab_final;

@@ -298,6 +298,53 @@ std::optional<VectorWithMemoryTracking<Float64>> tryGetReferenceVector(const Act
     return reference_vector;
 }
 
+/// True if `dag` feeds `search_column` into a function, as opposed to merely carrying it through to
+/// its outputs.
+///
+/// This distinguishes a filter above the read that only passes the vector column along - which the
+/// planner does routinely so the ORDER BY above can use it, and whose pass-through alias
+/// replaceVectorColumnWithDistanceColumn() removes - from one that actually computes with it, such
+/// as `WHERE length(vec) = 2`. Only the latter breaks once the column leaves the read list.
+bool searchColumnFeedsIntoFunction(const ActionsDAG & dag, const String & search_column)
+{
+    std::unordered_map<const ActionsDAG::Node *, bool> reaches_search_column;
+
+    auto reaches = [&](const ActionsDAG::Node * node, auto & self) -> bool
+    {
+        auto [it, inserted] = reaches_search_column.try_emplace(node, false);
+        if (!inserted)
+            return it->second;
+
+        bool result = (node->type == ActionsDAG::ActionType::INPUT && node->result_name == search_column);
+        if (!result)
+        {
+            for (const auto * child : node->children)
+            {
+                if (self(child, self))
+                {
+                    result = true;
+                    break;
+                }
+            }
+        }
+
+        /// try_emplace may have rehashed while recursing, so look the slot up again.
+        reaches_search_column[node] = result;
+        return result;
+    };
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION && node.type != ActionsDAG::ActionType::ARRAY_JOIN)
+            continue;
+        for (const auto * child : node.children)
+            if (reaches(child, reaches))
+                return true;
+    }
+
+    return false;
+}
+
 /// Find the distance-function nodes in `dag` that the `_distance` virtual column can stand in for.
 ///
 /// A node qualifies only if it computes exactly the same thing the vector index already returned,
@@ -523,6 +570,28 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     {
         if (settings.vector_search_with_rescoring)
             return false;
+
+        /// FINAL may add PK-overlapping ranges after vector index analysis, so the vector row hints
+        /// describe only the pre-FINAL candidates. The rescoring row filter is disabled under FINAL
+        /// for exactly this reason (see apply_row_filter_for_rescoring below), but the rewrite keeps
+        /// the hints active, so an explicit PREWHERE under FINAL has to keep the bail-out.
+        if (read_from_mergetree_step->isQueryWithFinal())
+            return false;
+
+        /// The rewrite drops the vector column from the read list, so a step above the read that
+        /// computes something from it would reference a column that is no longer produced, e.g.
+        ///     PREWHERE cosineDistance(vec, reference) < 0.5 WHERE length(vec) = 2
+        /// Merely carrying the column through to the outputs is fine and common - the planner keeps
+        /// it available for the ORDER BY above - and replaceVectorColumnWithDistanceColumn() drops
+        /// that pass-through alias. So a filter such as `WHERE id % 2 = 0` stays eligible, and only
+        /// a filter that feeds the column into a function bails out.
+        if (filter_step || prewhere_expression_step)
+        {
+            const ActionsDAG & dag_above_read
+                = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
+            if (searchColumnFeedsIntoFunction(dag_above_read, vector_search_parameters.value().column))
+                return false;
+        }
 
         prewhere_distance_nodes
             = findDistanceNodesReplaceableByDistanceColumn(prewhere_info->prewhere_actions, vector_search_parameters.value());
