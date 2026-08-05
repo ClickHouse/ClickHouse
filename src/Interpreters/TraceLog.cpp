@@ -199,7 +199,9 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
                 else
                     column_symbols_inner.insertData(symbol->name, strlen(symbol->name));
 
-                column_lines_inner.insert(AddressToLineCache::get(trace[frame]));
+                /// For non-innermost frames the address is a return address; subtract 1 so DWARF
+                /// resolves the `call` instruction itself (mirrors `StackTrace::forEachFrame`).
+                column_lines_inner.insert(AddressToLineCache::get(trace[frame] - (frame > 0 ? 1 : 0)));
             }
             else
             {

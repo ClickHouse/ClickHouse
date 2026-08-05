@@ -46,7 +46,14 @@ symbolizeTrace(const void * const * frame_pointers, size_t size, bool need_symbo
         }
 
         if (need_lines)
-            lines.emplace_back(AddressToLineCache::get(reinterpret_cast<uintptr_t>(addr)));
+        {
+            /// For non-innermost frames the address is a return address, i.e. it points to the
+            /// instruction after the `call`. Subtract 1 so DWARF resolves the `call` itself instead
+            /// of the next source line (mirrors the adjustment in `StackTrace::forEachFrame`).
+            /// The symbol lookup above intentionally uses the unadjusted address, as `StackTrace` does.
+            uintptr_t line_addr = reinterpret_cast<uintptr_t>(addr) - (i > 0 ? 1 : 0);
+            lines.emplace_back(AddressToLineCache::get(line_addr));
+        }
     }
 
     return {std::move(symbols), std::move(lines)};
