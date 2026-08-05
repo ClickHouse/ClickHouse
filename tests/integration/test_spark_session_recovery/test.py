@@ -1,6 +1,5 @@
 import os
 import signal
-import time
 
 import pyspark
 from pyspark.context import SparkContext
@@ -8,9 +7,13 @@ from pyspark.context import SparkContext
 from helpers.spark_tools import ResilientSparkSession
 
 
-def _jvm_pid():
+def _jvm_proc():
     gateway = SparkContext._gateway
-    proc = getattr(gateway, "proc", None) if gateway is not None else None
+    return getattr(gateway, "proc", None) if gateway is not None else None
+
+
+def _jvm_pid():
+    proc = _jvm_proc()
     return proc.pid if proc is not None else None
 
 
@@ -20,6 +23,18 @@ def _alive(pid):
         return True
     except Exception:
         return False
+
+
+def _kill_jvm_and_reap(proc):
+    """Kill the gateway JVM and wait until it is reaped, not merely signalled.
+
+    Nothing in pyspark ever waits on ``gateway.proc``, so a killed JVM stays a
+    zombie and ``os.kill(pid, 0)`` keeps succeeding; ``wait()`` is what makes
+    the liveness check below able to fail.
+    """
+    os.kill(proc.pid, signal.SIGKILL)
+    proc.wait(timeout=30)
+    assert not _alive(proc.pid)
 
 
 def _create():
@@ -35,6 +50,7 @@ def test_recovers_dead_gateway_and_reuses_live_one():
     and no stop() clears it, so a session built after the JVM died must discard
     that handle, while a session built while it still answers must reuse it."""
     session = ResilientSparkSession(_create)
+    first_proc = _jvm_proc()
     first_pid = _jvm_pid()
     assert session.range(3).count() == 3
     assert first_pid is not None
@@ -56,22 +72,17 @@ def test_recovers_dead_gateway_and_reuses_live_one():
 
     # Recovery: with the JVM dead, the next session must relaunch it. Before the
     # fix this raised "SparkConf does not exist in the JVM" from __init__.
-    os.kill(first_pid, signal.SIGKILL)
-    deadline = time.monotonic() + 30
-    while _alive(first_pid) and time.monotonic() < deadline:
-        time.sleep(0.2)
+    _kill_jvm_and_reap(first_proc)
 
     recovered = ResilientSparkSession(_create)
+    second_proc = _jvm_proc()
     second_pid = _jvm_pid()
     assert second_pid != first_pid
     assert recovered.range(5).count() == 5
 
     # Attribute access on a wrapper whose JVM has since died goes through
     # __getattr__ -> _restart, which must recover the same way __init__ does.
-    os.kill(second_pid, signal.SIGKILL)
-    deadline = time.monotonic() + 30
-    while _alive(second_pid) and time.monotonic() < deadline:
-        time.sleep(0.2)
+    _kill_jvm_and_reap(second_proc)
 
     assert recovered.range(6).count() == 6
     assert _jvm_pid() not in (first_pid, second_pid)
