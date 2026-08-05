@@ -319,7 +319,7 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
 
 /// `last-column-id` is the table's high-water mark of assigned field ids. The reader needs it to
 /// tell a column dropped from the current schema (id within the bound) from a metadata mismatch.
-/// It is optional in the metadata; when absent the reader keeps rejecting every unmapped id.
+/// The spec requires it, so the absence check only fail-closes a non-conformant writer.
 static void observeLastColumnId(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor)
 {
     if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
