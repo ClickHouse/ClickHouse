@@ -16,7 +16,7 @@ SELECT extract(create_table_query, 'INDEX idx .* TYPE minmax GRANULARITY 1')
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'skip_index_alias_lambda_normalization';
 
--- The analyzed expression recursively replaces nested aliases (with their type conversions) but keeps the lambda argument `x`.
+-- The analyzed expression recursively replaces nested aliases but keeps the lambda argument `x`.
 SELECT expr FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 'skip_index_alias_lambda_normalization';
 

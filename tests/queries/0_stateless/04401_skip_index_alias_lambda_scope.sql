@@ -18,7 +18,7 @@ SELECT extract(create_table_query, 'INDEX idx .+ TYPE minmax GRANULARITY 1')
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'skip_index_alias_lambda_scope';
 
--- The analyzed expression replaces the outer alias `lim` (with its type conversion) but keeps the lambda argument `x`.
+-- The analyzed expression replaces the outer alias `lim` but keeps the lambda argument `x`.
 SELECT expr FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 'skip_index_alias_lambda_scope';
 

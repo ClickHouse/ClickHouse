@@ -184,13 +184,11 @@ ASTPtr IndexDescription::initExpressionInfo(ASTPtr index_expression, const Colum
     /// `definition_ast`: matcher expansion is frozen at creation time, while alias
     /// references stay live so that later `ALTER MODIFY COLUMN ... ALIAS` picks up
     /// the new alias body on `recalculateWithNewColumns`.
-    /// The executable expression uses `IndexAnalysis` replacement so a typed alias
-    /// (`b UInt8 ALIAS a`) keeps its semantic `_CAST`: the index must store the alias
-    /// *value*, not the raw source expression, whose domain differs for narrowing or
-    /// otherwise non-injective alias types. Unlike `QueryAnalysis`, no synthetic result
-    /// names are set: index granule columns are keyed by plain expression names, which
-    /// is what both analyzers substitute for predicates over the alias when matching
-    /// the index.
+    /// The executable expression uses `IndexAnalysis` replacement: unlike `QueryAnalysis`,
+    /// it adds neither a synthetic result name nor a conversion to the declared alias type,
+    /// so an index over a typed alias (`b UInt8 ALIAS a`) is built over the alias body.
+    /// See the comment on `ColumnAliasReplacementMode::IndexAnalysis` for why converting
+    /// to the alias type here would misread the index files of already written parts.
     expandColumnMatchersInExpressionList(expr_list, columns, context);
     ASTPtr persisted_expression_list = expr_list->clone();
     replaceAliasColumnsInQuery(
