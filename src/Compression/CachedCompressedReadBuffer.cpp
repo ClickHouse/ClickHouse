@@ -1,4 +1,5 @@
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <IO/WriteHelpers.h>
 #include <Compression/LZ4_decompress_faster.h>
@@ -35,10 +36,24 @@ void CachedCompressedReadBuffer::prefetch(Priority priority)
 }
 
 
+void CachedCompressedReadBuffer::releaseCell()
+{
+    /// The cell was cached without charging this query (see `nextImpl`), so dropping our reference - which may
+    /// be the last one, when the entry has already been evicted - must not credit this query either.
+    MemoryTrackerBlockerInThread not_credited_to_the_query;
+    owned_cell.reset();
+}
+
+
 bool CachedCompressedReadBuffer::nextImpl()
 {
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
     UInt128 key = UncompressedCache::hash(path, file_pos);
+
+    /// The decompressed block goes into a cache shared by every query and is freed by whichever query's
+    /// insertion evicts it, which cannot uncharge this one, so its charge would stay on the per-user tracker.
+    /// `total_memory_tracker` still accounts it. Same reasoning as `MergeTreeMarksLoader`.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
 
     owned_cell = cache->getOrSet(key, [&]()
     {
@@ -106,12 +121,17 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
         bytes += offset();
         /// No data, everything discarded
         resetWorkingBuffer();
-        owned_cell.reset();
+        releaseCell();
 
         /// Remember required offset in decompressed block which will be set in
         /// the next ReadBuffer::next() call
         nextimpl_working_buffer_offset = offset_in_decompressed_block;
     }
+}
+
+CachedCompressedReadBuffer::~CachedCompressedReadBuffer()
+{
+    releaseCell();
 }
 
 }
