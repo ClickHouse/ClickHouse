@@ -44,6 +44,10 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.RISCV64: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-riscv64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.S390X: f"        cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-s390x.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.LOONGARCH64: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-loongarch64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_BUZZHOUSE=1",
+    # WebAssembly, through the Emscripten toolchain: `emcmake` points CMAKE_TOOLCHAIN_FILE at
+    # Emscripten's own toolchain file, which supplies `emcc`/`em++`, so no compiler is passed
+    # here. `emcc` is a Python driver that sccache cannot cache, hence the cache is disabled.
+    BuildTypes.WASM64: f"       emcmake cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DCOMPILER_CACHE=disabled -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.ARM_FUZZERS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_FUZZING=1 -DENABLE_PROTOBUF=1 -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DENABLE_BUZZHOUSE=0 -DPARALLEL_LINK_JOBS=1",  # TODO: fix build with -DSANITIZE_COVERAGE=1
 }
 
@@ -374,6 +378,11 @@ def main():
     if res and JobStages.BUILD in stages:
         if build_type == BuildTypes.ARM_FUZZERS:
             targets = "fuzzers"
+        elif build_type == BuildTypes.WASM64:
+            # Nothing above `clickhouse_common_io` links for WebAssembly yet, so pin
+            # exactly the layers that are known to build (see the `OS_WASM` arms in
+            # cmake/target.cmake) and let the target grow from here.
+            targets = "common clickhouse_common_io"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:

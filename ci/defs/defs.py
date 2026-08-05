@@ -348,6 +348,9 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
+    # WebAssembly (wasm64, through Emscripten). Experimental: only the lower layers of the
+    # tree build, and the CI job pins exactly those (see build_clickhouse.py).
+    WASM64 = "wasm64"
     ARM_FUZZERS = "arm_fuzzers"
     AMD_CFI = "amd_cfi"
 

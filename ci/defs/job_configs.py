@@ -524,6 +524,13 @@ class JobConfigs:
             provides=[ArtifactNames.CH_LOONGARCH64],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
+        # There is no full binary to provide yet: the job builds the layers of the tree
+        # that support WebAssembly, to keep them from regressing.
+        Job.ParamSet(
+            parameter=BuildTypes.WASM64,
+            provides=[],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_FUZZERS,
             provides=[],

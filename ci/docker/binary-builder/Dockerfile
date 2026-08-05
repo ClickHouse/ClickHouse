@@ -118,6 +118,26 @@ RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/M
   && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
   && rm /MacOSX11.0.sdk.tar.xz
 
+# Emscripten SDK for the experimental WebAssembly build (see the `OS_WASM` arms in cmake/).
+# The version has to match the one the wasm64 target is verified with.
+ARG EMSDK_VERSION=6.0.5
+RUN curl -fsSL "https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMSDK_VERSION}.tar.gz" | tar -xzf - -C /opt \
+  && mv "/opt/emsdk-${EMSDK_VERSION}" /opt/emsdk \
+  && /opt/emsdk/emsdk install "${EMSDK_VERSION}" \
+  && /opt/emsdk/emsdk activate "${EMSDK_VERSION}" \
+  && rm -rf /opt/emsdk/downloads
+
+ENV EMSDK=/opt/emsdk
+ENV PATH="$PATH:/opt/emsdk/upstream/emscripten"
+
+# Pre-generate the wasm64 variant of the Emscripten system libraries. `-sMEMORY64`,
+# `-fwasm-exceptions` and `-pthread` are ABI flags applied to every translation unit
+# (see cmake/target.cmake), and `emcc` compiles the matching sysroot variant lazily
+# at first use, so bake it into the image instead of every CI build.
+RUN echo 'int main() { return 0; }' > /tmp/em_prewarm.cpp \
+  && em++ -sMEMORY64=1 -fwasm-exceptions -pthread /tmp/em_prewarm.cpp -o /tmp/em_prewarm.js \
+  && rm -f /tmp/em_prewarm.*
+
 ARG CLANG_TIDY_SHA1=3880541496c7ce0d2e2830d2f525375078fe0b1f
 RUN curl -Lo /usr/bin/clang-tidy-cache.py \
         "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/src/ctcache/clang_tidy_cache.py" \
