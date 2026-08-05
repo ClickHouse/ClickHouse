@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h|utils/wasm-parser/shim/'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h|utils/wasm-parser/shim/'
 # Heuristic style checks must skip the verbatim Markdown documentation embedded into
 # the format source files as R"DOCS_MD( ... )DOCS_MD" raw-string literals (literal tabs
 # in TabSeparated/TSV examples, Pretty result tables indented by one to three spaces,
@@ -45,7 +45,7 @@ O="$STYLE_TMPDIR/out"
 {
 rg $@ -n --glob '*.h' --glob '*.cpp' \
     --glob '!**/build/**' --glob '!**/integration/**' --glob '!**/widechar_width/**' \
-    --glob '!**/poco/**' --glob '!**/memcpy/**' \
+    --glob '!**/glibc-compatibility/**' --glob '!**/poco/**' --glob '!**/memcpy/**' \
     --glob '!**/consistent-hashing/**' --glob '!**/*benchmark*' \
     --glob '!**/tests/**/*.cpp' \
     --glob '!**/AvroSchema.h' \

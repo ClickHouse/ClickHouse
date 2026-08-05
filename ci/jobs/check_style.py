@@ -745,6 +745,7 @@ if __name__ == "__main__":
     cpp_files = Utils.traverse_paths(
         include_paths=["./src", "./base", "./programs", "./utils"],
         exclude_paths=[
+            "./base/glibc-compatibility",
             "./contrib/consistent-hashing",
             "./base/widechar_width",
         ],

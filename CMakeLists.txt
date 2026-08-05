@@ -89,6 +89,7 @@ if (ENABLE_FUZZING)
     set (ENABLE_TCMALLOC 0)
     set (ENABLE_JEMALLOC 0)
     set (ENABLE_CHECK_HEAVY_BUILDS 1)
+    set (GLIBC_COMPATIBILITY OFF)
     set (ENABLE_BENCHMARKS 0)
     set (ENABLE_CLICKHOUSE_KEEPER 0)
 
@@ -156,6 +157,13 @@ include (cmake/block_build_time_checks.cmake)
 option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
+
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT USE_MUSL)
+    # Only for Linux, x86_64 or aarch64.
+    option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
+elseif(GLIBC_COMPATIBILITY)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
+endif ()
 
 if (OS_LINUX)
     # We should not export dynamic symbols, because:
@@ -360,6 +368,25 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 # guarding each call with a branch to a libm wrapper, which also unblocks vectorization.
 # Clang's default on Linux is `-fmath-errno` (errno-setting), so this is not already implied.
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
+
+# `-fno-math-errno` lets the compiler fold, hoist, and eliminate libm calls. That can remove the
+# last `src/`-side references to a libm function, leaving its only references in contrib objects
+# (e.g. usearch, arrow) that are linked after our in-tree `glibc-compatibility` math archive. Since
+# an archive member is pulled only to satisfy an already-undefined symbol, the in-tree object is
+# never extracted and the reference binds to shared glibc's newer symbol version, which the
+# compatibility check rejects (max allowed GLIBC version is 2.4 on amd64, 2.18 on aarch64). Force
+# our in-tree `musl` implementations to be pulled from the static archive so they preempt glibc,
+# in the same spirit as the explicit `memcpy` interposition in `clickhouse_add_executable` below.
+#
+# Both the single-precision functions (new glibc version `@GLIBC_2.27`) and the double-precision
+# ones (`@GLIBC_2.29`) are pinned. The doubles matter when `ENABLE_LLVM_LIBC_MATH=OFF`: in that
+# configuration llvm-libc does not provide them, so `exp`/`log`/`pow`/`exp2`/`log2` are available
+# only from the earlier `glibc-compatibility` archive and a later contrib reference can otherwise
+# bind to glibc's `@GLIBC_2.29` symbols above the floor. With llvm-libc on they are already pulled
+# from it, so the extra `-u` requests are harmless no-ops.
+if (GLIBC_COMPATIBILITY)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f -Wl,-u,log -Wl,-u,pow -Wl,-u,exp -Wl,-u,exp2 -Wl,-u,log2")
+endif ()
 
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)

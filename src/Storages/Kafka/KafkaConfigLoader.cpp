@@ -526,6 +526,7 @@ void updateConfigurationFromConfig(
     // Configure interceptor to change thread name
     //
     // TODO: add interceptors support into the cppkafka.
+    // XXX:  rdkafka uses pthread_set_name_np(), but glibc-compatibility overrides it to noop.
     {
         // This should be safe, since we wait the rdkafka object anyway.
         void * self = static_cast<void *>(&storage);
