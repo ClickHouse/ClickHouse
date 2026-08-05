@@ -6,163 +6,130 @@
 # shows, and `unstable` means its output is random and any outcome is accepted.
 # An entry is not an excuse: fix the example and drop the line whenever you can.
 
-AggregateFunction/anyHeavy#0                    error  # the example reads a demo dataset that the server under test does not have
-AggregateFunction/categoricalInformationValue#0 error  # the example reads a demo dataset that the server under test does not have
-AggregateFunction/categoricalInformationValue#1 error  # the example reads a demo dataset that the server under test does not have
-AggregateFunction/flameGraph#0                  error  # the example reads a demo dataset that the server under test does not have
-AggregateFunction/flameGraph#1                  error  # the example reads a demo dataset that the server under test does not have
-AggregateFunction/flameGraph#2                  error  # the example reads a demo dataset that the server under test does not have
-AggregateFunction/flameGraph#3                  error  # the example reads a demo dataset that the server under test does not have
-AggregateFunction/groupArraySample#0            unstable  # the output is not the same on every run
-AggregateFunction/groupArraySample#2            unstable  # the output is not the same on every run
-AggregateFunction/kolmogorovSmirnovTest#0       unstable  # the output is not the same on every run
-AggregateFunction/kolmogorovSmirnovTest#1       unstable  # the output is not the same on every run
-AggregateFunction/stddevPopStable#0             unstable  # the output is not the same on every run
-AggregateFunction/topK#0                        error  # the example reads a demo dataset that the server under test does not have
-DatabaseEngine/URL#0                            error  # the example reads an illustrative URL that serves no data
-Function/FQDN#0                                 output  # the response describes the server or the machine it runs on
-Function/IPv4NumToStringClassC#0                error  # the example reads a demo dataset that the server under test does not have
-Function/IPv6NumToString#1                      error  # the example reads a demo dataset that the server under test does not have
-Function/IPv6NumToString#2                      error  # the example reads a demo dataset that the server under test does not have
-Function/UTCTimestamp#0                         unstable  # the output is not the same on every run
-Function/YYYYMMDDToDate#0                       output  # the documented response is out of date; it could not be rewritten automatically
-Function/YYYYMMDDhhmmssToDateTime64#0           output  # the documented response is out of date; it could not be rewritten automatically
-Function/addressToLine#0                        unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
-Function/addressToLine#1                        output  # the response carries a path or a database name of the machine this ran on
-Function/addressToLine#2                        unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
-Function/addressToLineWithInlines#0             output  # the response carries a path or a database name of the machine this ran on
-Function/addressToLineWithInlines#1             unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
-Function/addressToSymbol#0                      unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
-Function/addressToSymbol#1                      output  # the documented response is out of date; it could not be rewritten automatically
-Function/addressToSymbol#2                      unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
-Function/aiClassify#0                           error  # the example calls an external model provider, which needs credentials
-Function/aiClassify#1                           error  # the example reads a demo dataset that the server under test does not have
-Function/aiEmbed#0                              error  # the example calls an external model provider, which needs credentials
-Function/aiEmbed#1                              error  # the example calls an external model provider, which needs credentials
-Function/aiEmbed#2                              error  # the example reads a demo dataset that the server under test does not have
-Function/aiExtract#0                            error  # the example calls an external model provider, which needs credentials
-Function/aiExtract#1                            error  # the example reads a demo dataset that the server under test does not have
-Function/aiGenerate#0                           error  # the example calls an external model provider, which needs credentials
-Function/aiGenerate#1                           error  # the example calls an external model provider, which needs credentials
-Function/aiGenerate#2                           error  # the example reads a demo dataset that the server under test does not have
-Function/aiTranslate#0                          error  # the example calls an external model provider, which needs credentials
-Function/aiTranslate#1                          error  # the example reads a demo dataset that the server under test does not have
-Function/arrayEnumerateUniq#2                   error  # the example reads a demo dataset that the server under test does not have
-Function/arrayPartialShuffle#0                  unstable  # the output is not the same on every run
-Function/arrayPartialShuffle#1                  unstable  # the output is random and sometimes equals the documented one
-Function/arrayPartialShuffle#2                  unstable  # the output is not the same on every run
-Function/arrayRandomSample#0                    unstable  # the output is random and sometimes equals the documented one
-Function/arrayRandomSample#1                    output  # the documented response is out of date; it could not be rewritten automatically
-Function/arrayShuffle#0                         unstable  # the output is not the same on every run
-Function/authenticatedUser#0                    error  # the example impersonates a user that has to be created and granted first
-Function/bar#0                                  error  # the example reads a demo dataset that the server under test does not have
-Function/bitShiftLeft#1                         output  # the output is binary, which cannot be written into a source file
-Function/bitShiftLeft#2                         output  # the output is binary, which cannot be written into a source file
-Function/bitShiftRight#1                        output  # the output is binary, which cannot be written into a source file
-Function/bitShiftRight#2                        output  # the output is binary, which cannot be written into a source file
-Function/bitmapBuild#0                          output  # the output is binary, which cannot be written into a source file
-Function/buildId#0                              output  # the response describes the server or the machine it runs on
-Function/catboostEvaluate#0                     error  # the example reads a demo dataset that the server under test does not have
-Function/currentDatabase#0                      output  # the response describes the server or the machine it runs on
-Function/currentDatabase#1                      output  # the response describes the server or the machine it runs on
-Function/currentQueryID#0                       unstable  # the output is not the same on every run
-Function/currentSchemas#0                       output  # the response describes the server or the machine it runs on
-Function/dateTimeToUUIDv7#0                     unstable  # the output is not the same on every run
-Function/dateTimeToUUIDv7#1                     unstable  # the output is not the same on every run
-Function/dateTrunc#0                            unstable  # the output is not the same on every run
-Function/dateTrunc#1                            unstable  # the output is not the same on every run
-Function/demangle#0                             unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
-Function/demangle#1                             output  # the documented response is out of date; it could not be rewritten automatically
-Function/demangle#2                             unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
-Function/displayName#0                          output  # the response describes the server or the machine it runs on
-Function/evalMLMethod#0                         error  # the example reads a demo dataset that the server under test does not have
-Function/filesystemAvailable#0                  output  # the response describes the server or the machine it runs on
-Function/filesystemCapacity#0                   output  # the response describes the server or the machine it runs on
-Function/filesystemUnreserved#0                 output  # the response describes the server or the machine it runs on
-Function/formatDateTime#2                       unstable  # the output is not the same on every run
-Function/fuzzBits#0                             unstable  # the output is not the same on every run
-Function/generateRandomStructure#0              unstable  # the output is not the same on every run
-Function/generateRandomStructure#1              unstable  # the output is not the same on every run
-Function/generateSerialID#0                     output  # the response describes the server or the machine it runs on
-Function/generateSerialID#1                     output  # the response describes the server or the machine it runs on
-Function/generateSerialID#2                     output  # the response describes the server or the machine it runs on
-Function/generateSerialID#3                     output  # the response describes the server or the machine it runs on
-Function/generateSerialID#4                     output  # the response describes the server or the machine it runs on
-Function/generateSnowflakeID#0                  unstable  # the output is not the same on every run
-Function/generateSnowflakeID#1                  unstable  # the output is not the same on every run
-Function/generateSnowflakeID#2                  unstable  # the output is not the same on every run
-Function/generateULID#0                         unstable  # the output is not the same on every run
-Function/generateULID#1                         unstable  # the output is not the same on every run
-Function/generateUUIDv4#0                       unstable  # the output is not the same on every run
-Function/generateUUIDv4#1                       unstable  # the output is not the same on every run
-Function/generateUUIDv7#0                       unstable  # the output is not the same on every run
-Function/generateUUIDv7#1                       unstable  # the output is not the same on every run
-Function/getMacro#0                             output  # the response describes the server or the machine it runs on
-Function/hostName#0                             output  # the response describes the server or the machine it runs on
-Function/indexHint#0                            error  # the example reads a demo dataset that the server under test does not have
-Function/localtime#0                            unstable  # the output is not the same on every run
-Function/lowCardinalityKeys#0                   unstable  # the output is not the same on every run
-Function/naiveBayesClassifier#0                 error  # the example needs a trained model dictionary
-Function/naiveBayesClassifierWithAllProbs#0     error  # the example needs a trained model dictionary
-Function/naiveBayesClassifierWithProb#0         error  # the example needs a trained model dictionary
-Function/now#0                                  unstable  # the output is not the same on every run
-Function/now#1                                  unstable  # the output is not the same on every run
-Function/now#2                                  unstable  # the output is not the same on every run
-Function/now64#0                                unstable  # the output is not the same on every run
-Function/nowInBlock#0                           unstable  # the output is not the same on every run
-Function/nowInBlock64#0                         unstable  # the output is not the same on every run
-Function/numericIndexedVectorBuild#0            output  # the output is binary, which cannot be written into a source file
-Function/obfuscateQuery#0                       unstable  # the output is not the same on every run
-Function/obfuscateQuery#1                       unstable  # the output is not the same on every run
-Function/parseDateTime64BestEffort#0            unstable  # the output is not the same on every run
-Function/rand#0                                 unstable  # the output is not the same on every run
-Function/rand64#0                               unstable  # the output is not the same on every run
-Function/randBernoulli#0                        unstable  # the output is random and sometimes equals the documented one
-Function/randBinomial#0                         unstable  # the output is not the same on every run
-Function/randCanonical#0                        unstable  # the output is not the same on every run
-Function/randChiSquared#0                       unstable  # the output is not the same on every run
-Function/randConstant#0                         unstable  # the output is not the same on every run
-Function/randConstant#1                         unstable  # the output is not the same on every run
-Function/randExponential#0                      unstable  # the output is not the same on every run
-Function/randFisherF#0                          unstable  # the output is not the same on every run
-Function/randLogNormal#0                        unstable  # the output is not the same on every run
-Function/randNegativeBinomial#0                 unstable  # the output is not the same on every run
-Function/randNormal#0                           unstable  # the output is not the same on every run
-Function/randPoisson#0                          unstable  # the output is not the same on every run
-Function/randStudentT#0                         unstable  # the output is not the same on every run
-Function/randUniform#0                          unstable  # the output is not the same on every run
-Function/randomFixedString#0                    unstable  # the output is not the same on every run
-Function/randomPrintableASCII#0                 unstable  # the output is not the same on every run
-Function/randomString#0                         unstable  # the output is not the same on every run
-Function/randomStringUTF8#0                     unstable  # the output is not the same on every run
-Function/regionToArea#0                         error  # the geobase of the test configuration does not have this hierarchy
-Function/regionToDistrict#0                     error  # the geobase of the test configuration does not have this hierarchy
-Function/reinterpretAsFixedString#0             output  # the output is binary, which cannot be written into a source file
-Function/reinterpretAsString#0                  output  # the output is binary, which cannot be written into a source file
-Function/revision#0                             output  # the response describes the server or the machine it runs on
-Function/rowNumberInAllBlocks#0                 output  # the documented response is out of date; it could not be rewritten automatically
-Function/serverUUID#0                           output  # the response describes the server or the machine it runs on
-Function/shardNum#0                             unstable  # the two shards answer in whichever order they finish
-Function/showCertificate#0                      error  # the example needs a server configured with TLS
-Function/sipHash128#0                           output  # the output is binary, which cannot be written into a source file
-Function/sipHash128Keyed#0                      output  # the output is binary, which cannot be written into a source file
-Function/sipHash128Reference#0                  output  # the output is binary, which cannot be written into a source file
-Function/sipHash128ReferenceKeyed#0             output  # the output is binary, which cannot be written into a source file
-Function/structureToCapnProtoSchema#0           unstable  # the output is not the same on every run
-Function/tid#0                                  unstable  # the output is not the same on every run
-Function/timezone#0                             output  # the response describes the server or the machine it runs on
-Function/toFixedString#0                        output  # the output is binary, which cannot be written into a source file
-Function/toInterval#1                           unstable  # the output is not the same on every run
-Function/toStartOfInterval#0                    output  # the documented response is out of date; it could not be rewritten automatically
-Function/toStartOfInterval#1                    output  # the documented response is out of date; it could not be rewritten automatically
-Function/toString#0                             unstable  # the output is not the same on every run
-Function/toYYYYMMDDhhmmss#0                     unstable  # the output is not the same on every run
-Function/today#0                                unstable  # the output depends on the current date
-Function/today#1                                unstable  # the output depends on the current date
-Function/transactionID#0                        unstable  # the output is not the same on every run
-Function/transform#0                            error  # the example reads a demo dataset that the server under test does not have
-Function/transform#1                            error  # the example reads a demo dataset that the server under test does not have
-Function/uptime#0                               output  # the response describes the server or the machine it runs on
-Function/version#0                              output  # the response describes the server or the machine it runs on
-Function/yesterday#0                            unstable  # the output depends on the current date
-Function/zookeeperSessionUptime#0               unstable  # the output grows with the uptime of the session
+AggregateFunction/groupArraySample#0      unstable  # the output is not the same on every run
+AggregateFunction/groupArraySample#2      unstable  # the output is not the same on every run
+AggregateFunction/kolmogorovSmirnovTest#0 unstable  # the output is not the same on every run
+AggregateFunction/kolmogorovSmirnovTest#1 unstable  # the output is not the same on every run
+AggregateFunction/stddevPopStable#0       unstable  # the output is not the same on every run
+DatabaseEngine/URL#0                      error  # the example reads an illustrative URL that serves no data
+Function/FQDN#0                           output  # the response describes the server or the machine it runs on
+Function/UTCTimestamp#0                   unstable  # the output is not the same on every run
+Function/YYYYMMDDToDate#0                 output  # the documented response is out of date; it could not be rewritten automatically
+Function/YYYYMMDDhhmmssToDateTime64#0     output  # the documented response is out of date; it could not be rewritten automatically
+Function/addressToLine#0                  unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
+Function/addressToLine#1                  output  # the response carries a path or a database name of the machine this ran on
+Function/addressToLine#2                  unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
+Function/addressToLineWithInlines#0       output  # the response carries a path or a database name of the machine this ran on
+Function/addressToLineWithInlines#1       unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
+Function/addressToSymbol#0                unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
+Function/addressToSymbol#1                output  # the documented response is out of date; it could not be rewritten automatically
+Function/addressToSymbol#2                unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
+Function/aiClassify#0                     error  # the example calls an external model provider, which needs credentials
+Function/aiClassify#1                     error  # the example calls an external model provider, which needs credentials
+Function/aiEmbed#0                        error  # the example calls an external model provider, which needs credentials
+Function/aiEmbed#1                        error  # the example calls an external model provider, which needs credentials
+Function/aiEmbed#2                        error  # the example calls an external model provider, which needs credentials
+Function/aiExtract#0                      error  # the example calls an external model provider, which needs credentials
+Function/aiExtract#1                      error  # the example calls an external model provider, which needs credentials
+Function/aiGenerate#0                     error  # the example calls an external model provider, which needs credentials
+Function/aiGenerate#1                     error  # the example calls an external model provider, which needs credentials
+Function/aiGenerate#2                     error  # the example calls an external model provider, which needs credentials
+Function/aiTranslate#0                    error  # the example calls an external model provider, which needs credentials
+Function/aiTranslate#1                    error  # the example calls an external model provider, which needs credentials
+Function/arrayPartialShuffle#0            unstable  # the output is not the same on every run
+Function/arrayPartialShuffle#1            unstable  # the output is random and sometimes equals the documented one
+Function/arrayPartialShuffle#2            unstable  # the output is not the same on every run
+Function/arrayRandomSample#0              unstable  # the output is random and sometimes equals the documented one
+Function/arrayRandomSample#1              output  # the documented response is out of date; it could not be rewritten automatically
+Function/arrayShuffle#0                   unstable  # the output is not the same on every run
+Function/buildId#0                        output  # the response describes the server or the machine it runs on
+Function/catboostEvaluate#0               error  # the example reads a demo dataset that the server under test does not have
+Function/currentDatabase#0                output  # the response describes the server or the machine it runs on
+Function/currentDatabase#1                output  # the response describes the server or the machine it runs on
+Function/currentQueryID#0                 unstable  # the output is not the same on every run
+Function/currentSchemas#0                 output  # the response describes the server or the machine it runs on
+Function/dateTimeToUUIDv7#0               unstable  # the output is not the same on every run
+Function/dateTimeToUUIDv7#1               unstable  # the output is not the same on every run
+Function/dateTrunc#0                      unstable  # the output is not the same on every run
+Function/dateTrunc#1                      unstable  # the output is not the same on every run
+Function/demangle#0                       unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
+Function/demangle#1                       output  # the documented response is out of date; it could not be rewritten automatically
+Function/demangle#2                       unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
+Function/displayName#0                    output  # the response describes the server or the machine it runs on
+Function/filesystemAvailable#0            output  # the response describes the server or the machine it runs on
+Function/filesystemCapacity#0             output  # the response describes the server or the machine it runs on
+Function/filesystemUnreserved#0           output  # the response describes the server or the machine it runs on
+Function/formatDateTime#2                 unstable  # the output is not the same on every run
+Function/fuzzBits#0                       unstable  # the output is not the same on every run
+Function/generateRandomStructure#0        unstable  # the output is not the same on every run
+Function/generateRandomStructure#1        unstable  # the output is not the same on every run
+Function/generateSerialID#0               output  # the response describes the server or the machine it runs on
+Function/generateSerialID#1               output  # the response describes the server or the machine it runs on
+Function/generateSerialID#2               output  # the response describes the server or the machine it runs on
+Function/generateSerialID#3               output  # the response describes the server or the machine it runs on
+Function/generateSerialID#4               output  # the response describes the server or the machine it runs on
+Function/generateSnowflakeID#0            unstable  # the output is not the same on every run
+Function/generateSnowflakeID#1            unstable  # the output is not the same on every run
+Function/generateSnowflakeID#2            unstable  # the output is not the same on every run
+Function/generateULID#0                   unstable  # the output is not the same on every run
+Function/generateULID#1                   unstable  # the output is not the same on every run
+Function/generateUUIDv4#0                 unstable  # the output is not the same on every run
+Function/generateUUIDv4#1                 unstable  # the output is not the same on every run
+Function/generateUUIDv7#0                 unstable  # the output is not the same on every run
+Function/generateUUIDv7#1                 unstable  # the output is not the same on every run
+Function/getMacro#0                       output  # the response describes the server or the machine it runs on
+Function/hostName#0                       output  # the response describes the server or the machine it runs on
+Function/localtime#0                      unstable  # the output is not the same on every run
+Function/lowCardinalityKeys#0             unstable  # the output is not the same on every run
+Function/now#0                            unstable  # the output is not the same on every run
+Function/now#1                            unstable  # the output is not the same on every run
+Function/now#2                            unstable  # the output is not the same on every run
+Function/now64#0                          unstable  # the output is not the same on every run
+Function/nowInBlock#0                     unstable  # the output is not the same on every run
+Function/nowInBlock64#0                   unstable  # the output is not the same on every run
+Function/obfuscateQuery#0                 unstable  # the output is not the same on every run
+Function/obfuscateQuery#1                 unstable  # the output is not the same on every run
+Function/parseDateTime64BestEffort#0      unstable  # the output is not the same on every run
+Function/rand#0                           unstable  # the output is not the same on every run
+Function/rand64#0                         unstable  # the output is not the same on every run
+Function/randBernoulli#0                  unstable  # the output is random and sometimes equals the documented one
+Function/randBinomial#0                   unstable  # the output is not the same on every run
+Function/randCanonical#0                  unstable  # the output is not the same on every run
+Function/randChiSquared#0                 unstable  # the output is not the same on every run
+Function/randConstant#0                   unstable  # the output is not the same on every run
+Function/randConstant#1                   unstable  # the output is not the same on every run
+Function/randExponential#0                unstable  # the output is not the same on every run
+Function/randFisherF#0                    unstable  # the output is not the same on every run
+Function/randLogNormal#0                  unstable  # the output is not the same on every run
+Function/randNegativeBinomial#0           unstable  # the output is not the same on every run
+Function/randNormal#0                     unstable  # the output is not the same on every run
+Function/randPoisson#0                    unstable  # the output is not the same on every run
+Function/randStudentT#0                   unstable  # the output is not the same on every run
+Function/randUniform#0                    unstable  # the output is not the same on every run
+Function/randomFixedString#0              unstable  # the output is not the same on every run
+Function/randomPrintableASCII#0           unstable  # the output is not the same on every run
+Function/randomString#0                   unstable  # the output is not the same on every run
+Function/randomStringUTF8#0               unstable  # the output is not the same on every run
+Function/regionToArea#0                   error  # the geobase of the test configuration does not have this hierarchy
+Function/regionToDistrict#0               error  # the geobase of the test configuration does not have this hierarchy
+Function/revision#0                       output  # the response describes the server or the machine it runs on
+Function/rowNumberInAllBlocks#0           output  # the documented response is out of date; it could not be rewritten automatically
+Function/serverUUID#0                     output  # the response describes the server or the machine it runs on
+Function/shardNum#0                       unstable  # the two shards answer in whichever order they finish
+Function/showCertificate#0                error  # the example needs a server configured with TLS
+Function/structureToCapnProtoSchema#0     unstable  # the output is not the same on every run
+Function/tid#0                            unstable  # the output is not the same on every run
+Function/timezone#0                       output  # the response describes the server or the machine it runs on
+Function/toInterval#1                     unstable  # the output is not the same on every run
+Function/toStartOfInterval#0              output  # the documented response is out of date; it could not be rewritten automatically
+Function/toStartOfInterval#1              output  # the documented response is out of date; it could not be rewritten automatically
+Function/toString#0                       unstable  # the output is not the same on every run
+Function/today#0                          unstable  # the output depends on the current date
+Function/today#1                          unstable  # the output depends on the current date
+Function/transactionID#0                  unstable  # the output is not the same on every run
+Function/transactionLatestSnapshot#0      unstable  # the snapshot counter grows with the number of transactions the server has run
+Function/transactionOldestSnapshot#0      unstable  # the snapshot counter grows with the number of transactions the server has run
+Function/uptime#0                         output  # the response describes the server or the machine it runs on
+Function/version#0                        output  # the response describes the server or the machine it runs on
+Function/yesterday#0                      unstable  # the output depends on the current date
+Function/zookeeperSessionUptime#0         unstable  # the output grows with the uptime of the session
