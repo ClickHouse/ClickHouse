@@ -79,8 +79,8 @@ TEST(PuffinFilesCacheMetrics, WaiterOfClearDiscardedLoadCountsAsMiss)
     const auto key = PuffinFilesCache::tryCreateKey("puffin.bin", "etag-waiter", 100, 200, "data/file-w.parquet", 1, 100);
     ASSERT_TRUE(key.has_value());
 
-    const auto hits_before = ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheHits].load();
-    const auto misses_before = ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheMisses].load();
+    const auto hits_before = ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheHits];
+    const auto misses_before = ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheMisses];
 
     std::promise<void> load_started;
     std::promise<void> allow_load_finish;
@@ -132,8 +132,8 @@ TEST(PuffinFilesCacheMetrics, WaiterOfClearDiscardedLoadCountsAsMiss)
 
     EXPECT_EQ(load_calls.load(), 1u);
     EXPECT_FALSE(waiter_load_called.load());
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheHits].load() - hits_before, 0u);
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheMisses].load() - misses_before, 2u);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheHits] - hits_before, 0u);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheMisses] - misses_before, 2u);
 }
 
 TEST(PuffinFilesCacheMetrics, OrdinaryHitAndMissCounters)
