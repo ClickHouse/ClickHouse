@@ -70,8 +70,14 @@ SETTINGS enable_compression = 1;
 | DATE                             | [Date](/reference/data-types/date)               |
 | DATETIME, TIMESTAMP              | [DateTime](/reference/data-types/datetime)       |
 | BINARY                           | [FixedString](/reference/data-types/fixedstring) |
+| POINT                            | [Point](/reference/data-types/geo#point)         |
+| LINESTRING                       | [LineString](/reference/data-types/geo#linestring) |
+| POLYGON                          | [Polygon](/reference/data-types/geo#polygon)     |
+| MULTILINESTRING                  | [MultiLineString](/reference/data-types/geo#multilinestring) |
+| MULTIPOLYGON                     | [MultiPolygon](/reference/data-types/geo#multipolygon) |
+| GEOMETRY                         | [Geometry](/reference/data-types/geo#geometry)   |
 
-All other MySQL data types are converted into [String](/reference/data-types/string).
+The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](/reference/settings/session-settings/mysql#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](/reference/data-types/geo#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](/reference/data-types/string) (the raw WKB) like all other MySQL data types.
 
 [Nullable](/reference/data-types/nullable) is supported.
 

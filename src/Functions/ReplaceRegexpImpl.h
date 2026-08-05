@@ -201,11 +201,14 @@ struct ReplaceRegexpImpl
                 {
                     std::string_view replacement;
                     if (instr.substitution_num >= 0)
-                        replacement = {matches[instr.substitution_num].data(), matches[instr.substitution_num].size()};
+                        replacement = matches[instr.substitution_num];
                     else
                         replacement = instr.literal;
                     res_data.resize(res_data.size() + replacement.size());
-                    memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+                    /// re2 reports a capturing group that did not participate in the match as a null
+                    /// string_view, and passing that to memcpy is undefined behavior even for a zero size.
+                    if (!replacement.empty())
+                        memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                     res_offset += replacement.size();
                     units_since_charge += 1 + replacement.size() / ReplaceCancellationBudget::bytes_per_unit;
                     if (units_since_charge >= ReplaceCancellationBudget::units_per_instruction_charge)
