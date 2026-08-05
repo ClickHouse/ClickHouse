@@ -1952,6 +1952,61 @@ FROM tab
 WHERE (a > 3) AND (b < 3)
 ```
 
+## formatQueryFromJSON {#formatQueryFromJSON}
+
+Introduced in: v26.8.0
+
+Takes a JSON representation of a SQL AST (as produced by `parseQueryToJSON`) and formats it back into a SQL query string.
+
+With one argument, produces canonically formatted SQL.
+With two arguments `(json, original_query)`, preserves comments, whitespace, and indentation from the original query on a best-effort basis.
+
+The deserialized AST is bounded by the current session's `max_ast_depth` and `max_ast_elements` settings.
+Together with `parseQueryToJSON`, this function enables programmatic inspection and transformation of queries
+through their JSON AST form.
+
+
+**Syntax**
+
+```sql
+formatQueryFromJSON(json[, original_query])
+```
+
+**Arguments**
+
+- `json` — A JSON string representing a SQL AST. [`String`](/reference/data-types/string)
+- `original_query` — Optional. The original SQL query to preserve formatting from. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+A SQL query string. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Round-trip**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'));
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'))─┐
+│ SELECT a, b FROM t WHERE x > 1                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Preserve formatting**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t');
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t')─┐
+│ SELECT /* comment */ a FROM t                                                             │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## formatQueryOrNull {#formatQueryOrNull}
 
 Introduced in: v23.11.0
@@ -4351,6 +4406,54 @@ SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 
 
 ```response title=Response
 true
+```
+
+## parseQueryToJSON {#parseQueryToJSON}
+
+Introduced in: v26.8.0
+
+Parses a SQL query string into its AST (Abstract Syntax Tree) and returns a JSON representation of that tree.
+The resulting JSON can be passed to `formatQueryFromJSON` to reconstruct the SQL query, or sent directly
+to the server using the `clickhouse_json` value of the `dialect` setting (gated by `allow_experimental_json_ast_dialect`).
+
+This is useful for tools that want to inspect or transform queries programmatically without going through
+the SQL grammar.
+
+Not every SQL query has a faithful JSON representation. Queries that carry data the JSON form cannot
+reproduce (for example inline `INSERT ... VALUES` / `INSERT ... FORMAT` data) and AST node types that do
+not yet implement JSON serialization are rejected with `BAD_ARGUMENTS`, rather than producing JSON that
+`formatQueryFromJSON` could not read back.
+
+Parsing limits (`max_query_size`, `max_parser_depth`, `max_parser_backtracks`) are taken from the current
+session settings.
+
+
+**Syntax**
+
+```sql
+parseQueryToJSON(sql)
+```
+
+**Arguments**
+
+- `sql` — A SQL query string to parse. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+A JSON string representing the AST. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Simple SELECT**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1'));
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT 1'))─┐
+│ SELECT 1                                          │
+└───────────────────────────────────────────────────┘
 ```
 
 ## parseReadableSize {#parseReadableSize}

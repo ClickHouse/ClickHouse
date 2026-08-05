@@ -11,10 +11,12 @@
 # gracefully and leave the server running.
 
 import os
+import re
 import time
 
 import pytest
 
+import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,9 +50,43 @@ def use_keeper_config(config_name):
     )
 
 
+def assert_negotiated_session_timeout(expected_ms):
+    """Assert the server enforces expected_ms for the server's own Keeper session.
+
+    The configs here set the server's *max* session timeout; if that cap drops to or below the
+    client's default request the handshake silently clamps every session, and a stall longer than
+    the clamped value then kills the session under whatever Keeper call is in flight.
+
+    Only the session's *existence* is polled: with no Replicated database yet, the server's own
+    session is opened by DDLWorker startup, which is an AsyncLoader job that restart_clickhouse()
+    does not wait for. The timeout value itself is never retried, so a clamped session fails on
+    the first read.
+    """
+    deadline = time.monotonic() + 30
+    while True:
+        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="cons")
+        # 'cons' answers on its own connection too, and that connection never completed a
+        # handshake: its session_id is the -1 initializer, which still passes the
+        # 'session_id != 0' guard in dumpStats, and session_timeout is never assigned for it, so
+        # it reports sid=0xffffffffffffffff with to=0. Skip it and read the real sessions.
+        timeouts = [
+            int(m.group(1))
+            for line in data.split("\n")
+            if line.strip() and "sid=0xffffffffffffffff" not in line
+            for m in [re.search(r"\bto=(\d+)", line)]
+            if m
+        ]
+        if timeouts or time.monotonic() >= deadline:
+            break
+        time.sleep(0.5)
+    assert timeouts, f"no established Keeper session found in cons output:\n{data}"
+    assert all(t == expected_ms for t in timeouts), (expected_ms, timeouts, data)
+
+
 def test_refreshable_mv_attach_without_multi_read(started_cluster):
     use_keeper_config("enable_keeper_multi_read.xml")
     node.restart_clickhouse()
+    assert_negotiated_session_timeout(30000)
 
     node.query(
         "CREATE DATABASE rdb ENGINE = Replicated('/clickhouse/rdb', '{shard}', '{replica}')"
@@ -76,6 +112,7 @@ def test_refreshable_mv_attach_without_multi_read(started_cluster):
     # re-attaches rdb.mv (attach=true), which is exactly the path that used to crash.
     use_keeper_config("enable_keeper_no_multi_read.xml")
     node.restart_clickhouse()
+    assert_negotiated_session_timeout(30000)
 
     # The server must be up and answering queries (no crash, no crash-loop).
     assert node.query("SELECT 1").strip() == "1"
@@ -159,6 +196,7 @@ def test_refreshable_mv_attach_feature_flag_propagation_race(started_cluster):
     # Downgrade Keeper AND make the constructor miss the downgrade (simulating the race).
     use_keeper_config("enable_keeper_no_multi_read_simulate_attach_race.xml")
     node.restart_clickhouse()
+    assert_negotiated_session_timeout(30000)
 
     # The server must be up and answering queries (no crash, no crash-loop).
     assert node.query("SELECT 1").strip() == "1"
