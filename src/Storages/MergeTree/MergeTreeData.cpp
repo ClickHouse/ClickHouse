@@ -1217,6 +1217,22 @@ void MergeTreeData::checkProperties(
                     "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
                     projection.name);
             }
+
+            /// A projection cannot turn column IDs on by itself: its parts are stamped from the
+            /// table's mapping, and the experimental gate is checked once, for the table. Compared
+            /// against the table's setting, not its mapping, which CREATE persists after this runs.
+            if (!attach
+                && (*settings)[MergeTreeSetting::serialization_info_version] != MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+                && (*getSettings(&projection.settings_changes))[MergeTreeSetting::serialization_info_version]
+                    == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Projection {} sets `serialization_info_version = 'with_column_ids'`, but table {} does not use column IDs. "
+                    "A projection follows its table's setting; it cannot enable column IDs on its own",
+                    projection.name, getStorageID().getNameForLogs());
+            }
+
             projections_names.insert(projection.name);
         }
     }
