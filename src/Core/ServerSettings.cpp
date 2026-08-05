@@ -52,6 +52,7 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/XML/NamePool.h>
 #include <Poco/DOM/Element.h>
+#include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/DOM/Node.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <cstdlib>
@@ -2605,14 +2606,18 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// unresolvable top-level `<include from_zk=.../>` case.
         bool has_unresolvable_users_include_from_from_zk = false;
 
-        /// The raw top-level `<include_from>` declaration of one users-config file, before the
+        /// One raw top-level `<include_from>` sibling of one users-config file, before the
         /// users-config merge. `UsersConfigAccessStorage::load` feeds each active users config
         /// through its own `ConfigProcessor`, which merges the file with its `users.d`/`conf.d`
         /// fragments *first* and only then reads the single merged `<include_from>` — so a later
-        /// fragment can `replace` or `remove` an earlier source. Record each file's raw declaration
-        /// here and let the caller fold the chain with the merger's semantics; unioning the raw
-        /// pre-merge values instead would keep a stale/overridden source, letting it exempt an
-        /// unrelated unknown server key (or latch an already-removed `from_zk` bail-out).
+        /// fragment can `replace` or `remove` an earlier source, and a file may carry several
+        /// `<include_from>` siblings (e.g. a `remove` followed by a fresh declaration, which the
+        /// merger appends after dropping the old node). Record every sibling of every file, in
+        /// document order, and let the caller replay the merger's semantics over the whole chain;
+        /// unioning the raw pre-merge values instead would keep a stale/overridden source, letting
+        /// it exempt an unrelated unknown server key (or latch an already-removed `from_zk`
+        /// bail-out), while reading only the first sibling per file would lose a source that a
+        /// later sibling of the same file re-declares.
         struct UsersIncludeFromDecl
         {
             bool has_remove = false;
@@ -2621,14 +2626,19 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             bool has_from_env = false;
             String from_env_name;
             bool has_from_zk = false;
+            /// The merge identity of the node: `mergeRecursive` pairs a fragment element with an
+            /// element of the accumulated tree that has the same name and the same
+            /// non-substitution, non-`remove`/`replace` attributes (see `getElementIdentifier`),
+            /// so two `<include_from>` nodes whose remaining attributes differ never merge.
+            String merge_identity;
         };
 
         /// Returns true iff the file is an actual merge candidate — i.e. it exists, parses, and has
         /// a root the merger accepts. Only such files contribute their top-level tags to the merged
         /// config, so only they belong in `merge_files`. When `is_server_file` is set, also collects
         /// any top-level `<include incl="X"/>` reference name; otherwise records the file's raw
-        /// top-level `<include_from>` declaration into `users_include_from` for the caller to fold.
-        auto scan_file = [&](const fs::path & p, bool is_server_file, std::optional<UsersIncludeFromDecl> * users_include_from = nullptr) -> bool
+        /// top-level `<include_from>` siblings into `users_include_from` for the caller to fold.
+        auto scan_file = [&](const fs::path & p, bool is_server_file, std::vector<UsersIncludeFromDecl> * users_include_from = nullptr) -> bool
         {
             if (!fs::exists(p))
                 return false;
@@ -2676,13 +2686,16 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         /// whitelists an unknown key) and false positives (a removed source wrongly
                         /// suppresses the `/etc/metrika.xml` fallback). The users config is a separate
                         /// `ConfigProcessor` invocation whose merged `<include_from>` is not exposed
-                        /// on the server `config`, so record its raw declaration for the caller to
-                        /// replay the merge across the users config's own fragment chain. Only the
-                        /// first `<include_from>` matters: `processConfig` reads the merged value via
-                        /// `getNodeByPath`, which yields the first node of that name.
+                        /// on the server `config`, so record its raw declarations for the caller to
+                        /// replay the merge across the users config's own fragment chain. Every
+                        /// sibling matters, not just the first: the merger walks a fragment's
+                        /// siblings in document order, so e.g. an `<include_from remove="remove"/>`
+                        /// followed by a plain `<include_from>` drops the old node and appends the
+                        /// new one, which then becomes the first — and hence effective — node that
+                        /// `processConfig` later reads via `getNodeByPath`.
                         if (is_server_file)
                             continue;
-                        if (users_include_from && !users_include_from->has_value())
+                        if (users_include_from)
                         {
                             auto * elem = static_cast<Poco::XML::Element *>(child);
                             UsersIncludeFromDecl decl;
@@ -2693,7 +2706,31 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             if (decl.has_from_env)
                                 decl.from_env_name = elem->getAttribute("from_env");
                             decl.has_from_zk = elem->hasAttribute("from_zk");
-                            *users_include_from = std::move(decl);
+
+                            Poco::AutoPtr<Poco::XML::NamedNodeMap> attrs(elem->attributes());
+                            std::vector<std::pair<String, String>> identity_attrs;
+                            for (const auto * attr = attrs->item(0); attr; attr = attr->nextSibling())
+                            {
+                                const String & attr_name = attr->nodeName();
+                                if (attr_name == "remove" || attr_name == "replace"
+                                    || std::find(
+                                           ConfigProcessor::SUBSTITUTION_ATTRS.begin(),
+                                           ConfigProcessor::SUBSTITUTION_ATTRS.end(),
+                                           attr_name)
+                                        != ConfigProcessor::SUBSTITUTION_ATTRS.end())
+                                    continue;
+                                identity_attrs.emplace_back(attr_name, attr->getNodeValue());
+                            }
+                            ::sort(identity_attrs.begin(), identity_attrs.end());
+                            for (const auto & [attr_name, attr_value] : identity_attrs)
+                            {
+                                decl.merge_identity += attr_name;
+                                decl.merge_identity += '\0';
+                                decl.merge_identity += attr_value;
+                                decl.merge_identity += '\0';
+                            }
+
+                            users_include_from->push_back(std::move(decl));
                         }
                     }
                     else if (is_server_file && child->nodeName() == "include")
@@ -2852,74 +2889,139 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// Scan every active users config and the fragments merged into it, unless it is the main
         /// config (already scanned). Fold each config's raw `<include_from>` declarations into the
         /// single *effective* value its own `ConfigProcessor` invocation would read from the merged
-        /// tree, replaying `mergeRecursive`'s semantics across the fragment chain: `remove` drops
-        /// the node, `replace` substitutes it wholesale, and a default merge replaces the text
-        /// (dropping the substitution attributes when the later node carries a value) while the
-        /// later node's substitution attributes override. Only the effective source may exempt keys
-        /// or trigger the `from_zk` bail-out — a stale, overridden source must do neither.
+        /// tree, replaying `mergeRecursive`'s semantics across the fragment chain over an ordered
+        /// model of the merged tree's `<include_from>` nodes: `remove` erases the paired node,
+        /// `replace` substitutes it in place, a default merge edits it in place, and an unpaired
+        /// fragment node is appended at the end. `processConfig` then reads the *first* surviving
+        /// node (`getNodeByPath`). Only that effective source may exempt keys or trigger the
+        /// `from_zk` bail-out — a stale, overridden source must do neither, and a source
+        /// re-declared by a later sibling of the same fragment must not be lost.
         for (const auto & users_path : users_paths)
         {
             if (users_path == fs::path(config_path))
                 continue;
 
-            std::optional<UsersIncludeFromDecl> effective_include_from;
-            auto fold_users_file = [&](const fs::path & users_file)
+            /// The `<include_from>` elements of the merged users-config tree, in document order.
+            std::vector<UsersIncludeFromDecl> merged_include_from_nodes;
+
+            auto fold_users_file = [&](const fs::path & users_file, bool is_merge_fragment)
             {
-                std::optional<UsersIncludeFromDecl> decl;
-                if (!scan_file(users_file, /*is_server_file=*/false, &decl) || !decl)
+                std::vector<UsersIncludeFromDecl> decls;
+                if (!scan_file(users_file, /*is_server_file=*/false, &decls))
                     return;
-                if (decl->has_remove)
+
+                if (!is_merge_fragment)
                 {
-                    effective_include_from.reset();
-                }
-                else if (decl->has_replace || !effective_include_from)
-                {
-                    effective_include_from = std::move(decl);
-                }
-                else
-                {
-                    /// Default merge: `mergeRecursive` strips the target's non-whitespace text and
-                    /// appends the later node's, so the later text always wins (even when empty).
-                    /// When the later node has a value, the target's substitution attributes are
-                    /// removed (`SUBSTITUTION_ATTRS`); `mergeAttributes` then overlays the later
-                    /// node's attributes on whatever remains.
-                    effective_include_from->text = decl->text;
-                    if (!decl->text.empty())
+                    /// The users config itself is the merge *base*: `mergeRecursive` interprets
+                    /// `remove`/`replace` only on the fragment side, so the base file's own nodes
+                    /// simply seed the tree in document order, attributes uninterpreted.
+                    for (auto & decl : decls)
                     {
-                        effective_include_from->has_from_env = false;
-                        effective_include_from->from_env_name.clear();
-                        effective_include_from->has_from_zk = false;
+                        decl.has_remove = false;
+                        decl.has_replace = false;
+                        merged_include_from_nodes.push_back(std::move(decl));
                     }
-                    if (decl->has_from_env)
+                    return;
+                }
+
+                /// Replay `mergeRecursive` for this fragment: it indexes the tree's nodes once (a
+                /// multimap in document order), then walks the fragment's siblings in document
+                /// order; each sibling pairs with the first not-yet-paired tree node of the same
+                /// merge identity. Nodes appended by this same fragment are not in the index, so a
+                /// later sibling of the same fragment cannot merge into them.
+                const size_t matchable_count = merged_include_from_nodes.size();
+                std::vector<char> paired(matchable_count, 0);
+                std::vector<char> erased(matchable_count, 0);
+                for (auto & decl : decls)
+                {
+                    size_t match = matchable_count;
+                    for (size_t i = 0; i < matchable_count; ++i)
                     {
-                        effective_include_from->has_from_env = true;
-                        effective_include_from->from_env_name = decl->from_env_name;
+                        if (!paired[i] && merged_include_from_nodes[i].merge_identity == decl.merge_identity)
+                        {
+                            match = i;
+                            break;
+                        }
                     }
-                    if (decl->has_from_zk)
-                        effective_include_from->has_from_zk = true;
+                    if (match == matchable_count)
+                    {
+                        /// No pair in the tree: a `remove` is dropped, anything else (including a
+                        /// dangling `replace`) is appended as-is at the end.
+                        if (!decl.has_remove)
+                        {
+                            decl.has_remove = false;
+                            decl.has_replace = false;
+                            merged_include_from_nodes.push_back(std::move(decl));
+                        }
+                        continue;
+                    }
+                    paired[match] = 1;
+                    UsersIncludeFromDecl & target = merged_include_from_nodes[match];
+                    if (decl.has_remove)
+                    {
+                        erased[match] = 1;
+                    }
+                    else if (decl.has_replace)
+                    {
+                        decl.has_remove = false;
+                        decl.has_replace = false;
+                        target = std::move(decl);
+                    }
+                    else
+                    {
+                        /// Default merge edits the paired node in place: `mergeRecursive` strips
+                        /// the target's non-whitespace text and appends the fragment's, so the
+                        /// fragment's text always wins (even when empty). When the fragment node
+                        /// carries a value, the target's substitution attributes are removed
+                        /// (`SUBSTITUTION_ATTRS`); `mergeAttributes` then overlays the fragment
+                        /// node's attributes on whatever remains.
+                        target.text = decl.text;
+                        if (!decl.text.empty())
+                        {
+                            target.has_from_env = false;
+                            target.from_env_name.clear();
+                            target.has_from_zk = false;
+                        }
+                        if (decl.has_from_env)
+                        {
+                            target.has_from_env = true;
+                            target.from_env_name = decl.from_env_name;
+                        }
+                        if (decl.has_from_zk)
+                            target.has_from_zk = true;
+                    }
+                }
+                /// Drop the nodes this fragment removed, preserving the order of the survivors
+                /// (appended nodes sit past `matchable_count` and are never erased here).
+                for (size_t i = matchable_count; i-- > 0;)
+                {
+                    if (erased[i])
+                        merged_include_from_nodes.erase(merged_include_from_nodes.begin() + i);
                 }
             };
-            fold_users_file(users_path);
+            fold_users_file(users_path, /*is_merge_fragment=*/false);
             for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
-                fold_users_file(merge_file);
+                fold_users_file(merge_file, /*is_merge_fragment=*/true);
 
-            if (!effective_include_from)
+            if (merged_include_from_nodes.empty())
                 continue;
 
-            /// Resolve the effective declaration exactly like `doIncludesRecursive` resolves the
-            /// merged node: a literal value wins; otherwise `from_env` is resolvable here, while
-            /// `from_zk` cannot be resolved at config-validation time, so record it and bail out
-            /// below rather than risk rejecting the source's top-level tags — fail open, never
-            /// refuse to start a valid config.
-            String src = effective_include_from->text;
+            /// Resolve the effective declaration — the first surviving node, which is what
+            /// `processConfig` reads via `getNodeByPath` — exactly like `doIncludesRecursive`
+            /// resolves the merged node: a literal value wins; otherwise `from_env` is resolvable
+            /// here, while `from_zk` cannot be resolved at config-validation time, so record it and
+            /// bail out below rather than risk rejecting the source's top-level tags — fail open,
+            /// never refuse to start a valid config.
+            const UsersIncludeFromDecl & effective_include_from = merged_include_from_nodes.front();
+            String src = effective_include_from.text;
             if (src.empty())
             {
-                if (effective_include_from->has_from_env)
+                if (effective_include_from.has_from_env)
                 {
-                    if (const char * env_val = std::getenv(effective_include_from->from_env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
+                    if (const char * env_val = std::getenv(effective_include_from.from_env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
                         src = env_val;
                 }
-                else if (effective_include_from->has_from_zk)
+                else if (effective_include_from.has_from_zk)
                 {
                     has_unresolvable_users_include_from_from_zk = true;
                 }
