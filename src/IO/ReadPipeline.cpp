@@ -177,15 +177,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (source->objects.empty())
         return std::make_unique<ReadBufferFromEmptyFile>();
 
-    /// Resolved here for the same reason as `query_id` below, and above the executor
-    /// return so it stays correct if the executor is instrumented later.
-    QueryStatusPtr query_status;
-    if (source->read_settings.remote_fs_settings.interruptible_reads)
-    {
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            query_status = query_context->getProcessListElementSafe();
-    }
-
     /// The executor owns the whole read, so it returns before the `wrap*` stages.
     if (auto pipeline_buf = tryBuildReaderExecutor())
         return pipeline_buf;
@@ -195,6 +186,14 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// gather/impl creators that may run on threadpool workers without query
     /// context, so calling `CurrentThread::getQueryId` there would return "".
     const std::string query_id(CurrentThread::getQueryId());
+
+    /// Resolved on this thread for the same reason as `query_id` above.
+    QueryStatusPtr query_status;
+    if (source->read_settings.remote_fs_settings.interruptible_reads)
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+    }
 
     auto impl = gather
         ? buildGatherStage(query_id, query_status) // Stages 1+2+3 (+3.5 DC)
@@ -221,6 +220,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path "
             "(caches not yet supported by the executor)");
+        return nullptr;
+    }
+
+    /// The executor has no interruption point, so serving this read would silently drop the
+    /// caller's opt-in. Fall back to the gather path, which honors it.
+    if (settings.remote_fs_settings.interruptible_reads)
+    {
+        LOG_DEBUG(log,
+            "use_reader_executor: falling back to the legacy read path "
+            "(interruptible reads not yet supported by the executor)");
         return nullptr;
     }
 

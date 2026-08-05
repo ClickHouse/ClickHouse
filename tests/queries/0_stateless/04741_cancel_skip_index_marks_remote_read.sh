@@ -108,6 +108,48 @@ $CLICKHOUSE_CLIENT --query "
     WHERE database = currentDatabase() AND table = 't_marks_cancel' AND active;
 "
 
+# The same read with the executor requested. `use_reader_executor` needs a non-threadpool read
+# method to be taken at all (a threadpool method adds async prefetch, which the executor does not
+# support and already falls back for), so both settings are required to exercise it.
+exec_query_id="04741_exec_${CLICKHOUSE_DATABASE}"
+
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM DROP MARK CACHE;
+    SYSTEM DROP INDEX MARK CACHE;
+    SYSTEM DROP FILESYSTEM CACHE;
+"
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP"
+
+$CLICKHOUSE_CLIENT --query_id "$exec_query_id" \
+    --max_read_buffer_size 500 \
+    --use_reader_executor 1 \
+    --remote_filesystem_read_method read \
+    --query "SELECT count() FROM t_marks_cancel WHERE hasToken(s, 'tok4242')" > /dev/null 2>&1 &
+exec_query_pid=$!
+
+# The executor has no interruption point, so reaching the failpoint proves the opt-in made the
+# read fall back to the path that honors it.
+if timeout 120 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE" > /dev/null 2>&1; then
+    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$exec_query_id' ASYNC FORMAT Null"
+    $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT $FP"
+
+    verdict="FAIL: the read did not unwind after cancellation"
+    for _ in {1..600}; do
+        running=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query_id = '$exec_query_id'")
+        if [ "$running" = "0" ]; then
+            verdict="cancelled-with-reader-executor"
+            break
+        fi
+        sleep 0.1
+    done
+    echo "$verdict"
+else
+    echo "FAIL: the marks read never reached the interruption point with use_reader_executor"
+fi
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP"
+wait $exec_query_pid 2>/dev/null || true
+
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_marks_cancel SYNC"
 
 # --------------------------------------------------------------------------------------------
