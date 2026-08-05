@@ -36,6 +36,26 @@ same-named ALIAS column on both sides
 58	58
 56	56
 54	54
+two aliases with the same body
+9	9
+8	8
+7	7
+shipped through ARRAY JOIN and USING
+38
+38
+36
+54
+54
+48
+28
+26
+24
+56
+52
+48
+56
+52
+48
 parallel replicas pushed into a subquery
 58
 56
