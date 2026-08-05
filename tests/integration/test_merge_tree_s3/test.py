@@ -1067,12 +1067,18 @@ def test_no_object_storage_read_when_evicting_index_marks(cluster):
     table = "s3_index_mark_eviction"
 
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    # columns_and_secondary_indices_sizes_lazy_calculation = 0 is load-bearing: it makes
+    # loading the part probe the archive, so the part is detached as broken and destroyed and
+    # the eviction path under test runs. Without it the only probe is the one under
+    # #ifndef NDEBUG in loadRowsCount, so on a release or sanitizer build the part loads fine
+    # and both assertions below read 0 whether the fix is present or not.
     node.query(
         f"""
         CREATE TABLE {table} (k UInt64, v UInt64, INDEX mm v TYPE minmax GRANULARITY 1)
         ENGINE = MergeTree ORDER BY k
         SETTINGS storage_policy = 's3', packed_skip_index_max_bytes = 1048576,
-                 index_granularity = 8, min_bytes_for_wide_part = 0
+                 index_granularity = 8, min_bytes_for_wide_part = 0,
+                 columns_and_secondary_indices_sizes_lazy_calculation = 0
         """
     )
     node.query(f"INSERT INTO {table} SELECT number, number * 7 FROM numbers(64)")
