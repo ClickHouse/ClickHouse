@@ -17,6 +17,10 @@ SET group_by_top_k_optimization_observation_rows = 65536;
 SET optimize_trivial_group_by_limit_query = 0;
 -- One stream, so the assertions below describe a single heap.
 SET max_threads = 1;
+-- Single-node heap mechanics: under parallel replicas the no-`ORDER BY` shape
+-- is gated off entirely, and memory-bound merging turns the partial aggregation
+-- in-order, dropping the heap the assertions below observe.
+SET enable_parallel_replicas = 0;
 SET log_queries = 1;
 
 DROP TABLE IF EXISTS t_no_order_freeze;

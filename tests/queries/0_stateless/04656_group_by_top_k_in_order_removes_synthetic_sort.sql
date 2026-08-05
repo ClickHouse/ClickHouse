@@ -12,6 +12,10 @@ SET enable_group_by_top_k_optimization = 1;
 -- disables the top-K optimization for aggregate-free projections; keep it off.
 SET optimize_trivial_group_by_limit_query = 0;
 SET enable_analyzer = 1;
+-- This test observes single-node plan shapes; under parallel replicas the
+-- no-`ORDER BY` shape is gated off (the synthesized sort cannot sit above the
+-- initiator's merge), so the `Top-K` annotation would never appear.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_top_k_in_order;
 
