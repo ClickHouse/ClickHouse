@@ -11,6 +11,7 @@ The Native format is the columnar wire format ClickHouse uses to move tabular da
 
 - the body of `Data`, `Totals`, `Extremes`, `Log`, and `ProfileEvents` packets in the [native TCP protocol](/reference/interfaces/specs/NativeProtocol) (the `TableColumns` packet is **not** a Native block — it carries two binary strings, so its layout belongs to the [native protocol spec](/reference/interfaces/specs/NativeProtocol));
 - the output of `SELECT ... FORMAT Native` over HTTP;
+- the typed query parameter block appended to a `Query` packet at protocol revision `54489` and above;
 - file exports written with `INTO OUTFILE ... FORMAT Native`;
 - inter-server replication payloads.
 
@@ -269,6 +270,9 @@ All Data-family packets share the same Block wire format. The variants differ on
 | Header block  | N > 0       | 0        | Announces the result schema (column names + types). |
 | Result block  | N > 0       | M > 0    | Actual result rows. |
 | Empty block   | 0           | 0        | Sentinel — end-of-input on the client side; boundary marker on the server side. |
+| Typed query parameter block | N > 0 | 1 | One query parameter per named column; carried directly in a `Query` packet at revision `54489` and above. |
+
+An empty typed query parameter set uses the ordinary empty-block representation. Unlike a `Data` packet, a typed parameter block has no `table_name` prefix and is not an end-of-input sentinel; its position in the `Query` packet determines its meaning. See [Typed query parameter block](/interfaces/specs/NativeProtocol#typed-query-parameter-block).
 
 ### Byte-level examples {#byte-level-examples}
 
@@ -344,6 +348,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
 | `DateTime(tz)` type parameter | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | The timezone parameter is dropped from the `type` string — `DateTime('UTC')` is announced as bare `DateTime`. |
+| Typed query parameter block | `DBMS_MIN_PROTOCOL_VERSION_WITH_TYPED_QUERY_PARAMETERS` | `54489` | No Native block follows the text parameter list in a `Query` packet; clients must use text parameters. |
 
 That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped.
 
@@ -1059,13 +1064,13 @@ The geographic types alias to nested arrays and tuples:
 | Type string              | Underlying wire type        |
 |--------------------------|-----------------------------|
 | `Point`                  | `Tuple(Float64, Float64)`   |
-| `Ring`, `LineString`     | `Array(Point)`              |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`    |
 | `Polygon`, `MultiLineString` | `Array(Ring)`           |
 | `MultiPolygon`           | `Array(Polygon)`            |
 
 So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering as `(1,2)`), a `Ring` as `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`), and so on up the hierarchy.
 
-`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the six geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. As with any `Variant`, the discriminators follow the canonical name-sorted order of the geo aliases: `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`. Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
+`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the seven geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. Unlike a user-spelled `Variant`, the discriminators of `Geometry` do **not** follow the name-sorted order: they are fixed for compatibility, and new geo types are only ever appended. The mapping is `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint` (added in 26.7 — streams from older servers simply never contain discriminator `6`). Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
 
 `SimpleAggregateFunction(func, T)` is an alias for its value type `T`. It stores an already-finalized aggregate value, so its wire form and rendering are exactly those of `T` (`SimpleAggregateFunction(sum, UInt64)` is decoded as `UInt64`). Only the single-value-type form is an alias this way; the underlying type may itself be a composite.
 
@@ -1479,7 +1484,7 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 | `0x9e` | `Quantized`       |
 | `0x9f` | `ZXC`             |
 
-`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
+`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
 `0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when `allow_experimental_codecs` is set, and the method byte is always accepted on decompression.
 
