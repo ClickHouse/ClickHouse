@@ -253,17 +253,14 @@ SnapshotWriterNodeStream::SnapshotWriterNodeStream(const StorageState & storage)
 
     if (storage.mutable_memtable)
         memtables.push_back(storage.mutable_memtable->takeSnapshot());
-}
 
-size_t SnapshotWriterNodeStream::getNodeCount() const
-{
     int64_t sum = 0;
     for (const auto & r : sorted_runs)
         sum += r->node_count_delta;
     for (const auto & m : memtables)
         sum += m->node_count_delta;
     chassert(sum >= 0);
-    return size_t(sum);
+    node_count = size_t(sum);
 }
 
 void SnapshotWriterNodeStream::next()
