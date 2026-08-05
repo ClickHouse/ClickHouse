@@ -15,6 +15,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -1622,7 +1623,7 @@ static BlockIO executeQueryImpl(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
-                executeQueryInBackground(std::string_view(begin, end), context, CurrentThread::getGroup());
+                executeQueryInBackground(std::string_view(begin, end), context);
                 BlockIO io;
                 io.dispatched = true;
                 return io;
@@ -2568,7 +2569,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     return std::make_pair(std::move(ast), std::move(res));
 }
 
-void executeQueryInBackground(std::string_view query, ContextMutablePtr context, ThreadGroupPtr thread_group)
+void executeQueryInBackground(std::string_view query, ContextMutablePtr context)
 {
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -2577,13 +2578,16 @@ void executeQueryInBackground(std::string_view query, ContextMutablePtr context,
     if (context->hasSessionContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A background query context must not be attached to a session");
 
-    GlobalThreadPool::instance().scheduleOrThrow([query_text = String(query), context, thread_group]
+    GlobalThreadPool::instance().scheduleOrThrow([query_text = String(query), context]
     {
         ThreadStatus thread_status;
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
 
         try
         {
+            auto thread_group = ThreadGroup::createForQuery(context);
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
+            SCOPE_EXIT_SAFE(thread_group->memory_tracker.logPeakMemoryUsage());
+
             auto io = executeQuery(query_text, context, QueryFlags{ .background = true }).second;
             try
             {
@@ -2618,8 +2622,6 @@ void executeQueryInBackground(std::string_view query, ContextMutablePtr context,
         {
             tryLogCurrentException("executeQueryInBackground");
         }
-
-        thread_group->memory_tracker.logPeakMemoryUsage();
     });
 }
 
