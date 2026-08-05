@@ -77,7 +77,7 @@ Once configured, bitdrift timeline log rows and span views show a **View Trace**
 
 ## Deployment flexibility {#deployment-flexibility}
 
-The integration works whether ClickStack is self-managed or run as a managed offering on ClickHouse Cloud. Telemetry from bitdrift reaches the same OpenTelemetry Collector that ClickStack already uses, via OTLP over HTTP or gRPC. No changes to your ClickStack deployment are required.
+The integration works whether ClickStack is self-managed or run as a managed offering on ClickHouse Cloud, because it does not change how data reaches ClickStack. bitdrift does not export mobile telemetry into ClickStack: it captures the OpenTelemetry trace context of a request on the device and links to the backend trace that your own OpenTelemetry-instrumented services already send to ClickStack. All bitdrift needs is the address of your ClickStack UI (HyperDX) in order to build the **View Trace** link, so no changes to your ClickStack deployment or its ingestion pipeline are required.
 
 ## Next steps {#next-steps}
 
