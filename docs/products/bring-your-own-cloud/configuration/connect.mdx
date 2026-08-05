@@ -21,7 +21,7 @@ For BYOC services, the **Connect** dialog includes a **Connection via** dropdown
 - **Private load balancer** — the internal endpoint, reached over VPC peering or connected networks. Listed only when a [private load balancer](#private-load-balancer) is enabled for your infrastructure.
 - **PrivateLink** (AWS) / **Private Service Connect** (GCP) / **Private Link** (Azure) — the cloud provider's private-endpoint hostname. Listed only when a [private endpoint](#privatelink-or-private-service-connect) is enabled.
 
-Selecting a path updates the hostname in every connection example in the dialog — the HTTPS (`curl`) command, the native client, JDBC, MySQL, and the language-client snippets (Python, Node.js, Java, Go, and C#) — so you can copy a ready-to-use command for the exact path you need without editing the hostname by hand.
+Selecting a path updates the hostname in every connection example in the dialog — the HTTPS (`curl`) command, the native client, JDBC, and the language-client snippets (Python, Node.js, Java, Go, and C#) — so you can copy a ready-to-use command for the exact path you need without editing the hostname by hand.
 
 The dropdown lists only the paths enabled for your infrastructure, and the list is refreshed each time the dialog opens — a newly enabled private load balancer or PrivateLink endpoint appears the next time you open **Connect**, with no propagation delay. When only one path is available, the dropdown is shown disabled with that endpoint selected.
 
@@ -109,7 +109,7 @@ AWS PrivateLink, GCP Private Service Connect, and Azure Private Link provide the
 
 ### Connecting via a private endpoint {#connecting-via-privatelink}
 
-Complete the PrivateLink, Private Service Connect, or Private Link setup (see [Private Networking Setup](/products/bring-your-own-cloud/onboarding/network)). Once configured, you can connect to your ClickHouse service using a dedicated private-endpoint hostname. DNS resolution in your VPC/VNet automatically routes traffic through the private endpoint.
+Complete the PrivateLink, Private Service Connect, or Private Link setup (see [Private Networking Setup](/products/bring-your-own-cloud/onboarding/network)). Once configured, you can connect to your ClickHouse service using a dedicated private-endpoint hostname. DNS behavior differs by provider: on AWS, enabling **Private DNS names** on the endpoint makes DNS resolution in your VPC route traffic through it automatically. GCP Private Service Connect requires creating a wildcard DNS record on your side — see the [GCP setup guide](/products/bring-your-own-cloud/onboarding/network-gcp) — and Azure Private Link likewise requires a private DNS zone with a wildcard record linked to your VNet; contact the ClickHouse team for Azure setup assistance.
 
 The private-endpoint hostname is similar to the public endpoint, but adds a cloud-specific label between the service subdomain and the BYOC infrastructure subdomain — `vpce` on AWS, `p` on GCP, and `privatelink` on Azure. For example:
 
@@ -122,7 +122,7 @@ Once the endpoint is set up and allowlisted, select **PrivateLink** (**Private S
 
 ### Endpoint ID Allowlist {#endpoint-id-allowlist}
 
-In order to use PrivateLink, Private Service Connect, or Private Link, the Endpoint ID of your client connection must be explicitly allowed for each ClickHouse service. Please contact ClickHouse Support and provide your Endpoint IDs so they can be added to the service allowlist.
+In order to use PrivateLink, Private Service Connect, or Private Link, the Endpoint ID of your client connection must be explicitly allowed for each ClickHouse service. Add it yourself in the ClickHouse Cloud console: open the service's **Settings** page, click **Set up private endpoint**, and register the Endpoint ID — allowlisting is per service, so repeat this for each service you connect to (see the [AWS](/products/bring-your-own-cloud/onboarding/network-aws) and [GCP](/products/bring-your-own-cloud/onboarding/network-gcp) guides for the full flow). Contact ClickHouse Support if you need assistance.
 
 For detailed setup instructions, see the [Private Networking Setup guide](/products/bring-your-own-cloud/onboarding/network).
 
