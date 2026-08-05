@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
+#include <Common/DateLUT.h>
 
 #include <Common/config_version.h>
 
@@ -211,15 +212,27 @@ class FunctionCurrentSetting final : public IFunction
 {
 public:
     static constexpr auto name = "current_setting";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionCurrentSetting>(context->getCurrentDatabase()); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        /// The effective timezone of the query, as the `timezone` function reports it: `DateLUT::instance`
+        /// resolves the `session_timezone` setting of the current query context and falls back to the
+        /// server timezone when it is not set. Capturing a constant here is what `timezone` does too.
+        return std::make_shared<FunctionCurrentSetting>(context->getCurrentDatabase(), String(DateLUT::instance().getTimeZone()));
+    }
 
-    explicit FunctionCurrentSetting(String current_database_) : current_database(std::move(current_database_)) {}
+    FunctionCurrentSetting(String current_database_, String current_timezone_)
+        : current_database(std::move(current_database_)), current_timezone(std::move(current_timezone_))
+    {
+    }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    /// The result depends on the session: the current database (`search_path`) and the effective
+    /// timezone (which follows the `session_timezone` setting).
+    bool isDeterministic() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -287,7 +300,7 @@ private:
         else if (setting_name == "datestyle")
             value = "ISO, MDY";
         else if (setting_name == "timezone")
-            value = "UTC";
+            value = current_timezone;
         else if (setting_name == "search_path")
             /// Unqualified table names resolve in the connected database (`current_schema()` is
             /// `currentDatabase`), so report exactly that - not PostgreSQL's default `public`. A client
@@ -301,6 +314,7 @@ private:
     }
 
     String current_database;
+    String current_timezone;
 };
 
 }
