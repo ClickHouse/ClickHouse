@@ -48,16 +48,12 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-<<<<<<< HEAD
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
 {
     extern const char storage_cluster_read_sleep[];
-=======
-    extern const int INVALID_SETTING_VALUE;
-    extern const int BAD_ARGUMENTS;
->>>>>>> 41e66548fd0 (Merge pull request #1872 from Altinity/bugfix/antalya-26.3/fix_aggregation_with_remote_initiator)
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
