@@ -122,23 +122,77 @@ convertExtendedJSONWrapper(const rapidjson::Value & wrapper, const String & fiel
   * Both the inferred schema and the inserted rows are derived from this flattened form, so a
   * document can never produce a value for a column that is not in the schema.
   */
-/// Rejects an Extended JSON wrapper anywhere inside an array: its elements are copied verbatim,
-/// so a wrapper there would silently become a document with a `$`-named field.
-void throwIfExtendedJSONWrapperInside(const rapidjson::Value & value, const String & field_name)
+/// Replaces every Extended JSON wrapper inside a nested value with the value it wraps, so that
+/// a wrapper never reaches the inserted JSON as a document with a `$`-named field. The type the
+/// wrapper named is dropped here: a value this deep lands in a `JSON` or `Dynamic` column, which
+/// keeps the serialized form.
+rapidjson::Value convertWrappersDeep(const rapidjson::Value & value, const String & field_name, rapidjson::Document::AllocatorType & allocator)
 {
     if (isExtendedJSONWrapper(value))
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "The BSON type '{}' inside the field '{}' is not supported by an insert",
-            value.MemberBegin()->name.GetString(),
-            field_name);
+        return convertExtendedJSONWrapper(value, field_name, allocator).second;
 
     if (value.IsObject())
+    {
+        rapidjson::Value out(rapidjson::kObjectType);
         for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
-            throwIfExtendedJSONWrapperInside(it->value, field_name);
-    else if (value.IsArray())
+        {
+            rapidjson::Value key;
+            key.CopyFrom(it->name, allocator);
+            rapidjson::Value converted = convertWrappersDeep(it->value, field_name, allocator);
+            out.AddMember(key, converted, allocator);
+        }
+        return out;
+    }
+
+    if (value.IsArray())
+    {
+        rapidjson::Value out(rapidjson::kArrayType);
         for (const auto & element : value.GetArray())
-            throwIfExtendedJSONWrapperInside(element, field_name);
+        {
+            rapidjson::Value converted = convertWrappersDeep(element, field_name, allocator);
+            out.PushBack(converted, allocator);
+        }
+        return out;
+    }
+
+    rapidjson::Value out;
+    out.CopyFrom(value, allocator);
+    return out;
+}
+
+/** Converts the Extended JSON wrappers among the elements of an array. When every element is a
+  * wrapper of one and the same type, that type is returned so the column becomes an array of it -
+  * an array of `$date` values becomes `Array(DateTime64(3, 'UTC'))`; otherwise the elements keep
+  * their converted serializations and the column type is inferred from them as usual.
+  */
+std::optional<String> convertWrappersInArray(
+    const rapidjson::Value & array, const String & field_name, rapidjson::Value & out, rapidjson::Document::AllocatorType & allocator)
+{
+    std::optional<String> common_type;
+    bool all_wrappers = true;
+
+    for (const auto & element : array.GetArray())
+    {
+        if (isExtendedJSONWrapper(element))
+        {
+            auto [type, value] = convertExtendedJSONWrapper(element, field_name, allocator);
+            if (!common_type)
+                common_type = std::move(type);
+            else if (*common_type != type)
+                all_wrappers = false;
+            out.PushBack(value, allocator);
+        }
+        else
+        {
+            all_wrappers = false;
+            rapidjson::Value converted = convertWrappersDeep(element, field_name, allocator);
+            out.PushBack(converted, allocator);
+        }
+    }
+
+    if (all_wrappers && common_type)
+        return common_type;
+    return std::nullopt;
 }
 
 void flattenDocument(
@@ -176,9 +230,16 @@ void flattenDocument(
         }
 
         if (it->value.IsArray())
-            throwIfExtendedJSONWrapperInside(it->value, full_name);
+        {
+            rapidjson::Value converted(rapidjson::kArrayType);
+            if (auto element_type = convertWrappersInArray(it->value, full_name, converted, allocator))
+                wrapper_types[full_name] = fmt::format("Array({})", *element_type);
+            rapidjson::Value key(full_name.c_str(), static_cast<rapidjson::SizeType>(full_name.size()), allocator);
+            out.AddMember(key, converted, allocator);
+            continue;
+        }
 
-        if (!it->value.IsArray() && !getSimpleTypeField(it->value).has_value())
+        if (!getSimpleTypeField(it->value).has_value())
             continue;
 
         rapidjson::Value key(full_name.c_str(), static_cast<rapidjson::SizeType>(full_name.size()), allocator);
