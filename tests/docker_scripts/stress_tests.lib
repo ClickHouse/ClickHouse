@@ -8,6 +8,20 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 
+# `configure` enables the server-side AST fuzzer for the `default` user
+# (`ast_fuzzer_runs=5`, `ast_fuzzer_any_query=true`), which then also fires on the
+# maintenance queries of the test harness itself. The fuzzer runs as a query-finish
+# callback, so the connection thread executes the mutated follow-up queries before the
+# response completes and a trivial query can occupy the client for tens of seconds -
+# long enough for the readiness probe below to declare "Cannot start clickhouse-server"
+# on a server that is up. With `ast_fuzzer_any_query` the mutation is not restricted to
+# read-only statements either, so a fuzzed `SYSTEM STOP DISTRIBUTED SENDS` runs some
+# other `SYSTEM` statement during shutdown. Pin the setting off for our own queries; an
+# explicit value is marked `changed` even though it equals the default, so the client
+# sends it and it overrides the profile. `clickhouse-test` and `stress.py` pin it the
+# same way for their infrastructure queries.
+NO_AST_FUZZER="--ast_fuzzer_runs=0"
+
 function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
@@ -220,7 +234,7 @@ function stop_server()
     #
     # Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
     for i in {1..30}; do
-        if clickhouse client --receive_timeout=10 -q "SYSTEM STOP DISTRIBUTED SENDS"; then
+        if clickhouse client --receive_timeout=10 $NO_AST_FUZZER -q "SYSTEM STOP DISTRIBUTED SENDS"; then
             break
         fi
     done
@@ -291,7 +305,7 @@ function start_server()
 
     counter=0
     max_attempt=${1:-6}
-    until clickhouse-client --receive_timeout 30 --query "SELECT 1"
+    until clickhouse-client --receive_timeout 30 $NO_AST_FUZZER --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]
         then
@@ -317,7 +331,7 @@ function start_server()
 
 function check_server_start()
 {
-    clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+    clickhouse-client --receive_timeout 30 $NO_AST_FUZZER --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
         || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
         && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
         >> /test_output/test_results.tsv)

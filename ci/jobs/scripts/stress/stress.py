@@ -15,6 +15,29 @@ from subprocess import PIPE, STDOUT, Popen, call, check_output
 from typing import List, Optional
 
 
+# The stress profile (`stress_tests.lib`) enables the server-side AST fuzzer for the
+# `default` user with `ast_fuzzer_runs=5` and `ast_fuzzer_any_query=true`, so every query
+# this script runs against the server is fuzzed too. That is harmful in three ways:
+#
+#   * The fuzzer runs as a query-finish callback, so the connection thread executes the
+#     mutated follow-up queries before the response completes. A maintenance query then
+#     takes an unbounded amount of time and trips the client's `--receive_timeout`: the
+#     `system.server_settings` check in `install_thread_pool_fault_injection` read its
+#     rows in 67 ms and returned after 16.3 s, aborting the whole job before a single
+#     test ran.
+#   * With `ast_fuzzer_any_query` the mutated query is not restricted to read-only
+#     statements, so a fuzzed `DETACH DATABASE` or `KILL QUERY` from
+#     `prepare_for_hung_check` runs arbitrary DDL right before the hung check.
+#   * Fuzzing a `system.processes` query spawns new queries that then show up in the
+#     processlist the hung check is about to inspect.
+#
+# Pinning the setting on the command line is what makes it stick: the value is marked
+# `changed` even though it equals the default, so the client sends it and it overrides
+# the profile. `clickhouse-test` pins the same setting for its own infrastructure
+# queries (see `clickhouse_execute_http`).
+NO_AST_FUZZER = "--ast_fuzzer_runs=0"
+
+
 class ServerDied(Exception):
     pass
 
@@ -53,7 +76,7 @@ class RandomQueryKiller:
         try:
             # Get a random query_id, excluding our own queries and system queries
             result = check_output(
-                "clickhouse client --receive_timeout=5 -q \""
+                f"clickhouse client --receive_timeout=5 {NO_AST_FUZZER} -q \""
                 "SELECT query_id FROM system.processes "
                 "WHERE query NOT LIKE '%system.processes%' "
                 "AND query NOT LIKE '%KILL QUERY%' "
@@ -66,7 +89,8 @@ class RandomQueryKiller:
             if query_id:
                 logging.info("Killing random query: %s", query_id)
                 call(
-                    f"clickhouse client --receive_timeout=5 -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
+                    f"clickhouse client --receive_timeout=5 {NO_AST_FUZZER} "
+                    f"-q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
                     shell=True,
                     timeout=5,
                 )
@@ -283,11 +307,12 @@ def install_thread_pool_fault_injection() -> None:
     call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
 
     # Fail-close: `call_with_retry` is silent on persistent failure, so verify
-    # the injector probability is actually non-zero after reload. The server runs
-    # under thread-fuzzer injection and may not answer even a trivial query within
-    # the client's 15-second `receive_timeout` right after `SYSTEM RELOAD CONFIG`,
-    # so retry transient client failures instead of aborting the whole run on the
-    # first timeout.
+    # the injector probability is actually non-zero after reload. The stress server
+    # runs under `THREAD_FUZZER_*` injection and can be slow to answer even a trivial
+    # query within the client's 15-second `receive_timeout`, so retry transient client
+    # failures instead of aborting the whole run on the first one. A persistent failure
+    # or a zero probability still aborts. (The dominant source of timeouts here used to
+    # be the server-side AST fuzzer running on this very query; see `NO_AST_FUZZER`.)
     verify_query = make_query_command(
         "SELECT value FROM system.server_settings "
         "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
@@ -470,7 +495,7 @@ def make_query_command(query: str) -> str:
     return (
         f'clickhouse client -q "{query}" --receive_timeout=15 --max_untracked_memory=1Gi '
         "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000 "
-        "--enable-progress-table-toggle=0"
+        f"--enable-progress-table-toggle=0 {NO_AST_FUZZER}"
     )
 
 
@@ -497,7 +522,8 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
-        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
+        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && "
+        f"clickhouse client --receive_timeout=5 {NO_AST_FUZZER} -q 'SELECT 1 FORMAT Null'"
     )
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
@@ -596,7 +622,10 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = 'clickhouse client --receive_timeout=30 -q "SELECT count() FROM system.processes where elapsed > 300" '
+        query = (
+            f"clickhouse client --receive_timeout=30 {NO_AST_FUZZER} "
+            '-q "SELECT count() FROM system.processes where elapsed > 300" '
+        )
         output = (
             check_output(query, shell=True, stderr=STDOUT, timeout=30)
             .decode("utf-8")
