@@ -515,6 +515,9 @@ try
 
     query_context->setSetting("distributed_plan_force_exchange_kind", exchangeKind);
 
+    /// Each task runs its own pipeline, so `max_threads` at auto multiplies core count by task count.
+    query_context->setSetting("max_threads", 1);
+
     {
         /// Create JOIN query plan
         auto query_plan = createHashJoinQueryPlan(data_a, data_b);
