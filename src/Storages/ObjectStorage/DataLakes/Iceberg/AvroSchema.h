@@ -187,13 +187,6 @@ static constexpr const char * manifest_list_v2_schema = R"(
             ],
             "doc": "Summary for each partition",
             "field-id": 507
-        },
-        {
-            "name": "key_metadata",
-            "type": ["null", "bytes"],
-            "doc": "Encryption key metadata blob",
-            "default": null,
-            "field-id": 519
         }
     ]
 }

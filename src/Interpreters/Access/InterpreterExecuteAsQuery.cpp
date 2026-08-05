@@ -33,7 +33,7 @@ namespace
         if (!database.empty() && database != new_context->getCurrentDatabase())
             new_context->setCurrentDatabase(database);
 
-        new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
+        new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
         new_context->setProgressCallback(context->getProgressCallback());
         new_context->setProcessListElement(context->getProcessListElement());
 
@@ -87,7 +87,7 @@ BlockIO InterpreterExecuteAsQuery::execute()
     }
 
     const auto & query = query_ptr->as<const ASTExecuteAsQuery &>();
-    String target_user_name = query.target_user->as<const ASTUserNameWithHost &>().toString();
+    String target_user_name = query.target_user->toString();
     getContext()->checkAccess(AccessType::IMPERSONATE, target_user_name);
 
     if (query.subquery)
@@ -105,7 +105,6 @@ BlockIO InterpreterExecuteAsQuery::execute()
 }
 
 
-void registerInterpreterExecuteAsQuery(InterpreterFactory & factory);
 void registerInterpreterExecuteAsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
