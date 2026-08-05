@@ -423,6 +423,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
 #else
     UNUSED(objects);
+    UNUSED(successful_objects);
 #endif
 }
 
@@ -520,6 +521,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
 #else
     UNUSED(objects);
+    UNUSED(successful_objects);
 #endif
 }
 
