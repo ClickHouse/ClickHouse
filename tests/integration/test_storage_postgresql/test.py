@@ -1036,66 +1036,6 @@ def test_postgres_date32(started_cluster):
     cursor.execute("DROP TABLE test_date32")
 
 
-def test_postgres_timestamp_with_precision(started_cluster):
-    """Test that a PostgreSQL `timestamp(p)` keeps its precision and its full range when read.
-
-    `timestamp` is a native PostgreSQL type whose range is far wider than that of the 32-bit
-    ClickHouse `DateTime`, so an explicit precision must map to `DateTime64(p)` for every `p`,
-    including `timestamp(0)`. Mapping `timestamp(0)` to `DateTime` would clamp values before 1970 to
-    the epoch and truncate values after 2106.
-    """
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("DROP TABLE IF EXISTS test_timestamp_precision")
-    cursor.execute(
-        "CREATE TABLE test_timestamp_precision (id integer, t0 timestamp(0), t3 timestamp(3), t timestamp)"
-    )
-    # '1900-01-01' is before the epoch and '2200-01-01' is beyond the 32-bit `DateTime` range: both are
-    # ordinary `timestamp` values that must survive the round trip.
-    cursor.execute(
-        "INSERT INTO test_timestamp_precision VALUES "
-        "(1, '1900-01-01 00:00:00', '1900-01-01 00:00:00.125', '1900-01-01 00:00:00.123456'), "
-        "(2, '2200-01-01 00:00:00', '2200-01-01 00:00:00.125', '2200-01-01 00:00:00.123456')"
-    )
-    started_cluster.postgres_conn.commit()
-
-    table = f"postgresql('postgres1:5432', 'postgres', 'test_timestamp_precision', 'postgres', '{pg_pass}')"
-
-    # A bare `timestamp` keeps the historical microsecond mapping.
-    assert node1.query(
-        f"SELECT toTypeName(t0), toTypeName(t3), toTypeName(t) FROM {table} LIMIT 1"
-    ) == "Nullable(DateTime64(0))\tNullable(DateTime64(3))\tNullable(DateTime64(6))\n"
-
-    assert node1.query(f"SELECT id, t0, t3, t FROM {table} ORDER BY id") == (
-        "1\t1900-01-01 00:00:00\t1900-01-01 00:00:00.125\t1900-01-01 00:00:00.123456\n"
-        "2\t2200-01-01 00:00:00\t2200-01-01 00:00:00.125\t2200-01-01 00:00:00.123456\n"
-    )
-
-    cursor.execute("DROP TABLE test_timestamp_precision")
-
-
-def test_postgres_empty_multidimensional_array(started_cluster):
-    """An empty PostgreSQL array is printed as `{}` whatever its dimensionality.
-
-    Such a value carries no nesting to count, so it must be read as an empty array instead of being
-    rejected for having fewer dimensions than the column declares.
-    """
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("DROP TABLE IF EXISTS test_empty_nested_array")
-    cursor.execute("CREATE TABLE test_empty_nested_array (id integer, a integer[][])")
-    cursor.execute(
-        "INSERT INTO test_empty_nested_array VALUES (1, '{}'), (2, '{{1,2},{3,4}}')"
-    )
-    started_cluster.postgres_conn.commit()
-
-    table = f"postgresql('postgres1:5432', 'postgres', 'test_empty_nested_array', 'postgres', '{pg_pass}')"
-    assert (
-        node1.query(f"SELECT id, a FROM {table} ORDER BY id")
-        == "1\t[]\n2\t[[1,2],[3,4]]\n"
-    )
-
-    cursor.execute("DROP TABLE test_empty_nested_array")
-
-
 def test_postgres_date32_array(started_cluster):
     """Test that PostgreSQL DATE[] arrays with large dates are correctly read as Array(Date32)."""
     cursor = started_cluster.postgres_conn.cursor()

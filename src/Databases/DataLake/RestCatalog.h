@@ -112,6 +112,7 @@ public:
         std::string client_secret;
         std::string tenant_id;
         std::string bearer_token;
+        std::string refresh_token;
         Config config;
     };
     using CatalogStateVersion = MultiVersion<CatalogState>::Version;
@@ -238,6 +239,25 @@ protected:
 class OneLakeCatalog : public RestCatalog
 {
 public:
+    /// The authentication mode, fixed when the database is created:
+    /// exactly one of `onelake_bearer_token`, `onelake_refresh_token` (+ client id)
+    /// or the `onelake_client_id` + `onelake_client_secret` pair is provided.
+    enum class AuthMode
+    {
+        BearerToken,
+        RefreshToken,
+        ClientCredentials,
+    };
+
+    static AuthMode getAuthMode(const std::string & bearer_token, const std::string & refresh_token)
+    {
+        if (!bearer_token.empty())
+            return AuthMode::BearerToken;
+        if (!refresh_token.empty())
+            return AuthMode::RefreshToken;
+        return AuthMode::ClientCredentials;
+    }
+
     explicit OneLakeCatalog(
         const std::string & warehouse_,
         const std::string & base_url_,
@@ -245,6 +265,7 @@ public:
         const std::string & onelake_client_id,
         const std::string & onelake_client_secret,
         const std::string & bearer_token_,
+        const std::string & refresh_token_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
@@ -257,10 +278,11 @@ public:
 
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 
-    /// `bearer_mode` means the catalog authenticates with `onelake_bearer_token`,
-    /// otherwise with the `onelake_client_id` + `onelake_client_secret` pair.
-    /// The mode is fixed when the database is created.
-    static void validateSettingsChanges(const DB::SettingsChanges & changes, bool bearer_mode);
+    static void validateSettingsChanges(const DB::SettingsChanges & changes, AuthMode auth_mode);
+
+    /// A currently valid access token together with its expiration time, for object storage
+    /// access in refresh-token mode. Renews the token transparently when it is expired.
+    std::pair<std::string, std::chrono::system_clock::time_point> getCurrentAccessToken() const;
 
 protected:
     void applySettingsChangesToState(
@@ -269,6 +291,15 @@ protected:
         CatalogState & new_state,
         std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
         std::unique_ptr<AccessToken> & new_access_token) override;
+
+private:
+    /// Cached access token for refresh-token mode; renews it via the refresh token grant
+    /// when it is missing, expired, or `force_update` is set.
+    AccessToken getValidAccessToken(const CatalogState & catalog_state, bool force_update) const;
+
+    /// Redeems the refresh token from `catalog_state` for an access token
+    /// (`grant_type=refresh_token` against the Entra ID token endpoint).
+    AccessToken retrieveAccessTokenViaRefreshToken(const CatalogState & catalog_state) const;
 };
 
 class BigLakeCatalog : public RestCatalog
