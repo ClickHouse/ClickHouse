@@ -122,11 +122,8 @@ class WriteBuffer;
     M(CLASS_NAME, JoinOrderAlgorithm) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
-<<<<<<< HEAD
-    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy)
-=======
+    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
     M(CLASS_NAME, ExportPartitionAllOnError) \
->>>>>>> 12992af66fa (Merge pull request #1741 from Altinity/export_partition_all)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
