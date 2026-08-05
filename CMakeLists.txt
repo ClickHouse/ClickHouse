@@ -324,7 +324,9 @@ option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
 if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
-    if (LINKER_NAME MATCHES "lld")
+    # lld's MinGW driver does not implement `--time-trace` (only the ELF driver does),
+    # so the Windows link would fail with "unknown argument".
+    if (LINKER_NAME MATCHES "lld" AND NOT OS_WINDOWS)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
         set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
     endif ()
