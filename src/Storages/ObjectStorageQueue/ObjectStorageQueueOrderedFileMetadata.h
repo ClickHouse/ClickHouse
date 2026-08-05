@@ -196,6 +196,10 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     void release();
 
 private:
+    /// Drop the `local_active_nodes` registration of the bucket lock path, so that the TTL
+    /// cleanup can reap the node. Idempotent: every terminal path of the holder calls it.
+    void unregisterLocalActiveNode();
+
     BucketInfoPtr bucket_info;
     Stopwatch age_watch;
     int32_t bucket_lock_version = 0;
@@ -203,6 +207,9 @@ private:
     /// and release must use the same TTL as the cleanup.
     const std::atomic<size_t> & persistent_processing_node_ttl_seconds;
     ObjectStorageQueueLocalActiveNodesPtr local_active_nodes;
+    /// Tracked separately from `released`: `refresh` marks the holder released on lost
+    /// ownership, and then `release` returns early without unregistering.
+    bool local_active_node_unregistered = false;
     bool released = false;
     bool finished = false;
     LoggerPtr log;

@@ -302,6 +302,9 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
         /// acquired by another server (`persistent_processing_node_ttl_seconds` too small, or a
         /// bug), which can cause duplicates. released is set to not remove someone else's lock.
         released = true;
+        /// `release` will return early from now on, so unregister here: the lock node is not
+        /// ours anymore and the cleanup must be able to reap it.
+        unregisterLocalActiveNode();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueBucketLockLostOwnership);
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -314,6 +317,15 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
     age_watch.restart();
 }
 
+void ObjectStorageQueueOrderedFileMetadata::BucketHolder::unregisterLocalActiveNode()
+{
+    if (!local_active_nodes || local_active_node_unregistered)
+        return;
+
+    local_active_node_unregistered = true;
+    local_active_nodes->remove(bucket_info->bucket_lock_path);
+}
+
 void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
 {
     if (released)
@@ -323,10 +335,7 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
 
     /// Unregister even when the removal below fails: the holder is gone,
     /// so the TTL cleanup must be able to reap the lock node.
-    SCOPE_EXIT({
-        if (local_active_nodes)
-            local_active_nodes->remove(bucket_info->bucket_lock_path);
-    });
+    SCOPE_EXIT({ unregisterLocalActiveNode(); });
 
     LOG_TEST(log, "Releasing bucket {}", bucket_info->bucket);
 
@@ -407,6 +416,9 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::~BucketHolder()
     try
     {
         release();
+        /// A last resort for the paths that mark the holder released without unregistering
+        /// (the lost-ownership branch of `refresh` does it itself, but it must never leak).
+        unregisterLocalActiveNode();
     }
     catch (...)
     {
