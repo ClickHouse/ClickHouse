@@ -19,6 +19,12 @@ node_group_label_disabled = cluster.add_instance(
     "node_group_label_disabled",
     main_configs=["configs/prom_conf_group_label_disabled_sections.xml"],
 )
+node_handler_labels = cluster.add_instance(
+    "node_handler_labels",
+    main_configs=["configs/prom_conf_handlers_labels.xml"],
+    # Exercises the from_env path for a handler defined inside a `prometheus.handlers` block.
+    env_variables={"PROM_SHARD": "shard-02"},
+)
 
 
 @pytest.fixture(scope="module")
@@ -133,6 +139,33 @@ def test_prometheus_endpoint_constant_labels(start_cluster):
     )
     assert re.search(
         r'^ClickHouseProfileEvents_Query\{environment="staging",shard="shard-01"\} \d+',
+        response.text,
+        re.MULTILINE,
+    )
+
+
+def test_prometheus_endpoint_constant_labels_in_handlers_config(start_cluster):
+    # Constant labels configured inside a `<prometheus><handlers>` block go through the
+    # "prometheus.handlers.*.handler.labels" config prefix, which is a different handler-construction
+    # path than the top-level "prometheus.labels" section exercised above.
+    node_handler_labels.query("SELECT 1")
+
+    response = get_metrics_response(node_handler_labels, 10)
+
+    for line in response.text.split("\n"):
+        line = line.rstrip()
+        if not line or line.startswith("#"):
+            continue
+        assert 'environment="staging"' in line, line
+        assert 'shard="shard-02"' in line, line
+        assert "PROM_SHARD" not in line, line
+
+    assert (
+        'ClickHouse_Info{environment="staging",shard="shard-02",name="'
+        in response.text
+    )
+    assert re.search(
+        r'^ClickHouseProfileEvents_Query\{environment="staging",shard="shard-02"\} \d+',
         response.text,
         re.MULTILINE,
     )
