@@ -1387,6 +1387,42 @@ Disabled by default to avoid possible security issues which can be caused by bug
 <process_query_plan_packet>true</process_query_plan_packet>
 ```
 )", 0) \
+    DECLARE(UInt64, max_query_plan_serialization_version, 0, R"(
+Holds this server's query plan writers at an older serialization version. `0`, the default, adds no
+ceiling, so writers use the version the server writes by default or the one a query asked for.
+
+Use it while a fleet is being upgraded and a newer version would carry something the not-yet-upgraded
+servers cannot read: with the clamp in place those plans are never written, instead of being written
+and rejected. Remove it once every server is upgraded. It also lets one binary produce older plans
+in tests.
+
+**Example**
+
+```xml
+<max_query_plan_serialization_version>4</max_query_plan_serialization_version>
+```
+)", 0) \
+    DECLARE(UInt64, max_serialized_query_plan_size, 2_GiB, R"(
+The maximum size in bytes of a serialized query plan this server accepts in a QueryPlan packet.
+
+Applies to plans in the framed format (serialization version 5 and above), which declare their size
+up front: a plan above this limit is rejected with `CANNOT_PARSE_QUERY_PLAN` before any of it is
+buffered, so the sender cannot make this server allocate an arbitrary amount of memory for one plan.
+A plan from a pre-v5 peer declares no size and is read field by field as it arrives, so its total
+is not checked against this limit. It still bounds the parts of such a plan that are sized from the
+stream: a set may not claim more rows than a plan of this size could hold, since a row costs at
+least a byte.
+
+It is a server setting on purpose: a query setting would travel with the query, letting the sender
+pick its own limit. Raise it in the server config, on every node that reads plans, if an extreme
+plan needs it.
+
+**Example**
+
+```xml
+<max_serialized_query_plan_size>4294967296</max_serialized_query_plan_size>
+```
+)", 0) \
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
     DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materizlied view creation delay)", 0) \
     DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \

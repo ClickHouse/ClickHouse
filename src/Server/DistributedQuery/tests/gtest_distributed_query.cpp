@@ -469,22 +469,19 @@ void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 
 void registerPlanSteps()
 {
-    /// The registry is process-wide and rejects a second registration of the same step, so register
-    /// once for the whole binary instead of per test.
+    /// The registry is process-wide, shared with the other test suites in this binary, and rejects
+    /// a second registration of the same step. Register the full production set once (whichever
+    /// suite gets there first) plus this file's test-only steps.
     static std::once_flag registered;
     std::call_once(registered, []
     {
         QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
 
+        if (!registry.hasStep("Expression"))
+            QueryPlanStepRegistry::registerPlanSteps();
+
         registerReadFromFileStep(registry);
-        registerShuffleSendStep(registry);
-        registerShuffleReceiveStep(registry);
-        registerJoinStep(registry);
-        registerGatherSendStep(registry);
-        registerGatherReceiveStep(registry);
         registerPrintTSVStep(registry);
-        registerFilterStep(registry);
-        registerBuildRuntimeFilterStep(registry);
     });
 }
 

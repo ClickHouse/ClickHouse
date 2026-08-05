@@ -1,14 +1,22 @@
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanEnvelope.h>
 #include <Processors/QueryPlan/Serialization.h>
+
+#include <Core/ProtocolDefines.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/resolveStorages.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
+#include <tuple>
+
 #include <Analyzer/Identifier.h>
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/NativeReader.h>
@@ -25,6 +33,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_PARSE_QUERY_PLAN;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_serialized_query_plan_size;
 }
 
 namespace Setting
@@ -39,12 +53,17 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
-enum class SetSerializationKind : UInt8
+/// Sanity caps for a hostile set payload; checked before allocation.
+static constexpr UInt64 MAX_SET_COLUMNS = 1'000'000;
+static constexpr UInt64 MAX_SET_STORAGE_NAME_BYTES = 16ULL << 20;
+
+static void checkSetColumnsCount(UInt64 num_columns, const PreparedSets::Hash & hash)
 {
-    StorageSet = 1,
-    TupleValues = 2,
-    SubqueryPlan = 3,
-};
+    if (num_columns > MAX_SET_COLUMNS)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Serialized set {}_{} declares {} columns which exceeds the limit of {}",
+            hash.low64, hash.high64, num_columns, MAX_SET_COLUMNS);
+}
 
 QueryPlanAndSets::QueryPlanAndSets() = default;
 QueryPlanAndSets::~QueryPlanAndSets() = default;
@@ -70,14 +89,31 @@ struct QueryPlanAndSets::SetFromSubquery : public QueryPlanAndSets::Set
     QueryPlanAndSets plan_and_sets;
 };
 
+std::vector<std::pair<FutureSet::Hash, FutureSet *>> SerializedSetsRegistry::entriesSortedByHash() const
+{
+    std::vector<std::pair<FutureSet::Hash, FutureSet *>> ordered;
+    ordered.reserve(sets.size());
+    for (const auto & [hash, set] : sets)
+        ordered.emplace_back(hash, set.get());
+    std::sort(ordered.begin(), ordered.end(), [](const auto & lhs, const auto & rhs)
+    {
+        return std::tie(lhs.first.high64, lhs.first.low64) < std::tie(rhs.first.high64, rhs.first.low64);
+    });
+    return ordered;
+}
+
 void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const SerializationFlags & flags)
 {
-    writeVarUInt(registry.sets.size(), out);
-    for (const auto & [hash, set] : registry.sets)
+    /// Write sets sorted by hash, not in the unordered map iteration order,
+    /// so the same plan serializes to the same bytes in every process.
+    auto ordered_sets = registry.entriesSortedByHash();
+
+    writeVarUInt(ordered_sets.size(), out);
+    for (const auto & [hash, set_ptr] : ordered_sets)
     {
         writeBinary(hash, out);
 
-        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set.get()))
+        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set_ptr))
         {
             writeIntBinary(SetSerializationKind::StorageSet, out);
             const auto & storage_id = from_storage->getStorageID();
@@ -87,7 +123,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
             auto storage_name = storage_id->getFullTableName();
             writeStringBinary(storage_name, out);
         }
-        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set.get()))
+        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set_ptr))
         {
             writeIntBinary(SetSerializationKind::TupleValues, out);
 
@@ -117,7 +153,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                 NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
             }
         }
-        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
+        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set_ptr))
         {
             writeIntBinary(SetSerializationKind::SubqueryPlan, out);
             const auto * plan = from_subquery->getQueryPlan();
@@ -128,10 +164,229 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
         }
         else
         {
-            const auto & set_ref = *set;
+            const auto & set_ref = *set_ptr;
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown FutureSet type {}", typeid(set_ref).name());
         }
     }
+}
+
+/// The oldest plan version whose readers know a body layout. Every new kind is added here with the
+/// plan version that introduced it.
+static UInt64 planVersionIntroducingFormatKind(UInt64 format_kind)
+{
+    if (format_kind == DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE)
+        return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested query plan has unknown body layout {}", format_kind);
+}
+
+/// The "needed to read" floor of a complete nested plan body: a v5+ body declares it in its head;
+/// a legacy body is readable exactly by readers of its leading version.
+static UInt64 nestedPlanBodyMinReader(const String & body)
+{
+    ReadBufferFromMemory in(body.data(), body.size());
+    UInt64 version = 0;
+    readVarUInt(version, in);
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
+        return version;
+
+    /// Head order: version, format kind, body size, then the value wanted here.
+    UInt64 format_kind = 0;
+    readVarUInt(format_kind, in);
+    UInt64 body_size = 0;
+    readVarUInt(body_size, in);
+
+    UInt64 min_reader = 0;
+    readVarUInt(min_reader, in);
+
+    /// A reader decides at the outer head, without looking inside the set payloads, so the floor
+    /// of the nested body layout has to be folded in here.
+    return std::max(min_reader, planVersionIntroducingFormatKind(format_kind));
+}
+
+void serializeEnvelopeSets(
+    SerializedSetsRegistry & registry,
+    const QueryPlan::SerializationFlags & flags,
+    PlanOutline & outline,
+    std::vector<String> & payloads,
+    UInt64 & min_reader_plan_version)
+{
+    auto ordered_sets = registry.entriesSortedByHash();
+    outline.sets.reserve(ordered_sets.size());
+    payloads.reserve(ordered_sets.size());
+
+    for (const auto & [hash, set_ptr] : ordered_sets)
+    {
+        PlanOutline::SetEntry entry;
+        entry.hash = hash;
+
+        WriteBufferFromOwnString body;
+
+        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set_ptr))
+        {
+            entry.kind = UInt8(SetSerializationKind::StorageSet);
+            const auto & storage_id = from_storage->getStorageID();
+            if (!storage_id)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "FutureSetFromStorage without storage id");
+            writeStringBinary(storage_id->getFullTableName(), body);
+        }
+        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set_ptr))
+        {
+            entry.kind = UInt8(SetSerializationKind::TupleValues);
+
+            auto types = from_tuple->getTypes();
+            auto columns = from_tuple->getKeyColumns();
+
+            if (columns.size() != types.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Invalid number of columns for Set. Expected {} got {}",
+                    columns.size(), types.size());
+
+            UInt64 num_columns = columns.size();
+            UInt64 num_rows = num_columns > 0 ? columns.front()->size() : 0;
+
+            writeVarUInt(num_columns, body);
+            writeVarUInt(num_rows, body);
+
+            for (size_t col = 0; col < num_columns; ++col)
+            {
+                if (columns[col]->size() != num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Invalid number of rows in column of Set. Expected {} got {}",
+                        num_rows, columns[col]->size());
+
+                min_reader_plan_version = std::max(min_reader_plan_version, minReaderVersionForType(*types[col]));
+                encodeDataType(types[col], body);
+                auto serialization = types[col]->getDefaultSerialization();
+                NativeWriter::writeData(*serialization, columns[col], body, {}, 0, 0, 0);
+            }
+        }
+        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set_ptr))
+        {
+            entry.kind = UInt8(SetSerializationKind::SubqueryPlan);
+            const auto * plan = from_subquery->getQueryPlan();
+            if (!plan)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
+
+            /// A complete plan with its own leading version, so the nested envelope is length-prefixed and
+            /// self-describing (unlike the legacy stream, which embeds the nested body inline). It is
+            /// written at the version the outer plan resolved to, not resolved again: a query that asks
+            /// for a version must get it for the whole plan, nested set plans included.
+            plan->serialize(body, flags.version, flags.version);
+        }
+        else
+        {
+            const auto & set_ref = *set_ptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown FutureSet type {}", typeid(set_ref).name());
+        }
+
+        body.finalize();
+        if (entry.kind == UInt8(SetSerializationKind::SubqueryPlan))
+            min_reader_plan_version = std::max(min_reader_plan_version, nestedPlanBodyMinReader(body.str()));
+        entry.payload_size = body.str().size();
+        outline.sets.push_back(entry);
+        /// `body` is finalized and goes out of scope here, so a large set moves rather than copies.
+        payloads.push_back(std::move(body.str()));
+    }
+}
+
+QueryPlanAndSets deserializeEnvelopeSets(
+    QueryPlan plan,
+    DeserializedSetsRegistry & registry,
+    const PlanOutline & outline,
+    ReadBuffer & in,
+    const QueryPlan::SerializationFlags & flags,
+    const ContextPtr & context,
+    size_t max_type_complexity)
+{
+    QueryPlanAndSets res;
+    res.plan = std::move(plan);
+
+    String frame_bytes;
+    for (const auto & entry : outline.sets)
+    {
+        auto it = registry.sets.find(entry.hash);
+        if (it == registry.sets.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is not registered", entry.hash.low64, entry.hash.high64);
+
+        auto & columns = it->second;
+        if (columns.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", entry.hash.low64, entry.hash.high64);
+
+        /// One frame at a time, into a reused buffer: only the largest set is ever held. Decoding
+        /// through a reader bounded to the frame keeps a nested plan from reading past its own
+        /// bytes into the next set or the outer protocol. The caller has already checked every
+        /// declared size against the envelope.
+        frame_bytes.resize(entry.payload_size);
+        try
+        {
+            in.readStrict(frame_bytes.data(), frame_bytes.size());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while reading the payload of set {}_{} ({} bytes)",
+                entry.hash.low64, entry.hash.high64, entry.payload_size));
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+        }
+
+        ReadBufferFromMemory body(frame_bytes.data(), frame_bytes.size());
+
+        if (entry.kind == UInt8(SetSerializationKind::StorageSet))
+        {
+            String storage_name;
+            readStringBinary(storage_name, body, MAX_SET_STORAGE_NAME_BYTES);
+            res.sets_from_storage.emplace_back(QueryPlanAndSets::SetFromStorage{{entry.hash, std::move(columns)}, std::move(storage_name)});
+        }
+        else if (entry.kind == UInt8(SetSerializationKind::TupleValues))
+        {
+            UInt64 num_columns = 0;
+            UInt64 num_rows = 0;
+            readVarUInt(num_columns, body);
+            readVarUInt(num_rows, body);
+            checkSetColumnsCount(num_columns, entry.hash);
+
+            /// Without this a few bytes could ask for an arbitrary allocation: `NativeReader::readData`
+            /// sizes the column from the row count before reading it, and a row costs at least a byte.
+            if (num_rows > body.available())
+                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                    "Serialized set {}_{} declares {} rows but only {} bytes of its frame remain",
+                    entry.hash.low64, entry.hash.high64, num_rows, body.available());
+
+            ColumnsWithTypeAndName set_columns;
+
+            FormatSettings format_settings;
+            format_settings.binary.max_binary_type_complexity = max_type_complexity;
+
+            for (size_t col = 0; col < num_columns; ++col)
+            {
+                auto type = decodeDataType(body, max_type_complexity);
+                auto serialization = type->getDefaultSerialization();
+                ColumnPtr column = type->createColumn();
+                NativeReader::readData(*serialization, column, body, &format_settings, num_rows, nullptr, nullptr);
+
+                set_columns.emplace_back(std::move(column), std::move(type), String{});
+            }
+
+            res.sets_from_tuple.emplace_back(QueryPlanAndSets::SetFromTuple{{entry.hash, std::move(columns)}, std::move(set_columns)});
+        }
+        else if (entry.kind == UInt8(SetSerializationKind::SubqueryPlan))
+        {
+            auto plan_for_set = QueryPlan::deserialize(body, context, max_type_complexity, flags.skip_data);
+
+            res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
+                {entry.hash, std::move(columns)},
+                std::move(plan_for_set)});
+        }
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has unknown kind {}",
+                entry.hash.low64, entry.hash.high64, int(entry.kind));
+
+        if (!body.eof())
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                "Serialized set {}_{} did not consume its payload frame ({} bytes left)",
+                entry.hash.low64, entry.hash.high64, body.available());
+    }
+
+    return res;
 }
 
 QueryPlanAndSets QueryPlan::deserializeSets(
@@ -166,7 +421,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         if (kind == UInt8(SetSerializationKind::StorageSet))
         {
             String storage_name;
-            readStringBinary(storage_name, in);
+            readStringBinary(storage_name, in, MAX_SET_STORAGE_NAME_BYTES);
             res.sets_from_storage.emplace_back(QueryPlanAndSets::SetFromStorage{{hash, std::move(columns)}, std::move(storage_name)});
         }
         else if (kind == UInt8(SetSerializationKind::TupleValues))
@@ -175,9 +430,17 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             UInt64 num_rows = 0;
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
+            checkSetColumnsCount(num_columns, hash);
+
+            /// Without this the row count could ask for an arbitrary allocation. A legacy stream
+            /// has no frame, so the bound is the accepted plan size: a row costs at least a byte.
+            const UInt64 max_plan_bytes = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
+            if (num_rows > max_plan_bytes)
+                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                    "Serialized set {}_{} declares {} rows, more than the {} bytes a plan may have",
+                    hash.low64, hash.high64, num_rows, max_plan_bytes);
 
             ColumnsWithTypeAndName set_columns;
-            set_columns.reserve(num_columns);
 
             /// The set data comes from the same plan stream, so it carries the plan's resolved type-complexity
             /// limit (the effective setting for client packets, 0 for trusted server-to-server plans). Pass it

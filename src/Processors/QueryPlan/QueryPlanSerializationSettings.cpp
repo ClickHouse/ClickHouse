@@ -2,6 +2,20 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/logger_useful.h>
+#include <Core/ProtocolDefines.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_SETTING;
+    extern const int CANNOT_PARSE_QUERY_PLAN;
+}
+}
+
 /**
  * This file declares the concrete list of settings that are considered relevant for query plan step (de)serialization.
  * They are defined through the PLAN_SERIALIZATION_SETTINGS macro which is consumed by BaseSettings machinery
@@ -140,6 +154,70 @@ void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out) const
 void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
 {
     impl->readBinary(in);
+}
+
+UInt64 QueryPlanSerializationSettings::minReaderVersionForEntry(const SerializedEntry &)
+{
+    /// All current settings and value encodings predate the outline format. A non-ignorable
+    /// setting introduced later must return its introduced-at version here (an ignorable one
+    /// never raises the floor: readers skip it by the wire flag).
+    return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
+}
+
+bool QueryPlanSerializationSettings::hasSetting(std::string_view name)
+{
+    const auto & accessor = QueryPlanSerializationSettingsTraits::Accessor::instance();
+    return accessor.find(QueryPlanSerializationSettingsTraits::resolveName(name)) != static_cast<size_t>(-1);
+}
+
+std::vector<QueryPlanSerializationSettings::SerializedEntry> QueryPlanSerializationSettings::getChangedEntries() const
+{
+    const auto & accessor = QueryPlanSerializationSettingsTraits::Accessor::instance();
+
+    std::vector<SerializedEntry> entries;
+    for (const auto & field : *impl)
+    {
+        SerializedEntry entry;
+        entry.name = field.getName();
+        /// All current settings are must-understand (flags = 0). A future setting that an old
+        /// reader may safely default should set FLAG_IGNORABLE when its entries are produced.
+
+        WriteBufferFromOwnString value;
+        accessor.writeBinary(*impl, accessor.find(field.getName()), value);
+        value.finalize();
+        entry.value = value.str();
+
+        entries.push_back(std::move(entry));
+    }
+    return entries;
+}
+
+void QueryPlanSerializationSettings::applyEntries(const std::vector<SerializedEntry> & entries)
+{
+    const auto & accessor = QueryPlanSerializationSettingsTraits::Accessor::instance();
+
+    for (const auto & entry : entries)
+    {
+        size_t index = accessor.find(QueryPlanSerializationSettingsTraits::resolveName(entry.name));
+        if (index == static_cast<size_t>(-1))
+        {
+            if (entry.flags & SerializedEntry::FLAG_IGNORABLE)
+            {
+                LOG_WARNING(getLogger("QueryPlanSerializationSettings"),
+                    "Skipping unknown ignorable query plan setting '{}'", entry.name);
+                continue;
+            }
+            throw Exception(ErrorCodes::UNKNOWN_SETTING,
+                "Unknown query plan setting '{}' (not marked ignorable by the writer)", entry.name);
+        }
+
+        ReadBufferFromMemory value(entry.value.data(), entry.value.size());
+        accessor.readBinary(*impl, index, value);
+        if (!value.eof())
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                "Query plan setting '{}' did not consume its value frame ({} bytes left)",
+                entry.name, value.available());
+    }
 }
 
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)

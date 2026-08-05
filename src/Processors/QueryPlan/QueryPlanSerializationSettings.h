@@ -56,6 +56,35 @@ struct QueryPlanSerializationSettings
     /// Read settings updating only those present in the stream; missing ones keep defaults.
     void readBinary(ReadBuffer & in);
 
+    /// Whether a setting with this name (or alias) exists. Used by outline validation to tell
+    /// unknown settings from known ones without attempting to decode the value.
+    static bool hasSetting(std::string_view name);
+
+    /// A changed setting as carried in the plan outline: the value bytes are length-prefixed on
+    /// the wire, so a reader can skip a setting it does not know when the writer marked it
+    /// ignorable, and must reject it otherwise (defaulting an unknown execution-affecting setting
+    /// would silently change behavior).
+    struct SerializedEntry
+    {
+        String name;
+        UInt8 flags = 0;
+        String value;   /// the setting-field binary encoding
+
+        static constexpr UInt8 FLAG_IGNORABLE = 1;
+    };
+
+    /// Changed settings as outline entries.
+    std::vector<SerializedEntry> getChangedEntries() const;
+
+    /// The oldest plan version whose readers understand this entry ("needed to read"). All
+    /// current settings and value encodings predate the outline format, so this returns the
+    /// base version; a setting or value variant introduced later must raise it here so plans
+    /// carrying it demand new enough readers (unless the entry is wire-flagged ignorable).
+    static UInt64 minReaderVersionForEntry(const SerializedEntry & entry);
+    /// Apply entries: unknown entries are skipped when marked ignorable, rejected otherwise;
+    /// a value that does not consume exactly its frame is rejected.
+    void applyEntries(const std::vector<SerializedEntry> & entries);
+
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 

@@ -5712,6 +5712,15 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
             "make_distributed_plan does not support a distributed read with the STREAM modifier");
 
     verifyBucketedReadSupported();
+
+    /// A replica reading a stream older than version 3 would not know the parallel-replicas flag bit,
+    /// silently ignore it and do a full non-parallel read. Refuse before any bytes are written.
+    if (is_parallel_reading_from_replicas
+        && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot serialize a parallel-replicas read for query plan version {} (requires at least {})",
+            ctx.version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS);
+
     /// The replica path serializes deferred FINAL filters as ordinary read filters, which would apply them
     /// before FINAL. The coordinator only buckets a deferred-FINAL read for the stateless worker, so a
     /// bucketed deferred read must never reach this replica serializer -- reject it rather than return

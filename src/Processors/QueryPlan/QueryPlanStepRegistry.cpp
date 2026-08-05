@@ -8,6 +8,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 QueryPlanStepRegistry & QueryPlanStepRegistry::instance()
@@ -18,9 +19,28 @@ QueryPlanStepRegistry & QueryPlanStepRegistry::instance()
 
 void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function)
 {
+    registerStep(name, std::move(create_function), StepSerializationInfo{});
+}
+
+void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function, StepSerializationInfo info)
+{
     if (steps.contains(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
-    steps[name] = std::move(create_function);
+
+    /// Payload formats run 2, 3, ... without gaps: a version that appears without the one before it
+    /// would mean a payload change nobody classified, and older readers decide whether they may
+    /// prefix-read a payload from exactly these entries.
+    UInt64 expected_version = 2;
+    for (const auto & [format_version, format] : info.payload_formats)
+    {
+        if (format_version != expected_version)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Query plan step '{}' declares payload format version {} but says nothing about {}",
+                name, format_version, expected_version);
+        ++expected_version;
+    }
+
+    steps[name] = Entry{std::move(create_function), std::move(info)};
 }
 
 QueryPlanStepPtr QueryPlanStepRegistry::createStep(
@@ -32,9 +52,22 @@ QueryPlanStepPtr QueryPlanStepRegistry::createStep(
         auto it = steps.find(name);
         if (it == steps.end())
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown query plan step: {}", name);
-        create_function = it->second;
+        create_function = it->second.create_function;
     }
     return create_function(ctx);
+}
+
+bool QueryPlanStepRegistry::hasStep(const std::string & name) const
+{
+    return steps.contains(name);
+}
+
+const QueryPlanStepRegistry::StepSerializationInfo * QueryPlanStepRegistry::getStepSerializationInfo(const std::string & name) const
+{
+    auto it = steps.find(name);
+    if (it == steps.end())
+        return nullptr;
+    return &it->second.info;
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry);

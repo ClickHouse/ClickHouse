@@ -6631,6 +6631,14 @@ Enable use of software prefetch in hash join probe phase to hide memory access l
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
+    DECLARE(UInt64, query_plan_serialization_version, 0, R"(
+Which query plan serialization version this query writes. `0`, the default, writes the version the
+server is set to use by default, which lags the newest one it supports for a release.
+
+Set it to the newest version to try it before it becomes the default, for example to check that a
+fleet reads it correctly. Asking for a version the server does not support is an error. A peer too
+old for the version written rejects the plan with a clear error rather than misreading it.
+)", 0) \
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
 )", 0) \

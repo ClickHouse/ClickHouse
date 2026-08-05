@@ -11,7 +11,9 @@
 
 #include <functional>
 #include <list>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
@@ -35,6 +37,8 @@ class WriteBuffer;
 
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
+
+struct PlanOutline;
 
 class Pipe;
 
@@ -106,18 +110,27 @@ public:
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
-    void serialize(WriteBuffer & out, size_t max_supported_version) const;
+    /// `requested_version` is the version the query asked for, 0 to use the server default.
+    void serialize(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version = 0) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
-    /// Serializes the query plan and store the result
-    void ensureSerialized(size_t max_supported_version) const;
+    /// A serialized plan held as the pieces it was built from. Joining them into one buffer would
+    /// hold a second full copy of a plan that can carry large `IN` sets, so they stay apart and go
+    /// to the wire one after another.
+    using SerializedChunks = std::vector<String>;
 
-    /// Get cached serialized data
-    std::string_view getSerializedData() const;
+    /// Serializes the query plan and caches the result, keyed by the effective version
+    /// (min of `max_supported_version` and the current one). The cache is per version: bytes
+    /// produced for one negotiated version must not be sent to a peer that advertised an older
+    /// one, and different replicas may advertise different versions within one query.
+    void ensureSerialized(size_t max_supported_version, UInt64 requested_version = 0) const;
 
-    /// Check if already serialized
-    bool isSerialized() const;
+    /// Writes the cached bytes for the effective version derived from `max_supported_version`.
+    void writeSerializedTo(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version = 0) const;
+
+    /// Check if already serialized for the effective version derived from max_supported_version
+    bool isSerialized(size_t max_supported_version, UInt64 requested_version = 0) const;
 
     void resolveStorages(const ContextPtr & context);
 
@@ -202,14 +215,38 @@ public:
 
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
-private:
-    struct SerializationFlags;
+    struct SerializationFlags
+    {
+        /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
+        UInt64 version = 0;
+        bool skip_data = false;
+    };
 
+private:
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
+    SerializedChunks serializeEnvelopeToChunks(const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
+    static QueryPlanAndSets deserializeEnvelope(
+        ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags,
+        size_t max_type_complexity, UInt64 min_reader_plan_version, UInt64 body_size);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
     static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
+
+    friend void serializeEnvelopeSets(
+        SerializedSetsRegistry & registry,
+        const SerializationFlags & flags,
+        PlanOutline & outline,
+        std::vector<String> & payloads,
+        UInt64 & min_reader_plan_version);
+    friend QueryPlanAndSets deserializeEnvelopeSets(
+        QueryPlan plan,
+        DeserializedSetsRegistry & registry,
+        const PlanOutline & outline,
+        ReadBuffer & in,
+        const SerializationFlags & flags,
+        const ContextPtr & context,
+        size_t max_type_complexity);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;
@@ -222,9 +259,33 @@ private:
     size_t max_threads = 0;
     bool concurrency_control = false;
 
-    /// Cached serialized representation
+    /// Cached serialized representation, one entry per effective serialization version
+    /// (in practice 1-2 entries: the current version and possibly one older peer's version).
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
-    mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+    ///
+    /// One plan is shared by all the replicas of a query, and each replica sends it from its own
+    /// thread, so the cache is guarded. Without the mutex a sender could pick up an entry another
+    /// thread is still writing and put a truncated plan on the wire.
+    struct SerializedPlanCache
+    {
+        std::mutex mutex;
+        /// Shared so a sender can take its entry under the lock and write it to the wire without
+        /// holding the lock across the network.
+        std::map<UInt64, std::shared_ptr<const SerializedChunks>> plans;
+
+        SerializedPlanCache() = default;
+
+        /// A plan is moved while it is being built, never while it is being sent, so the cached
+        /// bytes move without locking. The mutex itself is not movable and stays behind.
+        SerializedPlanCache(SerializedPlanCache && other) noexcept : plans(std::move(other.plans)) { }
+        SerializedPlanCache & operator=(SerializedPlanCache && other) noexcept
+        {
+            plans = std::move(other.plans);
+            return *this;
+        }
+    };
+
+    mutable SerializedPlanCache serialized_plans;
 };
 
 /// This is a structure which contains a query plan and a list of sets.
