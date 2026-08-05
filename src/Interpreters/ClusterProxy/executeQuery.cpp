@@ -554,12 +554,10 @@ Block makeShardNumScalar(UInt32 shard_num, const String & cluster_name)
 /// shard scope only when the scalar demonstrably belongs to `cluster`.
 ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & cluster)
 {
-    const auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
-    const auto it = scalars.find("_shard_num");
-    if (it == scalars.end())
+    if (!context->hasQueryContext() || !context->getQueryContext()->hasScalar("_shard_num"))
         return {};
 
-    const Block & block = it->second;
+    const Block block = context->getQueryContext()->getScalar("_shard_num");
     ShardScope scope{ShardScopeKind::Scoped, block.safeGetByPosition(0).column->getUInt(0)};
     if (scope.shard_num == 0)
         return {};

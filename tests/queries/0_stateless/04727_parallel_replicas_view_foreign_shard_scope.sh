@@ -15,6 +15,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   parallel_replicas_plan_based = 0 -- the plan-based path builds locally and never applies a shard scope
 #   enable_analyzer, parallel_replicas_only_with_analyzer -- parallel replicas are off entirely unless
 #       the two agree, so each arm pins the analyzer it measures instead of inheriting the profile
+# `serialize_query_plan` needs no pin here and was measured, not assumed: it does suppress parallel
+# replicas for a read of a plain table (see 02947/03562, which pin it for that reason), but each view
+# below carries `enable_parallel_replicas` in its own SETTINGS, which the shard re-applies, so the
+# matching arm's oracle still reads 1 under the `distributed plan` profile.
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE t_04727 (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_04727 SELECT number FROM numbers(100);
