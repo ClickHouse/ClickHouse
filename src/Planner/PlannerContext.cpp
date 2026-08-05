@@ -5,7 +5,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
@@ -25,30 +24,22 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Quer
     return createColumnIdentifier(column_node_typed.getColumn(), column_source_node);
 }
 
-static std::string buildColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
-{
-    const auto & source_alias = column_source_node->getAlias();
-    if (!source_alias.empty())
-        return backQuoteIfNeed(source_alias) + "." + backQuoteIfNeed(column.name);
-    return column.name;
-}
-
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
 {
-    auto column_identifier = buildColumnIdentifier(column, column_source_node);
+    std::string column_identifier;
 
-    auto [it, inserted] = column_identifiers.emplace(std::move(column_identifier));
+    const auto & source_alias = column_source_node->getAlias();
+    if (!source_alias.empty())
+        column_identifier = source_alias + "." + column.name;
+    else
+        column_identifier = column.name;
+
+    auto [it, inserted] = column_identifiers.emplace(column_identifier);
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column identifier {} is already registered", *it);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column identifier {} is already registered", column_identifier);
 
-    return *it;
-}
+    assert(inserted);
 
-const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifierOrGet(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
-{
-    auto column_identifier = buildColumnIdentifier(column, column_source_node);
-
-    auto [it, inserted] = column_identifiers.emplace(std::move(column_identifier));
     return *it;
 }
 

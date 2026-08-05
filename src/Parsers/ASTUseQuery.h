@@ -5,7 +5,6 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -16,7 +15,7 @@ namespace DB
 class ASTUseQuery : public IAST
 {
 public:
-    IAST * database{};
+    IAST * database;
 
     String getDatabase() const
     {
@@ -30,7 +29,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTUseQuery>(*this);
+        auto res = std::make_shared<ASTUseQuery>(*this);
         res->children.clear();
         if (database)
             res->set(res->database, database->clone());
@@ -38,8 +37,6 @@ public:
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Use; }
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

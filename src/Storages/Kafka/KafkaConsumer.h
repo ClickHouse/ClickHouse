@@ -36,8 +36,7 @@ public:
         size_t poll_timeout_,
         bool intermediate_commit_,
         const std::atomic<bool> & stopped_,
-        const Names & _topics,
-        size_t skip_bytes_ = 0
+        const Names & _topics
     );
 
     ~KafkaConsumer() override;
@@ -53,14 +52,6 @@ public:
     // Notes: duplicates can appear if the some data were already flushed
     // it causes rebalance (and is an expensive way of exception handling)
     void markDirty();
-
-    /// Abort an in-flight batch while staying in the consumer group, rewinding to the block start so the
-    /// whole block is redelivered even if `kafka_commit_every_batch` committed part of it mid-block.
-    void rewindToLastCommitted();
-
-    /// Called once the in-flight block has reached its durable boundary (committed after the insert), so
-    /// the next block tracks a fresh start. See `block_start_offsets`.
-    void cleanBlockStartOffsets() { block_start_offsets.clear(); }
 
     auto pollTimeout() const { return poll_timeout; }
 
@@ -135,7 +126,6 @@ private:
     LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
-    const size_t skip_bytes = 0;
     size_t offsets_stored = 0;
     bool current_subscription_valid = false;
 
@@ -153,9 +143,6 @@ private:
     // order is important, need to be destructed *before* consumer
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
-
-    /// Offset of the first message of the current, not-yet-durably-committed block
-    cppkafka::TopicPartitionList block_start_offsets;
 
     /// system.kafka_consumers data is retrieved asynchronously
     ///  so we have to protect exceptions_buffer
@@ -179,7 +166,6 @@ private:
     void cleanAssignment();
     void resetIfStopped();
     ReadBufferPtr getNextMessage();
-    void trackCurrentBlockStart(const cppkafka::Message & message);
 };
 
 }

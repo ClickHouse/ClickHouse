@@ -4,8 +4,9 @@ sidebar_label: 'last_value'
 sidebar_position: 4
 slug: /sql-reference/window-functions/last_value
 title: 'last_value'
-doc_type: 'reference'
 ---
+
+# last_value
 
 Returns the last value evaluated within its ordered frame. By default, NULL arguments are skipped, however the `RESPECT NULLS` modifier can be used to override this behaviour.
 
@@ -38,7 +39,9 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 In this example the `last_value` function is used to find the lowest paid footballer from a fictional dataset of salaries of Premier League football players.
 
-```sql title="Query"
+Query:
+
+```sql
 DROP TABLE IF EXISTS salaries;
 CREATE TABLE salaries
 (
@@ -59,13 +62,15 @@ INSERT INTO salaries FORMAT VALUES
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql title="Query"
+```sql
 SELECT player, salary,
        last_value(player) OVER (ORDER BY salary DESC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS lowest_paid_player
 FROM salaries;
 ```
 
-```response title="Response"
+Result:
+
+```response
    ┌─player──────────┬─salary─┬─lowest_paid_player─┐
 1. │ Gary Chen       │ 196000 │ Michael Stanley    │
 2. │ Robert George   │ 195000 │ Michael Stanley    │

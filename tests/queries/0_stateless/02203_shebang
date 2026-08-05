@@ -1,0 +1,3 @@
+#!/usr/bin/clickhouse-local --queries-file
+
+SELECT 1;
