@@ -379,12 +379,12 @@ def main():
         if build_type == BuildTypes.ARM_FUZZERS:
             targets = "fuzzers"
         elif build_type == BuildTypes.WASM64:
-            # The full binary does not link for WebAssembly yet, so pin exactly the
-            # layers that are known to build (see the `OS_WASM` arms in
-            # cmake/target.cmake) and let the target grow from here. `dbms` pulls in
-            # `common`, `clickhouse_common_io`, the parsers, the compression codecs
-            # and every contrib they need.
-            targets = "dbms"
+            # The multicall `clickhouse` binary builds and links for WebAssembly, and
+            # `clickhouse local` runs under Node.js >= 24 and in browsers (with the
+            # cross-origin isolation that pthreads-on-Workers require). Pinning the
+            # binary target keeps the whole tree - dbms, functions, programs and the
+            # `OS_WASM` platform arms - building for this target.
+            targets = "clickhouse"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:

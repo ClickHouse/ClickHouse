@@ -1075,8 +1075,9 @@ template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;
 template NearestFieldType<std::decay_t<Object>> & Field::safeGet<Object>() &;
 template NearestFieldType<std::decay_t<Tuple>> & Field::safeGet<Tuple>() &;
 template NearestFieldType<std::decay_t<CustomType>> & Field::safeGet<CustomType>() &;
-/// In Darwin unsigned long does not match any of the UInt* types
-#ifdef OS_DARWIN
+/// In Darwin and on WebAssembly (both LP64 with a `long long` uint64_t)
+/// unsigned long does not match any of the UInt* types
+#if defined(OS_DARWIN) || defined(OS_WASM)
 template NearestFieldType<std::decay_t<unsigned long>> & Field::safeGet<unsigned long>() &;
 #endif
 }
