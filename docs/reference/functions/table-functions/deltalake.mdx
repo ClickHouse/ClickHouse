@@ -15,14 +15,16 @@ Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delt
 `deltaLake` is an alias of `deltaLakeS3` which is supported for compatibility.
 
 ```sql
-deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 
-deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 
-deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
 deltaLakeLocal(path, [,format])
 ```
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 

@@ -15,15 +15,17 @@ Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in pa
 ## Syntax {#syntax}
 
 ```sql
-icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,extra_credentials])
 icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
 
-icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
 
-icebergHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+icebergHDFSCluster(cluster_name, path_to_table, [,format])
 icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
 ```
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
