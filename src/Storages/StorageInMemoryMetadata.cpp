@@ -184,6 +184,11 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
     }
 
+    /// Transport wiring, not invoker identity: a cluster table function inside the view sends its
+    /// read-task request over this callback, and only the initiator can decide whether to serve it.
+    if (context->hasClusterFunctionReadTaskCallback())
+        new_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
         new_context->applySettingsChanges(context->getSettingsRef().changes());
