@@ -612,6 +612,7 @@ MergeTreeIndexConditionPtr MergeTreeProjectionIndexText::createIndexCondition(co
         predicate,
         context,
         index.sample_block,
+        text_index->normalized_index_column_name,
         text_index->tokenizer.get(),
         text_index->preprocessor,
         text_index->postprocessor,
