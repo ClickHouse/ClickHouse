@@ -17,10 +17,12 @@ QUERY_ID="04691_kill_${CLICKHOUSE_DATABASE}"
 
 # No max_execution_time, so only the KILL can stop this. max_block_size / max_threads are pinned because
 # the test runner randomizes both, and a small block would let an unpatched server finish its
-# uninterruptible unit quickly enough to stay under the bound asserted below.
+# uninterruptible unit quickly enough to stay under the bound asserted below. The rows carry a trailing
+# comment for the reason the `.sql` companion gives: the poll is throttled on input bytes while a row's
+# parse cost is per AST node, so the KILL went unobserved for one stride, 19 s on MSan when unpadded.
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" --max_execution_time 0 -q "
-    SELECT sum(length(formatQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40))))
-    FROM numbers(200000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1
+    SELECT sum(length(formatQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000))))
+    FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1
 " &>/dev/null &
 
 # Readiness waits for the query to have been running rather than merely being visible: `ProcessList`

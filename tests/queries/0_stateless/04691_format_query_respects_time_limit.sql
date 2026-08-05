@@ -24,42 +24,51 @@
 SET max_execution_time = 3;
 SET allow_fuzz_query_functions = 1;
 
+-- Every row below carries a long trailing comment. The poll is throttled on accumulated input BYTES,
+-- while a row's parse cost is set by how many AST nodes it has, so the longest a cancellation can go
+-- unobserved is one stride of parsing: 64 KiB divided by the row size, times the per-row cost. Rows of
+-- 40 `OR` clauses in 458 bytes are the worst case for that ratio, and on MSan one stride cost 29 s
+-- against this 3 s limit. Comment bytes count toward the stride but add no AST, so padding a row to
+-- 2462 bytes cuts the wait more than fivefold for no extra parse work. The row counts are halved to
+-- hold peak memory where it was, and both have to stay large enough that one unpolled block still
+-- exceeds case 7's threshold by a wide margin.
+
 -- 1. formatQuery: many rows of moderate SQL text in one block.
-SELECT sum(length(formatQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_timed */
-FROM numbers(200000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(length(formatQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000)))) /* 04691_timed */
+FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
 -- 2. formatQueryOrNull must raise, not swallow the cancellation into NULLs. Its per-row `catch (...)`
 --    turns any exception into NULL and continues, so the check has to sit outside that handler.
-SELECT sum(length(formatQueryOrNull('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_timed */
-FROM numbers(200000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(length(formatQueryOrNull('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000)))) /* 04691_timed */
+FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
 -- 3. The single-line variants share the same loop.
-SELECT sum(length(formatQuerySingleLine('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_timed */
-FROM numbers(200000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(length(formatQuerySingleLine('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000)))) /* 04691_timed */
+FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
-SELECT sum(length(formatQuerySingleLineOrNull('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_timed */
-FROM numbers(200000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(length(formatQuerySingleLineOrNull('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000)))) /* 04691_timed */
+FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
 -- 4. Siblings with the same per-row parse loop.
-SELECT sum(length(parseQueryToJSON('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_timed */
-FROM numbers(200000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(length(parseQueryToJSON('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000)))) /* 04691_timed */
+FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
 --    `highlightQuery` and `tokenizeQuery` share one row loop in FunctionQueryTokenization.
 --    `highlightQuery` runs a full parse per row and covers that loop. `tokenizeQuery` is lexer-only and
 --    its cost is dominated by the size of the token array it builds, so it exhausts memory well before
 --    it overshoots a time limit; it gets no case of its own rather than one whose oracle cannot redden.
-SELECT sum(length(highlightQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_timed */
+SELECT sum(length(highlightQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000)))) /* 04691_timed */
 FROM numbers(60000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
 -- 5. `fuzzQuery` has one row loop per argument shape and both need the poll.
 --    Non-constant argument, so this one takes the ColumnString loop.
-SELECT sum(length(fuzzQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_timed */
-FROM numbers(200000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(length(fuzzQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000)))) /* 04691_timed */
+FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
 --    Constant argument: `fuzzQuery` opts out of the default constant handling, so this reaches the
 --    separate ColumnConst loop. It is not folded away because the function is non-deterministic.
-SELECT sum(length(fuzzQuery('SELECT 1 WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_timed */
-FROM numbers(200000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(length(fuzzQuery('SELECT 1 WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000)))) /* 04691_timed */
+FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
 --    `formatQueryFromJSON` takes JSON from a scalar computed once and then materialized. Nesting the
 --    `parseQueryToJSON` call inside the timed expression instead would let the inner function's own
@@ -75,17 +84,17 @@ FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads =
 --    settings the test runner randomizes, so nothing else would ever reach it. `04648` covers the
 --    identical decision for `geohashesInBox` the same way.
 --    A stopped aggregate emits no row rather than a partial sum, and this query succeeds in both
---    directions, so the latency bound in case 7 is what discriminates: 69783 ms pre-fix, 1045 ms with
---    it. The marker is separate because a successful query lands in `query_log` as `QueryFinish`.
-SELECT sum(length(formatQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_break */
-FROM numbers(200000) FORMAT Null
+--    directions, so the latency bound in case 7 is what discriminates: 34413 ms unpolled, 3005 ms with
+--    the poll. The marker is separate because a successful query lands in `query_log` as `QueryFinish`.
+SELECT sum(length(formatQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40) || ' -- ' || repeat('c', 2000)))) /* 04691_break */
+FROM numbers(100000) FORMAT Null
 SETTINGS max_block_size = 200000, max_threads = 1, timeout_overflow_mode = 'break';
 
 -- 7. The real assertion: every case above stopped near its limit rather than running its block out.
 --    The bound is on CPU time, not on `query_duration_ms`: wall clock also absorbs scheduling delay,
 --    and this test runs concurrently with copies of itself, so a wall-clock budget wide enough for a
---    starved host would have to exceed the pre-fix cost it exists to detect. Pre-fix a single one of
---    these statements burns about 70 s of CPU; with the fix it stops within a stride of its limit.
+--    starved host would have to exceed the pre-fix cost it exists to detect. Unpolled a single one of
+--    these statements burns about 35 s of CPU; with the poll it stops within a stride of its limit.
 --    `count() = 10` keeps the assertion from going vacuous: countIf(...) = 0 over an empty result set is
 --    trivially true, so a marker that stopped matching would silently disarm the whole test.
 --    `type != 'QueryStart'` rather than `= 'ExceptionWhileProcessing'` because the break case above
@@ -160,7 +169,7 @@ FROM numbers(100) SETTINGS max_execution_time = 0, max_block_size = 200000;
 DROP TABLE IF EXISTS t_04691_retained;
 CREATE TABLE t_04691_retained (q String, n UInt64)
 ENGINE = MergeTree PARTITION BY cityHash64(formatQuery(q)) ORDER BY n;
-ALTER TABLE t_04691_retained ADD COLUMN extra UInt8 DEFAULT 0 SETTINGS max_execution_time = 1;
+ALTER TABLE t_04691_retained ADD COLUMN extra UInt8 DEFAULT 0 SETTINGS max_execution_time = 30;
 SELECT sleep(1), sleep(0.2) FORMAT Null SETTINGS max_execution_time = 0;
 INSERT INTO t_04691_retained (q, n)
 SELECT 'SELECT ' || toString(number % 4) || ' -- ' || repeat('x', 700), number FROM numbers(200)
