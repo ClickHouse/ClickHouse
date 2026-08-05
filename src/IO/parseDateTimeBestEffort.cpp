@@ -120,6 +120,8 @@ ReturnType parseDateTimeBestEffortImpl(
     UInt8 second = 0;
 
     bool has_year = false;
+    bool has_month = false;
+    bool has_day = false;
     bool has_time = false;
     bool has_fractional = false;
 
@@ -133,7 +135,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
     bool has_comma_between_date_and_time = false;
 
-    auto read_alpha_month = [&month] (const auto & alpha)
+    auto read_alpha_month = [&month, &has_month] (const auto & alpha)
     {
         if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
         else if (0 == strncasecmp(alpha, "Feb", 3)) month = 2;
@@ -149,6 +151,7 @@ ReturnType parseDateTimeBestEffortImpl(
         else if (0 == strncasecmp(alpha, "Dec", 3)) month = 12;
         else
             return false;
+        has_month = true;
         return true;
     };
 
@@ -259,6 +262,8 @@ ReturnType parseDateTimeBestEffortImpl(
                 month = fp_month;
                 day_of_month = fp_day;
                 has_year = true;
+                has_month = true;
+                has_day = true;
                 if (time_matches)
                 {
                     hour = fp_hour;
@@ -401,6 +406,8 @@ ReturnType parseDateTimeBestEffortImpl(
                 readDecimalNumber<2>(minute, digits + 10);
                 readDecimalNumber<2>(second, digits + 12);
                 has_year = true;
+                has_month = true;
+                has_day = true;
                 has_time = true;
             }
             else if (num_digits == 8 && !has_year)
@@ -414,6 +421,8 @@ ReturnType parseDateTimeBestEffortImpl(
                 readDecimalNumber<2>(month, digits + 4);
                 readDecimalNumber<2>(day_of_month, digits + 6);
                 has_year = true;
+                has_month = true;
+                has_day = true;
             }
             else if (num_digits == 6)
             {
@@ -427,6 +436,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     readDecimalNumber<4>(year, digits);
                     readDecimalNumber<2>(month, digits + 4);
                     has_year = true;
+                    has_month = true;
                 }
                 else if (!has_time)
                 {
@@ -477,6 +487,7 @@ ReturnType parseDateTimeBestEffortImpl(
                             ErrorCodes::CANNOT_PARSE_DATETIME,
                             "Cannot read DateTime: unexpected number of decimal digits after year: {}",
                             num_digits);
+                    has_month = true;
 
                     /// Only the same delimiter.
                     if (!day_of_month && checkChar(delimiter_after_year, in))
@@ -494,6 +505,7 @@ ReturnType parseDateTimeBestEffortImpl(
                                 ErrorCodes::CANNOT_PARSE_DATETIME,
                                 "Cannot read DateTime: unexpected number of decimal digits after year and month: {}",
                                 num_digits);
+                        has_day = true;
                     }
 
                     if (!isSymbolIn(delimiter_after_year, allowed_date_delimiters))
@@ -562,7 +574,10 @@ ReturnType parseDateTimeBestEffortImpl(
                 else if (checkChar(',', in))
                 {
                     if (month && !day_of_month)
+                    {
                         day_of_month = hour_or_day_of_month_or_month;
+                        has_day = true;
+                    }
                 }
                 else if (
                     (!in.eof() && isSymbolIn(*in.position(), allowed_date_delimiters))
@@ -577,6 +592,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     if constexpr (is_us_style)
                     {
                         month = hour_or_day_of_month_or_month;
+                        has_month = true;
                         num_digits = readDigits(digits, sizeof(digits), in);
                         if (num_digits == 2)
                             readDecimalNumber<2>(day_of_month, digits);
@@ -587,17 +603,25 @@ ReturnType parseDateTimeBestEffortImpl(
                                 ErrorCodes::CANNOT_PARSE_DATETIME,
                                 "Cannot read DateTime: unexpected number of decimal digits after month: {}",
                                 num_digits);
+                        has_day = true;
                     }
                     else
                     {
                         day_of_month = hour_or_day_of_month_or_month;
+                        has_day = true;
 
                         num_digits = readDigits(digits, sizeof(digits), in);
 
                         if (num_digits == 2)
+                        {
                             readDecimalNumber<2>(month, digits);
+                            has_month = true;
+                        }
                         else if (num_digits == 1)
+                        {
                             readDecimalNumber<1>(month, digits);
+                            has_month = true;
+                        }
                         else if (num_digits == 0)
                         {
                             /// Month in alphabetical form
@@ -676,6 +700,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     else
                     {
                         day_of_month = hour_or_day_of_month_or_month;
+                        has_day = true;
                     }
                 }
             }
@@ -905,23 +930,23 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!has_year && !month && !day_of_month && !has_time)
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: neither Date nor Time was parsed successfully");
 
-    /// Match basic DateTime / DateTime64 year-0 placeholder handling before defaulting missing month/day to 1.
-    /// Avoids invalid DateTime64 values like 0000-00-00 from being parsed as 0000-01-01 and diverging from the
-    /// fixed-format reader. DateTime64 with a real calendar date in year 0 is validated after this conditional.
+    /// Only the full zero-date placeholder 0000-00-00 maps to the Unix epoch before month/day
+    /// defaulting. Partial zero dates (0000-01-00 / 0000-00-01) and year-only 0000 are rejected for
+    /// DateTime. DateTime64 accepts real calendar dates in year 0 (ex. 0000-01-01).
     if (has_year && year == 0)
     {
+        if (has_month && has_day && month == 0 && day_of_month == 0)
+        {
+            res = 0;
+            return ReturnType(true);
+        }
+
         if constexpr (!is_64)
-        {
-            /// DateTime cannot represent year 0; map any year-0 input to the Unix epoch.
-            res = 0;
-            return ReturnType(true);
-        }
-        else if (month == 0 || day_of_month == 0)
-        {
-            /// DateTime64: zero month/day placeholders map to the Unix epoch, matching fixed-format reader.
-            res = 0;
-            return ReturnType(true);
-        }
+            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year 0 is out of supported range");
+
+        /// DateTime64 rejects incomplete or partial-zero year-0 forms. Continue only for real dates.
+        if (!has_month || !has_day || month == 0 || day_of_month == 0)
+            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year 0 is out of supported range");
     }
 
     if (!day_of_month)

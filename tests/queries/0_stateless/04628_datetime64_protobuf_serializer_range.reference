@@ -36,7 +36,7 @@
 0000-01-01 00:00:00.000	0000-01-01 00:00:00.000
 -- 0000-00-00 still maps to the Unix epoch (with basic input format)
 1970-01-01 00:00:00.000
--- 0000-00-00 maps to the Unix epoch via parseDateTime64BestEffort
-1970-01-01 00:00:00.000	1970-01-01 00:00:00.000
+-- 0000-00-00 maps to the Unix epoch via parseDateTime64BestEffort, partial zeros are rejected
+1970-01-01 00:00:00.000	\N	\N
 -- 0000-00-00 maps to the Unix epoch with best_effort input format
 1970-01-01 00:00:00.000
