@@ -456,20 +456,24 @@ bool reasonRegistersAnAlias(std::string_view reason)
 }
 
 /// Adds a record to the history of one name, unless the same change of the default value in the same version is
-/// already listed there. One change is recorded twice whenever it concerns both a setting and an alias of it, once
-/// under each name and with a reason authored separately for each, and the history of a name lists it once. Which
-/// of the two records is kept is decided by `authoritative`: the history of a setting keeps the record written
-/// under the name of that setting, and the history of an alias keeps the record that registers the alias, each
-/// being the more direct account of the change for the name it is rendered for.
+/// already listed there under another name. One change is recorded twice whenever it concerns both a setting and
+/// an alias of it, once under each name and with a reason authored separately for each, and the history of a name
+/// lists it once. Which of the two records is kept is decided by `authoritative`: the history of a setting keeps
+/// the record written under the name of that setting, and the history of an alias keeps the record that registers
+/// the alias, each being the more direct account of the change for the name it is rendered for.
 ///
-/// The two records are recognized as the same change by the version and the values alone, and not by the reason,
-/// which is free-form and authored per record ("Lightweight updates were moved to Beta. Added an alias for setting
-/// `allow_experimental_lightweight_update`." against "Lightweight updates were moved to Beta.").
+/// The two records are recognized as the same change by the version and the values, and not by the reason, which
+/// is free-form and authored per record ("Lightweight updates were moved to Beta. Added an alias for setting
+/// `allow_experimental_lightweight_update`." against "Lightweight updates were moved to Beta."). Records written
+/// under the same name are never coalesced: they are separate entries of the history file, not two accounts of
+/// one change (`enable_max_bytes_limit_for_min_age_to_force_merge` has two 25.1 records with the same values but
+/// different reasons), and each keeps its own reason.
 void addSettingHistoryEntry(std::vector<SettingHistoryEntry> & entries, const SettingHistoryEntry & entry, bool authoritative)
 {
     const auto same_change = std::find_if(entries.begin(), entries.end(), [&](const SettingHistoryEntry & other)
     {
-        return other.version == entry.version
+        return other.change->name != entry.change->name
+            && other.version == entry.version
             && other.change->previous_value == entry.change->previous_value
             && other.change->new_value == entry.change->new_value;
     });

@@ -29,7 +29,7 @@ FROM
 INNER JOIN system.settings AS s ON s.name = ch.recorded_name;
 
 CREATE VIEW session_changes AS
-SELECT setting AS name, version, previous_value, new_value, reason
+SELECT setting AS name, recorded_name, version, previous_value, new_value, reason
 FROM session_records
 WHERE NOT (recorded_name != setting AND previous_value = new_value AND match(reason,
     '(?i)\\b(?:add\\w*|new|introduc\\w*)\\b[^.]{0,20}\\balias\\b|(?:^|[.;]\\s+)(?:an?\\s+)?alias\\s+(?:for|of|to)\\b'));
@@ -70,12 +70,25 @@ SELECT count() FROM system.documentation WHERE type = 'Server Setting' AND posit
 
 -- The history lists exactly one item per recorded change of the setting. A change that concerns both a setting and
 -- an alias of it is recorded twice, once under each name, with a reason authored separately for each, and is
--- listed once — so the identity of a change is the version and the values, not the free-form reason.
+-- listed once — so the identity of a change is the version and the values together with the recorded name. Two
+-- records written under the same name are separate entries of the history file, not two accounts of one change,
+-- and both are listed.
 SELECT count() FROM system.documentation AS d
 INNER JOIN
 (
-    SELECT name, uniqExact((version, previous_value, new_value)) AS recorded
-    FROM session_changes GROUP BY name
+    SELECT name, sum(bullets) AS recorded
+    FROM
+    (
+        SELECT name, version, previous_value, new_value, max(cnt) AS bullets
+        FROM
+        (
+            SELECT name, version, previous_value, new_value, recorded_name, count() AS cnt
+            FROM session_changes
+            GROUP BY name, version, previous_value, new_value, recorded_name
+        )
+        GROUP BY name, version, previous_value, new_value
+    )
+    GROUP BY name
 ) AS c USING (name)
 WHERE d.type = 'Setting'
   AND length(splitByString('\n- **', substring(d.description, position(d.description, '**History**')))) - 1 != c.recorded;
@@ -170,6 +183,11 @@ FROM system.documentation WHERE type = 'Setting' AND name = 'evaluation_time';
 -- even though the history file records it under both names with a differently worded reason for each.
 SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'allow_experimental_lightweight_update';
 SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'enable_lightweight_update';
+
+-- Two records written under the same name are separate entries of the history file, not two accounts of one
+-- change, and each is listed with its own reason: `enable_max_bytes_limit_for_min_age_to_force_merge` has two
+-- 25.1 records with the same values but differently authored reasons, and neither overwrites the other.
+SELECT description FROM system.documentation WHERE type = 'MergeTree Setting' AND name = 'enable_max_bytes_limit_for_min_age_to_force_merge';
 
 DROP VIEW alias_registrations;
 DROP VIEW session_changes;
