@@ -1248,13 +1248,30 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// expression, while the residual filter still drops rows from the result.
     JoinActionRef on_clause_condition = concatConditions(join_expression);
     JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
+
+    const bool build_mixed_join_expression
+        = on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator));
+
+    /// A prepared storage delivers its columns already converted to `Nullable`, so the conversion is
+    /// dropped from the right-side expression below and the aliased `Nullable` node is what the join
+    /// is expected to output.
+    ///
+    /// A mixed join expression is the exception for a key-value storage: it is evaluated during the
+    /// join, over the right columns as they were stored, and only the hash family evaluates it at all.
+    /// `DirectKeyValueJoin` declines a mixed condition, so such a join always runs an algorithm that
+    /// reads the key-value storage as an ordinary stream and applies `join_use_nulls` itself. Handing
+    /// it a pre-converted right side would shadow the non-`Nullable` columns the mixed condition is
+    /// built on with same-named `Nullable` ones, and `HashJoin`, which resolves those columns by name,
+    /// would then evaluate the condition over mismatched column types.
+    const bool right_nullable_from_prepared_storage
+        = prepared_join_storage && !(prepared_join_storage.storage_key_value && build_mixed_join_expression);
+
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
     for (const auto * action : actions_after_join)
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
-            //bool remove_right_nullable = prepared_join_storage && use_nulls && isLeftOrFull(join_operator.kind);
-            if (prepared_join_storage && JoinActionRef(action, expression_actions).fromRight())
+            if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// StorageJoin should convert to nullable by itself.
             }
@@ -1294,7 +1311,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     collect_required_input_nodes(on_clause_condition);
     collect_required_input_nodes(residual_filter_condition);
 
-    if (on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator)))
+    if (build_mixed_join_expression)
     {
         auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
         ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
@@ -1316,7 +1333,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
-            if (prepared_join_storage && JoinActionRef(action, expression_actions).fromRight())
+            if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// x (Alias) -> toNullable(x) -> x (Input)
                 action = action->children.at(0)->children.at(0);
@@ -1368,7 +1385,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     ActionsDAG left_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromLeft() || node.fromNone(); }));
     ActionsDAG right_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromRight(); }));
 
-    if (logical_lookup && prepared_join_storage.storage_key_value)
+    if (logical_lookup && prepared_join_storage.storage_key_value && right_nullable_from_prepared_storage)
     {
         right_dag.mergeInplace(
             JoinExpressionActions::getSubDAG(
