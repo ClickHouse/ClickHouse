@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Tags: long, no-random-settings, no-random-merge-tree-settings
 #
-# no-random-settings: a random max_execution_time / max_rows_to_read would end the queries
-# instead of the limits set here, and max_block_size must stay large enough for one block to
-# span every mark.
+# no-random-settings: the read-speed family (local_filesystem_read_method, max_read_buffer_size,
+# enable_filesystem_cache, use_page_cache_for_local_disks,
+# merge_tree_compact_parts_min_granules_to_multibuffer_read) is randomized, and a fast enough
+# combination makes the unpatched read finish under the assertions below, which stops them
+# discriminating. max_block_size is randomized too, but every query that depends on it sets it.
 # no-random-merge-tree-settings: the read must go through a Compact part with
-# index_granularity = 1, and both are randomized settings.
+# index_granularity = 1, and both that and min_bytes_for_wide_part are randomized. Redundant
+# today, since no-random-settings already disables the merge-tree randomizer, but kept so the
+# requirement is explicit.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
