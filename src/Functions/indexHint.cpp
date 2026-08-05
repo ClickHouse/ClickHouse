@@ -61,6 +61,9 @@ Note: It is not possible to optimize a query with the `indexHint` function. The 
     {
         "Usage example with date filtering",
         R"(
+-- `index_granularity` is lowered to 8 here only to keep the example small enough to follow.
+-- Do not change it in production: the default of 8192 is what makes the index sparse and cheap,
+-- and a small value makes the index large and slows queries down.
 CREATE TABLE ontime (FlightDate Date, Carrier String)
 ENGINE = MergeTree ORDER BY FlightDate
 SETTINGS index_granularity = 8;
