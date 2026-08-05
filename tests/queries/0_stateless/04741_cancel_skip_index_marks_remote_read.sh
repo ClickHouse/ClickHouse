@@ -179,6 +179,10 @@ $CLICKHOUSE_CLIENT --query "
              enable_block_number_column = 1, enable_block_offset_column = 1,
              apply_patches_on_merge = 0;
 
+    -- A retried insert consumes ZooKeeper block numbers, so part ids stop being
+    -- deterministic and the fixture assertion below no longer knows the merged part's name.
+    SET insert_keeper_fault_injection_probability = 0;
+
     INSERT INTO t_patch_cancel SELECT number, 0 FROM numbers(2000);
     INSERT INTO t_patch_cancel SELECT number + 2000, 0 FROM numbers(2000);
     INSERT INTO t_patch_cancel SELECT number + 4000, 0 FROM numbers(2000);
