@@ -1,6 +1,6 @@
 {
   "version": 6,
-  "settings": 1274,
+  "settings": 1277,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -9,6 +9,7 @@
     "aggregate_functions_null_for_empty": "/reference/settings/session-settings/aggregate",
     "aggregation_in_order_max_block_bytes": "/reference/settings/session-settings/aggregation",
     "aggregation_memory_efficient_merge_threads": "/reference/settings/session-settings/aggregation",
+    "ai_function_allow_insecure_endpoint": "/reference/settings/session-settings/ai-function",
     "ai_function_embedding_default_credentials": "/reference/settings/session-settings/ai-function",
     "ai_function_embedding_max_batch_size": "/reference/settings/session-settings/ai-function",
     "ai_function_max_api_calls_per_query": "/reference/settings/session-settings/ai-function",
@@ -1193,6 +1194,7 @@
     "text_index_posting_list_apply_mode": "/reference/settings/session-settings/text-index",
     "throw_if_no_data_to_insert": "/reference/settings/session-settings/other",
     "throw_on_error_from_cache_on_write_operations": "/reference/settings/session-settings/throw-on",
+    "throw_on_hive_partitioning_resolution_failure": "/reference/settings/session-settings/throw-on",
     "throw_on_max_partitions_per_insert_block": "/reference/settings/session-settings/throw-on",
     "throw_on_unsupported_query_inside_transaction": "/reference/settings/session-settings/throw-on",
     "timeout_before_checking_execution_speed": "/reference/settings/session-settings/other",
@@ -1268,6 +1270,7 @@
     "use_variant_as_common_type": "/reference/settings/session-settings/use-variant",
     "use_variant_default_implementation_for_comparisons": "/reference/settings/session-settings/use-variant",
     "use_with_fill_by_sorting_prefix": "/reference/settings/session-settings/use",
+    "uuid_type_version": "/reference/settings/session-settings/other",
     "validate_enum_literals_in_operators": "/reference/settings/session-settings/validate",
     "validate_mutation_query": "/reference/settings/session-settings/validate",
     "validate_polygons": "/reference/settings/session-settings/validate",
@@ -2863,8 +2866,8 @@
     {
       "path": "/reference/settings/session-settings/ai-function",
       "label": "ai_function_*",
-      "settings": 11,
-      "characters": 6257
+      "settings": 12,
+      "characters": 7156
     },
     {
       "path": "/reference/settings/session-settings/allow",
@@ -3194,7 +3197,7 @@
       "path": "/reference/settings/session-settings/enable",
       "label": "enable_*",
       "settings": 32,
-      "characters": 19456
+      "characters": 19084
     },
     {
       "path": "/reference/settings/session-settings/enable-blob-storage-log",
@@ -3914,7 +3917,7 @@
       "path": "/reference/settings/session-settings/optimize-trivial",
       "label": "optimize_trivial_*",
       "settings": 5,
-      "characters": 4729
+      "characters": 5116
     },
     {
       "path": "/reference/settings/session-settings/optimize-use",
@@ -4225,8 +4228,8 @@
     {
       "path": "/reference/settings/session-settings/throw-on",
       "label": "throw_on_*",
-      "settings": 3,
-      "characters": 1108
+      "settings": 4,
+      "characters": 1775
     },
     {
       "path": "/reference/settings/session-settings/timeout-overflow-mode",
@@ -4375,8 +4378,8 @@
     {
       "path": "/reference/settings/session-settings/other",
       "label": "Other",
-      "settings": 120,
-      "characters": 64432
+      "settings": 121,
+      "characters": 66325
     }
   ]
 }
