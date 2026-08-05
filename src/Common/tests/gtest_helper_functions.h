@@ -7,9 +7,9 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Poco/AutoPtr.h>
-#include "Poco/DOM/Document.h"
-#include "Poco/DOM/NodeList.h"
-#include "Poco/DOM/NamedNodeMap.h"
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/NodeList.h>
+#include <Poco/DOM/NamedNodeMap.h>
 
 const std::string tmp_path = "/tmp/";
 
@@ -26,6 +26,7 @@ inline std::unique_ptr<Poco::File> getFileWithContents(const char *fileName, con
     {
         WriteBufferFromFile out(config_file->path());
         writeString(fileContents, out);
+        out.finalize();
     }
 
     return config_file;

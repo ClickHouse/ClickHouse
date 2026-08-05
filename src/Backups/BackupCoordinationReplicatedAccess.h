@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <map>
-#include <unordered_set>
+#include <set>
 
 
 namespace DB
@@ -28,7 +28,7 @@ public:
     BackupCoordinationReplicatedAccess();
     ~BackupCoordinationReplicatedAccess();
 
-    struct FilePathForAccessEntitry
+    struct FilePathForAccessEntity
     {
         String access_zk_path;
         AccessEntityType access_entity_type;
@@ -37,7 +37,7 @@ public:
     };
 
     /// Adds a path to access*.txt file keeping access entities of a ReplicatedAccessStorage.
-    void addFilePath(FilePathForAccessEntitry && file_path_for_access_entity);
+    void addFilePath(FilePathForAccessEntity && file_path_for_access_entity);
 
     /// Returns all paths added by addFilePath() if `host_id` is a host chosen to store access.
     Strings getFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const;
@@ -47,7 +47,7 @@ private:
 
     struct FilePathsAndHost
     {
-        std::unordered_set<String> file_paths;
+        std::set<String> file_paths;
         String host_to_store_access;
     };
 

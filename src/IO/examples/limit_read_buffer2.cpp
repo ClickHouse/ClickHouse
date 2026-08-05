@@ -1,10 +1,11 @@
-#include <sstream>
-
 #include <IO/LimitReadBuffer.h>
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
+#include <iostream>
+#include <sstream>
+#include <Examples/clickhouse_examples.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ namespace DB
 }
 
 
-int main(int, char **)
+int mainEntryExampleLimitReadBuffer2(int, char **)
 try
 {
     using namespace DB;
@@ -27,7 +28,7 @@ try
 
         ReadBuffer in(src.data(), src.size(), 0);
 
-        LimitReadBuffer limit_in(in, 1, /* trow_exception */ false, /* exact_limit */ {});
+        auto limit_in = LimitReadBuffer(in, {.read_no_more = 1});
 
         {
             WriteBufferFromString out(dst);
@@ -52,10 +53,10 @@ try
         {
             WriteBufferFromString out(dst);
 
-            char x;
+            char x = {};
             readChar(x, in);
 
-            LimitReadBuffer limit_in(in, 1, /* trow_exception */ false, /* exact_limit */ {});
+            auto limit_in = LimitReadBuffer(in, {.read_no_more = 1});
 
             copyData(limit_in, out);
 
@@ -70,7 +71,7 @@ try
         if (dst != "b")
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Incorrect destination value: {}, expected 'b'", dst);
 
-        char y;
+        char y = {};
         readChar(y, in);
         if (y != 'c')
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Read incorrect value from underlying buffer: {}, expected 'c'", y);
@@ -85,9 +86,9 @@ try
         ReadBuffer in(src.data(), src.size(), 0);
 
         {
-            LimitReadBuffer limit_in(in, 1, /* trow_exception */ false, /* exact_limit */ {});
+            auto limit_in = LimitReadBuffer(in, {.read_no_more = 1});
 
-            char x;
+            char x = {};
             readChar(x, limit_in);
 
             if (limit_in.count() != 1)

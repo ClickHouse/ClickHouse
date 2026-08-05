@@ -4,10 +4,8 @@ import logging
 import os
 import time
 
-
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 
@@ -71,6 +69,7 @@ def cluster():
 
 def test_dataloss(cluster):
     node = cluster.instances["node"]
+    node.query("DROP TABLE IF EXISTS s3_failover_test")
 
     node.query(
         """
@@ -84,5 +83,9 @@ def test_dataloss(cluster):
 
     # Must throw an exception because we use proxy which always fail
     # CompleteMultipartUpload requests
-    with pytest.raises(Exception):
-        node.query("INSERT INTO s3_failover_test VALUES (1, 'Hello')")
+    try:
+        with pytest.raises(Exception) as exc_info:
+            node.query("INSERT INTO s3_failover_test VALUES (1, 'Hello')")
+        assert "completeMultipartUpload" in str(exc_info.value)
+    finally:
+        node.query("DROP TABLE IF EXISTS s3_failover_test")

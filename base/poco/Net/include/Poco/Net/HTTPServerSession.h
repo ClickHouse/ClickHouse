@@ -65,7 +65,7 @@ namespace Net
     private:
         bool _firstRequest;
         Poco::Timespan _keepAliveTimeout;
-        int _maxKeepAliveRequests;
+        size_t _maxKeepAliveRequests;
     };
 
 
@@ -74,7 +74,7 @@ namespace Net
     //
     inline bool HTTPServerSession::canKeepAlive() const
     {
-        return _maxKeepAliveRequests != 0;
+        return getKeepAlive() && _maxKeepAliveRequests > 0;
     }
 
 

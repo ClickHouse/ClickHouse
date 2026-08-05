@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-azure-blob-storage, long
 # Tag no-fasttest: 45 seconds running
+# Tag long: the test uses background `sleepEachRow` queries (~66s of parallel sleeps and
+# a ~20s tuple sleep) as a timing floor, but the wall-clock duration is dominated by the
+# concurrent DDL (`CREATE`/`DROP`/`RENAME`/`EXCHANGE`) on `Atomic` databases running on
+# top of those sleeps. The DDL path is instrumented under ASan/TSan/MSan and coverage
+# builds, so the whole test can exceed 180s (CIDB p95 on `amd_tsan, parallel` is ~356s),
+# which trips the `clickhouse-test` flaky-check `TEST_MAX_RUN_TIME_IN_SECONDS = 180s` cap;
+# the `long` tag exempts the test from that cap. The `sleepEachRow` calls themselves are
+# wall-clock sleeps and are not sped up or slowed down by sanitizers.
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
@@ -51,8 +59,8 @@ $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW
 $CLICKHOUSE_CLIENT -q "SELECT name, uuid, create_table_query FROM system.tables WHERE database='${DATABASE_2}'" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
 
 RANDOM_COMMENT="$RANDOM"
-$CLICKHOUSE_CLIENT --max-threads 5 --function_sleep_max_microseconds_per_block 120000000 -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(3) AS col FROM ${DATABASE_1}.mt) -- ${RANDOM_COMMENT}" &     # 66s (3s * 22 rows per partition [Using 5 threads in parallel]), result: 110, 5995
-$CLICKHOUSE_CLIENT --max-threads 5 --function_sleep_max_microseconds_per_block 120000000 -q "INSERT INTO ${DATABASE_2}.mt SELECT number + sleepEachRow(2.2) FROM numbers(30) -- ${RANDOM_COMMENT}" &                # 66s (2.2s * 30 rows)
+$CLICKHOUSE_CLIENT --max-execution-time 600 --max-threads 5 --function_sleep_max_microseconds_per_block 120000000 -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(3) AS col FROM ${DATABASE_1}.mt) -- ${RANDOM_COMMENT}" &     # 66s (3s * 22 rows per partition [Using 5 threads in parallel]), result: 110, 5995
+$CLICKHOUSE_CLIENT --max-execution-time 600 --max-threads 5 --function_sleep_max_microseconds_per_block 120000000 -q "INSERT INTO ${DATABASE_2}.mt SELECT number + sleepEachRow(2.2) FROM numbers(30) -- ${RANDOM_COMMENT}" &                # 66s (2.2s * 30 rows)
 
 it=0
 while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_COMMENT}%'") -ne 2 ]]; do

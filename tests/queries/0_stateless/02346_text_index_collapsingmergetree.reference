@@ -1,0 +1,12 @@
+Take values from all parts
+-- direct read disabled
+foo
+foo updated
+-- direct read enabled
+bar
+bar updated
+Take values from the final part
+-- direct read disabled
+foo updated
+-- direct read enabled
+bar updated

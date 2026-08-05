@@ -5,6 +5,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
@@ -51,11 +52,21 @@ public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
 
+    /// `external_join_threshold_` is the auto-spill memory cap supplied by `SpillingHashJoin`
+    /// when this instance is wrapped. It triggers in-bucket rehashing whenever the in-memory
+    /// hash table approaches half of the cap, so the configured spill ceiling is honored.
+    /// Pass 0 for standalone use (`join_algorithm = 'grace_hash'`); the user-visible
+    /// `max_bytes_before_external_join` setting deliberately does NOT apply to standalone
+    /// instances - those still rely on `max_rows_in_join` / `max_bytes_in_join` for spill
+    /// decisions.
     GraceHashJoin(
-        ContextPtr context_, std::shared_ptr<TableJoin> table_join_,
-        const Block & left_sample_block_, const Block & right_sample_block_,
+        size_t initial_num_buckets_,
+        size_t max_num_buckets_,
+        std::shared_ptr<TableJoin> table_join_,
+        SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
-        bool any_take_last_row_ = false);
+        bool any_take_last_row_ = false,
+        size_t external_join_threshold_ = 0);
 
     ~GraceHashJoin() override;
 
@@ -66,16 +77,16 @@ public:
 
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
 
     void setTotals(const Block & block) override;
+    const Block & getTotals() const override;
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
-    bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
@@ -85,7 +96,11 @@ public:
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
 
+    void onBuildPhaseFinish() override;
+
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+
+    void forceSpill() { force_spill = true; }
 
 private:
     void initBuckets();
@@ -121,19 +136,19 @@ private:
     Block prepareRightBlock(const Block & block);
 
     LoggerPtr log;
-    ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
-    Block left_sample_block;
-    Block right_sample_block;
+    SharedHeader left_sample_block;
+    SharedHeader right_sample_block;
     Block output_sample_block;
     bool any_take_last_row;
+    const size_t initial_num_buckets;
     const size_t max_num_buckets;
-    size_t max_block_size;
+    const size_t external_join_threshold;
 
     Names left_key_names;
     Names right_key_names;
 
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
 
     Buckets buckets;
     mutable SharedMutex rehash_mutex;
@@ -145,6 +160,9 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
+    std::atomic<bool> force_spill = false;
+
+    mutable std::mutex totals_mutex;
 };
 
 }

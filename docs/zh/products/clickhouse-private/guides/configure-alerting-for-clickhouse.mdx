@@ -1,0 +1,49 @@
+---
+noindex: true
+title: "为 ClickHouse 配置告警"
+sidebarTitle: "配置告警"
+description: "为 ClickHouse Server、Keeper 和 operator 设置 Prometheus 抓取目标及告警。"
+---
+
+为 ClickHouse Server、Keeper 和 operator 设置 Prometheus 抓取目标及告警。
+
+<div id="set-up-prometheus-scrape-targets-for-clickhouse-server">
+  ## 为 ClickHouse server 设置 Prometheus 抓取目标
+</div>
+
+ClickHouse server 的 Pod (容器组) 包含 `prometheus.io/*` 注解，可暴露基础指标。若要获取完整的指标集 (包括 `ClickHouse_CustomMetrics_*`) ，请通过 PodMonitor 或同等方式，将每个 ClickHouse server pod (容器组) 的 `:8123/metrics` 端点配置为 Prometheus 抓取目标。
+
+此端点**需要身份验证**。请使用具有只读特权的专用用户进行身份验证。
+
+<div id="set-up-podmonitor-for-keeper">
+  ## 为 Keeper 配置 PodMonitor
+</div>
+
+创建一个 PodMonitor，以 Keeper pod (容器组) 上的 `:8001/metrics` 端点为目标，用于采集 Keeper 指标。
+
+<div id="alert-rules">
+  ## 告警规则
+</div>
+
+有关推荐告警定义 (Prometheus 表达式、阈值和操作) 的完整列表，请参阅 [reference/metrics-and-alerts.md](/zh/products/clickhouse-private/reference/metrics-and-alerts-reference)。
+
+关键告警包括：
+
+| 告警                 | 指标                                                     | 用途                                      |
+| ------------------ | ------------------------------------------------------ | --------------------------------------- |
+| Operator 未进行协调     | `last_cluster_reconcile`                               | Operator 未在预期时间窗口内完成协调                  |
+| Operator 协调错误      | `controller_runtime_reconcile_errors_total`            | 错误率超过协调尝试总次数的 5%                        |
+| 损坏的 detached parts | `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`  | 损坏的 detached parts 超过 100 个，并持续 60 分钟以上 |
+| 数据丢失               | `ClickHouse_CustomMetric_LostPartCount`                | 检测到丢失的 parts (可能导致数据丢失)                 |
+| 服务器卡在关闭过程中         | `ClickHouseMetrics_IsServerShuttingDown`               | 服务器持续处于关闭过程中，已超过一小时                     |
+| 表副本为只读             | `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds` | 表处于只读模式已超过一小时                           |
+
+<div id="standard-kubernetes-alerts">
+  ## 标准 Kubernetes 告警
+</div>
+
+除 ClickHouse 特有告警外，还应添加以下标准 Kubernetes 告警：
+
+* 处于 CrashLoop 的 Pod (容器组)
+* 无法调度的 Pod (容器组)
+* 您所在环境中特有的其他基础设施相关问题

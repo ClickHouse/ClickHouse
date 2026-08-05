@@ -22,20 +22,23 @@ public:
     bool attach_mode = false;
     bool is_revoke = false;
     AccessRightsElements access_rights_elements;
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     bool admin_option = false;
     bool replace_access = false;
     bool replace_granted_roles = false;
     bool current_grants = false;
 
-    std::shared_ptr<ASTRolesOrUsersSet> grantees;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     void replaceEmptyDatabase(const String & current_database);
     void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTGrantQuery>(clone()); }
     QueryKind getQueryKind() const override { return is_revoke ? QueryKind::Revoke : QueryKind::Grant; }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
+
 }

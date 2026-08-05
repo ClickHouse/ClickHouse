@@ -12,7 +12,7 @@ bool ParserShowFunctionsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 {
     ASTPtr like;
 
-    auto query = std::make_shared<ASTShowFunctionsQuery>();
+    auto query = make_intrusive<ASTShowFunctionsQuery>();
     if (!ParserKeyword(Keyword::SHOW_FUNCTIONS).ignore(pos, expected))
         return false;
 
@@ -26,7 +26,7 @@ bool ParserShowFunctionsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     }
 
     if (like)
-        query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();
+        query->like = like->as<ASTLiteral &>().value.safeGet<String>();
     node = query;
 
     return true;

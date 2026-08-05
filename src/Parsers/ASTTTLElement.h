@@ -4,6 +4,7 @@
 #include <Storages/DataDestinationType.h>
 #include <Storages/TTLMode.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -23,6 +24,15 @@ public:
 
     ASTPtr recompression_codec;
 
+    ASTTTLElement()
+        : mode(TTLMode::DELETE)
+        , destination_type(DataDestinationType::DELETE)
+        , if_exists(false)
+        , ttl_expr_pos(-1)
+        , where_expr_pos(-1)
+    {
+    }
+
     ASTTTLElement(TTLMode mode_, DataDestinationType destination_type_, const String & destination_name_, bool if_exists_)
         : mode(mode_)
         , destination_type(destination_type_)
@@ -36,6 +46,8 @@ public:
     String getID(char) const override { return "TTLElement"; }
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr ttl() const { return getExpression(ttl_expr_pos); }
     ASTPtr where() const { return getExpression(where_expr_pos); }
@@ -44,7 +56,7 @@ public:
     void setWhere(ASTPtr && ast) { setExpression(where_expr_pos, std::forward<ASTPtr>(ast)); }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
 private:
     int ttl_expr_pos;

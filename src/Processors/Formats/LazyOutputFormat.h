@@ -2,10 +2,11 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/ProfileInfo.h>
-#include <IO/WriteBuffer.h>
 
 namespace DB
 {
+
+class NullWriteBuffer;
 
 /// LazyOutputFormat is used to retrieve ready data from executing pipeline.
 /// You can periodically call `getChunk` from separate thread.
@@ -14,8 +15,7 @@ class LazyOutputFormat : public IOutputFormat
 {
 
 public:
-    explicit LazyOutputFormat(const Block & header)
-        : IOutputFormat(header, out), queue(2) {}
+    explicit LazyOutputFormat(SharedHeader header);
 
     String getName() const override { return "LazyOutputFormat"; }
 
@@ -41,6 +41,7 @@ public:
     }
 
     bool expectMaterializedColumns() const override { return false; }
+    bool supportsSpecialSerializationKinds() const override { return true; }
 
 protected:
     void consume(Chunk chunk) override
@@ -58,7 +59,7 @@ private:
     Chunk extremes;
 
     /// Is not used.
-    static WriteBufferFromPointer out;
+    static NullWriteBuffer out;
 
     ProfileInfo info;
 };

@@ -1,46 +1,45 @@
 #pragma once
 
-#include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/SchedulerRoot.h>
-#include <Common/Scheduler/ResourceGuard.h>
-#include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
-#include <Common/Scheduler/Nodes/PriorityPolicy.h>
-#include <Common/Scheduler/Nodes/FifoQueue.h>
-#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
-#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
-#include <Common/Scheduler/Nodes/registerResourceManagers.h>
+#include <gtest/gtest.h>
 
-#include <Poco/Util/XMLConfiguration.h>
+#include <Common/Scheduler/WorkloadSettings.h>
+#include <Common/Scheduler/IResourceManager.h>
+#include <Common/Scheduler/ResourceGuard.h>
+#include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
+#include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/WorkloadNode.h>
+
+#include <Common/ThreadPool.h>
 
 #include <atomic>
 #include <barrier>
+#include <exception>
+#include <functional>
+#include <memory>
 #include <unordered_map>
 #include <mutex>
-#include <set>
 #include <sstream>
+#include <utility>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int RESOURCE_ACCESS_DENIED;
+}
+
 struct ResourceTestBase
 {
-    ResourceTestBase()
+    template <class TClass, class... Args>
+    static TClass * add(EventQueue & event_queue, SchedulerNodePtr & root_node, const String & path, Args... args)
     {
-        [[maybe_unused]] static bool typesRegistered = [] { registerSchedulerNodes(); registerResourceManagers(); return true; }();
-    }
-
-    template <class TClass>
-    static TClass * add(EventQueue * event_queue, SchedulerNodePtr & root_node, const String & path, const String & xml = {})
-    {
-        std::stringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        stream << "<resource><node path=\"" << path << "\">" << xml << "</node></resource>";
-        Poco::AutoPtr config{new Poco::Util::XMLConfiguration(stream)};
-        String config_prefix = "node";
-
         if (path == "/")
         {
             EXPECT_TRUE(root_node.get() == nullptr);
-            root_node.reset(new TClass(event_queue, *config, config_prefix));
+            root_node.reset(new TClass(event_queue, std::forward<Args>(args)...));
             return static_cast<TClass *>(root_node.get());
         }
 
@@ -65,65 +64,118 @@ struct ResourceTestBase
         }
 
         EXPECT_TRUE(!child_name.empty()); // wrong path
-        SchedulerNodePtr node = std::make_shared<TClass>(event_queue, *config, config_prefix);
+        SchedulerNodePtr node = std::make_shared<TClass>(event_queue, std::forward<Args>(args)...);
         node->basename = child_name;
         parent->attachChild(node);
         return static_cast<TClass *>(node.get());
     }
 };
 
-
-struct ConstraintTest : public SemaphoreConstraint
-{
-    explicit ConstraintTest(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : SemaphoreConstraint(event_queue_, config, config_prefix)
-    {}
-
-    std::pair<ResourceRequest *, bool> dequeueRequest() override
-    {
-        auto [request, active] = SemaphoreConstraint::dequeueRequest();
-        if (request)
-        {
-            std::unique_lock lock(mutex);
-            requests.insert(request);
-        }
-        return {request, active};
-    }
-
-    void finishRequest(ResourceRequest * request) override
-    {
-        {
-            std::unique_lock lock(mutex);
-            requests.erase(request);
-        }
-        SemaphoreConstraint::finishRequest(request);
-    }
-
-    std::mutex mutex;
-    std::set<ResourceRequest *> requests;
-};
-
 class ResourceTestClass : public ResourceTestBase
 {
     struct Request : public ResourceRequest
     {
+        ResourceTestClass * test;
         String name;
 
-        Request(ResourceCost cost_, const String & name_)
+        Request(ResourceTestClass * test_, ResourceCost cost_, const String & name_)
             : ResourceRequest(cost_)
+            , test(test_)
             , name(name_)
         {}
 
         void execute() override
         {
         }
+
+        void failed(const std::exception_ptr &) override
+        {
+            test->failed_cost += cost;
+            delete this;
+        }
     };
 
+    EventQueue event_queue;
+    EventQueue::SchedulerThread scheduler_thread{&event_queue};
+    SchedulerNodePtr root_node;
+    std::unordered_map<String, ResourceCost> consumed_cost;
+    ResourceCost failed_cost = 0;
+
 public:
-    template <class TClass>
-    void add(const String & path, const String & xml = {})
+    ~ResourceTestClass()
     {
-        ResourceTestBase::add<TClass>(&event_queue, root_node, path, xml);
+        if (root_node)
+            dequeue(); // Just to avoid any leaks of `Request` object
+    }
+
+    EventQueue & getEventQueue()
+    {
+        return event_queue;
+    }
+
+    template <class TClass, class... Args>
+    void add(const String & path, Args... args)
+    {
+        ResourceTestBase::add<TClass>(event_queue, root_node, path, std::forward<Args>(args)...);
+    }
+
+    template <class TClass, class... Args>
+    void addCustom(const String & path, Args... args)
+    {
+        ResourceTestBase::add<TClass>(event_queue, root_node, path, std::forward<Args>(args)...);
+    }
+
+    TimeSharedWorkloadNodePtr createUnifiedNode(const String & basename, const WorkloadSettings & settings = {})
+    {
+        return createUnifiedNode(basename, {}, settings);
+    }
+
+    TimeSharedWorkloadNodePtr createUnifiedNode(const String & basename, const TimeSharedWorkloadNodePtr & parent, const WorkloadSettings & settings = {})
+    {
+        auto node = std::make_shared<TimeSharedWorkloadNode>(event_queue, settings, CostUnit::IOByte, "test_resource");
+        node->basename = basename;
+        if (parent)
+        {
+            parent->attachWorkloadChild(node);
+        }
+        else
+        {
+            EXPECT_TRUE(root_node.get() == nullptr);
+            root_node = node;
+        }
+        return node;
+    }
+
+    // Updates the parent and/or scheduling settings for a specidfied `node`.
+    // Unit test implementation must make sure that all needed queues and constraints are not going to be destroyed.
+    // Normally it is the responsibility of WorkloadResourceManager, but we do not use it here, so manual version control is required.
+    // (see WorkloadResourceManager::Resource::updateCurrentVersion() fo details)
+    void updateUnifiedNode(const TimeSharedWorkloadNodePtr & node, const TimeSharedWorkloadNodePtr & old_parent, const TimeSharedWorkloadNodePtr & new_parent, const WorkloadSettings & new_settings)
+    {
+        EXPECT_TRUE((old_parent && new_parent) || (!old_parent && !new_parent)); // changing root node is not supported
+        bool detached = false;
+        if (IWorkloadNode::updateRequiresDetach(
+            old_parent ? old_parent->basename : "",
+            new_parent ? new_parent->basename : "",
+            node->getSettings(),
+            new_settings,
+            SharingMode::TimeShared))
+        {
+            if (old_parent)
+                old_parent->detachWorkloadChild(node);
+            detached = true;
+        }
+
+        node->updateSchedulingSettings(new_settings);
+
+        if (detached && new_parent)
+            new_parent->attachWorkloadChild(node);
+    }
+
+
+    void enqueue(const TimeSharedWorkloadNodePtr & node, const std::vector<ResourceCost> & costs)
+    {
+        enqueueImpl(node->getLink().queue, costs, node->basename);
     }
 
     void enqueue(const String & path, const std::vector<ResourceCost> & costs)
@@ -131,7 +183,7 @@ public:
         ASSERT_TRUE(root_node.get() != nullptr); // root should be initialized first
         ISchedulerNode * node = root_node.get();
         size_t pos = 1;
-        while (pos < path.length())
+        while (node && pos < path.length())
         {
             size_t slash = path.find('/', pos);
             if (slash != String::npos)
@@ -146,21 +198,25 @@ public:
                 pos = String::npos;
             }
         }
-        ISchedulerQueue * queue = dynamic_cast<ISchedulerQueue *>(node);
-        ASSERT_TRUE(queue != nullptr); // not a queue
+        if (node)
+            enqueueImpl(dynamic_cast<ISchedulerQueue *>(node), costs);
+    }
 
+    void enqueueImpl(ISchedulerQueue * queue, const std::vector<ResourceCost> & costs, const String & name = {})
+    {
+        ASSERT_TRUE(queue != nullptr); // not a queue
+        if (!queue)
+            return; // to make clang-analyzer-core.NonNullParamChecker happy
         for (ResourceCost cost : costs)
-        {
-            queue->enqueueRequest(new Request(cost, queue->basename));
-        }
+            queue->enqueueRequest(new Request(this, cost, name.empty() ? queue->basename : name));
         processEvents(); // to activate queues
     }
 
-    void dequeue(size_t count_limit = size_t(-1), ResourceCost cost_limit = ResourceCostMax)
+    void dequeue(size_t count_limit = size_t(-1), ResourceCost cost_limit = std::numeric_limits<ResourceCost>::max())
     {
         while (count_limit > 0 && cost_limit > 0)
         {
-            if (auto [request, _] = root_node->dequeueRequest(); request)
+            if (auto [request, _] = getRoot().dequeueRequest(); request)
             {
                 count_limit--;
                 cost_limit -= request->cost;
@@ -173,16 +229,16 @@ public:
         }
     }
 
-    void process(EventQueue::TimePoint now, size_t count_limit = size_t(-1), ResourceCost cost_limit = ResourceCostMax)
+    void process(EventQueue::TimePoint now, size_t count_limit = size_t(-1), ResourceCost cost_limit = std::numeric_limits<ResourceCost>::max())
     {
         event_queue.setManualTime(now);
 
         while (count_limit > 0 && cost_limit > 0)
         {
             processEvents();
-            if (!root_node->isActive())
+            if (!getRoot().isActive())
                 return;
-            if (auto [request, _] = root_node->dequeueRequest(); request)
+            if (auto [request, _] = getRoot().dequeueRequest(); request)
             {
                 count_limit--;
                 cost_limit -= request->cost;
@@ -208,37 +264,79 @@ public:
         consumed_cost[name] -= value;
     }
 
+    void failed(ResourceCost value)
+    {
+        EXPECT_EQ(failed_cost, value);
+        failed_cost -= value;
+    }
+
     void processEvents()
     {
         while (event_queue.tryProcess()) {}
     }
 
-private:
-    EventQueue event_queue;
-    SchedulerNodePtr root_node;
-    std::unordered_map<String, ResourceCost> consumed_cost;
+    ITimeSharedNode & getRoot()
+    {
+        return static_cast<ITimeSharedNode &>(*root_node);
+    }
 };
+
+enum EnqueueOnlyEnum { EnqueueOnly };
 
 template <class TManager>
 struct ResourceTestManager : public ResourceTestBase
 {
     ResourceManagerPtr manager;
 
-    std::vector<ThreadFromGlobalPool> threads;
+    std::mutex threads_mutex;
+    std::list<ThreadFromGlobalPool> threads; // We use list to avoid moving ThreadFromGlobalPool objects
     std::barrier<> busy_period;
 
     struct Guard : public ResourceGuard
     {
         ResourceTestManager & t;
+        ResourceCost cost;
 
-        Guard(ResourceTestManager & t_, ResourceLink link_, ResourceCost cost)
-            : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost, Lock::Defer)
+        /// Works like regular ResourceGuard, ready for consumption after constructor
+        Guard(ResourceTestManager & t_, ResourceLink link_, ResourceCost cost_)
+            : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost_, Lock::Defer)
             , t(t_)
+            , cost(cost_)
         {
             t.onEnqueue(link);
+            waitExecute();
+        }
+
+        /// Just enqueue resource request, do not block (needed for tests to sync). Call `waitExecuted()` afterwards
+        Guard(ResourceTestManager & t_, ResourceLink link_, ResourceCost cost_, EnqueueOnlyEnum)
+            : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost_, Lock::Defer)
+            , t(t_)
+            , cost(cost_)
+        {
+            t.onEnqueue(link);
+        }
+
+        /// Waits for ResourceRequest::execute() to be called for enqueued request
+        void waitExecute()
+        {
             lock();
             t.onExecute(link);
             consume(cost);
+        }
+
+        /// Waits for ResourceRequest::failure() to be called for enqueued request
+        void waitFailed(const String & pattern)
+        {
+            try
+            {
+                lock();
+                FAIL();
+            }
+            catch (Exception & e)
+            {
+                ASSERT_EQ(e.code(), ErrorCodes::RESOURCE_ACCESS_DENIED);
+                ASSERT_TRUE(e.message().contains(pattern));
+            }
         }
     };
 
@@ -264,17 +362,35 @@ struct ResourceTestManager : public ResourceTestBase
         , busy_period(thread_count)
     {}
 
+    enum DoNotInitManagerEnum { DoNotInitManager };
+
+    explicit ResourceTestManager(size_t thread_count, DoNotInitManagerEnum)
+        : busy_period(thread_count)
+    {}
+
     ~ResourceTestManager()
     {
-        for (auto & thread : threads)
-            thread.join();
+        wait();
     }
 
-    void update(const String & xml)
+    void wait()
     {
-        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::AutoPtr config{new Poco::Util::XMLConfiguration(stream)};
-        manager->updateConfiguration(*config);
+        while (true)
+        {
+            std::list<ThreadFromGlobalPool> threads_to_join;
+            {
+                std::scoped_lock lock{threads_mutex};
+                threads_to_join.swap(threads);
+            }
+            if (threads_to_join.empty())
+                break;
+            for (ThreadFromGlobalPool & thread : threads_to_join)
+            {
+                if (thread.joinable())
+                    thread.join();
+            }
+            // we have to repeat because threads we have just joined could have created new threads in the meantime
+        }
     }
 
     auto & getLinkData(ResourceLink link)

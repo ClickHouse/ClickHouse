@@ -32,6 +32,7 @@ clickhouse:
     field2: "2"
 )YAML";
         writeString(data, out);
+        out.finalize();
     }
 
     auto system_tables_file = std::make_unique<File>(path / "config.d/system_tables.yaml");
@@ -49,11 +50,12 @@ clickhouse:
         level: debug
 )YAML";
         writeString(data, out);
+        out.finalize();
     }
 
 
     DB::ConfigProcessor processor(config_file->path(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
-    bool has_zk_includes;
+    bool has_zk_includes = {};
     DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
     DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
@@ -96,6 +98,7 @@ clickhouse:
         level: debug
 )YAML";
         writeString(data, out);
+        out.finalize();
     }
 
     auto system_tables_file = std::make_unique<File>(path / "config.d/system_tables.yaml");
@@ -115,11 +118,12 @@ clickhouse:
         level: debug
 )YAML";
         writeString(data, out);
+        out.finalize();
     }
 
 
     DB::ConfigProcessor processor(config_file->path(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
-    bool has_zk_includes;
+    bool has_zk_includes = {};
     DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
     DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 

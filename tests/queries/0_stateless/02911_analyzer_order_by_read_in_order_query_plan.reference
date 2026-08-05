@@ -44,7 +44,7 @@ select * from tab order by (a + b) * c, sin(a / b);
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c, sin(a / b)) where explain like '%sort description%';
   Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, sin(divide(__table1.a, __table1.b)) ASC
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, sin(divide(__table1.a, __table1.b)) ASC
-select * from tab order by (a + b) * c desc, sin(a / b) desc;
+select * from tab order by (a + b) * c desc, sin(a / b) desc nulls first;
 4	4	4	4
 4	4	4	4
 3	3	3	3
@@ -55,7 +55,7 @@ select * from tab order by (a + b) * c desc, sin(a / b) desc;
 1	1	1	1
 0	0	0	0
 0	0	0	0
-select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, sin(a / b) desc) where explain like '%sort description%';
+select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, sin(a / b) desc nulls first) where explain like '%sort description%';
   Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, sin(divide(__table1.a, __table1.b)) DESC
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, sin(divide(__table1.a, __table1.b)) DESC
 -- Exact match, mixed direction
@@ -168,7 +168,7 @@ select * from (explain plan actions = 1 select * from tab order by (a + b) * c, 
   Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, intDiv(sin(divide(__table1.a, __table1.b)), 2_UInt8) DESC
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc;
-select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc) where explain like '%sort description%';
+select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc nulls first) where explain like '%sort description%';
   Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, intDiv(sin(divide(__table1.a, __table1.b)), 2_UInt8) DESC
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, intDiv(sin(divide(__table1.a, __table1.b)), 2_UInt8) DESC
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), -2);
@@ -238,7 +238,7 @@ select * from tab2 order by toTimeZone(toTimezone(x, 'UTC'), 'CET'), intDiv(intD
 2020-02-05 00:00:00	3	3
 2020-02-05 00:00:00	3	3
 select * from (explain plan actions = 1 select * from tab2 order by toTimeZone(toTimezone(x, 'UTC'), 'CET'), intDiv(intDiv(y, -2), -3)) where explain like '%sort description%';
-  Prefix sort description: toTimezone(toTimezone(__table1.x, \'UTC\'_String), \'CET\'_String) ASC, intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
+  Prefix sort description: toTimezone(toTimezone(__table1.x, \'UTC\'_String), \'CET\'_String) ASC
   Result sort description: toTimezone(toTimezone(__table1.x, \'UTC\'_String), \'CET\'_String) ASC, intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
 select * from tab2 order by toStartOfDay(x), intDiv(intDiv(y, -2), -3);
 2020-02-02 00:00:00	0	0
@@ -254,8 +254,6 @@ select * from (explain plan actions = 1 select * from tab2 order by toStartOfDay
   Result sort description: toStartOfDay(__table1.x) ASC, intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
 -- select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3);
 select * from (explain plan actions = 1 select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3)) where explain like '%sort description%';
-  Prefix sort description: intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
-  Result sort description: intDiv(intDiv(__table1.y, -2_Int8), -3_Int8) ASC
 -- { echoOn }
 
 -- Union (not fully supported)
@@ -373,7 +371,7 @@ select * from (select * from tab union all select * from tab5) order by (a + b) 
 0	0	0	0
 0	0	0	0
 select * from (explain plan actions = 1 select * from (select * from tab union all select * from tab5) order by (a + b) * c, sin(a / b) limit 3) where explain ilike '%sort description%' or explain like '%ReadType%' or explain like '%Limit%';
-  Limit (preliminary LIMIT (without OFFSET))
+  Limit (preliminary LIMIT)
   Limit 3
     Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, sin(divide(__table1.a, __table1.b)) ASC
     Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, sin(divide(__table1.a, __table1.b)) ASC
@@ -391,7 +389,7 @@ select * from (select * from tab union all select * from tab5 union all select *
 0	0	0	0
 0	0	0	0
 select * from (explain plan actions = 1 select * from (select * from tab union all select * from tab5 union all select * from tab4) order by (a + b) * c, sin(a / b), d limit 3) where explain ilike '%sort description%' or explain like '%ReadType%' or explain like '%Limit%';
-  Limit (preliminary LIMIT (without OFFSET))
+  Limit (preliminary LIMIT)
   Limit 3
     Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, sin(divide(__table1.a, __table1.b)) ASC
     Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, sin(divide(__table1.a, __table1.b)) ASC, __table1.d ASC

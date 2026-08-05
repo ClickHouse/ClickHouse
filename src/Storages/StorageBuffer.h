@@ -1,15 +1,14 @@
 #pragma once
 
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <Poco/Event.h>
 
 #include <atomic>
 #include <mutex>
-#include <thread>
 
 
 namespace Poco { class Logger; }
@@ -46,12 +45,16 @@ class StorageBuffer final : public IStorage, WithContext
 friend class BufferSource;
 friend class BufferSink;
 
+    static VirtualColumnsDescription createVirtuals();
+
 public:
     struct Thresholds
     {
         time_t time = 0;  /// The number of seconds from the insertion of the first row into the block.
         size_t rows = 0;  /// The number of rows in the block.
         size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
+
+        std::string toString() const;
     };
 
     /** num_shards - the level of internal parallelism (the number of independent buffers)
@@ -90,7 +93,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
@@ -107,8 +110,27 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    bool supportsSampling() const override { return true; }
+    bool supportsSampling() const override
+    {
+        /// During reads, Buffer queries both the in-memory buffers and the destination table simultaneously.
+        /// Sampling on the buffer part is handled probabilistically (no sampling key required).
+        /// Sampling on the destination part requires the destination to have a sampling key.
+        /// If there is no destination, only the buffer is read, so sampling is always supported.
+        if (auto destination = getDestinationTable())
+            return destination->supportsSampling();
+        return true;
+    }
     bool supportsPrewhere() const override;
+    /// read() hands the built PREWHERE to the destination (converting declared-type differences
+    /// with a prefix), so a column must exist there and be allowed by the destination's own
+    /// contract. Fails closed like supportsPrewhere(): no destination means nothing is supported.
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    /// read() forwards the already-analyzed query straight to the destination table, so the
+    /// initiator must not rewrite functions to subcolumns when the destination opts out (e.g.
+    /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.
+    bool supportsOptimizationToSubcolumns() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
@@ -116,8 +138,8 @@ public:
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     std::optional<UInt64> lifetimeRows() const override { return lifetime_writes.rows; }
     std::optional<UInt64> lifetimeBytes() const override { return lifetime_writes.bytes; }
@@ -182,12 +204,14 @@ private:
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
     void backgroundFlush();
-    void reschedule();
+    void reschedule(size_t min_delay);
 
     StoragePtr getDestinationTable() const;
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
+
+    static constexpr size_t BACKGROUND_RESCHEDULE_MIN_DELAY = 1;
 };
 
 }

@@ -25,6 +25,8 @@ void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
+void registerInputFormatBuffers(FormatFactory & factory);
+void registerOutputFormatBuffers(FormatFactory & factory);
 
 void registerInputFormatRowBinary(FormatFactory & factory);
 void registerOutputFormatRowBinary(FormatFactory & factory);
@@ -66,8 +68,10 @@ void registerInputFormatORC(FormatFactory & factory);
 void registerOutputFormatORC(FormatFactory & factory);
 void registerInputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory);
+#if USE_ARROW
 void registerInputFormatArrow(FormatFactory & factory);
 void registerOutputFormatArrow(FormatFactory & factory);
+#endif
 void registerInputFormatAvro(FormatFactory & factory);
 void registerOutputFormatAvro(FormatFactory & factory);
 void registerInputFormatRawBLOB(FormatFactory & factory);
@@ -83,10 +87,9 @@ void registerInputFormatForm(FormatFactory & factory);
 /// Output only (presentational) formats.
 
 void registerOutputFormatPretty(FormatFactory & factory);
-void registerOutputFormatPrettyCompact(FormatFactory & factory);
-void registerOutputFormatPrettySpace(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
+void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
@@ -95,7 +98,8 @@ void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory);
-void registerOutputFormatJSONCompactWithProgress(FormatFactory & factory);
+void registerOutputFormatPNG(FormatFactory & factory);
+void registerOutputFormatHash(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -105,6 +109,7 @@ void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
+void registerInputFormatPuffin(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
 
@@ -117,7 +122,9 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory);
 
+#if USE_ARROW
 void registerArrowSchemaReader(FormatFactory & factory);
+#endif
 void registerParquetSchemaReader(FormatFactory & factory);
 void registerORCSchemaReader(FormatFactory & factory);
 void registerTSVSchemaReader(FormatFactory & factory);
@@ -148,13 +155,19 @@ void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory);
+void registerPuffinSchemaReaders(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
 
+void registerInputFormatGeoJSON(FormatFactory & factory);
+void registerOutputFormatGeoJSON(FormatFactory & factory);
+void registerGeoJSONSchemaReader(FormatFactory & factory);
+
 void registerFileExtensions(FormatFactory & factory);
 
+void registerFormats();
 void registerFormats()
 {
     auto & factory = FormatFactory::instance();
@@ -175,6 +188,8 @@ void registerFormats()
 
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);
+    registerInputFormatBuffers(factory);
+    registerOutputFormatBuffers(factory);
 
     registerInputFormatRowBinary(factory);
     registerOutputFormatRowBinary(factory);
@@ -224,16 +239,17 @@ void registerFormats()
     registerOutputFormatParquet(factory);
     registerInputFormatAvro(factory);
     registerOutputFormatAvro(factory);
+#if USE_ARROW
     registerInputFormatArrow(factory);
     registerOutputFormatArrow(factory);
+#endif
     registerInputFormatNpy(factory);
     registerOutputFormatNpy(factory);
 
     registerOutputFormatPretty(factory);
-    registerOutputFormatPrettyCompact(factory);
-    registerOutputFormatPrettySpace(factory);
     registerOutputFormatVertical(factory);
     registerOutputFormatJSONEachRowWithProgress(factory);
+    registerOutputFormatJSONCompactEachRowWithProgress(factory);
     registerOutputFormatXML(factory);
     registerOutputFormatODBCDriver2(factory);
     registerOutputFormatNull(factory);
@@ -243,11 +259,14 @@ void registerFormats()
     registerOutputFormatCapnProto(factory);
     registerOutputFormatPrometheus(factory);
     registerOutputFormatSQLInsert(factory);
-    registerOutputFormatJSONCompactWithProgress(factory);
+    registerOutputFormatPNG(factory);
+    registerOutputFormatHash(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatJSONAsObject(factory);
+    registerInputFormatGeoJSON(factory);
+    registerOutputFormatGeoJSON(factory);
     registerInputFormatLineAsString(factory);
 #if USE_HIVE
     registerInputFormatHiveText(factory);
@@ -257,6 +276,7 @@ void registerFormats()
     registerInputFormatMySQLDump(factory);
 
     registerInputFormatParquetMetadata(factory);
+    registerInputFormatPuffin(factory);
     registerInputFormatDWARF(factory);
     registerInputFormatOne(factory);
 
@@ -264,7 +284,9 @@ void registerFormats()
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(factory);
 
+#if USE_ARROW
     registerArrowSchemaReader(factory);
+#endif
     registerParquetSchemaReader(factory);
     registerORCSchemaReader(factory);
     registerTSVSchemaReader(factory);
@@ -275,6 +297,7 @@ void registerFormats()
     registerJSONObjectEachRowSchemaReader(factory);
     registerJSONAsStringSchemaReader(factory);
     registerJSONAsObjectSchemaReader(factory);
+    registerGeoJSONSchemaReader(factory);
     registerJSONColumnsSchemaReader(factory);
     registerJSONCompactColumnsSchemaReader(factory);
     registerJSONColumnsWithMetadataSchemaReader(factory);
@@ -295,6 +318,7 @@ void registerFormats()
     registerMySQLSchemaReader(factory);
     registerBSONEachRowSchemaReader(factory);
     registerParquetMetadataSchemaReader(factory);
+    registerPuffinSchemaReaders(factory);
     registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);

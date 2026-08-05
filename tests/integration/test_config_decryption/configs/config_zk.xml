@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- key for decryption is stored in ZK -->
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/key128"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+</clickhouse>

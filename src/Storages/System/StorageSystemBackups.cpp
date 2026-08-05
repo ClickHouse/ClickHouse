@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemBackups.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Backups/BackupsWorker.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -6,10 +7,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeMap.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
+#include <Core/Field.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Columns/ColumnsDateTime.h>
 
 
 namespace DB
@@ -17,6 +21,8 @@ namespace DB
 
 ColumnsDescription StorageSystemBackups::getColumnsDescription()
 {
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     return ColumnsDescription
     {
         {"id", std::make_shared<DataTypeString>(), "Operation ID, can be either passed via SETTINGS id=... or be randomly generated UUID."},
@@ -25,8 +31,8 @@ ColumnsDescription StorageSystemBackups::getColumnsDescription()
         {"query_id", std::make_shared<DataTypeString>(), "Query ID of a query that started backup."},
         {"status", std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues()), "Status of backup or restore operation."},
         {"error", std::make_shared<DataTypeString>(), "The error message if any."},
-        {"start_time", std::make_shared<DataTypeDateTime>(), "The time when operation started."},
-        {"end_time", std::make_shared<DataTypeDateTime>(), "The time when operation finished."},
+        {"start_time", std::make_shared<DataTypeDateTime64>(6), "The time when operation started."},
+        {"end_time", std::make_shared<DataTypeDateTime64>(6), "The time when operation finished."},
         {"num_files", std::make_shared<DataTypeUInt64>(), "The number of files stored in the backup."},
         {"total_size", std::make_shared<DataTypeUInt64>(), "The total size of files stored in the backup."},
         {"num_entries", std::make_shared<DataTypeUInt64>(), "The number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder."},
@@ -34,7 +40,9 @@ ColumnsDescription StorageSystemBackups::getColumnsDescription()
         {"compressed_size", std::make_shared<DataTypeUInt64>(), "The compressed size of the backup."},
         {"files_read", std::make_shared<DataTypeUInt64>(), "Returns the number of files read during RESTORE from this backup."},
         {"bytes_read", std::make_shared<DataTypeUInt64>(), "Returns the total size of files read during RESTORE from this backup."},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
+        {"settings", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Backup/restore-specific settings effectively used for this operation (from the `SETTINGS` clause, including defaults). Sensitive settings are not exposed."},
+        {"engine_settings", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Settings effectively used by the backup engine's reader/writer (e.g. S3 `allow_native_copy`). Empty when the operation involves more than one engine that a flat map cannot represent: incremental backups and restores, lightweight snapshot restores, and non-internal `ON CLUSTER` operations."},
     };
 }
 
@@ -48,8 +56,8 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     auto & column_query_id = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_status = assert_cast<ColumnInt8 &>(*res_columns[column_index++]);
     auto & column_error = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_start_time = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]);
-    auto & column_end_time = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]);
+    auto & column_start_time = assert_cast<ColumnDateTime64 &>(*res_columns[column_index++]);
+    auto & column_end_time = assert_cast<ColumnDateTime64 &>(*res_columns[column_index++]);
     auto & column_num_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_total_size = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_num_entries = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
@@ -58,6 +66,17 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     auto & column_num_read_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_num_read_bytes = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_profile_events = assert_cast<ColumnMap &>(*res_columns[column_index++]);
+    auto & column_settings = assert_cast<ColumnMap &>(*res_columns[column_index++]);
+    auto & column_engine_settings = assert_cast<ColumnMap &>(*res_columns[column_index++]);
+
+    auto add_string_map = [](ColumnMap & column_map, const std::map<String, String> & map)
+    {
+        Map map_field;
+        map_field.reserve(map.size());
+        for (const auto & [key, value] : map)
+            map_field.push_back(Tuple{key, value});
+        column_map.insert(map_field);
+    };
 
     auto add_row = [&](const BackupOperationInfo & info)
     {
@@ -67,8 +86,8 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
         column_query_id.insertData(info.query_id.data(), info.query_id.size());
         column_status.insertValue(static_cast<Int8>(info.status));
         column_error.insertData(info.error_message.data(), info.error_message.size());
-        column_start_time.insertValue(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.start_time)));
-        column_end_time.insertValue(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.end_time)));
+        column_start_time.insertValue(static_cast<Decimal64>(info.start_time_us));
+        column_end_time.insertValue(static_cast<Decimal64>(info.end_time_us));
         column_num_files.insertValue(info.num_files);
         column_total_size.insertValue(info.total_size);
         column_num_entries.insertValue(info.num_entries);
@@ -80,6 +99,8 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
             ProfileEvents::dumpToMapColumn(*info.profile_counters, &column_profile_events, true);
         else
             column_profile_events.insertDefault();
+        add_string_map(column_settings, info.settings);
+        add_string_map(column_engine_settings, info.engine_settings);
     };
 
     for (const auto & entry : context->getBackupsWorker().getAllInfos())
@@ -87,3 +108,6 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemBackups) }

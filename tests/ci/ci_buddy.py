@@ -1,15 +1,14 @@
 import argparse
 import json
 import os
-from typing import Union, Dict, List
+from typing import Dict, List, Union
 
-import boto3
 import requests
 from botocore.exceptions import ClientError
 
+from ci_utils import GH, Envs, Shell, WithIter
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from ci_config import CI
-from ci_utils import WithIter
 
 
 class Channels(metaclass=WithIter):
@@ -52,36 +51,23 @@ class CIBuddy:
         self.pr_number = pr_info.number
         self.head_ref = pr_info.head_ref
         self.commit_url = pr_info.commit_html_url
-        self.sha = pr_info.sha[:10]
+        self.sha_full = pr_info.sha
+        self.sha = self.sha_full[:10]
 
     def check_workflow(self):
-        CI.GH.print_workflow_results()
-        if CI.Envs.GITHUB_WORKFLOW == CI.WorkFlowNames.CreateRelease:
-            if not CI.GH.is_workflow_ok():
-                self.post_job_error(
-                    f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
-                )
-        else:
-            res = CI.GH.get_workflow_job_result(CI.GH.ActionsNames.RunConfig)
-            if res != CI.GH.ActionStatuses.SUCCESS:
-                print(f"ERROR: RunConfig status is [{res}] - post report to slack")
-                self.post_job_error(
-                    f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
-                )
+        GH.print_workflow_results()
+        if not GH.is_workflow_ok():
+            self.post_job_error(
+                f"{Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
+            )
 
     @staticmethod
     def _get_webhooks():
         name = "ci_buddy_web_hooks"
 
-        session = boto3.Session(region_name="us-east-1")  # Replace with your region
-        ssm_client = session.client("ssm")
         json_string = None
         try:
-            response = ssm_client.get_parameter(
-                Name=name,
-                WithDecryption=True,  # Set to True if the parameter is a SecureString
-            )
-            json_string = response["Parameter"]["Value"]
+            json_string = get_parameter_from_ssm(name, decrypt=True)
         except ClientError as e:
             print(f"An error occurred: {e}")
 
@@ -187,10 +173,10 @@ class CIBuddy:
         instance_id, instance_type = "unknown", "unknown"
         if with_instance_info:
             instance_id = (
-                CI.Shell.get_output("ec2metadata --instance-id") or instance_id
+                Shell.get_output("ec2metadata --instance-id") or instance_id
             )
             instance_type = (
-                CI.Shell.get_output("ec2metadata --instance-type") or instance_type
+                Shell.get_output("ec2metadata --instance-type") or instance_type
             )
         if not job_name:
             job_name = os.getenv("CHECK_NAME", "unknown")

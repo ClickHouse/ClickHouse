@@ -1,9 +1,10 @@
+import datetime
 import random
 import time
 from multiprocessing.dummy import Pool
-import datetime
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -16,7 +17,7 @@ node_options = dict(
         "configs/config.d/zookeeper_session_timeout.xml",
         "configs/config.d/storage_configuration.xml",
     ],
-    tmpfs=["/external:size=200M", "/internal:size=1M"],
+    tmpfs=["/test_rename_column_external:size=200M", "/test_rename_column_internal:size=1M"],
 )
 
 cluster = ClickHouseCluster(__file__)
@@ -150,7 +151,7 @@ def insert(
                 query.append("SET max_insert_block_size = 256")
             if with_time_column:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk})".format(
+                    "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk}) ORDER BY ALL".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -159,7 +160,7 @@ def insert(
                 )
             elif slow:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) SETTINGS function_sleep_max_microseconds_per_block = 0".format(
+                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL SETTINGS function_sleep_max_microseconds_per_block = 0".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -168,7 +169,7 @@ def insert(
                 )
             else:
                 query.append(
-                    "INSERT INTO {table_name} ({col0},{col1}) SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1} FROM numbers_mt({chunk})".format(
+                    "INSERT INTO {table_name} ({col0},{col1}) SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -177,7 +178,7 @@ def insert(
                     )
                 )
             node.query(";\n".join(query))
-        except QueryRuntimeException as ex:
+        except QueryRuntimeException:
             if not ignore_exception:
                 raise
 
@@ -216,7 +217,7 @@ def select(
                     ):
                         continue
                     assert r == expected_result
-            except QueryRuntimeException as ex:
+            except QueryRuntimeException:
                 if not ignore_exception:
                     raise
             break
@@ -268,6 +269,37 @@ def rename_column_on_cluster(
             break
 
 
+def _num2_converged(nodes, table_name):
+    return all(
+        node.query(
+            "SELECT count() FROM system.columns "
+            "WHERE database = 'default' AND table IN ('{t}', '{t}_replicated') "
+            "AND name = 'num2'".format(t=table_name)
+        ).strip()
+        == "2"
+        for node in nodes
+    )
+
+
+def wait_for_rename_to_num2(nodes, table_name, attempts=12, poll_seconds=5):
+    # Best-effort cleanup renames + async ON CLUSTER replication can leave the
+    # column as foo2/foo3 on some replicas. Re-drive the idempotent rename-back
+    # until num2 is present on every node's Distributed and _replicated tables,
+    # so the strict queries below do not race schema convergence (UNKNOWN_IDENTIFIER).
+    tables = [table_name, "%s_replicated" % table_name]
+    for _ in range(attempts):
+        if _num2_converged(nodes, table_name):
+            return
+        for old_name in ("foo2", "foo3"):
+            for table in tables:
+                rename_column_on_cluster(nodes[0], table, old_name, "num2", 1, True)
+        time.sleep(poll_seconds)
+    if not _num2_converged(nodes, table_name):
+        raise Exception(
+            "columns did not converge to num2 for {} on all nodes".format(table_name)
+        )
+
+
 def alter_move(node, table_name, iterations=1, ignore_exception=False):
     i = 0
     while True:
@@ -292,6 +324,9 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
 
 
 def test_rename_parallel_same_node(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_parallel_same_node"
     drop_table(nodes, table_name)
     try:
@@ -330,6 +365,9 @@ def test_rename_parallel_same_node(started_cluster):
 
 
 def test_rename_parallel(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_parallel"
     drop_table(nodes, table_name)
     try:
@@ -369,6 +407,9 @@ def test_rename_parallel(started_cluster):
 
 def test_rename_with_parallel_select(started_cluster):
     table_name = "test_rename_with_parallel_select"
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     drop_table(nodes, table_name)
     try:
         create_table(nodes, table_name)
@@ -419,6 +460,9 @@ def test_rename_with_parallel_select(started_cluster):
 
 
 def test_rename_with_parallel_insert(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_with_parallel_insert"
     drop_table(nodes, table_name)
     try:
@@ -472,6 +516,9 @@ def test_rename_with_parallel_insert(started_cluster):
 
 
 def test_rename_with_parallel_merges(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_with_parallel_merges"
     drop_table(nodes, table_name)
     try:
@@ -535,6 +582,9 @@ def test_rename_with_parallel_merges(started_cluster):
 
 
 def test_rename_with_parallel_slow_insert(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_with_parallel_slow_insert"
     drop_table(nodes, table_name)
     try:
@@ -573,6 +623,9 @@ def test_rename_with_parallel_slow_insert(started_cluster):
 
 
 def test_rename_with_parallel_ttl_move(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_with_parallel_ttl_move"
     try:
         create_table(
@@ -644,6 +697,9 @@ def test_rename_with_parallel_ttl_move(started_cluster):
 
 def test_rename_with_parallel_ttl_delete(started_cluster):
     table_name = "test_rename_with_parallel_ttl_delete"
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     try:
         create_table(nodes, table_name, with_time_column=True, with_ttl_delete=True)
         rename_column(node1, table_name, "time", "time2", 1, False)
@@ -784,14 +840,7 @@ def test_rename_distributed_parallel_insert_and_select(started_cluster):
         for task in tasks:
             task.get(timeout=240)
 
-        rename_column_on_cluster(node1, table_name, "foo2", "num2", 1, True)
-        rename_column_on_cluster(
-            node1, "%s_replicated" % table_name, "foo2", "num2", 1, True
-        )
-        rename_column_on_cluster(node1, table_name, "foo3", "num2", 1, True)
-        rename_column_on_cluster(
-            node1, "%s_replicated" % table_name, "foo3", "num2", 1, True
-        )
+        wait_for_rename_to_num2(nodes, table_name)
 
         insert(node1, table_name, 1000, col_names=["num", "num2"])
         select(node1, table_name, "num2")

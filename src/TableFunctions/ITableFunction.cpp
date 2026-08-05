@@ -1,9 +1,11 @@
+#include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/ProfileEvents.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -11,24 +13,56 @@ namespace ProfileEvents
     extern const Event TableFunctionExecute;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;;
+}
+
 namespace DB
 {
 
-AccessType ITableFunction::getSourceAccessType() const
+const char * ITableFunction::getNonClusteredStorageEngineName() const
 {
-    return StorageFactory::instance().getSourceAccessType(getStorageTypeName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+}
+
+std::optional<AccessTypeObjects::Source> ITableFunction::getSourceAccessObject() const
+{
+    if (isClusterFunction())
+        return StorageFactory::instance().getSourceAccessObject(getNonClusteredStorageEngineName());
+    return StorageFactory::instance().getSourceAccessObject(getStorageEngineName());
+}
+
+void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query) const
+{
+    if (const auto access_object = getSourceAccessObject())
+    {
+        AccessType type_to_check = AccessType::READ;
+        if (is_insert_query)
+            type_to_check = AccessType::WRITE;
+
+        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
+    }
+}
+
+ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
+{
+    /// Resolving table structure is always a read operation.
+    checkSourceAccess(context, /*is_insert_query*/ false);
+    return getActualTableStructure(context, is_insert_query);
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query) const
+                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query, bool check_create_temporary_table, bool check_source_access) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    AccessFlags required_access = getSourceAccessType();
+    if (check_source_access)
+        checkSourceAccess(context, is_insert_query);
+
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
-    if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
-        required_access |= AccessType::CREATE_TEMPORARY_TABLE;
-    context->checkAccess(required_access);
+    if (check_create_temporary_table && (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly)))
+        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
@@ -47,6 +81,20 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     /// It will request actual table structure and create underlying storage lazily
     return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
                                                        std::move(cached_columns), needStructureConversion());
+}
+
+String ITableFunction::getFunctionURINormalized() const
+{
+    try
+    {
+        Poco::URI uri(getFunctionURI());
+        uri.normalize();
+        return uri.toString();
+    }
+    catch (const Poco::Exception &)
+    {
+        return "";
+    }
 }
 
 }

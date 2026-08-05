@@ -1,0 +1,82 @@
+-- IN subquery
+1	1
+2	2
+3	3
+-- GLOBAL IN subquery
+1	0
+2	0
+3	0
+-- IN union
+1	1
+1	2
+2	2
+2	4
+3	3
+3	6
+-- GLOBAL IN union
+1	0
+2	0
+3	0
+-- IN CTE subquery
+1	1
+2	2
+3	3
+-- GLOBAL IN CTE subquery
+1	0
+2	0
+3	0
+-- IN CTE union
+1	1
+1	2
+2	2
+2	4
+3	3
+3	6
+-- GLOBAL IN CTE union
+1	0
+2	0
+3	0
+-- JOIN subquery, analyzer
+1	1
+2	2
+3	3
+-- JOIN subquery, w/o analyzer
+1	1
+2	2
+3	3
+-- GLOBAL JOIN subquery, analyzer
+1	0
+2	0
+3	0
+-- GLOBAL JOIN subquery, w/o analyzer
+1	0
+2	0
+3	0
+-- JOIN union, analyzer
+1	1
+1	2
+2	2
+2	4
+3	3
+3	6
+-- JOIN union, w/o analyzer
+1	1
+1	2
+2	2
+2	4
+3	3
+3	6
+-- GLOBAL JOIN union, analyzer
+1	0
+1	0
+2	0
+2	0
+3	0
+3	0
+-- GLOBAL JOIN union, w/o analyzer
+1	0
+1	0
+2	0
+2	0
+3	0
+3	0

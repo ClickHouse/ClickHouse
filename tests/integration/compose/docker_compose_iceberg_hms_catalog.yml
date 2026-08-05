@@ -1,0 +1,19 @@
+services:
+  hive:
+    image: clickhouse/integration-test-with-hms
+    restart: unless-stopped
+    ports:
+      - "${HMS_CATALOG_PORT}:9083"
+    environment:
+      SERVICE_NAME: "metastore"
+      SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://warehouse-hms/data/"
+    volumes:
+      - ${ICEBERG_HMS_CORE_SITE}:/opt/hadoop/etc/hadoop/core-site.xml
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9083"]
+      interval: 2s
+      timeout: 5s
+      retries: 45
+      start_period: 45s
+    stop_grace_period: 5s
+    cpus: 3

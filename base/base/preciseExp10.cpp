@@ -29,13 +29,14 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ----------------------------------------------------------------------
 */
 
+#include <base/preciseExp10.h>
+
 #include <cmath>
-#include <cstdint>
-#include <cstdio>
+#include <limits>
 
 double preciseExp10(double x)
 {
-    if (isnan(x)) return NAN;
+    if (isnan(x)) return std::numeric_limits<double>::quiet_NaN();
 
     // ranging between DBL_TRUE_MIN and DBL_MAX. Outsiders are treated as zeros or infinities
     static const double p10[]
@@ -78,8 +79,9 @@ double preciseExp10(double x)
            1e+289, 1e+290, 1e+291, 1e+292, 1e+293, 1e+294, 1e+295, 1e+296, 1e+297, 1e+298, 1e+299, 1e+300, 1e+301, 1e+302, 1e+303, 1e+304, 1e+305,
            1e+306, 1e+307, 1e+308};
 
-    double n, y = modf(x, &n);
-    if (n > 308) return INFINITY;
+    double n = {};
+    double y = modf(x, &n);
+    if (n > 308) return std::numeric_limits<double>::infinity();
     if (n < -323) return 0;
 
     // Using lookup table based formula to get accurate results for integer arguments.

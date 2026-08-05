@@ -16,7 +16,10 @@ class client(object):
     def __init__(self, command=None, name="", log=None):
         self.client = uexpect.spawn(["/bin/bash", "--noediting"])
         if command is None:
-            command = os.environ.get("CLICKHOUSE_BINARY", "clickhouse") + " client"
+            options = "--enable-progress-table-toggle=0"
+            command = (
+                os.environ.get("CLICKHOUSE_BINARY", "clickhouse") + " client " + options
+            )
         self.client.command = command
         self.client.eol("\r")
         self.client.logger(log, prefix=name)

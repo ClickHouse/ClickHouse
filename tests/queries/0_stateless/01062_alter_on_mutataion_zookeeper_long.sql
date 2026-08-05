@@ -1,5 +1,6 @@
--- Tags: long, zookeeper, no-replicated-database
+-- Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree
 -- Tag no-replicated-database: Old syntax is not allowed
+-- no-shared-merge-tree: old syntax not allowed
 
 DROP TABLE IF EXISTS test_alter_on_mutation;
 
@@ -50,7 +51,6 @@ ALTER TABLE test_alter_on_mutation ADD COLUMN value String DEFAULT '10';
 
 SELECT sum(cast(value as UInt64)) from test_alter_on_mutation;
 
--- TODO(alesap)
 OPTIMIZE table test_alter_on_mutation FINAL;
 
 ALTER TABLE test_alter_on_mutation MODIFY COLUMN value UInt64 DEFAULT 10;

@@ -7,8 +7,8 @@ concurrency:
   group: autoreleases
 
 on:
-  #  schedule:
-  #    - cron: '0 9 * * *'
+  schedule:
+    - cron: '45 11 * * *'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -19,7 +19,7 @@ on:
 
 jobs:
   AutoReleaseInfo:
-    runs-on: [self-hosted, release-maker]
+    runs-on: [self-hosted, amd-release-maker]
     outputs:
       data: ${{ steps.info.outputs.AUTO_RELEASE_PARAMS }}
       dry_run: ${{ steps.info.outputs.DRY_RUN }}
@@ -52,7 +52,7 @@ jobs:
               echo 'EOF'
           } >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            echo "DRY_RUN=true" >> "$GITHUB_OUTPUT"
+            echo "DRY_RUN=false" >> "$GITHUB_OUTPUT"
           else
             echo "DRY_RUN=${{ github.event.inputs.dry-run }}" >> "$GITHUB_OUTPUT"
           fi
@@ -65,7 +65,15 @@ jobs:
 
   Releases:
     needs: AutoReleaseInfo
+    # The reusable create_release.yml declares `permissions: write-all`; a called
+    # workflow cannot hold more permission than its caller grants, so the calling
+    # job must grant write-all too, otherwise the run fails at startup with a
+    # workflow-file error. (The pre-Praktika create_release.yml set no
+    # permissions and inherited the caller's, so this was not needed before.)
+    permissions: write-all
     strategy:
+      # Without this, a failure on one release branch cancels the queued matrix entries for the others.
+      fail-fast: false
       matrix:
         release_params: ${{ fromJson(needs.AutoReleaseInfo.outputs.data).releases }}
       max-parallel: 1

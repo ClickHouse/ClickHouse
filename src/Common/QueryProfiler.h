@@ -2,10 +2,9 @@
 
 #include <optional>
 #include <base/types.h>
+#include <base/sanitizer_defs.h> /// THREAD_SANITIZER, used by QUERY_PROFILER_SUPPORTED below
 #include <signal.h>
 #include <time.h>
-
-#include "config.h"
 
 #include <Common/Logger.h>
 
@@ -14,6 +13,19 @@ namespace Poco
 {
     class Logger;
 }
+
+/// Whether the sampling query profiler can run in this build.
+/// It is disabled under TSan on macOS: the profiler pauses threads with signals, and a signal
+/// delivered to a thread waiting on a `pthread_rwlock` makes Darwin's implementation lose the
+/// wakeup and deadlock the process (Apple FB24027930). Other Darwin builds link the replacement
+/// in `base/darwin-compatibility`, but TSan builds cannot, because TSan interposes those same
+/// functions to track lock order.
+/// Emscripten declares `SIGEV_THREAD_ID` but its `sigevent` has no `_sigev_un`, and a
+/// WebAssembly sandbox has no signals to deliver a timer expiry with in the first place.
+#if (defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)) && !(defined(THREAD_SANITIZER) && defined(OS_DARWIN)) \
+    && defined(OS_HAS_SIGNAL_HANDLERS)
+#    define QUERY_PROFILER_SUPPORTED 1
+#endif
 
 namespace DB
 {
@@ -30,7 +42,7 @@ namespace DB
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
 
-#ifndef __APPLE__
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
 class Timer
 {
 public:
@@ -48,23 +60,25 @@ private:
     LoggerPtr log;
     std::optional<timer_t> timer_id;
 };
-#endif
+#endif // defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
 
 template <typename ProfilerImpl>
 class QueryProfilerBase
 {
+    friend ProfilerImpl;
+
 public:
-    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt64 period, int pause_signal_);
     ~QueryProfilerBase();
 
     void setPeriod(UInt64 period_);
 
 private:
+    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt64 period, int pause_signal_);
     void cleanup();
 
     LoggerPtr log;
 
-#ifndef __APPLE__
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
     inline static thread_local Timer timer = Timer();
 #endif
 
@@ -79,6 +93,8 @@ public:
     QueryProfilerReal(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
+
+    static constexpr int PAUSE_SIGNAL = SIGUSR1;
 };
 
 /// Query profiler with timer based on CPU clock
@@ -88,6 +104,8 @@ public:
     QueryProfilerCPU(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
+
+    static constexpr int PAUSE_SIGNAL = SIGUSR2;
 };
 
 }

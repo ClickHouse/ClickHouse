@@ -21,7 +21,7 @@ ORDER BY name;
 set optimize_distinct_in_order=1;
 set max_threads=1;
 
-select trimLeft(explain) from (explain pipeline SELECT DISTINCT id, v FROM t_sparse_distinct) where explain ilike '%DistinctSortedChunkTransform%';
+select splitByString(' ', trimLeft(explain))[1] from (explain pipeline SELECT DISTINCT id, v FROM t_sparse_distinct) where explain ilike '%DistinctSortedStreamTransform%';
 SELECT DISTINCT id, v FROM t_sparse_distinct format Null;
 
 DROP TABLE t_sparse_distinct;

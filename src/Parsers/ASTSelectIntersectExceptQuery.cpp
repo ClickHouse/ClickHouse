@@ -1,14 +1,21 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTSelectIntersectExceptQuery::clone() const
 {
-    auto res = std::make_shared<ASTSelectIntersectExceptQuery>(*this);
+    auto res = make_intrusive<ASTSelectIntersectExceptQuery>(*this);
 
     res->children.clear();
     for (const auto & child : children)
@@ -18,7 +25,7 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
     return res;
 }
 
-void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
@@ -26,13 +33,27 @@ void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, 
     {
         if (it != children.begin())
         {
-            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
+            ostr << settings.nl_or_ws << indent_str
                           << fromOperator(final_operator)
-                          << (settings.hilite ? hilite_none : "")
+
                           << settings.nl_or_ws;
         }
 
-        (*it)->formatImpl(settings, state, frame);
+        /// Wrap compound children in parentheses: `UNION` has lower precedence than
+        /// `INTERSECT`/`EXCEPT`, and we also keep nested `INTERSECT`/`EXCEPT` explicit.
+        bool need_parens = (*it)->as<ASTSelectWithUnionQuery>() != nullptr
+            || (*it)->as<ASTSelectIntersectExceptQuery>() != nullptr;
+
+        if (need_parens)
+        {
+            ostr << indent_str;
+            auto subquery = make_intrusive<ASTSubquery>(*it);
+            subquery->format(ostr, settings, state, frame);
+        }
+        else
+        {
+            (*it)->format(ostr, settings, state, frame);
+        }
     }
 }
 
@@ -68,5 +89,58 @@ const char * ASTSelectIntersectExceptQuery::fromOperator(Operator op)
         default:
             return "";
     }
+}
+
+void ASTSelectIntersectExceptQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "SelectIntersectExceptQuery");
+    w.writeString("final_operator", fromOperator(final_operator));
+    w.writeChildren(children);
+}
+
+static ASTSelectIntersectExceptQuery::Operator parseOperator(const String & str)
+{
+    if (str == "EXCEPT ALL")
+        return ASTSelectIntersectExceptQuery::Operator::EXCEPT_ALL;
+    if (str == "EXCEPT DISTINCT")
+        return ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT;
+    if (str == "INTERSECT ALL")
+        return ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL;
+    if (str == "INTERSECT DISTINCT")
+        return ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT;
+    return ASTSelectIntersectExceptQuery::Operator::UNKNOWN;
+}
+
+void ASTSelectIntersectExceptQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    if (!r.has("final_operator"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'final_operator' field in `SelectIntersectExceptQuery` during AST JSON deserialization");
+
+    const String final_operator_str = r.getString("final_operator");
+    final_operator = parseOperator(final_operator_str);
+    if (final_operator == Operator::UNKNOWN)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unknown 'final_operator' value '{}' in `SelectIntersectExceptQuery` during AST JSON deserialization", final_operator_str);
+
+    children = r.readChildren();
+
+    /// An `INTERSECT`/`EXCEPT` query requires at least two select operands.
+    if (children.size() < 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected at least two select operands in `SelectIntersectExceptQuery`, got {}, during AST JSON deserialization", children.size());
+
+    /// Every child must be a select operand: `getListOfSelects` (and the interpreter built on
+    /// top of it) only recognizes these three node types and silently drops any other, while
+    /// `formatImpl` would still print it with the operator separator. Reject foreign children
+    /// from malformed `clickhouse_json` so the AST cannot format as different SQL than it means.
+    for (const auto & child : children)
+        if (!child
+            || !(child->as<ASTSelectQuery>()
+                 || child->as<ASTSelectWithUnionQuery>()
+                 || child->as<ASTSelectIntersectExceptQuery>()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected only select operands in `SelectIntersectExceptQuery` during AST JSON deserialization");
 }
 }

@@ -7,10 +7,11 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <memory>
 #include <string>
-
 
 namespace DB
 {
@@ -20,16 +21,22 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_ARRAY_SIZE;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
 {
 
-class FunctionGeohashesInBox : public IFunction
+class FunctionGeohashesInBox final : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashesInBox>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGeohashesInBox>(context); }
+
+    explicit FunctionGeohashesInBox(ContextPtr context)
+        : process_list_element(context ? context->getProcessListElement() : nullptr)
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -38,10 +45,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
+            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
+            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
+            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
             {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
         };
         validateFunctionArguments(*this, arguments, args);
@@ -74,6 +81,12 @@ public:
         size_t input_rows_count) const
     {
         static constexpr size_t max_array_size = 10'000'000;
+        /// The span between two checkpoints is the work a cancelled query still has to finish, so it
+        /// is what the caller waits for. 100k items are ~1.2 MB of geohashes: tens of milliseconds
+        /// of work against a check that costs a clock read and an uncontended lock. A million items,
+        /// the first choice here, was over three seconds of uninterruptible work on a loaded
+        /// sanitizer build, which is not what "cancelled promptly" should mean.
+        static constexpr UInt64 items_between_cancellation_checks = 100'000;
 
         const auto * lon_min_const = typeid_cast<const ColumnConst *>(lon_min_column);
         const auto * lat_min_const = typeid_cast<const ColumnConst *>(lat_min_column);
@@ -111,16 +124,19 @@ public:
         ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
+        UInt64 items_since_check = 0;
+
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const Float64 lon_min_value = lon_min->getElement(lon_min_const ? 0 : row);
-            const Float64 lat_min_value = lat_min->getElement(lat_min_const ? 0 : row);
-            const Float64 lon_max_value = lon_max->getElement(lon_max_const ? 0 : row);
-            const Float64 lat_max_value = lat_max->getElement(lat_max_const ? 0 : row);
+            const LonAndLatType lon_min_value = lon_min->getElement(lon_min_const ? 0 : row);
+            const LonAndLatType lat_min_value = lat_min->getElement(lat_min_const ? 0 : row);
+            const LonAndLatType lon_max_value = lon_max->getElement(lon_max_const ? 0 : row);
+            const LonAndLatType lat_max_value = lat_max->getElement(lat_max_const ? 0 : row);
             const PrecisionType precision_value = precision->getElement(precision_const ? 0 : row);
 
             const auto prepared_args = geohashesInBoxPrepare(
-                lon_min_value, lat_min_value, lon_max_value, lat_max_value,
+                static_cast<Float64>(lon_min_value), static_cast<Float64>(lat_min_value),
+                static_cast<Float64>(lon_max_value), static_cast<Float64>(lat_max_value),
                 precision_value);
 
             if (prepared_args.items_count > max_array_size)
@@ -130,8 +146,19 @@ public:
                                 getName(), prepared_args.items_count, max_array_size);
             }
 
+            /// The whole block's rows run inside one `executeImpl` call, so the pipeline's
+            /// between-blocks cancellation check cannot interrupt them. Throttle on accumulated work
+            /// units rather than rows, counting each row as at least one: a row can hold up to
+            /// max_array_size items, and a degenerate box (reversed bounds or NaN) holds none.
+            items_since_check += std::max<UInt64>(1, prepared_args.items_count);
+            if (items_since_check >= items_between_cancellation_checks)
+            {
+                items_since_check = 0;
+                checkQueryTimeLimit();
+            }
+
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
-            res_strings_chars.resize(res_strings_chars.size() + prepared_args.items_count * (prepared_args.precision + 1));
+            res_strings_chars.resize(res_strings_chars.size() + prepared_args.items_count * prepared_args.precision);
             const auto starting_offset = res_strings_offsets.empty() ? 0 : res_strings_offsets.back();
             char * out = reinterpret_cast<char *>(res_strings_chars.data() + starting_offset);
 
@@ -139,7 +166,7 @@ public:
             geohashesInBox(prepared_args, out);
 
             for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
-                res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
+                res_strings_offsets.push_back(starting_offset + prepared_args.precision * i);
             res_offsets.push_back(res_offsets.back() + prepared_args.items_count);
         }
 
@@ -166,12 +193,27 @@ public:
         const IColumn * precision = arguments[4].column.get();
         ColumnPtr res;
 
-        if (checkColumn<ColumnVector<Float32>>(lon_min))
+        // Dispatch on the declared argument type, not the runtime column class: a constant
+        // coordinate stays wrapped in ColumnConst when the call mixes const and non-const
+        // arguments, so checkColumn<ColumnVector<...>> on the raw column would misclassify it.
+        if (WhichDataType(arguments[0].type).isFloat32())
             execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
         else
             execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
 
         return res;
+    }
+
+private:
+    QueryStatusPtr process_list_element;
+
+    /// `checkTimeLimit` throws for `KILL QUERY` and the 'throw' overflow mode; for the 'break' mode it
+    /// returns false instead. A half-filled `Array(String)` result is a wrong value, not a smaller one,
+    /// so we throw on the false return too; the pipeline absorbs it into a clean cancellation.
+    void checkQueryTimeLimit() const
+    {
+        if (process_list_element && !process_list_element->checkTimeLimit())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
     }
 };
 
@@ -179,7 +221,42 @@ public:
 
 REGISTER_FUNCTION(GeohashesInBox)
 {
-    factory.registerFunction<FunctionGeohashesInBox>();
+    FunctionDocumentation::Description description = R"(
+Returns an array of [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded strings of given precision that fall inside and intersect boundaries of given box, essentially a 2D grid flattened into an array.
+
+:::note
+All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+:::
+
+This function throws an exception if the size of the resulting array exceeds more than 10,000,000 items.
+    )";
+    FunctionDocumentation::Syntax syntax = "geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)";
+    FunctionDocumentation::Arguments arguments = {
+        {"longitude_min", "Minimum longitude. Range: `[-180°, 180°]`.", {"Float32", "Float64"}},
+        {"latitude_min", "Minimum latitude. Range: `[-90°, 90°]`.", {"Float32", "Float64"}},
+        {"longitude_max", "Maximum longitude. Range: `[-180°, 180°]`.", {"Float32", "Float64"}},
+        {"latitude_max", "Maximum latitude. Range: `[-90°, 90°]`.", {"Float32", "Float64"}},
+        {"precision", "Geohash precision. Range: `[1, 12]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of precision-long strings of geohash-boxes covering the provided area, or an empty array if the minimum longitude and latitude values aren't less than the corresponding maximum values.",
+        {"Array(String)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            "SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos",
+            R"(
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGeohashesInBox>(documentation);
 }
 
 }

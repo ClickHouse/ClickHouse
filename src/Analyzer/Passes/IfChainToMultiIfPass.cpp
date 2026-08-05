@@ -1,15 +1,20 @@
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
 
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
 #include <Core/Settings.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/multiIf.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_execute_multiif_columnar;
+    extern const SettingsBool optimize_if_chain_to_multiif;
+    extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
+}
 
 namespace
 {
@@ -27,7 +32,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_if_chain_to_multiif)
+        if (!getSettings()[Setting::optimize_if_chain_to_multiif])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -84,7 +89,10 @@ private:
 void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
+    auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(
+        settings[Setting::allow_execute_multiif_columnar],
+        settings[Setting::use_variant_as_common_type],
+        settings[Setting::allow_lossy_numeric_supertype]);
     IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

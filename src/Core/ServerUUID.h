@@ -11,7 +11,8 @@ namespace DB
 
 class ServerUUID
 {
-    inline static UUID server_uuid = UUIDHelpers::Nil;
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static UUID server_uuid;
 
 public:
     /// Returns persistent UUID of current clickhouse-server or clickhouse-keeper instance.
@@ -19,6 +20,9 @@ public:
 
     /// Loads server UUID from file or creates new one. Should be called on daemon startup.
     static void load(const fs::path & server_uuid_file, Poco::Logger * log);
+
+    /// Sets specific server UUID.
+    static void set(UUID & uuid);
 
     static void setRandomForUnitTests();
 };

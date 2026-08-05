@@ -1,11 +1,20 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
+#include <Parsers/ASTExpressionList.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 String ASTPair::getID(char) const
 {
@@ -15,41 +24,74 @@ String ASTPair::getID(char) const
 
 ASTPtr ASTPair::clone() const
 {
-    auto res = std::make_shared<ASTPair>(*this);
+    auto res = make_intrusive<ASTPair>(*this);
     res->children.clear();
     res->set(res->second, second->clone());
     return res;
 }
 
 
-void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTPair::writeJSON(WriteBuffer & out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(first) << " " << (settings.hilite ? hilite_none : "");
+    JSONObjectWriter w(out, "Pair");
+    w.writeString("first", first);
+    w.writeBool("second_with_brackets", second_with_brackets);
+    w.writeChild("second", second);
+}
+
+void ASTPair::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    first = r.getString("first");
+    if (first.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'first' in ASTPair during AST JSON deserialization");
+
+    second_with_brackets = r.getBool("second_with_brackets");
+
+    auto child = r.readChild("second");
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
+    set(second, child);
+}
+
+void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    ostr << Poco::toUpper(first) << " ";
 
     if (second_with_brackets)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "(";
+        ostr << "(";
 
     if (!settings.show_secrets && (first == "password"))
     {
         /// Hide password in the definition of a dictionary:
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
-        settings.ostr << "'[HIDDEN]'";
+        ostr << "'[HIDDEN]'";
+    }
+    else if (!settings.show_secrets && (first == "uri"))
+    {
+        // Hide password from URI in the defention of a dictionary
+        WriteBufferFromOwnString temp_buf;
+        FormatSettings tmp_settings(settings.one_line);
+        FormatState tmp_state;
+        second->format(temp_buf, tmp_settings, tmp_state, frame);
+
+        maskURIPassword(&temp_buf.str());
+        ostr << temp_buf.str();
     }
     else
     {
-        second->formatImpl(settings, state, frame);
+        second->format(ostr, settings, state, frame);
     }
 
     if (second_with_brackets)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ")";
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
+        ostr << ")";
 }
 
 
 bool ASTPair::hasSecretParts() const
 {
-    return first == "password";
+    return (first == "password") || second->hasSecretParts();
 }
 
 
@@ -70,7 +112,7 @@ String ASTFunctionWithKeyValueArguments::getID(char delim) const
 
 ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 {
-    auto res = std::make_shared<ASTFunctionWithKeyValueArguments>(*this);
+    auto res = make_intrusive<ASTFunctionWithKeyValueArguments>(*this);
     res->children.clear();
 
     if (elements)
@@ -83,12 +125,43 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 }
 
 
-void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTFunctionWithKeyValueArguments::writeJSON(WriteBuffer & out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
-    elements->formatImpl(settings, state, frame);
-    settings.ostr << (has_brackets ? ")" : "");
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    JSONObjectWriter w(out, "FunctionWithKeyValueArguments");
+    w.writeString("name", name);
+    w.writeBool("has_brackets", has_brackets);
+    w.writeChild("elements", elements);
+}
+
+void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' in ASTFunctionWithKeyValueArguments during AST JSON deserialization");
+
+    has_brackets = r.getBool("has_brackets");
+
+    /// `elements` is parser-produced as an `ASTExpressionList` of `ASTPair`;
+    /// `buildConfigurationFromFunctionWithKeyValueArguments` does `elements->as<const ASTExpressionList>()`
+    /// and dereferences each child as an `ASTPair`. Validate both layers so malformed dictionary
+    /// `clickhouse_json` fails with `BAD_ARGUMENTS` instead of inside dictionary-configuration building.
+    elements = r.readChildOfType<ASTExpressionList>("elements");
+    if (!elements)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' in ASTFunctionWithKeyValueArguments during AST JSON deserialization");
+    for (const auto & element : elements->children)
+        if (!element || !element->as<ASTPair>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'elements' of ASTFunctionWithKeyValueArguments must contain only key-value pairs during AST JSON deserialization");
+    children.push_back(elements);
+}
+
+void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    ostr << Poco::toUpper(name) << (has_brackets ? "(" : "");
+    elements->format(ostr, settings, state, frame);
+    ostr << (has_brackets ? ")" : "");
 }
 
 

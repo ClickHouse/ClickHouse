@@ -29,8 +29,7 @@ struct ExtractPath
         if (end == pos)
             return;
 
-        /// Note that strings are zero-terminated.
-        bool has_subsequent_slash = pos[1] == '/';
+        bool has_subsequent_slash = pos + 1 < end && pos[1] == '/';
         if (has_subsequent_slash)
         {
             /// Search for next slash.

@@ -1,8 +1,10 @@
-import pytest
-import socket
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
-from time import sleep
 import os
+import socket
+from time import sleep
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -63,7 +65,7 @@ def setup_ch_server(dns_server_ip):
     ch_server.exec_in_container(
         (["bash", "-c", "echo 'options ndots:0' >> /etc/resolv.conf"])
     )
-    ch_server.query("SYSTEM DROP DNS CACHE")
+    ch_server.query("SYSTEM CLEAR DNS CACHE")
 
 
 def build_endpoint_v4(ip):

@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 
+#include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
+
 namespace DB
 {
 
@@ -30,7 +32,8 @@ MergeTreeReadTaskPtr MergeTreeInReverseOrderSelectAlgorithm::getNewTask(IMergeTr
     return pool.getTask(part_idx, previous_task);
 }
 
-MergeTreeReadTask::BlockAndProgress MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask & task, const BlockSizeParams & params)
+MergeTreeReadTask::BlockAndProgress
+MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask & task)
 {
     MergeTreeReadTask::BlockAndProgress res;
 
@@ -42,7 +45,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeInReverseOrderSelectAlgorithm::read
     }
 
     while (!task.isFinished())
-        chunks.push_back(task.read(params));
+        chunks.push_back(task.read());
 
     if (chunks.empty())
         return {};
@@ -50,6 +53,12 @@ MergeTreeReadTask::BlockAndProgress MergeTreeInReverseOrderSelectAlgorithm::read
     res = std::move(chunks.back());
     chunks.pop_back();
     return res;
+}
+
+MergeTreeReadTaskPtr
+MergeTreeProjectionIndexSelectAlgorithm::getNewTask(IMergeTreeReadPool & /* pool */, MergeTreeReadTask * /* previous_task */)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeProjectionIndexSelectAlgorithm cannot be used to generate new tasks");
 }
 
 }

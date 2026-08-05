@@ -24,7 +24,7 @@ SET join_use_nulls=0;
 -- { echoOn }
 
 -- Support for query lower
-{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL', 'SEMI LEFT', 'SEMI RIGHT'] -%}
 {% for algorithm in ['hash', 'grace_hash'] -%}
 SET join_algorithm='{{ algorithm }}';
 SELECT * FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.attr) ORDER BY ALL;
@@ -33,7 +33,7 @@ SELECT * FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.a
 
 
 -- Subquery JOIN
-{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL', 'SEMI LEFT', 'SEMI RIGHT'] -%}
 {% for algorithm in ['hash', 'grace_hash'] -%}
 SET join_algorithm='{{ algorithm }}';
 SELECT * FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.attr) {{ join_type }} JOIN (SELECT * FROM VALUES('key UInt64, a UInt64', (0, 10), (1, 100), (2, 1000))) t3 ON t1.key=t3.key AND t2.key=t3.key AND t3.a!=t1.a AND t3.a!=t2.a ORDER BY ALL;

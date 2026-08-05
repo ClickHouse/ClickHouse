@@ -10,6 +10,7 @@ namespace DB
 {
 template <class> struct Decimal;
 class DateTime64;
+class Time64;
 
 #define FOR_EACH_UNDERLYING_DECIMAL_TYPE(M) \
     M(Int32) \
@@ -47,7 +48,7 @@ struct Decimal
     constexpr Decimal(const T & value_): value(value_) {} // NOLINT(google-explicit-constructor)
 
     template <typename U>
-    constexpr Decimal(const Decimal<U> & x): value(x.value) {} // NOLINT(google-explicit-constructor)
+    constexpr Decimal(const Decimal<U> & x): value(static_cast<T>(x.value)) {} // NOLINT(google-explicit-constructor)
 
     constexpr Decimal<T> & operator=(Decimal<T> &&) noexcept = default;
     constexpr Decimal<T> & operator = (const Decimal<T> &) = default;
@@ -63,15 +64,31 @@ struct Decimal
             return static_cast<U>(value);
     }
 
-    const Decimal<T> & operator += (const T & x);
-    const Decimal<T> & operator -= (const T & x);
-    const Decimal<T> & operator *= (const T & x);
+    /// The overflow-dependent operators below (`+=`, `-=`, `*=`, plus the free
+    /// `+`, `-`, `*` and unary `-`) intentionally wrap around — see `Decimal.cpp`
+    /// for the rationale — and are marked `NO_SANITIZE_UNDEFINED`. `/=` and `%=`
+    /// keep UBSan instrumentation so `divide-by-zero` and `INT_MIN / -1` are
+    /// still reported.
+    NO_SANITIZE_UNDEFINED const Decimal<T> & operator += (const T & x);
+    NO_SANITIZE_UNDEFINED const Decimal<T> & operator -= (const T & x);
+    NO_SANITIZE_UNDEFINED const Decimal<T> & operator *= (const T & x);
     const Decimal<T> & operator /= (const T & x);
     const Decimal<T> & operator %= (const T & x);
 
-    template <typename U> const Decimal<T> & operator += (const Decimal<U> & x);
-    template <typename U> const Decimal<T> & operator -= (const Decimal<U> & x);
-    template <typename U> const Decimal<T> & operator *= (const Decimal<U> & x);
+    constexpr Decimal<T> operator~() const { return Decimal<T>(~value); }
+
+    constexpr Decimal<T> operator&(const T& x) const { return Decimal<T>(value & x); }
+    constexpr Decimal<T> operator|(const T& x) const { return Decimal<T>(value | x); }
+
+    template <typename U>
+    constexpr Decimal<T> operator&(const Decimal<U>& x) const { return Decimal<T>(value & static_cast<T>(x.value)); }
+
+    template <typename U>
+    constexpr Decimal<T> operator|(const Decimal<U>& x) const { return Decimal<T>(value | static_cast<T>(x.value)); }
+
+    template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & operator += (const Decimal<U> & x);
+    template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & operator -= (const Decimal<U> & x);
+    template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & operator *= (const Decimal<U> & x);
     template <typename U> const Decimal<T> & operator /= (const Decimal<U> & x);
     template <typename U> const Decimal<T> & operator %= (const Decimal<U> & x);
 
@@ -86,9 +103,9 @@ FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
 #undef DISPATCH
 
 #define DISPATCH(TYPE_T, TYPE_U) \
-    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator += (const Decimal<TYPE_U> & x); \
-    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator -= (const Decimal<TYPE_U> & x); \
-    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator *= (const Decimal<TYPE_U> & x); \
+    extern template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator += (const Decimal<TYPE_U> & x); \
+    extern template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator -= (const Decimal<TYPE_U> & x); \
+    extern template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator *= (const Decimal<TYPE_U> & x); \
     extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator /= (const Decimal<TYPE_U> & x); \
     extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator %= (const Decimal<TYPE_U> & x);
 #define INVOKE(X) FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(DISPATCH, X)
@@ -113,18 +130,20 @@ extern template bool operator!= (const Decimal<TYPE> & x, const Decimal<TYPE> & 
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
 #undef DISPATCH
 
-template <typename T> Decimal<T> operator+ (const Decimal<T> & x, const Decimal<T> & y);
-template <typename T> Decimal<T> operator- (const Decimal<T> & x, const Decimal<T> & y);
-template <typename T> Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator+ (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator- (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y);
 template <typename T> Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y);
-template <typename T> Decimal<T> operator- (const Decimal<T> & x);
+template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator- (const Decimal<T> & x);
+template <typename T> Decimal<T> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<T> & x);
 
 #define DISPATCH(TYPE) \
-extern template Decimal<TYPE> operator+ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-extern template Decimal<TYPE> operator- (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-extern template Decimal<TYPE> operator* (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator+ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator- (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator* (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 extern template Decimal<TYPE> operator/ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-extern template Decimal<TYPE> operator- (const Decimal<TYPE> & x);
+extern template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator- (const Decimal<TYPE> & x); \
+extern template Decimal<TYPE> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<TYPE> & x);
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
 #undef DISPATCH
 
@@ -141,6 +160,16 @@ public:
     using NativeType = Base::NativeType;
 
     constexpr DateTime64(const Base & v): Base(v) {} // NOLINT(google-explicit-constructor)
+};
+
+class Time64 : public Decimal64
+{
+public:
+    using Base = Decimal64;
+    using Base::Base;
+    using NativeType = Base::NativeType;
+
+    constexpr Time64(const Base & v): Base(v) {} // NOLINT(google-explicit-constructor)
 };
 }
 
@@ -159,8 +188,8 @@ namespace std
     {
         size_t operator()(const DB::Decimal128 & x) const
         {
-            return std::hash<Int64>()(x.value >> 64)
-                ^ std::hash<Int64>()(x.value & max_uint_mask);
+            return std::hash<Int64>()(static_cast<Int64>(x.value >> 64))
+                ^ std::hash<Int64>()(static_cast<Int64>(x.value & max_uint_mask));
         }
     };
 
@@ -170,6 +199,15 @@ namespace std
         size_t operator()(const DB::DateTime64 & x) const
         {
             return std::hash<DB::DateTime64::NativeType>()(x);
+        }
+    };
+
+    template <>
+    struct hash<DB::Time64>
+    {
+        size_t operator()(const DB::Time64 & x) const
+        {
+            return std::hash<DB::Time64::NativeType>()(x);
         }
     };
 

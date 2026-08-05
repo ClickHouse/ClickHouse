@@ -9,13 +9,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm -q "ATTACH TABLE mv" |& {
+$CLICKHOUSE_CLIENT -m -q "ATTACH TABLE mv" |& {
     # CANNOT_GET_CREATE_TABLE_QUERY -- ATTACH TABLE IF EXISTS
     # TABLE_ALREADY_EXISTS          -- ATTACH TABLE IF NOT EXISTS
     grep -F -m1 Exception | grep -v -e CANNOT_GET_CREATE_TABLE_QUERY -e TABLE_ALREADY_EXISTS
 }
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     DROP TABLE IF EXISTS null;
     CREATE TABLE null (key Int) ENGINE = Null;
     DROP TABLE IF EXISTS mv;

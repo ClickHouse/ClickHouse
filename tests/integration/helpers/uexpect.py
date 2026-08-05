@@ -15,9 +15,9 @@ import os
 import pty
 import re
 import time
-from queue import Queue, Empty
+from queue import Empty, Queue
 from subprocess import Popen
-from threading import Thread, Event
+from threading import Event, Thread
 
 
 class TimeoutError(Exception):
@@ -107,7 +107,9 @@ class IO(object):
             self.process.kill()
         else:
             self.process.terminate()
+        self.process.wait()
         os.close(self.master)
+        self.reader["thread"].join(timeout=5)
         if self._logger:
             self._logger.write("\n")
             self._logger.flush()
@@ -188,7 +190,7 @@ def spawn(command):
     master, slave = pty.openpty()
     process = Popen(
         command,
-        preexec_fn=os.setsid,
+        start_new_session=True,
         stdout=slave,
         stdin=slave,
         stderr=slave,

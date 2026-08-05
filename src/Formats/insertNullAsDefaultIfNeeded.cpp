@@ -45,6 +45,9 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
         if (tuple_input_type.getElements().size() != tuple_header_type.getElements().size())
             return false;
 
+        bool has_explicit_names = tuple_input_type.hasExplicitNames();
+        Names explicit_names = has_explicit_names ? tuple_input_type.getElementNames() : Names{};
+
         Columns nested_input_columns;
         nested_input_columns.reserve(tuple_input_type.getElements().size());
         DataTypes nested_input_types;
@@ -67,7 +70,9 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
             return false;
 
         input_column.column = ColumnTuple::create(std::move(nested_input_columns));
-        input_column.type = std::make_shared<DataTypeTuple>(std::move(nested_input_types));
+        input_column.type = has_explicit_names
+                            ? std::make_shared<DataTypeTuple>(std::move(nested_input_types), explicit_names)
+                            : std::make_shared<DataTypeTuple>(std::move(nested_input_types));
         return true;
     }
 
@@ -86,6 +91,27 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
 
         input_column.column = ColumnMap::create(std::move(nested_input_column.column));
         input_column.type = std::make_shared<DataTypeMap>(std::move(nested_input_column.type));
+        return true;
+    }
+
+    /// When both input and header are Nullable, unwrap and recurse into the nested types.
+    /// This can handle cases such as e.g. Nullable(Tuple(Nullable(Int32), String)) vs Nullable(Tuple(UInt32, String))
+    if (input_column.type->isNullable() && header_column.type->isNullable())
+    {
+        ColumnWithTypeAndName nested_input;
+        nested_input.column = assert_cast<const ColumnNullable *>(input_column.column.get())->getNestedColumnPtr();
+        nested_input.type = removeNullable(input_column.type);
+
+        ColumnWithTypeAndName nested_header;
+        nested_header.column = assert_cast<const ColumnNullable *>(header_column.column.get())->getNestedColumnPtr();
+        nested_header.type = removeNullable(header_column.type);
+
+        if (!insertNullAsDefaultIfNeeded(nested_input, nested_header, 0, nullptr))
+            return false;
+
+        input_column.column = ColumnNullable::create(
+            nested_input.column, assert_cast<const ColumnNullable *>(input_column.column.get())->getNullMapColumnPtr());
+        input_column.type = std::make_shared<DataTypeNullable>(std::move(nested_input.type));
         return true;
     }
 
@@ -112,6 +138,11 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(input_column.type.get());
         input_column.type = std::make_shared<DataTypeLowCardinality>(removeNullable(lc_type->getDictionaryType()));
     }
+
+    /// After stripping the outer Nullable, the inner type may also need processing.
+    /// For example, Nullable(Tuple(Nullable(Int), String)) -> Tuple(Nullable(Int), String)
+    /// still needs the Tuple elements compared against the header to strip inner Nullable.
+    insertNullAsDefaultIfNeeded(input_column, header_column, column_i, block_missing_values);
 
     return true;
 }

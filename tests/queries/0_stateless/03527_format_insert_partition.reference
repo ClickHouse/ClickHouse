@@ -1,0 +1,6 @@
+[0;1mINSERT INTO[0m [0;1mFUNCTION[0m [0;22;33ms3[0;38;5;218m([0;22;32m'https://a_path_to_s3/bucket_name/test.parquet'[0m, [0;22;32m'access_key'[0m, [0;22;32m'secret_key'[0m, [0;22;32m'Parquet'[0;38;5;218m)[0m [0;1mPARTITION BY[0m [0;22;33mrand[0;38;5;210m()[0m % [0;38;5;40m10[0m [0;1mSELECT[0m *
+[0;1mFROM[0m [0;22;36mTestTable[0m
+[0;1mLIMIT[0m [0;38;5;40m10[0m
+[0;1mINSERT INTO[0m [0;1mFUNCTION[0m [0;22;33ms3[0;38;5;218m([0;22;32m'https://a_path_to_s3/bucket_name/test.parquet'[0m, [0;22;32m'access_key'[0m, [0;22;32m'secret_key'[0m, [0;22;32m'Parquet'[0;38;5;218m)[0m [0;1mPARTITION BY[0m [0;22;33mrand[0;38;5;210m()[0m % [0;38;5;40m10[0m [0;1mSELECT[0m *
+[0;1mFROM[0m [0;22;36mTestTable[0m
+[0;1mLIMIT[0m [0;38;5;40m10[0m

@@ -2,6 +2,7 @@
 #include <Interpreters/TextLog.h>
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -15,6 +16,12 @@
 
 namespace DB
 {
+
+std::shared_ptr<TextLog::Queue> TextLog::getLogQueue(const SystemLogQueueSettings & settings)
+{
+    static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
+    return queue;
+}
 
 ColumnsDescription TextLogElement::getColumnsDescription()
 {
@@ -42,9 +49,9 @@ ColumnsDescription TextLogElement::getColumnsDescription()
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the thread from which the logging was done."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "OS thread ID."},
 
-        {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace'."},
+        {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace', 9 or 'Test'."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
-        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (i.e. DDLWorker)."},
+        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (e.g., DDLWorker)."},
         {"message", std::make_shared<DataTypeString>(), "The message itself."},
 
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
@@ -75,7 +82,8 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 
-    columns[i++]->insertData(thread_name.data(), thread_name.size());
+    auto thread_name_str = toString(thread_name);
+    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
     columns[i++]->insert(thread_id);
 
     columns[i++]->insert(level);

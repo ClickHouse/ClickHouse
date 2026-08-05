@@ -1,4 +1,5 @@
 1	NewPart	NotAMerge	all_1_1_0
+1	MergePartsStart	RegularMerge	all_1_1_1
 1	MergeParts	RegularMerge	all_1_1_1
 1	NewPart	NotAMerge	all_1_1_2
 1	RemovePart	NotAMerge	all_1_1_1

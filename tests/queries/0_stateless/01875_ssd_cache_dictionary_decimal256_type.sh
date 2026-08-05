@@ -6,8 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="
-    SET allow_experimental_bigint_types = 1;
-
     DROP TABLE IF EXISTS dictionary_decimal_source_table;
     CREATE TABLE dictionary_decimal_source_table
     (

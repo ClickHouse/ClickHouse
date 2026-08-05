@@ -1,5 +1,8 @@
-#ifdef FUZZING_MODE
+#include <config.h>
 
+#if USE_FUZZING_MODE
+
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -12,7 +15,7 @@ namespace DB
 namespace
 {
 
-class FunctionGetFuzzerData : public IFunction
+class FunctionGetFuzzerData final : public IFunction
 {
     inline static String fuzz_data;
 
@@ -51,7 +54,7 @@ public:
 
 REGISTER_FUNCTION(GetFuzzerData)
 {
-    factory.registerFunction<FunctionGetFuzzerData>();
+    factory.registerFunction<FunctionGetFuzzerData>({});
 }
 
 }

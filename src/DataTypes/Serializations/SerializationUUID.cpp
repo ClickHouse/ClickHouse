@@ -1,4 +1,5 @@
 #include <Columns/ColumnsNumber.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationUUID.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -9,6 +10,18 @@
 
 namespace DB
 {
+
+UInt128 SerializationUUID::getHash()
+{
+    SipHash hash;
+    hash.update("UUID");
+    return hash.get128();
+}
+
+SerializationPtr SerializationUUID::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationUUID(); });
+}
 
 void SerializationUUID::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
@@ -181,8 +194,9 @@ void SerializationUUID::serializeBinaryBulk(const IColumn & column, WriteBuffer 
 #pragma clang diagnostic pop
 }
 
-void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
+    istr.ignore(sizeof(UUID) * rows_offset);
     typename ColumnVector<UUID>::Container & x = typeid_cast<ColumnVector<UUID> &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
@@ -196,4 +210,5 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
 #pragma clang diagnostic pop
 }
+
 }

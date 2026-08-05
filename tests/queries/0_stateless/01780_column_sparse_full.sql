@@ -5,8 +5,11 @@ DROP TABLE IF EXISTS t_sparse_full;
 
 CREATE TABLE t_sparse_full (id UInt64, u UInt64, s String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 32, index_granularity_bytes = '10Mi',
-ratio_of_defaults_for_sparse_serialization = 0.1;
+SETTINGS index_granularity = 32,
+    index_granularity_bytes = '10Mi',
+    ratio_of_defaults_for_sparse_serialization = 0.1,
+    enable_block_number_column = 0,
+    enable_block_offset_column = 0;
 
 SYSTEM STOP MERGES t_sparse_full;
 
@@ -40,7 +43,7 @@ SELECT id % 3 AS k, sum(u) FROM t_sparse_full WHERE u != 0 GROUP BY k ORDER BY k
 SELECT '======';
 SELECT uniqExact(u) FROM t_sparse_full WHERE s != '';
 SELECT '======';
-SELECT toUInt32(s) % 5 AS k, groupUniqArray(u % 4) FROM t_sparse_full WHERE s != '' GROUP BY k ORDER BY k;
+SELECT toUInt32(s) % 5 AS k, arraySort(groupUniqArray(u % 4)) FROM t_sparse_full WHERE s != '' GROUP BY k ORDER BY k;
 SELECT max(range(id % 10)[u]) FROM t_sparse_full;
 SELECT '======';
 SELECT id, u, s FROM remote('127.0.0.{1,2}', currentDatabase(), t_sparse_full) ORDER BY id, u, s LIMIT 5;

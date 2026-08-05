@@ -6,9 +6,12 @@
 namespace DB
 {
 
+class TemporaryDataBuffer;
+using TemporaryDataBufferPtr = std::unique_ptr<TemporaryDataBuffer>;
+
 /// Represents a file prepared to be included in a backup, assuming that until this backup entry is destroyed
 /// the file can be appended with new data, but the bytes which are already in the file won't be changed.
-class BackupEntryFromAppendOnlyFile : public BackupEntryWithChecksumCalculation<IBackupEntry>
+class BackupEntryFromAppendOnlyFile : public BackupEntryWithChecksumCalculation
 {
 public:
     /// The constructor is allowed to not set `file_size_`, in that case it will be calculated from the data.
@@ -16,7 +19,10 @@ public:
         const DiskPtr & disk_,
         const String & file_path_,
         bool copy_encrypted_ = false,
-        const std::optional<UInt64> & file_size_ = {});
+        const std::optional<UInt64> & file_size_ = {},
+        bool allow_checksum_from_remote_path_ = true);
+
+    explicit BackupEntryFromAppendOnlyFile(TemporaryDataBufferPtr tmp_file_);
 
     ~BackupEntryFromAppendOnlyFile() override;
 
@@ -30,12 +36,19 @@ public:
     DiskPtr getDisk() const override { return disk; }
     String getFilePath() const override { return file_path; }
 
+protected:
+    bool isPartialChecksumAllowed() const override { return true; }
+    bool isChecksumFromRemotePathAllowed() const override { return allow_checksum_from_remote_path; }
+
 private:
-    const DiskPtr disk;
-    const String file_path;
-    const DataSourceDescription data_source_description;
-    const bool copy_encrypted;
-    const UInt64 size;
+    TemporaryDataBufferPtr tmp_file;
+
+    DiskPtr disk;
+    String file_path;
+    DataSourceDescription data_source_description;
+    bool copy_encrypted = false;
+    UInt64 size = 0;
+    bool allow_checksum_from_remote_path = false;
 };
 
 }

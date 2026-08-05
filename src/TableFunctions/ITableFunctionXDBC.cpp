@@ -3,31 +3,37 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
-
-#include "config.h"
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool external_table_functions_use_nulls;
+    extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsBool odbc_bridge_use_connection_pooling;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -39,7 +45,6 @@ namespace
  */
 class ITableFunctionXDBC : public ITableFunction
 {
-private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
@@ -78,7 +83,7 @@ private:
         return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
-    const char * getStorageTypeName() const override { return "JDBC"; }
+    const char * getStorageEngineName() const override { return "JDBC"; }
 };
 
 class TableFunctionODBC : public ITableFunctionXDBC
@@ -99,7 +104,7 @@ private:
         return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
-    const char * getStorageTypeName() const override { return "ODBC"; }
+    const char * getStorageEngineName() const override { return "ODBC"; }
 };
 
 
@@ -111,23 +116,69 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments.", getName());
 
     ASTs & args = args_func.arguments->children;
-    if (args.size() != 2 && args.size() != 3)
+
+    if (args.empty() || args.size() > 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{0}' requires 2 or 3 arguments: {0}('DSN', table) or {0}('DSN', schema, table)", getName());
+            "Table function '{0}' requires 1, 2 or 3 arguments: {0}(named_collection) or {0}('DSN', table) or {0}('DSN', schema, table)", getName());
 
-    for (auto & arg : args)
-        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
-
-    if (args.size() == 3)
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
     {
-        connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        schema_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        if (Poco::toLower(getName()) == "jdbc")
+        {
+            validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "external_database",
+                                                                          "external_table", "table"});
+
+            connection_string = named_collection->get<String>("datasource");
+
+            /// These are aliases for better compatibility and similarity between JDBC and ODBC
+            /// Both aliases cannot be specified simultaneously.
+            if (named_collection->has("external_database") && named_collection->has("schema"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Table function '{0}' cannot have `external_database` and `schema` arguments simultaneously", getName());
+            schema_name = named_collection->getAnyOrDefault<String>({"external_database", "schema"}, "");
+
+            if (named_collection->has("external_table") && named_collection->has("table"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Table function '{0}' cannot have `external_table` and `table` arguments simultaneously", getName());
+            remote_table_name = named_collection->getAnyOrDefault<String>({"external_table", "table"}, "");
+        }
+        else
+        {
+            validateNamedCollection<>(*named_collection, {}, {"datasource", "connection_settings",   // Aliases
+                                                              "external_database",
+                                                              "external_table"});
+
+            if (named_collection->has("datasource") == named_collection->has("connection_settings"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Table function '{0}' must have exactly one `datasource` / `connection_settings` argument", getName());
+            connection_string = named_collection->getAny<String>({"datasource", "connection_settings"});
+
+
+            schema_name = named_collection->getOrDefault<String>("external_database", "");
+            remote_table_name = named_collection->getOrDefault<String>("external_table", "");
+        }
     }
-    else if (args.size() == 2)
+    else if (args.size() == 1)
     {
-        connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table function '{0}' has 1 argument, it is expected to be named collection", getName());
+    }
+    else
+    {
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
+        if (args.size() == 3)
+        {
+            connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+            schema_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        }
+        else if (args.size() == 2)
+        {
+            connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+            remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        }
     }
 }
 
@@ -135,7 +186,11 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
 {
     if (!helper)
     {
-        helper = createBridgeHelper(context, context->getSettingsRef().http_receive_timeout.value, connection_string, context->getSettingsRef().odbc_bridge_use_connection_pooling.value);
+        helper = createBridgeHelper(
+            context,
+            Poco::Timespan(context->getSettingsRef()[Setting::http_receive_timeout]),
+            connection_string,
+            context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
         helper->startBridgeSync();
     }
 }
@@ -151,16 +206,27 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
         columns_info_uri.addQueryParameter("schema", schema_name);
     columns_info_uri.addQueryParameter("table", remote_table_name);
 
-    bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
+    bool use_nulls = context->getSettingsRef()[Setting::external_table_functions_use_nulls];
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
+
+    /// `startBridgeIfNot` above has already verified the bridge responds, so this metadata
+    /// request talks to a known-alive local subprocess. Do not retry it: if the bridge (or the
+    /// ODBC/JDBC driver behind it) stops responding mid-request, retrying `http_max_tries` times,
+    /// each blocking for up to `http_receive_timeout`, keeps the query running for minutes during
+    /// query analysis, where it cannot observe cancellation (`KILL QUERY`, `max_execution_time`).
+    /// That is what surfaces as a "possible deadlock" in the stress-test hung check. Make a single
+    /// attempt and let the error propagate instead.
+    ReadSettings read_settings;
+    read_settings.http_settings.max_tries = 1;
 
     Poco::Net::HTTPBasicCredentials credentials{};
     auto buf = BuilderRWBufferFromHTTP(columns_info_uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withSettings(read_settings)
                    .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(
                         context->getSettingsRef(),
-                        context->getServerSettings().keep_alive_timeout))
+                        context->getServerSettings()))
                    .create(credentials);
 
     std::string columns_info;
@@ -184,11 +250,162 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionJDBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionJDBC>();
+    factory.registerFunction<TableFunctionJDBC>({.description = R"DOCS_MD(
+<Note>
+clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability issues and security vulnerabilities. Use it at your own risk. 
+ClickHouse recommend using built-in table functions in ClickHouse which provide a better alternative for ad-hoc querying scenarios (Postgres, MySQL, MongoDB, etc).
+</Note>
+
+JDBC table function returns table that is connected via JDBC driver.
+
+This table function requires separate [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) program to be running.
+It supports Nullable types (based on DDL of remote table that is queried).
+
+## Syntax {#syntax}
+
+```sql
+jdbc(datasource, external_database, external_table)
+jdbc(datasource, external_table)
+jdbc(named_collection)
+```
+
+## Examples {#examples}
+
+Instead of an external database name, a schema can be specified:
+
+```sql
+SELECT * FROM jdbc('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
+```
+
+```sql
+SELECT * FROM jdbc('mysql://localhost:3306/?user=root&password=root', 'select * from schema.table')
+```
+
+```sql
+SELECT * FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
+```
+
+```sql
+SELECT *
+FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
+```
+
+```sql
+SELECT a.datasource AS server1, b.datasource AS server2, b.name AS db
+FROM jdbc('mysql-dev?datasource_column', 'show databases') a
+INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 
 void registerTableFunctionODBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionODBC>();
+    factory.registerFunction<TableFunctionODBC>({.description = R"DOCS_MD(
+Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+
+## Syntax {#syntax}
+
+```sql
+odbc(datasource, external_database, external_table)
+odbc(datasource, external_table)
+odbc(named_collection)
+```
+
+## Arguments {#arguments}
+
+| Argument            | Description                                                            |
+|---------------------|------------------------------------------------------------------------|
+| `datasource` | Name of the section with connection settings in the `odbc.ini` file. |
+| `external_database` | Name of a database in an external DBMS.                                |
+| `external_table`    | Name of a table in the `external_database`.                            |
+
+These parameters can also be passed using [named collections](/concepts/features/configuration/server-config/named-collections).
+
+To safely implement ODBC connections, ClickHouse uses a separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from `clickhouse-server`, driver problems can crash the ClickHouse server. ClickHouse automatically starts `clickhouse-odbc-bridge` when it is required. The ODBC bridge program is installed from the same package as the `clickhouse-server`.
+
+The fields with the `NULL` values from the external table are converted into the default values for the base data type. For example, if a remote MySQL table field has the `INT NULL` type it is converted to 0 (the default value for ClickHouse `Int32` data type).
+
+## Usage Example {#usage-example}
+
+**Getting data from the local MySQL installation via ODBC**
+
+This example is checked for Ubuntu Linux 18.04 and MySQL server 5.7.
+
+Ensure that unixODBC and MySQL Connector are installed.
+
+By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus you need to create and configure this user in the MySQL server.
+
+```bash
+$ sudo mysql
+```
+
+```sql
+mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
+```
+
+Then configure the connection in `/etc/odbc.ini`.
+
+```bash
+$ cat /etc/odbc.ini
+[mysqlconn]
+DRIVER = /usr/local/lib/libmyodbc5w.so
+SERVER = 127.0.0.1
+PORT = 3306
+DATABASE = test
+USERNAME = clickhouse
+PASSWORD = clickhouse
+```
+
+You can check the connection using the `isql` utility from the unixODBC installation.
+
+```bash
+$ isql -v mysqlconn
++-------------------------+
+| Connected!                            |
+|                                       |
+...
+```
+
+Table in MySQL:
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+Retrieving data from the MySQL table in ClickHouse:
+
+```sql
+SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
+│      1 │            0 │     2 │              0 │
+└────────┴──────────────┴───────┴────────────────┘
+```
+
+## Related {#see-also}
+
+- [ODBC dictionaries](/reference/statements/create/dictionary/sources/odbc)
+- [ODBC table engine](/reference/engines/table-engines/integrations/odbc).
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 }

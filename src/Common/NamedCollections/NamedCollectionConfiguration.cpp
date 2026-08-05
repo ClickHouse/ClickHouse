@@ -1,9 +1,9 @@
-#include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <base/EnumReflection.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Exception.h>
-#include <Common/SettingsChanges.h>
 #include <Common/FieldVisitorToString.h>
-#include <magic_enum.hpp>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -162,7 +162,7 @@ ConfigurationPtr createConfiguration(
     namespace Configuration = NamedCollectionConfiguration;
 
     auto config = Configuration::createEmptyConfiguration(root_name);
-    for (const auto & [name, value] : settings)
+    for (const auto & [name, value, _] : settings)
     {
         Configuration::setConfigValue<String>(*config, name, convertFieldToString(value));
         auto ovalue = overridability.find(name);

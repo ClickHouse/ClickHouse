@@ -4,32 +4,47 @@
 
 #if USE_LIBPQXX
 
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <DataTypes/dataTypeToAST.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/RemoteHostFilter.h>
+#include <IO/WriteHelpers.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
-
+#include <Disks/IDisk.h>
 namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
+}
+
+namespace PostgreSQLSetting
+{
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_size;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_retries;
+    extern const PostgreSQLSettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_attempt_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -45,14 +60,15 @@ static const auto cleaner_reschedule_ms = 60000;
 static const auto reschedule_error_multiplier = 10;
 
 DatabasePostgreSQL::DatabasePostgreSQL(
-        ContextPtr context_,
-        const String & metadata_path_,
-        const ASTStorage * database_engine_define_,
-        const String & dbname_,
-        const StoragePostgreSQL::Configuration & configuration_,
-        postgres::PoolWithFailoverPtr pool_,
-        bool cache_tables_)
-    : IDatabase(dbname_)
+    ContextPtr context_,
+    const String & metadata_path_,
+    const ASTStorage * database_engine_define_,
+    const String & dbname_,
+    const StoragePostgreSQL::Configuration & configuration_,
+    postgres::PoolWithFailoverPtr pool_,
+    bool cache_tables_,
+    UUID uuid)
+    : DatabaseWithAltersOnDiskBase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -60,9 +76,16 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
+    , db_uuid(uuid)
 {
-    fs::create_directories(metadata_path);
-    cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
+    persistent = !context_->getClientInfo().is_shared_catalog_internal;
+    if (persistent)
+    {
+        auto db_disk = getDisk();
+        db_disk->createDirectories(metadata_path);
+    }
+
+    cleaner_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
 
@@ -126,8 +149,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
 
 bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
 {
-    if (table_name.find('\'') != std::string::npos
-        || table_name.find('\\') != std::string::npos)
+    if (table_name.contains('\'') || table_name.contains('\\'))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);
@@ -198,7 +220,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto storage = std::make_shared<StoragePostgreSQL>(
-                StorageID(database_name, table_name), pool, table_name,
+                StorageID(database_name, table_name), pool, TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
                 context_, configuration.schema, configuration.on_conflict);
 
@@ -224,6 +246,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 
 void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
+    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
 
     if (!checkPostgresTable(table_name))
@@ -241,9 +264,11 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
 
     detached_or_dropped.erase(table_name);
 
+    if (!persistent)
+        return;
+
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    if (fs::exists(table_marked_as_removed))
-        (void)fs::remove(table_marked_as_removed);
+    db_disk->removeFileIfExists(table_marked_as_removed);
 }
 
 
@@ -280,6 +305,10 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 
 void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
 {
+    if (!persistent)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
+
+    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
 
     if (!checkPostgresTable(table_name))
@@ -289,7 +318,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    FS::createFile(mark_table_removed);
+    db_disk->createFile(mark_table_removed);
 
     if (cache_tables)
         cached_tables.erase(table_name);
@@ -298,24 +327,32 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 }
 
 
-void DatabasePostgreSQL::drop(ContextPtr /*context*/)
+void DatabasePostgreSQL::drop(ContextPtr)
 {
-    (void)fs::remove_all(getMetadataPath());
+    if (!persistent)
+        return;
+
+    auto db_disk = getDisk();
+    db_disk->removeRecursive(getMetadataPath());
 }
 
 
 void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/)
 {
+    if (persistent)
     {
+        auto db_disk = getDisk();
         std::lock_guard lock{mutex};
-        fs::directory_iterator iter(getMetadataPath());
-
         /// Check for previously dropped tables
-        for (fs::directory_iterator end; iter != end; ++iter)
+        for (const auto it = db_disk->iterateDirectory(getMetadataPath()); it->isValid(); it->next())
         {
-            if (fs::is_regular_file(iter->path()) && endsWith(iter->path().filename(), suffix))
+            auto path = fs::path(it->path());
+            if (path.filename().empty())
+                path = path.parent_path();
+
+            if (db_disk->existsFile(path) && endsWith(path.filename(), suffix))
             {
-                const auto & file_name = iter->path().filename().string();
+                const auto & file_name = path.filename().string();
                 const auto & table_name = unescapeForFileName(file_name.substr(0, file_name.size() - strlen(suffix)));
                 detached_or_dropped.emplace(table_name);
             }
@@ -362,15 +399,19 @@ void DatabasePostgreSQL::removeOutdatedTables()
         }
     }
 
+    auto db_disk = getDisk();
     for (auto iter = detached_or_dropped.begin(); iter != detached_or_dropped.end();)
     {
         if (!actual_tables.contains(*iter))
         {
             auto table_name = *iter;
             iter = detached_or_dropped.erase(iter);
+
+            if (!persistent)
+                continue;
+
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-            if (fs::exists(table_marked_as_removed))
-                (void)fs::remove(table_marked_as_removed);
+            db_disk->removeFileIfExists(table_marked_as_removed);
         }
         else
             ++iter;
@@ -385,15 +426,15 @@ void DatabasePostgreSQL::shutdown()
     cleaner_task->deactivate();
 }
 
-
-ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
+ASTPtr DatabasePostgreSQL::getCreateDatabaseQueryImpl() const
 {
-    const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    const auto & create_query = make_intrusive<ASTCreateQuery>();
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
+    create_query->uuid = db_uuid;
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -414,13 +455,13 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
         return nullptr;
     }
 
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
+    auto create_table_query = make_intrusive<ASTCreateQuery>();
     auto table_storage_define = database_engine_define->clone();
-    table_storage_define->as<ASTStorage>()->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+    table_storage_define->as<ASTStorage>()->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     create_table_query->set(create_table_query->storage, table_storage_define);
 
-    auto columns_declare_list = std::make_shared<ASTColumns>();
-    auto columns_expression_list = std::make_shared<ASTExpressionList>();
+    auto columns_declare_list = make_intrusive<ASTColumns>();
+    auto columns_expression_list = make_intrusive<ASTExpressionList>();
 
     columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
     create_table_query->set(create_table_query->columns_list, columns_declare_list);
@@ -430,17 +471,16 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     create_table_query->setTable(table_id.table_name);
     create_table_query->setDatabase(table_id.database_name);
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
-        column_declaration->type = getColumnDeclaration(column_type_and_name.type);
+        column_declaration->setType(dataTypeToAST(column_type_and_name.type));
         columns_expression_list->children.emplace_back(column_declaration);
     }
 
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-    ASTs storage_children = ast_storage->children;
     auto storage_engine_arguments = ast_storage->engine->arguments;
 
     if (storage_engine_arguments->children.empty())
@@ -449,7 +489,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     /// Check for named collection.
     if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
     {
-        storage_engine_arguments->children.push_back(makeASTFunction("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_id.table_name)));
+        storage_engine_arguments->children.push_back(makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_id.table_name)));
     }
     else
     {
@@ -459,47 +499,38 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 
         /// Add table_name to engine arguments.
         if (storage_engine_arguments->children.size() >= 2)
-            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
+            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
     }
 
     return create_table_query;
 }
 
 
-ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) const
-{
-    WhichDataType which(data_type);
-
-    if (which.isNullable())
-        return makeASTDataType("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
-
-    if (which.isArray())
-        return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
-
-    if (which.isDateTime64())
-        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
-
-    return makeASTDataType(data_type->getName());
-}
-
+void registerDatabasePostgreSQL(DatabaseFactory & factory);
 void registerDatabasePostgreSQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
         auto * engine_define = args.create_query.storage;
         const ASTFunction * engine = engine_define->engine;
-        ASTs & engine_args = engine->arguments->children;
-        const String & engine_name = engine_define->engine->name;
 
         if (!engine->arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `PostgreSQL` must have arguments");
+
+        ASTs & engine_args = engine->arguments->children;
+        const String & engine_name = engine_define->engine->name;
 
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
 
+        /// The connection-pool parameters are seeded from the query-level `postgresql_*` settings
+        /// (preserving the historical behaviour); a named collection may override them.
+        PostgreSQLSettings postgresql_settings;
+        postgresql_settings.loadFromQueryContext(*args.context);
+
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
@@ -513,7 +544,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
 
             const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
-            size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
+            size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
             configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
             configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
@@ -540,14 +571,32 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
         }
 
-        const auto & settings = args.context->getSettingsRef();
+        /// Enforce the server's outbound-host policy, exactly like the table engine and the table
+        /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
+        /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
+        /// Skip it only for an internal metadata replay (server startup / restore, the same
+        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
+        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
+        /// enforcing the policy there would turn one database created before the whitelist was
+        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
+        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        if (!is_internal_metadata_replay)
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+        }
+
+        if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
+
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            settings.postgresql_connection_pool_retries,
-            settings.postgresql_connection_pool_auto_close_connection,
-            settings.postgresql_connection_attempt_timeout);
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_wait_timeout],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_retries],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<DatabasePostgreSQL>(
             args.context,
@@ -556,9 +605,157 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             args.database_name,
             configuration,
             pool,
-            use_table_cache);
+            use_table_cache,
+            args.uuid);
     };
-    factory.registerDatabase("PostgreSQL", create_fn);
+    factory.registerDatabase("PostgreSQL", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::POSTGRES,
+    }, Documentation{
+        .description = R"DOCS_MD(
+Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
+
+Gives the real-time access to table list and table structure from remote PostgreSQL with the help of `SHOW TABLES` and `DESCRIBE TABLE` queries.
+
+Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `use_table_cache` parameter (see the Engine Parameters below) is set to `1`, the table structure is cached and not checked for being modified, but can be updated with `DETACH` and `ATTACH` queries.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
+```
+
+**Engine Parameters**
+
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `schema` — PostgreSQL schema.
+- `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
+
+<a id="data_types-support"></a>
+## Data types support {#data-types-support}
+
+| PostgreSQL       | ClickHouse                                                   |
+|------------------|--------------------------------------------------------------|
+| DATE             | [Date](/reference/data-types/date)               |
+| TIMESTAMP        | [DateTime](/reference/data-types/datetime)       |
+| REAL             | [Float32](/reference/data-types/float)           |
+| DOUBLE           | [Float64](/reference/data-types/float)           |
+| DECIMAL, NUMERIC | [Decimal](/reference/data-types/decimal) (see note below) |
+| SMALLINT         | [Int16](/reference/data-types/int-uint)          |
+| INTEGER          | [Int32](/reference/data-types/int-uint)          |
+| BIGINT           | [Int64](/reference/data-types/int-uint)          |
+| SERIAL           | [UInt32](/reference/data-types/int-uint)         |
+| BIGSERIAL        | [UInt64](/reference/data-types/int-uint)         |
+| TEXT, CHAR       | [String](/reference/data-types/string)           |
+| INTEGER          | Nullable([Int32](/reference/data-types/int-uint))|
+| ARRAY            | [Array](/reference/data-types/array)             |
+
+:::note
+PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](/reference/data-types/int-uint) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
+:::
+
+## Examples of use {#examples-of-use}
+
+Database in ClickHouse, exchanging data with the PostgreSQL server:
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+```
+
+```sql
+SHOW DATABASES;
+```
+
+```text
+┌─name──────────┐
+│ default       │
+│ test_database │
+│ system        │
+└───────────────┘
+```
+
+```sql
+SHOW TABLES FROM test_database;
+```
+
+```text
+┌─name───────┐
+│ test_table │
+└────────────┘
+```
+
+Reading data from the PostgreSQL table:
+
+```sql
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─id─┬─value─┐
+│  1 │     2 │
+└────┴───────┘
+```
+
+Writing data to the PostgreSQL table:
+
+```sql
+INSERT INTO test_database.test_table VALUES (3,4);
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```
+
+Consider the table structure was modified in PostgreSQL:
+
+```sql
+postgre> ALTER TABLE test_table ADD COLUMN data Text
+```
+
+As the `use_table_cache` parameter was set to `1` when the database was created, the table structure in ClickHouse was cached and therefore not modified:
+
+```sql
+DESCRIBE TABLE test_database.test_table;
+```
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+└────────┴───────────────────┘
+```
+
+After detaching the table and attaching it again, the structure was updated:
+
+```sql
+DETACH TABLE test_database.test_table;
+ATTACH TABLE test_database.test_table;
+DESCRIBE TABLE test_database.test_table;
+```
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+│ data   │ Nullable(String)  │
+└────────┴───────────────────┘
+```
+
+## Related content {#related-content}
+
+- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
+)DOCS_MD",
+        .syntax = "ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, schema, use_table_cache])",
+        .related = {"MaterializedPostgreSQL", "MySQL"}});
 }
 }
 

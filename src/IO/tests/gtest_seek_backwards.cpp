@@ -18,10 +18,11 @@ TEST(ReadBufferFromFile, seekBackwards)
         WriteBufferFromFile out(tmp_file->path());
         for (size_t i = 0; i < N; ++i)
             writeIntBinary(i, out);
+        out.finalize();
     }
 
     ReadBufferFromFile in(tmp_file->path(), BUF_SIZE);
-    size_t x;
+    size_t x = {};
 
     /// Read something to initialize the buffer.
     in.seek(BUF_SIZE * 10, SEEK_SET);

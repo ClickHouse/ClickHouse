@@ -1,0 +1,1115 @@
+-- Inclusion of ORDER BY hits the layer of Set type validation
+
+-- { echoOn }
+
+SET allow_experimental_nullable_tuple_type = 0;
+SET enable_analyzer = 1;
+SET transform_null_in = 1;
+SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1];
+1
+SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1] ORDER BY ALL;
+1
+SELECT CAST(NULL, 'Nullable(Int32)') IN (NULL, 1);
+1
+SELECT CAST(NULL, 'Nullable(Int32)') IN (NULL, 1) ORDER BY ALL;
+1
+SELECT CAST('a', 'String') IN [NULL, 'a'];
+1
+SELECT CAST('a', 'String') IN [NULL, 'a'] ORDER BY ALL;
+1
+SELECT 2 IN (1, 2, 3);
+1
+SELECT 2 IN (1, 2, 3) ORDER BY ALL;
+1
+SELECT CAST(tuple(), 'Tuple()') IN (tuple());
+1
+SELECT CAST(tuple(), 'Tuple()') IN (tuple()) ORDER BY ALL;
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN [(200, 3), (200, 4)];
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN [(200, 3), (200, 4)] ORDER BY ALL;
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN ((200, 3), (200, 4));
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN ((200, 3), (200, 4)) ORDER BY ALL;
+1
+SELECT CAST(tuple(tuple(10)), 'Tuple(Tuple(Int32))') IN (tuple(tuple(10)));
+1
+SELECT CAST(tuple(tuple(10)), 'Tuple(Tuple(Int32))') IN (tuple(tuple(10))) ORDER BY ALL;
+1
+SELECT CAST('x', 'LowCardinality(String)') IN ['x', 'y'];
+1
+SELECT CAST('x', 'LowCardinality(String)') IN ['x', 'y'] ORDER BY ALL;
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN [('x', 1), ('z', 2)];
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN [('x', 1), ('z', 2)] ORDER BY ALL;
+1
+SELECT CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') IN ['a', 'c'];
+1
+SELECT CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') IN ['a', 'c'] ORDER BY ALL;
+1
+SELECT CAST(('a', 1), 'Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32)') IN [('a', 1), ('c', 1)];
+1
+SELECT CAST(('a', 1), 'Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32)') IN [('a', 1), ('c', 1)] ORDER BY ALL;
+1
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [(1, 2, 3)];-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [(1, 2, 3)] ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN (1, 2);
+1
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN (1, 2) ORDER BY ALL;
+1
+SELECT (1, (1, NULL)) in (1, (1, NULL));
+1
+SELECT (1, (1, NULL)) in (1, (1, NULL)) ORDER BY ALL;
+1
+SELECT (1, (1, NULL)) in ((1, (1, NULL)));
+1
+SELECT (1, (1, NULL)) in ((1, (1, NULL))) ORDER BY ALL;
+1
+SELECT (1, (1, 2)) in ((1, (1, NULL)), (1, (1, 2)));
+1
+SELECT (1, (1, 2)) in ((1, (1, NULL)), (1, (1, 2))) ORDER BY ALL;
+1
+SELECT 1 in '1';
+1
+SELECT 1 in '1' ORDER BY ALL;
+1
+SELECT 1 in ('1', '2');
+1
+SELECT 1 in ('1', '2') ORDER BY ALL;
+1
+SELECT 1234 IN ['1234'];
+1
+SELECT 1234 IN ['1234'] ORDER BY ALL;
+1
+SELECT (1234, 32) IN ('1234', '32');
+1
+SELECT (1234, 32) IN ('1234', '32') ORDER BY ALL;
+1
+SELECT ('1234', '32') IN (1234, 32);
+1
+SELECT ('1234', '32') IN (1234, 32) ORDER BY ALL;
+1
+SELECT (1234, (32, 10)) IN ('1234', ('32', 10));
+1
+SELECT (1234, (32, 10)) IN ('1234', ('32', 10)) ORDER BY ALL;
+1
+SELECT (1234, [32, 10]) IN ('1234', [32, 10]);
+1
+SELECT (1234, [32, 10]) IN ('1234', [32, 10]) ORDER BY ALL;
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (3, ['3', '1'])))];
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (3, ['3', '1'])))] ORDER BY ALL;
+1
+SELECT toTypeName([('1234', ('32', (3, ['3', '1'])))]);
+Array(Tuple(String, Tuple(String, Tuple(UInt8, Array(String)))))
+SELECT toTypeName([('1234', ('32', (3, ['3', '1'])))]) ORDER BY ALL;
+Array(Tuple(String, Tuple(String, Tuple(UInt8, Array(String)))))
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (CAST(3, 'Nullable(Int)'), ['3', '1'])))];
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (CAST(3, 'Nullable(Int)'), ['3', '1'])))] ORDER BY ALL;
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, '-10'));
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, '-10')) ORDER BY ALL;
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, -10.001));
+0
+SELECT (1234, (32, -10)) IN ('1234', (32, -10.001)) ORDER BY ALL;
+0
+SELECT 1 IN [[1, 2]];-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 1 IN [[1, 2]] ORDER BY ALL;-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN (((1, 2), 1), (1, 2));-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN (((1, 2), 1), (1, 2)) ORDER BY ALL;-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN ((1, 2), (1, 2));
+1
+select (1, 2) IN ((1, 2), (1, 2)) ORDER BY ALL;
+1
+select (1, 2) IN ((1, 2), (1, 2), (1, 2, 3));-- { serverError INCORRECT_ELEMENT_OF_SET }
+select (1, 2) IN ((1, 2), (1, 2), (1, 2, 3)) ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)') IN [(NULL, 3), (1, 3)];
+1
+SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)') IN [(NULL, 3), (1, 3)] ORDER BY ALL;
+1
+SELECT NULL in NULL;
+1
+SELECT NULL in NULL ORDER BY ALL;
+1
+SELECT (NULL, NULL) in [(NULL, NULL)];
+1
+SELECT (NULL, NULL) in [(NULL, NULL)] ORDER BY ALL;
+1
+SELECT ((NULL, NULL), (NULL, NULL)) in [((NULL, NULL), (NULL, NULL))];
+1
+SELECT ((NULL, NULL), (NULL, NULL)) in [((NULL, NULL), (NULL, NULL))] ORDER BY ALL;
+1
+SELECT CAST(NULL, 'Nullable(Tuple(Int64))') IN [NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64))') IN [NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN [NULL, (1, 2)];
+1
+SELECT (1, 2) IN [NULL, (1, 2)] ORDER BY ALL;
+1
+SELECT (1, 2) IN NULL;
+0
+SELECT (1, 2) IN NULL ORDER BY ALL;
+0
+SELECT (1, 2) IN (NULL, NULL, NULL);-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (NULL, NULL, NULL) ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (NULL, NULL, (1, 2));
+1
+SELECT (1, 2) IN (NULL, NULL, (1, 2)) ORDER BY ALL;
+1
+SELECT 'a' IN (NULL, NULL, 'a');
+1
+SELECT 'a' IN (NULL, NULL, 'a') ORDER BY ALL;
+1
+SELECT 'a' IN [NULL, NULL, 'a'];
+1
+SELECT 'a' IN [NULL, NULL, 'a'] ORDER BY ALL;
+1
+SELECT (1, 2) IN CAST((1, 2), 'Nullable(Tuple(Int64, Int64))'); -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN CAST((1, 2), 'Nullable(Tuple(Int64, Int64))') ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN CAST(NULL, 'Nullable(String)');
+0
+SELECT (1, 2) IN CAST(NULL, 'Nullable(String)') ORDER BY ALL;
+0
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] 
+SETTINGS validate_enum_literals_in_operators = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL
+SETTINGS validate_enum_literals_in_operators = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2] ORDER BY ALL; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (1, NULL);
+0
+SELECT (1, 2) IN (1, NULL) ORDER BY ALL;
+0
+SELECT (1, NULL) IN (1, NULL);
+1
+SELECT (1, NULL) IN (1, NULL) ORDER BY ALL;
+1
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2)); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2)) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN 1 ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [1]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN [1] ORDER BY ALL; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))) ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))] ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 2 IN (1, 2.0, 3);
+1
+SELECT 2 IN (1, 2.0, 3) ORDER BY ALL;
+1
+SELECT 2 IN [1, 2.0, 3];
+1
+SELECT 2 IN [1, 2.0, 3] ORDER BY ALL;
+1
+SELECT 2 IN (1, 1+1, toInt32(3));
+1
+SELECT 2 IN (1, 1+1, toInt32(3)) ORDER BY ALL;
+1
+SELECT 2 IN [1, 1+1, toInt32(3)];
+1
+SELECT 2 IN [1, 1+1, toInt32(3)] ORDER BY ALL;
+1
+SELECT (1, 2) IN ((1, 1+1));
+1
+SELECT (1, 2) IN ((1, 1+1)) ORDER BY ALL;
+1
+SELECT (1, 2) IN [(1, 1+1)];
+1
+SELECT (1, 2) IN [(1, 1+1)] ORDER BY ALL;
+1
+SELECT (1, 2) IN [NULL, NULL];
+0
+SELECT (1, 2) IN [NULL, NULL] ORDER BY ALL;
+0
+SELECT (1, 2) IN [(NULL, NULL)];
+0
+SELECT (1, 2) IN [(NULL, NULL)] ORDER BY ALL;
+0
+SELECT (1, 2) IN ((1, 2), NULL);
+1
+SELECT (1, 2) IN ((1, 2), NULL) ORDER BY ALL;
+1
+SELECT (1, 2) IN [(1, 2), NULL];
+1
+SELECT (1, 2) IN [(1, 2), NULL] ORDER BY ALL;
+1
+SELECT 'x' IN [CAST('x', 'LowCardinality(String)')];
+1
+SELECT 'x' IN [CAST('x', 'LowCardinality(String)')] ORDER BY ALL;
+1
+SELECT ('x', 1) IN ((CAST('x', 'LowCardinality(String)'), 1));
+1
+SELECT ('x', 1) IN ((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
+1
+SELECT tuple(1) IN tuple(1);
+1
+SELECT tuple(1) IN tuple(1) ORDER BY ALL;
+1
+SELECT 1 IN [];
+0
+SELECT 1 IN [] ORDER BY ALL;
+0
+SELECT CAST('x', 'LowCardinality(String)') IN tuple('x', 'y');
+1
+SELECT CAST('x', 'LowCardinality(String)') IN tuple('x', 'y') ORDER BY ALL;
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN tuple(('x', 1), ('z', 2));
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN tuple(('x', 1), ('z', 2)) ORDER BY ALL;
+1
+SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1));
+1
+SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
+1
+SELECT 1 IN tuple(1, 2, 3, 4, 5);
+1
+SELECT 1 IN tuple(1, 2, 3, 4, 5) ORDER BY ALL;
+1
+SET transform_null_in = 0;
+SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1];
+\N
+SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1] ORDER BY ALL;
+\N
+SELECT CAST(NULL, 'Nullable(Int32)') IN (NULL, 1);
+\N
+SELECT CAST(NULL, 'Nullable(Int32)') IN (NULL, 1) ORDER BY ALL;
+\N
+SELECT CAST('a', 'String') IN [NULL, 'a'];
+1
+SELECT CAST('a', 'String') IN [NULL, 'a'] ORDER BY ALL;
+1
+SELECT 2 IN (1, 2, 3);
+1
+SELECT 2 IN (1, 2, 3) ORDER BY ALL;
+1
+SELECT CAST(tuple(), 'Tuple()') IN (tuple());
+1
+SELECT CAST(tuple(), 'Tuple()') IN (tuple()) ORDER BY ALL;
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN [(200, 3), (200, 4)];
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN [(200, 3), (200, 4)] ORDER BY ALL;
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN ((200, 3), (200, 4));
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN ((200, 3), (200, 4)) ORDER BY ALL;
+1
+SELECT CAST(tuple(tuple(10)), 'Tuple(Tuple(Int32))') IN (tuple(tuple(10)));
+1
+SELECT CAST(tuple(tuple(10)), 'Tuple(Tuple(Int32))') IN (tuple(tuple(10))) ORDER BY ALL;
+1
+SELECT CAST('x', 'LowCardinality(String)') IN ['x', 'y'];
+1
+SELECT CAST('x', 'LowCardinality(String)') IN ['x', 'y'] ORDER BY ALL;
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN [('x', 1), ('z', 2)];
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN [('x', 1), ('z', 2)] ORDER BY ALL;
+1
+SELECT CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') IN ['a', 'c'];
+1
+SELECT CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') IN ['a', 'c'] ORDER BY ALL;
+1
+SELECT CAST(('a', 1), 'Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32)') IN [('a', 1), ('c', 1)];
+1
+SELECT CAST(('a', 1), 'Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32)') IN [('a', 1), ('c', 1)] ORDER BY ALL;
+1
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [(1, 2, 3)];-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [(1, 2, 3)] ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN (1, 2);
+1
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN (1, 2) ORDER BY ALL;
+1
+SELECT (1, (1, NULL)) in (1, (1, NULL));
+1
+SELECT (1, (1, NULL)) in (1, (1, NULL)) ORDER BY ALL;
+1
+SELECT (1, (1, NULL)) in ((1, (1, NULL)));
+1
+SELECT (1, (1, NULL)) in ((1, (1, NULL))) ORDER BY ALL;
+1
+SELECT (1, (1, 2)) in ((1, (1, NULL)), (1, (1, 2)));
+1
+SELECT (1, (1, 2)) in ((1, (1, NULL)), (1, (1, 2))) ORDER BY ALL;
+1
+SELECT 1 in '1';
+1
+SELECT 1 in '1' ORDER BY ALL;
+1
+SELECT 1 in ('1', '2');
+1
+SELECT 1 in ('1', '2') ORDER BY ALL;
+1
+SELECT 1234 IN ['1234'];
+1
+SELECT 1234 IN ['1234'] ORDER BY ALL;
+1
+SELECT (1234, 32) IN ('1234', '32');
+1
+SELECT (1234, 32) IN ('1234', '32') ORDER BY ALL;
+1
+SELECT ('1234', '32') IN (1234, 32);
+1
+SELECT ('1234', '32') IN (1234, 32) ORDER BY ALL;
+1
+SELECT (1234, (32, 10)) IN ('1234', ('32', 10));
+1
+SELECT (1234, (32, 10)) IN ('1234', ('32', 10)) ORDER BY ALL;
+1
+SELECT (1234, [32, 10]) IN ('1234', [32, 10]);
+1
+SELECT (1234, [32, 10]) IN ('1234', [32, 10]) ORDER BY ALL;
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (3, ['3', '1'])))];
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (3, ['3', '1'])))] ORDER BY ALL;
+1
+SELECT toTypeName([('1234', ('32', (3, ['3', '1'])))]);
+Array(Tuple(String, Tuple(String, Tuple(UInt8, Array(String)))))
+SELECT toTypeName([('1234', ('32', (3, ['3', '1'])))]) ORDER BY ALL;
+Array(Tuple(String, Tuple(String, Tuple(UInt8, Array(String)))))
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (CAST(3, 'Nullable(Int)'), ['3', '1'])))];
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (CAST(3, 'Nullable(Int)'), ['3', '1'])))] ORDER BY ALL;
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, '-10'));
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, '-10')) ORDER BY ALL;
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, -10.001));
+0
+SELECT (1234, (32, -10)) IN ('1234', (32, -10.001)) ORDER BY ALL;
+0
+SELECT 1 IN [[1, 2]];-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 1 IN [[1, 2]] ORDER BY ALL;-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN (((1, 2), 1), (1, 2));-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN (((1, 2), 1), (1, 2)) ORDER BY ALL;-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN ((1, 2), (1, 2));
+1
+select (1, 2) IN ((1, 2), (1, 2)) ORDER BY ALL;
+1
+select (1, 2) IN ((1, 2), (1, 2), (1, 2, 3));-- { serverError INCORRECT_ELEMENT_OF_SET }
+select (1, 2) IN ((1, 2), (1, 2), (1, 2, 3)) ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)') IN [(NULL, 3), (1, 3)];
+0
+SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)') IN [(NULL, 3), (1, 3)] ORDER BY ALL;
+0
+SELECT NULL in NULL;
+\N
+SELECT NULL in NULL ORDER BY ALL;
+\N
+SELECT (NULL, NULL) in [(NULL, NULL)];
+0
+SELECT (NULL, NULL) in [(NULL, NULL)] ORDER BY ALL;
+0
+SELECT ((NULL, NULL), (NULL, NULL)) in [((NULL, NULL), (NULL, NULL))];
+1
+SELECT ((NULL, NULL), (NULL, NULL)) in [((NULL, NULL), (NULL, NULL))] ORDER BY ALL;
+1
+SELECT CAST(NULL, 'Nullable(Tuple(Int64))') IN [NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64))') IN [NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN [NULL, (1, 2)];
+1
+SELECT (1, 2) IN [NULL, (1, 2)] ORDER BY ALL;
+1
+SELECT (1, 2) IN NULL;
+0
+SELECT (1, 2) IN NULL ORDER BY ALL;
+0
+SELECT (1, 2) IN (NULL, NULL, NULL);-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (NULL, NULL, NULL) ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (NULL, NULL, (1, 2));
+1
+SELECT (1, 2) IN (NULL, NULL, (1, 2)) ORDER BY ALL;
+1
+SELECT 'a' IN (NULL, NULL, 'a');
+1
+SELECT 'a' IN (NULL, NULL, 'a') ORDER BY ALL;
+1
+SELECT 'a' IN [NULL, NULL, 'a'];
+1
+SELECT 'a' IN [NULL, NULL, 'a'] ORDER BY ALL;
+1
+SELECT (1, 2) IN CAST((1, 2), 'Nullable(Tuple(Int64, Int64))'); -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN CAST((1, 2), 'Nullable(Tuple(Int64, Int64))') ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN CAST(NULL, 'Nullable(String)');
+0
+SELECT (1, 2) IN CAST(NULL, 'Nullable(String)') ORDER BY ALL;
+0
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] 
+SETTINGS validate_enum_literals_in_operators = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL
+SETTINGS validate_enum_literals_in_operators = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2] ORDER BY ALL; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (1, NULL);
+0
+SELECT (1, 2) IN (1, NULL) ORDER BY ALL;
+0
+SELECT (1, NULL) IN (1, NULL);
+0
+SELECT (1, NULL) IN (1, NULL) ORDER BY ALL;
+0
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2)); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2)) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN 1 ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [1]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN [1] ORDER BY ALL; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))) ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))] ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 2 IN (1, 2.0, 3);
+1
+SELECT 2 IN (1, 2.0, 3) ORDER BY ALL;
+1
+SELECT 2 IN [1, 2.0, 3];
+1
+SELECT 2 IN [1, 2.0, 3] ORDER BY ALL;
+1
+SELECT 2 IN (1, 1+1, toInt32(3));
+1
+SELECT 2 IN (1, 1+1, toInt32(3)) ORDER BY ALL;
+1
+SELECT 2 IN [1, 1+1, toInt32(3)];
+1
+SELECT 2 IN [1, 1+1, toInt32(3)] ORDER BY ALL;
+1
+SELECT (1, 2) IN ((1, 1+1));
+1
+SELECT (1, 2) IN ((1, 1+1)) ORDER BY ALL;
+1
+SELECT (1, 2) IN [(1, 1+1)];
+1
+SELECT (1, 2) IN [(1, 1+1)] ORDER BY ALL;
+1
+SELECT (1, 2) IN [NULL, NULL];
+0
+SELECT (1, 2) IN [NULL, NULL] ORDER BY ALL;
+0
+SELECT (1, 2) IN [(NULL, NULL)];
+0
+SELECT (1, 2) IN [(NULL, NULL)] ORDER BY ALL;
+0
+SELECT (1, 2) IN ((1, 2), NULL);
+1
+SELECT (1, 2) IN ((1, 2), NULL) ORDER BY ALL;
+1
+SELECT (1, 2) IN [(1, 2), NULL];
+1
+SELECT (1, 2) IN [(1, 2), NULL] ORDER BY ALL;
+1
+SELECT 'x' IN [CAST('x', 'LowCardinality(String)')];
+1
+SELECT 'x' IN [CAST('x', 'LowCardinality(String)')] ORDER BY ALL;
+1
+SELECT ('x', 1) IN ((CAST('x', 'LowCardinality(String)'), 1));
+1
+SELECT ('x', 1) IN ((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
+1
+SELECT tuple(1) IN tuple(1);
+1
+SELECT tuple(1) IN tuple(1) ORDER BY ALL;
+1
+SELECT 1 IN [];
+0
+SELECT 1 IN [] ORDER BY ALL;
+0
+SELECT CAST('x', 'LowCardinality(String)') IN tuple('x', 'y');
+1
+SELECT CAST('x', 'LowCardinality(String)') IN tuple('x', 'y') ORDER BY ALL;
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN tuple(('x', 1), ('z', 2));
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN tuple(('x', 1), ('z', 2)) ORDER BY ALL;
+1
+SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1));
+1
+SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
+1
+SELECT 1 IN tuple(1, 2, 3, 4, 5);
+1
+SELECT 1 IN tuple(1, 2, 3, 4, 5) ORDER BY ALL;
+1
+SET enable_analyzer = 0;
+SET transform_null_in = 1;
+SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1];
+1
+SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1] ORDER BY ALL;
+1
+SELECT CAST(NULL, 'Nullable(Int32)') IN (NULL, 1);
+1
+SELECT CAST(NULL, 'Nullable(Int32)') IN (NULL, 1) ORDER BY ALL;
+1
+SELECT CAST('a', 'String') IN [NULL, 'a'];
+1
+SELECT CAST('a', 'String') IN [NULL, 'a'] ORDER BY ALL;
+1
+SELECT 2 IN (1, 2, 3);
+1
+SELECT 2 IN (1, 2, 3) ORDER BY ALL;
+1
+SELECT CAST(tuple(), 'Tuple()') IN (tuple());
+1
+SELECT CAST(tuple(), 'Tuple()') IN (tuple()) ORDER BY ALL;
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN [(200, 3), (200, 4)];
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN [(200, 3), (200, 4)] ORDER BY ALL;
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN ((200, 3), (200, 4));
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN ((200, 3), (200, 4)) ORDER BY ALL;
+1
+SELECT CAST(tuple(tuple(10)), 'Tuple(Tuple(Int32))') IN (tuple(tuple(10)));
+1
+SELECT CAST(tuple(tuple(10)), 'Tuple(Tuple(Int32))') IN (tuple(tuple(10))) ORDER BY ALL;
+1
+SELECT CAST('x', 'LowCardinality(String)') IN ['x', 'y'];
+1
+SELECT CAST('x', 'LowCardinality(String)') IN ['x', 'y'] ORDER BY ALL;
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN [('x', 1), ('z', 2)];
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN [('x', 1), ('z', 2)] ORDER BY ALL;
+1
+SELECT CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') IN ['a', 'c'];
+1
+SELECT CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') IN ['a', 'c'] ORDER BY ALL;
+1
+SELECT CAST(('a', 1), 'Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32)') IN [('a', 1), ('c', 1)];
+1
+SELECT CAST(('a', 1), 'Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32)') IN [('a', 1), ('c', 1)] ORDER BY ALL;
+1
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [(1, 2, 3)];-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [(1, 2, 3)] ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN (1, 2);
+1
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN (1, 2) ORDER BY ALL;
+1
+SELECT (1, (1, NULL)) in (1, (1, NULL));
+1
+SELECT (1, (1, NULL)) in (1, (1, NULL)) ORDER BY ALL;
+1
+SELECT (1, (1, NULL)) in ((1, (1, NULL)));
+1
+SELECT (1, (1, NULL)) in ((1, (1, NULL))) ORDER BY ALL;
+1
+SELECT (1, (1, 2)) in ((1, (1, NULL)), (1, (1, 2)));
+1
+SELECT (1, (1, 2)) in ((1, (1, NULL)), (1, (1, 2))) ORDER BY ALL;
+1
+SELECT 1 in '1';
+1
+SELECT 1 in '1' ORDER BY ALL;
+1
+SELECT 1 in ('1', '2');
+1
+SELECT 1 in ('1', '2') ORDER BY ALL;
+1
+SELECT 1234 IN ['1234'];
+1
+SELECT 1234 IN ['1234'] ORDER BY ALL;
+1
+SELECT (1234, 32) IN ('1234', '32');
+1
+SELECT (1234, 32) IN ('1234', '32') ORDER BY ALL;
+1
+SELECT ('1234', '32') IN (1234, 32);
+1
+SELECT ('1234', '32') IN (1234, 32) ORDER BY ALL;
+1
+SELECT (1234, (32, 10)) IN ('1234', ('32', 10));
+1
+SELECT (1234, (32, 10)) IN ('1234', ('32', 10)) ORDER BY ALL;
+1
+SELECT (1234, [32, 10]) IN ('1234', [32, 10]);
+1
+SELECT (1234, [32, 10]) IN ('1234', [32, 10]) ORDER BY ALL;
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (3, ['3', '1'])))];
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (3, ['3', '1'])))] ORDER BY ALL;
+1
+SELECT toTypeName([('1234', ('32', (3, ['3', '1'])))]);
+Array(Tuple(String, Tuple(String, Tuple(UInt8, Array(String)))))
+SELECT toTypeName([('1234', ('32', (3, ['3', '1'])))]) ORDER BY ALL;
+Array(Tuple(String, Tuple(String, Tuple(UInt8, Array(String)))))
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (CAST(3, 'Nullable(Int)'), ['3', '1'])))];
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (CAST(3, 'Nullable(Int)'), ['3', '1'])))] ORDER BY ALL;
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, '-10'));
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, '-10')) ORDER BY ALL;
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, -10.001));
+0
+SELECT (1234, (32, -10)) IN ('1234', (32, -10.001)) ORDER BY ALL;
+0
+SELECT 1 IN [[1, 2]];-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 1 IN [[1, 2]] ORDER BY ALL;-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN (((1, 2), 1), (1, 2));-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN (((1, 2), 1), (1, 2)) ORDER BY ALL;-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN ((1, 2), (1, 2));
+1
+select (1, 2) IN ((1, 2), (1, 2)) ORDER BY ALL;
+1
+select (1, 2) IN ((1, 2), (1, 2), (1, 2, 3));-- { serverError INCORRECT_ELEMENT_OF_SET }
+select (1, 2) IN ((1, 2), (1, 2), (1, 2, 3)) ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)') IN [(NULL, 3), (1, 3)];
+1
+SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)') IN [(NULL, 3), (1, 3)] ORDER BY ALL;
+1
+SELECT NULL in NULL;
+1
+SELECT NULL in NULL ORDER BY ALL;
+1
+SELECT (NULL, NULL) in [(NULL, NULL)];
+1
+SELECT (NULL, NULL) in [(NULL, NULL)] ORDER BY ALL;
+1
+SELECT ((NULL, NULL), (NULL, NULL)) in [((NULL, NULL), (NULL, NULL))];
+1
+SELECT ((NULL, NULL), (NULL, NULL)) in [((NULL, NULL), (NULL, NULL))] ORDER BY ALL;
+1
+SELECT CAST(NULL, 'Nullable(Tuple(Int64))') IN [NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64))') IN [NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN [NULL, (1, 2)];
+1
+SELECT (1, 2) IN [NULL, (1, 2)] ORDER BY ALL;
+1
+SELECT (1, 2) IN NULL;
+0
+SELECT (1, 2) IN NULL ORDER BY ALL;
+0
+SELECT (1, 2) IN (NULL, NULL, NULL);-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (NULL, NULL, NULL) ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (NULL, NULL, (1, 2));
+1
+SELECT (1, 2) IN (NULL, NULL, (1, 2)) ORDER BY ALL;
+1
+SELECT 'a' IN (NULL, NULL, 'a');
+1
+SELECT 'a' IN (NULL, NULL, 'a') ORDER BY ALL;
+1
+SELECT 'a' IN [NULL, NULL, 'a'];
+1
+SELECT 'a' IN [NULL, NULL, 'a'] ORDER BY ALL;
+1
+SELECT (1, 2) IN CAST((1, 2), 'Nullable(Tuple(Int64, Int64))'); -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN CAST((1, 2), 'Nullable(Tuple(Int64, Int64))') ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN CAST(NULL, 'Nullable(String)');
+0
+SELECT (1, 2) IN CAST(NULL, 'Nullable(String)') ORDER BY ALL;
+0
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] 
+SETTINGS validate_enum_literals_in_operators = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL
+SETTINGS validate_enum_literals_in_operators = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2] ORDER BY ALL; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (1, NULL);
+0
+SELECT (1, 2) IN (1, NULL) ORDER BY ALL;
+0
+SELECT (1, NULL) IN (1, NULL);
+1
+SELECT (1, NULL) IN (1, NULL) ORDER BY ALL;
+1
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2)); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2)) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN 1 ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [1]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN [1] ORDER BY ALL; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))) ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))] ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 2 IN (1, 2.0, 3);
+1
+SELECT 2 IN (1, 2.0, 3) ORDER BY ALL;
+1
+SELECT 2 IN [1, 2.0, 3];
+1
+SELECT 2 IN [1, 2.0, 3] ORDER BY ALL;
+1
+SELECT 2 IN (1, 1+1, toInt32(3));
+1
+SELECT 2 IN (1, 1+1, toInt32(3)) ORDER BY ALL;
+1
+SELECT 2 IN [1, 1+1, toInt32(3)];
+1
+SELECT 2 IN [1, 1+1, toInt32(3)] ORDER BY ALL;
+1
+SELECT (1, 2) IN ((1, 1+1));
+1
+SELECT (1, 2) IN ((1, 1+1)) ORDER BY ALL;
+1
+SELECT (1, 2) IN [(1, 1+1)];
+1
+SELECT (1, 2) IN [(1, 1+1)] ORDER BY ALL;
+1
+SELECT (1, 2) IN [NULL, NULL];
+0
+SELECT (1, 2) IN [NULL, NULL] ORDER BY ALL;
+0
+SELECT (1, 2) IN [(NULL, NULL)];
+0
+SELECT (1, 2) IN [(NULL, NULL)] ORDER BY ALL;
+0
+SELECT (1, 2) IN ((1, 2), NULL);
+1
+SELECT (1, 2) IN ((1, 2), NULL) ORDER BY ALL;
+1
+SELECT (1, 2) IN [(1, 2), NULL];
+1
+SELECT (1, 2) IN [(1, 2), NULL] ORDER BY ALL;
+1
+SELECT 'x' IN [CAST('x', 'LowCardinality(String)')];
+1
+SELECT 'x' IN [CAST('x', 'LowCardinality(String)')] ORDER BY ALL;
+1
+SELECT ('x', 1) IN ((CAST('x', 'LowCardinality(String)'), 1));
+1
+SELECT ('x', 1) IN ((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
+1
+SELECT tuple(1) IN tuple(1);
+1
+SELECT tuple(1) IN tuple(1) ORDER BY ALL;
+1
+SELECT 1 IN [];
+0
+SELECT 1 IN [] ORDER BY ALL;
+0
+SELECT CAST('x', 'LowCardinality(String)') IN tuple('x', 'y');
+1
+SELECT CAST('x', 'LowCardinality(String)') IN tuple('x', 'y') ORDER BY ALL;
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN tuple(('x', 1), ('z', 2));
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN tuple(('x', 1), ('z', 2)) ORDER BY ALL;
+1
+SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1));
+1
+SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
+1
+SELECT 1 IN tuple(1, 2, 3, 4, 5);
+1
+SELECT 1 IN tuple(1, 2, 3, 4, 5) ORDER BY ALL;
+1
+SET transform_null_in = 0;
+SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1];
+\N
+SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1] ORDER BY ALL;
+\N
+SELECT CAST(NULL, 'Nullable(Int32)') IN (NULL, 1);
+\N
+SELECT CAST(NULL, 'Nullable(Int32)') IN (NULL, 1) ORDER BY ALL;
+\N
+SELECT CAST('a', 'String') IN [NULL, 'a'];
+1
+SELECT CAST('a', 'String') IN [NULL, 'a'] ORDER BY ALL;
+1
+SELECT 2 IN (1, 2, 3);
+1
+SELECT 2 IN (1, 2, 3) ORDER BY ALL;
+1
+SELECT CAST(tuple(), 'Tuple()') IN (tuple());
+1
+SELECT CAST(tuple(), 'Tuple()') IN (tuple()) ORDER BY ALL;
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN [(200, 3), (200, 4)];
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN [(200, 3), (200, 4)] ORDER BY ALL;
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN ((200, 3), (200, 4));
+1
+SELECT CAST((200, 3), 'Tuple(Int32, Int64)') IN ((200, 3), (200, 4)) ORDER BY ALL;
+1
+SELECT CAST(tuple(tuple(10)), 'Tuple(Tuple(Int32))') IN (tuple(tuple(10)));
+1
+SELECT CAST(tuple(tuple(10)), 'Tuple(Tuple(Int32))') IN (tuple(tuple(10))) ORDER BY ALL;
+1
+SELECT CAST('x', 'LowCardinality(String)') IN ['x', 'y'];
+1
+SELECT CAST('x', 'LowCardinality(String)') IN ['x', 'y'] ORDER BY ALL;
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN [('x', 1), ('z', 2)];
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN [('x', 1), ('z', 2)] ORDER BY ALL;
+1
+SELECT CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') IN ['a', 'c'];
+1
+SELECT CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') IN ['a', 'c'] ORDER BY ALL;
+1
+SELECT CAST(('a', 1), 'Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32)') IN [('a', 1), ('c', 1)];
+1
+SELECT CAST(('a', 1), 'Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32)') IN [('a', 1), ('c', 1)] ORDER BY ALL;
+1
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [(1, 2, 3)];-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [(1, 2, 3)] ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN (1, 2);
+1
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN (1, 2) ORDER BY ALL;
+1
+SELECT (1, (1, NULL)) in (1, (1, NULL));
+1
+SELECT (1, (1, NULL)) in (1, (1, NULL)) ORDER BY ALL;
+1
+SELECT (1, (1, NULL)) in ((1, (1, NULL)));
+1
+SELECT (1, (1, NULL)) in ((1, (1, NULL))) ORDER BY ALL;
+1
+SELECT (1, (1, 2)) in ((1, (1, NULL)), (1, (1, 2)));
+1
+SELECT (1, (1, 2)) in ((1, (1, NULL)), (1, (1, 2))) ORDER BY ALL;
+1
+SELECT 1 in '1';
+1
+SELECT 1 in '1' ORDER BY ALL;
+1
+SELECT 1 in ('1', '2');
+1
+SELECT 1 in ('1', '2') ORDER BY ALL;
+1
+SELECT 1234 IN ['1234'];
+1
+SELECT 1234 IN ['1234'] ORDER BY ALL;
+1
+SELECT (1234, 32) IN ('1234', '32');
+1
+SELECT (1234, 32) IN ('1234', '32') ORDER BY ALL;
+1
+SELECT ('1234', '32') IN (1234, 32);
+1
+SELECT ('1234', '32') IN (1234, 32) ORDER BY ALL;
+1
+SELECT (1234, (32, 10)) IN ('1234', ('32', 10));
+1
+SELECT (1234, (32, 10)) IN ('1234', ('32', 10)) ORDER BY ALL;
+1
+SELECT (1234, [32, 10]) IN ('1234', [32, 10]);
+1
+SELECT (1234, [32, 10]) IN ('1234', [32, 10]) ORDER BY ALL;
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (3, ['3', '1'])))];
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (3, ['3', '1'])))] ORDER BY ALL;
+1
+SELECT toTypeName([('1234', ('32', (3, ['3', '1'])))]);
+Array(Tuple(String, Tuple(String, Tuple(UInt8, Array(String)))))
+SELECT toTypeName([('1234', ('32', (3, ['3', '1'])))]) ORDER BY ALL;
+Array(Tuple(String, Tuple(String, Tuple(UInt8, Array(String)))))
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (CAST(3, 'Nullable(Int)'), ['3', '1'])))];
+1
+SELECT (1234, (32, (3, [3, 1]))) IN [('1234', ('32', (CAST(3, 'Nullable(Int)'), ['3', '1'])))] ORDER BY ALL;
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, '-10'));
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, '-10')) ORDER BY ALL;
+1
+SELECT (1234, (32, -10)) IN ('1234', (32, -10.001));
+0
+SELECT (1234, (32, -10)) IN ('1234', (32, -10.001)) ORDER BY ALL;
+0
+SELECT 1 IN [[1, 2]];-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 1 IN [[1, 2]] ORDER BY ALL;-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN (((1, 2), 1), (1, 2));-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN (((1, 2), 1), (1, 2)) ORDER BY ALL;-- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (1, 2) IN ((1, 2), (1, 2));
+1
+select (1, 2) IN ((1, 2), (1, 2)) ORDER BY ALL;
+1
+select (1, 2) IN ((1, 2), (1, 2), (1, 2, 3));-- { serverError INCORRECT_ELEMENT_OF_SET }
+select (1, 2) IN ((1, 2), (1, 2), (1, 2, 3)) ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)') IN [(NULL, 3), (1, 3)];
+0
+SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)') IN [(NULL, 3), (1, 3)] ORDER BY ALL;
+0
+SELECT NULL in NULL;
+\N
+SELECT NULL in NULL ORDER BY ALL;
+\N
+SELECT (NULL, NULL) in [(NULL, NULL)];
+0
+SELECT (NULL, NULL) in [(NULL, NULL)] ORDER BY ALL;
+0
+SELECT ((NULL, NULL), (NULL, NULL)) in [((NULL, NULL), (NULL, NULL))];
+1
+SELECT ((NULL, NULL), (NULL, NULL)) in [((NULL, NULL), (NULL, NULL))] ORDER BY ALL;
+1
+SELECT CAST(NULL, 'Nullable(Tuple(Int64))') IN [NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64))') IN [NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN [NULL, (1, 2)];
+1
+SELECT (1, 2) IN [NULL, (1, 2)] ORDER BY ALL;
+1
+SELECT (1, 2) IN NULL;
+0
+SELECT (1, 2) IN NULL ORDER BY ALL;
+0
+SELECT (1, 2) IN (NULL, NULL, NULL);-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (NULL, NULL, NULL) ORDER BY ALL;-- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (NULL, NULL, (1, 2));
+1
+SELECT (1, 2) IN (NULL, NULL, (1, 2)) ORDER BY ALL;
+1
+SELECT 'a' IN (NULL, NULL, 'a');
+1
+SELECT 'a' IN (NULL, NULL, 'a') ORDER BY ALL;
+1
+SELECT 'a' IN [NULL, NULL, 'a'];
+1
+SELECT 'a' IN [NULL, NULL, 'a'] ORDER BY ALL;
+1
+SELECT (1, 2) IN CAST((1, 2), 'Nullable(Tuple(Int64, Int64))'); -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN CAST((1, 2), 'Nullable(Tuple(Int64, Int64))') ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN CAST(NULL, 'Nullable(String)');
+0
+SELECT (1, 2) IN CAST(NULL, 'Nullable(String)') ORDER BY ALL;
+0
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] 
+SETTINGS validate_enum_literals_in_operators = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL
+SETTINGS validate_enum_literals_in_operators = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL]; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2] ORDER BY ALL; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (1, NULL);
+0
+SELECT (1, 2) IN (1, NULL) ORDER BY ALL;
+0
+SELECT (1, NULL) IN (1, NULL);
+0
+SELECT (1, NULL) IN (1, NULL) ORDER BY ALL;
+0
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2)); -- { serverError ILLEGAL_COLUMN }
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2)) ORDER BY ALL; -- { serverError ILLEGAL_COLUMN }
+SELECT (1, 2) IN 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN 1 ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [1]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN [1] ORDER BY ALL; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))) ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))] ORDER BY ALL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 2 IN (1, 2.0, 3);
+1
+SELECT 2 IN (1, 2.0, 3) ORDER BY ALL;
+1
+SELECT 2 IN [1, 2.0, 3];
+1
+SELECT 2 IN [1, 2.0, 3] ORDER BY ALL;
+1
+SELECT 2 IN (1, 1+1, toInt32(3));
+1
+SELECT 2 IN (1, 1+1, toInt32(3)) ORDER BY ALL;
+1
+SELECT 2 IN [1, 1+1, toInt32(3)];
+1
+SELECT 2 IN [1, 1+1, toInt32(3)] ORDER BY ALL;
+1
+SELECT (1, 2) IN ((1, 1+1));
+1
+SELECT (1, 2) IN ((1, 1+1)) ORDER BY ALL;
+1
+SELECT (1, 2) IN [(1, 1+1)];
+1
+SELECT (1, 2) IN [(1, 1+1)] ORDER BY ALL;
+1
+SELECT (1, 2) IN [NULL, NULL];
+0
+SELECT (1, 2) IN [NULL, NULL] ORDER BY ALL;
+0
+SELECT (1, 2) IN [(NULL, NULL)];
+0
+SELECT (1, 2) IN [(NULL, NULL)] ORDER BY ALL;
+0
+SELECT (1, 2) IN ((1, 2), NULL);
+1
+SELECT (1, 2) IN ((1, 2), NULL) ORDER BY ALL;
+1
+SELECT (1, 2) IN [(1, 2), NULL];
+1
+SELECT (1, 2) IN [(1, 2), NULL] ORDER BY ALL;
+1
+SELECT 'x' IN [CAST('x', 'LowCardinality(String)')];
+1
+SELECT 'x' IN [CAST('x', 'LowCardinality(String)')] ORDER BY ALL;
+1
+SELECT ('x', 1) IN ((CAST('x', 'LowCardinality(String)'), 1));
+1
+SELECT ('x', 1) IN ((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
+1
+SELECT tuple(1) IN tuple(1);
+1
+SELECT tuple(1) IN tuple(1) ORDER BY ALL;
+1
+SELECT 1 IN [];
+0
+SELECT 1 IN [] ORDER BY ALL;
+0
+SELECT CAST('x', 'LowCardinality(String)') IN tuple('x', 'y');
+1
+SELECT CAST('x', 'LowCardinality(String)') IN tuple('x', 'y') ORDER BY ALL;
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN tuple(('x', 1), ('z', 2));
+1
+SELECT CAST(('x', 1), 'Tuple(LowCardinality(String), Int32)') IN tuple(('x', 1), ('z', 2)) ORDER BY ALL;
+1
+SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1));
+1
+SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
+1
+SELECT 1 IN tuple(1, 2, 3, 4, 5);
+1
+SELECT 1 IN tuple(1, 2, 3, 4, 5) ORDER BY ALL;
+1

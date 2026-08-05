@@ -1,10 +1,13 @@
 #pragma once
 
+#include <ctime>
+#include <map>
+#include <memory>
+#include <optional>
+
 #include <Core/Types.h>
 #include <Disks/WriteMode.h>
 #include <IO/WriteSettings.h>
-#include <memory>
-#include <optional>
 
 
 namespace DB
@@ -15,6 +18,7 @@ struct BackupFileInfo;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
+class ReadBufferFromFileBase;
 
 /// Represents a backup, i.e. a storage of BackupEntries which can be accessed by their names.
 /// A backup can be either incremental or non-incremental. An incremental backup doesn't store
@@ -32,16 +36,24 @@ public:
     {
         READ,
         WRITE,
+        UNLOCK, /// unlock a lightweight backup
     };
 
     /// Returns whether the backup was opened for reading or writing.
     virtual OpenMode getOpenMode() const = 0;
+
+    /// Settings effectively used by the backup engine's reader/writer (e.g. S3 `allow_native_copy`). Empty if none.
+    virtual std::map<String, String> getEngineSettings() const = 0;
 
     /// Returns the time point when this backup was created.
     virtual time_t getTimestamp() const = 0;
 
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
+
+    /// The backup's operation id (the `id` setting, else the UUID), as recorded in the manifest.
+    /// Empty for backups written before this field existed.
+    virtual const String & getBackupId() const = 0;
 
     /// Returns the base backup or null if there is no base backup.
     virtual std::shared_ptr<const IBackup> getBaseBackup() const = 0;
@@ -78,6 +90,9 @@ public:
     /// The following is always true: `getNumReadBytes() <= getTotalSize()`.
     virtual UInt64 getNumReadBytes() const = 0;
 
+    /// Checks if a specified directory exists.
+    virtual bool directoryExists(const String & directory) const = 0;
+
     /// Returns names of entries stored in a specified directory in the backup.
     /// If `directory` is empty or '/' the functions returns entries in the backup's root.
     virtual Strings listFiles(const String & directory, bool recursive) const = 0;
@@ -97,15 +112,15 @@ public:
     virtual UInt64 getFileSize(const String & file_name) const = 0;
 
     /// Returns the checksum of the entry's data.
-    /// This function does the same as `read(file_name)->getCheckum()` but faster.
+    /// This function does the same as `read(file_name)->getChecksum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
     /// Returns both the size and checksum in one call.
     virtual SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const = 0;
 
     /// Reads an entry from the backup.
-    virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const = 0;
-    virtual std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
     virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;
@@ -115,14 +130,21 @@ public:
     /// Puts a new entry to the backup.
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
 
+    virtual void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept = 0;
+
     /// Whether it's possible to add new entries to the backup in multiple threads.
     virtual bool supportsWritingInMultipleThreads() const = 0;
 
     /// Finalizes writing the backup, should be called after all entries have been successfully written.
     virtual void finalizeWriting() = 0;
 
-    /// Try to remove all files copied to the backup. Used after an exception or it the backup was cancelled.
-    virtual void tryRemoveAllFiles() = 0;
+    /// Sets that a non-retriable error happened while the backup was being written which means that
+    /// the backup is most likely corrupted and it can't be finalized.
+    /// This function is called while handling an exception or if the backup was cancelled.
+    virtual bool setIsCorrupted() noexcept = 0;
+
+    /// Try to remove all files copied to the backup. Could be used after setIsCorrupted().
+    virtual bool tryRemoveAllFiles() noexcept = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

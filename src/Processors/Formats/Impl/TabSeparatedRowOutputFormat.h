@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <IO/WriteBufferFromString.h>
@@ -21,7 +20,7 @@ public:
       */
     TabSeparatedRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         bool with_names_,
         bool with_types_,
         bool is_raw_,
@@ -29,8 +28,7 @@ public:
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
 
-    /// https://www.iana.org/assignments/media-types/text/tab-separated-values
-    String getContentType() const override { return "text/tab-separated-values; charset=UTF-8"; }
+    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

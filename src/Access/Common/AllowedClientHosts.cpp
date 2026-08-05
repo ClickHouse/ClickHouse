@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <Common/StringUtils.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Common/Exception.h>
 #include <Common/likePatternToRegexp.h>
@@ -5,10 +7,6 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>
-#include <boost/algorithm/string/predicate.hpp>
-#include <boost/algorithm/string/replace.hpp>
-#include <boost/range/algorithm/find.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <Common/DNSResolver.h>
 #include <ifaddrs.h>
 #include <filesystem>
@@ -61,7 +59,7 @@ namespace
         {
             if (addr.family() == IPAddress::Family::IPv4 && addr_v6 == toIPv6(addr))
                 return true;
-            else if (addr.family() == IPAddress::Family::IPv6 && addr_v6 == addr)
+            if (addr.family() == IPAddress::Family::IPv6 && addr_v6 == addr)
                 return true;
         }
 
@@ -106,7 +104,7 @@ namespace
     {
         /// We need to cache DNS requests.
         static const std::vector<IPAddress> local_addresses = getAddressesOfLocalhostImpl();
-        return boost::range::find(local_addresses, toIPv6(address)) != local_addresses.end();
+        return std::ranges::find(local_addresses, toIPv6(address)) != local_addresses.end();
     }
 
     /// Returns the host name by its address.
@@ -146,15 +144,15 @@ namespace
             String wildcard_replaced_with_one_bits = pattern;
             if (address_family == IPAddress::IPv6)
             {
-                boost::algorithm::replace_all(wildcard_replaced_with_zero_bits, "_", "0");
-                boost::algorithm::replace_all(wildcard_replaced_with_zero_bits, "%", "0000");
-                boost::algorithm::replace_all(wildcard_replaced_with_one_bits, "_", "f");
-                boost::algorithm::replace_all(wildcard_replaced_with_one_bits, "%", "ffff");
+                replaceAll(wildcard_replaced_with_zero_bits, "_", "0");
+                replaceAll(wildcard_replaced_with_zero_bits, "%", "0000");
+                replaceAll(wildcard_replaced_with_one_bits, "_", "f");
+                replaceAll(wildcard_replaced_with_one_bits, "%", "ffff");
             }
             else if (address_family == IPAddress::IPv4)
             {
-                boost::algorithm::replace_all(wildcard_replaced_with_zero_bits, "%", "0");
-                boost::algorithm::replace_all(wildcard_replaced_with_one_bits, "%", "255");
+                replaceAll(wildcard_replaced_with_zero_bits, "%", "0");
+                replaceAll(wildcard_replaced_with_one_bits, "%", "255");
             }
 
             IPAddress prefix{wildcard_replaced_with_zero_bits};
@@ -267,10 +265,9 @@ String AllowedClientHosts::IPSubnet::toString() const
     unsigned int prefix_length = mask.prefixLength();
     if (isMaskAllBitsOne())
         return prefix.toString();
-    else if (IPAddress{prefix_length, mask.family()} == mask)
+    if (IPAddress{prefix_length, mask.family()} == mask)
         return fs::path(prefix.toString()) / std::to_string(prefix_length);
-    else
-        return fs::path(prefix.toString()) / mask.toString();
+    return fs::path(prefix.toString()) / mask.toString();
 }
 
 bool AllowedClientHosts::IPSubnet::isMaskAllBitsOne() const
@@ -299,7 +296,7 @@ void AllowedClientHosts::addAddress(const IPAddress & address)
 {
     if (address.isLoopback())
         local_host = true;
-    else if (boost::range::find(addresses, address) == addresses.end())
+    else if (std::ranges::find(addresses, address) == addresses.end())
         addresses.push_back(address);
 }
 
@@ -317,7 +314,7 @@ void AllowedClientHosts::addSubnet(const IPSubnet & subnet)
         any_host = true;
     else if (subnet.isMaskAllBitsOne())
         addAddress(subnet.getPrefix());
-    else if (boost::range::find(subnets, subnet) == subnets.end())
+    else if (std::ranges::find(subnets, subnet) == subnets.end())
         subnets.push_back(subnet);
 }
 
@@ -333,15 +330,15 @@ void AllowedClientHosts::removeSubnet(const IPSubnet & subnet)
 
 void AllowedClientHosts::addName(const String & name)
 {
-    if (boost::iequals(name, "localhost"))
+    if (equalsCaseInsensitive(name, "localhost"))
         local_host = true;
-    else if (boost::range::find(names, name) == names.end())
+    else if (std::ranges::find(names, name) == names.end())
         names.push_back(name);
 }
 
 void AllowedClientHosts::removeName(const String & name)
 {
-    if (boost::iequals(name, "localhost"))
+    if (equalsCaseInsensitive(name, "localhost"))
         local_host = false;
     else
         std::erase(names, name);
@@ -349,17 +346,17 @@ void AllowedClientHosts::removeName(const String & name)
 
 void AllowedClientHosts::addNameRegexp(const String & name_regexp)
 {
-    if (boost::iequals(name_regexp, "localhost"))
+    if (equalsCaseInsensitive(name_regexp, "localhost"))
         local_host = true;
     else if (name_regexp == ".*")
         any_host = true;
-    else if (boost::range::find(name_regexps, name_regexp) == name_regexps.end())
+    else if (std::ranges::find(name_regexps, name_regexp) == name_regexps.end())
         name_regexps.push_back(name_regexp);
 }
 
 void AllowedClientHosts::removeNameRegexp(const String & name_regexp)
 {
-    if (boost::iequals(name_regexp, "localhost"))
+    if (equalsCaseInsensitive(name_regexp, "localhost"))
         local_host = false;
     else if (name_regexp == ".*")
         any_host = false;
@@ -369,17 +366,17 @@ void AllowedClientHosts::removeNameRegexp(const String & name_regexp)
 
 void AllowedClientHosts::addLikePattern(const String & pattern)
 {
-    if (boost::iequals(pattern, "localhost") || (pattern == "127.0.0.1") || (pattern == "::1"))
+    if (equalsCaseInsensitive(pattern, "localhost") || (pattern == "127.0.0.1") || (pattern == "::1"))
         local_host = true;
     else if ((pattern == "%") || (pattern == "0.0.0.0/0") || (pattern == "::/0"))
         any_host = true;
-    else if (boost::range::find(like_patterns, pattern) == name_regexps.end())
+    else if (std::ranges::find(like_patterns, pattern) == like_patterns.end())
         like_patterns.push_back(pattern);
 }
 
 void AllowedClientHosts::removeLikePattern(const String & pattern)
 {
-    if (boost::iequals(pattern, "localhost") || (pattern == "127.0.0.1") || (pattern == "::1"))
+    if (equalsCaseInsensitive(pattern, "localhost") || (pattern == "127.0.0.1") || (pattern == "::1"))
         local_host = false;
     else if ((pattern == "%") || (pattern == "0.0.0.0/0") || (pattern == "::/0"))
         any_host = false;
@@ -502,7 +499,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
     /// Check `names`.
     auto check_name = [&](const String & name_)
     {
-        if (boost::iequals(name_, "localhost"))
+        if (equalsCaseInsensitive(name_, "localhost"))
             return is_client_local();
         try
         {
@@ -531,7 +528,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
     {
         try
         {
-            if (boost::iequals(name_regexp_, "localhost"))
+            if (equalsCaseInsensitive(name_regexp_, "localhost"))
                 return is_client_local();
             if (!resolved_hosts)
             {
@@ -541,7 +538,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             for (const auto & host : resolved_hosts.value())
             {
                 Poco::RegularExpression re(name_regexp_);
-                Poco::RegularExpression::Match match;
+                Poco::RegularExpression::Match match{};
                 if (re.match(host, match) != 0)
                 {
                     return true;
@@ -575,12 +572,11 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
         parseLikePattern(pattern, subnet, name, name_regexp);
         if (subnet)
             return check_subnet(*subnet);
-        else if (name)
+        if (name)
             return check_name(*name);
-        else if (name_regexp)
+        if (name_regexp)
             return check_name_regexp(*name_regexp);
-        else
-            return false;
+        return false;
     };
 
     for (const String & like_pattern : like_patterns)

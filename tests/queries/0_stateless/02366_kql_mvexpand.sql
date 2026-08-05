@@ -11,6 +11,7 @@ CREATE TABLE mv_expand_test_table
    d Array(Int8)
 ) ENGINE = Memory;
 INSERT INTO mv_expand_test_table VALUES (1, ['Salmon', 'Steak','Chicken'],[1,2,3,4],[5,6,7,8]);
+set allow_experimental_kusto_dialect=1;
 set dialect='kusto';
 print '-- mv-expand --';
 print '-- mv_expand_test_table | mv-expand c --';

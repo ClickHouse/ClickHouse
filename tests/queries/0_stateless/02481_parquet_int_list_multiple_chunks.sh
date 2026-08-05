@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ubsan, no-fasttest
-
+# Tags: no-ubsan, no-fasttest, no-parallel-replicas
+# no-parallel-replicas: ORDER BY ALL is missing, but this test doesn't add additional value with parallel replicas enabled, so skip it
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -36,7 +36,10 @@ echo "Parquet"
 DATA_FILE=$CUR_DIR/data_parquet/int-list-zero-based-chunked-array.parquet
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_load"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_load (arr Array(Int64)) ENGINE = Memory"
-cat "$DATA_FILE" | ${CLICKHOUSE_CLIENT} -q "INSERT INTO parquet_load FORMAT Parquet"
+# Keep the insert single-stream so the row order (and thus the md5 below) is deterministic:
+# with max_insert_threads > 1 the writing side of a plain INSERT fans out across parallel
+# streams into the Memory table, which reorders the rows.
+cat "$DATA_FILE" | ${CLICKHOUSE_CLIENT} -q "INSERT INTO parquet_load SETTINGS max_insert_threads = 1 FORMAT Parquet"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_load SETTINGS max_threads=1" | md5sum
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM parquet_load"
 ${CLICKHOUSE_CLIENT} --query="drop table parquet_load"

@@ -4,6 +4,7 @@
 #include <Access/Common/QuotaDefs.h>
 #include <Access/RolesOrUsersSet.h>
 #include <chrono>
+#include <optional>
 
 
 namespace DB
@@ -38,6 +39,9 @@ struct Quota : public IAccessEntity
     /// Users with the same key share the same amount of resource.
     QuotaKeyType key_type = QuotaKeyType::NONE;
 
+    std::optional<MaskBits> ipv4_prefix_bits;
+    std::optional<MaskBits> ipv6_prefix_bits;
+
     /// Which roles or users should use this quota.
     RolesOrUsersSet to_roles;
 
@@ -47,7 +51,12 @@ struct Quota : public IAccessEntity
     AccessEntityType getType() const override { return TYPE; }
 
     std::vector<UUID> findDependencies() const override;
+    bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    void copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids) override;
+    void removeDependencies(const std::unordered_set<UUID> & ids) override;
+    void clearAllExceptDependencies() override;
+
     bool isBackupAllowed() const override { return true; }
 };
 

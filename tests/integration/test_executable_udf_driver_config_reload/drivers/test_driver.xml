@@ -1,0 +1,6 @@
+<clickhouse>
+    <driver>
+        <name>TestDriver</name>
+        <create_command>/etc/clickhouse-server/drivers/test_driver_create.sh</create_command>
+    </driver>
+</clickhouse>

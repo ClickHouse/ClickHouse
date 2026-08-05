@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
-select round(geoToH3(toFloat64(0),toFloat64(1),arrayJoin([1,2])), 2);
+select round(geoToH3(toFloat64(1),toFloat64(0),arrayJoin([1,2])), 2);
 select h3ToParent(641573946153969375, arrayJoin([1,2]));
 SELECT round(h3HexAreaM2(arrayJoin([1,2])), 2);
 SELECT round(h3HexAreaKm2(arrayJoin([1,2])), 2);

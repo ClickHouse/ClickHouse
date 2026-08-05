@@ -87,6 +87,7 @@ FROM test
 WHERE insertion_time > toDateTime('2024-03-14 11:38:09')
 GROUP BY address);
 
+set optimize_trivial_insert_select = 0;
 set max_insert_threads=4;
 insert into test_tmp select * from generateRandom() limit 24;
 insert into test_tmp select * from generateRandom() limit 25;

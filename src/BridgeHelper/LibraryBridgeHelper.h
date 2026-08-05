@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -36,6 +36,8 @@ protected:
     Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
     Poco::URI createBaseURI() const override;
+
+    std::optional<String> getLibrariesSandboxPath() const override;
 
     static constexpr size_t DEFAULT_PORT = 9012;
 

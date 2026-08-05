@@ -3,6 +3,7 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Common/quoteString.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -17,7 +18,7 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTCheckTableQuery>(*this);
+        auto res = make_intrusive<ASTCheckTableQuery>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         cloneTableOptions(*res);
@@ -25,6 +26,9 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Check; }
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     std::variant<std::monostate, ASTPtr, String> getPartitionOrPartitionID() const
     {
@@ -36,39 +40,45 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
+        ostr << indent_str << "CHECK TABLE ";
 
         if (table)
         {
             if (database)
             {
-                database->formatImpl(settings, state, frame);
-                settings.ostr << '.';
+                database->format(ostr, settings, state, frame);
+                ostr << '.';
             }
 
             chassert(table);
-            table->formatImpl(settings, state, frame);
+            table->format(ostr, settings, state, frame);
         }
 
         if (partition)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
+            ostr << indent_str << " PARTITION ";
+            partition->format(ostr, settings, state, frame);
+        }
+
+        if (!part_name.empty())
+        {
+            ostr << indent_str << " PART "
+                << quoteString(part_name);
         }
     }
 };
 
+
 struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
 {
-
     String getID(char /* delim */) const override { return "CheckAllQuery"; }
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTCheckAllTablesQuery>(*this);
+        auto res = make_intrusive<ASTCheckAllTablesQuery>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         return res;
@@ -76,11 +86,14 @@ struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
 
     QueryKind getQueryKind() const override { return QueryKind::Check; }
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK ALL TABLES" << (settings.hilite ? hilite_none : "");
+        ostr << indent_str << "CHECK ALL TABLES";
     }
 };
 

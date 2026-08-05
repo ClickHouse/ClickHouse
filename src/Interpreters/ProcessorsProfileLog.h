@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Processors/IProcessor.h>
 #include <Storages/ColumnsDescription.h>
@@ -25,6 +25,8 @@ struct ProcessorProfileLogElement
     String initial_query_id;
     String query_id;
     String processor_name;
+    String processor_uniq_id;
+    String step_uniq_id;
 
     /// Milliseconds spend in IProcessor::work()
     UInt64 elapsed_us{};
@@ -49,5 +51,10 @@ class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>
 public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
 };
+
+VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
+
+void logProcessorProfile(ContextPtr context, const Processors & processors);
+void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
 
 }

@@ -1,4 +1,5 @@
-#include "StorageSystemProjectionPartsColumns.h"
+#include <Storages/System/StorageSystemProjectionPartsColumns.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -10,7 +11,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -69,13 +69,14 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>(), "Total size of the decompressed data in the column, in bytes."},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>(), "The size of the column with marks, in bytes."},
         {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The last time the column was modified."},
+        /// TODO: make adaptive codec selection inside projections observable, e.g. by extending the `mergeTreeCodecBlockCounts` table function.
     }
     )
 {
 }
 
 void StorageSystemProjectionPartsColumns::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -84,7 +85,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         String default_expression;
     };
 
-    auto storage_metadata = info.storage->getInMemoryMetadataPtr();
+    auto storage_metadata = info.storage->getInMemoryMetadataPtr(context, false);
     std::unordered_map<String, std::unordered_map<String, ColumnInfo>> projection_columns_info;
     for (const auto & projection : storage_metadata->getProjections())
     {
@@ -95,7 +96,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (column.default_desc.expression)
             {
                 column_info.default_kind = toString(column.default_desc.kind);
-                column_info.default_expression = queryToString(column.default_desc.expression);
+                column_info.default_expression = column.default_desc.expression->formatForLogging();
             }
 
             columns_info[column.name] = column_info;
@@ -109,6 +110,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
     {
         const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
+        const auto part_metadata_snapshot = part->getMetadataSnapshot();
         chassert(parent_part);
 
         auto part_state = all_parts_state[part_number];
@@ -131,13 +133,10 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         for (const auto & column : part->getColumns())
         {
             ++column_position;
-            size_t src_index = 0, res_index = 0;
+            size_t src_index = 0;
+            size_t res_index = 0;
             if (columns_mask[src_index++])
-            {
-                WriteBufferFromOwnString out;
-                parent_part->partition.serializeText(*info.data, out, format_settings);
-                columns[res_index++]->insert(out.str());
-            }
+                columns[res_index++]->insert(part->partition.serializeToString(part_metadata_snapshot));
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -192,7 +191,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
                 columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->info.partition_id);
+                columns[res_index++]->insert(parent_part->info.getPartitionId());
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(parent_part->info.min_block);
             if (columns_mask[src_index++])
@@ -264,3 +263,6 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjectionPartsColumns) }

@@ -1,13 +1,10 @@
 #pragma once
 
-#include <Access/ContextAccess.h>
-#include <Interpreters/Context.h>
-
-
-#include <Core/Settings.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
+class IAST;
 
 struct SecretHidingFormatSettings
 {
@@ -19,19 +16,5 @@ struct SecretHidingFormatSettings
     bool one_line = true;
 };
 
-inline String format(const SecretHidingFormatSettings & settings)
-{
-    const bool show_secrets = settings.ctx->displaySecretsInShowAndSelect()
-        && settings.ctx->getSettingsRef().format_display_secrets_in_show_and_select
-        && settings.ctx->getAccess()->isGranted(AccessType::displaySecretsInShowAndSelect);
-
-    return settings.query.formatWithPossiblyHidingSensitiveData(
-        settings.max_length,
-        settings.one_line,
-        show_secrets,
-        settings.ctx->getSettingsRef().print_pretty_type_names,
-        settings.ctx->getSettingsRef().output_format_always_quote_identifiers,
-        settings.ctx->getSettingsRef().output_format_identifier_quoting_style);
-}
-
+String format(const SecretHidingFormatSettings & settings);
 }

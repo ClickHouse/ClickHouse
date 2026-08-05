@@ -16,11 +16,4 @@ public:
             if (Base::buf[i].isZero(*this) && !rhs.buf[i].isZero(*this))
                 new (&Base::buf[i]) Cell(rhs.buf[i]);
     }
-
-    /// NOTE: Currently this method isn't used. When it does, the ReadBuffer should
-    ///  contain the Key explicitly.
-    // void readAndMerge(DB::ReadBuffer & rb)
-    // {
-
-    // }
 };

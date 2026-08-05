@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <DataTypes/NumberTraits.h>
+#include <Common/FunctionDocumentation.h>
 
 
 namespace DB
@@ -49,7 +50,7 @@ using FunctionBitBoolMaskOr = BinaryArithmeticOverloadResolver<BitBoolMaskOrImpl
 
 REGISTER_FUNCTION(BitBoolMaskOr)
 {
-    factory.registerFunction<FunctionBitBoolMaskOr>();
+    factory.registerFunction<FunctionBitBoolMaskOr>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

@@ -1,6 +1,5 @@
 #include <Parsers/ASTShowIndexesQuery.h>
 
-#include <iomanip>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -9,30 +8,29 @@ namespace DB
 
 ASTPtr ASTShowIndexesQuery::clone() const
 {
-    auto res = std::make_shared<ASTShowIndexesQuery>(*this);
+    auto res = make_intrusive<ASTShowIndexesQuery>(*this);
     res->children.clear();
     cloneOutputOptions(*res);
     return res;
 }
 
-void ASTShowIndexesQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTShowIndexesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
+    ostr
                   << "SHOW "
                   << (extended ? "EXTENDED " : "")
                   << "INDEXES"
-                  << (settings.hilite ? hilite_none : "");
+                 ;
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(table);
+    ostr << " FROM " << backQuoteIfNeed(table);
     if (!database.empty())
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
+        ostr << " FROM " << backQuoteIfNeed(database);
 
     if (where_expression)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-        where_expression->formatImpl(settings, state, frame);
+        ostr << " WHERE ";
+        where_expression->format(ostr, settings, state, frame);
     }
 }
 
 }
-

@@ -1,0 +1,6 @@
+mv1_db1:	1	db1_data	from_mv1_db1
+mv1_db2:	2	db2_data	from_mv1_db2
+qualified:	2	db2_data	qualified_crossdb
+modified_mv1_db1:	3	db1_v2_data	modified_query_db1
+modified_mv1_db2:	4	db2_v2_data	modified_query_db2
+mv1_db1:	1	db1_data	from_mv1_db1

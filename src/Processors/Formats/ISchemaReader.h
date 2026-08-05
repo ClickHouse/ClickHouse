@@ -4,7 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -105,7 +105,7 @@ protected:
 
     virtual bool allowVariableNumberOfColumns() const { return false; }
 
-    size_t field_index;
+    size_t field_index{};
 
 private:
     DataTypePtr getDefaultType(size_t column) const;
@@ -189,16 +189,15 @@ void chooseResultColumnType(
                 column_name,
                 row,
                 type->getName());
-        else
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
-                "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
-                new_type->getName(),
-                column_name,
-                row,
-                type->getName(),
-                hints_parsing_error);
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH,
+            "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
+            "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
+            new_type->getName(),
+            column_name,
+            row,
+            type->getName(),
+            hints_parsing_error);
     }
 }
 

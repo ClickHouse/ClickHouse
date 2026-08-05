@@ -2,15 +2,12 @@
 
 #include <limits>
 #include <algorithm>
-#include <climits>
 #include <base/types.h>
 #include <base/sort.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <IO/Operators_pcg_random.h>
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
@@ -53,6 +50,7 @@ struct NanLikeValueConstructor
         return std::numeric_limits<ResultType>::quiet_NaN();
     }
 };
+
 template <typename ResultType>
 struct NanLikeValueConstructor<ResultType, false>
 {
@@ -86,7 +84,12 @@ public:
             return;
 
         sorted = false;
-        ++total_values;
+        /// Keep `total_values` saturated once it hits the max. A saturated state (e.g. from
+        /// multiplying an aggregate state by a huge constant) can be merged into another via
+        /// the insert() branch of merge(); a plain ++ would wrap SIZE_MAX to 0 and reach
+        /// genRandom(0), which is UB / a debug assert failure.
+        if (total_values != std::numeric_limits<size_t>::max())
+            ++total_values;
         if (samples.size() < sample_count)
         {
             samples.push_back(v);
@@ -116,7 +119,7 @@ public:
 
         sortIfNeeded();
 
-        double index = level * (samples.size() - 1);
+        double index = level * static_cast<double>(samples.size() - 1);
         size_t int_index = static_cast<size_t>(index + 0.5); /// NOLINT
         int_index = std::max(0LU, std::min(samples.size() - 1, int_index));
         return samples[int_index];
@@ -135,7 +138,7 @@ public:
         }
         sortIfNeeded();
 
-        double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
+        double index = std::max(0., std::min(static_cast<double>(samples.size() - 1), level * static_cast<double>(samples.size() - 1)));
 
         /// To get the value of a fractional index, we linearly interpolate between neighboring values.
         size_t left_index = static_cast<size_t>(index);
@@ -148,8 +151,8 @@ public:
                 return static_cast<double>(samples[left_index]);
         }
 
-        double left_coef = right_index - index;
-        double right_coef = index - left_index;
+        double left_coef = static_cast<double>(right_index) - index;
+        double right_coef = index - static_cast<double>(left_index);
 
         if constexpr (DB::is_decimal<T>)
             return static_cast<double>(samples[left_index].value) * left_coef + static_cast<double>(samples[right_index].value) * right_coef;
@@ -161,6 +164,13 @@ public:
     {
         if (sample_count != b.sample_count)
             throw Poco::Exception("Cannot merge ReservoirSampler's with different sample_count");
+
+        // There will be an aliasing issue if we merge the same object with itself. I.e. we will insert from `b.samples` into `a.samples`,
+        // but both refer to the same array. It might happen in case of multiplying an aggregate function state by a numeric constant.
+        // ATST, it seems that self-merging cannot improve accuracy, so there is no point to do it anyway.
+        if (this == &b)
+            return;
+
         sorted = false;
 
         if (b.total_values <= sample_count)
@@ -182,13 +192,19 @@ public:
             /// with the probability of b.total_values / (a.total_values + b.total_values)
             /// Do it more roughly than true random sampling to save performance.
 
-            total_values += b.total_values;
+            /// `total_values` can overflow when an aggregate state is multiplied by a huge
+            /// constant: `executeAggregateMultiply` self-merges the reservoir with
+            /// exponentiation by squaring, doubling `total_values` each step. On overflow the
+            /// wrapped sum would make `frequency` drop below 1, turning the loop below into a
+            /// near-infinite one. Saturate the sum so `frequency` stays >= 1.
+            if (__builtin_add_overflow(total_values, b.total_values, &total_values))
+                total_values = std::numeric_limits<size_t>::max();
 
             /// Will replace every frequency'th element in a to element from b.
-            double frequency = static_cast<double>(total_values) / b.total_values;
+            double frequency = static_cast<double>(total_values) / static_cast<double>(b.total_values);
 
             /// When frequency is too low, replace just one random element with the corresponding probability.
-            if (frequency * 2 >= sample_count)
+            if (frequency * 2 >= static_cast<double>(sample_count))
             {
                 UInt64 rnd = genRandom(static_cast<UInt64>(frequency));
                 if (rnd < sample_count)
@@ -196,7 +212,7 @@ public:
             }
             else
             {
-                for (double i = 0; i < sample_count; i += frequency) /// NOLINT
+                for (double i = 0; i < static_cast<double>(sample_count); i += frequency) /// NOLINT
                 {
                     size_t idx = static_cast<size_t>(i);
                     samples[idx] = b.samples[idx];
@@ -252,16 +268,14 @@ private:
     pcg32_fast rng;
     bool sorted = false;
 
-
     UInt64 genRandom(UInt64 limit)
     {
         chassert(limit > 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (limit <= static_cast<UInt64>(pcg32_fast::max()))
-            return rng() % limit;
-        else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
+            return rng() % limit;  /// NOLINT(clang-analyzer-core.DivideZero)
+        return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }
 
     void sortIfNeeded()
@@ -277,7 +291,6 @@ private:
     {
         if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSampler");
-        else
-            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
+        return NanLikeValueConstructor<ResultType, is_floating_point<ResultType>>::getValue();
     }
 };

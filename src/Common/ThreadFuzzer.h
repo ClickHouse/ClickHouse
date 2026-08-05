@@ -45,14 +45,12 @@ namespace DB
 class ThreadFuzzer
 {
 public:
-    static ThreadFuzzer & instance()
-    {
-        static ThreadFuzzer res;
-        return res;
-    }
+    /// Defined out of line: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static ThreadFuzzer & instance();
 
     bool isEffective() const;
-    bool needsSetup() const;
+    void setup() const;
 
     static void stop();
     static void start();
@@ -71,12 +69,13 @@ private:
     double explicit_sleep_probability = 0;
     double explicit_memory_exception_probability = 0;
 
-    inline static std::atomic<bool> started{true};
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static std::atomic<bool> started;
 
     ThreadFuzzer();
 
     void initConfiguration();
-    void setup() const;
+    bool needsSetup() const;
 
     static void signalHandler(int);
 };

@@ -25,20 +25,31 @@ namespace
         });
     }
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::vector<std::shared_ptr<ASTSettingsProfileElement>> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected))
-                return false;
-
-            ASTPtr new_settings_ast;
+            ASTPtr ast;
             ParserSettingsProfileElements elements_p;
             elements_p.useIDMode(id_mode);
-            if (!elements_p.parse(pos, new_settings_ast, expected))
+            if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            settings = std::move(new_settings_ast->as<ASTSettingsProfileElements &>().elements);
+            settings = boost::static_pointer_cast<ASTSettingsProfileElements>(ast);
+            return true;
+        });
+    }
+
+    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTAlterSettingsProfileElements> & alter_settings)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            ASTPtr ast;
+            ParserAlterSettingsProfileElements elements_p;
+            if (!elements_p.parse(pos, ast, expected))
+                return false;
+
+            alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(ast);
             return true;
         });
     }
@@ -90,7 +101,8 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
 
     String new_name;
-    std::shared_ptr<ASTSettingsProfileElements> settings;
+    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
+    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
     String cluster;
     String storage_name;
 
@@ -99,14 +111,27 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
             continue;
 
-        std::vector<std::shared_ptr<ASTSettingsProfileElement>> new_settings;
-        if (parseSettings(pos, expected, attach_mode, new_settings))
+        if (alter)
         {
-            if (!settings)
-                settings = std::make_shared<ASTSettingsProfileElements>();
-
-            insertAtEnd(settings->elements, std::move(new_settings));
-            continue;
+            boost::intrusive_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
+            if (parseAlterSettings(pos, expected, new_alter_settings))
+            {
+                if (!alter_settings)
+                    alter_settings = make_intrusive<ASTAlterSettingsProfileElements>();
+                alter_settings->add(std::move(*new_alter_settings));
+                continue;
+            }
+        }
+        else
+        {
+            boost::intrusive_ptr<ASTSettingsProfileElements> new_settings;
+            if (parseSettings(pos, expected, attach_mode, new_settings))
+            {
+                if (!settings)
+                    settings = make_intrusive<ASTSettingsProfileElements>();
+                settings->add(std::move(*new_settings));
+                continue;
+            }
         }
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
@@ -118,7 +143,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         break;
     }
 
-    auto query = std::make_shared<ASTCreateRoleQuery>();
+    auto query = make_intrusive<ASTCreateRoleQuery>();
     node = query;
 
     query->alter = alter;
@@ -130,6 +155,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->settings = std::move(settings);
+    query->alter_settings = std::move(alter_settings);
     query->storage_name = std::move(storage_name);
 
     return true;

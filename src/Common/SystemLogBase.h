@@ -3,20 +3,24 @@
 #include <condition_variable>
 #include <limits>
 #include <memory>
+#include <type_traits>
 #include <vector>
 #include <base/types.h>
 
+#include <Common/Logger_fwd.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
+
 
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
     M(CrashLogElement) \
-    M(MetricLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
+    M(BackgroundSchedulePoolLogElement) \
     M(QueryLogElement) \
     M(QueryThreadLogElement) \
     M(QueryViewsLogElement) \
@@ -32,7 +36,17 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(ErrorLogElement)
+    M(QueryMetricLogElement) \
+    M(DeadLetterQueueElement) \
+    M(ZooKeeperConnectionLogElement) \
+    M(IcebergMetadataLogElement) \
+    M(DeltaMetadataLogElement) \
+    M(PredicateStatisticsLogElement) \
+
+#define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
+    M(DistributedCacheLogElement) \
+    M(DistributedCacheServerLogElement) \
+
 
 namespace Poco
 {
@@ -59,13 +73,19 @@ public:
 
     virtual String getName() const = 0;
 
+    /// For implementations that buffer data in memory and flush it to the log periodically,
+    /// this method forces an immediate write to the log.
+    virtual void flushBufferToLog(std::chrono::system_clock::time_point /* current_time */) {}
     /// Return the index of the latest added log element. That index no less than the flashed index.
     /// The flashed index is the index of the last log element which has been flushed successfully.
     /// Thereby all the records whose index is less than the flashed index are flushed already.
     virtual Index getLastLogIndex() = 0;
+    /// Notifies the implementation that a manual flush up to `target_index` was requested.
+    virtual void setManualFlushTargetIndex(Index /* target_index */) {}
+
     /// Call this method to wake up the flush thread and flush the data in the background. It is non blocking call
     virtual void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
-    /// Call this method to wait intill the logs are flushed up to expected_flushed_index. It is blocking call.
+    /// Call this method to wait until the logs are flushed up to expected_flushed_index. It is blocking call.
     virtual void flush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
 
     virtual void prepareTable() = 0;
@@ -85,6 +105,8 @@ public:
 
     virtual void savingThreadFunction() = 0;
 
+    virtual bool mustBePreparedAtStartup() const { return false; }
+
 protected:
     std::mutex thread_mutex;
     std::unique_ptr<ThreadFromGlobalPool> saving_thread;
@@ -96,12 +118,12 @@ struct SystemLogQueueSettings
 {
     String database;
     String table;
-    size_t reserved_size_rows;
-    size_t max_size_rows;
-    size_t buffer_size_rows_flush_threshold;
-    size_t flush_interval_milliseconds;
-    bool notify_flush_on_crash;
-    bool turn_off_logger;
+    size_t reserved_size_rows{};
+    size_t max_size_rows{};
+    size_t buffer_size_rows_flush_threshold{};
+    size_t flush_interval_milliseconds{};
+    bool notify_flush_on_crash{};
+    bool turn_off_logger{};
 };
 
 template <typename LogElement>
@@ -114,8 +136,17 @@ public:
 
     void shutdown();
 
-    // producer methods
-    void push(LogElement && element);
+    // producer method: fill the element in place under a memory-tracker blocker, then enqueue it (moved).
+    template <typename FillElement>
+    requires std::is_invocable_r_v<void, FillElement, LogElement &>
+    void add(FillElement && fill)
+    {
+        MemoryTrackerUntrackedAllocationsBlockerInThread untracked_allocations_blocker;
+        MemoryTrackerBlockerInThread block_memory_tracker;
+        LogElement element{};
+        fill(element);
+        push(std::move(element));
+    }
 
     Index getLastLogIndex();
     void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway);
@@ -137,6 +168,9 @@ public:
     void confirm(Index last_flashed_index);
 
 private:
+    /// Enqueue an already-built element. Private so add() (which holds the memory blocker) is the only entry.
+    void push(LogElement && element);
+
     void notifyFlushUnlocked(Index expected_flushed_index, bool should_prepare_tables_anyway);
 
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
@@ -158,7 +192,7 @@ private:
     // Flushed log up to this index, exclusive
     Index flushed_index = 0;
 
-    // The same logic for the prepare tables: if requested_prepar_tables > prepared_tables we need to do prepare
+    // The same logic for the prepare tables: if requested_prepare_tables > prepared_tables we need to do prepare
     // except that initial prepared_tables is -1
     // it is due to the difference: when no logs have been written and we call flush logs
     // it becomes in the state: requested_flush_index = 0 and flushed_index = 0 -- we do not want to do anything
@@ -191,10 +225,19 @@ public:
 
     void startup() override;
 
-    /** Append a record into log.
-      * Writing to table will be done asynchronously and in case of failure, record could be lost.
+    /** Append a record into log (asynchronous; may be lost on failure).
+      *
+      * The callback fills the element in place: it is built under a memory-tracker blocker and moved into
+      * the queue, so its allocations are charged to the global tracker only (the flush thread frees them
+      * later and cannot credit the query/user tracker). Build or copy the fields inside the callback; do not
+      * std::move() in buffers allocated before the call - that keeps their charge on the query/user tracker.
       */
-    void add(LogElement element);
+    template <typename FillElement>
+    requires std::is_invocable_r_v<void, FillElement, LogElement &>
+    void add(FillElement && fill)
+    {
+        queue->add(std::forward<FillElement>(fill));
+    }
 
     Index getLastLogIndex() override;
 
@@ -208,6 +251,7 @@ public:
 
     String getName() const override { return LogElement::name(); }
 
+    static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }
     static consteval size_t getDefaultMaxSize() { return 1048576; }
     static consteval size_t getDefaultReservedSize() { return 8192; }

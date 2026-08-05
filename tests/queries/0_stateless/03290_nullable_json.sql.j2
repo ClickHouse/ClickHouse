@@ -1,0 +1,28 @@
+-- Tags: no-fasttest, long
+
+SET enable_json_type = 1;
+
+drop table if exists test;
+
+{% for create_command in ['create table test (json Nullable(JSON(a UInt32, b Array(UInt32), c Nullable(UInt32), d Tuple(e UInt32, f Nullable(UInt32))))) engine=Memory;',
+                          'create table test (json Nullable(JSON(a UInt32, b Array(UInt32), c Nullable(UInt32), d Tuple(e UInt32, f Nullable(UInt32))))) engine=MergeTree order by tuple() settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000;',
+                          'create table test (json Nullable(JSON(a UInt32, b Array(UInt32), c Nullable(UInt32), d Tuple(e UInt32, f Nullable(UInt32))))) engine=MergeTree order by tuple() settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;'] -%}
+
+select '---';
+{{ create_command }}
+
+insert into test select number % 2 ? NULL : '{"a" : 1, "b" : [1, 2, 3], "c" : null, "d" : {"e" : 1, "f" : null}, "x" : 42, "y" : [1, 2, 3]}' from numbers(4);
+select json.a as path, toTypeName(path) from test;
+select json.b as path, toTypeName(path) from test;
+select json.c as path, toTypeName(path) from test;
+select json.d as path, toTypeName(path) from test;
+select json.d.e as path, toTypeName(path) from test;
+select json.d.f as path, toTypeName(path) from test;
+select json.x as path, toTypeName(path) from test;
+select json.x.:Int64 as path, toTypeName(path) from test;
+select json.y as path, toTypeName(path) from test;
+select json.y.:`Array(Nullable(Int64))` as path, toTypeName(path) from test;
+
+drop table test;
+
+{% endfor -%}

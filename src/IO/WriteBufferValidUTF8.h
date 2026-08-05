@@ -26,7 +26,7 @@ public:
 
 private:
     void putReplacement();
-    void putValid(char * data, size_t len);
+    void putValid(const char * data, size_t len);
 
     void nextImpl() override;
     void finalizeImpl() override;

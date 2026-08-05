@@ -1,19 +1,21 @@
 #pragma once
 
-#include <string>
 #include <cstdint>
-#include <magic_enum.hpp>
+#include <limits>
+#include <string_view>
+#include <base/EnumReflection.h>
 
 
 namespace Coordination
 {
 
-using XID = int32_t;
+using XID = int64_t;
 
 static constexpr XID WATCH_XID = -1;
 static constexpr XID PING_XID  = -2;
 static constexpr XID AUTH_XID  = -4;
-static constexpr XID CLOSE_XID = 0x7FFFFFFF;
+static constexpr XID CLOSE_XID = std::numeric_limits<int32_t>::max();
+static constexpr XID CLOSE_XID_64 = std::numeric_limits<int64_t>::max();
 
 enum class OpNum : int32_t
 {
@@ -32,22 +34,55 @@ enum class OpNum : int32_t
     List = 12,
     Check = 13,
     Multi = 14,
+    Create2 = 15,
     Reconfig = 16,
+    CheckWatch = 17,
+    RemoveWatch = 18,
+    CreateContainer = 19,
+    CreateTTL = 21,
     MultiRead = 22,
     Auth = 100,
+    SetWatch = 101,
+    SetWatch2 = 105,
+    AddWatch = 106,
 
     // CH Keeper specific operations
     FilteredList = 500,
     CheckNotExists = 501,
     CreateIfNotExists = 502,
+    RemoveRecursive = 503,
+    CheckStat = 504,
+    TryRemove = 505,
+    FilteredListWithStatsAndData = 506,
+    ListRecursive = 507,
 
     SessionID = 997, /// Special internal request
 };
 
+}
+
+/// OpNum has values from -11 to 997, which is outside the default magic_enum range [-128, 127].
+template <> struct magic_enum::customize::enum_range<Coordination::OpNum>
+{
+    static constexpr int min = -20;
+    static constexpr int max = 1000;
+};
+
+namespace Coordination
+{
+
 OpNum getOpNum(int32_t raw_op_num);
+
+/// Returns operation name as string (e.g., OpNum::Get -> "Get", OpNum::Set -> "Set")
+std::string_view opNumToString(OpNum op_num);
+
+/// Returns operation type for use in metric labels (e.g., OpNum::Get -> "readonly", OpNum::Set -> "write")
+const char * toOperationTypeMetricLabel(OpNum op_num);
 
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION = 10;
+static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64 = 11;
+static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING = 12;
 static constexpr int32_t KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT = 42;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH = 44;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH_WITH_READONLY = 45;
@@ -58,6 +93,10 @@ static constexpr int32_t PASSWORD_LENGTH = 16;
 /// ZooKeeper has 1 MB node size and serialization limit by default,
 /// but it can be raised up, so we have a slightly larger limit on our side.
 static constexpr int32_t MAX_STRING_OR_ARRAY_SIZE = 1 << 28;  /// 256 MiB
+/// Request length prefix is a signed int32, so this is a hard limit
+static constexpr uint64_t MAX_REQUEST_SIZE_HARD_LIMIT = std::numeric_limits<int32_t>::max();
+/// Smallest server-advertised max_request_size we accept; anything below is treated as bogus and ignored
+static constexpr uint64_t MIN_SANE_ADVERTISED_REQUEST_SIZE_LIMIT = 1024;
 static constexpr int32_t DEFAULT_SESSION_TIMEOUT_MS = 30000;
 static constexpr int32_t DEFAULT_MIN_SESSION_TIMEOUT_MS = 10000;
 static constexpr int32_t DEFAULT_MAX_SESSION_TIMEOUT_MS = 100000;
@@ -65,12 +104,3 @@ static constexpr int32_t DEFAULT_OPERATION_TIMEOUT_MS = 10000;
 static constexpr int32_t DEFAULT_CONNECTION_TIMEOUT_MS = 1000;
 
 }
-
-/// This is used by fmt::format to print OpNum as strings.
-/// All OpNum values should be in range [min, max] to be printed.
-template <>
-struct magic_enum::customize::enum_range<Coordination::OpNum>
-{
-    static constexpr int min = -100;
-    static constexpr int max = 1000;
-};

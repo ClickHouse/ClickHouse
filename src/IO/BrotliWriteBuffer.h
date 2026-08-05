@@ -42,7 +42,7 @@ public:
 private:
     void nextImpl() override;
 
-    void finalizeBefore() override;
+    void finalFlushBefore() override;
 
     class BrotliStateWrapper
     {

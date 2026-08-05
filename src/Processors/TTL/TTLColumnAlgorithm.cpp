@@ -31,7 +31,7 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
 
 void TTLColumnAlgorithm::execute(Block & block)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     /// If we read not all table columns. E.g. while mutation.
@@ -42,9 +42,33 @@ void TTLColumnAlgorithm::execute(Block & block)
     if (!isMinTTLExpired())
         return;
 
-    /// Later drop full column
+    auto & column_with_type = block.getByName(column_name);
+
+    /// The whole block is past the column TTL. Reset the column to its default so that
+    /// dependent skip indices or projections recalculate against the value the base table
+    /// will logically read. Evaluate the DDL `DEFAULT` expression (matching the per-row slow
+    /// path below), falling back to the type default only when the column has no `DEFAULT`.
+    /// Filling the type default here would make a rebuilt projection materialize the type
+    /// default (e.g. `0`) while the base reads the DDL default (e.g. `-1`) via `expired_columns`.
     if (isMaxTTLExpired() && !is_compact_part)
+    {
+        auto result_column = column_with_type.column->cloneEmpty();
+        result_column->reserve(block.rows());
+
+        auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
+        if (default_column)
+        {
+            default_column = default_column->convertToFullColumnIfConst();
+            result_column->insertRangeFrom(*default_column, 0, block.rows());
+        }
+        else
+        {
+            result_column->insertManyDefaults(block.rows());
+        }
+
+        column_with_type.column = std::move(result_column);
         return;
+    }
 
     auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
     if (default_column)
@@ -52,14 +76,13 @@ void TTLColumnAlgorithm::execute(Block & block)
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
 
-    auto & column_with_type = block.getByName(column_name);
     const IColumn * values_column = column_with_type.column.get();
     MutableColumnPtr result_column = values_column->cloneEmpty();
     result_column->reserve(block.rows());
 
     for (size_t i = 0; i < block.rows(); ++i)
     {
-        UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+        Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
         if (isTTLExpired(cur_ttl))
         {
             if (default_column)
@@ -81,7 +104,7 @@ void TTLColumnAlgorithm::execute(Block & block)
 void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
     data_part->ttl_infos.columns_ttl[column_name] = new_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
     if (is_fully_empty)
         data_part->expired_columns.insert(column_name);
 }

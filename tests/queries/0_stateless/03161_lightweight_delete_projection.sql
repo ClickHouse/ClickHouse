@@ -34,8 +34,6 @@ DELETE FROM users_compact WHERE uid = 1231;
 
 SELECT * FROM users_compact ORDER BY uid;
 
-SYSTEM FLUSH LOGS;
-
 -- all_1_1_0_2
 SELECT
     name
@@ -56,8 +54,6 @@ ALTER TABLE users_compact MODIFY SETTING lightweight_mutation_projection_mode = 
 DELETE FROM users_compact WHERE uid = 6666;
 
 SELECT * FROM users_compact ORDER BY uid;
-
-SYSTEM FLUSH LOGS;
 
 -- all_1_1_0_4, all_3_3_0_4
 SELECT
@@ -103,8 +99,6 @@ DELETE FROM users_wide WHERE uid = 1231;
 
 SELECT * FROM users_wide ORDER BY uid;
 
-SYSTEM FLUSH LOGS;
-
 -- all_1_1_0_2
 SELECT
     name
@@ -125,8 +119,6 @@ ALTER TABLE users_wide MODIFY SETTING lightweight_mutation_projection_mode = 're
 DELETE FROM users_wide WHERE uid = 6666;
 
 SELECT * FROM users_wide ORDER BY uid;
-
-SYSTEM FLUSH LOGS;
 
 -- all_1_1_0_4, all_3_3_0_4
 SELECT

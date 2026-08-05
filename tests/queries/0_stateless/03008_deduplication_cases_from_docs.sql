@@ -1,4 +1,3 @@
--- #########
 select 'Different materialized view insert into one underlayed table equal data.';
 
 DROP TABLE IF EXISTS dst;
@@ -81,8 +80,6 @@ DROP TABLE mv_first;
 DROP TABLE mv_dst;
 DROP TABLE dst;
 
-
--- #########
 select 'Different insert operations generate the same data after transformation in underlied table of materialized view.';
 
 DROP TABLE IF EXISTS dst;
@@ -151,8 +148,6 @@ ORDER by all;
 DROP TABLE mv_dst;
 DROP TABLE dst;
 
-
--- #########
 select 'Indentical blocks in insertion with `insert_deduplication_token`';
 
 DROP TABLE IF EXISTS dst;
@@ -175,7 +170,7 @@ select 'first attempt';
 INSERT INTO dst SELECT
     0 AS key,
     'A' AS value
-FROM numbers(2)
+FROM numbers(2) ORDER BY ALL
 SETTINGS insert_deduplication_token='some_user_token';
 
 SELECT
@@ -190,7 +185,7 @@ select 'second attempt';
 INSERT INTO dst SELECT
     0 AS key,
     'A' AS value
-FROM numbers(2)
+FROM numbers(2) ORDER BY ALL
 SETTINGS insert_deduplication_token='some_user_token';
 
 SELECT
@@ -205,7 +200,7 @@ select 'third attempt';
 INSERT INTO dst SELECT
     1 AS key,
     'b' AS value
-FROM numbers(2)
+FROM numbers(2) ORDER BY ALL
 SETTINGS insert_deduplication_token='some_user_token';
 
 SELECT
@@ -217,8 +212,6 @@ ORDER by all;
 
 DROP TABLE dst;
 
-
--- #########
 select 'Indentical blocks in insertion';
 
 DROP TABLE IF EXISTS dst;
@@ -239,7 +232,7 @@ SET min_insert_block_size_bytes=0;
 INSERT INTO dst SELECT
     0 AS key,
     'A' AS value
-FROM numbers(2);
+FROM numbers(2) ORDER BY ALL;
 
 SELECT
     'from dst',
@@ -250,8 +243,6 @@ ORDER by all;
 
 DROP TABLE dst;
 
-
--- #########
 select 'Indentical blocks after materialised view`s transformation';
 
 DROP TABLE IF EXISTS dst;
@@ -290,7 +281,7 @@ select 'first attempt';
 INSERT INTO dst SELECT
     number + 1 AS key,
     IF(key = 0, 'A', 'B') AS value
-FROM numbers(2);
+FROM numbers(2) ORDER BY ALL;
 
 SELECT
     'from dst',
@@ -311,7 +302,7 @@ select 'second attempt';
 INSERT INTO dst SELECT
     number + 1 AS key,
     IF(key = 0, 'A', 'B') AS value
-FROM numbers(2);
+FROM numbers(2) ORDER BY ALL;
 
 SELECT
     'from dst',

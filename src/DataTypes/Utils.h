@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Returns true if from_type can be safely casted to to_type.
+/** Returns true if from_type can be safely cast to to_type.
   *
   * Examples:
   * From type UInt8 to type UInt16 returns true.
@@ -14,6 +14,6 @@ namespace DB
   * From type LowCardinality(String) to type String returns true.
   * From type String to type UInt8 returns false.
   */
-bool canBeSafelyCasted(const DataTypePtr & from_type, const DataTypePtr & to_type);
+bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type);
 
 }

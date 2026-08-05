@@ -1,9 +1,9 @@
 import os
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-
 
 DICTIONARY_FILES = [
     "configs/dictionaries/FileSourceConfig.xml",

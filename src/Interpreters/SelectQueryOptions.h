@@ -45,10 +45,15 @@ struct SelectQueryOptions
     bool is_create_parameterized_view = false;
     /// Bypass setting constraints for some internal queries such as projection ASTs.
     bool ignore_setting_constraints = false;
+    bool is_create_view = false; /// this select is a part of CREATE [MATERIALIZED] VIEW query
 
     /// Bypass access check for select query.
     /// This allows to skip double access check in some specific cases (e.g. insert into table with materialized view)
     bool ignore_access_check = false;
+
+    /// Check access rights for tables inside subqueries even in only_analyze mode.
+    /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
+    bool check_subquery_table_access = false;
 
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
@@ -56,22 +61,30 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_num;
     std::optional<UInt32> shard_count;
 
-    /** During read from MergeTree parts will be removed from snapshot after they are not needed.
-      * This optimization will break subsequent execution of the same query tree, because table node
-      * will no more have valid snapshot.
-      *
-      * TODO: Implement this functionality in safer way
-      */
-    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
+    bool build_logical_plan = false;
+    bool is_local_shard_plan = false;
+    bool ignore_rename_columns = false;
+
+    /// The plan is built for a local shard/replica of a distributed query, so its blocks are
+    /// consumed in this process and must not be marshalled: `UnmarshallBlocksTransform` exists
+    /// only on remote pipes, so a `ColumnBLOB` would reach the parent pipeline as is.
+    bool is_local_plan_for_distributed_query = false;
+
+    size_t max_step_description_length = 0;
+
+    bool force_materialize_cte = false;
 
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
-        size_t depth = 0,
+        size_t subquery_depth_ = 0,
         bool is_subquery_ = false,
         bool settings_limit_offset_done_ = false)
-        : to_stage(stage), subquery_depth(depth), is_subquery(is_subquery_),
-        settings_limit_offset_done(settings_limit_offset_done_)
-    {}
+        : to_stage(stage)
+        , subquery_depth(subquery_depth_)
+        , is_subquery(is_subquery_)
+        , settings_limit_offset_done(settings_limit_offset_done_)
+    {
+    }
 
     SelectQueryOptions copy() const { return *this; }
 
@@ -79,9 +92,17 @@ struct SelectQueryOptions
     {
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
+        out.is_local_shard_plan = false;
+        out.is_local_plan_for_distributed_query = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
+    }
+
+    SelectQueryOptions & createView(bool value = true)
+    {
+        is_create_view = value;
+        return *this;
     }
 
     SelectQueryOptions createParameterizedView() const
@@ -147,6 +168,12 @@ struct SelectQueryOptions
         return *this;
     }
 
+    SelectQueryOptions & checkSubqueryTableAccess(bool value = true)
+    {
+        check_subquery_table_access = value;
+        return *this;
+    }
+
     SelectQueryOptions & setInternal(bool value = false)
     {
         is_internal = value;
@@ -169,6 +196,12 @@ struct SelectQueryOptions
     SelectQueryOptions & setExplain(bool value = true)
     {
         is_explain = value;
+        return *this;
+    }
+
+    SelectQueryOptions & forceMaterializeCTE(bool value = true)
+    {
+        force_materialize_cte = value;
         return *this;
     }
 };

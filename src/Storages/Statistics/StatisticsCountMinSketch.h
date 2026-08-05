@@ -16,13 +16,15 @@ class StatisticsCountMinSketch : public IStatistics
 public:
     StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
 
-    Float64 estimateEqual(const Field & val) const override;
+    std::optional<Float64> estimateEqual(const Field & val) const override;
 
-    void update(const ColumnPtr & column) override;
+    void build(const ColumnPtr & column) override;
+    void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
-    void deserialize(ReadBuffer & buf) override;
+    void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
+    String getNameForLogs() const override { return "CMSketch"; }
 private:
     using Sketch = datasketches::count_min_sketch<UInt64>;
     Sketch sketch;
@@ -31,7 +33,7 @@ private:
 };
 
 
-void countMinSketchStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

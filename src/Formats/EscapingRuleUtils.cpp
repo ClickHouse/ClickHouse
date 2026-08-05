@@ -10,7 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
-#include <Parsers/TokenIterator.h>
 
 
 namespace DB
@@ -25,22 +24,21 @@ FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
 {
     if (escaping_rule.empty())
         return FormatSettings::EscapingRule::None;
-    else if (escaping_rule == "None")
+    if (escaping_rule == "None")
         return FormatSettings::EscapingRule::None;
-    else if (escaping_rule == "Escaped")
+    if (escaping_rule == "Escaped")
         return FormatSettings::EscapingRule::Escaped;
-    else if (escaping_rule == "Quoted")
+    if (escaping_rule == "Quoted")
         return FormatSettings::EscapingRule::Quoted;
-    else if (escaping_rule == "CSV")
+    if (escaping_rule == "CSV")
         return FormatSettings::EscapingRule::CSV;
-    else if (escaping_rule == "JSON")
+    if (escaping_rule == "JSON")
         return FormatSettings::EscapingRule::JSON;
-    else if (escaping_rule == "XML")
+    if (escaping_rule == "XML")
         return FormatSettings::EscapingRule::XML;
-    else if (escaping_rule == "Raw")
+    if (escaping_rule == "Raw")
         return FormatSettings::EscapingRule::Raw;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
 }
 
 String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
@@ -84,7 +82,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
-            skipJSONField(buf, StringRef(field_name, field_name_len), format_settings.json);
+            skipJSONField(buf, std::string_view(field_name, field_name_len), format_settings.json);
             break;
         case FormatSettings::EscapingRule::Raw:
             readStringInto(out, buf);
@@ -305,7 +303,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 /// Return String type if one of the following conditions apply
                 ///  - we couldn't infer any type
                 ///  - it's a number and csv.try_infer_numbers_from_strings = 0
-                ///  - it's a tuple and try_infer_strings_from_quoted_tuples = 0
+                ///  - it's a tuple and try_infer_strings_from_quoted_tuples = 1
                 ///  - it's a Bool type (we don't allow reading bool values from strings)
                 if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)) || isBool(type))
                     return std::make_shared<DataTypeString>();
@@ -340,13 +338,15 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
-            /// Special case when we have number that starts with 0. In TSV we don't parse such numbers,
-            /// see readIntTextUnsafe in ReadHelpers.h. If we see data started with 0, we can determine it
-            /// as a String, so parsing won't fail.
-            if (field[0] == '0' && field.size() != 1)
+            auto type = tryInferDataTypeForSingleField(field, format_settings);
+
+            /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
+            /// ReadHelpers.h) reads the leading '0' as the whole value.
+            /// allow_number_leading_zeros (hive partitioning) opts out.
+            if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
+                && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();
 
-            auto type = tryInferDataTypeForSingleField(field, format_settings);
             if (!type)
                 return std::make_shared<DataTypeString>();
             return type;
@@ -411,11 +411,14 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
 String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
 {
     return fmt::format(
-        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}",
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, schema_inference_allow_nullable_tuple_type={}, date_time_input_format={}, input_format_try_infer_variants={}",
         settings.schema_inference_hints,
         settings.max_rows_to_read_for_schema_inference,
         settings.max_bytes_to_read_for_schema_inference,
-        settings.schema_inference_make_columns_nullable);
+        settings.schema_inference_make_columns_nullable,
+        settings.schema_inference_allow_nullable_tuple_type,
+        settings.date_time_input_format,
+        settings.try_infer_variant);
 }
 
 String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)
@@ -458,7 +461,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             result += fmt::format(
                 ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_bools_as_strings={}, read_objects_as_strings={}, "
                 "read_numbers_as_strings={}, "
-                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, try_infer_objects={}, "
+                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, "
                 "use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
@@ -468,7 +471,6 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.json.read_arrays_as_strings,
                 settings.json.try_infer_objects_as_tuples,
                 settings.json.infer_incomplete_types_as_strings,
-                settings.json.allow_deprecated_object_type,
                 settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects);
             break;
         default:

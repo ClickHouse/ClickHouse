@@ -1,7 +1,11 @@
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
+#include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -9,6 +13,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
@@ -19,9 +28,33 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
+void ASTLiteral::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Literal");
+    w.writeFieldValue("value", value);
+    w.writeAlias(*this);
+}
+
+void ASTLiteral::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    /// A `Literal` always requires an explicit `value` key (a NULL literal is written
+    /// with an explicit `value`), so reject input that omits it instead of silently
+    /// deserializing as a NULL literal, which the SQL parser cannot produce.
+    if (!r.has("value"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'value' key for Literal during AST JSON deserialization");
+    value = r.readField("value");
+    r.readAlias(*this);
+}
+
+String ASTLiteral::getID(char delim) const
+{
+    return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value));
+}
+
 ASTPtr ASTLiteral::clone() const
 {
-    auto res = std::make_shared<ASTLiteral>(*this);
+    auto res = make_intrusive<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
 }
@@ -43,6 +76,8 @@ private:
 template<>
 String FieldVisitorToColumnName::operator() (const Tuple & x) const
 {
+    checkStackSize();
+
     WriteBufferFromOwnString wb;
 
     wb << "tuple(";
@@ -61,7 +96,7 @@ String FieldVisitorToColumnName::operator() (const Tuple & x) const
 
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    if (use_legacy_column_name_of_tuple)
+    if (getUseLegacyColumnNameOfTuple())
     {
         appendColumnNameImplLegacy(ostr);
         return;
@@ -73,12 +108,13 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     /// Special case for very large arrays and tuples. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing)
-        || (type == Field::Types::Tuple && value.safeGet<const Tuple &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing)
+        || (type == Field::Types::Tuple && value.safeGet<Tuple>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low, high;
+        UInt64 low = 0;
+        UInt64 high = 0;
         hash.get128(low, high);
 
         writeCString(type == Field::Types::Array ? "__array_" : "__tuple_", ostr);
@@ -110,11 +146,12 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low, high;
+        UInt64 low = 0;
+        UInt64 high = 0;
         hash.get128(low, high);
 
         writeCString("__array_", ostr);
@@ -148,12 +185,12 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
     return wb.str();
 }
 
-void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
     if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+        ostr << applyVisitor(FieldVisitorToString(), value);
     else
-        settings.ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+        ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
 }
 
 }

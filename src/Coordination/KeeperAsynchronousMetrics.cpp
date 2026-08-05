@@ -1,12 +1,29 @@
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
 
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
+#include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+void setKeeperFileDescriptorMetrics(
+    AsynchronousMetricValues & new_values, Int64 open_file_descriptor_count, std::optional<size_t> max_file_descriptor_count)
+{
+    new_values["KeeperOpenFileDescriptorCount"]
+        = {open_file_descriptor_count, "The number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."};
+    if (max_file_descriptor_count.has_value())
+        new_values["KeeperMaxFileDescriptorCount"] = {
+            *max_file_descriptor_count,
+            "The maximum number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."};
+    else
+        new_values["KeeperMaxFileDescriptorCount"]
+            = {-1, "The maximum number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."};
+}
 
 void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousMetricValues & new_values)
 {
@@ -20,8 +37,13 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t ephemerals_count = 0;
     size_t approximate_data_size = 0;
     size_t key_arena_size = 0;
-    size_t open_file_descriptor_count = 0;
-    std::optional<size_t> max_file_descriptor_count = 0;
+    /// Signed on purpose: `getCurrentProcessFDCount` reports an undetermined count as `-1`,
+    /// and it must not wrap around to 2^64 - 1, which is indistinguishable from an unlimited
+    /// `RLIMIT_NOFILE`. This matches the contract of the `mntr` four-letter command.
+    /// The values are assigned only on Linux and macOS, so start from "undetermined",
+    /// not from 0, for the same reason.
+    Int64 open_file_descriptor_count = -1;
+    std::optional<size_t> max_file_descriptor_count;
     size_t followers = 0;
     size_t synced_followers = 0;
     size_t zxid = 0;
@@ -38,15 +60,16 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         is_follower = static_cast<size_t>(keeper_info.is_follower);
         is_exceeding_mem_soft_limit = static_cast<size_t>(keeper_info.is_exceeding_mem_soft_limit);
 
-        zxid = keeper_info.last_zxid;
         const auto & state_machine = keeper_dispatcher.getStateMachine();
-        znode_count = state_machine.getNodesCount();
-        watch_count = state_machine.getTotalWatchesCount();
-        ephemerals_count = state_machine.getTotalEphemeralNodesCount();
-        approximate_data_size = state_machine.getApproximateDataSize();
-        key_arena_size = state_machine.getKeyArenaSize();
-        session_with_watches = state_machine.getSessionsWithWatchesCount();
-        paths_watched = state_machine.getWatchedPathsCount();
+        const auto storage_stats = state_machine.getStorageStats();
+        zxid = storage_stats.last_committed_zxid;
+        znode_count = storage_stats.nodes_count;
+        watch_count = storage_stats.total_watches_count;
+        ephemerals_count = storage_stats.total_emphemeral_nodes_count;
+        approximate_data_size = storage_stats.approximate_data_size;
+        key_arena_size = 0;
+        session_with_watches = storage_stats.sessions_with_watches_count;
+        paths_watched = storage_stats.watched_paths_count;
 
 #    if defined(__linux__) || defined(__APPLE__)
         open_file_descriptor_count = getCurrentProcessFDCount();
@@ -76,11 +99,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     /// it needs to be fixed and it needs to be atomic to avoid deadlock
     ///new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };
 
-    new_values["KeeperOpenFileDescriptorCount"] = { open_file_descriptor_count, "The number of open file descriptors in ClickHouse Keeper." };
-    if (max_file_descriptor_count.has_value())
-        new_values["KeeperMaxFileDescriptorCount"] = { *max_file_descriptor_count, "The maximum number of open file descriptors in ClickHouse Keeper." };
-    else
-        new_values["KeeperMaxFileDescriptorCount"] = { -1, "The maximum number of open file descriptors in ClickHouse Keeper." };
+    setKeeperFileDescriptorMetrics(new_values, open_file_descriptor_count, max_file_descriptor_count);
 
     new_values["KeeperFollowers"] = { followers, "The number of followers of ClickHouse Keeper." };
     new_values["KeeperSyncedFollowers"] = { synced_followers, "The number of followers of ClickHouse Keeper who are also in-sync." };
@@ -114,8 +133,18 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
 }
 
 KeeperAsynchronousMetrics::KeeperAsynchronousMetrics(
-    ContextPtr context_, unsigned update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
-    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_), context(std::move(context_))
+    ContextPtr context_,
+    unsigned update_period_seconds,
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    bool update_jemalloc_epoch_,
+    bool update_rss_)
+    : AsynchronousMetrics(
+        update_period_seconds,
+        protocol_server_metrics_func_,
+        update_jemalloc_epoch_,
+        update_rss_,
+        context_)
+    , context(std::move(context_))
 {
 }
 
@@ -134,6 +163,12 @@ void KeeperAsynchronousMetrics::updateImpl(TimePoint /*update_time*/, TimePoint 
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }
 #endif
+}
+
+void KeeperAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
+{
+    if (auto asynchronous_metric_log = context->getAsynchronousMetricLog())
+        asynchronous_metric_log->addValues(new_values);
 }
 
 }

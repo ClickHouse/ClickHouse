@@ -21,6 +21,7 @@ CREATE TABLE collapsing (key Int64, sign Int8) ENGINE = CollapsingMergeTree(sign
 ALTER TABLE collapsing MODIFY COLUMN sign String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE collapsing DROP COLUMN sign; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE collapsing RENAME COLUMN sign TO sign2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE collapsing MODIFY COLUMN sign MODIFY SETTING max_compress_block_size = 123456; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 CREATE TABLE versioned_collapsing_wrong (key Int64, version UInt8, sign Int8) ENGINE = VersionedCollapsingMergeTree(sign, sign) ORDER BY key; -- { serverError BAD_ARGUMENTS }
 

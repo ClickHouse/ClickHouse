@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
 
 #include <IO/ReadHelpers.h>
@@ -43,7 +44,7 @@ void SerializationDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & 
 {
     typename FieldType::NativeType x;
     readBinaryLittleEndian(x, istr);
-    field = DecimalField(T(x), this->scale);
+    field = DecimalField<T>(T(x), this->scale);
 }
 
 template <typename T>
@@ -55,11 +56,12 @@ void SerializationDecimalBase<T>::deserializeBinary(IColumn & column, ReadBuffer
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
+void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double) const
 {
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
+    istr.ignore(sizeof(FieldType) * rows_offset);
     const size_t size = istr.readBig(reinterpret_cast<char *>(&x[initial_size]), sizeof(FieldType) * limit);
     x.resize(initial_size + size / sizeof(FieldType));
 
@@ -68,10 +70,21 @@ void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBu
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
 }
 
+template <typename T>
+UInt128 SerializationDecimalBase<T>::getHash(UInt32 precision_, UInt32 scale_)
+{
+    SipHash hash;
+    hash.update(TypeName<T>);
+    hash.update(precision_);
+    hash.update(scale_);
+    return hash.get128();
+}
+
 template class SerializationDecimalBase<Decimal32>;
 template class SerializationDecimalBase<Decimal64>;
 template class SerializationDecimalBase<Decimal128>;
 template class SerializationDecimalBase<Decimal256>;
 template class SerializationDecimalBase<DateTime64>;
+template class SerializationDecimalBase<Time64>;
 
 }

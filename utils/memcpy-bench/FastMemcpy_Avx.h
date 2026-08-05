@@ -371,12 +371,12 @@ static INLINE void *memcpy_tiny_avx(void * __restrict dst, const void * __restri
 //---------------------------------------------------------------------
 // main routine
 //---------------------------------------------------------------------
+void* memcpy_fast_avx(void * __restrict destination, const void * __restrict source, size_t size);
 void* memcpy_fast_avx(void * __restrict destination, const void * __restrict source, size_t size) /// NOLINT(misc-definitions-in-headers)
 {
     unsigned char *dst = reinterpret_cast<unsigned char*>(destination);
     const unsigned char *src = reinterpret_cast<const unsigned char*>(source);
     static size_t cachesize = 0x200000; // L3-cache size
-    size_t padding;
 
     // small memory copy
     if (size <= 256)
@@ -387,7 +387,7 @@ void* memcpy_fast_avx(void * __restrict destination, const void * __restrict sou
     }
 
     // align destination to 16 bytes boundary
-    padding = (32 - (((size_t)dst) & 31)) & 31;
+    size_t padding = (32 - (((size_t)dst) & 31)) & 31;
 
 #if 0
     if (padding > 0)
@@ -409,7 +409,14 @@ void* memcpy_fast_avx(void * __restrict destination, const void * __restrict sou
     // medium size copy
     if (size <= cachesize)
     {
-        __m256i c0, c1, c2, c3, c4, c5, c6, c7;
+        __m256i c0;
+        __m256i c1;
+        __m256i c2;
+        __m256i c3;
+        __m256i c4;
+        __m256i c5;
+        __m256i c6;
+        __m256i c7;
 
         for (; size >= 256; size -= 256)
         {
@@ -435,7 +442,14 @@ void* memcpy_fast_avx(void * __restrict destination, const void * __restrict sou
     }
     else
     {        // big memory copy
-        __m256i c0, c1, c2, c3, c4, c5, c6, c7;
+        __m256i c0;
+        __m256i c1;
+        __m256i c2;
+        __m256i c3;
+        __m256i c4;
+        __m256i c5;
+        __m256i c6;
+        __m256i c7;
         /* __m256i c0, c1, c2, c3, c4, c5, c6, c7; */
 
         if ((((size_t)src) & 31) == 0)

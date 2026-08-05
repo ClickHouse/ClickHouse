@@ -1,8 +1,9 @@
 DROP TABLE IF EXISTS events0;
 DROP TABLE IF EXISTS probe0;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET join_algorithm = 'full_sorting_merge';
+SET date_time_input_format='basic';
 
 CREATE TABLE events0 (
     begin Nullable(DateTime('UTC')),

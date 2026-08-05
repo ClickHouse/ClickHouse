@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Algorithms.h"
-#include "ArraySourceVisitor.h"
-#include "ArraySinkVisitor.h"
-#include "ValueSourceVisitor.h"
+#include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/ArraySourceVisitor.h>
+#include <Functions/GatherUtils/ArraySinkVisitor.h>
+#include <Functions/GatherUtils/ValueSourceVisitor.h>
 
 
 namespace DB
@@ -25,7 +25,7 @@ namespace GatherUtils
 template <typename Base, typename Tuple, int index, typename ... Args>
 void callSelectMemberFunctionWithTupleArgument(Tuple & tuple, Args && ... args)
 {
-    if constexpr (index == std::tuple_size<Tuple>::value)
+    if constexpr (index == std::tuple_size_v<Tuple>)
         Base::selectImpl(args ...);
     else
         callSelectMemberFunctionWithTupleArgument<Base, Tuple, index + 1>(tuple, args ..., std::get<index>(tuple));
@@ -34,7 +34,7 @@ void callSelectMemberFunctionWithTupleArgument(Tuple & tuple, Args && ... args)
 template <typename Base, typename Tuple, int index, typename ... Args>
 void callSelectSource(bool is_const, bool is_nullable, Tuple & tuple, Args && ... args)
 {
-    if constexpr (index == std::tuple_size<Tuple>::value)
+    if constexpr (index == std::tuple_size_v<Tuple>)
         Base::selectSource(is_const, is_nullable, args ...);
     else
         callSelectSource<Base, Tuple, index + 1>(is_const, is_nullable, tuple, args ..., std::get<index>(tuple));
@@ -115,8 +115,11 @@ struct ArraySourcePairSelector
     static void selectSource(bool is_second_const, bool is_second_nullable, SecondSource && second,
                              bool is_first_const, bool is_first_nullable, FirstSource && first, Args && ... args)
     {
-        Base::selectSourcePair(is_first_const, is_first_nullable, first,
-                               is_second_const, is_second_nullable, second, args ...);
+        if constexpr (std::is_same_v<FirstSource, SecondSource>)
+        {
+            Base::selectSourcePair(is_first_const, is_first_nullable, first,
+                                   is_second_const, is_second_nullable, second, args ...);
+        }
     }
 };
 

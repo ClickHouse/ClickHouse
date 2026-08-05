@@ -1,0 +1,5 @@
+<clickhouse>
+    <access_control_improvements>
+        <enable_user_name_access_type>0</enable_user_name_access_type>
+    </access_control_improvements>
+</clickhouse>

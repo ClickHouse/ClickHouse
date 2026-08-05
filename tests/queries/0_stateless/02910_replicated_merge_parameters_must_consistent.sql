@@ -1,4 +1,5 @@
--- Tags: zookeeper, no-replicated-database
+-- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+
 CREATE TABLE t
 (
     `id` UInt64,

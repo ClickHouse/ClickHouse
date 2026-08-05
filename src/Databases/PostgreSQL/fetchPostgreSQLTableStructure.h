@@ -5,10 +5,18 @@
 #if USE_LIBPQXX
 #include <Core/PostgreSQL/ConnectionHolder.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/IDataType.h>
+
+#include <functional>
 
 
 namespace DB
 {
+
+/// Convert a PostgreSQL type (as returned by `format_type`, e.g. "integer", "numeric(10,2)", "text[]")
+/// to a ClickHouse data type. `recheck_array` is called when an array's dimensions could not be
+/// determined from `dimensions` and have to be rechecked separately.
+DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> recheck_array, bool is_nullable = false, uint16_t dimensions = 0);
 
 struct PostgreSQLTableStructure
 {
@@ -48,7 +56,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     T & tx, const String & postgres_table, const String & postgres_schema, bool use_nulls = true,
-    bool with_primary_key = false, bool with_replica_identity_index = false);
+    bool with_primary_key = false, bool with_replica_identity_index = false, const Strings & columns = {});
 
 template<typename T>
 std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema);

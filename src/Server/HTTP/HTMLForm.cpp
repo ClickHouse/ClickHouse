@@ -19,6 +19,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 http_max_fields;
+    extern const SettingsUInt64 http_max_field_name_size;
+    extern const SettingsUInt64 http_max_field_value_size;
+    extern const SettingsUInt64 http_max_request_header_size;
+}
 
 namespace ErrorCodes
 {
@@ -42,9 +49,10 @@ const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
 
 HTMLForm::HTMLForm(const Settings & settings)
-    : max_fields_number(settings.http_max_fields)
-    , max_field_name_size(settings.http_max_field_name_size)
-    , max_field_value_size(settings.http_max_field_value_size)
+    : max_fields_number(settings[Setting::http_max_fields])
+    , max_field_name_size(settings[Setting::http_max_field_name_size])
+    , max_field_value_size(settings[Setting::http_max_field_value_size])
+    , max_request_header_size(settings[Setting::http_max_request_header_size])
     , encoding(ENCODING_URL)
 {
 }
@@ -183,7 +191,7 @@ void HTMLForm::readQuery(ReadBuffer & in)
 void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
 {
     /// Assume there is always a boundary provided.
-    assert(!boundary.empty());
+    chassert(!boundary.empty());
 
     size_t fields = 0;
     MultipartReadBuffer in(in_, boundary);
@@ -198,7 +206,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
             throw Poco::Net::HTMLFormException("Too many form fields");
 
         Poco::Net::MessageHeader header;
-        readHeaders(header, in, max_fields_number, max_field_name_size, max_field_value_size);
+        readHeaders(header, in, max_fields_number, max_field_name_size, max_field_value_size, max_request_header_size);
         skipToNextLineOrEOF(in);
 
         NameValueCollection params;
@@ -214,7 +222,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
         {
             std::string name = params["name"];
             std::string value;
-            char ch;
+            char ch = 0;
 
             while (in.read(ch))
             {
@@ -294,7 +302,7 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
 
         if (in.eof()) break;
 
-        assert(ch == '\r');
+        chassert(ch == '\r');
 
         if (in.peek(ch) && ch == '\n')
         {
@@ -314,7 +322,7 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     if (boundary_hit)
         return false;
 
-    assert(position() >= in.position());
+    chassert(position() >= in.position());
 
     in.position() = position();
 

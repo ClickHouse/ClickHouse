@@ -1,17 +1,25 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTStatisticsDeclaration::clone() const
 {
-    auto res = std::make_shared<ASTStatisticsDeclaration>();
+    auto res = make_intrusive<ASTStatisticsDeclaration>();
 
     res->set(res->columns, columns->clone());
     if (types)
@@ -45,16 +53,47 @@ std::vector<String> ASTStatisticsDeclaration::getTypeNames() const
 
 }
 
-void ASTStatisticsDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTStatisticsDeclaration::writeJSON(WriteBuffer & out) const
 {
-    columns->formatImpl(s, state, frame);
-    s.ostr << (s.hilite ? hilite_keyword : "");
+    JSONObjectWriter w(out, "StatisticsDeclaration");
+    w.writeChild("columns", columns);
+    w.writeChild("types", types);
+}
+
+void ASTStatisticsDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    /// `columns` is an `ASTExpressionList` of `ASTIdentifier` and `types` (when present) an
+    /// `ASTExpressionList` of `ASTFunction`: `getColumnNames` does `column_ast->as<ASTIdentifier &>()`
+    /// and `getTypeNames` does `column_ast->as<ASTFunction &>()`. Validate both layers so malformed
+    /// `clickhouse_json` fails with `BAD_ARGUMENTS` instead of reaching those internal casts.
+    auto child = r.readChildOfType<ASTExpressionList>("columns");
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'columns' field in `StatisticsDeclaration` during AST JSON deserialization");
+    for (const auto & column : child->children)
+        if (!column || !column->as<ASTIdentifier>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`StatisticsDeclaration` 'columns' must contain only identifiers during AST JSON deserialization");
+    set(columns, child);
+
+    child = r.readChildOfType<ASTExpressionList>("types");
+    if (child)
+    {
+        for (const auto & type : child->children)
+            if (!type || !type->as<ASTFunction>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`StatisticsDeclaration` 'types' must contain only statistic-type functions during AST JSON deserialization");
+        set(types, child);
+    }
+}
+
+void ASTStatisticsDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+{
+    columns->format(ostr, s, state, frame);
     if (types)
     {
-        s.ostr << " TYPE " << (s.hilite ? hilite_none : "");
-        types->formatImpl(s, state, frame);
+        ostr << " TYPE ";
+        types->format(ostr, s, state, frame);
     }
 }
 
 }
-

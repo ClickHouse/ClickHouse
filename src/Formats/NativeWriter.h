@@ -1,13 +1,13 @@
 #pragma once
 
-#include <base/types.h>
+#include <Core/Block_fwd.h>
 #include <DataTypes/IDataType.h>
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
 {
 
+struct ColumnWithTypeAndName;
 class WriteBuffer;
 class CompressedWriteBuffer;
 struct IndexForNativeFormat;
@@ -24,21 +24,23 @@ public:
     /** If non-zero client_revision is specified, additional block information can be written.
       */
     NativeWriter(
-        WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_, std::optional<FormatSettings> format_settings_ = std::nullopt, bool remove_low_cardinality_ = false,
+        WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_, std::optional<FormatSettings> format_settings_ = std::nullopt, bool remove_low_cardinality_ = false,
         IndexForNativeFormat * index_ = nullptr, size_t initial_size_of_file_ = 0);
 
-    Block getHeader() const { return header; }
+    SharedHeader getHeader() const { return header; }
 
     /// Returns the number of bytes written.
     size_t write(const Block & block);
     void flush();
 
-    static String getContentType() { return "application/octet-stream"; }
+    static std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column);
+
+    static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision);
 
 private:
     WriteBuffer & ostr;
     UInt64 client_revision;
-    Block header;
+    SharedHeader header;
     IndexForNativeFormat * index = nullptr;
     size_t initial_size_of_file;    /// The initial size of the data file, if `append` done. Used for the index.
     /// If you need to write index, then `ostr` must be a CompressedWriteBuffer.

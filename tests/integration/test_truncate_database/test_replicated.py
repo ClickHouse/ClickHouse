@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 
@@ -49,6 +50,10 @@ def test_truncate_database_replicated(start_cluster):
     node1.query(
         "INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)"
     )
+
+    for node in [node2, node3]:
+        node.query("SYSTEM SYNC REPLICA test.test_table LIGHTWEIGHT")
+
     assert node2.query("SELECT min(id) FROM test.test_table") == "0\n"
     assert node2.query("SELECT id FROM test.test_table ORDER BY id LIMIT 1") == "0\n"
     assert node3.query("SHOW DATABASES LIKE 'test'") == "test\n"

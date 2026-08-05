@@ -1,6 +1,5 @@
 #pragma once
-/// defines.h should be included before fiber.hpp
-/// BOOST_USE_ASAN, BOOST_USE_TSAN and BOOST_USE_UCONTEXT should be correctly defined for sanitizers.
+/// BOOST_USE_ASAN, BOOST_USE_MSAN, BOOST_USE_TSAN and BOOST_USE_UCONTEXT are defined via CMake for sanitizer builds.
 #include <base/defines.h>
 #include <boost/context/fiber.hpp>
 #include <map>
@@ -18,7 +17,7 @@ private:
 
 public:
     template <typename StackAlloc, typename Fn>
-    Fiber(StackAlloc && salloc, Fn && fn) : impl(std::allocator_arg_t(), std::forward<StackAlloc>(salloc), RoutineImpl(std::forward<Fn>(fn)))
+    Fiber(StackAlloc && salloc, Fn && fn) : impl(std::allocator_arg_t(), std::forward<StackAlloc>(salloc), RoutineImpl<Fn>(std::forward<Fn>(fn)))
     {
     }
 
@@ -46,11 +45,9 @@ public:
         current_fiber = parent_fiber;
     }
 
-    static FiberPtr & getCurrentFiber()
-    {
-        thread_local static FiberPtr current_fiber;
-        return current_fiber;
-    }
+    /// Defined in `Fiber.cpp`: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static FiberPtr & getCurrentFiber();
 
 private:
     template <typename Fn>

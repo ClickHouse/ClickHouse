@@ -1,5 +1,6 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTFunction.h>
@@ -7,8 +8,8 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -21,6 +22,12 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_DATABASE;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
 }
 
 namespace
@@ -31,7 +38,7 @@ namespace
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Error while executing table function merge. Either there is no database, which matches regular expression `{}`, or there are "
-        "no tables in database matches `{}`, which fit tables expression: {}",
+        "no tables in the database matches `{}`, which fit tables expression: {}",
         source_database_regexp,
         source_database_regexp,
         source_table_regexp);
@@ -49,29 +56,24 @@ public:
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "Merge"; }
+    const char * getStorageEngineName() const override { return "Merge"; }
 
-    using TableSet = std::set<String>;
-    using DBToTableSetMap = std::map<String, TableSet>;
-    const DBToTableSetMap & getSourceDatabasesAndTables(ContextPtr context) const;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-    static TableSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
 
     String source_database_name_or_regexp;
     String source_table_regexp;
     bool database_is_regexp = false;
-    mutable std::optional<DBToTableSetMap> source_databases_and_tables;
 };
 
-std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments_nodes.size();
 
-    std::vector<size_t> result;
+    VectorWithMemoryTracking<size_t> result;
 
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
@@ -99,6 +101,13 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
         database_is_regexp = false;
         source_database_name_or_regexp = context->getCurrentDatabase();
 
+        /// The current database is not set, for example, in a background thread that interprets a mutation.
+        if (source_database_name_or_regexp.empty())
+            throw Exception(
+                ErrorCodes::UNKNOWN_DATABASE,
+                "Table function 'merge' is called with a single argument, so it uses the current database, "
+                "but the current database is not set. Specify the database explicitly: merge('db_name', 'tables_regexp')");
+
         args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
         source_table_regexp = checkAndGetLiteralArgument<String>(args[0], "table_name_regexp");
     }
@@ -123,106 +132,64 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
     }
 }
 
-
-const TableFunctionMerge::DBToTableSetMap & TableFunctionMerge::getSourceDatabasesAndTables(ContextPtr context) const
-{
-    if (source_databases_and_tables)
-        return *source_databases_and_tables;
-
-    source_databases_and_tables.emplace();
-
-    /// database_name is not a regexp
-    if (!database_is_regexp)
-    {
-        auto source_tables = getMatchedTablesWithAccess(source_database_name_or_regexp, source_table_regexp, context);
-        if (source_tables.empty())
-            throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
-        (*source_databases_and_tables)[source_database_name_or_regexp] = source_tables;
-    }
-
-    /// database_name is a regexp
-    else
-    {
-        OptimizedRegularExpression database_re(source_database_name_or_regexp);
-        auto databases = DatabaseCatalog::instance().getDatabases();
-
-        for (const auto & db : databases)
-            if (database_re.match(db.first))
-                (*source_databases_and_tables)[db.first] = getMatchedTablesWithAccess(db.first, source_table_regexp, context);
-
-        if (source_databases_and_tables->empty())
-            throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
-    }
-
-    return *source_databases_and_tables;
-}
-
 ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
-    {
-        for (const auto & table : db_with_tables.second)
-        {
-            auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, table}, context);
-            if (storage)
-                return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
-        }
-    }
+    auto res = StorageMerge::getColumnsDescriptionFromSourceTables(
+        context,
+        source_database_name_or_regexp,
+        database_is_regexp,
+        source_table_regexp,
+        context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference]);
+    if (res.empty())
+        throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
 
-    throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
+    return res;
 }
 
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
 {
     auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context, is_insert_query),
+        std::move(cached_columns),
         String{},
         source_database_name_or_regexp,
         database_is_regexp,
-        getSourceDatabasesAndTables(context),
+        source_table_regexp,
         context);
 
     res->startup();
     return res;
 }
 
-TableFunctionMerge::TableSet
-TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context)
-{
-    OptimizedRegularExpression table_re(table_regexp);
-
-    auto table_name_match = [&](const String & table_name) { return table_re.match(table_name); };
-
-    auto access = context->getAccess();
-
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, database_name);
-    bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, database_name);
-
-    TableSet tables;
-
-    for (auto it = database->getTablesIterator(context, table_name_match); it->isValid(); it->next())
-    {
-        if (!it->table())
-            continue;
-        bool granted_show = granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, database_name, it->name());
-        if (!granted_show)
-            continue;
-        if (!granted_select_on_all_tables)
-            access->checkAccess(AccessType::SELECT, database_name, it->name());
-        tables.emplace(it->name());
-    }
-    return tables;
-}
-
 }
 
 void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionMerge>();
+    factory.registerFunction<TableFunctionMerge>(
+        {.description = R"DOCS_MD(
+Creates a temporary [Merge](/reference/engines/table-engines/special/merge) table.
+The table schema is derived from underlying tables by using a union of their columns and by deriving common types.
+The same virtual columns are available as for the [Merge](/reference/engines/table-engines/special/merge) table engine.
+
+## Syntax {#syntax}
+
+```sql
+merge(['db_name',] 'tables_regexp')
+```
+## Arguments {#arguments}
+
+| Argument        | Description                                                                                                                                                                                                                                                                                     |
+|-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `db_name`       | Possible values (optional, default is `currentDatabase()`):<br/>    - database name,<br/>    - constant expression that returns a string with a database name, for example, `currentDatabase()`,<br/>    - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names. |
+| `tables_regexp` | A regular expression to match the table names in the specified DB or DBs.                                                                                                                                                                                                                       |
+
+## Related {#related}
+
+- [Merge](/reference/engines/table-engines/special/merge) table engine
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        {.allow_readonly = true}
+    );
 }
 
 }

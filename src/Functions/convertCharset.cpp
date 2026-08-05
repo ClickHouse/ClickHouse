@@ -16,6 +16,8 @@
 #    include <string>
 #    include <unicode/ucnv.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -40,7 +42,7 @@ namespace
   * When bytes are illegal in 'from' charset or are not representable in 'to' charset,
   *  behavior is implementation specific.
   */
-class FunctionConvertCharset : public IFunction
+class FunctionConvertCharset final : public IFunction
 {
 private:
     struct Converter : private boost::noncopyable
@@ -103,7 +105,7 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t from_string_size = from_offsets[i] - current_from_offset - 1;
+            size_t from_string_size = from_offsets[i] - current_from_offset;
 
             /// We assume that empty string is empty in every charset.
             if (0 != from_string_size)
@@ -112,14 +114,16 @@ private:
                 ucnv_reset(converter_from->impl);
                 ucnv_reset(converter_to->impl);
 
-                /// maximum number of code points is number of bytes in input string plus one for terminating zero
-                uchars.resize(from_string_size + 1);
+                /// maximum number of code points is the number of bytes in input string
+                uchars.resize(from_string_size);
 
                 UErrorCode status = U_ZERO_ERROR;
                 int32_t res = ucnv_toUChars(
                     converter_from->impl,
-                    uchars.data(), uchars.size(),
-                    reinterpret_cast<const char *>(&from_chars[current_from_offset]), from_string_size,
+                    uchars.data(),
+                    static_cast<int32_t>(uchars.size()),
+                    reinterpret_cast<const char *>(&from_chars[current_from_offset]),
+                    static_cast<int32_t>(from_string_size),
                     &status);
 
                 if (!U_SUCCESS(status))
@@ -144,14 +148,10 @@ private:
                 current_to_offset += res;
             }
 
-            if (to_chars.size() < current_to_offset + 1)
-                to_chars.resize(current_to_offset + 1);
+            if (to_chars.size() < current_to_offset)
+                to_chars.resize(current_to_offset);
 
-            to_chars[current_to_offset] = 0;
-
-            ++current_to_offset;
             to_offsets[i] = current_to_offset;
-
             current_from_offset = from_offsets[i];
         }
 
@@ -181,6 +181,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
@@ -207,8 +212,8 @@ public:
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets(), input_rows_count);
             return col_to;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column passed as first argument of function {} (must be ColumnString).", getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column passed as first argument of function {} (must be ColumnString).", getName());
     }
 };
 
@@ -216,8 +221,35 @@ public:
 
 REGISTER_FUNCTION(ConvertCharset)
 {
-    factory.registerFunction<FunctionConvertCharset>();
+    FunctionDocumentation::Description description = R"(
+Returns string `s` converted from the encoding `from` to encoding `to`.
+)";
+    FunctionDocumentation::Syntax syntax = "convertCharset(s, from, to)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String"}},
+        {"from", "Source character encoding.", {"String"}},
+        {"to", "Target character encoding.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns string `s` converted from encoding `from` to encoding `to`.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');",
+        R"(
+┌─convertChars⋯SO-8859-1')─┐
+│ Caf�                     │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionConvertCharset>(documentation);
 }
+
+#pragma clang diagnostic pop
 
 }
 

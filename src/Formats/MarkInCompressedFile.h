@@ -1,19 +1,15 @@
 #pragma once
 
 #include <tuple>
+#include <unordered_map>
 
-#include <IO/WriteHelpers.h>
 #include <base/types.h>
 #include <Common/PODArray.h>
+#include <Common/JemallocCacheAllocator.h>
 
 
 namespace DB
 {
-
-/// It's a bug in clang with three-way comparison operator
-/// https://github.com/llvm/llvm-project/issues/55919
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 
 /** Mark is the position in the compressed file. The compressed file consists of adjacent compressed blocks.
   * Mark is a tuple - the offset in the file to the start of the compressed block, the offset in the decompressed block to the start of the data.
@@ -27,19 +23,9 @@ struct MarkInCompressedFile
 
     auto asTuple() const { return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block); }
 
-    String toString() const
-    {
-        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
-    }
-
-    String toStringWithRows(size_t rows_num) const
-    {
-        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ","
-            + DB::toString(rows_num) + ")";
-    }
+    String toString() const;
+    String toStringWithRows(size_t rows_num) const;
 };
-
-#pragma clang diagnostic pop
 
 /**
  * In-memory representation of an array of marks.
@@ -56,15 +42,6 @@ struct MarkInCompressedFile
  */
 class MarksInCompressedFile
 {
-public:
-    using PlainArray = PODArray<MarkInCompressedFile>;
-
-    explicit MarksInCompressedFile(const PlainArray & marks);
-
-    MarkInCompressedFile get(size_t idx) const;
-
-    size_t approximateMemoryUsage() const;
-
 private:
     /** Throughout this class:
      *   * "x" stands for offset_in_compressed_file,
@@ -97,26 +74,83 @@ private:
         size_t min_y = UINT64_MAX;
 
         // Place in `packed` where this block start.
-        size_t bit_offset_in_packed_array;
+        size_t bit_offset_in_packed_array{};
 
         // How many bits each mark takes. These numbers are bit-packed in the `packed` array.
         // Can be zero. (Especially for y, which is typically all zeroes.)
-        UInt8 bits_for_x;
-        UInt8 bits_for_y;
+        UInt8 bits_for_x{};
+        UInt8 bits_for_y{};
         // The `y` values should be <<'ed by this amount.
         // Useful for integer columns when marks granularity is a power of 2; in this case all
         // offset_in_decompressed_block values are divisible by 2^15 or so.
         UInt8 trailing_zero_bits_in_y = 63;
     };
 
+public:
+    using PlainArray = PODArray<MarkInCompressedFile>;
+
+    /// Create from a complete plain marks array.
+    static std::shared_ptr<MarksInCompressedFile> create(const PlainArray & marks);
+
+    MarkInCompressedFile get(size_t idx) const;
+
+    size_t approximateMemoryUsage() const;
+
+    size_t getNumberOfMarks() const { return num_marks; }
+
     static constexpr size_t MARKS_PER_BLOCK = 256;
 
+    /// Streaming builder that compresses marks one block at a time,
+    /// avoiding the need to materialize the full plain marks array.
+    /// Callers can feed marks in arbitrary-sized chunks; the builder
+    /// internally buffers and flushes at MARKS_PER_BLOCK boundaries.
+    class Builder
+    {
+    public:
+        explicit Builder(size_t total_marks_);
+
+        /// Add arbitrary number of marks. Internally buffers and compresses
+        /// in MARKS_PER_BLOCK-sized blocks.
+        void addMarks(const MarkInCompressedFile * marks, size_t count);
+
+        /// Finalize and return the compressed marks object.
+        /// Flushes any remaining buffered marks.
+        std::shared_ptr<MarksInCompressedFile> finish();
+
+    private:
+        friend MarksInCompressedFile;
+
+        /// Add all marks at once. Processes full blocks directly without
+        /// copying into the internal buffer. Must only be called once on
+        /// an empty builder (no prior addMarks calls). Used by create.
+        void addAllMarks(const MarkInCompressedFile * marks, size_t count);
+
+        /// Compress up to MARKS_PER_BLOCK marks into one internal block.
+        void flushBlock(const MarkInCompressedFile * data, size_t count);
+
+        size_t total_marks;
+        size_t marks_flushed = 0;
+        size_t packed_bits = 0;
+        PODArray<MarkInCompressedFile> pending;
+        PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
+        PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
+    };
+
+private:
+    /// Private constructor used by Builder::finish.
+    MarksInCompressedFile(
+        size_t num_marks_,
+        PODArray<BlockInfo, 4096, JemallocCacheAllocator> && blocks_,
+        PODArray<UInt64, 4096, JemallocCacheAllocator> && packed_);
+
     size_t num_marks;
-    PODArray<BlockInfo> blocks;
-    PODArray<UInt64> packed;
+    PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
+    PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
 
     // Mark idx -> {block info, bit offset in `packed`}.
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
 };
+
+using PlainMarksByName = std::unordered_map<String, std::unique_ptr<MarksInCompressedFile::PlainArray>>;
 
 }

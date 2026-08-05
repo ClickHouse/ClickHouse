@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Interpreters/Context.h>
-#include <Poco/Logger.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Net/HTTPRequest.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/ShellCommand.h>
 
+#include <Poco/Logger.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -56,6 +57,12 @@ protected:
     virtual Poco::Timespan getHTTPTimeout() const = 0;
 
     virtual Poco::URI createBaseURI() const = 0;
+
+    /// The single directory or file the bridge is allowed to `dlopen`, passed to it as `--libraries-path`.
+    /// An empty optional means the bridge does not load shared libraries at all, so it needs no sandbox.
+    /// A bridge that does load them must never be started without one, so the override is expected to
+    /// throw instead of returning an empty optional when the sandbox is not configured.
+    virtual std::optional<String> getLibrariesSandboxPath() const { return {}; }
 
 
 private:

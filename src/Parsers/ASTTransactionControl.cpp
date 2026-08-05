@@ -1,25 +1,34 @@
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
 
-void ASTTransactionControl::formatImpl(const FormatSettings & format /*state*/, FormatState &, FormatStateStacked /*frame*/) const
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+void ASTTransactionControl::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked /*frame*/) const
 {
     switch (action)
     {
         case BEGIN:
-            format.ostr << (format.hilite ? hilite_keyword : "") << "BEGIN TRANSACTION" << (format.hilite ? hilite_none : "");
+            ostr << "BEGIN TRANSACTION";
             break;
         case COMMIT:
-            format.ostr << (format.hilite ? hilite_keyword : "") << "COMMIT" << (format.hilite ? hilite_none : "");
+            ostr << "COMMIT";
             break;
         case ROLLBACK:
-            format.ostr << (format.hilite ? hilite_keyword : "") << "ROLLBACK" << (format.hilite ? hilite_none : "");
+            ostr << "ROLLBACK";
             break;
         case SET_SNAPSHOT:
-            format.ostr << (format.hilite ? hilite_keyword : "") << "SET TRANSACTION SNAPSHOT " << (format.hilite ? hilite_none : "") << snapshot;
+            ostr << "SET TRANSACTION SNAPSHOT " << snapshot;
             break;
     }
 }
@@ -42,6 +51,32 @@ IAST::QueryKind ASTTransactionControl::getQueryKind() const
 void ASTTransactionControl::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
 {
     hash_state.update(action);
+}
+
+void ASTTransactionControl::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TransactionControl");
+    w.writeString("action", std::string(magic_enum::enum_name(action)));
+    if (action == SET_SNAPSHOT)
+        w.writeUInt("snapshot", snapshot);
+}
+
+void ASTTransactionControl::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    if (!r.has("action"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'action' field in `TransactionControl` during AST JSON deserialization");
+    String action_str = r.getString("action");
+    auto action_opt = magic_enum::enum_cast<QueryType>(action_str);
+    if (!action_opt)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown TransactionControl action: '{}'", action_str);
+    action = *action_opt;
+    if (action == SET_SNAPSHOT)
+    {
+        if (!r.has("snapshot"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'snapshot' field for SET_SNAPSHOT action");
+        snapshot = r.getUInt("snapshot");
+    }
 }
 
 }

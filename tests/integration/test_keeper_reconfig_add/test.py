@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
-import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-import helpers.keeper_utils as ku
 import os
 import typing as tp
+
+import pytest
+
+import helpers.keeper_utils as ku
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")

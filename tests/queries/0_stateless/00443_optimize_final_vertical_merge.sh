@@ -83,7 +83,8 @@ $CLICKHOUSE_CLIENT -q "ALTER TABLE $name MODIFY COLUMN da Array(String) DEFAULT 
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(Sign), sum(ki = di05), sum(hex(ki) = ds), sum(ki = n.i[1]), sum([hex(ki), hex(ki+1)] = n.s) FROM $name"
 $CLICKHOUSE_CLIENT -q "SELECT groupUniqArray(da), groupUniqArray(n.a) FROM $name"
 
-hash_src=$($CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT cityHash64(groupArray(ki)) FROM $name")
+# parallel_replicas_local_plan=1 because the data may be returned in a different order
+hash_src=$($CLICKHOUSE_CLIENT --max_threads=1 --parallel_replicas_local_plan=1 -q "SELECT cityHash64(groupArray(ki)) FROM $name")
 hash_ref=$($CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT cityHash64(groupArray(ki)) FROM (SELECT number as ki FROM system.numbers LIMIT $res_rows)")
 echo $(( $hash_src - $hash_ref ))
 

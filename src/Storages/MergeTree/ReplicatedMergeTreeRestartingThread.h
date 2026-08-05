@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Poco/Event.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <base/types.h>
 #include <thread>
 #include <atomic>
 #include <Common/logger_useful.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace DB
@@ -41,7 +42,7 @@ private:
     /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
 
-    BackgroundSchedulePool::TaskHolder task;
+    BackgroundSchedulePoolTaskHolder task;
     Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
     UInt32 consecutive_check_failures = 0;  /// How many consecutive checks have failed
     bool first_time = true;                 /// Activate replica for the first time.
@@ -68,6 +69,9 @@ private:
 
     /// Disable readonly mode for table
     void setNotReadonly();
+
+    /// Fix replica metadata_version if needed
+    Int32 fixReplicaMetadataVersionIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 };
 
 

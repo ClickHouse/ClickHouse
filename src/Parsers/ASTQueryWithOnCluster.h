@@ -33,7 +33,7 @@ public:
     /// Returns a query prepared for execution on remote server
     std::string getRewrittenQueryWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params = {}) const;
 
-    void formatOnCluster(const IAST::FormatSettings & settings) const;
+    void formatOnCluster(WriteBuffer & ostr, const IAST::FormatSettings & settings) const;
 
     /// Parses " CLUSTER [cluster|'cluster'] " clause
     static bool parse(Pos & pos, std::string & cluster_str, Expected & expected);

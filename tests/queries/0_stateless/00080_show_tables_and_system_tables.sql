@@ -1,3 +1,4 @@
+-- Tags: log-engine
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 

@@ -1,0 +1,118 @@
+---
+description: 'Документация по HTTP API ClickHouse Keeper и встроенной веб-панели мониторинга'
+sidebarTitle: 'HTTP API ClickHouse Keeper'
+slug: /operations/utilities/clickhouse-keeper-http-api
+title: 'HTTP API и панель мониторинга ClickHouse Keeper'
+doc_type: 'reference'
+---
+
+ClickHouse Keeper предоставляет HTTP API и встроенную веб-панель мониторинга для мониторинга, проверок состояния и управления хранилищем.
+Этот интерфейс позволяет операторам проверять состояние кластера, выполнять команды и управлять хранилищем Keeper через веб-браузер или HTTP-клиенты.
+
+<div id="configuration">
+  ## Конфигурация
+</div>
+
+Чтобы включить HTTP API, добавьте раздел `http_control` в конфигурацию `keeper_server`:
+
+```xml
+<keeper_server>
+    <!-- Другие параметры конфигурации keeper_server -->
+
+    <http_control>
+        <port>9182</port>
+        <!-- <secure_port>9443</secure_port> -->
+    </http_control>
+</keeper_server>
+```
+
+<div id="configuration-options">
+  ### Параметры конфигурации
+</div>
+
+| Параметр                                  | По умолчанию | Описание                                      |
+| ----------------------------------------- | ------------ | --------------------------------------------- |
+| `http_control.port`                       | -            | HTTP-порт для панели мониторинга и API        |
+| `http_control.secure_port`                | -            | HTTPS-порт (требуется настройка SSL)          |
+| `http_control.readiness.endpoint`         | `/ready`     | Пользовательский путь для проверки готовности |
+| `http_control.storage.session_timeout_ms` | `30000`      | Тайм-аут сеанса при операциях с API хранилища |
+
+<div id="endpoints">
+  ## Конечные точки
+</div>
+
+<div id="dashboard">
+  ### Панель мониторинга
+</div>
+
+* **Путь**: `/dashboard`
+* **Метод**: GET
+* **Описание**: Отдает встроенную веб-панель мониторинга для наблюдения и управления Keeper
+
+Панель мониторинга предоставляет:
+
+* Визуализацию состояния кластера в реальном времени
+* Мониторинг узлов (роль, задержка, соединения)
+* Браузер хранилища
+* Интерфейс для выполнения команд
+
+<div id="readiness-probe">
+  ### Проверка готовности
+</div>
+
+* **Путь**: `/ready` (настраивается)
+* **Метод**: GET
+* **Описание**: Конечная точка проверки состояния
+
+Успешный ответ (HTTP 200):
+
+```json
+{
+  "status": "ok",
+  "details": {
+    "role": "leader",
+    "hasLeader": true
+  }
+}
+```
+
+<div id="commands-api">
+  ### API команд
+</div>
+
+* **Путь**: `/api/v1/commands/{command}`
+* **Методы**: GET, POST
+* **Описание**: Выполняет команды Four-Letter Word или команды CLI-клиента ClickHouse Keeper
+
+Параметры запроса:
+
+* `command` - команда для выполнения
+* `cwd` - текущий рабочий каталог для команд, использующих путь (по умолчанию: `/`)
+
+Примеры:
+
+```bash
+# Команда Four-Letter Word
+curl http://localhost:9182/api/v1/commands/stat
+
+# Команда ZooKeeper CLI
+curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+```
+
+<div id="storage-api">
+  ### API хранилища
+</div>
+
+* **Базовый путь**: `/api/v1/storage`
+* **Описание**: REST API для операций с хранилищем Keeper
+
+API хранилища соответствует соглашениям REST, в которых тип операции определяется HTTP-методом:
+
+| Операция | Путь                                   | Метод  | Код состояния | Описание                        |
+| -------- | -------------------------------------- | ------ | ------------- | ------------------------------- |
+| Get      | `/api/v1/storage/{path}`               | GET    | 200           | Получение данных узла           |
+| List     | `/api/v1/storage/{path}?children=true` | GET    | 200           | Получение списка дочерних узлов |
+| Exists   | `/api/v1/storage/{path}`               | HEAD   | 200           | Проверка существования узла     |
+| Create   | `/api/v1/storage/{path}`               | POST   | 201           | Создание нового узла            |
+| Update   | `/api/v1/storage/{path}?version={v}`   | PUT    | 200           | Обновление данных узла          |
+| Delete   | `/api/v1/storage/{path}?version={v}`   | DELETE | 204           | Удаление узла                   |

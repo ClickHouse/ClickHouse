@@ -1,7 +1,11 @@
 #pragma once
 
 #include <functional>
+#include <Common/QueryScope.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <IO/Progress.h>
+#include <Processors/IProcessor.h>
 
 
 namespace DB
@@ -9,34 +13,81 @@ namespace DB
 
 class ProcessListEntry;
 
+struct QueryPipelineFinalizedInfo
+{
+    std::optional<ResultProgress> result_progress;
+    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
+    String pipeline_dump;
+};
+
 struct BlockIO
 {
     BlockIO() = default;
     BlockIO(BlockIO &&) = default;
 
-    BlockIO & operator= (BlockIO && rhs) noexcept;
+    /// Not noexcept: moves the QueryPipeline, whose move-assignment appends resources and can
+    /// throw MEMORY_LIMIT_EXCEEDED.
+    BlockIO & operator= (BlockIO && rhs); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     ~BlockIO();
 
     BlockIO(const BlockIO &) = delete;
     BlockIO & operator= (const BlockIO & rhs) = delete;
 
-    std::shared_ptr<ProcessListEntry> process_list_entry;
+    /// Needed for internal queries.
+    /// Each level calls executeQuery and adds its process list entry.
+    VectorWithMemoryTracking<std::shared_ptr<ProcessListEntry>> process_list_entries;
 
     QueryPipeline pipeline;
 
-    /// Callbacks for query logging could be set here.
-    std::function<void(QueryPipeline &)> finish_callback;
-    std::function<void(bool)> exception_callback;
+    /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
+    /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.
+    std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finalize_query_pipeline;
+    VectorWithMemoryTracking<std::function<void(const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)>> finish_callbacks;
+
+    VectorWithMemoryTracking<std::function<void(bool)>> exception_callbacks;
 
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;
 
-    void onFinish();
-    void onException();
+    /// Needed to optionally detach from the thread group on destruction
+    QueryScope query_scope;
+
+    void onFinish(std::chrono::system_clock::time_point finish_time = std::chrono::system_clock::now());
+    void onException(bool log_as_error=true);
     void onCancelOrConnectionLoss();
+
+    template<typename Func>
+    void executeWithCallbacks(Func && func)
+    {
+        try
+        {
+            func();
+        }
+        catch (...)
+        {
+            onException();
+            throw;
+        }
+
+        onFinish();
+    }
 
     /// Set is_all_data_sent in system.processes for this query.
     void setAllDataSent() const;
+
+    /// Release all acquired workload resources (query slot and memory reservation).
+    /// Only safe once the pipeline has been stopped (see `releaseMemoryReservation`).
+    void releaseWorkloadResources() const;
+
+    /// Release the query slot early to allow the client to reuse it for its next query.
+    /// Safe while the pipeline is still running: pipeline threads do not access the query slot.
+    void releaseQuerySlot() const;
+
+    /// Release the memory reservation. MUST be called only after the pipeline has been finalized,
+    /// because pipeline threads hold raw pointers to `MemoryReservation`.
+    void releaseMemoryReservation() const;
+
+    void resetPipeline(bool cancel);
 
 private:
     void reset();

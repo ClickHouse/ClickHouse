@@ -25,12 +25,15 @@ struct ProxyConfiguration
         {
             return Protocol::HTTP;
         }
-        else if (str == "https")
+        if (str == "https")
         {
             return Protocol::HTTPS;
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown proxy protocol: {}", str);
+        if (str.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty protocol in the URL");
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown protocol in the URL: {}", str);
     }
 
     static auto protocolToString(Protocol protocol)

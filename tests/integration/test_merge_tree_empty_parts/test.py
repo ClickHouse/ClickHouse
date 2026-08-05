@@ -1,8 +1,8 @@
 import pytest
+
 import helpers.client
 import helpers.cluster
 from helpers.test_tools import assert_eq_with_retry
-
 
 cluster = helpers.cluster.ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

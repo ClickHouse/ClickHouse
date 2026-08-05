@@ -1,17 +1,31 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
-
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/IStorage_fwd.h>
 
 #include <Interpreters/Context_fwd.h>
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Core/Field.h>
+#include <Core/Names.h>
+
+#include <Columns/IColumn_fwd.h>
+
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
 
 class FunctionNode;
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
+class TableNode;
+using TableNodePtr = std::shared_ptr<TableNode>;
+
+struct IdentifierResolveScope;
+
+struct NameAndTypePair;
+using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
@@ -34,11 +48,43 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 /// Add unique suffix to names of duplicate columns in block
 void makeUniqueColumnNamesInBlock(Block & block);
 
+/// Returns true, if node is allowed to be a part of expression
+bool isExpressionNodeType(QueryTreeNodeType node_type);
+
+/// Returns true, if node is LAMBDA
+bool isFunctionExpressionNodeType(QueryTreeNodeType node_type);
+
+/// Returns true, if node is either QUERY or UNION
+bool isSubqueryNodeType(QueryTreeNodeType node_type);
+
+/// Returns true, if node is TABLE, TABLE_FUNCTION, QUERY or UNION
+bool isTableExpressionNodeType(QueryTreeNodeType node_type);
+
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const IQueryTreeNode * node);
 
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
+
+/// Returns true, if node has type QUERY or UNION and uses any columns from outer scope
+bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
+
+/// Returns true, if the node or any node in its subtree is a correlated subquery/union.
+/// A correlated subquery must be evaluated exactly once, so optimizations that clone or
+/// distribute an expression must not do so when the expression contains one.
+bool containsCorrelatedSubquery(const QueryTreeNodePtr & node);
+
+/* Checks, if column source is not registered in scopes that appear
+ * before nearest query scope.
+ * If column appears to be correlated in the scope than it be registered
+ * in corresponding QueryNode or UnionNode.
+ */
+bool checkCorrelatedColumn(
+    const IdentifierResolveScope * scope_to_check,
+    const QueryTreeNodePtr & column
+);
+
+DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
 
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
@@ -55,16 +101,16 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.
   */
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const ConvertToASTOptions & convert_to_ast_options);
 
 /// Extract all TableNodes from the query tree.
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
 /// Extract table, table function, query, union from join tree.
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
+TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
 
 /// Extract left table expression from join tree.
-QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
+TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr & join_tree_node);
 
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
   *
@@ -76,7 +122,7 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
   * 4. t2
   * 5. t1
   */
-QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
+TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
@@ -112,6 +158,16 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
+/// Constant-fold a resolved `_CAST(<constant>, <type>)` function node, exactly as `resolveFunction` would.
+/// Passes that create a `_CAST` after normal resolution (e.g. `IfTransformStringsToEnumPass`,
+/// `DistanceTransposedPartialReadsPass`) must fold it here so that a remote shard / parallel replica, which
+/// re-analyzes the shipped AST and folds the constant on its side, names the resulting `ConstantNode`
+/// identically. Otherwise the action-node names on the initiator and the shard diverge and the initiator
+/// cannot find the column the shard produced (issues #74716, #110719). If the node cannot be folded (not a
+/// resolved `_CAST`, non-constant arguments, or a value >= 1 MiB, matching `resolveFunction`) the original
+/// node is returned unchanged.
+QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
+
 /// Resolves function node as ordinary function with given name.
 /// Arguments and parameters are taken from the node.
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context);
@@ -120,8 +176,10 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 /// Arguments and parameters are taken from the node.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
 
-/// Checks that node has only one source and returns it
-QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node);
+/// Returns single source of expression node.
+/// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
+/// Second element of pair is true if there is at most one source, false if there are multiple sources.
+std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
 
 /// Update mutable context for subquery execution
 void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
@@ -129,35 +187,67 @@ void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
 /** Build query to read specified columns from table expression.
   * Specified mutable context will be used as query context.
   */
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     ContextMutablePtr & context);
 
 /** Build subquery to read specified columns from table expression.
   * Specified mutable context will be used as query context.
   */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     ContextMutablePtr & context);
 
 /** Build query to read specified columns from table expression.
   * Specified context will be copied and used as query context.
   */
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     const ContextPtr & context);
 
 /** Build subquery to read specified columns from table expression.
   * Specified context will be copied and used as query context.
   */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     const ContextPtr & context);
 
 /** Build subquery to read all columns from table expression.
   * Specified context will be copied and used as query context.
   */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
+TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const TableNodePtr & table_node, const ContextPtr & context);
 
+std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context);
+
+/** Does a node or its children have a dependency on column
+  * NOT from a specific table expression.
+  */
+bool hasUnknownColumn(
+    const QueryTreeNodePtr & node,
+    QueryTreeNodePtr table_expression);
+
+/** Suppose we have a table x with columns a, c, d and
+  * a an expression like x.a > 2 AND y.b > 3 AND x.c + 1 == x.d
+  * This method will remove the part y.b > 3 from it since it depends
+  * on unknown columns from a different table.
+  */
+void removeExpressionsThatDoNotDependOnTableIdentifiers(
+    QueryTreeNodePtr & expression,
+    const QueryTreeNodePtr & replacement_table_expression,
+    const ContextPtr & context);
+
+
+Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
+
+/// Returns true if the subquery's projection matches the storage schema (column count and
+/// types). On mismatch: throws TYPE_MISMATCH when throw_on_mismatch is true, otherwise
+/// returns false.
+bool verifyMaterializedCTESubqueryMatchesStorage(
+    const QueryTreeNodePtr & subquery,
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node,
+    bool throw_on_mismatch);
 
 }

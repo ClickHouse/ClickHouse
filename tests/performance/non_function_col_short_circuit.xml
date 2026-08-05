@@ -1,0 +1,31 @@
+<test>
+    <settings>
+        <short_circuit_function_evaluation>force_enable</short_circuit_function_evaluation>
+    </settings>
+
+    <create_query>
+        create table test_non_function_column_short_circuit(a UInt8, b UInt8, c UInt8, d UInt8) Engine=Memory
+    </create_query>
+
+    <fill_query>
+        insert into test_non_function_column_short_circuit select cast(rand()%2 == 1 as UInt8) as a, cast(rand()%3 == 1 as UInt8) as b, cast(rand()%4 == 1 as UInt8) as c, cast(rand()%5 == 1 as UInt8) as d from numbers(10000000)
+    </fill_query>
+
+    <query>
+        select and(a, b, c, d == 1) from test_non_function_column_short_circuit Format null
+    </query>
+    <query>
+        select and(a, b, c == 1, d) from test_non_function_column_short_circuit Format null
+    </query>
+
+    <query>
+        select or(a, b, c, d == 1) from test_non_function_column_short_circuit Format null
+    </query>
+    <query>
+        select or(a, b, c == 1, d) from test_non_function_column_short_circuit Format null
+    </query>
+
+    <drop_query>
+        drop table if exists test_non_function_column_short_circuit;
+    </drop_query>
+</test>

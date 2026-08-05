@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
 import os
-import subprocess
+import random
 import signal
+import subprocess
 import sys
 import time
-import random
 from argparse import ArgumentParser
-
 
 XML_TEMPLATE = """
 <clickhouse>

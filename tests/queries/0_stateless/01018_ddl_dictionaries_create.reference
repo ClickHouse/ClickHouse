@@ -16,7 +16,6 @@ CREATE DICTIONARY memory_db.dict2\n(\n    `key_column` UInt64 DEFAULT 0 INJECTIV
 dict2
 1
 memory_db	dict2
-=DICTIONARY in Lazy DB
 =DROP DATABASE WITH DICTIONARY
 dict4
 dict4

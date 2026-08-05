@@ -1,10 +1,9 @@
 #pragma once
 
-#include <limits>
-#include <IO/ReadHelpers.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/intExp.h>
-#include <base/wide_integer_to_string.h>
 
+#include <limits>
 
 namespace DB
 {
@@ -19,8 +18,11 @@ namespace ErrorCodes
 /// Returns integer 'exponent' factor that x should be multiplied by to get correct Decimal value: result = x * 10^exponent.
 /// Use 'digits' input as max allowed meaning decimal digits in result. Place actual number of meaning digits in 'digits' output.
 /// Does not care about decimal scale, only about meaningful digits in decimal text representation.
+/// When 'has_digits' is provided, it is set to whether at least one digit character was read. This lets a
+/// caller with 'digits_only = false' tell a real number (including a bare zero) apart from a token with no
+/// digits at all, such as ".", "-" or "e9", which is otherwise consumed as zero.
 template <bool _throw_on_error, typename T>
-inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false)
+inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false, bool * has_digits = nullptr)
 {
     x = T(0);
     exponent = 0;
@@ -30,6 +32,9 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
     typename T::NativeType sign = 1;
     bool leading_zeroes = true;
     bool after_point = false;
+
+    if (has_digits)
+        *has_digits = false;
 
     if (buf.eof())
     {
@@ -52,6 +57,8 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
     while (!buf.eof() && !stop)
     {
         const char & byte = *buf.position();
+        if (has_digits && byte >= '0' && byte <= '9')
+            *has_digits = true;
         switch (byte)
         {
             case '.':
@@ -90,28 +97,27 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                         /// Simply cut excessive digits.
                         break;
                     }
-                    else
-                    {
-                        if constexpr (_throw_on_error)
-                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too many digits ({} > {}) in decimal value",
-                                std::to_string(digits + places), std::to_string(max_digits));
 
-                        return false;
-                    }
+                    if constexpr (_throw_on_error)
+                        throw Exception(
+                            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Too many digits ({} > {}) in decimal value",
+                            std::to_string(digits + places),
+                            std::to_string(max_digits));
+
+                    return false;
                 }
-                else
-                {
-                    digits += places;
-                    if (after_point)
-                        exponent -= places;
 
-                    // TODO: accurate shift10 for big integers
-                    x *= intExp10OfSize<typename T::NativeType>(places);
-                    places = 0;
+                digits += places;
+                if (after_point)
+                    exponent -= places;
 
-                    x += (byte - '0');
-                    break;
-                }
+                // TODO: accurate shift10 for big integers
+                x *= intExp10OfSize<typename T::NativeType>(places);
+                places = 0;
+
+                x += (byte - '0');
+                break;
             }
             case 'e': [[fallthrough]];
             case 'E':
@@ -148,13 +154,13 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
 }
 
 template <typename T, typename ReturnType=void>
-inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool digits_only = false)
+inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool digits_only = false, bool * has_digits = nullptr)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     uint32_t digits = precision;
-    int32_t exponent;
-    auto ok = readDigits<throw_exception>(buf, x, digits, exponent, digits_only);
+    int32_t exponent = 0;
+    auto ok = readDigits<throw_exception>(buf, x, digits, exponent, digits_only, has_digits);
 
     if (!throw_exception && !ok)
         return ReturnType(false);
@@ -163,13 +169,9 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
     {
         if constexpr (throw_exception)
         {
-            static constexpr auto pattern = "Decimal value is too big: {} digits were read: {}e{}."
-                                                    " Expected to read decimal with scale {} and precision {}";
-
-            if constexpr (is_big_int_v<typename T::NativeType>)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x.value, exponent, scale, precision);
-            else
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x, exponent, scale, precision);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Decimal value is too big: {} digits were read: {}e{}. Expected to read decimal with scale {} and precision {}",
+                digits, convertFieldToString(x), exponent, scale, precision);
         }
         else
             return ReturnType(false);
@@ -186,15 +188,13 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
             scale = 0;
             return ReturnType(true);
         }
-        else
-        {
-            /// Too many digits after point. Just cut off excessive digits.
-            auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
-            assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
-            x.value /= divisor;
-            scale = 0;
-            return ReturnType(true);
-        }
+
+        /// Too many digits after point. Just cut off excessive digits.
+        auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
+        chassert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
+        x.value /= divisor;  /// NOLINT(clang-analyzer-core.DivideZero)
+        scale = 0;
+        return ReturnType(true);
     }
 
     scale += exponent;

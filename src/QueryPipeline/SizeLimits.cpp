@@ -2,6 +2,8 @@
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace ProfileEvents
@@ -13,6 +15,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
 
 bool SizeLimits::check(UInt64 rows, UInt64 bytes, const char * what, int too_many_rows_exception_code, int too_many_bytes_exception_code) const
 {
@@ -62,6 +70,27 @@ bool SizeLimits::softCheck(UInt64 rows, UInt64 bytes) const
 bool SizeLimits::check(UInt64 rows, UInt64 bytes, const char * what, int exception_code) const
 {
     return check(rows, bytes, what, exception_code, exception_code);
+}
+
+static void checkAllowedOwerflowMode(OverflowMode mode, int code)
+{
+    if (!(mode == OverflowMode::BREAK || mode == OverflowMode::THROW))
+        throw Exception(code, "Unexpected overflow mode {}", mode);
+}
+
+void SizeLimits::serialize(WriteBuffer & out) const
+{
+    checkAllowedOwerflowMode(overflow_mode, ErrorCodes::LOGICAL_ERROR);
+    writeVarUInt(max_rows, out);
+    writeVarUInt(max_bytes, out);
+    writeIntBinary(overflow_mode, out);
+}
+void SizeLimits::deserialize(ReadBuffer & in)
+{
+    checkAllowedOwerflowMode(overflow_mode, ErrorCodes::INCORRECT_DATA);
+    readVarUInt(max_rows, in);
+    readVarUInt(max_bytes, in);
+    readIntBinary(overflow_mode, in);
 }
 
 }

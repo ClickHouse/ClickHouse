@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class GRPCServer;
+class IGRPCServer;
 class TCPServer;
 
 /// Provides an unified interface to access a protocol implementing server
@@ -21,14 +21,33 @@ class ProtocolServerAdapter
 public:
     ProtocolServerAdapter(ProtocolServerAdapter && src) = default;
     ProtocolServerAdapter & operator =(ProtocolServerAdapter && src) = default;
-    ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<TCPServer> tcp_server_);
+    ProtocolServerAdapter(
+        const std::string & listen_host_,
+        const char * port_name_,
+        const std::string & description_,
+        std::unique_ptr<TCPServer> tcp_server_,
+        bool supports_runtime_reconfiguration_ = true);
 
 #if USE_GRPC
-    ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<GRPCServer> grpc_server_);
+    ProtocolServerAdapter(
+        const std::string & listen_host_,
+        const char * port_name_,
+        const std::string & description_,
+        std::unique_ptr<IGRPCServer> grpc_server_,
+        bool supports_runtime_reconfiguration_ = true);
 #endif
 
     /// Starts the server. A new thread will be created that waits for and accepts incoming connections.
-    void start() { impl->start(); }
+    /// Does nothing if the server has already been started: a server may be started ahead of the
+    /// common start loop (e.g. Prometheus starts before tables are loaded), and the underlying
+    /// implementation does not support being started twice.
+    void start()
+    {
+        if (started)
+            return;
+        impl->start();
+        started = true;
+    }
 
     /// Stops the server. No new connections will be accepted.
     void stop() { impl->stop(); }
@@ -45,6 +64,8 @@ public:
 
     /// Returns the port this server is listening to.
     UInt16 portNumber() const { return impl->portNumber(); }
+
+    bool supportsRuntimeReconfiguration() const { return supports_runtime_reconfiguration; }
 
     const std::string & getListenHost() const { return listen_host; }
 
@@ -72,6 +93,8 @@ private:
     std::string port_name;
     std::string description;
     std::unique_ptr<Impl> impl;
+    bool supports_runtime_reconfiguration = true;
+    bool started = false;
 };
 
 }

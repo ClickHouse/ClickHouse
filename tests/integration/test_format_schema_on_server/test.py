@@ -1,7 +1,8 @@
-import pytest
 import os
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance("instance", clickhouse_path_dir="clickhouse_path")
@@ -68,6 +69,9 @@ message MessageTmp {
         os.path.join(database_path, "format_schemas", protobuf_schema_path_name), "w"
     ) as file:
         file.write(schema)
+
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE FOR Protobuf")
+
     assert (
         instance.http_query(
             "SELECT * FROM test.simple FORMAT Protobuf SETTINGS format_schema='message_tmp:MessageTmp'"
@@ -97,9 +101,9 @@ message MessageTmp {
     )
     instance.query("INSERT INTO test.new_simple VALUES (1, 'abc'), (2, 'def')")
 
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE FOR Protobuf")
 
-    # Tets works with new scheme
+    # Test works with new scheme
     assert (
         instance.http_query(
             "SELECT * FROM test.new_simple FORMAT Protobuf SETTINGS format_schema='message_tmp:MessageTmp'"
@@ -158,7 +162,7 @@ struct MessageTmp {
     )
     instance.query("INSERT INTO test.new_simple VALUES (1, 'abc'), (2, 'def')")
 
-    # instance.query("SYSTEM DROP FORMAT SCHEMA CACHE FOR CapnProto")
+    # instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE FOR CapnProto")
 
     # Tets works with new scheme
     assert instance.http_query(

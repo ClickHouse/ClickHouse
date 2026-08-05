@@ -1,5 +1,3 @@
-SET allow_experimental_bigint_types=1;
-
 CREATE TABLE IF NOT EXISTS test_01035_avg (
     i8 Int8         DEFAULT i64,
     i16 Int16       DEFAULT i64,

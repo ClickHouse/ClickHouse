@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Parsers/ASTSelectQuery.h>
-#include "Parsers/ExpressionListParsers.h"
+#include <Parsers/ExpressionListParsers.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -23,16 +24,20 @@ public:
         INTERSECT_DISTINCT,
     };
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 
     ASTs getListOfSelects() const;
 
     static const char * fromOperator(Operator op);
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
     /// Final operator after applying visitor.
     Operator final_operator = Operator::UNKNOWN;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

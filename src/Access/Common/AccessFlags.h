@@ -24,6 +24,11 @@ public:
     /// Constructs from a string like "SELECT".
     AccessFlags(std::string_view keyword); /// NOLINT
 
+    /// The same, but for callers that are only asking whether the keyword names an access type -
+    /// the parser checking which alternative it is looking at, for instance. Returns false rather
+    /// than throwing when it does not.
+    static bool tryFromKeyword(std::string_view keyword, AccessFlags & result);
+
     /// Constructs from a list of strings like "SELECT, UPDATE, INSERT".
     AccessFlags(const std::vector<std::string_view> & keywords); /// NOLINT
     AccessFlags(const Strings & keywords); /// NOLINT
@@ -53,12 +58,15 @@ public:
     explicit operator bool() const { return !isEmpty(); }
     bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
     bool isGlobalWithParameter() const;
+    bool validateParameter(String & parameter, std::function<void(const char *)> add_to_expected) const;
     enum ParameterType
     {
         NONE,
+        SOURCE,
         TABLE_ENGINE,
         NAMED_COLLECTION,
         USER_NAME,
+        DEFINER,
     };
     ParameterType getParameterType() const;
     std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
@@ -108,8 +116,14 @@ public:
     /// Returns all the flags related to a user.
     static AccessFlags allUserNameFlags();
 
+    /// Returns all the flags related to a definer.
+    static AccessFlags allDefinerFlags();
+
     /// Returns all the flags related to a table engine.
     static AccessFlags allTableEngineFlags();
+
+    /// Returns all the flags related to a source.
+    static AccessFlags allSourceFlags();
 
     /// Returns all the flags which could be granted on the global level.
     /// The same as allFlags().

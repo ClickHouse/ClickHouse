@@ -24,6 +24,28 @@ public:
 
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
+    bool hasLightweightDelete() const override { return data_part->hasLightweightDelete(); }
+
+    const String & getPartName() const override { return data_part->name; }
+
+    const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
+
+    Int64 getMinDataVersion() const override
+    {
+        return data_part->info.isPatch()
+            ? data_part->getSourcePartsSet().getMinDataVersion()
+            : data_part->info.getDataVersion();
+    }
+
+    Int64 getMaxDataVersion() const override
+    {
+        return data_part->info.isPatch()
+            ? data_part->getSourcePartsSet().getMaxDataVersion()
+            : data_part->info.getDataVersion();
+    }
+
+    IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
+
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
@@ -32,7 +54,13 @@ public:
 
     const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const override { return data_part->getColumnsDescriptionWithCollectedNested(); }
 
+    const ColumnsSubstreams & getColumnsSubstreams() const override { return data_part->getColumnsSubstreams(); }
+
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
+
+    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const override { return data_part->tryGetColumn(column_name); }
+
+    bool isSystemColumnInvalidated(const String & column_name) const override { return data_part->isSystemColumnInvalidated(column_name); }
 
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
@@ -40,6 +68,17 @@ public:
     {
         return data_part->getColumnNameWithMinimumCompressedSize(available_columns);
     }
+
+    String getParentPartName() const override { return data_part->getParentPartName(); }
+
+    ColumnSize getColumnSize(const String & column_name) const override { return data_part->getColumnSize(column_name); }
+
+    std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override
+    {
+        return data_part->getColumnSizes();
+    }
+
+    ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
@@ -51,7 +90,7 @@ public:
 
     const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { return data_part->index_granularity_info; }
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const override { return data_part->index_granularity; }
+    const MergeTreeIndexGranularity & getIndexGranularity() const override { return *data_part->index_granularity; }
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 
@@ -59,8 +98,11 @@ public:
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
-    MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
+    MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
 
+    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return data_part; }
+
+    size_t getRowCount() const override { return data_part->rows_count; }
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;

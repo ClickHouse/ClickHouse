@@ -1,4 +1,4 @@
--- Tags: long, no-random-settings, no-tsan, no-asan, no-msan, no-s3-storage
+-- Tags: long, no-random-settings, no-tsan, no-asan, no-msan, no-object-storage
 
 DROP TABLE IF EXISTS t_read_in_order_2;
 

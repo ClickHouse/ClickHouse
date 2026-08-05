@@ -44,7 +44,7 @@ void LZMADeflatingWriteBuffer::initialize(int compression_level)
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
-    /// It is OK to call deflateEnd() twice (one from the finalizeAfter())
+    /// It is OK to call deflateEnd() twice (one from the finalFlushAfter())
     lzma_end(&lstr);
 }
 
@@ -88,7 +88,7 @@ void LZMADeflatingWriteBuffer::nextImpl()
     }
 }
 
-void LZMADeflatingWriteBuffer::finalizeBefore()
+void LZMADeflatingWriteBuffer::finalFlushBefore()
 {
     next();
 
@@ -120,7 +120,7 @@ void LZMADeflatingWriteBuffer::finalizeBefore()
     } while (lstr.avail_out == 0);
 }
 
-void LZMADeflatingWriteBuffer::finalizeAfter()
+void LZMADeflatingWriteBuffer::finalFlushAfter()
 {
     lzma_end(&lstr);
 }

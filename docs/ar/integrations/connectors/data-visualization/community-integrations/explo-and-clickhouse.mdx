@@ -1,0 +1,127 @@
+---
+sidebarTitle: 'Explo'
+slug: /integrations/explo
+keywords: ['clickhouse', 'Explo', 'connect', 'integrate', 'ui']
+description: 'Explo أداة واجهة مستخدم سهلة الاستخدام ومفتوحة المصدر لطرح أسئلة حول بياناتك.'
+title: 'ربط Explo بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+تحليلات موجّهة للعملاء لأي منصة. صُممت لتقديم تصورات بصرية جذابة. وهندست لتكون بسيطة.
+
+<div id="goal">
+  ## الهدف
+</div>
+
+في هذا الدليل، ستربط بياناتك من ClickHouse بـ Explo وتعرض النتائج بصريًا. سيبدو المخطط كما يلي:
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="لوحة معلومات Explo" />
+
+<p />
+
+<Tip>
+  **أضف بعض البيانات**
+
+  إذا لم تكن لديك مجموعة بيانات للعمل عليها، يمكنك إضافة أحد الأمثلة المتاحة. يستخدم هذا الدليل مجموعة بيانات [UK Price Paid](/ar/get-started/sample-datasets/uk-price-paid)، لذا قد ترغب في اختيارها. وهناك عدة مجموعات أخرى يمكنك الاطلاع عليها ضمن قسم التوثيق نفسه.
+</Tip>
+
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="ربط Explo بـ ClickHouse" id="2--connect-explo-to-clickhouse">
+    1. سجّل للحصول على حساب في Explo.
+
+    2. انقر على علامة تبويب **Data** في الشريط الجانبي الأيسر.
+
+    <Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="علامة تبويب Data" border />
+
+    3. انقر على **Connect Data Source** في أعلى الجهة اليمنى.
+
+    <Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
+
+    4. املأ المعلومات في صفحة **Getting Started**
+
+    <Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
+
+    5. اختر **ClickHouse**
+
+    <Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
+
+    6. أدخِل **بيانات اعتماد ClickHouse**.
+
+    <Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="بيانات الاعتماد" border />
+
+    7. اضبط **Security**
+
+    <Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Security" border />
+
+    8. ضمن ClickHouse، **أضِف عناوين IP الخاصة بـ Explo إلى القائمة المسموح بها**.
+       `54.211.43.19, 52.55.98.121, 3.214.169.94, و 54.156.141.148`
+  </Step>
+
+  <Step title="إنشاء لوحة معلومات" id="3-create-a-dashboard">
+    1. انتقل إلى علامة تبويب **لوحة معلومات** في شريط التنقل الجانبي الأيسر.
+
+    <Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="لوحة معلومات" border />
+
+    2. انقر على **Create Dashboard** في الزاوية العلوية اليمنى، ثم سمِّ لوحة المعلومات. لقد أنشأت الآن لوحة معلومات!
+
+    <Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="Create Dashboard" border />
+
+    3. ينبغي أن ترى الآن شاشة مشابهة لهذه:
+
+    <Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Explo Dashboard" border />
+  </Step>
+
+  <Step title="تشغيل استعلام SQL" id="4-run-a-sql-query">
+    1. احصل على اسم الجدول من الشريط الجانبي الأيمن أسفل عنوان المخطط، ثم أدخِل الأمر التالي في محرر مجموعة البيانات:
+       `SELECT * FROM YOUR_TABLE_NAME
+       LIMIT 100`
+
+    <Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
+
+    2. انقر الآن على **Run** ثم انتقل إلى علامة تبويب **preview** لرؤية بياناتك.
+
+    <Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+  </Step>
+
+  <Step title="إنشاء مخطط" id="5-build-a-chart">
+    1. من الجهة اليسرى، اسحب أيقونة المخطط الشريطي إلى الشاشة.
+
+    <Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+
+    2. اختر مجموعة البيانات. ينبغي أن ترى الآن شاشة مشابهة لما يلي:
+
+    <Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+
+    3. املأ **county** في المحور X و**Price** في قسم المحور Y كما يلي:
+
+    <Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
+
+    4. الآن، غيّر التجميع إلى **AVG**.
+
+    <Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
+
+    5. أصبح لدينا الآن متوسط أسعار المنازل موزعًا حسب السعر!
+
+    <Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+  </Step>
+</Steps>
+
+<div id="learn-more">
+  ## تعرّف على المزيد
+</div>
+
+يمكنك العثور على مزيد من المعلومات حول Explo وكيفية إنشاء لوحات المعلومات من خلال <a href="https://docs.explo.co/" target="_blank">الاطلاع على وثائق Explo</a>.

@@ -16,30 +16,47 @@
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
-#include <Interpreters/ConvertFunctionOrLikeVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Storages/IStorage.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool convert_query_to_cnf;
+    extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool optimize_aggregators_of_group_by_keys;
+    extern const SettingsBool optimize_append_index;
+    extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
+    extern const SettingsBool optimize_group_by_function_keys;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
+    extern const SettingsBool optimize_injective_functions_inside_uniq;
+    extern const SettingsBool optimize_normalize_count_variants;
+    extern const SettingsBool optimize_substitute_columns;
+    extern const SettingsBool optimize_time_filter_with_preimage;
+    extern const SettingsBool optimize_using_constraints;
+    extern const SettingsBool optimize_redundant_functions_in_order_by;
+}
 
 namespace ErrorCodes
 {
@@ -76,8 +93,8 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
     /// Since ASTLiteral is different from ASTIdentifier, so we can use a special constant String Literal for this,
     /// and do not need to worry about it conflict with the name of the column in the table.
-    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>("__unused_group_by_column"));
+    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, make_intrusive<ASTExpressionList>());
+    select_query->groupBy()->children.emplace_back(make_intrusive<ASTLiteral>("__unused_group_by_column"));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
@@ -86,6 +103,16 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
     if (!select_query->groupBy())
+        return;
+
+    /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
+    /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH TOTALS
+    /// row. In such a row the key is output as its column default. Rewriting f(g) -> g makes the
+    /// output projection recompute f(defaultOf(g)) instead of defaultOf(typeOf(f(g))) (e.g.
+    /// toString(number) from number = 0 gives '0' instead of the required String default ''),
+    /// which changes the result. See #110715.
+    if (select_query->group_by_with_cube || select_query->group_by_with_rollup
+        || select_query->group_by_with_grouping_sets || select_query->group_by_with_totals)
         return;
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
@@ -144,6 +171,13 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context); /// NOLINT(readability-static-accessed-through-instance)
 
                 if (!function_builder)
+                {
+                    auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+                    if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+                        function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function->name, context);
+                }
+
+                if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
 
                 if (!function_builder->isInjective({}))
@@ -179,7 +213,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
         else if (is_literal(group_exprs[i]))
         {
             bool keep_position = false;
-            if (settings.enable_positional_arguments)
+            if (settings[Setting::enable_positional_arguments])
             {
                 const auto & value = group_exprs[i]->as<ASTLiteral>()->value;
                 if (value.getType() == Field::Types::UInt64)
@@ -464,7 +498,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
 {
     if (select_query->where())
     {
-        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where());
+        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where().get());
         if (!cnf_form)
             return false;
 
@@ -494,7 +528,7 @@ void optimizeUsing(const ASTSelectQuery * select_query)
     for (const auto & expression : expression_list)
     {
         auto expression_name = expression->getAliasOrColumnName();
-        if (expressions_names.find(expression_name) == expressions_names.end())
+        if (!expressions_names.contains(expression_name))
         {
             uniq_expressions_list.push_back(expression);
             expressions_names.insert(expression_name);
@@ -510,12 +544,6 @@ void optimizeAggregationFunctions(ASTPtr & query)
     /// Move arithmetic operations out of aggregation functions
     ArithmeticOperationsInAgrFuncVisitor::Data data;
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
-}
-
-void optimizeArrayExistsFunctions(ASTPtr & query)
-{
-    RewriteArrayExistsFunctionVisitor::Data data = {};
-    RewriteArrayExistsFunctionVisitor(data).visit(query);
 }
 
 void optimizeMultiIfToIf(ASTPtr & query)
@@ -563,12 +591,6 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeOrLikeChain(ASTPtr & query)
-{
-    ConvertFunctionOrLikeVisitor::Data data = {};
-    ConvertFunctionOrLikeVisitor(data).visit(query);
-}
-
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
@@ -593,6 +615,16 @@ void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query, ContextPtr co
 void TreeOptimizer::optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 {
     if (!select_query->groupBy())
+        return;
+
+    /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
+    /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH TOTALS
+    /// row. In such a row the key is output as its column default. Dropping a key that is a function
+    /// of other keys makes the output projection recompute it from those keys' totals-row defaults
+    /// (e.g. toString(number) from number = 0 gives '0' instead of the required String default ''),
+    /// which changes the result. See #110715.
+    if (select_query->group_by_with_cube || select_query->group_by_with_rollup
+        || select_query->group_by_with_grouping_sets || select_query->group_by_with_totals)
         return;
 
     auto group_by = select_query->groupBy();
@@ -629,57 +661,65 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
 
     /// Move arithmetic operations out of aggregation functions
-    if (settings.optimize_arithmetic_operations_in_aggregate_functions)
+    if (settings[Setting::optimize_arithmetic_operations_in_aggregate_functions])
         optimizeAggregationFunctions(query);
 
     bool converted_to_cnf = false;
-    if (settings.convert_query_to_cnf)
+    if (settings[Setting::convert_query_to_cnf])
         converted_to_cnf = convertQueryToCNF(select_query);
 
-    if (converted_to_cnf && settings.optimize_using_constraints && result.storage_snapshot)
+    if (converted_to_cnf && settings[Setting::optimize_using_constraints] && result.storage_snapshot)
     {
-        optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
-            tables_with_columns, result.storage_snapshot->metadata, settings.optimize_append_index);
+        optimizeWithConstraints(
+            select_query,
+            result.aliases,
+            result.source_columns_set,
+            tables_with_columns,
+            result.storage_snapshot->metadata,
+            settings[Setting::optimize_append_index]);
 
-        if (settings.optimize_substitute_columns)
+        if (settings[Setting::optimize_substitute_columns])
             optimizeSubstituteColumn(select_query, result.aliases, result.source_columns_set,
                 tables_with_columns, result.storage_snapshot->metadata, result.storage);
     }
 
     /// Rewrite sum(column +/- literal) function with sum(column) +/- literal * count(column).
-    if (settings.optimize_arithmetic_operations_in_aggregate_functions)
+    if (settings[Setting::optimize_arithmetic_operations_in_aggregate_functions])
         rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
 
     /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
-    if (settings.optimize_time_filter_with_preimage)
+    if (settings[Setting::optimize_time_filter_with_preimage])
         optimizeDateFilters(select_query, tables_with_columns, context);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);
 
     /// GROUP BY functions of other keys elimination.
-    if (settings.optimize_group_by_function_keys)
+    if (settings[Setting::optimize_group_by_function_keys])
         optimizeGroupByFunctionKeys(select_query);
 
-    if (settings.optimize_normalize_count_variants)
+    if (settings[Setting::optimize_normalize_count_variants])
         optimizeCountConstantAndSumOne(query, context);
 
-    if (settings.optimize_rewrite_array_exists_to_has)
-        optimizeArrayExistsFunctions(query);
-
     /// Remove injective functions inside uniq
-    if (settings.optimize_injective_functions_inside_uniq)
+    if (settings[Setting::optimize_injective_functions_inside_uniq])
         optimizeInjectiveFunctionsInsideUniq(query, context);
 
-    /// Eliminate min/max/any aggregators of functions of GROUP BY keys
-    if (settings.optimize_aggregators_of_group_by_keys
+    /// Eliminate min/max/any aggregators of functions of GROUP BY keys.
+    /// GROUPING SETS with a single set is classified as an ordinary GROUP BY by ExpressionAnalyzer
+    /// (see analyzeAggregation), so it emits no rows with a key absent from the aggregated set and
+    /// the elimination stays valid; only the multi-set form has to be skipped.
+    const bool is_multi_set_grouping_sets = select_query->group_by_with_grouping_sets
+        && select_query->groupBy() && select_query->groupBy()->children.size() > 1;
+    if (settings[Setting::optimize_aggregators_of_group_by_keys]
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
-        && !select_query->group_by_with_cube)
+        && !select_query->group_by_with_cube
+        && !is_multi_set_grouping_sets)
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY
-    if (settings.optimize_redundant_functions_in_order_by)
+    if (settings[Setting::optimize_redundant_functions_in_order_by])
         optimizeRedundantFunctionsInOrderBy(select_query, context);
 
     /// Remove duplicate items from ORDER BY.
@@ -688,7 +728,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     optimizeDuplicatesInOrderBy(select_query);
 
     /// If function "if" has String-type arguments, transform them into enum
-    if (settings.optimize_if_transform_strings_to_enum)
+    if (settings[Setting::optimize_if_transform_strings_to_enum])
         transformIfStringsIntoEnum(query);
 
     /// Remove duplicated elements from LIMIT BY clause.
@@ -697,13 +737,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
 
-    if (settings.optimize_or_like_chain
-        && settings.allow_hyperscan
-        && settings.max_hyperscan_regexp_length == 0
-        && settings.max_hyperscan_regexp_total_length == 0)
-    {
-        optimizeOrLikeChain(query);
-    }
+    /// Note: `optimize_or_like_chain` is an analyzer-only optimization (`ConvertOrLikeChainPass`);
+    /// the old analyzer does not rewrite `OR LIKE` chains.
 }
 
 }

@@ -33,17 +33,14 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    struct Output
-    {
-        std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
-    };
+    using OutputPtr = std::shared_ptr<WriteBufferFromHTTPServerResponse>;
 
     IServer & server;
     LoggerPtr log;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
 
-    void processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output);
+    void processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr used_output);
 
     std::pair<String, bool> checkAuthentication(HTTPServerRequest & request) const;
 };

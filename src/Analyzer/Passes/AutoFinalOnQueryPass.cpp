@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool final;
+}
 
 namespace
 {
@@ -24,19 +28,19 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().final)
+        if (!getSettings()[Setting::final])
             return;
 
         const auto * query_node = node->as<QueryNode>();
         if (!query_node)
             return;
 
-        auto table_expressions = extractTableExpressions(query_node->getJoinTree());
+        auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
         for (auto & table_expression : table_expressions)
             applyFinalIfNeeded(table_expression);
     }
 private:
-    static void applyFinalIfNeeded(QueryTreeNodePtr & node)
+    static void applyFinalIfNeeded(TableExpressionNodePtr & node)
     {
         auto * table_node = node->as<TableNode>();
         auto * table_function_node = node->as<TableFunctionNode>();

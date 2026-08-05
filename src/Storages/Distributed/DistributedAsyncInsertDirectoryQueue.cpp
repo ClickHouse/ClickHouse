@@ -2,6 +2,9 @@
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
+#include <Storages/Distributed/DistributedSettings.h>
+#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
@@ -11,7 +14,9 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Core/Settings.h>
 #include <Disks/IDisk.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils.h>
 #include <Common/SipHash.h>
@@ -23,10 +28,6 @@
 #include <Common/logger_useful.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/Operators.h>
-#include <base/hex.h>
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
-#include <boost/range/adaptor/indexed.hpp>
 #include <filesystem>
 
 
@@ -48,6 +49,24 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool distributed_insert_skip_read_only_replicas;
+    extern const SettingsSeconds distributed_replica_error_half_life;
+    extern const SettingsUInt64 distributed_replica_error_cap;
+    extern const SettingsLoadBalancing load_balancing;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsUInt64 background_insert_batch;
+    extern const DistributedSettingsMilliseconds background_insert_max_sleep_time_ms;
+    extern const DistributedSettingsMilliseconds background_insert_sleep_time_ms;
+    extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
+    extern const DistributedSettingsBool fsync_directories;
+}
 
 namespace ErrorCodes
 {
@@ -111,16 +130,16 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , path(fs::path(disk->getPath()) / relative_path / "")
     , broken_relative_path(fs::path(relative_path) / "broken")
     , broken_path(fs::path(path) / "broken" / "")
-    , should_batch_inserts(storage.getDistributedSettingsRef().background_insert_batch)
-    , split_batch_on_failure(storage.getDistributedSettingsRef().background_insert_split_batch_on_failure)
-    , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
-    , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
+    , should_batch_inserts(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_batch])
+    , split_batch_on_failure(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_split_batch_on_failure])
+    , dir_fsync(storage.getDistributedSettingsRef()[DistributedSetting::fsync_directories])
+    , min_batched_block_size_rows(storage.getContext()->getSettingsRef()[Setting::min_insert_block_size_rows])
+    , min_batched_block_size_bytes(storage.getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes])
     , current_batch_file_path(path + "current_batch.txt")
     , pending_files(std::numeric_limits<size_t>::max())
-    , default_sleep_time(storage.getDistributedSettingsRef().background_insert_sleep_time_ms.totalMilliseconds())
+    , default_sleep_time(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_sleep_time_ms].totalMilliseconds())
     , sleep_time(default_sleep_time)
-    , max_sleep_time(storage.getDistributedSettingsRef().background_insert_max_sleep_time_ms.totalMilliseconds())
+    , max_sleep_time(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_max_sleep_time_ms].totalMilliseconds())
     , log(getLogger(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_bytes(CurrentMetrics::DistributedBytesToInsert, 0)
@@ -132,7 +151,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
 
     initializeFilesFromDisk();
 
-    task_handle = bg_pool.createTask(getLoggerName() + "/Bg", [this]{ run(); });
+    task_handle = bg_pool.createTask(storage.getStorageID(), getLoggerName() + "/Bg", [this]{ run(); });
     task_handle->activateAndSchedule();
 }
 
@@ -154,7 +173,7 @@ void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & 
     std::lock_guard lock{mutex};
     if (!hasPendingFiles())
         return;
-    processFiles(settings_changes);
+    processFiles(/*force=*/true, settings_changes);
 }
 
 void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
@@ -178,6 +197,32 @@ void DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush()
     task_handle->deactivate();
 }
 
+std::chrono::milliseconds DistributedAsyncInsertDirectoryQueue::calculateSleepTime(
+    std::chrono::milliseconds default_sleep_time,
+    std::chrono::milliseconds max_sleep_time,
+    size_t error_count)
+{
+    if (default_sleep_time.count() <= 0)
+        return std::min(default_sleep_time, max_sleep_time);
+
+    const UInt64 q = doubleToUInt64(std::exp2(error_count));
+    /// Clamp before multiplying: default_sleep_time * q can overflow for large error_count.
+    if (q > static_cast<UInt64>(max_sleep_time.count() / default_sleep_time.count()))
+        return max_sleep_time;
+
+    return std::min(std::chrono::milliseconds(default_sleep_time.count() * static_cast<Int64>(q)), max_sleep_time);
+}
+
+void DistributedAsyncInsertDirectoryQueue::updateSleepTime()
+{
+    size_t error_count = 0;
+    {
+        std::lock_guard status_lock(status_mutex);
+        error_count = status.error_count;
+    }
+    sleep_time = calculateSleepTime(default_sleep_time, max_sleep_time, error_count);
+}
+
 
 void DistributedAsyncInsertDirectoryQueue::run()
 {
@@ -186,6 +231,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
     std::lock_guard lock{mutex};
 
     bool do_sleep = false;
+    bool had_error = false;
     while (!pending_files.isFinished())
     {
         do_sleep = true;
@@ -197,31 +243,15 @@ void DistributedAsyncInsertDirectoryQueue::run()
         {
             try
             {
-                processFiles();
+                processFiles(/*force=*/false);
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
-
-                const auto now = std::chrono::system_clock::now();
-                if (now - last_decrease_time > decrease_error_count_period)
-                {
-                    std::lock_guard status_lock(status_mutex);
-
-                    status.error_count /= 2;
-                    last_decrease_time = now;
-                }
             }
             catch (...)
             {
                 tryLogCurrentException(getLoggerName().data());
-
-                UInt64 q = doubleToUInt64(std::exp2(status.error_count));
-                std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
-                if (new_sleep_time.count() < 0)
-                    sleep_time = max_sleep_time;
-                else
-                    sleep_time = std::min(new_sleep_time, max_sleep_time);
-
+                had_error = true;
                 do_sleep = true;
             }
         }
@@ -232,8 +262,25 @@ void DistributedAsyncInsertDirectoryQueue::run()
             break;
     }
 
+    /// Decay error_count on a non-failing, unblocked run so the backoff relaxes after recovery.
+    /// Skip on error (keep growing during an outage) and while sends are stopped (preserve backoff).
+    if (!had_error && !monitor_blocker.isCancelled())
+    {
+        const auto now = std::chrono::system_clock::now();
+        std::lock_guard status_lock(status_mutex);
+        if (now - last_decrease_time > decrease_error_count_period)
+        {
+            status.error_count /= 2;
+            last_decrease_time = now;
+        }
+    }
+
+    /// Recompute the backoff here, the only place sleep_time is used, so it tracks error_count up and down.
     if (!pending_files.isFinished() && do_sleep)
+    {
+        updateSleepTime();
         task_handle->scheduleAfter(sleep_time.count());
+    }
 }
 
 
@@ -259,7 +306,8 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
                     address.host_name == replica_address.host_name &&
                     address.port == replica_address.port &&
                     address.default_database == replica_address.default_database &&
-                    address.secure == replica_address.secure)
+                    address.secure == replica_address.secure &&
+                    address.bind_host == replica_address.bind_host)
                 {
                     return shards_info[shard_index].per_replica_pools[replica_index];
                 }
@@ -280,27 +328,23 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
             address.cluster_secret,
             storage.getName() + '_' + address.user, /* client */
             Protocol::Compression::Enable,
-            address.secure);
+            address.secure,
+            address.bind_host);
     };
 
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
     const auto & settings = storage.getContext()->getSettingsRef();
-    return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
-        settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(),
-        settings.distributed_replica_error_cap);
+    return std::make_shared<ConnectionPoolWithFailover>(
+        std::move(pools),
+        settings[Setting::load_balancing],
+        settings[Setting::distributed_replica_error_half_life].totalSeconds(),
+        settings[Setting::distributed_replica_error_cap]);
 }
 
 bool DistributedAsyncInsertDirectoryQueue::hasPendingFiles() const
 {
     return fs::exists(current_batch_file_path) || !current_file.empty() || !pending_files.empty();
-}
-
-void DistributedAsyncInsertDirectoryQueue::addFile(const std::string & file_path)
-{
-    if (!pending_files.push(fs::absolute(file_path).string()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path);
 }
 
 void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
@@ -321,8 +365,8 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
             const auto & base_name = file_path.stem().string();
             if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(base_name))
             {
-                const std::string & file_path_str = file_path.string();
-                addFile(file_path_str);
+                if (!pending_files.push(fs::absolute(file_path).string()))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path.string());
                 bytes_count += fs::file_size(file_path);
             }
             else if (base_name != "tmp" && base_name != "broken")
@@ -350,7 +394,10 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         {
             const auto & file_path = it->path();
             if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(file_path.stem()))
+            {
                 broken_bytes_count += fs::file_size(file_path);
+                broken_files++;
+            }
             else
                 LOG_WARNING(log, "Unexpected file {} in {}", file_path.string(), broken_path);
         }
@@ -364,18 +411,18 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         status.broken_bytes_count = broken_bytes_count;
     }
 }
-void DistributedAsyncInsertDirectoryQueue::processFiles(const SettingsChanges & settings_changes)
+void DistributedAsyncInsertDirectoryQueue::processFiles(bool force, const SettingsChanges & settings_changes)
 try
 {
     if (should_batch_inserts)
-        processFilesWithBatching(settings_changes);
+        processFilesWithBatching(force, settings_changes);
     else
     {
         /// Process unprocessed file.
         if (!current_file.empty())
             processFile(current_file, settings_changes);
 
-        while (!pending_files.isFinished() && pending_files.tryPop(current_file))
+        while ((force || !monitor_blocker.isCancelled()) && !pending_files.isFinished() && pending_files.tryPop(current_file))
             processFile(current_file, settings_changes);
     }
 
@@ -410,13 +457,12 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
             __PRETTY_FUNCTION__,
             storage.getContext()->getOpenTelemetrySpanLog());
 
-        Settings insert_settings = distributed_header.insert_settings;
+        Settings insert_settings = *distributed_header.insert_settings;
         insert_settings.applyChanges(settings_changes);
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
         auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto result = results.front();
-        pool->checkTryResultIsValid(result, insert_settings.distributed_insert_skip_read_only_replicas);
+        auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
@@ -429,6 +475,8 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
             distributed_header.insert_query,
             insert_settings,
             distributed_header.client_info};
+        remote.initialize();
+
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.onFinish();
@@ -468,7 +516,7 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
     Block header;
 
     BatchHeader(Settings settings_, String query_, ClientInfo client_info_, Block header_)
-        : settings(std::move(settings_))
+        : settings(settings_)
         , query(std::move(query_))
         , client_info(std::move(client_info_))
         , header(std::move(header_))
@@ -477,8 +525,8 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
     bool operator==(const BatchHeader & other) const
     {
-        return std::tie(settings, query, client_info.query_kind) ==
-               std::tie(other.settings, other.query, other.client_info.query_kind) &&
+        return std::tie(settings, query, client_info.query_kind, client_info.client_agent, client_info.is_internal) ==
+               std::tie(other.settings, other.query, other.client_info.query_kind, other.client_info.client_agent, other.client_info.is_internal) &&
                blocksHaveEqualStructure(header, other.header);
     }
 
@@ -488,6 +536,8 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
         {
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
+            hash_state.update(batch_header.client_info.client_agent.data(), batch_header.client_info.client_agent.size());
+            hash_state.update(batch_header.client_info.is_internal);
             batch_header.header.updateHash(hash_state);
             return hash_state.get64();
         }
@@ -496,15 +546,11 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
 bool DistributedAsyncInsertDirectoryQueue::addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
 {
-    /// NOTE: It is better not to throw in this case, since the file is already
-    /// on disk (see DistributedSink), and it will be processed next time.
-    if (pending_files.isFinished())
+    if (!pending_files.push(fs::absolute(file_path).string()))
     {
         LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file_path);
         return false;
     }
-
-    addFile(file_path);
 
     {
         std::lock_guard lock(status_mutex);
@@ -524,7 +570,7 @@ DistributedAsyncInsertDirectoryQueue::Status DistributedAsyncInsertDirectoryQueu
     return current_status;
 }
 
-void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const SettingsChanges & settings_changes)
+void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, const SettingsChanges & settings_changes)
 {
     /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
     if (fs::exists(current_batch_file_path))
@@ -532,18 +578,10 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
         LOG_DEBUG(log, "Restoring the batch");
 
         DistributedAsyncInsertBatch batch(*this);
-        batch.deserialize();
+        if (batch.recoverBatch())
+            batch.send(settings_changes, /*update_current_batch=*/ false);
 
-        /// In case of recovery it is possible that some of files will be
-        /// missing, if server had been restarted abnormally
-        /// (between unlink(*.bin) and unlink(current_batch.txt)).
-        ///
-        /// But current_batch_file_path should be removed anyway, since if some
-        /// file was missing, then the batch is not complete and there is no
-        /// point in trying to pretend that it will not break deduplication.
-        if (batch.valid())
-            batch.send(settings_changes);
-
+        /// Remove the batch info unconditionally since it is either valid and sent or broken and should be re-created from scratch.
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
         fs::remove(current_batch_file_path);
     }
@@ -554,7 +592,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
 
     try
     {
-        while (pending_files.tryPop(file_path))
+        while ((force || !monitor_blocker.isCancelled()) && !pending_files.isFinished() && pending_files.tryPop(file_path))
         {
             if (!fs::exists(file_path))
             {
@@ -578,22 +616,22 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
                     total_bytes += distributed_header.bytes;
                 }
 
-                if (distributed_header.block_header)
+                if (!distributed_header.block_header.empty())
                     header = distributed_header.block_header;
 
-                if (!total_rows || !header)
+                if (!total_rows || header.empty())
                 {
                     LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                     CompressedReadBuffer decompressing_in(in);
                     NativeReader block_in(decompressing_in, distributed_header.revision);
 
-                    while (Block block = block_in.read())
+                    for (Block block = block_in.read(); !block.empty(); block = block_in.read())
                     {
                         total_rows += block.rows();
                         total_bytes += block.bytes();
 
-                        if (!header)
+                        if (header.empty())
                             header = block.cloneEmpty();
                     }
                 }
@@ -606,12 +644,11 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
                     tryLogCurrentException(log, "File is marked broken due to");
                     continue;
                 }
-                else
-                    throw;
+                throw;
             }
 
             BatchHeader batch_header(
-                std::move(distributed_header.insert_settings),
+                std::move(*distributed_header.insert_settings),
                 std::move(distributed_header.insert_query),
                 std::move(distributed_header.client_info),
                 std::move(header)
@@ -623,15 +660,13 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
             batch.total_bytes += total_bytes;
 
             if (batch.isEnoughSize())
-            {
-                batch.send(settings_changes);
-            }
+                batch.send(settings_changes, /*update_current_batch=*/ true);
         }
 
         for (auto & kv : header_to_batch)
         {
             DistributedAsyncInsertBatch & batch = kv.second;
-            batch.send(settings_changes);
+            batch.send(settings_changes, /*update_current_batch=*/ true);
         }
     }
     catch (...)
@@ -642,7 +677,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
             for (const auto & file : batch.files)
             {
                 if (!pending_files.pushFront(file))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot re-schedule a file '{}'", file);
+                    LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file);
             }
         }
         /// Rethrow exception

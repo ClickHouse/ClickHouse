@@ -1,8 +1,10 @@
 #pragma once
 
-#include <base/types.h>
 #include <mutex>
 #include <unordered_set>
+#include <vector>
+#include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -13,6 +15,8 @@ class KnownObjectNames
 public:
     bool exists(const String & name) const;
     void add(const String & name, bool case_insensitive = false);
+
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const;
 
 private:
     mutable std::mutex mutex;

@@ -2,9 +2,10 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import pytest
-import uuid
 import time
+import uuid
+
+import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -40,6 +41,14 @@ users = pytest.mark.parametrize(
     "user,password",
     [
         ("default", ""),
+        ("nopass", ""),
+        ("pass", "foo"),
+    ],
+)
+
+users_with_remote_default = pytest.mark.parametrize(
+    "user,password",
+    [
         ("nopass", ""),
         ("pass", "foo"),
     ],
@@ -160,6 +169,25 @@ def get_query_user_info_by_id(node, query_id):
         )
         .strip()
         .split("\t")
+    )
+
+
+def get_user_query_log_count_by_id(node, query_id, user, password=""):
+    node.query("SYSTEM FLUSH LOGS")
+    return int(
+        node.query(
+            """
+    SELECT count()
+    FROM system.user_query_log
+    WHERE
+        (query_id = '{query_id}' OR initial_query_id = '{query_id}') AND
+        type = 'QueryFinish'
+    """.format(
+                query_id=query_id
+            ),
+            user=user,
+            password=password,
+        )
     )
 
 
@@ -344,6 +372,21 @@ def test_user_insecure_cluster(user, password):
     assert get_query_user_info(n2, id_)[0] == ["default", user]
 
 
+@users_with_remote_default
+def test_user_query_log_insecure_cluster_uses_initial_user(user, password):
+    id_ = "query-user_query_log-dist_insecure-" + user + "-" + generate_query_id()
+    n1.query(
+        f"SELECT *, '{id_}' FROM dist_insecure",
+        user=user,
+        password=password,
+        query_id=id_,
+    )
+
+    assert get_query_user_info(n2, id_)[0] == ["default", user]
+    assert get_user_query_log_count_by_id(n2, id_, user, password) >= 1
+    assert get_user_query_log_count_by_id(n2, id_, "default") == 0
+
+
 @users
 def test_user_secure_cluster(user, password):
     id_ = "query-dist_secure-" + user + "-" + generate_query_id()
@@ -441,8 +484,9 @@ def test_secure_cluster_distributed_over_distributed_different_users_remote():
 
 def test_secure_cluster_distributed_over_distributed_different_users_cluster():
     id_ = "cluster-user" + "-" + generate_query_id()
+    # serialize_query_plan is disabled because every replica is treated as local
     n1.query(
-        f"SELECT *, '{id_}' FROM cluster(secure, currentDatabase(), dist_secure)",
+        f"SELECT *, '{id_}' FROM cluster(secure, currentDatabase(), dist_secure) settings serialize_query_plan = 0",
         user="nopass",
         settings={
             "prefer_localhost_replica": 0,

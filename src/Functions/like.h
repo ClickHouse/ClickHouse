@@ -1,7 +1,7 @@
 #pragma once
 
-#include "MatchImpl.h"
-#include "FunctionsStringSearch.h"
+#include <Functions/MatchImpl.h>
+#include <Functions/FunctionsStringSearch.h>
 
 namespace DB
 {

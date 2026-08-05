@@ -3,20 +3,19 @@
 #include "config.h"
 #if USE_PROTOBUF
 
+#include <IO/WriteBuffer.h>
+
 #include <google/protobuf/io/zero_copy_stream.h>
 
 
 namespace DB
 {
-class WriteBuffer;
 
 class ProtobufZeroCopyOutputStreamFromWriteBuffer : public google::protobuf::io::ZeroCopyOutputStream
 {
 public:
     explicit ProtobufZeroCopyOutputStreamFromWriteBuffer(WriteBuffer & out_);
     explicit ProtobufZeroCopyOutputStreamFromWriteBuffer(std::unique_ptr<WriteBuffer> out_);
-
-    ~ProtobufZeroCopyOutputStreamFromWriteBuffer() override;
 
     // Obtains a buffer into which data can be written.
     bool Next(void ** data, int * size) override;

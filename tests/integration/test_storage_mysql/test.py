@@ -1,18 +1,26 @@
+import threading
+import time
 from contextlib import contextmanager
 
 ## sudo -H pip install PyMySQL
 import pymysql.cursors
 import pytest
-import time
-import threading
-from helpers.cluster import ClickHouseCluster
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import mysql_pass
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/remote_servers.xml", "configs/named_collections.xml"],
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/named_collections.xml",
+        "certs/ca.pem",
+        "certs/client-key.pem",
+        "certs/client-cert.pem",
+    ],
     user_configs=["configs/users.xml"],
     with_mysql8=True,
 )
@@ -43,7 +51,7 @@ drop_table_sql_template = """
 
 def get_mysql_conn(started_cluster, host):
     conn = pymysql.connect(
-        user="root", password="clickhouse", host=host, port=started_cluster.mysql8_port
+        user="root", password=mysql_pass, host=host, port=started_cluster.mysql8_port
     )
     return conn
 
@@ -90,11 +98,9 @@ def test_many_connections(started_cluster):
     create_mysql_table(conn, table_name)
 
     node1.query(
-        """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse');
-""".format(
-            table_name, table_name
-        )
+        f"""
+CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}');
+"""
     )
 
     node1.query(
@@ -121,11 +127,9 @@ def test_insert_select(started_cluster):
     create_mysql_table(conn, table_name)
 
     node1.query(
-        """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse');
-""".format(
-            table_name, table_name
-        )
+        f"""
+CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}');
+"""
     )
     node1.query(
         "INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000) ".format(
@@ -147,11 +151,9 @@ def test_replace_select(started_cluster):
     create_mysql_table(conn, table_name)
 
     node1.query(
-        """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse', 1);
-""".format(
-            table_name, table_name
-        )
+        f"""
+CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', 1);
+"""
     )
     node1.query(
         "INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000) ".format(
@@ -178,11 +180,9 @@ def test_insert_on_duplicate_select(started_cluster):
     create_mysql_table(conn, table_name)
 
     node1.query(
-        """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse', 0, 'update money = money + values(money)');
-""".format(
-            table_name, table_name
-        )
+        f"""
+CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', 0, 'update money = money + values(money)');
+"""
     )
     node1.query(
         "INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000) ".format(
@@ -209,11 +209,9 @@ def test_where(started_cluster):
     drop_mysql_table(conn, table_name)
     create_mysql_table(conn, table_name)
     node1.query(
-        """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse');
-""".format(
-            table_name, table_name
-        )
+        f"""
+CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}');
+"""
     )
     node1.query(
         "INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000) ".format(
@@ -268,7 +266,7 @@ def test_table_function(started_cluster):
     drop_mysql_table(conn, "table_function")
     create_mysql_table(conn, "table_function")
     table_function = (
-        "mysql('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format(
+        f"mysql('mysql80:3306', 'clickhouse', '{{}}', 'root', '{mysql_pass}')".format(
             "table_function"
         )
     )
@@ -317,7 +315,7 @@ def test_schema_inference(started_cluster):
             "CREATE TABLE clickhouse.inference_table (id INT PRIMARY KEY, data BINARY(16) NOT NULL)"
         )
 
-    parameters = "'mysql80:3306', 'clickhouse', 'inference_table', 'root', 'clickhouse'"
+    parameters = f"'mysql80:3306', 'clickhouse', 'inference_table', 'root', '{mysql_pass}'"
 
     node1.query(
         f"CREATE TABLE mysql_schema_inference_engine ENGINE=MySQL({parameters})"
@@ -343,7 +341,7 @@ def test_binary_type(started_cluster):
             "CREATE TABLE clickhouse.binary_type (id INT PRIMARY KEY, data BINARY(16) NOT NULL)"
         )
     table_function = (
-        "mysql('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format(
+        f"mysql('mysql80:3306', 'clickhouse', '{{}}', 'root', '{mysql_pass}')".format(
             "binary_type"
         )
     )
@@ -367,11 +365,9 @@ def test_enum_type(started_cluster):
     drop_mysql_table(conn, table_name)
     create_mysql_table(conn, table_name)
     node1.query(
-        """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('IP' = 1, 'URL' = 2)) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse', 1);
-""".format(
-            table_name, table_name
-        )
+        f"""
+CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32, source Enum8('IP' = 1, 'URL' = 2)) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', 1);
+"""
     )
     node1.query(
         "INSERT INTO {} (id, name, age, money, source) VALUES (1, 'name', 0, 0, 'URL')".format(
@@ -385,100 +381,6 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('
     conn.close()
 
 
-def test_mysql_distributed(started_cluster):
-    table_name = "test_replicas"
-
-    conn1 = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
-    conn2 = get_mysql_conn(started_cluster, started_cluster.mysql2_ip)
-    conn3 = get_mysql_conn(started_cluster, started_cluster.mysql3_ip)
-    conn4 = get_mysql_conn(started_cluster, started_cluster.mysql4_ip)
-
-    create_mysql_db(conn1, "clickhouse")
-    create_mysql_db(conn2, "clickhouse")
-    create_mysql_db(conn3, "clickhouse")
-    create_mysql_db(conn4, "clickhouse")
-
-    create_mysql_table(conn1, table_name)
-    create_mysql_table(conn2, table_name)
-    create_mysql_table(conn3, table_name)
-    create_mysql_table(conn4, table_name)
-
-    node2.query("DROP TABLE IF EXISTS test_replicas")
-
-    # Storage with with 3 replicas
-    node2.query(
-        """
-        CREATE TABLE test_replicas
-        (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = MySQL('mysql{2|3|4}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); """
-    )
-
-    # Fill remote tables with different data to be able to check
-    nodes = [node1, node2, node2, node2]
-    for i in range(1, 5):
-        nodes[i - 1].query("DROP TABLE IF EXISTS test_replica{}".format(i))
-        nodes[i - 1].query(
-            """
-            CREATE TABLE test_replica{}
-            (id UInt32, name String, age UInt32, money UInt32)
-            ENGINE = MySQL('mysql{}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse');""".format(
-                i, 80 if i == 1 else i
-            )
-        )
-        nodes[i - 1].query(
-            "INSERT INTO test_replica{} (id, name) SELECT number, 'host{}' from numbers(10) ".format(
-                i, i
-            )
-        )
-
-    # test multiple ports parsing
-    result = node2.query(
-        """SELECT DISTINCT(name) FROM mysql('mysql{80|2|3}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); """
-    )
-    assert result == "host1\n" or result == "host2\n" or result == "host3\n"
-    result = node2.query(
-        """SELECT DISTINCT(name) FROM mysql('mysql80:3306|mysql2:3306|mysql3:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); """
-    )
-    assert result == "host1\n" or result == "host2\n" or result == "host3\n"
-
-    # check all replicas are traversed
-    query = "SELECT * FROM ("
-    for i in range(3):
-        query += "SELECT name FROM test_replicas UNION DISTINCT "
-    query += "SELECT name FROM test_replicas) ORDER BY name"
-
-    result = node2.query(query)
-    assert result == "host2\nhost3\nhost4\n"
-
-    # Storage with with two shards, each has 2 replicas
-    node2.query("DROP TABLE IF EXISTS test_shards")
-
-    node2.query(
-        """
-        CREATE TABLE test_shards
-        (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = ExternalDistributed('MySQL', 'mysql{80|2}:3306,mysql{3|4}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); """
-    )
-
-    # Check only one replica in each shard is used
-    result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
-    assert result == "host1\nhost3\n"
-
-    # check all replicas are traversed
-    query = "SELECT name FROM ("
-    for i in range(3):
-        query += "SELECT name FROM test_shards UNION DISTINCT "
-    query += "SELECT name FROM test_shards) ORDER BY name"
-    result = node2.query(query)
-    assert result == "host1\nhost2\nhost3\nhost4\n"
-
-    # disconnect mysql
-    started_cluster.pause_container("mysql80")
-    result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
-    started_cluster.unpause_container("mysql80")
-    assert result == "host2\nhost4\n" or result == "host3\nhost4\n"
-
-
 def test_external_settings(started_cluster):
     table_name = "test_external_settings"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
@@ -488,11 +390,9 @@ def test_external_settings(started_cluster):
 
     node3.query(f"DROP TABLE IF EXISTS {table_name}")
     node3.query(
-        """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse');
-""".format(
-            table_name, table_name
-        )
+        f"""
+CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}');
+"""
     )
     node3.query(
         "INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(100) ".format(
@@ -526,19 +426,17 @@ def test_settings_connection_wait_timeout(started_cluster):
     create_mysql_table(conn, table_name)
 
     node1.query(
-        """
-        CREATE TABLE {}
+        f"""
+        CREATE TABLE {table_name}
         (
             id UInt32,
             name String,
             age UInt32,
             money UInt32
         )
-        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse')
-        SETTINGS connection_wait_timeout={}, connection_pool_size=1
-        """.format(
-            table_name, table_name, wait_timeout
-        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        SETTINGS connection_wait_timeout={wait_timeout}, connection_pool_size=1
+        """
     )
 
     node1.query(
@@ -599,7 +497,7 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query(
         "INSERT INTO test_table (id, name, money) select number, toString(number), number from numbers(100)"
     )
-    assert node1.query(f"SELECT count() FROM test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test_table").rstrip() == "100"
 
     node1.query(
         """
@@ -614,7 +512,7 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query(
         "INSERT INTO test_table (id, name, money) select number, toString(number), number from numbers(100)"
     )
-    assert node1.query(f"SELECT count() FROM test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test_table").rstrip() == "100"
 
     node1.query_and_get_error(
         """
@@ -652,7 +550,7 @@ def test_predefined_connection_configuration(started_cluster):
         ENGINE MySQL(mysql3, port=3306);
     """
     )
-    assert node1.query(f"SELECT count() FROM test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test_table").rstrip() == "100"
 
     assert "Connection pool cannot have zero size" in node1.query_and_get_error(
         "SELECT count() FROM mysql(mysql1, `table`='test_table', connection_pool_size=0)"
@@ -676,18 +574,16 @@ def test_mysql_in(started_cluster):
     create_mysql_table(conn, table_name)
 
     node1.query(
-        """
-        CREATE TABLE {}
+        f"""
+        CREATE TABLE {table_name}
         (
             id UInt32,
             name String,
             age UInt32,
             money UInt32
         )
-        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse')
-        """.format(
-            table_name, table_name
-        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        """
     )
 
     node1.query(
@@ -729,16 +625,14 @@ def test_mysql_null(started_cluster):
         )
 
     node1.query(
-        """
-        CREATE TABLE {}
+        f"""
+        CREATE TABLE {table_name}
         (
             id UInt32,
             money Nullable(UInt32)
         )
-        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse')
-        """.format(
-            table_name, table_name
-        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        """
     )
 
     node1.query(
@@ -793,7 +687,7 @@ def test_settings(started_cluster):
             age UInt32,
             money UInt32
         )
-        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
         SETTINGS connection_wait_timeout={wait_timeout}, connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}, connection_pool_size={connection_pool_size}
         """
     )
@@ -805,7 +699,7 @@ def test_settings(started_cluster):
 
     rw_timeout = 20123001
     connect_timeout = 20123002
-    node1.query(f"SELECT * FROM mysql(mysql_with_settings, table='test_settings')")
+    node1.query("SELECT * FROM mysql(mysql_with_settings, table='test_settings')")
     assert node1.contains_in_log(
         f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
     )
@@ -815,7 +709,7 @@ def test_settings(started_cluster):
     node1.query(
         f"""
         SELECT *
-            FROM mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse',
+            FROM mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}',
                        SETTINGS
                            connection_wait_timeout={wait_timeout},
                            connect_timeout={connect_timeout},
@@ -846,7 +740,7 @@ def test_settings(started_cluster):
     connect_timeout = 50123002
     node1.query(
         f"""
-        CREATE DATABASE mm ENGINE = MySQL('mysql80:3306', 'clickhouse', 'root', 'clickhouse')
+        CREATE DATABASE mm ENGINE = MySQL('mysql80:3306', 'clickhouse', 'root', '{mysql_pass}')
             SETTINGS
                 connection_wait_timeout={wait_timeout},
                 connect_timeout={connect_timeout},
@@ -860,6 +754,171 @@ def test_settings(started_cluster):
 
     node1.query("DROP DATABASE m")
     node1.query("DROP DATABASE mm")
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
+def test_enable_compression(started_cluster):
+    table_name = "test_enable_compression"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    node1.query("DROP NAMED COLLECTION IF EXISTS mysql_compression_creds")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"INSERT INTO `clickhouse`.`{table_name}` (id, name, age, money) VALUES (1, 'name_1', 10, 20)"
+        )
+    conn.commit()
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (
+            id UInt32,
+            name String,
+            age UInt32,
+            money UInt32
+        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        SETTINGS enable_compression=1
+        """
+    )
+
+    assert node1.query(f"SELECT * FROM {table_name} FORMAT TSV").strip() == "1\tname_1\t10\t20"
+
+    # Wire-level assertion for the MySQL table engine path (SETTINGS clause).
+    # Create a second engine table pointing at performance_schema.session_status to
+    # confirm that ClickHouse actually negotiates CLIENT_COMPRESS for that connection.
+    node1.query("DROP TABLE IF EXISTS compression_status_engine")
+    node1.query(
+        f"""
+        CREATE TABLE compression_status_engine
+        (
+            VARIABLE_NAME String,
+            VARIABLE_VALUE String
+        )
+        ENGINE = MySQL('mysql80:3306', 'performance_schema', 'session_status', 'root', '{mysql_pass}')
+        SETTINGS enable_compression = 1
+        """
+    )
+    engine_compression_status = ""
+    for _ in range(10):
+        engine_compression_status = node1.query(
+            "SELECT VARIABLE_VALUE FROM compression_status_engine WHERE VARIABLE_NAME = 'Compression' FORMAT TSV"
+        ).strip()
+        if engine_compression_status == "ON":
+            break
+        time.sleep(0.5)
+    node1.query("DROP TABLE IF EXISTS compression_status_engine")
+    assert engine_compression_status == "ON", (
+        f"Expected Compression=ON via MySQL engine SETTINGS path, got: {engine_compression_status!r}"
+    )
+
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    assert (
+        node1.query(
+            f"""
+            SELECT id, name, age, money
+            FROM mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}',
+                SETTINGS enable_compression = 1)
+            FORMAT TSV
+            """
+        ).strip()
+        == "1\tname_1\t10\t20"
+    )
+
+    node1.query(
+        f"""
+        CREATE NAMED COLLECTION mysql_compression_creds AS
+            host = 'mysql80',
+            port = 3306,
+            database = 'clickhouse',
+            user = 'root',
+            password = '{mysql_pass}',
+            enable_compression = 1
+        """
+    )
+    try:
+        assert (
+            node1.query(
+                f"SELECT id, name, age, money FROM mysql(mysql_compression_creds, table='{table_name}') FORMAT TSV"
+            ).strip()
+            == "1\tname_1\t10\t20"
+        )
+
+        # Verify wire-level compression is actually negotiated via the named-collection path.
+        # Named collections use a different settings carrier than the literal SETTINGS clause,
+        # so this is a distinct code path. Override database+table to query performance_schema
+        # so MySQL reports the compression state of the ClickHouse-opened connection.
+        nc_compression_status = ""
+        for _ in range(10):
+            nc_compression_status = node1.query(
+                """
+                SELECT VARIABLE_VALUE
+                FROM mysql(mysql_compression_creds, database='performance_schema', table='session_status')
+                WHERE VARIABLE_NAME = 'Compression'
+                FORMAT TSV
+                """
+            ).strip()
+            if nc_compression_status == "ON":
+                break
+            time.sleep(0.5)
+
+        assert nc_compression_status == "ON", (
+            f"Expected Compression=ON via named collection, got: {nc_compression_status!r}"
+        )
+    finally:
+        node1.query("DROP NAMED COLLECTION IF EXISTS mysql_compression_creds")
+
+    # Separately verify wire-level compression via the literal table-function path (SETTINGS clause).
+    # This is a distinct code path from the named-collection path above.
+    compression_status = ""
+    for _ in range(10):
+        compression_status = node1.query(
+            f"""
+            SELECT VARIABLE_VALUE
+            FROM mysql('mysql80:3306', 'performance_schema', 'session_status', 'root', '{mysql_pass}',
+                SETTINGS enable_compression = 1)
+            WHERE VARIABLE_NAME = 'Compression'
+            FORMAT TSV
+            """
+        ).strip()
+        if compression_status == "ON":
+            break
+        time.sleep(0.5)
+
+    assert compression_status == "ON", (
+        f"Expected MySQL compression to be ON, got: {compression_status!r}"
+    )
+
+    # Wire-level assertion for the MySQL database engine path.
+    # Create a DATABASE pointing at performance_schema, then read session_status through
+    # it to confirm CLIENT_COMPRESS is negotiated on the database-engine connection.
+    node1.query("DROP DATABASE IF EXISTS compression_test_db")
+    node1.query(
+        f"""
+        CREATE DATABASE compression_test_db
+        ENGINE = MySQL('mysql80:3306', 'performance_schema', 'root', '{mysql_pass}')
+        SETTINGS enable_compression = 1
+        """
+    )
+    db_compression_status = ""
+    for _ in range(10):
+        db_compression_status = node1.query(
+            "SELECT VARIABLE_VALUE FROM compression_test_db.session_status WHERE VARIABLE_NAME = 'Compression' FORMAT TSV"
+        ).strip()
+        if db_compression_status == "ON":
+            break
+        time.sleep(0.5)
+    node1.query("DROP DATABASE IF EXISTS compression_test_db")
+    assert db_compression_status == "ON", (
+        f"Expected Compression=ON via MySQL database engine path, got: {db_compression_status!r}"
+    )
 
     drop_mysql_table(conn, table_name)
     conn.close()
@@ -888,27 +947,255 @@ def test_mysql_point(started_cluster):
     conn.commit()
 
     result = node1.query(
-        f"DESCRIBE mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
+        f"DESCRIBE mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
     )
     assert result.strip() == "id\tInt32\t\t\t\t\t\npoint\tPoint"
 
     assert 1 == int(
         node1.query(
-            f"SELECT count() FROM mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
+            f"SELECT count() FROM mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
         )
     )
     assert (
         "(15,20)"
         == node1.query(
-            f"SELECT point FROM mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
+            f"SELECT point FROM mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
         ).strip()
     )
 
     node1.query("DROP TABLE IF EXISTS test")
     node1.query(
-        f"CREATE TABLE test (id Int32, point Point) Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
+        f"CREATE TABLE test (id Int32, point Point) Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
     )
-    assert "(15,20)" == node1.query(f"SELECT point FROM test").strip()
+    assert "(15,20)" == node1.query("SELECT point FROM test").strip()
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
+def test_mysql_geometry(started_cluster):
+    table_name = "test_mysql_geometry"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int NOT NULL,
+            `ls` linestring NOT NULL,
+            `pg` polygon NOT NULL,
+            `mls` multilinestring NOT NULL,
+            `mpg` multipolygon NOT NULL,
+            `mp` multipoint NOT NULL,
+            `geo` geometry NOT NULL,
+            `geo_mp` geometry NOT NULL,
+            `geo_gc` geometry NOT NULL,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+        """
+        )
+        cursor.execute(
+            f"""
+            INSERT INTO `clickhouse`.`{table_name}` SET
+                id = 1,
+                ls = ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
+                pg = ST_GeomFromText('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'),
+                mls = ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
+                mpg = ST_GeomFromText('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'),
+                mp = ST_GeomFromText('MULTIPOINT(7 7, 8 8)'),
+                geo = ST_GeomFromText('LINESTRING(5 5, 6 6)'),
+                geo_mp = ST_GeomFromText('MULTIPOINT(0 0, 1 1)'),
+                geo_gc = ST_GeomFromText('GEOMETRYCOLLECTION(POINT(1 1))')
+        """
+        )
+        assert 1 == cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
+
+    conn.commit()
+
+    table_function = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    # The concrete spatial column types are mapped to the corresponding ClickHouse geometric types,
+    # because their subtype is fixed by the column type. The generic `geometry` column type can hold
+    # a value of any subtype, so it maps to the umbrella `Geometry` type (a `Variant` over the
+    # concrete geometric types). A value whose subtype has no ClickHouse counterpart
+    # (`GEOMETRYCOLLECTION`) then throws at read time (checked below); this incompatibility is
+    # accepted in exchange for a proper geometric type.
+    assert (
+        node1.query(
+            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(mp), "
+            "toTypeName(geo), toTypeName(geo_mp), toTypeName(geo_gc) "
+            f"FROM {table_function} LIMIT 1"
+        ).strip()
+        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tMultiPoint\tGeometry\tGeometry\tGeometry"
+    )
+
+    assert (
+        node1.query(f"SELECT ls FROM {table_function}").strip()
+        == "[(0,0),(1,1),(2,2)]"
+    )
+    assert (
+        node1.query(f"SELECT pg FROM {table_function}").strip()
+        == "[[(0,0),(4,0),(4,4),(0,4),(0,0)]]"
+    )
+    assert (
+        node1.query(f"SELECT mls FROM {table_function}").strip()
+        == "[[(0,0),(1,1)],[(2,2),(3,3)]]"
+    )
+    assert (
+        node1.query(f"SELECT mpg FROM {table_function}").strip()
+        == "[[[(0,0),(2,0),(2,2),(0,2),(0,0)]]]"
+    )
+    assert node1.query(f"SELECT mp FROM {table_function}").strip() == "[(7,7),(8,8)]"
+    # A generic `geometry` column holding a representable subtype reads back as the geometric value:
+    # `geo` stores a LINESTRING, so it is read through the `Geometry` Variant's `LineString`
+    # alternative, and `geo_mp` stores a MULTIPOINT, read through the `MultiPoint` alternative.
+    assert (
+        node1.query(f"SELECT geo FROM {table_function}").strip()
+        == "[(5,5),(6,6)]"
+    )
+    assert (
+        node1.query(f"SELECT geo_mp FROM {table_function}").strip()
+        == "[(0,0),(1,1)]"
+    )
+    # Regression test for the accepted incompatibility: a generic `geometry` column holding a subtype
+    # with no ClickHouse counterpart (`GEOMETRYCOLLECTION` here) throws at read time, because
+    # `GEOMETRYCOLLECTION` is not representable by the `Geometry` Variant.
+    assert "Incorrect geometry type" in node1.query_and_get_error(
+        f"SELECT geo_gc FROM {table_function}"
+    )
+
+    # Regression test: the WKB parsing of spatial values read from MySQL honors the
+    # `max_wkb_geometry_elements` setting (which bounds point/ring/polygon counts before the parser
+    # reserves memory). `ls` is a LINESTRING of 3 points, so reading it with the limit set to 1 must
+    # be rejected instead of parsing an oversized element count. Before the fix the MySQL read path
+    # called `parseWKBFormat` with the default `0`, so only the hard-coded 100M cap applied.
+    assert "TOO_LARGE_ARRAY_SIZE" in node1.query_and_get_error(
+        f"SELECT ls FROM {table_function} SETTINGS max_wkb_geometry_elements = 1"
+    )
+    # A limit large enough for this value reads it back normally.
+    assert (
+        node1.query(
+            f"SELECT ls FROM {table_function} SETTINGS max_wkb_geometry_elements = 1000000"
+        ).strip()
+        == "[(0,0),(1,1),(2,2)]"
+    )
+
+    # When the `geometry` mapping is disabled, the concrete spatial types (except `Point`) also fall
+    # back to String.
+    assert (
+        node1.query(
+            f"SELECT toTypeName(ls) FROM {table_function} LIMIT 1",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64,date2Date32"},
+        ).strip()
+        == "String"
+    )
+
+    # Regression test: disabling `geometry` through the table function's own `SETTINGS` must be
+    # honored during schema inference (the per-call opt-out), falling a concrete spatial type back to
+    # `String`. Before the fix the table function inferred the structure with the default engine
+    # settings, so both the per-call `SETTINGS` and a query-level value were silently ignored.
+    table_function_no_geo = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32')"
+    )
+    assert (
+        node1.query(f"SELECT toTypeName(ls) FROM {table_function_no_geo} LIMIT 1").strip()
+        == "String"
+    )
+
+    # The per-call `SETTINGS` override the query-context value: here `geometry` is enabled through the
+    # function-local `SETTINGS` even though the query context disables it.
+    table_function_geo = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32,geometry')"
+    )
+    assert (
+        node1.query(
+            f"SELECT toTypeName(ls) FROM {table_function_geo} LIMIT 1",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64,date2Date32"},
+        ).strip()
+        == "LineString"
+    )
+
+    # A user can still read a generic `geometry` column as a geometric value by declaring the column
+    # as `Geometry` explicitly through the MySQL table engine (when its values are representable).
+    node1.query("DROP TABLE IF EXISTS test_geometry")
+    node1.query(
+        "CREATE TABLE test_geometry (id Int32, ls LineString, pg Polygon, mls MultiLineString, mpg MultiPolygon, geo Geometry) "
+        f"Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert node1.query("SELECT ls FROM test_geometry").strip() == "[(0,0),(1,1),(2,2)]"
+    assert node1.query("SELECT geo FROM test_geometry").strip() == "[(5,5),(6,6)]"
+    node1.query("DROP TABLE IF EXISTS test_geometry")
+
+    # The MySQL table engine infers the columns from MySQL when they are omitted. By default the
+    # `geometry` mapping is on, so a concrete spatial column is inferred as its geometric type.
+    node1.query("DROP TABLE IF EXISTS test_geometry_inferred")
+    node1.query(
+        f"CREATE TABLE test_geometry_inferred Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_inferred LIMIT 1").strip()
+        == "LineString"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_inferred")
+
+    # Regression test: disabling `geometry` through the table engine's own SETTINGS must be honored
+    # during schema inference, falling the concrete spatial types back to `String` (raw WKB). This is
+    # the per-engine opt-out; before the fix it was ignored because schema inference read the global
+    # query-context setting instead of the engine setting.
+    node1.query("DROP TABLE IF EXISTS test_geometry_no_geo")
+    node1.query(
+        f"CREATE TABLE test_geometry_no_geo Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32'"
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_no_geo LIMIT 1").strip()
+        == "String"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_no_geo")
+
+    # Regression test (query-backed inference): a MySQL source defined over a *query* rather than a
+    # table name infers its columns from the query result-set metadata, which reports every spatial
+    # value as the generic `MYSQL_TYPE_GEOMETRY` without exposing the concrete subtype. It must not be
+    # guessed as `Point` - that made reading a non-`Point` value such as this `LINESTRING` throw
+    # `Only Point data type is supported` at read time - so it falls back to the raw WKB `String`.
+    # Before the fix the query-backed path also dropped the effective `mysql_datatypes_support_level`
+    # entirely (it read the global query context), so the per-call/per-engine opt-out was ignored.
+    table_function_query = f"mysql('mysql80:3306', 'clickhouse', query('SELECT ls FROM {table_name}'), 'root', '{mysql_pass}')"
+    # The concrete subtype is unknowable from query result metadata, so it is inferred as `String` (raw
+    # WKB), never a geometric type such as `Point`/`LineString` (nullability follows the query metadata).
+    ls_query_type = node1.query(
+        f"SELECT toTypeName(ls) FROM {table_function_query} LIMIT 1"
+    ).strip()
+    assert "String" in ls_query_type and "Point" not in ls_query_type
+    # The value reads back as raw WKB `String` without an exception (before the fix this threw).
+    assert len(node1.query(f"SELECT ls FROM {table_function_query}").strip()) > 0
+
+    # Regression test (named-collection precedence): a named collection carrying an explicit
+    # `mysql_datatypes_support_level` opt-out keeps precedence over a conflicting session
+    # `SET mysql_datatypes_support_level`. The `mysql_no_geo_types` collection disables `geometry`, so a
+    # `LINESTRING` column is inferred as `String` even though the session enables `geometry`, and the
+    # session value is not frozen into `SHOW CREATE`. Before the fix the query-context bridge overwrote
+    # the named-collection value with the session value (and persisted it into the table definition).
+    node1.query("DROP TABLE IF EXISTS test_geometry_nc")
+    node1.query(
+        "CREATE TABLE test_geometry_nc Engine=MySQL(mysql_no_geo_types)",
+        settings={
+            "mysql_datatypes_support_level": "decimal,datetime64,date2Date32,geometry"
+        },
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_nc LIMIT 1").strip()
+        == "String"
+    )
+    assert "mysql_datatypes_support_level" not in node1.query(
+        "SHOW CREATE TABLE test_geometry_nc"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_nc")
 
     drop_mysql_table(conn, table_name)
     conn.close()
@@ -922,7 +1209,7 @@ def test_joins(started_cluster):
             "CREATE TABLE clickhouse.test_joins_mysql_users (id INT NOT NULL, name varchar(50) NOT NULL, created TIMESTAMP, PRIMARY KEY (`id`)) ENGINE=InnoDB;"
         )
         cursor.execute(
-            f"INSERT INTO clickhouse.test_joins_mysql_users VALUES (469722, 'user@example.com', '2019-08-30 07:55:01')"
+            "INSERT INTO clickhouse.test_joins_mysql_users VALUES (469722, 'user@example.com', '2019-08-30 07:55:01')"
         )
 
     drop_mysql_table(conn, "test_joins_mysql_tickets")
@@ -931,7 +1218,7 @@ def test_joins(started_cluster):
             "CREATE TABLE clickhouse.test_joins_mysql_tickets (id INT NOT NULL, subject varchar(50), created TIMESTAMP, creator INT NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB;"
         )
         cursor.execute(
-            f"INSERT INTO clickhouse.test_joins_mysql_tickets VALUES (281607, 'Feedback', '2024-06-25 12:09:41', 469722)"
+            "INSERT INTO clickhouse.test_joins_mysql_tickets VALUES (281607, 'Feedback', '2024-06-25 12:09:41', 469722)"
         )
 
     conn.commit()
@@ -940,19 +1227,19 @@ def test_joins(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_joins_table_tickets")
 
     node1.query(
-        """
+        f"""
         CREATE TABLE test_joins_table_users
         (
             `id` Int32,
             `Name` String,
             `Created` Nullable(DateTime)
         )
-        ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_joins_mysql_users', 'root', 'clickhouse');
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_joins_mysql_users', 'root', '{mysql_pass}');
         """
     )
 
     node1.query(
-        """
+        f"""
         CREATE TABLE test_joins_table_tickets
         (
             `id` Int32,
@@ -960,7 +1247,7 @@ def test_joins(started_cluster):
             `Created` Nullable(DateTime),
             `Creator` Int32
         )
-        ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_joins_mysql_tickets', 'root', 'clickhouse');
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_joins_mysql_tickets', 'root', '{mysql_pass}');
         """
     )
 
@@ -975,6 +1262,239 @@ def test_joins(started_cluster):
 
     node1.query("DROP TABLE test_joins_table_users")
     node1.query("DROP TABLE test_joins_table_tickets")
+
+
+def test_mysql_ssl_auth(started_cluster):
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            CREATE USER 'ssl_user'@'{}' REQUIRE X509;
+            """.format(
+                node1.ip_address
+            )
+        )
+        cursor.execute(
+            """
+            GRANT ALL PRIVILEGES ON *.* TO 'ssl_user'@'{}' WITH GRANT OPTION;
+            """.format(
+                node1.ip_address
+            )
+        )
+
+    node1.query(
+        """
+        DROP TABLE IF EXISTS test_table;
+        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32) ENGINE MySQL(mysql_with_ssl);
+        SELECT * FROM test_table;
+        DROP TABLE test_table;
+        """
+    )
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            DROP USER 'ssl_user'@'{}';
+            """.format(
+                node1.ip_address
+            )
+        )
+        cursor.execute(
+            """
+            FLUSH PRIVILEGES;
+            """
+        )
+
+
+def test_mysql_reading_clone(started_cluster):
+    table_name = "test_mysql_reading_clone"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (
+            id UInt32,
+            name String,
+            age UInt32,
+            money UInt32
+        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        """
+    )
+
+    node1.query(
+        "INSERT INTO {} (id, name) SELECT number, concat('name_', toString(number)) from numbers(10) ".format(
+            table_name
+        )
+    )
+
+    assert node1.query(f"SELECT count() FROM {table_name}").rstrip() == "10"
+
+    result = node1.query(f"SELECT count() FROM (SELECT (SELECT tx.id) = 1 as x FROM {table_name} AS tx) WHERE x SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0")
+
+    assert result.rstrip() == "1"
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
+def test_query_passing_table_function(started_cluster):
+    table_name = "table_function_query"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    # Populate via the plain (table-name) form of the table function.
+    plain = f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION {plain} (id, name, money) "
+        "SELECT number, concat('name_', toString(number)), 3 FROM numbers(100)"
+    )
+
+    # query('...') form: the WHERE is executed on the MySQL side.
+    q_func = f"mysql('mysql80:3306', 'clickhouse', query('SELECT * FROM {table_name} WHERE id % 2 = 0'), 'root', '{mysql_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_func}").rstrip() == "50"
+    assert node1.query(f"SELECT sum(money) FROM {q_func}").rstrip() == "150"
+
+    # subquery form.
+    q_subq = f"mysql('mysql80:3306', 'clickhouse', (SELECT id, name FROM {table_name} WHERE id < 10), 'root', '{mysql_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_subq}").rstrip() == "10"
+    assert node1.query(f"SELECT name FROM {q_subq} ORDER BY id LIMIT 1").rstrip() == "name_0"
+    # Only the columns produced by the query are visible (id, name).
+    row = node1.query(f"SELECT * FROM {q_subq} ORDER BY id LIMIT 1").rstrip()
+    assert len(row.split("\t")) == 2
+
+    # The external_table_functions_use_nulls setting is honoured by the query-backed schema inference,
+    # exactly as it is by the table-name path: a nullable MySQL column is exposed as Nullable(T) by
+    # default and as plain T when the setting is disabled.
+    null_table = "table_function_query_null"
+    drop_mysql_table(conn, null_table)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{null_table} "
+            f"(id INT NOT NULL, money INT NULL DEFAULT NULL, PRIMARY KEY (id)) ENGINE=InnoDB;"
+        )
+        cursor.execute(f"INSERT INTO clickhouse.{null_table} VALUES (1, 10), (2, NULL)")
+        conn.commit()
+
+    q_null = f"mysql('mysql80:3306', 'clickhouse', query('SELECT id, money FROM {null_table}'), 'root', '{mysql_pass}')"
+    assert (
+        node1.query(
+            f"SELECT toTypeName(money) FROM {q_null} LIMIT 1 SETTINGS external_table_functions_use_nulls = 1"
+        ).rstrip()
+        == "Nullable(Int32)"
+    )
+    assert (
+        node1.query(
+            f"SELECT toTypeName(money) FROM {q_null} LIMIT 1 SETTINGS external_table_functions_use_nulls = 0"
+        ).rstrip()
+        == "Int32"
+    )
+    drop_mysql_table(conn, null_table)
+
+    # external_table_strict_query: an outer filter that cannot be pushed down into the passed query is
+    # applied locally by default, but rejected with INCORRECT_QUERY under external_table_strict_query = 1.
+    q_strict = f"mysql('mysql80:3306', 'clickhouse', query('SELECT id, name FROM {table_name}'), 'root', '{mysql_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_strict} WHERE id = 1").rstrip() == "1"
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"SELECT count() FROM {q_strict} WHERE id = 1 SETTINGS external_table_strict_query = 1"
+    )
+
+    # INSERT into a query-backed table function is rejected with INCORRECT_QUERY before the storage is
+    # constructed, so the remote schema-inference query is never run against MySQL.
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"INSERT INTO TABLE FUNCTION {q_strict} (id, name) VALUES (1, 'x')"
+    )
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
+def test_query_passing_engine(started_cluster):
+    table_name = "engine_query"
+    second_table = "engine_query_dim"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    drop_mysql_table(conn, second_table)
+    create_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{second_table} (id INT PRIMARY KEY, factor INT NOT NULL) ENGINE=InnoDB;"
+        )
+        conn.commit()
+
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') "
+        "(id, name, money) SELECT number, concat('name_', toString(number)), number FROM numbers(10)"
+    )
+    with conn.cursor() as cursor:
+        cursor.execute(f"INSERT INTO clickhouse.{second_table} VALUES (1, 10), (2, 100)")
+        conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS mysql_engine_query")
+    node1.query(
+        f"""
+        CREATE TABLE mysql_engine_query (id UInt32, name String, calculated Int64)
+        ENGINE = MySQL('mysql80:3306', 'clickhouse',
+            query('SELECT a.id, a.name, a.money * b.factor AS calculated
+                   FROM {table_name} AS a JOIN {second_table} AS b ON a.id = b.id'),
+            'root', '{mysql_pass}')
+        """
+    )
+    assert node1.query("SELECT count() FROM mysql_engine_query").rstrip() == "2"
+    assert (
+        node1.query("SELECT sum(calculated) FROM mysql_engine_query").rstrip()
+        == str(1 * 10 + 2 * 100)
+    )
+
+    # Writing into a query-backed table is not allowed.
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        "INSERT INTO mysql_engine_query VALUES (5, 'x', 0)"
+    )
+
+    node1.query("DROP TABLE mysql_engine_query")
+    drop_mysql_table(conn, table_name)
+    drop_mysql_table(conn, second_table)
+    conn.close()
+
+
+def test_query_passing_type_mismatch(started_cluster):
+    # A declared structure whose types disagree with the passed query must surface as a query error, never
+    # abort the server.
+    table_name = "query_passing_mismatch"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name} (a INT NOT NULL, b VARCHAR(50) NOT NULL, PRIMARY KEY (a)) ENGINE=InnoDB;"
+        )
+        cursor.execute(
+            f"INSERT INTO clickhouse.{table_name} VALUES (1, 'name_1'), (2, 'name_2')"
+        )
+        conn.commit()
+
+    # Column b holds text but is declared Int32. MySQL's typed accessor reports a query error instead of
+    # crashing.
+    node1.query("DROP TABLE IF EXISTS mysql_type_mismatch")
+    node1.query(
+        f"CREATE TABLE mysql_type_mismatch (a Int32, b Int32) "
+        f"ENGINE = MySQL('mysql80:3306', 'clickhouse', query('SELECT a, b FROM {table_name}'), 'root', '{mysql_pass}')"
+    )
+    assert node1.query_and_get_error("SELECT * FROM mysql_type_mismatch") != ""
+    node1.query("DROP TABLE mysql_type_mismatch")
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
 
 
 if __name__ == "__main__":

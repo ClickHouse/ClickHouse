@@ -1,13 +1,22 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTDictionaryAttributeDeclaration::clone() const
 {
-    const auto res = std::make_shared<ASTDictionaryAttributeDeclaration>(*this);
+    const auto res = make_intrusive<ASTDictionaryAttributeDeclaration>(*this);
     res->children.clear();
 
     if (type)
@@ -31,41 +40,89 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
     return res;
 }
 
-void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDictionaryAttributeDeclaration::writeJSON(WriteBuffer & out) const
 {
-    frame.need_parens = false;
+    JSONObjectWriter w(out, "DictionaryAttributeDeclaration");
+    w.writeString("name", name);
+    w.writeChild("attr_type", type);
+    w.writeChild("default_value", default_value);
+    w.writeChild("expression", expression);
+    w.writeBool("hierarchical", hierarchical);
+    w.writeBool("bidirectional", bidirectional);
+    w.writeBool("injective", injective);
+    w.writeBool("is_object_id", is_object_id);
+}
 
-    settings.quoteIdentifier(name);
+void ASTDictionaryAttributeDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    /// `ParserDictionaryAttributeDeclaration` always requires a non-empty attribute name followed by
+    /// `ParserDataType`, so both are mandatory and `attr_type` must be a data-type node. (`as<T>` is
+    /// exact-type, so use `dynamic_cast` to also accept the `ASTDataType` subclasses `ASTEnumDataType`/
+    /// `ASTTupleDataType`.) Reject malformed `clickhouse_json` here instead of failing later in
+    /// dictionary configuration.
+    name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' for `DictionaryAttributeDeclaration` during AST JSON deserialization");
+
+    type = r.readChild("attr_type");
+    if (!type)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'attr_type' for `DictionaryAttributeDeclaration` during AST JSON deserialization");
+    if (!dynamic_cast<const ASTDataType *>(type.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DictionaryAttributeDeclaration` 'attr_type' must be a data type during AST JSON deserialization");
+    children.push_back(type);
+
+    default_value = r.readChild("default_value");
+    if (default_value)
+        children.push_back(default_value);
+
+    expression = r.readChild("expression");
+    if (expression)
+        children.push_back(expression);
+
+    hierarchical = r.getBool("hierarchical");
+    bidirectional = r.getBool("bidirectional");
+    injective = r.getBool("injective");
+    is_object_id = r.getBool("is_object_id");
+}
+
+void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
     if (type)
     {
-        settings.ostr << ' ';
-        type->formatImpl(settings, state, frame);
+        ostr << ' ';
+        type->format(ostr, settings, state, frame);
     }
 
     if (default_value)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "DEFAULT" << (settings.hilite ? hilite_none : "") << ' ';
-        default_value->formatImpl(settings, state, frame);
+        ostr << ' ' << "DEFAULT" << ' ';
+        default_value->format(ostr, settings, state, frame);
     }
 
     if (expression)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "EXPRESSION" << (settings.hilite ? hilite_none : "") << ' ';
-        expression->formatImpl(settings, state, frame);
+        ostr << ' ' << "EXPRESSION" << ' ';
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expression.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        expression->format(ostr, settings, state, nested_frame);
     }
 
     if (hierarchical)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "HIERARCHICAL" << (settings.hilite ? hilite_none : "");
+        ostr << ' ' << "HIERARCHICAL";
 
     if (bidirectional)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "BIDIRECTIONAL" << (settings.hilite ? hilite_none : "");
+        ostr << ' ' << "BIDIRECTIONAL";
 
     if (injective)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "INJECTIVE" << (settings.hilite ? hilite_none : "");
+        ostr << ' ' << "INJECTIVE";
 
     if (is_object_id)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "IS_OBJECT_ID" << (settings.hilite ? hilite_none : "");
+        ostr << ' ' << "IS_OBJECT_ID";
 }
 
 }

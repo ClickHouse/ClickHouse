@@ -1,8 +1,19 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Core/Block.h>
+#include <Core/UUID.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/sort.h>
@@ -11,8 +22,10 @@
 #include <Common/assert_cast.h>
 
 #include <iterator>
+#include <ranges>
 
 #include <boost/algorithm/string.hpp>
+#include <fmt/ranges.h>
 
 
 namespace DB
@@ -38,6 +51,183 @@ static ReturnType onError(int code [[maybe_unused]],
         return false;
 }
 
+/// Omit Const, Sparse and Replicated and get actual column.
+static const IColumn * getActualColumn(const IColumn * column)
+{
+    const IColumn * actual_column = column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+        return getActualColumn(&column_const->getDataColumn());
+
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column))
+        return getActualColumn(column_replicated->getNestedColumn().get());
+
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column))
+        return getActualColumn(&column_sparse->getValuesColumn());
+
+    return actual_column;
+}
+
+/// Compares the structure of two columns. Aggregate-state columns whose functions have the same
+/// state representation (e.g. `quantileState` and `quantilesState(0.9)`) are compatible even
+/// though their names differ, and this relaxation must apply at any nesting depth: an expression
+/// over a `UNION` of such states can wrap them into another column (e.g. into a `Tuple`), and the
+/// per-branch headers then differ only by the aggregate function nested inside. For all other
+/// columns the comparison is as strict as comparing full column names.
+static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn & expected)
+{
+    /// A `Sparse` column is structurally interchangeable with the full column of the same type it
+    /// wraps, and this holds at any depth, not only at the top level: one branch can materialize a
+    /// nested subcolumn (`recursiveRemoveSparse`) while another keeps it sparse. Unwrap `Sparse` on
+    /// either side independently, mirroring the top-level unwrap in `checkColumnStructure`.
+    if (const auto * actual_sparse = typeid_cast<const ColumnSparse *>(&actual))
+        return haveCompatibleColumnStructure(actual_sparse->getValuesColumn(), expected);
+    if (const auto * expected_sparse = typeid_cast<const ColumnSparse *>(&expected))
+        return haveCompatibleColumnStructure(actual, expected_sparse->getValuesColumn());
+
+    const auto * actual_agg = typeid_cast<const ColumnAggregateFunction *>(&actual);
+    const auto * expected_agg = typeid_cast<const ColumnAggregateFunction *>(&expected);
+    if (actual_agg && expected_agg)
+        return actual_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_agg->getAggregateFunction());
+
+    if (typeid(actual) != typeid(expected))
+        return false;
+
+    /// `Variant` is compositional too: its type equality (checked before this point) already
+    /// fixes the set and the global order of alternatives, so the only thing that can differ
+    /// between two structurally-equal-typed `Variant` columns is an aggregate state nested
+    /// inside an alternative, which is exactly what we want to relax. But the local order of
+    /// the nested variant columns (the order `forEachSubcolumn` iterates them in) is a property
+    /// of a particular column, not of the type, and `getName` lists the variants in the global
+    /// order — so compare the alternatives pairwise by global discriminator, like `getName` does.
+    if (const auto * actual_variant = typeid_cast<const ColumnVariant *>(&actual))
+    {
+        const auto & expected_variant = assert_cast<const ColumnVariant &>(expected);
+        const size_t num_variants = actual_variant->getNumVariants();
+        if (num_variants != expected_variant.getNumVariants())
+            return false;
+
+        for (size_t global_discr = 0; global_discr < num_variants; ++global_discr)
+            if (!haveCompatibleColumnStructure(
+                actual_variant->getVariantByGlobalDiscriminator(global_discr),
+                expected_variant.getVariantByGlobalDiscriminator(global_discr)))
+                return false;
+
+        return true;
+    }
+
+    /// `Replicated` is compositional too, but only its nested column is structural: the internal
+    /// indexes column is a variable-width encoding detail (`UInt8` .. `UInt64`, widened lazily)
+    /// that `getName` does not include, yet `forEachSubcolumn` exposes — so descending into all
+    /// subcolumns would make the check stricter than the name comparison and reject a valid
+    /// runtime block against its header. Compare only the nested column, like
+    /// `ColumnReplicated::structureEquals` does.
+    if (const auto * actual_replicated = typeid_cast<const ColumnReplicated *>(&actual))
+    {
+        const auto & expected_replicated = assert_cast<const ColumnReplicated &>(expected);
+        return haveCompatibleColumnStructure(*actual_replicated->getNestedColumn(), *expected_replicated.getNestedColumn());
+    }
+
+    /// Descend only into the plain container columns whose name is a pure composition of the
+    /// nested column names, so that for everything else the comparison stays exactly as strict
+    /// as comparing full column names. `Dynamic`/`Object` are deliberately left strict because
+    /// their nested structure is not fixed by the type.
+    const bool is_compositional = typeid_cast<const ColumnTuple *>(&actual) || typeid_cast<const ColumnArray *>(&actual)
+        || typeid_cast<const ColumnMap *>(&actual) || typeid_cast<const ColumnNullable *>(&actual)
+        || typeid_cast<const ColumnConst *>(&actual);
+
+    if (!is_compositional)
+        return actual.getName() == expected.getName();
+
+    std::vector<const IColumn *> actual_children;
+    std::vector<const IColumn *> expected_children;
+    actual.forEachSubcolumn([&](const auto & subcolumn) { actual_children.push_back(subcolumn.get()); });
+    expected.forEachSubcolumn([&](const auto & subcolumn) { expected_children.push_back(subcolumn.get()); });
+
+    if (actual_children.size() != expected_children.size())
+        return false;
+
+    for (size_t i = 0; i < actual_children.size(); ++i)
+        if (!haveCompatibleColumnStructure(*actual_children[i], *expected_children[i]))
+            return false;
+
+    return true;
+}
+
+static bool haveCompatibleConstantValues(const Field & actual, const Field & expected, bool strict_aggregate_states);
+
+static bool haveCompatibleConstantValueVectors(const FieldVector & actual, const FieldVector & expected, bool strict_aggregate_states)
+{
+    if (actual.size() != expected.size())
+        return false;
+
+    for (size_t i = 0; i < actual.size(); ++i)
+        if (!haveCompatibleConstantValues(actual[i], expected[i], strict_aggregate_states))
+            return false;
+
+    return true;
+}
+
+/// Compares two constant values, relaxing only the aggregate-state leaves: the `Field` comparison
+/// of aggregate states throws when the aggregate function type names differ, even when the states
+/// are compatible by `haveSameStateRepresentation` (which the type and column structure checks
+/// have already established at this point). For such leaves compare only the serialized state, so
+/// that genuinely different constants — including a differing non-aggregate element next to a
+/// compatible aggregate state inside the same `Tuple` — are still reported as a mismatch.
+///
+/// The relaxation is only sound while the type of a value is fully determined by the column type,
+/// which is not the case under `Variant`, `Dynamic` and `JSON` — see `typeCanHideTheValueType`.
+/// For those, `strict_aggregate_states` also requires the aggregate function names to be equal
+/// (compared field by field, because `Field::operator ==` throws for differing names).
+static bool haveCompatibleConstantValues(const Field & actual, const Field & expected, bool strict_aggregate_states)
+{
+    if (actual.getType() != expected.getType())
+        return false;
+
+    switch (actual.getType())
+    {
+        case Field::Types::AggregateFunctionState:
+        {
+            const auto & actual_state = actual.safeGet<AggregateFunctionStateData>();
+            const auto & expected_state = expected.safeGet<AggregateFunctionStateData>();
+            if (strict_aggregate_states && actual_state.name != expected_state.name)
+                return false;
+            return actual_state.data == expected_state.data;
+        }
+        case Field::Types::Array:
+            return haveCompatibleConstantValueVectors(actual.safeGet<Array>(), expected.safeGet<Array>(), strict_aggregate_states);
+        case Field::Types::Tuple:
+            return haveCompatibleConstantValueVectors(actual.safeGet<Tuple>(), expected.safeGet<Tuple>(), strict_aggregate_states);
+        case Field::Types::Map:
+            return haveCompatibleConstantValueVectors(actual.safeGet<Map>(), expected.safeGet<Map>(), strict_aggregate_states);
+        default:
+            return actual == expected;
+    }
+}
+
+/// Whether a value of this type is converted to a `Field` that no longer tells which type the
+/// value actually has. A `Variant` flattens a row to the `Field` of its active alternative
+/// (`ColumnVariant::operator []`) and `DataTypeVariant::equals` allows several aggregate-state
+/// alternatives that are compatible by state representation; `Dynamic` and `JSON` similarly store
+/// values of types that are not fixed by the column type. Two values on different alternatives can
+/// then produce equal `Field`s although the alternative itself is a part of the value and is
+/// observable (e.g. by `variantType`), so the aggregate-state relaxation must not apply inside them.
+///
+/// Only these three types are checked, not `IDataType::hasDynamicSubcolumns`: the latter is also
+/// true for a plain `Map`, which merely exposes the `m.keys` and `m.values` virtual subcolumns while
+/// the type of every value it holds is still fixed by the declared `Map(K, V)`.
+static bool typeCanHideTheValueType(const IDataType & type)
+{
+    if (isVariant(type) || isDynamic(type) || isObject(type))
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        result = result || typeCanHideTheValueType(child);
+    });
+
+    return result;
+}
 
 template <typename ReturnType>
 static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
@@ -56,36 +246,33 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         return ReturnType(true);
 
     const IColumn * actual_column = actual.column.get();
+    const IColumn * expected_column = expected.column.get();
 
-    /// If we allow to materialize, and expected column is not const or sparse, then unwrap actual column.
+    /// A Sparse column is structurally equal to the full column of the same type it wraps, and every
+    /// consumer can process sparse, so it must compare equal to a non-sparse column even in the
+    /// strict path. Unwrap Sparse on both sides here; Const and Replicated stay strict unless
+    /// allow_materialize.
+    if (const auto * actual_sparse = typeid_cast<const ColumnSparse *>(actual_column))
+        actual_column = &actual_sparse->getValuesColumn();
+    if (const auto * expected_sparse = typeid_cast<const ColumnSparse *>(expected_column))
+        expected_column = &expected_sparse->getValuesColumn();
+
+    /// If we allow to materialize columns, omit Const and Replicated columns too.
     if (allow_materialize)
     {
-        if (!isColumnConst(*expected.column))
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
-                actual_column = &column_const->getDataColumn();
-
-        if (!expected.column->isSparse())
-            if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(actual_column))
-                actual_column = &column_sparse->getValuesColumn();
+        actual_column = getActualColumn(actual_column);
+        expected_column = getActualColumn(expected_column);
     }
 
-    const auto * actual_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(actual_column);
-    const auto * expected_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(expected.column.get());
-    if (actual_column_maybe_agg && expected_column_maybe_agg)
+    if (!haveCompatibleColumnStructure(*actual_column, *expected_column))
     {
-        if (!actual_column_maybe_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_column_maybe_agg->getAggregateFunction()))
-            return onError<ReturnType>(code,
-                    "Block structure mismatch in {} stream: different columns:\n{}\n{}",
-                    context_description,
-                    actual.dumpStructure(),
-                    expected.dumpStructure());
-    }
-    else if (actual_column->getName() != expected.column->getName())
         return onError<ReturnType>(code,
                 "Block structure mismatch in {} stream: different columns:\n{}\n{}",
                 context_description,
                 actual.dumpStructure(),
                 expected.dumpStructure());
+
+    }
 
     if (isColumnConst(*actual.column) && isColumnConst(*expected.column)
         && !actual.column->empty() && !expected.column->empty()) /// don't check values in empty columns
@@ -93,7 +280,10 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
         Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
 
-        if (actual_value != expected_value)
+        /// The types are already checked to be equal at this point.
+        const bool strict_aggregate_states = actual.type && typeCanHideTheValueType(*actual.type);
+
+        if (!haveCompatibleConstantValues(actual_value, expected_value, strict_aggregate_states))
             return onError<ReturnType>(code,
                     "Block structure mismatch in {} stream: different values of constants in column '{}': actual: {}, expected: {}",
                     context_description,
@@ -109,6 +299,10 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
 template <typename ReturnType>
 static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, std::string_view context_description, bool allow_materialize)
 {
+    /// It's common to have common SharedHeaders in the pipeline
+    if (&lhs == &rhs)
+        return ReturnType(true);
+
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
         return onError<ReturnType>(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch in {} stream: different number of columns:\n{}\n{}",
@@ -206,15 +400,40 @@ void Block::insertUnique(ColumnWithTypeAndName elem)
     if (elem.name.empty())
         throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Column name in Block cannot be empty");
 
-    if (index_by_name.end() == index_by_name.find(elem.name))
+    if (!index_by_name.contains(elem.name))
         insert(std::move(elem));
 }
 
 
 void Block::erase(const std::set<size_t> & positions)
 {
-    for (auto it = positions.rbegin(); it != positions.rend(); ++it)
-        erase(*it);
+    if (positions.empty())
+        return;
+
+    if (*positions.rbegin() >= data.size())
+        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position out of bound in Block::erase(), max position = {}",
+            data.empty() ? 0 : data.size() - 1);
+
+    /// Compact `data` in a single pass, dropping the erased positions, then rebuild the name index once.
+    /// This is O(columns) instead of O(columns * erased) that repeated single-position erases would cost.
+    size_t next = 0;
+    auto pos_it = positions.begin();
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        if (pos_it != positions.end() && *pos_it == i)
+        {
+            ++pos_it;
+            continue;
+        }
+        if (next != i)
+            data[next] = std::move(data[i]);
+        ++next;
+    }
+    data.resize(next);
+
+    index_by_name.clear();
+    for (size_t i = 0; i < data.size(); ++i)
+        index_by_name.emplace(data[i].name, i);
 }
 
 
@@ -285,33 +504,71 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
+const ColumnWithTypeAndName * Block::findByName(std::string_view name, bool case_insensitive) const
+{
+    const auto pos = findPositionByName(name, case_insensitive);
+    return pos.has_value() ? &data[pos.value()] : nullptr;
+}
+
 const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
 {
-    if (case_insensitive)
+    return findByName(std::string_view{name}, case_insensitive);
+}
+
+std::optional<ColumnWithTypeAndName> Block::findSubcolumnByName(const std::string & name) const
+{
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
     {
-        auto found = std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); });
-        if (found == data.end())
-        {
-            return nullptr;
-        }
-        return &*found;
+        const auto * column = findByName(column_name, false);
+        if (!column)
+            continue;
+
+        auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
+        auto subcolumn = column->type->tryGetSubcolumn(subcolumn_name, column->column);
+        if (subcolumn_type && subcolumn)
+            return ColumnWithTypeAndName(subcolumn, subcolumn_type, name);
     }
 
-    auto it = index_by_name.find(name);
-    if (index_by_name.end() == it)
-    {
-        return nullptr;
-    }
-    return &data[it->second];
+    return std::nullopt;
+}
+
+std::optional<ColumnWithTypeAndName> Block::findColumnOrSubcolumnByName(const std::string & name) const
+{
+    if (const auto * column = findByName(name, false))
+        return *column;
+
+    return findSubcolumnByName(name);
 }
 
 
 const ColumnWithTypeAndName & Block::getByName(const std::string & name, bool case_insensitive) const
 {
-    const auto * result = findByName(name, case_insensitive);
+    size_t pos = getPositionByName(name, case_insensitive);
+    return data[pos];
+}
+
+ColumnWithTypeAndName Block::getSubcolumnByName(const std::string & name) const
+{
+    auto result = findSubcolumnByName(name);
     if (!result)
-        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
-            name, dumpNames());
+        throw Exception(
+            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+            "Not found subcolumn {} in block. There are only columns: {}",
+            name,
+            dumpNames());
+
+    return *result;
+}
+
+ColumnWithTypeAndName Block::getColumnOrSubcolumnByName(const std::string & name) const
+{
+    auto result = findColumnOrSubcolumnByName(name);
+    if (!result)
+        throw Exception(
+            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+            "Not found column or subcolumn {} in block. There are only columns: {}",
+            name,
+            dumpNames());
 
     return *result;
 }
@@ -319,24 +576,38 @@ const ColumnWithTypeAndName & Block::getByName(const std::string & name, bool ca
 
 bool Block::has(const std::string & name, bool case_insensitive) const
 {
-    if (case_insensitive)
-        return std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); })
-            != data.end();
-
-    return index_by_name.end() != index_by_name.find(name);
+    return findPositionByName(name, case_insensitive).has_value();
 }
 
 
-size_t Block::getPositionByName(const std::string & name) const
+std::optional<size_t> Block::findPositionByName(std::string_view name, bool case_insensitive) const
 {
+    if (case_insensitive)
+    {
+        auto found = std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); });
+        if (found == data.end())
+        {
+            return std::nullopt;
+        }
+        return found - data.begin();
+    }
+
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
-        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
-            name, dumpNames());
-
+    {
+        return std::nullopt;
+    }
     return it->second;
 }
 
+size_t Block::getPositionByName(const std::string & name, bool case_insensitive) const
+{
+    const auto pos = findPositionByName(name, case_insensitive);
+    if (!pos.has_value())
+        throw Exception(
+            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}", name, dumpNames());
+    return pos.value();
+}
 
 void Block::checkNumberOfRows(bool allow_null_columns) const
 {
@@ -374,7 +645,8 @@ size_t Block::bytes() const
 {
     size_t res = 0;
     for (const auto & elem : data)
-        res += elem.column->byteSize();
+        if (elem.column)
+            res += elem.column->byteSize();
 
     return res;
 }
@@ -383,7 +655,8 @@ size_t Block::allocatedBytes() const
 {
     size_t res = 0;
     for (const auto & elem : data)
-        res += elem.column->allocatedBytes();
+        if (elem.column)
+            res += elem.column->allocatedBytes();
 
     return res;
 }
@@ -449,6 +722,14 @@ MutableColumns Block::cloneEmptyColumns() const
     return columns;
 }
 
+MutableColumns Block::cloneEmptyColumns(const Serializations & serializations) const
+{
+    size_t num_columns = data.size();
+    MutableColumns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].type->createColumn(*serializations[i]);
+    return columns;
+}
 
 Columns Block::getColumns() const
 {
@@ -469,6 +750,14 @@ MutableColumns Block::mutateColumns()
     return columns;
 }
 
+Columns Block::detachColumns()
+{
+    size_t num_columns = data.size();
+    Columns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column ? std::move(data[i].column) : data[i].type->createColumn();
+    return columns;
+}
 
 void Block::setColumns(MutableColumns && columns)
 {
@@ -512,10 +801,12 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
 
     if (num_columns != columns.size())
     {
+        auto dump_columns = std::views::transform([](const auto & col) { return col->dumpStructure(); });
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot clone block with columns because block has {} columns, but {} columns given",
-            num_columns, columns.size());
+            "Cannot clone block with columns because block [{}] has {} columns, but {} columns given [{}]",
+            dumpStructure(), num_columns,
+            columns.size(), fmt::join(columns | dump_columns, ", "));
     }
 
     res.reserve(num_columns);
@@ -535,10 +826,12 @@ Block Block::cloneWithColumns(const Columns & columns) const
 
     if (num_columns != columns.size())
     {
+        auto dump_columns = std::views::transform([](const auto & col) { return col->dumpStructure(); });
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot clone block with columns because block has {} columns, but {} columns given",
-            num_columns, columns.size());
+            "Cannot clone block with columns because block [{}] has {} columns, but {} columns given [{}]",
+            dumpStructure(), num_columns,
+            columns.size(), fmt::join(columns | dump_columns, ", "));
     }
 
     res.reserve(num_columns);
@@ -578,7 +871,7 @@ Block Block::sortColumns() const
     Block sorted_block;
 
     /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    std::vector<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
+    VectorWithMemoryTracking<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
@@ -608,7 +901,7 @@ Block Block::compress() const
     size_t num_columns = data.size();
     Columns new_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        new_columns[i] = data[i].column->compress();
+        new_columns[i] = data[i].column->compress(/*force_compression=*/false);
     return cloneWithColumns(new_columns);
 }
 
@@ -660,6 +953,16 @@ Names Block::getNames() const
     return res;
 }
 
+NameSet Block::getNameSet() const
+{
+    NameSet res;
+    res.reserve(columns());
+
+    for (const auto & elem : data)
+        res.insert(elem.name);
+    return res;
+}
+
 
 DataTypes Block::getDataTypes() const
 {
@@ -684,17 +987,6 @@ Names Block::getDataTypeNames() const
     return res;
 }
 
-
-Block::NameMap Block::getNamesToIndexesMap() const
-{
-    NameMap res(index_by_name.size());
-    res.set_empty_key(StringRef{});
-    for (const auto & [name, index] : index_by_name)
-        res[name] = index;
-    return res;
-}
-
-
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 {
     return checkBlockStructure<bool>(lhs, rhs, "", false);
@@ -704,6 +996,29 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, std::string_view context_description)
 {
     checkBlockStructure<void>(lhs, rhs, context_description, false);
+}
+
+namespace
+{
+
+Block replaceReplicatedColumnsToNested(const Block & block)
+{
+    Block block_without_replicated;
+    for (const auto & column : block.getColumnsWithTypeAndName())
+    {
+        if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.column.get()))
+            block_without_replicated.insert(ColumnWithTypeAndName(column_replicated->getNestedColumn(), column.type, column.name));
+        else
+            block_without_replicated.insert(column);
+    }
+    return block_without_replicated;
+}
+
+}
+
+void assertBlocksHaveEqualStructureAllowReplicated(const Block & lhs, const Block & rhs, std::string_view context_description)
+{
+    checkBlockStructure<void>(replaceReplicatedColumnsToNested(lhs), replaceReplicatedColumnsToNested(rhs), context_description, false);
 }
 
 
@@ -724,7 +1039,7 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
     /// The traditional task: the largest common subsequence (LCS).
     /// Assume that order is important. If this becomes wrong once, let's simplify it: for example, make 2 sets.
 
-    std::vector<std::vector<int>> lcs(lhs.columns() + 1);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<int>> lcs(lhs.columns() + 1);
     for (auto & v : lcs)
         v.resize(rhs.columns() + 1);
 
@@ -769,18 +1084,22 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
     while (r > 0)
         right_columns.push_back(rhs.safeGetByPosition(--r));
 
-    WriteBufferFromString lhs_diff_writer(out_lhs_diff);
-    WriteBufferFromString rhs_diff_writer(out_rhs_diff);
-
-    for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
     {
-        lhs_diff_writer << it->dumpStructure();
-        lhs_diff_writer << ", position: " << lhs.getPositionByName(it->name) << '\n';
+        WriteBufferFromString lhs_diff_writer(out_lhs_diff);
+        for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
+        {
+            lhs_diff_writer << it->dumpStructure();
+            lhs_diff_writer << ", position: " << lhs.getPositionByName(it->name) << '\n';
+        }
     }
-    for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
+
     {
-        rhs_diff_writer << it->dumpStructure();
-        rhs_diff_writer << ", position: " << rhs.getPositionByName(it->name) << '\n';
+        WriteBufferFromString rhs_diff_writer(out_rhs_diff);
+        for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
+        {
+            rhs_diff_writer << it->dumpStructure();
+            rhs_diff_writer << ", position: " << rhs.getPositionByName(it->name) << '\n';
+        }
     }
 }
 
@@ -818,15 +1137,32 @@ Serializations Block::getSerializations() const
     return res;
 }
 
-void convertToFullIfSparse(Block & block)
+Serializations Block::getSerializations(const SerializationInfoByName & hints) const
 {
-    for (auto & column : block)
-        column.column = recursiveRemoveSparse(column.column);
+    Serializations res;
+    res.reserve(data.size());
+
+    for (const auto & column : data)
+    {
+        auto it = hints.find(column.name);
+        if (it == hints.end())
+            res.push_back(column.type->getSerialization(hints.getSettings()));
+        else
+            res.push_back(column.type->getSerialization(*it->second));
+    }
+
+    return res;
 }
 
-Block materializeBlock(const Block & block)
+void removeSpecialColumnRepresentations(Block & block)
 {
-    if (!block)
+    for (auto & column : block)
+        column.column = removeSpecialRepresentations(column.column);
+}
+
+Block materializeBlock(const Block & block, bool remove_special_column_representations)
+{
+    if (block.empty())
         return block;
 
     Block res = block;
@@ -834,22 +1170,31 @@ Block materializeBlock(const Block & block)
     for (size_t i = 0; i < columns; ++i)
     {
         auto & element = res.getByPosition(i);
-        element.column = recursiveRemoveSparse(element.column->convertToFullColumnIfConst());
+        element.column = element.column->convertToFullColumnIfConst();
+        if (remove_special_column_representations)
+            element.column = removeSpecialRepresentations(element.column);
     }
 
     return res;
 }
 
-void materializeBlockInplace(Block & block)
+void materializeBlockInplace(Block & block, bool remove_special_column_representations)
 {
     for (size_t i = 0; i < block.columns(); ++i)
-        block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
+    {
+        block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
+        if (remove_special_column_representations)
+            block.getByPosition(i).column = removeSpecialRepresentations(block.getByPosition(i).column);
+    }
 }
 
-Block concatenateBlocks(const std::vector<Block> & blocks)
+Block concatenateBlocks(const Blocks & blocks)
 {
     if (blocks.empty())
         return {};
+
+    if (blocks.size() == 1)
+        return blocks[0];
 
     size_t num_rows = 0;
     for (const auto & block : blocks)
@@ -870,6 +1215,32 @@ Block concatenateBlocks(const std::vector<Block> & blocks)
 
     out.setColumns(std::move(columns));
     return out;
+}
+
+String addDummyColumnWithRowCount(Block & block, size_t num_rows)
+{
+    bool has_columns = false;
+    for (const auto & column : block)
+    {
+        if (column.column)
+        {
+            chassert(column.column->size() == num_rows);
+            has_columns = true;
+            break;
+        }
+    }
+
+    if (has_columns)
+        return {};
+
+    ColumnWithTypeAndName dummy_column;
+    dummy_column.column = DataTypeUInt8().createColumnConst(num_rows, Field(1));
+    dummy_column.type = std::make_shared<DataTypeUInt8>();
+    /// Generate a random name to avoid collisions with real columns.
+    dummy_column.name = "....dummy...." + toString(UUIDHelpers::generateV4());
+    block.insert(dummy_column);
+
+    return dummy_column.name;
 }
 
 }

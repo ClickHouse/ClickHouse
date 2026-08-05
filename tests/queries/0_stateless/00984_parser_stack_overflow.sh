@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-asan
+# Tags: no-asan, no-msan, no-tsan
 
 # Such a huge timeout mostly for debug build.
 CLICKHOUSE_CURL_TIMEOUT=60

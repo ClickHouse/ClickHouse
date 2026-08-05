@@ -38,7 +38,7 @@ struct ExponentiallySmoothedAverage
     /// alternatively the space can be represented by (exponentially_adjusted_value, time) and then the curves will be constant over time.
 
     /// Also useful analogy is the exponential representation of a number: x = a * exp(b) = a * e (where e = exp(b))
-    /// a number x is represented by a curve in 2d plane that can be parametrized by coordinates (a, b) or (a, e).
+    /// a number x is represented by a curve in 2d plane that can be parameterized by coordinates (a, b) or (a, e).
 
     double time = 0;
 

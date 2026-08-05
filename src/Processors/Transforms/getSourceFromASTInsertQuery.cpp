@@ -1,25 +1,31 @@
+#include <cstddef>
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterSetQuery.h>
 #include <IO/ConcatReadBuffer.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/EmptyReadBuffer.h>
-#include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Formats/IInputFormat.h>
-#include "IO/CompressionMethod.h"
+#include <IO/CompressionMethod.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 
-
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool input_format_defaults_for_omitted_fields;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsSnappyMode snappy_mode;
+}
 
 namespace ErrorCodes
 {
@@ -48,22 +54,23 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     {
         if (input_function)
             throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT query requires format to be set");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT query requires format to be set");
     }
 
-    /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
-    auto input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
-        ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
-
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
-        ? getReadBufferFromASTInsertQuery(ast)
+        ? getReadBufferFromASTInsertQuery(ast, context->getSettingsRef()[Setting::snappy_mode])
         : std::make_unique<EmptyReadBuffer>();
 
+    const Settings & settings = context->getSettingsRef();
+
     /// Create a source from input buffer using format from query
-    auto source = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef().max_insert_block_size);
-    source->addBuffer(std::move(input_buffer));
-    return source;
+    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header,
+                                          settings[Setting::max_insert_block_size], std::nullopt,
+                                          settings[Setting::max_insert_block_size_bytes],
+                                          settings[Setting::min_insert_block_size_rows],
+                                          settings[Setting::min_insert_block_size_bytes]);
+    format->addBuffer(std::move(input_buffer));
+    return format;
 }
 
 Pipe getSourceFromInputFormat(
@@ -75,16 +82,29 @@ Pipe getSourceFromInputFormat(
     Pipe pipe(format);
 
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
-    if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
+    if (context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && !input_function)
     {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        const auto & columns = metadata_snapshot->getColumns();
-        if (columns.hasDefaults())
+        /// Resolve the destination columns. For a plain table the id is in the query;
+        /// for a table function (remote(), file(), ...) the id is empty, but the resolved
+        /// storage columns (including DEFAULTs) are saved in the context by InterpreterInsertQuery.
+        StorageMetadataHandle metadata_snapshot;
+        const ColumnsDescription * columns = nullptr;
+        if (ast_insert_query->table_id)
         {
-            pipe.addSimpleTransform([&](const Block & cur_header)
+            StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
+            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            columns = &metadata_snapshot->getColumns();
+        }
+        else if (const auto & insertion_columns = context->getInsertionTableColumnsDescription())
+        {
+            columns = insertion_columns.get();
+        }
+
+        if (columns && columns->hasDefaults())
+        {
+            pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
-                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *format, context);
+                return std::make_shared<AddingDefaultsTransform>(cur_header, *columns, *format, context);
             });
         }
     }
@@ -103,7 +123,7 @@ Pipe getSourceFromASTInsertQuery(
     return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
 }
 
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, SnappyMode snappy_mode)
 {
     const auto * insert_query = ast->as<ASTInsertQuery>();
     if (!insert_query)
@@ -125,10 +145,12 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
 
         /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
         /// Buffer for reading from file is created and wrapped with appropriate compression method
-        return wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
+        return wrapReadBufferWithCompressionMethod(
+            std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method),
+            /*zstd_window_log_max=*/ 0, snappy_mode);
     }
 
-    std::vector<std::unique_ptr<ReadBuffer>> buffers;
+    ConcatReadBuffer::Buffers buffers;
     if (insert_query->data)
     {
         /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
@@ -138,9 +160,14 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
         buffers.emplace_back(std::move(ast_buffer));
     }
 
+    /// tail does not possess the input buffer
     if (insert_query->tail)
-        buffers.emplace_back(wrapReadBufferReference(*insert_query->tail));
+    {
+        buffers.emplace_back(wrapReadBufferPointer(insert_query->tail));
+        insert_query->tail.reset();
+    }
 
+    chassert(!buffers.empty());
     return std::make_unique<ConcatReadBuffer>(std::move(buffers));
 }
 

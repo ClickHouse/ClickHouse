@@ -1,5 +1,7 @@
-#include "BufferAllocationPolicy.h"
+#include <Common/BufferAllocationPolicy.h>
+#include <base/defines.h>
 
+#include <algorithm>
 #include <memory>
 
 namespace DB
@@ -46,7 +48,7 @@ class ExpBufferAllocationPolicy : public DB::BufferAllocationPolicy
 
 public:
     explicit ExpBufferAllocationPolicy(const BufferAllocationPolicy::Settings & settings_)
-        : first_size(std::max(settings_.max_single_size, settings_.min_size))
+        : first_size(std::clamp(settings_.max_single_size, settings_.min_size, settings_.max_size))
         , second_size(settings_.min_size)
         , multiply_factor(settings_.multiply_factor)
         , multiply_threshold(settings_.multiply_parts_count_threshold)
@@ -95,8 +97,7 @@ BufferAllocationPolicyPtr BufferAllocationPolicy::create(BufferAllocationPolicy:
 {
     if (settings_.strict_size > 0)
         return std::make_unique<FixedSizeBufferAllocationPolicy>(settings_);
-    else
-        return std::make_unique<ExpBufferAllocationPolicy>(settings_);
+    return std::make_unique<ExpBufferAllocationPolicy>(settings_);
 }
 
 }

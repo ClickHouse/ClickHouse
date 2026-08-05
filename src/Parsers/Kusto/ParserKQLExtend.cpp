@@ -1,15 +1,8 @@
-#include <format>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLExtend.h>
-#include <Parsers/Kusto/ParserKQLMakeSeries.h>
-#include <Parsers/Kusto/ParserKQLOperators.h>
-#include <Parsers/Kusto/ParserKQLProject.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -23,7 +16,7 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String except_str;
     String new_extend_str;
     Tokens ntokens(extend_expr.data(), extend_expr.data() + extend_expr.size(), 0, true);
-    IParser::Pos npos(ntokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos npos(ntokens, pos);
 
     String alias;
 
@@ -31,7 +24,7 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (alias.empty())
         {
-            alias = std::format("Column{}", new_column_index);
+            alias = fmt::format("Column{}", new_column_index);
             ++new_column_index;
             new_extend_str += " AS";
         }
@@ -75,9 +68,9 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     apply_alias();
 
-    String expr = std::format("SELECT * {}, {} from prev", except_str, new_extend_str);
+    String expr = fmt::format("SELECT * {}, {} from prev", except_str, new_extend_str);
     Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
-    IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos new_pos(tokens, pos);
 
     if (!ParserSelectQuery().parse(new_pos, select_query, expected))
         return false;
