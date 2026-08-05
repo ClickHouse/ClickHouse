@@ -2650,10 +2650,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     state->query_context = session->makeQueryContext(client_info);
 
-    /// Sets the default database if it wasn't set earlier for the session context.
-    if (is_interserver_mode && !default_database.empty())
-        state->query_context->setCurrentDatabase(default_database);
-
     std::weak_ptr<QueryState> state_wptr = state;
 
     state->query_context->setProgressCallback(
@@ -2722,6 +2718,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         state->query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     state->query_context->applySettingsChanges(settings_changes);
+
+    /// Sets the default database if it wasn't set earlier for the session context. This runs after
+    /// the passed settings are applied, so the database explicitly carried by the query packet wins
+    /// over a `database` setting that may have arrived with the passed settings; `setCurrentDatabase`
+    /// mirrors it back into the setting, keeping the two in sync for `executeQuery`.
+    if (is_interserver_mode && !default_database.empty())
+        state->query_context->setCurrentDatabase(default_database);
 
     /// Use the received query id, or generate a random default. It is convenient
     /// to also generate the default OpenTelemetry trace id at the same time, and

@@ -3554,6 +3554,7 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
 
     DatabaseCatalog::instance().assertDatabaseExists(name);
     current_database = name;
+    mirrorCurrentDatabaseIntoSetting(name);
     need_recalculate_access = true;
 }
 
@@ -3570,7 +3571,22 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
 
     std::lock_guard lock(mutex);
     current_database = name;
+    mirrorCurrentDatabaseIntoSetting(name);
     need_recalculate_access = true;
+}
+
+void Context::mirrorCurrentDatabaseIntoSetting(const String & name)
+{
+    /// Keep the `database` setting in sync with a current database chosen out-of-band (a protocol's
+    /// connect-time database, MySQL `COM_INIT_DB`, `USE`, the user's `DEFAULT DATABASE`, internal
+    /// DDL / recovery / job contexts, …). `executeQuery` applies a non-empty `database` setting as
+    /// the documented equivalent of `USE`; without the mirror, a stale value inherited from a
+    /// profile or an earlier `SET database = …` would win back just before analysis and silently
+    /// override the database this context explicitly selected. The global context is exempt: the
+    /// server-wide default database is not an explicitly chosen setting and must not be marked as
+    /// changed for every session that inherits the global settings.
+    if (!isGlobalContext())
+        settings->set("database", name);
 }
 
 void Context::setCurrentQueryId(const String & query_id)

@@ -1984,6 +1984,10 @@ private:
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
+    /// Keep the `database` setting in sync with an out-of-band change of the current database.
+    /// Must be called with the context mutex held.
+    void mirrorCurrentDatabaseIntoSetting(const String & name);
+
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source);
 
     void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source);

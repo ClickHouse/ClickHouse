@@ -26,12 +26,11 @@ BlockIO InterpreterUseQuery::execute()
     database_change.setSetting("database", new_database);
     session_context->checkSettingsConstraints(database_change, SettingSource::QUERY);
 
+    /// `setCurrentDatabase` also keeps the `database` setting in sync with the session's current
+    /// database; without that, an earlier `SET database = ...` would be re-applied on the next query
+    /// and silently override the database just selected by this `USE`. A query's own
+    /// `SETTINGS database = ...` is applied later and still takes precedence.
     session_context->setCurrentDatabase(new_database);
-    /// Keep the `database` setting in sync with the session's current database; without this, an
-    /// earlier `SET database = ...` would be re-applied on the next query and silently override the
-    /// database just selected by this `USE`. A query's own `SETTINGS database = ...` is applied later
-    /// and still takes precedence.
-    session_context->setSetting("database", new_database);
     return {};
 }
 
