@@ -48,3 +48,51 @@ SELECT count() FROM t_stale_idx_clear WHERE t.a = 0;
 SELECT count() FROM t_stale_idx_clear WHERE t.a = 0 SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_stale_idx_clear;
+
+-- Case 4: with alter_column_secondary_index_mode = 'throw', an ALTER of the parent of an explicit
+-- index's subcolumn must be rejected synchronously (as it is for an index on a whole column),
+-- instead of silently rebuilding/dropping the index during the mutation.
+DROP TABLE IF EXISTS t_subcolumn_index_throw;
+CREATE TABLE t_subcolumn_index_throw (id UInt32, t Tuple(a Int32, b String), INDEX idx t.a TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, alter_column_secondary_index_mode = 'throw';
+
+INSERT INTO t_subcolumn_index_throw SELECT number, (number, 'x') FROM numbers(4);
+
+ALTER TABLE t_subcolumn_index_throw MODIFY COLUMN t Tuple(a Float32, b String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_subcolumn_index_throw CLEAR COLUMN t; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_subcolumn_index_throw;
+
+-- Case 5: a projection whose sort key is a subcolumn of the altered column. Its own primary index
+-- stores the sort key as raw bytes, so an ALTER MODIFY that changes the subcolumn type must rebuild
+-- the projection; otherwise range analysis over the projection mis-prunes granules (wrong results).
+DROP TABLE IF EXISTS t_stale_projection_modify;
+CREATE TABLE t_stale_projection_modify (id UInt32, t Tuple(a Int32, b String), PROJECTION p (SELECT * ORDER BY t.a))
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_stale_projection_modify SELECT number, (number, 'x') FROM numbers(16);
+
+ALTER TABLE t_stale_projection_modify MODIFY COLUMN t Tuple(a Float32, b String) SETTINGS mutations_sync = 2;
+
+SELECT count() FROM t_stale_projection_modify WHERE t.a >= 5 SETTINGS optimize_use_projections = 1;
+SELECT count() FROM t_stale_projection_modify WHERE t.a >= 5 SETTINGS optimize_use_projections = 0;
+
+DROP TABLE t_stale_projection_modify;
+
+-- Case 6: a rows TTL defined on a subcolumn must be recalculated when the parent column is updated.
+-- After moving the subcolumn value into the past, the rows must expire (as they do for a whole column).
+DROP TABLE IF EXISTS t_stale_ttl_update;
+CREATE TABLE t_stale_ttl_update (id UInt32, t Tuple(a DateTime, b String))
+ENGINE = MergeTree ORDER BY id
+TTL t.a
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_stale_ttl_update SELECT number, (now() + INTERVAL 1 YEAR, 'x') FROM numbers(4);
+
+ALTER TABLE t_stale_ttl_update UPDATE t = (now() - INTERVAL 1 YEAR, t.b) WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT count() FROM t_stale_ttl_update;
+
+DROP TABLE t_stale_ttl_update;

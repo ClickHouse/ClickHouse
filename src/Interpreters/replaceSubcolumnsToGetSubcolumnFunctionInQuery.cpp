@@ -1,4 +1,5 @@
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -35,6 +36,14 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
         for (auto & child : ast->children)
             replaceSubcolumnsToGetSubcolumnFunctionInQuery(child, columns);
     }
+}
+
+Names getRequiredColumnsWithSubcolumnsReplaced(
+    const ASTPtr & expression_ast, const NamesAndTypesList & all_columns, const ContextPtr & context)
+{
+    auto ast = expression_ast->clone();
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, all_columns);
+    return TreeRewriter(context).analyze(ast, all_columns)->requiredSourceColumns();
 }
 
 }

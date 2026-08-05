@@ -65,6 +65,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
@@ -5208,11 +5209,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// We use columns_in_indices to prevent alters that change column data type in a way that requires
     /// reindexing secondary indices (respecting alter_column_secondary_index_mode). But only care about explicit indices
     std::unordered_map<String, String> columns_in_explicit_indices;
+    const auto all_physical_columns = old_metadata.getColumns().getAllPhysical();
     for (const auto & index : old_metadata.getSecondaryIndices())
     {
         if (!index.isImplicitlyCreated())
         {
-            for (const String & col : index.expression->getRequiredColumns())
+            /// An index may read a subcolumn (e.g. `t.a`); resolve required columns to their
+            /// top-level columns (`t`) so an ALTER of the parent column is matched against
+            /// alter_column_secondary_index_mode, just like an index on a whole column.
+            for (const String & col : getRequiredColumnsWithSubcolumnsReplaced(index.expression_list_ast, all_physical_columns, local_context))
                 columns_in_explicit_indices.emplace(col, index.name);
         }
     }

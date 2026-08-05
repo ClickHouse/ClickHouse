@@ -19,6 +19,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -1232,6 +1233,10 @@ static void checkTTLGroupBySetForAggregateFunctions(
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
     auto ast = expression_ast->clone();
+    /// The TTL expression may read a subcolumn (e.g. `t.a`); evaluate it via getSubcolumn from the
+    /// whole (possibly just-updated) column so it is not read as a stale pre-extracted subcolumn.
+    /// expression_columns are already resolved to top-level columns (see getTTLFromAST).
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, expression_columns);
     return buildExpressionAndSets(ast, expression_columns, context);
 }
 
@@ -1240,6 +1245,7 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     if (where_expression_ast)
     {
         auto ast = where_expression_ast->clone();
+        replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, where_expression_columns);
         return buildExpressionAndSets(ast, where_expression_columns, context);
     }
 
@@ -1279,6 +1285,11 @@ TTLDescription TTLDescription::getTTLFromAST(
         build_guard.emplace(/*variant_throw=*/ true, /*dynamic_throw=*/ true);
 
     auto ttl_ast = result.expression_ast->clone();
+    /// Rewrite subcolumns (e.g. `t.a`) to getSubcolumn(t, 'a') so the required columns resolve to
+    /// their top-level columns. This makes a mutation of the parent column recognized as affecting
+    /// the TTL (see StorageInMemoryMetadata::getColumnDependencies), and lets the TTL be recomputed
+    /// from the updated parent. The stored expression_ast is kept as-is for SHOW CREATE.
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(ttl_ast, columns.getAllPhysical());
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
@@ -1305,6 +1316,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 result.where_expression_ast = where_expr_ast->clone();
 
                 ASTPtr ast = where_expr_ast->clone();
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, columns.getAllPhysical());
                 where_expression = buildExpressionAndSets(ast, columns.getAllPhysical(), context).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;

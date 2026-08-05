@@ -198,18 +198,6 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
-/// A skip index expression may read a subcolumn (e.g. `t.a`), while a mutation tracks the whole
-/// column it is stored in (e.g. `t`). Replace subcolumns in the expression with `getSubcolumn`
-/// (the same rewrite used for MATERIALIZED expressions) so its required source columns become
-/// top-level columns. This makes a mutation of the parent column recognized as affecting the
-/// index, and lets the index be recomputed from the updated parent instead of a stale
-/// pre-extracted subcolumn.
-Names getExpressionRequiredColumnsWithoutSubcolumns(const ASTPtr & expression_ast, const NamesAndTypesList & all_columns, const ContextPtr & context)
-{
-    auto ast = expression_ast->clone();
-    replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, all_columns);
-    return TreeRewriter(context).analyze(ast, all_columns)->requiredSourceColumns();
-}
 
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
@@ -1320,7 +1308,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
-                        const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
+                        /// The projection may sort by a subcolumn of the altered column (e.g.
+                        /// `ORDER BY t.a` while `ALTER ... MODIFY COLUMN t ...`). Resolve the primary
+                        /// key's required columns to their top-level columns, otherwise the projection
+                        /// (including its own primary index, which stores the sort key as raw bytes)
+                        /// is left stale (hardlinked unchanged) on wide parts and mis-prunes granules.
+                        const auto & primary_key = projection.metadata->getPrimaryKey();
+                        auto pk_columns = primary_key.expression_list_ast
+                            ? getRequiredColumnsWithSubcolumnsReplaced(primary_key.expression_list_ast, all_columns, context)
+                            : projection.metadata->getPrimaryKeyColumns();
                         if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
                         {
                             for (const auto & col : projection.required_columns)
@@ -1335,7 +1331,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         /// while `ALTER ... MODIFY COLUMN t ...`); resolve required columns to their
                         /// top-level columns so the parent change is recognized, otherwise a subcolumn
                         /// index would be left stale (hardlinked unchanged) on wide parts.
-                        auto index_cols = getExpressionRequiredColumnsWithoutSubcolumns(index.expression_list_ast, all_columns, context);
+                        auto index_cols = getRequiredColumnsWithSubcolumnsReplaced(index.expression_list_ast, all_columns, context);
                         if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
                         {
                             switch (index_mode)
@@ -1372,7 +1368,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// (including indices on a subcolumn of the cleared column, e.g. index on `t.a`).
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
-                auto index_cols = getExpressionRequiredColumnsWithoutSubcolumns(index.expression_list_ast, all_columns, context);
+                auto index_cols = getRequiredColumnsWithSubcolumnsReplaced(index.expression_list_ast, all_columns, context);
                 if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
                     dropped_indices.insert(index.name);
             }
@@ -1578,7 +1574,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// Resolve required columns to their top-level columns so a mutation of a parent column
         /// (e.g. `UPDATE`/`CLEAR COLUMN t`) is recognized as affecting an index on its subcolumn
         /// (e.g. `t.a`); otherwise the index would be left stale (hardlinked unchanged) on wide parts.
-        auto index_cols = getExpressionRequiredColumnsWithoutSubcolumns(index.expression_list_ast, all_columns, context);
+        auto index_cols = getRequiredColumnsWithSubcolumnsReplaced(index.expression_list_ast, all_columns, context);
         bool changed = std::any_of(
             index_cols.begin(),
             index_cols.end(),
