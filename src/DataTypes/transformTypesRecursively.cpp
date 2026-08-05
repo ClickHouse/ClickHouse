@@ -6,12 +6,18 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <Common/Exception.h>
 
 #include <unordered_set>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 static TypeIndexesSet getTypesIndexes(const DataTypes & types)
 {
@@ -266,12 +272,16 @@ DataTypePtr replaceNestedSimpleTypes(const DataTypePtr & type, const std::functi
         if (any_replaced)
         {
             /// A replacement changes a name (e.g. the alternative gains a version prefix), so two
-            /// alternatives that differed only in that name can collapse into one. Refuse the
-            /// replacement rather than lose an alternative.
+            /// alternatives that differed only in that name can collapse into one. Keeping the type
+            /// unreplaced instead would announce the wrong nested types (e.g. an aggregate function
+            /// state version other than the one the payload is written with), so this must be an
+            /// error, not a silent no-op.
             std::unordered_set<String> names;
             for (const auto & variant : new_variants)
                 if (!names.insert(variant->getName()).second)
-                    return nullptr;
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot rewrite the nested types of {}: two of its alternatives would become the same type {}",
+                        type->getName(), variant->getName());
 
             /// The default DataTypeVariant constructor re-sorts the alternatives by name, which after a
             /// rename would silently permute the discriminators of an existing column. Keep the original
