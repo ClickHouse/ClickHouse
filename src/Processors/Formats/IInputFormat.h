@@ -80,6 +80,16 @@ struct FileBucketInfo
     /// when nothing semantics-affecting would be lost. The default is the safe answer.
     virtual bool coversWholeFile() const { return false; }
 
+    /// Whether the row groups this assignment omits were *pruned* rather than handed to another
+    /// reader. It is false for a split bucket (a partition of the file among several sources: the
+    /// omitted row groups belong to the other buckets) and true for an assignment derived from the
+    /// query condition cache (`filterByMatchingRowGroups`), which restricts a single reader of the
+    /// whole file to the row groups a previous run found matching. Local-only: such an assignment is
+    /// always built on the node that reads the file, so the flag is never serialized. Read-path
+    /// profile events use it to decide what this reader is accountable for - the whole file, or only
+    /// its own bucket (see `Parquet::ReadManager::init`).
+    bool omitted_row_groups_are_pruned = false;
+
     virtual ~FileBucketInfo() = default;
 };
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;

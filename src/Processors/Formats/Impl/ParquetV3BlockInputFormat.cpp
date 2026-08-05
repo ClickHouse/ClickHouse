@@ -140,7 +140,10 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             if (buckets_to_read)
                 checkFileMatchesBucketAssignment(*buckets_to_read, reader->reader.file_metadata);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-            reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+            reader->init(
+                parser_shared_resources,
+                buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt,
+                buckets_to_read && buckets_to_read->omitted_row_groups_are_pruned);
         }
     }
 }
@@ -367,6 +370,9 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     {
         auto result = std::make_shared<ParquetFileBucketInfo>(matching_row_groups, result_file_num_row_groups);
         result->footer_digest = footer_digest;
+        /// The row groups left out here were dropped by the query condition cache, i.e. pruned - no
+        /// other reader picks them up. See `FileBucketInfo::omitted_row_groups_are_pruned`.
+        result->omitted_row_groups_are_pruned = true;
         return result;
     }
     std::unordered_set<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
@@ -376,6 +382,11 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
             filtered.push_back(rg);
     if (filtered.empty())
         return nullptr;
+    /// Filtering a real split bucket: the row groups left out are a mix of the other buckets' row
+    /// groups and the ones the cache dropped, so this reader stays accountable for its own bucket
+    /// only and `omitted_row_groups_are_pruned` stays false. Both current callers apply the cache
+    /// filter to a fresh prototype (they are gated on there being no split), so this path only
+    /// affects a hypothetical cache-filtered split.
     auto result = std::make_shared<ParquetFileBucketInfo>(std::move(filtered), result_file_num_row_groups);
     result->footer_digest = footer_digest;
     return result;

@@ -186,4 +186,18 @@ TEST(ParquetFileBucketInfoSerialization, FilterByMatchingRowGroupsKeepsFooterDig
     EXPECT_EQ(from_prototype->footer_digest, 0xdeadbeefu);
 }
 
+/// An assignment derived from the query condition cache omits row groups that were pruned, not
+/// handed to another reader, so it must be marked as such: the read path attributes the
+/// `ParquetPrunedRowGroups` event to the whole file for it, and to the bucket alone for a split.
+TEST(ParquetFileBucketInfoSerialization, CacheFilteredPrototypeMarksOmittedAsPruned)
+{
+    ParquetFileBucketInfo prototype;
+    auto from_prototype = prototype.filterByMatchingRowGroups({0, 2}, /*file_num_row_groups=*/4);
+    ASSERT_NE(from_prototype, nullptr);
+    EXPECT_TRUE(from_prototype->omitted_row_groups_are_pruned);
+
+    /// A split bucket stays accountable for its own row groups only.
+    EXPECT_FALSE(ParquetFileBucketInfo({0, 1}, /*file_num_row_groups=*/4).omitted_row_groups_are_pruned);
+}
+
 #endif

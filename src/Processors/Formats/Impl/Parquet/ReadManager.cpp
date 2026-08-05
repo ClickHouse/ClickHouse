@@ -48,7 +48,10 @@ std::optional<size_t> AtomicBitSet::findFirst()
     return std::nullopt;
 }
 
-void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
+void ReadManager::init(
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    const std::optional<std::vector<size_t>> & buckets_to_read_,
+    bool omitted_row_groups_are_pruned)
 {
     parser_shared_resources = parser_shared_resources_;
 
@@ -64,26 +67,21 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
 
-    /// Profile events must reflect only the row groups that belong to this bucket, otherwise
-    /// every bucket of a single-file split would report the file's totals and the events would
-    /// be multiplied by the number of buckets.
+    /// Profile events must reflect only the row groups this reader is accountable for, otherwise
+    /// every bucket of a single-file split would report the file's totals and the events would be
+    /// multiplied by the number of buckets. A reader accounts for its own bucket when the file is
+    /// partitioned among several readers, and for the whole file otherwise - including when the
+    /// assignment is a query-condition-cache prefilter of a single whole-file read, where the row
+    /// groups it omits were pruned by the cache and nobody else reads them.
     size_t read_count = 0;
-    size_t total_in_partition = 0;
-    if (row_groups_to_read.has_value())
-    {
-        read_count = 0;
-        for (const auto & rg : reader.row_groups)
-            if (rg.need_to_process)
-                ++read_count;
-        total_in_partition = row_groups_to_read->size();
-    }
-    else
-    {
-        read_count = reader.row_groups.size();
-        total_in_partition = reader.file_metadata.row_groups.size();
-    }
+    for (const auto & rg : reader.row_groups)
+        if (rg.need_to_process)
+            ++read_count;
+    const size_t accountable_row_groups = row_groups_to_read.has_value() && !omitted_row_groups_are_pruned
+        ? row_groups_to_read->size()
+        : reader.file_metadata.row_groups.size();
     ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, read_count);
-    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, total_in_partition - read_count);
+    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, accountable_row_groups - read_count);
 
     size_t num_row_groups = reader.row_groups.size();
     for (size_t i = size_t(ReadStage::NotStarted) + 1; i < size_t(ReadStage::Deliver); ++i)
