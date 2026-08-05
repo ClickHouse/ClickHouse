@@ -21,7 +21,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -100,6 +102,24 @@ extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
+}
+
+namespace
+{
+
+/// The storage a database enumerates is not always the storage a read must go through: a
+/// `MaterializedPostgreSQL` database exposes the physical nested `ReplacingMergeTree` tables to
+/// generic enumerators and hands out the `StorageMaterializedPostgreSQL` wrapper for reads. Reading
+/// the nested table directly would bypass the wrapper's `_sign = 1` filter and forced `FINAL` and
+/// return stale and deleted rows. See `IDatabase::getTableForRead`.
+StoragePtr tableForRead(const DatabasePtr & database, const String & table_name, const StoragePtr & table, const ContextPtr & local_context)
+{
+    if (!database)
+        return table;
+
+    return database->getTableForRead(table_name, table, local_context);
+}
+
 }
 
 StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
@@ -252,11 +272,16 @@ StoragePtr StorageMerge::traverseTablesUntilImpl(const ContextPtr & query_contex
 
     for (auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
+
         while (iterator->isValid())
         {
-            const auto & table = iterator->table();
-            if (table.get() != ignore_self && predicate(table))
-                return table;
+            const auto & nested = iterator->table();
+            if (nested.get() != ignore_self)
+            {
+                if (auto table = tableForRead(database, iterator->name(), nested, query_context); table && predicate(table))
+                    return table;
+            }
 
             iterator->next();
         }
@@ -415,9 +440,12 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     for (const auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
+
         while (iterator->isValid())
         {
-            const auto & table = iterator->table();
+            const auto & nested = iterator->table();
+            auto table = nested.get() == this ? nested : tableForRead(database, iterator->name(), nested, local_context);
             if (table && table.get() != this)
             {
                 ++selected_table_size;
@@ -1495,13 +1523,18 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     auto access = query_context->getAccess();
     for (const auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
         auto granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName());
         auto granted_select_on_all_tables = access->isGranted(AccessType::SELECT, iterator->databaseName());
         while (iterator->isValid())
         {
-            StoragePtr storage = iterator->table();
+            StoragePtr storage = tableForRead(database, iterator->name(), iterator->table(), query_context);
             if (!storage)
+            {
+                /// `next` must be called on every path, otherwise the loop never terminates.
+                iterator->next();
                 continue;
+            }
 
             if (storage.get() != storage_merge.get())
                 if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
