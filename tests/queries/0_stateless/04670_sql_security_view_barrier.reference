@@ -17,6 +17,13 @@ visible
 1
 2
 2
+===== a projection-only view stays exactly as optimizable as an INVOKER view =====
+same
+different
+same
+different
+same
+different
 ===== a view that hides no rows keeps PREWHERE =====
 1
 ===== but a filtering DEFINER view keeps the outer predicate out of PREWHERE =====

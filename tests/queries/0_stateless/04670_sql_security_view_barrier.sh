@@ -25,6 +25,11 @@ CREATE VIEW $db.projecting_view
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT owner, secret FROM $db.secrets;
 
+-- The same view without a security context switch, as the optimization baseline.
+CREATE VIEW $db.projecting_view_invoker
+SQL SECURITY INVOKER
+AS SELECT owner, secret FROM $db.secrets;
+
 CREATE VIEW $db.invoker_view
 SQL SECURITY INVOKER
 AS SELECT * FROM $db.secrets WHERE owner = currentUser();
@@ -74,34 +79,53 @@ done
 
 # The plan shape does not depend on who runs the query, and wrapping EXPLAIN in a subquery needs
 # CREATE TEMPORARY TABLE, so the checks below run as the default user. They pin every setting the
-# shape depends on, because the test also runs with randomized settings.
+# shape depends on, because the test also runs with randomized settings. The settings are pinned
+# on the client and not with a SETTINGS clause inside the subquery, because changing
+# `enable_analyzer` in a subquery is rejected when the server default differs.
+explain_client="${CLICKHOUSE_CLIENT} --enable_parallel_replicas 0
+    --query_plan_merge_filters 1 --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0"
+
 echo "===== an outer predicate merges into a view that is not a barrier ====="
 # One `Filter` step means the outer predicate and the view's own predicate ended up in the same
 # filter, which is exactly what must not happen across a barrier.
 for view in projecting_view invoker_view filtering_view filtering_view_none; do
-    ${CLICKHOUSE_CLIENT} --query \
+    ${explain_client} --enable_analyzer 1 --query \
         "SELECT count() FROM (
              EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.$view WHERE secret = 'x'
-             SETTINGS enable_analyzer = 1, query_plan_merge_filters = 1,
-                      optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
          ) WHERE explain ILIKE '%Filter column:%'"
 done
 
+echo "===== a projection-only view stays exactly as optimizable as an INVOKER view ====="
+# On every path that substitutes the view into the outer query before a plan exists
+# (`enable_analyzer = 0`, `analyzer_inline_views = 1`) as well as on the plan-level path, a
+# `DEFINER` view that provably hides no rows must produce the very plan of the same view declared
+# `SQL SECURITY INVOKER`, while a view that filters rows must not.
+for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+    for pair in "projecting_view projecting_view_invoker" "filtering_view invoker_view"; do
+        # shellcheck disable=SC2086
+        set -- $pair
+        if diff -q \
+            <(${explain_client} ${analyzer_settings} --query "EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.$1 WHERE secret = 'x'" 2>&1) \
+            <(${explain_client} ${analyzer_settings} --query "EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.$2 WHERE secret = 'x'" 2>&1) > /dev/null
+        then echo "same"; else echo "different"; fi
+    done
+done
+
+prewhere_client="${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_parallel_replicas 0
+    --optimize_move_to_prewhere 1 --query_plan_optimize_prewhere 1
+    --enable_multiple_prewhere_read_steps 1"
+
 echo "===== a view that hides no rows keeps PREWHERE ====="
 # Otherwise every DEFINER view would pay for the fix.
-${CLICKHOUSE_CLIENT} --query \
+${prewhere_client} --query \
     "SELECT count() > 0 FROM (
          EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.projecting_view WHERE secret = 'x'
-         SETTINGS enable_analyzer = 1, optimize_move_to_prewhere = 1,
-                  query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 1
      ) WHERE explain ILIKE '%Prewhere filter column: %secret%'"
 
 echo "===== but a filtering DEFINER view keeps the outer predicate out of PREWHERE ====="
-${CLICKHOUSE_CLIENT} --query \
+${prewhere_client} --query \
     "SELECT count() > 0 FROM (
          EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.filtering_view WHERE secret = 'x'
-         SETTINGS enable_analyzer = 1, optimize_move_to_prewhere = 1,
-                  query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 1
      ) WHERE explain ILIKE '%Prewhere filter column: %secret%'"
 
 echo "===== results through a barrier view are still correct ====="
