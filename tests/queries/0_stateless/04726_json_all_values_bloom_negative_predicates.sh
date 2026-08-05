@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT --multiquery --query "
     CREATE TABLE json_values_bloom_negative
     (
         id UInt32,
-        data JSON,
+        data JSON(a Int64, s String),
         INDEX json_idx JSONAllValues(data) TYPE tokenbf_v1(256, 2, 0) GRANULARITY 1
     )
     ENGINE = MergeTree

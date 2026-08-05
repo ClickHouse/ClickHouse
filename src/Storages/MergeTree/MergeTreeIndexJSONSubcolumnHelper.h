@@ -28,7 +28,7 @@ enum class JSONAllValuesMatchKind : uint8_t
 struct JSONAllValuesIndexInfo
 {
     JSONSubcolumnIndexInfo subcolumn;
-    JSONAllValuesMatchKind match_kind;
+    JSONAllValuesMatchKind match_kind = JSONAllValuesMatchKind::Direct;
 };
 
 /// Try to match a column name from the filter DAG to a JSON index column in the header.

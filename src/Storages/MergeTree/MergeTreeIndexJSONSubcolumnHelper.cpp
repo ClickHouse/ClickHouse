@@ -108,6 +108,21 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
     return tryMatchNodeToJSONAllValuesIndex(node, header.getNames());
 }
 
+static bool isJSONAllValuesMatchSafe(
+    const RPNBuilderTreeNode & node,
+    JSONAllValuesMatchKind match_kind)
+{
+    if (match_kind == JSONAllValuesMatchKind::StringCast)
+        return true;
+
+    const auto * dag_node = node.getDAGNode();
+    if (!dag_node)
+        return false;
+
+    const auto type_id = dag_node->result_type->getTypeId();
+    return type_id != TypeIndex::Dynamic && type_id != TypeIndex::Variant;
+}
+
 std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
     const RPNBuilderTreeNode & node,
     const Names & index_columns)
@@ -128,18 +143,27 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
             if (!node_dag || !argument_dag)
                 return std::nullopt;
 
+            JSONAllValuesMatchKind match_kind;
             if (node_dag->result_type->equals(*argument_dag->result_type))
-                return JSONAllValuesIndexInfo{std::move(*json_info), JSONAllValuesMatchKind::IdentityCast};
+                match_kind = JSONAllValuesMatchKind::IdentityCast;
+            else if (node_dag->result_type->getTypeId() == TypeIndex::String)
+                match_kind = JSONAllValuesMatchKind::StringCast;
+            else
+                return std::nullopt;
 
-            if (node_dag->result_type->getTypeId() == TypeIndex::String)
-                return JSONAllValuesIndexInfo{std::move(*json_info), JSONAllValuesMatchKind::StringCast};
+            if (!isJSONAllValuesMatchSafe(node, match_kind))
+                return std::nullopt;
 
-            return std::nullopt;
+            return JSONAllValuesIndexInfo{std::move(*json_info), match_kind};
         }
     }
 
     if (auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, "JSONAllValues"))
-        return JSONAllValuesIndexInfo{std::move(*json_info), JSONAllValuesMatchKind::Direct};
+    {
+        constexpr auto match_kind = JSONAllValuesMatchKind::Direct;
+        if (isJSONAllValuesMatchSafe(node, match_kind))
+            return JSONAllValuesIndexInfo{std::move(*json_info), match_kind};
+    }
 
     return std::nullopt;
 }
