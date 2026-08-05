@@ -226,6 +226,11 @@ struct KeeperLSMTNodesStorage::NodesReadView final : public KeeperNodesReadView
 
     bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override
     {
+        /// The caller is allowed to call next() again after it returned false (e.g.
+        /// `system.keeper_storage` calls it once per block, retrying after the block that
+        /// consumed the last node).
+        if (stream.at_end)
+            return false;
         stream.next();
         if (stream.at_end)
             return false;
