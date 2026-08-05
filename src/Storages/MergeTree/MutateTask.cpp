@@ -1442,11 +1442,13 @@ static void processStatisticsChanges(
     }
 }
 
-/// Repair the `_block_number` range of a minmax index inherited from a part that was mutated before the
-/// index started to be materialized for mutated parts: such a part has no `minmax__block_number.idx` of its
-/// own, and `MinMaxIndex::load` is not allowed to synthesize the range for it, so the range came back as the
-/// whole universe. Re-deriving it here heals the part on the next column-only mutation instead of carrying
-/// the lost range forward until a merge or a full rewrite happens.
+/// Repair the `_block_number` range of a minmax index inherited from a part that does not know it: a part
+/// that was mutated before the index started to be materialized for mutated parts has no
+/// `minmax__block_number.idx` of its own, and `MinMaxIndex::load` is not allowed to synthesize the range for
+/// it, so the range came back as the whole universe; a part loaded before `part_minmax_index_columns` was
+/// widened to cover the block columns carries an index without their slots at all. Re-deriving the range
+/// here heals the part on the next column-only mutation instead of carrying the lost range forward until a
+/// merge or a full rewrite happens.
 ///
 /// The repaired range is the block range of the part's own name, `[min_block, max_block]`: the
 /// `_block_number` of every row is the number of the block that inserted it, and merges and mutations only
@@ -1465,12 +1467,17 @@ static void repairInheritedBlockNumberMinMax(
 
     const auto columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), new_data_part.storage.getSettings());
 
+    /// The inherited index may be narrower than the current set of minmax columns: the block columns are
+    /// appended to the set when `part_minmax_index_columns` is widened, and changing the setting does not
+    /// reload the parts already in memory, so a part loaded (or written) before the change carries an index
+    /// without the block column slots at all. Grow it with unknown (whole universe) ranges - the same value
+    /// `load` gives a column whose file is missing - so the block columns are repaired and stored too.
+    while (minmax_index.hyperrectangle.size() < columns.size())
+        minmax_index.hyperrectangle.emplace_back(Range::createWholeUniverse());
+
     size_t i = 0;
     for (const auto & [column_name, _] : columns)
     {
-        if (i >= minmax_index.hyperrectangle.size())
-            break;
-
         if (column_name == BlockNumberColumn::name && minmax_index.hyperrectangle[i].left.isNegativeInfinity())
             minmax_index.hyperrectangle[i] = Range(part_info.min_block, true, part_info.max_block, true);
 
