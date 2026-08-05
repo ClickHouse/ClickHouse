@@ -16,15 +16,16 @@ SET use_query_condition_cache=0;
 DROP TABLE IF EXISTS oj_left_tbl;
 DROP TABLE IF EXISTS oj_right_tbl;
 
--- Left (parallelized) side: 1M rows with a varied, poorly-compressible payload, so the join
+-- Left (parallelized) side: 250K rows with a varied, poorly-compressible payload, so the join
 -- output is large enough to estimate meaningfully and stably, while staying light enough for the
--- sanitizer stateless matrix (which does not pass --no-long).
+-- sanitizer stateless matrix (which does not pass --no-long) and for the flaky check, which runs
+-- each new test 20 times in parallel on a saturated runner.
 CREATE TABLE oj_left_tbl (key UInt64, payload String) ENGINE = MergeTree ORDER BY key
-AS SELECT number, toString(cityHash64(number)) FROM numbers(1000000);
+AS SELECT number, toString(cityHash64(number)) FROM numbers(250000);
 
--- Right side: a subset of keys, so INNER matches a ~200K-row slice while LEFT/RIGHT keep all 1M.
+-- Right side: a subset of keys, so INNER matches a ~50K-row slice while LEFT/RIGHT keep all 250K.
 CREATE TABLE oj_right_tbl (key UInt64) ENGINE = MergeTree ORDER BY key
-AS SELECT number FROM numbers(200000);
+AS SELECT number FROM numbers(50000);
 
 -- INNER JOIN, join is the top of the replicas plan: ~200K matched payloads.
 SELECT t1.payload FROM oj_left_tbl AS t1 INNER JOIN oj_right_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_inner';
@@ -47,9 +48,9 @@ SYSTEM FLUSH LOGS query_log;
 -- deviates from the recorded baseline by more than 2x. Baselines are stable run-to-run because
 -- the data is deterministic.
 WITH map(
-    '04305_join_inner', 3943574,
-    '04305_join_left',  19636492,
-    '04305_join_right', 19629360) AS expected
+    '04305_join_inner', 1321301,
+    '04305_join_left',  6598805,
+    '04305_join_right', 6602935) AS expected
 SELECT format('{} {} {}', log_comment, output_bytes, expected[log_comment])
 FROM (
     SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS output_bytes

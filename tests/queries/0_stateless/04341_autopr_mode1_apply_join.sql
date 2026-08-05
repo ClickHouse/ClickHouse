@@ -22,8 +22,8 @@ DROP TABLE IF EXISTS aj_baseline;
 -- Small index_granularity so reads produce enough blocks for the statistics collector.
 CREATE TABLE aj_big (key UInt64, payload String) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity=128;
 CREATE TABLE aj_small (key UInt64) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity=128;
-INSERT INTO aj_big SELECT number, toString(cityHash64(number)) FROM numbers(5e5);
-INSERT INTO aj_small SELECT number * 2 FROM numbers(2.5e5);
+INSERT INTO aj_big SELECT number, toString(cityHash64(number)) FROM numbers(1.25e5);
+INSERT INTO aj_small SELECT number * 2 FROM numbers(6.25e4);
 
 -- Compute baselines with parallel replicas explicitly OFF. The test harness may randomize
 -- enable_parallel_replicas / automatic_parallel_replicas_mode on; if the baseline joins ran in
