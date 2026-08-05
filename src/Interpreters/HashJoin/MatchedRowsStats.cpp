@@ -14,11 +14,14 @@ MatchedRowsStats::MatchedRowsStats(JoinKind kind, JoinStrictness strictness, UIn
 {
 }
 
-
-void MatchedRowsStats::collectProbeBlock(UInt64 probed_block_size, UInt64 matched_left)
+void MatchedRowsStats::collectProbeBlock(UInt64 probed_block_size, std::optional<UInt64> matched_left)
 {
-    left_rows_total.fetch_add(probed_block_size);
-    left_rows_matched.fetch_add(matched_left);
+    left_rows_total.fetch_add(probed_block_size, std::memory_order_relaxed);
+
+    if (matched_left)
+        left_rows_matched.fetch_add(*matched_left, std::memory_order_relaxed);
+    else
+        left_matched_unavailable.store(true, std::memory_order_relaxed);
 }
 
 static size_t rowsAddressableBySelector(const ScatteredBlock::Selector & selector)
@@ -32,11 +35,11 @@ static size_t rowsAddressableBySelector(const ScatteredBlock::Selector & selecto
     return rows;
 }
 
-void MatchedRowsStats::prepareRightBitmap(const HashJoin::StoredBlocksList & stored_blocks)
+void MatchedRowsStats::prepareRightFlags(const HashJoin::StoredBlocksList & stored_blocks)
 {
-    right_rows_bitmap = std::make_unique<MatchedRightBitmap>();
+    right_rows_flags = std::make_unique<MatchedRightFlags>();
     for (const auto & block : stored_blocks)
-        right_rows_bitmap->allocate(block.block_no, rowsAddressableBySelector(block.selector));
+        right_rows_flags->allocate(block.block_no, rowsAddressableBySelector(block.selector));
 }
 
 void MatchedRowsStats::collectNonJoined(UInt64 non_joined_rows)
@@ -47,12 +50,12 @@ void MatchedRowsStats::collectNonJoined(UInt64 non_joined_rows)
 void MatchedRowsStats::markRightMatched(UInt64 ref_word)
 {
     for (const UInt64 word : refsOf(ref_word))
-        right_rows_bitmap->setMatched(refWordBlockNo(word), refWordRowNo(word));
+        right_rows_flags->setMatched(refWordBlockNo(word), refWordRowNo(word));
 }
 
 std::optional<UInt64> MatchedRowsStats::getMatchedLeft() const
 {
-    if (!left_matched_enabled)
+    if (left_matched_unavailable.load(std::memory_order_relaxed))
         return std::nullopt;
 
     return left_rows_matched.load(std::memory_order_relaxed);
@@ -62,9 +65,9 @@ std::optional<UInt64> MatchedRowsStats::getMatchedRight() const
 {
     switch (rightMatchedSource(join_kind, join_strictness))
     {
-        case RightMatchedSource::RefsBitmap:
-            if (right_rows_bitmap)
-                return right_rows_bitmap->countMatched();
+        case RightMatchedSource::RefsFlags:
+            if (right_rows_flags)
+                return right_rows_flags->countMatched();
             return std::nullopt;
         case RightMatchedSource::NonJoinedComplement:
             return right_rows_total - non_joined_right_rows.load(std::memory_order_relaxed);

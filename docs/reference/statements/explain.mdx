@@ -763,7 +763,9 @@ The maximum number in `parallelism` is computed as a minimum between:
 2. The maximum number of query processing threads set in `max_threads`.
 </Note>
 
-For a join step `EXPLAIN ANALYZE` prints per-side *participation* lines — `Left:` for the probe side (the left table) and `Right:` for the build side (the right table) — followed by one or more lines specific to the join algorithm (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge` or `direct`). Most algorithms report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
+#### Join steps {#explain-analyze-join-steps}
+
+For a join step `EXPLAIN ANALYZE` prints per-side *participation* lines — `Left:` for the probe side (the left table) and `Right:` for the build side (the right table) — followed by any lines specific to the join implementation. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `direct`), and so are the two implementations that setting cannot select: a `CROSS` or `COMMA` join and any `ON` section without a key equality, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
 
 The per-side lines share the same shape:
 
@@ -775,7 +777,7 @@ Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_ra
 For each side `EXPLAIN ANALYZE` reports:
 
 - `rows <rows>` — the total number of rows of that side that passed through the join.
-- `matched <matched_rows>` — the number of rows of that side that found at least one join partner on the other side. This counts *rows*, not keys: if a key occurs three times on the right and matches, all three right rows count as matched. Rows skipped because their key was `NULL`, or because a condition in the `ON` section excluded them, count as not matched.
+- `matched <matched_rows>` — the number of rows of that side that found at least one join partner on the other side. This counts *rows*, not keys: if a key occurs three times on the right and matches, all three right rows count as matched.
 - `match rate <match_rate>%` — the percentage of that side's rows that matched, computed as `100 * <matched_rows> / <rows>`.
 - `fanout <fanout>` — how many output rows an average matched row of that side produced.
 
@@ -783,7 +785,7 @@ A number that cannot be derived exactly is reported as `not collected` rather th
 
 #### Fanout {#explain-analyze-fanout}
 
-`fanout` measures row multiplication, and only row multiplication:
+`fanout` measures row multiplication:
 
 ```txt
 matched output rows = <output_rows> - <NULL-padded rows of both sides>
@@ -801,14 +803,20 @@ An outer join emits one `NULL`-padded output row for every row of a preserved si
 Most of these numbers fall out of data the join builds anyway and are reported by a plain `EXPLAIN ANALYZE`. Two cases need bookkeeping the join would otherwise not do, so they are only reported with `EXPLAIN ANALYZE matches = 1`:
 
 - the **right** side of `ALL INNER` and `ALL LEFT`, which requires marking every matched right row;
-- the **left** side of `ALL LEFT` and `ALL FULL`.
+- the **left** side of `ALL LEFT` and `ALL FULL`, but only when the query selects nothing from the
+  right table and the `ON` section is a plain key equality. Otherwise the probe already records
+  which left rows matched — either to materialize the right columns or to evaluate the residual
+  condition — and the count is exact without the option.
 
-:::note
+<Note>
 The option is off by default because the extra bookkeeping is not free, and what it costs is measurement fidelity. The work is done inside the probe loop and grows with the number of output rows. Use `matches = 1` when you need to know the exact matches that left and right rows found on the other side.
-:::
+</Note>
 
-:::note
-`matches = 1` does not make every combination collectable. Which side a join can report follows from what the join has to do anyway:
+`matches = 1` does not make every combination collectable. Which side a join can report follows
+from what that join has to do anyway, so it depends on the algorithm as well as on the kind and
+strictness.
+
+**Hash family.** `hash`, `parallel_hash` and `grace_hash` always agree with each other:
 
 | Join | `matched` left | `matched` right |
 |------|----------------|-----------------|
@@ -818,16 +826,26 @@ The option is off by default because the extra bookkeeping is not free, and what
 | `ASOF` (inner) | yes | no |
 | `SEMI RIGHT` | no | no |
 | `ANY INNER`, `ANY LEFT`, `ASOF LEFT` | no | no |
-| `CROSS`, `COMMA` | no | no |
 
 The right side is unavailable whenever the join keeps only one row per key in its hash table, which `ANY`, `SEMI` and `ANTI` joins do: the duplicate right rows are never stored, so they cannot be counted. The left side is unavailable when the join suppresses the output of a left row whose partner was already claimed by another left row, which makes the emitted rows an undercount of the matched ones.
 
-The set of available metrics depends only on the join kind and strictness — not on the query shape, the `ON` condition or the join algorithm — so the same join reports the same metrics under `hash`, `parallel_hash` and `grace_hash`.
-:::
+Enabling [`any_join_distinct_right_table_keys`](/reference/settings/session-settings/other#any_join_distinct_right_table_keys) switches `ANY` to the older `RightAny` semantics, which emits one row per left row and therefore keeps both counts. `ANY RIGHT` and `ANY FULL` then report **both** sides, and `ANY INNER` is rewritten to `SEMI LEFT`.
 
-Depending on the join algorithm, additional lines are then shown.
+The [`Join`](/reference/engines/table-engines/special/join) table engine follows the same table, using the kind and strictness declared in the engine: `Join(ALL, INNER, …)` reports both sides, `Join(ANY, LEFT, …)` neither.
 
-For `hash` and `parallel_hash` joins a `Hash table:` line describes the hash table built from the right table:
+**Merge algorithms.** `partial_merge` and `full_sorting_merge` report **both** sides for every combination they accept — they walk the two sorted inputs and see every row of an equal range, so nothing has to be reconstructed afterwards. `partial_merge` accepts `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` and `SEMI LEFT`; `full_sorting_merge` accepts the four `ALL` kinds, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` and `ASOF LEFT`.
+
+**`direct`.** The left side only. The right side is a key-value store that is never materialized into rows, so it has no `Right:` line at all.
+
+**`CROSS`, `COMMA` and a constant `ON`.** Neither side, as described [above](#explain-analyze-join-algorithm-lines).
+
+Where two algorithms both report a number, the numbers agree. The merge algorithms simply have more information; they do not disagree about what a match is.
+
+#### Algorithm-specific lines {#explain-analyze-join-algorithm-lines}
+
+Let's take a look at the lines each join implementation adds on top of those.
+
+For `hash` and `parallel_hash` joins, and for the `Join` table engine, a `Hash table:` line describes the hash table built from the right table:
 
 ```txt
 Hash table: unique keys <unique_keys> · memory <peak_memory>
@@ -864,6 +882,23 @@ Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> ·
 For `full_sorting_merge` join only the common `Left:` and `Right:` lines are printed.
 
 For `direct` join only the `Left:` line is printed, since the right side is a key-value store that is looked up directly rather than materialized into rows.
+
+For a `CROSS` or `COMMA` join, and for any `ON` section without a key equality, a `Buffer:` line describes how the right table was held in memory and a `Spill:` line reports whether it went to disk:
+
+```txt
+Buffer: memory <peak_memory> · compressed <yes|no>
+Spill: yes · right spilled <right_spilled_bytes>
+```
+
+- `memory <peak_memory>` — the peak memory the buffered right table occupied.
+- `compressed <yes|no>` — whether at least one buffered block was compressed; readers then decompress every stored block.
+- `Spill:` — the same `yes`/`no` flag as for `grace_hash`, with `right spilled <right_spilled_bytes>` reporting the compressed bytes written to disk.
+
+Both sides report `matched not collected` here: a constant predicate either pairs every left row with every right row or with none, so asking which individual rows matched has no answer.
+
+For a join against the [`Join`](/reference/engines/table-engines/special/join) table engine both sides are reported, together with the `Hash table:` line describing the pre-built table. The right side counts the rows stored in the engine, not the rows of some per-query build.
+
+#### Per-processor times {#explain-analyze-processors}
 
 With `processors = 1`, an extra line is printed under each stage, showing the distribution of elapsed time across the stage's processors:
 

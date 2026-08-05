@@ -276,10 +276,10 @@ public:
     // The default row is represented by a zero ref word, so that fixed-size blocks can be generated sequentially,
     // default_count cannot represent the position of the row
     LazyOutput lazy_output;
-    bool record_row_refs;
+    bool record_row_refs = false;
 
-    /// Non-owning; set only under EXPLAIN ANALYZE for RefsBitmap join kinds. When non-null,
-    /// appendFromBlock marks matched right rows in the participation bitmap.
+    /// Non-owning; set only under EXPLAIN ANALYZE for RefsFlags join kinds. When non-null,
+    /// appendFromBlock marks matched right rows in the participation flags.
     MatchedRowsStats * match_stats = nullptr;
 
     size_t matched_left_rows = 0;

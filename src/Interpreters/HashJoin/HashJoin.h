@@ -652,8 +652,6 @@ private:
 
     bool recordsRowRefsForStats() const;
 
-    bool leftMatchedStatsAvailable() const;
-
     void doDebugAsserts() const;
 };
 }

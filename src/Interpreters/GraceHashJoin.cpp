@@ -13,7 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <Interpreters/IJoin.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Core/Settings.h>
 
 #include <numeric>
@@ -179,7 +178,7 @@ public:
         return AccumulatedBlockReader(left_file.getReadStream(), left_file_mutex);
     }
 
-    /// Spilled bytes for this bucket.Only called after the join
+    /// Spilled bytes for this bucket. Only called after the join
     /// has finished, when no thread is writing to the files.
     TemporaryDataBuffer::Stat leftSpillStat() const { return left_file.getHolder()->getStat(); }
     TemporaryDataBuffer::Stat rightSpillStat() const { return right_file.getHolder()->getStat(); }
@@ -554,20 +553,19 @@ StepAnalysisReport GraceHashJoin::getAnalysisReport() const
         .matched_right = stats_snapshot.matched_right.get()});
 
     MetricList hash_table_metrics;
-    hash_table_metrics.emplace_back("unique keys", stats_snapshot.unique_keys, StepMetric::Format::Quantity);
-    hash_table_metrics.emplace_back("memory", stats_snapshot.peak_in_memory_bytes, StepMetric::Format::Bytes);
-    hash_table_metrics.emplace_back("buckets", stats_snapshot.num_buckets, StepMetric::Format::Quantity);
-    hash_table_metrics.emplace_back("rehashes", stats_snapshot.num_rehashes, StepMetric::Format::Quantity);
-    report.push_back({"hash table", std::move(hash_table_metrics)});
+    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, stats_snapshot.unique_keys);
+    hash_table_metrics.emplace_back(MetricKey::Memory, stats_snapshot.peak_in_memory_bytes);
+    hash_table_metrics.emplace_back(MetricKey::Buckets, stats_snapshot.num_buckets);
+    hash_table_metrics.emplace_back(MetricKey::Rehashes, stats_snapshot.num_rehashes);
+    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
 
     MetricList spill_metrics;
-    spill_metrics.emplace_back("left spilled", stats_snapshot.left_spilled_compressed_bytes, StepMetric::Format::Bytes);
-    spill_metrics.emplace_back("right spilled", stats_snapshot.right_spilled_compressed_bytes, StepMetric::Format::Bytes);
-    report.push_back({"spill", std::move(spill_metrics)});
+    spill_metrics.emplace_back(MetricKey::LeftSpilled, stats_snapshot.left_spilled_compressed_bytes);
+    spill_metrics.emplace_back(MetricKey::RightSpilled, stats_snapshot.right_spilled_compressed_bytes);
+    report.push_back({MetricGroupKey::Spill, std::move(spill_metrics)});
 
     return report;
 }
-
 
 bool GraceHashJoin::alwaysReturnsEmptySet() const
 {

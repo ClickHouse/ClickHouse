@@ -1,4 +1,3 @@
-#include <cctype>
 #include <iterator>
 #include <type_traits>
 #include <unordered_map>
@@ -21,12 +20,19 @@ namespace
 
 String formatStepMetricValue(const StepMetric & metric)
 {
-    if (metric.format == StepMetric::Format::Raw)
+    if (std::holds_alternative<std::monostate>(metric.value))
+        return "not collected";
+
+    const MetricFormat format = formatOf(metric.key);
+
+    if (format == MetricFormat::Raw)
         return std::visit([](const auto & value) -> String
         {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<T, std::string>)
                 return value;
+            else if constexpr (std::is_same_v<T, std::monostate>)
+                return {};
             else
                 return fmt::format("{}", value);
         }, metric.value);
@@ -40,30 +46,22 @@ String formatStepMetricValue(const StepMetric & metric)
             return 0.0;
     }, metric.value);
 
-    switch (metric.format)
+    switch (format)
     {
-        case StepMetric::Format::Bytes:
+        case MetricFormat::Bytes:
             return formatReadableSizeWithDecimalSuffix(numeric);
-        case StepMetric::Format::Quantity:
+        case MetricFormat::Quantity:
             return formatReadableQuantity(numeric);
-        case StepMetric::Format::Time:
+        case MetricFormat::Time:
             return formatReadableTime(numeric);
-        case StepMetric::Format::Percent:
+        case MetricFormat::Percent:
             return fmt::format("{:.2f}%", numeric);
-        case StepMetric::Format::Ratio:
+        case MetricFormat::Ratio:
             return fmt::format("{:.2f}", numeric);
-        case StepMetric::Format::Raw:
+        case MetricFormat::Raw:
             return {};
     }
     return {};
-}
-
-/// Group labels are defined lowercase at their source; the printer capitalizes the first letter in
-/// place so the output reads e.g. `Left:`, `Right:`, `Hash table:`, `Spill:`. Labels are ASCII.
-void capitalizeLabel(std::string & label)
-{
-    if (!label.empty())
-        label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
 }
 
 void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const std::string & prefix)
@@ -71,9 +69,7 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
     if (metric_group.metrics.empty())
         return;
 
-    out << prefix;
-    if (!metric_group.label.empty())
-        out << metric_group.label << ": ";
+    out << prefix << toString(metric_group.key) << ": ";
 
     bool first = true;
     for (const auto & metric : metric_group.metrics)
@@ -81,28 +77,29 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
         if (!first)
             out << " · ";
         first = false;
-        if (metric.name.empty())
+        const std::string_view name = toString(metric.key);
+        if (name.empty())
             out << formatStepMetricValue(metric);
         else
-            out << metric.name << " " << formatStepMetricValue(metric);
+            out << name << " " << formatStepMetricValue(metric);
     }
     out << "\n";
 }
 
 /// The group is built by `makeIOGroup`, so a missing metric means the two went out of sync.
-UInt64 getQuantity(const MetricGroup & metric_group, std::string_view name)
+UInt64 getQuantity(const MetricGroup & metric_group, MetricKey key)
 {
-    const auto quantity = findQuantity(metric_group, name);
+    const auto quantity = findQuantity(metric_group, key);
     chassert(quantity, "metric is missing from the I/O group");
     return quantity.value_or(0);
 }
 
 void printIOGroup(const MetricGroup & io_group, WriteBuffer & out, const std::string & prefix)
 {
-    const UInt64 input_rows = getQuantity(io_group, "input rows");
-    const UInt64 output_rows = getQuantity(io_group, "output rows");
-    const UInt64 input_bytes = getQuantity(io_group, "input bytes");
-    const UInt64 output_bytes = getQuantity(io_group, "output bytes");
+    const UInt64 input_rows = getQuantity(io_group, MetricKey::InputRows);
+    const UInt64 output_rows = getQuantity(io_group, MetricKey::OutputRows);
+    const UInt64 input_bytes = getQuantity(io_group, MetricKey::InputBytes);
+    const UInt64 output_bytes = getQuantity(io_group, MetricKey::OutputBytes);
 
     const UInt8 precision_rows_in = input_rows < 1000 ? 0 : 2;
     const UInt8 precision_rows_out = output_rows < 1000 ? 0 : 2;
@@ -139,7 +136,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
         << (stage.wall_clock_time_ns ? fmt::format("{:.2f}/{}", stage.parallelism, stage.max_parallelism) : "Unknown");
 
     for (const auto & metric : stage.inline_metrics)
-        out << " · " << metric.name << " " << formatStepMetricValue(metric);
+        out << " · " << toString(metric.key) << " " << formatStepMetricValue(metric);
 
     out << "\n";
 
@@ -152,7 +149,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
             if (!first)
                 out << " · ";
             first = false;
-            out << metric.name << " " << formatStepMetricValue(metric);
+            out << toString(metric.key) << " " << formatStepMetricValue(metric);
         }
         out << "\n";
     }
@@ -297,7 +294,7 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) con
     StepAnalysisReport raw_report = step->getAnalysisReport(step_processors);
 
     auto context_for_step = makeContext(step);
-    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step->getName());
+    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step);
 
     /// Use the service of a generator, which takes the context (e.g. i/o, total time)
     /// some internal raw metrics, which are specific for each step,  that
@@ -309,15 +306,13 @@ void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuff
 {
     for (const auto & group : step_data.step_metric_groups)
     {
-        if (group.label == "I/O")
+        if (group.key == MetricGroupKey::IO)
         {
             printIOGroup(group, out, prefix);
             continue;
         }
 
-        MetricGroup display = group;
-        capitalizeLabel(display.label);
-        printMetricGroup(display, out, prefix);
+        printMetricGroup(group, out, prefix);
     }
 
     for (const auto & stage : step_data.stage_reports)

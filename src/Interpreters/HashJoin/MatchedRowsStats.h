@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/JoinUtils.h>
 #include <base/types.h>
 #include <Core/Joins.h>
 
@@ -26,15 +27,12 @@ enum class LeftMatchedSource
 enum class RightMatchedSource
 {
     NonJoinedComplement,
-    RefsBitmap,
+    RefsFlags,
     Unsupported,
 };
 
 constexpr LeftMatchedSource leftMatchedSource(JoinKind kind, JoinStrictness strictness)
 {
-    if (kind == JoinKind::Cross || kind == JoinKind::Comma)
-        return LeftMatchedSource::Unsupported;
-
     if (strictness == JoinStrictness::All && isLeftOrFull(kind))
         return LeftMatchedSource::DefaultRowMarkers;
 
@@ -62,31 +60,21 @@ constexpr LeftMatchedSource leftMatchedSource(JoinKind kind, JoinStrictness stri
 
 constexpr RightMatchedSource rightMatchedSource(JoinKind kind, JoinStrictness strictness)
 {
-    if (kind == JoinKind::Cross || kind == JoinKind::Comma)
-        return RightMatchedSource::Unsupported;
-
-    if (kind == JoinKind::Full && strictness == JoinStrictness::Any)
-        return RightMatchedSource::Unsupported;
-
-    if (isRightOrFull(kind)
-        && (strictness == JoinStrictness::All
-            || strictness == JoinStrictness::Any
-            || strictness == JoinStrictness::RightAny
-            || strictness == JoinStrictness::Anti))
+    if (JoinCommon::hasNonJoinedBlocks(kind, strictness))
         return RightMatchedSource::NonJoinedComplement;
 
     if (isInnerOrLeft(kind) && strictness == JoinStrictness::All)
-        return RightMatchedSource::RefsBitmap;
+        return RightMatchedSource::RefsFlags;
 
     return RightMatchedSource::Unsupported;
 }
 
-/// Per-block/per-row bitmap of right-table rows that found a match, maintained ONLY for
+/// Per-block/per-row flags of right-table rows that found a match, maintained ONLY for
 /// EXPLAIN ANALYZE statistics. It is intentionally separate from `JoinStuff::JoinUsedFlags`
 /// (which the join maintains for RIGHT/FULL non-joined output): mixing a profiling concern into
 /// that correctness-critical structure would violate single-responsibility. This owns just the
 /// small subset of functionality the statistics need.
-class MatchedRightBitmap
+class MatchedRightFlags
 {
 public:
     /// Allocate flags (all false) for a stored right block. Called once per block after build.
@@ -127,17 +115,14 @@ public:
 
     MatchedRowsStats(JoinKind, JoinStrictness, UInt64 right_total_);
 
-    void collectProbeBlock(UInt64 probed_block_size, UInt64 matched_left);
+    void collectProbeBlock(UInt64 probed_block_size, std::optional<UInt64> matched_left);
 
     void markRightMatched(UInt64 ref_word);
 
     void collectNonJoined(UInt64 non_joined_rows);
 
-    void prepareRightBitmap(const HashJoin::StoredBlocksList & stored_blocks);
-    bool hasRightBitmap() const { return right_rows_bitmap != nullptr; }
-
-    void enableLeftMatched() { left_matched_enabled = true; }
-    bool hasLeftMatched() const { return left_matched_enabled; }
+    void prepareRightFlags(const HashJoin::StoredBlocksList & stored_blocks);
+    bool hasRightFlags() const { return right_rows_flags != nullptr; }
 
     UInt64 getInputLeft() const { return left_rows_total.load(std::memory_order_relaxed); }
     UInt64 getInputRight() const { return right_rows_total; }
@@ -146,11 +131,11 @@ public:
 
 private:
 
-    std::unique_ptr<MatchedRightBitmap> right_rows_bitmap;
+    std::unique_ptr<MatchedRightFlags> right_rows_flags;
     UInt64 right_rows_total = 0;
     std::atomic<UInt64> left_rows_total = 0;
     std::atomic<UInt64> left_rows_matched = 0;
-    bool left_matched_enabled = false;
+    std::atomic<bool> left_matched_unavailable = false;
     std::atomic<UInt64> non_joined_right_rows = 0;
 
     JoinKind join_kind;

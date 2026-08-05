@@ -15,7 +15,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -537,9 +536,9 @@ StepAnalysisReport ConcurrentHashJoin::getAnalysisReport() const
     StepAnalysisReport report = buildMatchedRowsReport(counters);
 
     MetricList hash_table_metrics;
-    hash_table_metrics.emplace_back("unique keys", getUniqueKeys(), StepMetric::Format::Quantity);
-    hash_table_metrics.emplace_back("memory", getPeakBuildBytes(), StepMetric::Format::Bytes);
-    report.push_back({"hash table", std::move(hash_table_metrics)});
+    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, getUniqueKeys());
+    hash_table_metrics.emplace_back(MetricKey::Memory, getPeakBuildBytes());
+    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
 
     return report;
 }

@@ -87,6 +87,8 @@ private:
     bool optimized = false;
     void updateOutputHeader() override;
 
+    JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors) const;
+
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
     String join_readable_relation_name;

@@ -404,7 +404,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     : input_headers(input_headers_)
     , kind(kind_)
     , strictness(strictness_)
-    , collect_exact_matches(collectsExactMatches(analyze_mode_))
+    , analyze_mode(analyze_mode_)
     , max_block_size(max_block_size_)
     , log(getLogger("MergeJoinAlgorithm"))
 {
@@ -1004,7 +1004,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     PaddedPODArray<UInt64> idx_map[2];
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_left, stat.matched_right, collect_exact_matches);
+    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_left, stat.matched_right, collectsExactMatches(analyze_mode));
 
     chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
@@ -1034,6 +1034,33 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     return Status(std::move(result));
 }
 
+JoinAnalysisCounters MergeJoinAlgorithm::getJoinAnalysisCounters() const
+{
+    JoinAnalysisCounters counters;
+    counters.left_rows = stat.num_rows[0];
+    counters.right_rows = stat.num_rows[1];
+    counters.matched_left = stat.matched_left;
+    counters.matched_right = stat.matched_right;
+
+    /// `AnyJoinImpl` walks only the preserved side past its equal range; the other side's length is
+    /// scanned separately and only under `Exact`. Without it the counter stays at its initial 0,
+    /// which means "never counted" rather than "nothing matched", so report it as unavailable.
+    if (strictness == JoinStrictness::Any && !collectsExactMatches(analyze_mode))
+    {
+        if (isLeft(kind))
+        {
+            chassert(stat.matched_right == 0, "matched_right was counted, but is reported as unavailable");
+            counters.matched_right = std::nullopt;
+        }
+        else if (isRight(kind))
+        {
+            chassert(stat.matched_left == 0, "matched_left was counted, but is reported as unavailable");
+            counters.matched_left = std::nullopt;
+        }
+    }
+
+    return counters;
+}
 
 void MergeJoinAlgorithm::countAsofMatch(AsofRightRowRef right_ref)
 {

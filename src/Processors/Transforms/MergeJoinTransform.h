@@ -255,24 +255,7 @@ public:
     MergedStats getMergedStats() const override;
 
     /// Participation counters for EXPLAIN ANALYZE (total and matched rows per side).
-    JoinAnalysisCounters getJoinAnalysisCounters() const
-    {
-        JoinAnalysisCounters counters;
-        counters.left_rows = stat.num_rows[0];
-        counters.right_rows = stat.num_rows[1];
-        counters.matched_left = stat.matched_left;
-        counters.matched_right = stat.matched_right;
-
-        if (strictness == JoinStrictness::Any && !collect_exact_matches)
-        {
-            if (isLeft(kind))
-                counters.matched_right = std::nullopt;
-            else if (isRight(kind))
-                counters.matched_left = std::nullopt;
-        }
-
-        return counters;
-    }
+    JoinAnalysisCounters getJoinAnalysisCounters() const;
 
 private:
     std::optional<Status> handleAnyJoinState();
@@ -312,7 +295,7 @@ private:
 
     JoinKind kind;
     JoinStrictness strictness;
-    bool collect_exact_matches;
+    JoinAnalyzeMode analyze_mode;
 
     size_t max_block_size;
     int null_direction_hint = 1;

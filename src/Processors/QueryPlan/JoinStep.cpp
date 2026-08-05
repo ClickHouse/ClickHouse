@@ -231,29 +231,35 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     return joined_pipeline;
 }
 
-StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
+JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
 {
-    if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
-        return join->getAnalysisReport();
-
     JoinAnalysisCounters counters;
     MatchedRowsAccumulator matched_left;
     MatchedRowsAccumulator matched_right;
     for (const auto * proc : step_processors)
     {
-        if (const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc))
-        {
-            const auto join_counters = merge_join->getJoinAnalysisCounters();
-            counters.left_rows += join_counters.left_rows;
-            counters.right_rows += join_counters.right_rows;
-            matched_left.add(join_counters.matched_left);
-            matched_right.add(join_counters.matched_right);
-        }
+        const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc);
+        if (!merge_join)
+            continue;
+
+        const auto join_counters = merge_join->getJoinAnalysisCounters();
+        counters.left_rows += join_counters.left_rows;
+        counters.right_rows += join_counters.right_rows;
+        matched_left.add(join_counters.matched_left);
+        matched_right.add(join_counters.matched_right);
     }
     counters.matched_left = matched_left.get();
     counters.matched_right = matched_right.get();
 
-    return buildMatchedRowsReport(counters);
+    return counters;
+}
+
+StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
+{
+    if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
+        return join->getAnalysisReport();
+
+    return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -467,7 +473,6 @@ void FilledJoinStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
 }
-
 
 StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
 {

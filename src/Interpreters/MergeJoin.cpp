@@ -18,7 +18,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Common/Stopwatch.h>
 
 
@@ -239,6 +238,9 @@ private:
     std::optional<Stopwatch> watch;
     Counter & target;
 };
+
+template <typename Counter>
+ScopedSortTimer(bool, Counter &) -> ScopedSortTimer<Counter>;
 }
 
 
@@ -604,8 +606,6 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
-    , collect_stats(table_join->collectAnalyzeStats())
-    , collect_matched_right(table_join->collectExactMatches())
     , log(getLogger("MergeJoin"))
 {
     switch (table_join->strictness())
@@ -695,7 +695,7 @@ void MergeJoin::setTotals(const Block & totals_block)
     IJoin::setTotals(totals_block);
     mergeRightBlocks();
 
-    if (is_right || is_full || collect_matched_right)
+    if (is_right || is_full || table_join->collectExactMatches())
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
 }
 
@@ -714,7 +714,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
     if (right_blocks.empty())
         return;
 
-    ScopedSortTimer merge_timer(collect_stats, build_sort_time_ns);
+    ScopedSortTimer merge_timer(table_join->collectAnalyzeStats(), build_sort_time_ns);
 
     Pipe source(std::make_shared<BlocksListSource>(std::move(right_blocks.blocks)));
     right_blocks.clear();
@@ -765,13 +765,13 @@ void MergeJoin::mergeFlushedRightBlocks()
     };
 
     {
-        ScopedSortTimer merge_timer(collect_stats, build_sort_time_ns);
+        ScopedSortTimer merge_timer(table_join->collectAnalyzeStats(), build_sort_time_ns);
 
         flushed_right_blocks = disk_writer->finishMerge(callback);
         disk_writer.reset();
     }
 
-    if (collect_stats)
+    if (table_join->collectAnalyzeStats())
         for (const auto & file : flushed_right_blocks)
             right_spilled_compressed_bytes += file.getHolder()->getStat().compressed_size;
 
@@ -822,7 +822,7 @@ bool MergeJoin::addBlockToJoin(const Block & src_block, bool)
     addConditionJoinColumn(block, JoinTableSide::Right);
 
     {
-        ScopedSortTimer sort_timer(collect_stats, build_sort_time_ns);
+        ScopedSortTimer sort_timer(table_join->collectAnalyzeStats(), build_sort_time_ns);
         sortBlock(block, right_sort_description);
     }
 
@@ -889,7 +889,7 @@ void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> 
                 lowcard_keys.push_back(column_name);
         }
 
-        ScopedSortTimer sort_timer(collect_stats, probe_sort_time_ns);
+        ScopedSortTimer sort_timer(table_join->collectAnalyzeStats(), probe_sort_time_ns);
         sortBlock(block, left_sort_description);
     }
 
@@ -1053,6 +1053,8 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
     auto r_columns_to_add = extractColumnsByNames(right_block, right_columns_to_add);
 
+    const bool collect_matched_right = table_join->collectExactMatches();
+
     /// Set right cursor position in first continuation right block
     if constexpr (is_all)
     {
@@ -1174,6 +1176,8 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
     left_cursor.setCompareNullability(right_cursor);
 
     auto r_columns_to_add = extractColumnsByNames(right_block, right_columns_to_add);
+
+    const bool collect_matched_right = table_join->collectExactMatches();
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
@@ -1350,27 +1354,27 @@ StepAnalysisReport MergeJoin::getAnalysisReport() const
 
     const UInt64 left_rows = total_left_rows.load(std::memory_order_relaxed);
     const UInt64 matched_left = matched_left_rows.load(std::memory_order_relaxed);
-    report.push_back({"left", joinSideMetrics(left_rows, matched_left)});
+    report.push_back({MetricGroupKey::Left, joinSideMetrics(left_rows, matched_left)});
 
     const std::optional<UInt64> matched_right
         = used_rows_bitmap ? std::optional<UInt64>(used_rows_bitmap->countUsed()) : std::nullopt;
 
     const bool in_memory = is_in_memory.load(std::memory_order_relaxed);
     MetricList right_metrics = joinSideMetrics(getTotalRowCount(), matched_right);
-    right_metrics.emplace_back("size", getTotalByteCount(), StepMetric::Format::Bytes);
-    right_metrics.emplace_back("blocks", getRightBlocksCount(), StepMetric::Format::Quantity);
-    right_metrics.emplace_back("storage", std::string(in_memory ? "in-memory" : "external"), StepMetric::Format::Raw);
+    right_metrics.emplace_back(MetricKey::Size, getTotalByteCount());
+    right_metrics.emplace_back(MetricKey::Blocks, getRightBlocksCount());
+    right_metrics.emplace_back(MetricKey::Storage, std::string(in_memory ? "in-memory" : "external"));
     if (!in_memory)
-        right_metrics.emplace_back("spilled", right_spilled_compressed_bytes, StepMetric::Format::Bytes);
-    report.push_back({"right", std::move(right_metrics)});
+        right_metrics.emplace_back(MetricKey::Spilled, right_spilled_compressed_bytes);
+    report.push_back({MetricGroupKey::Right, std::move(right_metrics)});
 
     MetricList build_metrics;
-    build_metrics.emplace_back("sort time", build_sort_time_ns, StepMetric::Format::Time);
-    report.push_back({"build", std::move(build_metrics)});
+    build_metrics.emplace_back(MetricKey::SortTime, build_sort_time_ns);
+    report.push_back({MetricGroupKey::Build, std::move(build_metrics)});
 
     MetricList probe_metrics;
-    probe_metrics.emplace_back("sort time", probe_sort_time_ns.load(std::memory_order_relaxed), StepMetric::Format::Time);
-    report.push_back({"probe", std::move(probe_metrics)});
+    probe_metrics.emplace_back(MetricKey::SortTime, probe_sort_time_ns.load(std::memory_order_relaxed));
+    report.push_back({MetricGroupKey::Probe, std::move(probe_metrics)});
 
     return report;
 }

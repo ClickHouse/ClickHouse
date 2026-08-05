@@ -36,6 +36,7 @@ using StepGroupStatsByGroupId = std::unordered_map<size_t, StepGroupStats>;
 
 struct AnalyzedStage
 {
+    size_t group_id = 0;
     std::string name;
     UInt64 wall_clock_time_ns = 0;
     UInt64 total_num_processors = 0;

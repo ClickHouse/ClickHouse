@@ -328,18 +328,18 @@ StepAnalysisReport ConstantJoin::getAnalysisReport() const
 {
     StepAnalysisReport report;
 
-    report.push_back({"left", joinSideMetrics(total_rows_left.load(std::memory_order_relaxed), std::nullopt)});
-    report.push_back({"right", joinSideMetrics(total_rows_to_join, std::nullopt)});
+    report.push_back({MetricGroupKey::Left, joinSideMetrics(total_rows_left.load(std::memory_order_relaxed), std::nullopt)});
+    report.push_back({MetricGroupKey::Right, joinSideMetrics(total_rows_to_join, std::nullopt)});
 
     MetricList buffer_metrics;
-    buffer_metrics.emplace_back("memory", peak_allocated_size, StepMetric::Format::Bytes);
-    buffer_metrics.emplace_back("compressed", std::string(have_compressed ? "yes" : "no"), StepMetric::Format::Raw);
-    report.push_back({"buffer", std::move(buffer_metrics)});
+    buffer_metrics.emplace_back(MetricKey::Memory, peak_allocated_size);
+    buffer_metrics.emplace_back(MetricKey::Compressed, std::string(have_compressed ? "yes" : "no"));
+    report.push_back({MetricGroupKey::Buffer, std::move(buffer_metrics)});
 
     const size_t right_spilled_compressed_bytes = tmp_stream ? tmp_stream->getHolder()->getStat().compressed_size : 0;
     MetricList spill_metrics;
-    spill_metrics.emplace_back("right spilled", right_spilled_compressed_bytes, StepMetric::Format::Bytes);
-    report.push_back({"spill", std::move(spill_metrics)});
+    spill_metrics.emplace_back(MetricKey::RightSpilled, right_spilled_compressed_bytes);
+    report.push_back({MetricGroupKey::Spill, std::move(spill_metrics)});
 
     return report;
 }
