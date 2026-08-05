@@ -162,23 +162,10 @@ void signalHandler(int, siginfo_t * info, void * context)
 
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
-#if defined(OS_DARWIN)
-    /// On macOS the async unwind (frame-pointer backtrace) can fault (SIGBUS/SIGSEGV) when the target
-    /// thread is parked in frame-pointer-less libsystem code; recover by dropping this trace instead of
-    /// crashing the server, mirroring the query profiler. SignalHandlers.cpp performs the siglongjmp.
-    /// The ctor blocks the profiler signals (SIGUSR1/SIGUSR2) here so they cannot nest and clobber the
-    /// shared recovery buffer. This applies under TSan too: macOS always captures via backtrace() (there
-    /// is no abseil path), so the fault is possible regardless of TSan. (On Linux libunwind + the PHDR
-    /// cache is async-safe, so no recovery here.)
-    asynchronous_stack_unwinding = true;
-    if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
-        stack_trace = StackTrace(signal_context);
-    else
-        stack_trace = StackTrace(NoCapture{});
-    asynchronous_stack_unwinding = false;
-#else
+    /// The ucontext StackTrace constructor recovers internally from a fault while unwinding the
+    /// target thread (e.g. off a frame-pointer-less libsystem frame or a fiber stack on macOS),
+    /// yielding an empty trace instead of crashing the server.
     stack_trace = StackTrace(signal_context);
-#endif
 
     auto query_id = CurrentThread::getQueryId();
     query_id_size = std::min(query_id.size(), max_query_id_size);
@@ -771,14 +758,14 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     if (sigaddset(&sa.sa_mask, STACK_TRACE_SERVICE_SIGNAL))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 
-#if defined(OS_DARWIN)
-    /// This handler shares the thread-local async-unwind recovery buffer with the query profiler on
-    /// macOS (see signalHandler above). Block the profiler pause signals (SIGUSR1/SIGUSR2) while it runs
-    /// so a profiler signal cannot nest and clobber that buffer, which would make the next fault's
-    /// siglongjmp jump to the wrong frame. Kept under TSan too, matching the recovery in signalHandler.
-    if (sigaddset(&sa.sa_mask, SIGUSR1) || sigaddset(&sa.sa_mask, SIGUSR2))
+    /// This handler captures through StackTrace(ucontext), sharing one thread-local async-unwind recovery
+    /// (asynchronous_stack_unwinding + sigjmp_buf in StackTrace) with the query profiler and the debug
+    /// SIGTSTP stack dumper. Block their signals (SIGUSR1/SIGUSR2 profilers, SIGTSTP) while it runs so
+    /// none can nest and clobber that buffer, which would make the next fault's siglongjmp jump to the
+    /// wrong frame (or, if SIGTSTP cleared the flag on return, turn a recoverable unwind fault into a
+    /// fatal crash).
+    if (sigaddset(&sa.sa_mask, SIGUSR1) || sigaddset(&sa.sa_mask, SIGUSR2) || sigaddset(&sa.sa_mask, SIGTSTP))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
-#endif
 #pragma clang diagnostic pop
 
     if (sigaction(STACK_TRACE_SERVICE_SIGNAL, &sa, nullptr))

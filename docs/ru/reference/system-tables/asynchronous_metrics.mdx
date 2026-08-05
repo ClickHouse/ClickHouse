@@ -318,6 +318,18 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 Количество неисправимых ошибок памяти ECC. Ненулевое значение этого показателя указывает на неисправность оперативной памяти, которую необходимо немедленно заменить, так как это может привести к повреждению данных. Источник: `/sys/devices/system/edac/mc/`
 
+<div id="executableuserdefinedfunctionmemoryresidentbytes">
+  ### ExecutableUserDefinedFunctionMemoryResidentBytes
+</div>
+
+Суммарный размер резидентного набора (VmRSS) всех работающих процессов пользовательских функций executable и executable&#95;pool, а также их дочерних процессов, в байтах. Бездействующие воркеры executable&#95;pool также включаются. Общие страницы учитываются один раз для каждого процесса, поэтому эта сумма представляет собой верхнюю границу и может превышать уникальный объём физической памяти, занимаемой процессами UDF.
+
+<div id="executableuserdefinedfunctionprocesses">
+  ### ExecutableUserDefinedFunctionProcesses
+</div>
+
+Количество работающих процессов, запущенных для пользовательских функций executable и executable&#95;pool, включая их дочерние процессы.
+
 <div id="filesystemcachebytes">
   ### FilesystemCacheBytes
 </div>

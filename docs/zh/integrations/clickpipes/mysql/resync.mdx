@@ -32,10 +32,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 以下是一些场景：
 
 1. 您可能需要对源表进行重大的 schema 变更，这可能会导致现有 ClickPipe 无法正常工作，并需要重新启动。完成这些变更后，您只需点击重新同步。
-2. 对于 ClickHouse，尤其是当您需要更改目标表的 ORDER BY keys 时，可以通过重新同步将数据重新导入具有正确排序键的新表。
+2. 对于 ClickHouse，尤其是在您需要更新目标表中 ORDER BY 列的值时，可以通过重新同步将数据重新导入具有正确排序键的新表。
 
 <Note>
-  您可以多次重新同步，但请注意每次重新同步都会给源数据库带来额外负载。
+  您可以多次重新同步，但请注意每次重新同步都会给源数据库带来额外负载，
+  因为每次都会涉及带并行线程的初始加载。
 </Note>
 
 <div id="guide-mysql-resync">
@@ -48,9 +49,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
 
-4. 此时会弹出确认对话框。再次点击重新同步。
+4. 此时会弹出确认对话框。再次点击 **重新同步**。
 5. 转到 **Metrics** 选项卡。
-6. 大约 5 秒后 (以及页面刷新后) ，管道状态应为 **Setup** 或 **Snapshot**。
+6. 大约 5 秒后 (以及刷新页面后) ，管道状态应为 **Setup** 或 **Snapshot**。
 7. 可在 **Tables** 选项卡的 **Initial Load Stats** 部分监控重新同步的初始加载进度。
 8. 初始加载完成后，管道会以原子方式将 `_resync` 表与原始表进行交换。在交换期间，状态将显示为 **重新同步**。
-9. 交换完成后，管道将进入 **Running** 状态，并在启用时执行 CDC。
+9. 交换完成后，管道将进入 **Running** 状态，并在启用时执行 CDC (变更数据捕获) 。

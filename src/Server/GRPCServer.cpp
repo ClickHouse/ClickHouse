@@ -1688,6 +1688,7 @@ namespace
         static_assert(::clickhouse::grpc::LOG_INFORMATION == static_cast<int>(Poco::Message::PRIO_INFORMATION));
         static_assert(::clickhouse::grpc::LOG_DEBUG       == static_cast<int>(Poco::Message::PRIO_DEBUG));
         static_assert(::clickhouse::grpc::LOG_TRACE       == static_cast<int>(Poco::Message::PRIO_TRACE));
+        static_assert(::clickhouse::grpc::LOG_TEST        == static_cast<int>(Poco::Message::PRIO_TEST));
 
         MutableColumns columns;
         while (logs_queue->tryPop(columns))

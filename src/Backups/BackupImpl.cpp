@@ -8,6 +8,7 @@
 #include <Backups/getBackupDataFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
@@ -47,6 +48,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char backup_fail_before_writing_metadata[];
+}
+
 namespace ErrorCodes
 {
     extern const int BACKUP_NOT_FOUND;
@@ -62,6 +68,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
     extern const int INSECURE_PATH;
+    extern const int FAULT_INJECTED;
 }
 
 namespace fs = std::filesystem;
@@ -719,21 +726,9 @@ void BackupImpl::readBackupMetadata()
             info.encrypted_by_disk = get_bool("encrypted_by_disk", false);
         }
 
-        file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
-        if (!info.object_key.empty())
-        {
-            if (original_endpoint.empty() || original_namespace.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
+        const auto size_and_checksum = std::pair{info.size, info.checksum};
 
-            if (open_mode == OpenMode::READ)
-                lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
-
-            file_object_keys.emplace(info.file_name, info.object_key);
-            lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
-        }
-        else if (info.size)
-            file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
-
+        /// Update counters before `info` is moved below.
         ++num_files;
         total_size += info.size;
         bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
@@ -741,6 +736,32 @@ void BackupImpl::readBackupMetadata()
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;
+        }
+
+        if (!info.object_key.empty())
+        {
+            if (original_endpoint.empty() || original_namespace.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
+
+            /// UNLOCK only reads table metadata to remove the snapshot's locks, never the data parts
+            /// (`object_key` entries). Skipping their bookkeeping avoids holding one `BackupFileInfo` per
+            /// part, which OOMs the server for snapshots with millions of parts.
+            if (open_mode != OpenMode::UNLOCK)
+            {
+                if (open_mode == OpenMode::READ)
+                    lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
+
+                file_names.emplace(info.file_name, size_and_checksum);
+                file_object_keys.emplace(info.file_name, info.object_key);
+                /// The key is copied from `info.object_key` before `info` is moved into the value.
+                lightweight_snapshot_file_infos.try_emplace(info.object_key, std::move(info));
+            }
+        }
+        else
+        {
+            file_names.emplace(info.file_name, size_and_checksum);
+            if (info.size)
+                file_infos.try_emplace(size_and_checksum, std::move(info));
         }
     };
 
@@ -1184,15 +1205,6 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (entry->isReference())
         return;
 
-    if (entry->isFromRemoteFile())
-    {
-        LOG_TRACE(log, "Writing backup for file {} : skipped because of lightweight snapshot", info.data_file_name);
-        std::lock_guard lock{mutex};
-        original_endpoint = entry->getEndpointURI();
-        original_namespace = entry->getNamespace();
-        return;
-    }
-
     if (open_mode == OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
@@ -1293,6 +1305,10 @@ void BackupImpl::finalizeWriting()
     if (!params.is_internal_backup)
     {
         LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
+        fiu_do_on(FailPoints::backup_fail_before_writing_metadata,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
+        });
         writeBackupMetadata();
         closeArchive(/* finalize= */ true);
         setCompressedSize();
@@ -1310,6 +1326,16 @@ void BackupImpl::setCompressedSize()
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
     else
         compressed_size = uncompressed_size;
+}
+
+
+void BackupImpl::setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept
+{
+    if (original_endpoint.empty())
+    {
+        original_endpoint = endpoint_;
+        original_namespace = namespace_;
+    }
 }
 
 
@@ -1374,7 +1400,10 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
             files_to_remove.push_back(".backup");
             coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & file_info)
             {
-                files_to_remove.push_back(file_info.data_file_name);
+                /// Skip entries with no data file — an empty file, or one wholly covered by the base backup.
+                /// Their `data_file_name` is empty, which would otherwise resolve to the backup root.
+                if (!file_info.data_file_name.empty())
+                    files_to_remove.push_back(file_info.data_file_name);
             });
         }
 
