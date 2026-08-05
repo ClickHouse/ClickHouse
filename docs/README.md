@@ -58,7 +58,6 @@ which walks you through how to make your first contribution.
 | `chdb/` | Documentation for chDB, the in-process ClickHouse engine |
 | `resources/` | Supporting material: about, changelogs, contribution guides, and support center |
 | `changelogs/` | Release changelogs for each ClickHouse version |
-| `en/` | Legacy content from the previous (Docusaurus) documentation site — do not add new content here |
 | `ar/`, `es/`, `fr/`, `ja/`, `ko/`, `pt-BR/`, `ru/`, `zh/` | Generated translations — do not edit these directly; edit the English content instead |
 | `images/` | Image assets used across the documentation |
 | `snippets/` | Reusable content snippets that can be imported into multiple pages |
