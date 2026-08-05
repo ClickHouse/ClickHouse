@@ -2,9 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
+#include <limits>
 #include <span>
 #include <string_view>
-#include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
 #include <Core/TypeId.h>
@@ -99,27 +100,6 @@ bool AdaptiveCodec::isCandidateType(const IDataType & type)
     return false;
 }
 
-CompressionCodecPtr AdaptiveCodec::select(const Codecs & pool, const char * source, UInt32 source_size)
-{
-    chassert(!pool.empty());
-
-    PODArray<char> scratch;
-    size_t best_idx = 0;
-    UInt32 best_size = CompressedSizeCalculator::getCompressedBlockSize(*pool[0], source, source_size, scratch);
-
-    for (size_t i = 1; i < pool.size(); ++i)
-    {
-        const UInt32 size = CompressedSizeCalculator::getCompressedBlockSize(*pool[i], source, source_size, scratch);
-        if (size < best_size)
-        {
-            best_idx = i;
-            best_size = size;
-        }
-    }
-
-    return pool[best_idx];
-}
-
 CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const CompressionCodecPtr & deployment_default)
     : pool(AdaptiveCodec::poolForType(type, deployment_default))
 {
@@ -129,8 +109,57 @@ CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const
 
 UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest) const
 {
-    CompressionCodecPtr winner = AdaptiveCodec::select(pool, source, source_size);
-    return winner->compress(source, source_size, dest);
+    /// A single pass over the pool. A candidate that reports its compressed size cheaply is measured without compressing.
+    /// Otherwise, compress into `dest` if it is free, else into a lazily allocated scratch buffer.
+    /// After the pass the winner reaches `dest` in one of three ways: a measured-only winner is compressed into it,
+    /// a winner already there needs nothing, and a winner in scratch is copied over.
+    PODArray<char> scratch;
+    const ICompressionCodec * best_codec = nullptr;
+    char * best_compressed = nullptr;
+    UInt32 best_size = std::numeric_limits<UInt32>::max();
+
+    for (const auto & codec : pool)
+    {
+        if (auto calculated = codec->tryGetCompressedSize(source, source_size))
+        {
+            const UInt32 size = getHeaderSize() + *calculated;
+            if (size < best_size)
+            {
+                best_size = size;
+                best_codec = codec.get();
+                best_compressed = nullptr;
+            }
+        }
+        else
+        {
+            char * target = dest;
+            if (best_compressed == dest)
+            {
+                if (scratch.empty())
+                    scratch.resize_exact(getMaxCompressedDataSize(source_size));
+                target = scratch.data();
+            }
+            const UInt32 size = codec->compress(source, source_size, target);
+            if (size < best_size)
+            {
+                best_size = size;
+                best_codec = codec.get();
+                best_compressed = target;
+            }
+        }
+    }
+
+    if (!best_compressed)
+    {
+        const UInt32 size = best_codec->compress(source, source_size, dest);
+        chassert(size == best_size);
+        return size;
+    }
+
+    if (best_compressed != dest)
+        memcpy(dest, best_compressed, best_size);
+
+    return best_size;
 }
 
 UInt32 CompressionCodecAdaptive::getMaxCompressedDataSize(UInt32 uncompressed_size) const
