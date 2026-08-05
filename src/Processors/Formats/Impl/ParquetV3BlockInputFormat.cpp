@@ -587,9 +587,10 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                "schema_inference_make_columns_nullable={};enable_json_parsing={};max_parser_depth={}",
                 settings.schema_inference_make_columns_nullable,
-                settings.parquet.enable_json_parsing);
+                settings.parquet.enable_json_parsing,
+                settings.max_parser_depth);
         });
 }
 

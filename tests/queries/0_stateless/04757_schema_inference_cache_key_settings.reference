@@ -1,0 +1,58 @@
+-- TSV exponent, exp=1 first
+Nullable(Float64)
+Nullable(String)
+-- TSV exponent, exp=0 first
+Nullable(String)
+Nullable(Float64)
+-- CSV exponent, exp=1 first
+Nullable(Float64)
+Nullable(String)
+-- CSV exponent, exp=0 first
+Nullable(String)
+Nullable(Float64)
+-- Form exponent, exp=1 first
+Nullable(Float64)
+Nullable(String)
+-- Form exponent, exp=0 first
+Nullable(String)
+Nullable(Float64)
+-- TSV exponent value, exp=1 first
+100000
+1e5
+-- Values (Quoted) exponent, exp=1 first, second query must fail
+Nullable(Float64)
+ONLY_NULLS_WHILE_READING_SCHEMA
+-- JSON exponent control, type must be identical at both values
+Nullable(Float64)
+Nullable(Float64)
+-- JSON exponent control, both values must share one cache entry
+1	1
+-- JSONEachRow depth, high limit then low limit must throw
+1
+-- JSONEachRow depth, low limit alone throws (control)
+1
+-- TSV depth, high limit then low limit must throw
+1
+-- TSV depth, low limit alone throws (control)
+1
+-- Parquet depth, high limit then low limit must throw
+1
+-- Parquet depth, low limit alone throws (control)
+1
+-- Template exponent, exp=1 first
+Nullable(Float64)
+Nullable(String)
+-- Template exponent, exp=0 first
+Nullable(String)
+Nullable(Float64)
+-- TSV key carries both new fields, once per setting value
+input_format_try_infer_exponent_floats=false	max_parser_depth=1000
+input_format_try_infer_exponent_floats=true	max_parser_depth=1000
+-- Values (Quoted) key carries the exponent field
+input_format_try_infer_exponent_floats=true
+-- Form key is no longer empty
+1
+-- Parquet key carries max_parser_depth
+max_parser_depth=1000
+-- Template key follows the row format's rule, not format_regexp_escaping_rule
+1	0
