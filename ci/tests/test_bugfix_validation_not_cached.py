@@ -77,5 +77,17 @@ def test_bugfix_validation_jobs_resolve_to_null_digest():
         ), f"Bugfix Validation job [{job.name}] must resolve to the null digest"
 
 
+def test_ci_tests_digest_covers_the_retry_workflow():
+    """The `ci/tests/` fork-gate guard reads `retry_infra_failures.yml`, so a
+    workflow-only change must invalidate the CI Tests digest -- otherwise the job is
+    served from cache and the guard never runs on the change it exists to catch."""
+    workflow = "./.github/workflows/retry_infra_failures.yml"
+    assert workflow in JobConfigs.ci_tests.digest_config.include_paths
+    assert JobConfigs.ci_tests.is_affected_by([workflow])
+    assert JobConfigs.ci_tests.is_affected_by(
+        [".github/workflows/retry_infra_failures.yml"]
+    )
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

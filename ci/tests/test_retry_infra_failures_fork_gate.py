@@ -13,6 +13,7 @@ CI Tests image, so in CI only the static assertions execute and they are what mu
 the step's semantics.
 """
 
+import collections
 import datetime
 import json
 import os
@@ -38,11 +39,6 @@ PROBE_CMD = (
     "--jq '.conclusion' 2>/dev/null || echo \"\")"
 )
 REJECT_COND = 'if [ "$attempt1_conclusion" != "action_required" ]; then'
-
-# The variables that carry a candidate from the listing to the rerun decision. Each
-# must be assigned exactly once: a second assignment anywhere silently substitutes a
-# value the asserted command never produced, leaving the whole guard inert, CI green.
-DATA_PATH_VARS = ("run_entries", "run_id", "run_attempt", "attempt1_conclusion")
 
 GH_STUB = """#!/usr/bin/env bash
 # The caller's own --jq expression, so the stub answers the field that was asked for rather
@@ -151,28 +147,22 @@ def _jq_stages(expr):
     return stages
 
 
-_COMPOUND_OPEN = r"(?:^|;|\bthen\b|\bdo\b|\belse\b)\s*(?:if|while|until|case|for)\b"
-_COMPOUND_CLOSE = r"(?:^|;)\s*(?:fi|done|esac)\b"
+_CONTINUE = re.compile(r"^continue\b(?!=)\s*[0-9]*\s*(?:;\s*:\s*)?$")
 
 
-def _reject_branch_continues(step):
-    """True iff the already-retried branch runs ``continue`` as a TOP-LEVEL command of
-    its own body. A ``continue`` nested in a conditional is unreachable, and one after
-    the branch's own ``fi`` belongs to the loop rather than the branch."""
-    after = step.split('!= "action_required" ]; then', 1)[1]
-    depth = 0
-    for line in after.splitlines():
-        s = line.strip()
-        if not s or s.startswith("#"):
-            continue
-        if depth == 0 and re.match(r"^continue\b(?!=)", s):
-            return True
-        opens = len(re.findall(_COMPOUND_OPEN, ";" + s))
-        closes = len(re.findall(_COMPOUND_CLOSE, ";" + s))
-        if depth == 0 and closes > opens:
-            return False  # the branch's own terminator
-        depth += opens - closes
-    return False
+def _reject_branch_body(step):
+    """The significant lines of the already-retried branch's body, comments dropped."""
+    lines = step.splitlines()
+    idx = next(i for i, l in enumerate(lines) if '!= "action_required" ]; then' in l)
+    indent = len(lines[idx]) - len(lines[idx].lstrip())
+    body = []
+    for l in lines[idx + 1 :]:
+        if l.strip() and len(l) - len(l.lstrip()) <= indent:
+            break  # the branch's own `fi`
+        s = l.strip()
+        if s and not s.startswith("#"):
+            body.append(s)
+    return body
 
 
 def test_selector_admits_gated_fork_runs():
@@ -182,21 +172,17 @@ def test_selector_admits_gated_fork_runs():
     # refuses a harmless re-wrap while the probe still reads .conclusion and still
     # fails closed.
     normalized = " ".join(step.replace("\\\n", " ").split())
-    # A substring assertion cannot see an ADDED conjunct: `select(.attempt <= 2 and
-    # .attempt == 1 ...)` keeps every fork run out while still containing
-    # "select(.attempt <= 2".
-    assert _listing_select_conjuncts(step) == {
-        ".attempt <= 2",
-        r".createdAt >= \"$cutoff\"",
-    }, "the listing filter must be exactly the attempt bound and the cutoff"
-    # The conjunct set pins what is INSIDE the select and nothing outside it: appending
-    # `| select(.attempt == 1)` to the same expression keeps that set identical while
-    # filtering every fork run back out. So pin the top-level shape as well.
     listing_jq, listing_invocation = _listing_jq(step)
-    stages = _jq_stages(listing_jq)
-    assert (
-        len(stages) == 3 and stages[0] == ".[]" and stages[1].startswith("select(")
-    ), f"the listing filter must be exactly `.[] | select(...) | projection`: {stages}"
+    # Pin all THREE stages exactly. A shape-only check (three stages, stage 2 starts with
+    # `select(`) leaves the projection free, and a filter nested INSIDE it -- `("\(.databaseId):
+    # \(.attempt)" | select(false))` -- keeps the stage count, the stage-1 prefix and the
+    # projection substring all intact while jq emits nothing at all, so the listing yields no
+    # candidates and the whole fix is inert.
+    assert _jq_stages(listing_jq) == [
+        ".[]",
+        r"select(.attempt <= 2 and .createdAt >= \"$cutoff\")",
+        r"\"\(.databaseId):\(.attempt)\"",
+    ], f"the listing filter must be exactly these three stages: {_jq_stages(listing_jq)}"
     # `.attempt` steers the guard, so the field must be requested. Without it jq yields
     # null, `null <= 2` still admits the row, and run_attempt becomes the string "null":
     # a same-repo attempt-1 run is then skipped and a fork run aborts the step at
@@ -258,29 +244,46 @@ def test_selector_admits_gated_fork_runs():
         and significant[0].startswith("attempt1_conclusion=$(gh api")
         and body_depth == 0
     ), "the attempt-1 probe must BE the guard's body, not sit behind another conditional"
-    # And its reject branch must actually skip the run, not just log. A `\n\s*continue`
-    # search matches a continue nested inside `if false; then ... fi`, which never runs,
-    # so the already-retried run falls through to the rerun logic. Depth-track instead.
-    # The `(?!=)` lookahead is PRESERVED: it rejects `continue=false`, an assignment.
-    assert _reject_branch_continues(
-        step
-    ), "the reject branch must run `continue` at top level, or the gate is inert"
-    # The projection and the two splits must agree on field order: transposing either makes
-    # run_id and run_attempt swap, so the probe reads a nonexistent run and rejects every
-    # gated candidate while every assert above still passes.
-    assert r'\"\(.databaseId):\(.attempt)\"' in step, "projection must emit id:attempt"
+    # The branch must SKIP the run, not just log. Depth-tracking a `continue` has to
+    # enumerate every construct that can nest one, and the enumeration keeps leaking: a
+    # `{ if false; then` / `fi; }` block reads as top-level because the brace opens no
+    # tracked depth while `fi; }` closes one. Whitelist the body instead -- log lines, then
+    # a `continue` as the last command. `(?!=)` still rejects `continue=false`, an
+    # assignment, and `continue 1` / `continue ; :` stay accepted, both being equivalent.
+    reject_body = _reject_branch_body(step)
+    assert reject_body and _CONTINUE.match(reject_body[-1]), (
+        "the reject branch must end in a top-level `continue`, or the gate is inert",
+        reject_body,
+    )
+    assert all(
+        l.startswith("echo ") for l in reject_body[:-1]
+    ), f"the reject branch must only log before it continues: {reject_body}"
+    # The projection (pinned as stage 3 above) and the two splits must agree on field order:
+    # transposing either makes run_id and run_attempt swap, so the probe reads a nonexistent
+    # run and rejects every gated candidate while every assert above still passes.
     assert 'run_id="${run_entry%%:*}"' in step, "run id must come from the head field"
     assert 'run_attempt="${run_entry##*:}"' in step, "attempt must come from the tail field"
-    # Presence is not enough: a later `run_id="${run_entry##*:}"` would overwrite the correct
-    # value from the wrong field while every assertion above still passes. Each
-    # data-path
-    # variable must be assigned exactly once, in ANY form -- a per-form count sees only
-    # assignments matching the expected expansion, so `run_attempt=1` appended later
-    # is invisible to it; `(?:^|;)` additionally catches a semicolon-separated overwrite
-    # on the same line, which a `^`-anchored count misses.
-    for var in DATA_PATH_VARS:
-        assigns = re.findall(rf"(?:^|;)\s*{var}=", step, re.M)
-        assert len(assigns) == 1, (var, assigns)
+    # Every assignment between the loop header and the reject condition, by name. A
+    # whitelist of named variables cannot see a name it does not list: `run_entry` is the
+    # loop variable this change introduces and BOTH splits derive from it, so rewriting it
+    # forges both at once, upstream of both, and forces the guard's condition false.
+    # The region ends at the REJECT condition, not at `guard`: ending at the outer
+    # `run_attempt != "1"` line would leave the probe's own assignment outside it.
+    guard_reject_index = next(
+        i for i, l in enumerate(lines) if '!= "action_required" ]; then' in l
+    )
+    region = "\n".join(lines[loop : guard_reject_index + 1])
+    assigned = collections.Counter(
+        re.findall(r"(?:^|;|\bthen\b|\bdo\b)\s*([A-Za-z_][A-Za-z0-9_]*)=", region, re.M)
+    )
+    assert dict(assigned) == {
+        "run_id": 1,
+        "run_attempt": 1,
+        "attempt1_conclusion": 1,
+    }, f"unexpected assignments in the candidate's data path: {dict(assigned)}"
+    # `run_entries` is assigned BEFORE the loop, so the region census cannot see a second
+    # assignment to it; keep an explicit bound on that one.
+    assert len(re.findall(r"(?:^|;)\s*run_entries=", step, re.M)) == 1
     # A gated attempt 1 has status "completed" and conclusion "action_required", so a probe
     # reading any other field rejects every fork candidate while the asserts above still pass.
     assert (
