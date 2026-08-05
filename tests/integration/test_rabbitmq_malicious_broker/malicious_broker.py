@@ -23,6 +23,7 @@ FRAME_END = 0xCE
 CLASS_CONNECTION = 10
 METHOD_START = 10
 METHOD_TUNE = 30
+METHOD_TUNE_OK = 31
 
 # Almost 4 GiB - the point is that it can not possibly fit in the client's receive buffer.
 HUGE_PAYLOAD_SIZE = 0xFFFFFF00
@@ -85,9 +86,22 @@ def handle(conn, frame_max):
 
         conn.sendall(connection_tune(frame_max))
 
-        # Connection.TuneOk, possibly pipelined with Connection.Open.
-        if not conn.recv(65536):
+        # Connection.TuneOk (possibly pipelined with Connection.Open, so read exactly one
+        # frame). Log the frame_max the client settled on: the test asserts it to prove the
+        # client clamps hostile proposals to [4096, 128 MiB] instead of echoing them back.
+        header = recv_exactly(conn, 7)
+        if header is None:
             return
+        frame_type, _channel, size = struct.unpack(">BHI", header)
+        payload = recv_exactly(conn, size + 1)  # payload plus the frame-end octet
+        if payload is None:
+            return
+        if frame_type == FRAME_METHOD and size >= 10:
+            klass, method, _channel_max, client_frame_max = struct.unpack(
+                ">HHHI", payload[:10]
+            )
+            if klass == CLASS_CONNECTION and method == METHOD_TUNE_OK:
+                print(f"client TuneOk frame_max={client_frame_max}", flush=True)
 
         # A frame header claiming a payload that is orders of magnitude larger than the
         # client's receive buffer, immediately followed by data to fill it with.

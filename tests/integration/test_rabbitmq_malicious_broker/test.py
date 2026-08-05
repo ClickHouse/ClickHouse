@@ -19,6 +19,12 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 # Must match the ports allowed in configs/allowed_hosts.xml.
 BROKER_PORT = 19672
 TLS_BROKER_PORT = 19673
+HUGE_FRAME_MAX_BROKER_PORT = 19674
+
+# The client must clamp the broker's frame_max proposal to this range and reply with the
+# clamped value in `Connection.TuneOk` (MIN_FRAME_SIZE / MAX_FRAME_SIZE in AMQP-CPP).
+MIN_FRAME_SIZE = 4096
+MAX_FRAME_SIZE = 128 * 1024 * 1024
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -82,6 +88,37 @@ def start_malicious_broker():
     )
     _wait_for_port(TLS_BROKER_PORT)
 
+    # Plain amqp broker proposing an absurdly large frame_max, to cover the upper clamp.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"python3 /malicious_broker.py {HUGE_FRAME_MAX_BROKER_PORT} {2**32 - 1}"
+            " > /var/log/clickhouse-server/malicious_broker_huge.log 2>&1",
+        ],
+        detach=True,
+        user="root",
+    )
+    _wait_for_port(HUGE_FRAME_MAX_BROKER_PORT)
+
+
+def _assert_negotiated_frame_max(broker_log, expected):
+    """The broker logs the frame_max from the client's `Connection.TuneOk` reply."""
+    wait_condition(
+        lambda: node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"grep -a 'client TuneOk frame_max=' /var/log/clickhouse-server/{broker_log}"
+                " | tail -1",
+            ],
+            nothrow=True,
+        ),
+        lambda reply: f"frame_max={expected}" in reply,
+        max_attempts=20,
+        delay=0.5,
+    )
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -123,6 +160,10 @@ def test_broker_proposing_zero_frame_max(started_cluster):
         delay=0.5,
     )
 
+    # The client must not take the proposed zero at face value: its TuneOk reply has to
+    # carry the lower clamp, which is what bounds the receive buffer.
+    _assert_negotiated_frame_max("malicious_broker.log", MIN_FRAME_SIZE)
+
 
 def test_broker_proposing_zero_frame_max_over_tls(started_cluster):
     """The same overflow driven through the TLS (amqps) receive path, which used to be unbounded.
@@ -131,6 +172,10 @@ def test_broker_proposing_zero_frame_max_over_tls(started_cluster):
     past the end of the TLS receive buffer and a sanitizer build aborts here, so the server must
     stay alive and answer afterwards.
     """
+    # The plaintext test already puts `frame size exceeded` into the shared server log, so
+    # require the count to grow rather than the substring to appear.
+    rejections_before = int(node.count_in_log("frame size exceeded"))
+
     error = node.query_and_get_error(
         f"""
         CREATE TABLE malicious_tls (key UInt64, value UInt64)
@@ -142,6 +187,48 @@ def test_broker_proposing_zero_frame_max_over_tls(started_cluster):
     )
     assert "CANNOT_CONNECT_RABBITMQ" in error, error
     assert node.query("SELECT 1") == "1\n"
+
+    # Deterministic proof the guard fired on the TLS receive path as well, not just that the
+    # server survived (on a non-sanitizer build the overflow could go unnoticed otherwise).
+    wait_condition(
+        lambda: int(node.count_in_log("frame size exceeded")),
+        lambda count: count > rejections_before,
+        max_attempts=20,
+        delay=0.5,
+    )
+
+    _assert_negotiated_frame_max("malicious_broker_tls.log", MIN_FRAME_SIZE)
+
+
+def test_broker_proposing_huge_frame_max(started_cluster):
+    """A frame_max proposal close to 4 GiB must be clamped to 128 MiB, not echoed back.
+
+    The TuneOk reply is what bounds the receive buffer, so accepting the proposal verbatim
+    would let the broker legally announce frames of arbitrary size.
+    """
+    rejections_before = int(node.count_in_log("frame size exceeded"))
+
+    error = node.query_and_get_error(
+        f"""
+        CREATE TABLE malicious_huge (key UInt64, value UInt64)
+        ENGINE = RabbitMQ
+        SETTINGS rabbitmq_address = 'amqp://guest:guest@localhost:{HUGE_FRAME_MAX_BROKER_PORT}/',
+                 rabbitmq_exchange_name = 'ex',
+                 rabbitmq_format = 'JSONEachRow'
+        """
+    )
+    assert "CANNOT_CONNECT_RABBITMQ" in error, error
+    assert node.query("SELECT 1") == "1\n"
+
+    # The ~4 GiB frame the broker sends next still exceeds the clamped 128 MiB.
+    wait_condition(
+        lambda: int(node.count_in_log("frame size exceeded")),
+        lambda count: count > rejections_before,
+        max_attempts=20,
+        delay=0.5,
+    )
+
+    _assert_negotiated_frame_max("malicious_broker_huge.log", MAX_FRAME_SIZE)
 
 
 def test_remote_host_filter_applies_to_rabbitmq_address(started_cluster):
