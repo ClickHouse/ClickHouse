@@ -51,9 +51,12 @@ def inflate_row_count(data, orig_n, large_n=LARGE_N):
 
 # 8. Boolean: 2 rows → still a 1-byte bit-packed buffer, so the inflated row count is the only
 #    corruption and the buffer length stays honest. A 1-row array puts the literal 1 in the
-#    buffer-length fields too, and inflating those declares a buffer longer than the whole file,
+#    buffer-length field too, and inflating it declares a buffer longer than the whole file,
 #    which is rejected before the per-element read. 4 and 8 collide with other metadata fields.
 d = write_arrow(pa.array([True, False], type=pa.bool_()))
+# Pin that: the needle must match the two row counts and nothing else.
+pos = [i for i in range(0, len(d) - 7, 8) if struct.unpack_from('<q', d, i)[0] == 2]
+assert len(pos) == 2, f'expected exactly 2 aligned int64==2 (the row counts), got {pos}'
 open(f'{out}/bool.arrow', 'wb').write(inflate_row_count(d, 2))
 
 # 9. Date32 slow path (no numeric type hint → check_date_range=true → Value() loop)
