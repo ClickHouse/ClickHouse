@@ -81,12 +81,15 @@ SELECT
 FROM legacy_variant_qd;
 
 -- The round trip between two current peers re-versions the state to the negotiated revision, so on
--- the initiator the alternative is named with the explicit version 1.
+-- the initiator the alternative is named with the explicit version 1. This holds for the classic
+-- pipeline, where the column crosses the Native wire before the subcolumn is extracted; with a
+-- serialized query plan the extraction is shipped to the shard and runs against the shard-local
+-- type, where the alternative keeps its unversioned name, so pin the classic pipeline.
 SELECT
     medianDeterministicMerge(v.\`AggregateFunction(1, quantileDeterministic, UInt64, UInt64)\`),
     sum(v.UInt8)
 FROM (SELECT v FROM remote('127.0.0.2', currentDatabase(), legacy_variant_qd))
-SETTINGS prefer_localhost_replica = 0;
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0;
 
 DROP TABLE legacy_variant_qd;
 DROP TABLE variant_qd;
