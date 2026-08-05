@@ -37,24 +37,37 @@ TEST(ScopedThreadAttributes, FailedConstructionRestoresPreviousState)
         /// back there); post_attach_failure throws after attachToGroup already succeeded.
         /// Both must leave the thread in its pre-construction state.
 
-        /// --- Starting detached: every failed switch must end detached. ---
+        /// --- Starting detached: every failed switch must end detached, and must not keep the new
+        /// name. The "keep the name after attaching from a detached thread" contract is only for a
+        /// SUCCESSFUL attach (see KeepsNameAfterAttachFromDetachedThread); a failed one has no job
+        /// whose tracing span would want the name. ---
+        setThreadName(ThreadName::TCP_HANDLER);
+
         FailPointInjection::enableFailPoint(FailPoints::attach_to_group_failure);
         {
             ScopedThreadAttributes scoped_attributes(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
             EXPECT_EQ(getCurrentThreadGroup(), nullptr)
                 << "Failed attach from detached state must leave the thread detached";
+            EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
+                << "Failed attach from detached state must restore the original name for the scope body";
         }
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER);
 
         FailPointInjection::enableFailPoint(FailPoints::scoped_thread_attributes_post_attach_failure);
         {
             ScopedThreadAttributes scoped_attributes(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
             EXPECT_EQ(getCurrentThreadGroup(), nullptr)
                 << "Post-attach failure from detached state must leave the thread detached";
+            EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
+                << "Post-attach failure from detached state must restore the original name for the scope body";
         }
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER);
 
         /// --- Starting attached to G0 and named: every failed allow_existing_group switch must
-        /// restore G0 in the catch block and the original name in the destructor (the thread is
-        /// renamed before the attach is attempted, and the name outlives a failed attach). ---
+        /// restore G0 and the original name already in the catch block, not only in the destructor.
+        /// The thread is renamed before the attach is attempted, and a switch that failed must not
+        /// leave the temporary name installed for the scope body, or the log messages, trace spans
+        /// and `thread.prof.name` produced there are attributed to a switch that never happened. ---
         setThreadName(ThreadName::TCP_HANDLER);
         CurrentThread::attachToGroupIfDetached(G0);
 
@@ -63,6 +76,8 @@ TEST(ScopedThreadAttributes, FailedConstructionRestoresPreviousState)
             ScopedThreadAttributes scoped_attributes(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
             EXPECT_EQ(getCurrentThreadGroup(), G0)
                 << "Failed allow_existing_group attach must restore the original group";
+            EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
+                << "Failed allow_existing_group attach must restore the original name for the scope body";
         }
         EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
             << "Failed allow_existing_group attach must restore the original name";
@@ -72,6 +87,8 @@ TEST(ScopedThreadAttributes, FailedConstructionRestoresPreviousState)
             ScopedThreadAttributes scoped_attributes(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
             EXPECT_EQ(getCurrentThreadGroup(), G0)
                 << "Post-attach failure must detach the target group and restore the original";
+            EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
+                << "Post-attach failure must restore the original name for the scope body";
         }
         EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
             << "Post-attach failure must restore the original name after setThreadName renamed the thread";
@@ -86,6 +103,8 @@ TEST(ScopedThreadAttributes, FailedConstructionRestoresPreviousState)
             ScopedThreadAttributes scoped_attributes(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
             EXPECT_EQ(getCurrentThreadGroup(), G0)
                 << "Post-attach failure must restore the original group for an initially-unnamed borrowed thread";
+            EXPECT_EQ(getThreadName(), ThreadName::UNKNOWN)
+                << "Post-attach failure must restore an UNKNOWN previous name for the scope body too";
         }
         EXPECT_EQ(getThreadName(), ThreadName::UNKNOWN)
             << "Post-attach failure must restore an UNKNOWN previous name; the restore is gated by a bool, not by the name value";

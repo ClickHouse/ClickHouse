@@ -117,6 +117,31 @@ ScopedThreadAttributes::ScopedThreadAttributes(ThreadGroupPtr thread_group_, Thr
         }
         thread_group = nullptr;
         prev_thread_group = nullptr;
+
+        /// The switch did not take effect, so the temporary name must not stay installed for the
+        /// scope body: otherwise everything the caller does inside the scope (log messages, trace
+        /// spans, `thread.prof.name`) is attributed to a switch that failed. Restore it right here
+        /// instead of waiting for the destructor. Note that the "keep the name after a successful
+        /// attach from a detached thread" contract does not apply on this path: the attach failed,
+        /// so there is no job whose tracing span would want the new name.
+        restorePrevThreadName();
+    }
+}
+
+void ScopedThreadAttributes::restorePrevThreadName() noexcept
+{
+    if (!should_restore_prev_thread_name)
+        return;
+    should_restore_prev_thread_name = false;
+
+    try
+    {
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        restoreThreadName(prev_thread_name);
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -148,19 +173,9 @@ ScopedThreadAttributes::~ScopedThreadAttributes()
         }
     }
 
-    /// Restore the name even when the group part did nothing or failed.
-    if (should_restore_prev_thread_name)
-    {
-        try
-        {
-            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-            restoreThreadName(prev_thread_name);
-        }
-        catch (...)
-        {
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+    /// Restore the name even when the group part did nothing. A failed construction already
+    /// restored it, which clears the flag, so there is no double restore here.
+    restorePrevThreadName();
 }
 
 }

@@ -39,7 +39,9 @@ public:
     /// below. The previous name is restored in the destructor, except after a successful attach
     /// from a detached thread: there the new name is intentionally left in place, because
     /// ThreadPoolImpl::worker reads it after the job returns to name the tracing span
-    /// (and resets it on the next iteration).
+    /// (and resets it on the next iteration). If the switch itself fails (this constructor is
+    /// noexcept and only logs), the name is restored immediately rather than in the destructor,
+    /// so the scope body is not attributed to a switch that never happened.
     /// Group: if thread_group_ is nullptr or equal to the current thread group, does nothing.
     /// allow_existing_group:
     ///  * If false, asserts that the thread is not already attached to a different group.
@@ -49,6 +51,11 @@ public:
     ~ScopedThreadAttributes();
 
 private:
+    /// Puts the pre-switch name back and clears should_restore_prev_thread_name, so it is safe to
+    /// call from both the constructor's failure path and the destructor. A no-op if there is
+    /// nothing to restore.
+    void restorePrevThreadName() noexcept;
+
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
