@@ -1972,10 +1972,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             /// query is built, just like the task-based parallel-replicas path, so they
                             /// do not collapse by name on the replicas (NUMBER_OF_COLUMNS_DOESNT_MATCH).
                             auto custom_key_query_tree = table_expression_query_info.query_tree->clone();
-                            /// TEMPORARY (CI verification): disambiguation disabled ONLY on the custom-key
-                            /// path so that a failure of the custom_key_* regression cases proves the bug
-                            /// is reproduced specifically via this path (other paths stay fixed). Reverted next.
-                            /// inlineAndDisambiguateAliasColumns(custom_key_query_tree, query_context);
+                            inlineAndDisambiguateAliasColumns(custom_key_query_tree, query_context);
                             modified_query_info.query_tree = custom_key_query_tree;
                             auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
