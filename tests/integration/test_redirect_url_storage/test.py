@@ -166,10 +166,19 @@ def test_url_reconnect(started_cluster):
         thread = threading.Thread(target=select)
         thread.start()
 
-        time.sleep(4)
+        # Heal the network only after the client demonstrably hit a connect
+        # timeout (the retry log line appears after the first timed-out
+        # attempt), then let a retry succeed. A fixed sleep is racy on a
+        # loaded runner: the query may reach its first connect attempt only
+        # after the rule is already deleted, timing out nothing.
+        for _ in range(60):
+            if node1.contains_in_log("connect timed out"):
+                break
+            time.sleep(0.5)
+        else:
+            assert False, "The client never hit a connect timeout"
         pm.delete_rule(pm_rule)
 
         thread.join()
 
         assert int(result) == 6581218782194912115
-        assert node1.contains_in_log("Timeout: connect timed out")
