@@ -118,10 +118,6 @@ class Info:
         return self.env.COMMIT_AUTHORS or []
 
     @property
-    def commit_author_emails(self):
-        return self.env.COMMIT_AUTHOR_EMAILS or []
-
-    @property
     def run_url(self):
         return self.env.RUN_URL
 
