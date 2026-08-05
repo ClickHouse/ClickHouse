@@ -394,14 +394,16 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT timeSeriesGroupToTags(group) AS tags,
+                /// SELECT timeSeriesGroupToTags(timeSeriesIdToGroup(id)) AS tags,
                 ///        timeSeriesGroupArray(timestamp::timestamp_data_type, value::scalar_data_type) AS time_series
                 /// FROM <raw_data>
-                /// GROUP BY group
+                /// GROUP BY id
                 /// HAVING notEmpty(time_series)
 
-                /// timeSeriesGroupToTags(group) AS tags
-                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                /// timeSeriesGroupToTags(timeSeriesIdToGroup(id)) AS tags
+                tags = makeASTFunction(
+                    "timeSeriesGroupToTags",
+                    makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
                 tags->setAlias(ColumnNames::Tags);
 
                 /// timeSeriesGroupArray(timestamp, value) AS time_series
@@ -411,7 +413,7 @@ namespace
                     timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type));
                 time_series->setAlias(ColumnNames::TimeSeries);
 
-                group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
                 having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
 
                 break;

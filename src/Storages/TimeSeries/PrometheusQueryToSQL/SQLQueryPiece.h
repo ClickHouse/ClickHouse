@@ -42,7 +42,8 @@ enum class StoreMethod
     /// Can be used with types ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     VECTOR_GRID,
 
-    /// Data are stored in three columns `group` (UInt64), `timestamp` (timestamp_data_type), 'value` (scalar_data_type).
+    /// Data are stored in three columns `id` (the table's id type), `timestamp` (timestamp_data_type), `value` (scalar_data_type).
+    /// The series key is the raw `id`; consumers group by it and convert it to `group` with timeSeriesIdToGroup(id) once per series.
     /// RAW_DATA is produced by selectors in a prometheus query.
     /// Can be used only with type ResultType::RANGE_VECTOR.
     RAW_DATA,
@@ -83,7 +84,7 @@ struct SQLQueryPiece
     /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (scalar_data_type) with a single row.
     /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(scalar_data_type)) with a single row.
     /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(scalar_data_type))).
-    /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp` (timestamp_data_type), `value` (scalar_data_type).
+    /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `id`, `timestamp`, `value` (see StoreMethod::RAW_DATA).
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;
 };

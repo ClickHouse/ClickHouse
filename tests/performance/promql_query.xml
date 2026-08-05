@@ -1,0 +1,57 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!-- Benchmarks PromQL evaluation (prometheusQuery / prometheusQueryRange) over a TimeSeries table. -->
+    <!-- The focus is the per-series (grid) aggregation of raw samples: it runs GROUP BY on the raw `id` column of the samples table. -->
+    <!-- `timeSeriesIdToGroup(id)` (a lookup in the per-query tags collector) runs on the aggregated result, i.e. once per series instead of once per sample. -->
+    <!-- The data is sized so that per-sample work dominates: 5000 series x 1440 samples = 7.2M samples, while the query result is small (50 namespaces, or 5000 series on a coarse grid). -->
+
+    <create_query>
+        CREATE TABLE promql_tags (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String), min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY (metric_name, id)
+    </create_query>
+    <create_query>
+        CREATE TABLE promql_data (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)
+    </create_query>
+    <create_query>
+        CREATE TABLE promql_ts ENGINE = TimeSeries DATA promql_data TAGS promql_tags
+    </create_query>
+
+    <!-- 5000 series of metric `m`: 50 namespaces x 100 pods. -->
+    <fill_query>
+        INSERT INTO promql_tags
+        SELECT
+            number + 1 AS id,
+            'm' AS metric_name,
+            map('ns', 'ns' || toString(intDiv(number, 100)), 'pod', 'pod' || toString(number % 100)) AS tags,
+            toDateTime64(0, 3) AS min_time,
+            toDateTime64(21600, 3) AS max_time
+        FROM numbers(5000)
+    </fill_query>
+
+    <!-- One sample per series every 15s over [0, 21600) -> 1440 samples/series, 7.2M rows total. -->
+    <!-- The value is a counter growing by 1 per second, so rate() is ~1 everywhere. -->
+    <fill_query>
+        INSERT INTO promql_data
+        SELECT
+            (number % 5000) + 1 AS id,
+            toDateTime64(intDiv(number, 5000) * 15, 3) AS timestamp,
+            (intDiv(number, 5000) * 15)::Float64 AS value
+        FROM numbers_mt(5000 * 1440)
+    </fill_query>
+
+    <!-- Range query aggregated to 50 namespaces: the per-series aggregation consumes all 7.2M samples. -->
+    <query>SELECT * FROM prometheusQueryRange('promql_ts', 'sum by (ns) (rate(m[5m]))', 3600, 21600, 60) FORMAT Null</query>
+    <!-- Range query without re-aggregation: 5000 output series on a coarse grid. -->
+    <query>SELECT * FROM prometheusQueryRange('promql_ts', 'rate(m[5m])', 3600, 21600, 300) FORMAT Null</query>
+    <!-- Instant queries: a plain selector (the last_over_time path) and an aggregated rate. -->
+    <query>SELECT * FROM prometheusQuery('promql_ts', 'm', 21600) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_ts', 'sum by (ns) (rate(m[5m]))', 21600) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_ts</drop_query>
+    <drop_query>DROP TABLE IF EXISTS promql_data</drop_query>
+    <drop_query>DROP TABLE IF EXISTS promql_tags</drop_query>
+</test>

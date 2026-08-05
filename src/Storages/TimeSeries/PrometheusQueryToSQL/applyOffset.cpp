@@ -51,11 +51,11 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group, timestamp + INTERVAL X, value
+                /// SELECT id, timestamp + INTERVAL X, value
                 /// FROM <raw_data>
                 SelectQueryBuilder builder;
 
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
 
                 ASTPtr new_timestamp;
                 if (isDateTime64(context.timestamp_data_type))
@@ -176,13 +176,13 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group,
+                /// SELECT id,
                 ///        arrayJoin(timeSeriesRange(<start_time>, <end_time>, <step>)) AS timestamp,
                 ///        value
                 /// FROM <raw_data>
                 SelectQueryBuilder builder;
 
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
 
                 auto new_timestamp = makeASTFunction(
                     "arrayJoin",

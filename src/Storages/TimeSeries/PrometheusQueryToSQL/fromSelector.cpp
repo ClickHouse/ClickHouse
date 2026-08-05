@@ -25,13 +25,12 @@ namespace
 
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::RAW_DATA};
 
-        /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
-        /// FROM timeSeriesSelectorToGrid(<selector>, <start_time>, <end_time>, <step>, <window>)
+        /// SELECT id, timestamp, value
+        /// FROM timeSeriesSelector(<db>, <tbl>, <selector>, <min_time>, <max_time>)
+        /// The raw `id` column is kept as the series key; consumers of RAW_DATA convert it to `group` after the per-series aggregation.
         SelectQueryBuilder builder;
 
-        builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
-
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
 

@@ -175,6 +175,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.type = ResultType::INSTANT_VECTOR;
 
     bool has_group = false;
+    bool group_by_raw_id = false;
     ASTPtr timestamps;
     ASTPtr values;
 
@@ -244,11 +245,12 @@ SQLQueryPiece applyFunctionOverRange(
 
         case StoreMethod::RAW_DATA:
         {
-            /// SELECT group,
+            /// SELECT timeSeriesIdToGroup(id) AS group,
             ///        <aggregate_function>(timestamp, value) AS values
             /// FROM <raw_data>
-            /// GROUP BY group
+            /// GROUP BY id
             has_group = true;
+            group_by_raw_id = true;
 
             timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
             values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
@@ -279,7 +281,13 @@ SQLQueryPiece applyFunctionOverRange(
 
     SelectQueryBuilder builder;
 
-    if (has_group)
+    if (group_by_raw_id)
+    {
+        /// timeSeriesIdToGroup(id) AS group
+        builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+    }
+    else if (has_group)
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
@@ -293,7 +301,7 @@ SQLQueryPiece applyFunctionOverRange(
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (has_group)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(group_by_raw_id ? ColumnNames::ID : ColumnNames::Group));
 
     if (argument.select_query)
     {
