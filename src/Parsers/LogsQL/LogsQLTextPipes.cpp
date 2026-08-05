@@ -149,8 +149,12 @@ void LogsQLParser::applyComputedFields(Layer & layer, const std::vector<std::pai
 
     wrapLayerIf(layer, !layer.select.empty());
 
+    /// The replaced expressions reference the original column (through `if (...)`,
+    /// `keep_original_fields`, or `skip_empty_results`), so the column must exist.
+    /// The strict transformer reports a missing column explicitly, while a non-strict
+    /// one would silently drop the computed field.
     auto replace = make_intrusive<ASTColumnsReplaceTransformer>();
-    replace->is_strict = false;
+    replace->is_strict = true;
     for (const auto & [name, expression] : fields)
     {
         auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
@@ -288,8 +292,9 @@ void LogsQLParser::parsePipeExtract(Layer & layer, bool is_regexp)
 
     if (use_replace)
     {
+        /// See the comment about the strict transformer in `applyComputedFields`.
         auto replace = make_intrusive<ASTColumnsReplaceTransformer>();
-        replace->is_strict = false;
+        replace->is_strict = true;
         for (const auto & [name, expression] : computed)
         {
             auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
@@ -892,7 +897,17 @@ void LogsQLParser::parsePipeRunningStats(Layer & layer, bool is_total)
     wrapLayerIf(layer, !layer.select.empty() || layer.has_aggregation || layer.limit.has_value() || layer.offset.has_value()
         || !layer.order_by.empty() || layer.order_by_all);
 
-    layer.select.push_back(make_intrusive<ASTAsterisk>());
+    /// `* EXCEPT (...)` overwrites existing same-named columns instead of duplicating them
+    /// (see the comment in `appendComputedColumn`).
+    auto except = make_intrusive<ASTColumnsExceptTransformer>();
+    for (const auto & entry : entries)
+        except->children.push_back(make_intrusive<ASTIdentifier>(columnName(entry.result_name)));
+    auto transformers = make_intrusive<ASTColumnsTransformerList>();
+    transformers->children.push_back(except);
+    auto asterisk = make_intrusive<ASTAsterisk>();
+    asterisk->transformers = transformers;
+    asterisk->children.push_back(transformers);
+    layer.select.push_back(asterisk);
     for (auto & entry : entries)
     {
         entry.expression->setAlias(columnName(entry.result_name));

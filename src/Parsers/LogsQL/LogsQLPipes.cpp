@@ -479,9 +479,7 @@ void LogsQLParser::parsePipeCopy(Layer & layer)
 {
     lex.nextToken();
 
-    if (layer.select.empty())
-        layer.select.push_back(make_intrusive<ASTAsterisk>());
-
+    std::vector<std::pair<String, String>> copies;
     while (true)
     {
         String source = lex.nextCompoundToken();
@@ -490,14 +488,32 @@ void LogsQLParser::parsePipeCopy(Layer & layer)
         if (lex.isKeyword("as"))
             lex.nextToken();
         String target = parseFieldName();
-
-        auto expression = columnExpr(source);
-        expression->setAlias(columnName(target));
-        layer.select.push_back(expression);
+        copies.emplace_back(columnName(source), columnName(target));
 
         if (!lex.isKeyword(","))
             break;
         lex.nextToken();
+    }
+
+    wrapLayerIf(layer, !layer.select.empty());
+
+    /// `* EXCEPT (...)` overwrites existing same-named columns instead of duplicating them
+    /// (see the comment in `appendComputedColumn`).
+    auto except = make_intrusive<ASTColumnsExceptTransformer>();
+    for (const auto & copy : copies)
+        except->children.push_back(make_intrusive<ASTIdentifier>(copy.second));
+    auto transformers = make_intrusive<ASTColumnsTransformerList>();
+    transformers->children.push_back(except);
+    auto asterisk = make_intrusive<ASTAsterisk>();
+    asterisk->transformers = transformers;
+    asterisk->children.push_back(transformers);
+    layer.select.push_back(asterisk);
+
+    for (const auto & [source, target] : copies)
+    {
+        auto expression = make_intrusive<ASTIdentifier>(source);
+        expression->setAlias(target);
+        layer.select.push_back(expression);
     }
 
     layer.has_projection = true;
@@ -780,6 +796,9 @@ void LogsQLParser::applySortWithExtras(
 
         auto except = make_intrusive<ASTColumnsExceptTransformer>();
         except->children.push_back(make_intrusive<ASTIdentifier>("__logsql_rank"));
+        /// The rank overwrites an existing same-named column (see `appendComputedColumn`).
+        if (!rank_name.empty())
+            except->children.push_back(make_intrusive<ASTIdentifier>(columnName(rank_name)));
         auto transformers = make_intrusive<ASTColumnsTransformerList>();
         transformers->children.push_back(except);
         auto asterisk = make_intrusive<ASTAsterisk>();
@@ -816,7 +835,15 @@ void LogsQLParser::applySortWithExtras(
         row_number->window_definition = window;
         row_number->children.push_back(window);
 
-        layer.select.push_back(make_intrusive<ASTAsterisk>());
+        /// The rank overwrites an existing same-named column (see `appendComputedColumn`).
+        auto except = make_intrusive<ASTColumnsExceptTransformer>();
+        except->children.push_back(make_intrusive<ASTIdentifier>(columnName(rank_name)));
+        auto transformers = make_intrusive<ASTColumnsTransformerList>();
+        transformers->children.push_back(except);
+        auto asterisk = make_intrusive<ASTAsterisk>();
+        asterisk->transformers = transformers;
+        asterisk->children.push_back(transformers);
+        layer.select.push_back(asterisk);
         row_number->setAlias(columnName(rank_name));
         layer.select.push_back(row_number);
         layer.has_projection = true;
@@ -1150,8 +1177,11 @@ void LogsQLParser::applyColumnReplacement(Layer & layer, const String & column, 
     replacement->name = column;
     replacement->children.push_back(std::move(expression));
 
+    /// The replacement expression transforms the original column in place, so the column
+    /// must exist. The strict transformer reports a missing column explicitly, while a
+    /// non-strict one would silently skip the transformation.
     auto replace = make_intrusive<ASTColumnsReplaceTransformer>();
-    replace->is_strict = false;
+    replace->is_strict = true;
     replace->children.push_back(replacement);
 
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
@@ -1167,8 +1197,22 @@ void LogsQLParser::applyColumnReplacement(Layer & layer, const String & column, 
 
 void LogsQLParser::appendComputedColumn(Layer & layer, ASTPtr expression, const String & alias)
 {
-    if (layer.select.empty())
-        layer.select.push_back(make_intrusive<ASTAsterisk>());
+    wrapLayerIf(layer, !layer.select.empty());
+
+    /// `SELECT * EXCEPT (alias), expression AS alias`: as in LogsQL, setting a field
+    /// overwrites it when the column already exists (a plain `SELECT *, expression AS alias`
+    /// would produce two same-named columns, which the old analyzer rejects when their
+    /// types differ), and creates the field otherwise (the EXCEPT transformer is not
+    /// strict, so a missing name is fine).
+    auto except = make_intrusive<ASTColumnsExceptTransformer>();
+    except->children.push_back(make_intrusive<ASTIdentifier>(alias));
+    auto transformers = make_intrusive<ASTColumnsTransformerList>();
+    transformers->children.push_back(except);
+    auto asterisk = make_intrusive<ASTAsterisk>();
+    asterisk->transformers = transformers;
+    asterisk->children.push_back(transformers);
+    layer.select.push_back(asterisk);
+
     expression->setAlias(alias);
     layer.select.push_back(expression);
     layer.has_projection = true;
@@ -1663,8 +1707,10 @@ void LogsQLParser::parsePipeUnroll(Layer & layer)
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     transformers->children.push_back(except);
 
+    /// The unrolled fields are read from the source table, so they must exist;
+    /// the strict transformer reports a missing column explicitly.
     auto replace = make_intrusive<ASTColumnsReplaceTransformer>();
-    replace->is_strict = false;
+    replace->is_strict = true;
     for (const auto & field : fields)
     {
         /// String elements are decoded; other elements keep their JSON form.
@@ -2355,9 +2401,7 @@ void LogsQLParser::parsePipeMath(Layer & layer)
 {
     lex.nextToken();
 
-    if (layer.select.empty())
-        layer.select.push_back(make_intrusive<ASTAsterisk>());
-
+    std::vector<ASTPtr> computed;
     while (true)
     {
         const char * expression_begin = lex.getTokenBegin();
@@ -2377,12 +2421,29 @@ void LogsQLParser::parsePipeMath(Layer & layer)
         }
 
         expression->setAlias(result_name);
-        layer.select.push_back(expression);
+        computed.push_back(expression);
 
         if (!lex.isKeyword(","))
             break;
         lex.nextToken();
     }
+
+    wrapLayerIf(layer, !layer.select.empty());
+
+    /// `* EXCEPT (...)` overwrites existing same-named columns instead of duplicating them
+    /// (see the comment in `appendComputedColumn`).
+    auto except = make_intrusive<ASTColumnsExceptTransformer>();
+    for (const auto & expression : computed)
+        except->children.push_back(make_intrusive<ASTIdentifier>(expression->tryGetAlias()));
+    auto transformers = make_intrusive<ASTColumnsTransformerList>();
+    transformers->children.push_back(except);
+    auto asterisk = make_intrusive<ASTAsterisk>();
+    asterisk->transformers = transformers;
+    asterisk->children.push_back(transformers);
+    layer.select.push_back(asterisk);
+
+    for (const auto & expression : computed)
+        layer.select.push_back(expression);
 
     layer.has_projection = true;
 }
