@@ -28,17 +28,11 @@ SELECT 'null_if', count() FROM t_113234 WHERE t % nullIf(19, 0) = 16;
 SELECT 'scalar_subquery', count() FROM t_113234 WHERE t % (SELECT toNullable(19)) = 16;
 SELECT 'materialize', count() FROM t_113234 WHERE t % materialize(toNullable(19)) = 16;
 
--- A scalar subquery is typed `Nullable` because it may return no rows, so parameterising the
--- indexed expression from a lookup table reaches the same collision with no `Nullable` anywhere
--- in the schema or the query text.
-DROP TABLE IF EXISTS cfg_113234;
-CREATE TABLE cfg_113234 (divisor UInt32) ENGINE = Memory;
-INSERT INTO cfg_113234 VALUES (19);
-
-SELECT 'subquery_from_table', count() FROM t_113234 WHERE t % (SELECT divisor FROM cfg_113234) = 16;
+-- A scalar subquery is typed `Nullable` because it may return no rows, so it reaches the same
+-- collision with no `Nullable` written anywhere in the query.
+SELECT 'subquery_plain', count() FROM t_113234 WHERE t % (SELECT 19) = 16;
 
 -- A `Nullable` comparison constant sits outside the indexed expression and was never affected.
 SELECT 'nullable_constant', count() FROM t_113234 WHERE t % 19 = toNullable(16);
 
-DROP TABLE cfg_113234;
 DROP TABLE t_113234;

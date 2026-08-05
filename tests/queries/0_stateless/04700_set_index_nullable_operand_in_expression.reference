@@ -4,5 +4,5 @@ to_nullable	5
 null_if	5
 scalar_subquery	5
 materialize	5
-subquery_from_table	5
+subquery_plain	5
 nullable_constant	5
