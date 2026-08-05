@@ -738,21 +738,31 @@ void BackupImpl::readBackupMetadata()
             size_of_entries += info.size - info.base_size;
         }
 
-        file_names.emplace(info.file_name, size_and_checksum);
         if (!info.object_key.empty())
         {
             if (original_endpoint.empty() || original_namespace.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
 
-            if (open_mode == OpenMode::READ)
-                lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
+            /// UNLOCK only reads table metadata to remove the snapshot's locks, never the data parts
+            /// (`object_key` entries). Skipping their bookkeeping avoids holding one `BackupFileInfo` per
+            /// part, which OOMs the server for snapshots with millions of parts.
+            if (open_mode != OpenMode::UNLOCK)
+            {
+                if (open_mode == OpenMode::READ)
+                    lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
 
-            file_object_keys.emplace(info.file_name, info.object_key);
-            /// The key is copied from `info.object_key` before `info` is moved into the value.
-            lightweight_snapshot_file_infos.try_emplace(info.object_key, std::move(info));
+                file_names.emplace(info.file_name, size_and_checksum);
+                file_object_keys.emplace(info.file_name, info.object_key);
+                /// The key is copied from `info.object_key` before `info` is moved into the value.
+                lightweight_snapshot_file_infos.try_emplace(info.object_key, std::move(info));
+            }
         }
-        else if (info.size)
-            file_infos.try_emplace(size_and_checksum, std::move(info));
+        else
+        {
+            file_names.emplace(info.file_name, size_and_checksum);
+            if (info.size)
+                file_infos.try_emplace(size_and_checksum, std::move(info));
+        }
     };
 
     Poco::XML::SAXParser xml_parser;
@@ -1195,15 +1205,6 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (entry->isReference())
         return;
 
-    if (entry->isFromRemoteFile())
-    {
-        LOG_TRACE(log, "Writing backup for file {} : skipped because of lightweight snapshot", info.data_file_name);
-        std::lock_guard lock{mutex};
-        original_endpoint = entry->getEndpointURI();
-        original_namespace = entry->getNamespace();
-        return;
-    }
-
     if (open_mode == OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
@@ -1325,6 +1326,16 @@ void BackupImpl::setCompressedSize()
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
     else
         compressed_size = uncompressed_size;
+}
+
+
+void BackupImpl::setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept
+{
+    if (original_endpoint.empty())
+    {
+        original_endpoint = endpoint_;
+        original_namespace = namespace_;
+    }
 }
 
 

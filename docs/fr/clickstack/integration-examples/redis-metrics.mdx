@@ -35,9 +35,7 @@ Si vous souhaitez tester l’intégration Redis Metrics avant de configurer votr
 * Mot de passe Redis si l’authentification est activée
 
 <Steps>
-  <Step>
-    #### Vérifiez la connexion à Redis
-
+  <Step title="Vérifiez la connexion à Redis" id="verify-redis">
     Commencez par vérifier que vous pouvez vous connecter à Redis et que la commande INFO fonctionne :
 
     ```bash
@@ -63,9 +61,7 @@ Si vous souhaitez tester l’intégration Redis Metrics avant de configurer votr
     * **À distance** : `<redis-host>:6379`
   </Step>
 
-  <Step>
-    #### Créer une configuration personnalisée pour l’OTel collector
-
+  <Step title="Créer une configuration personnalisée pour l’OTel collector" id="custom-otel">
     ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. Cette configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
 
     Créez un fichier nommé `redis-metrics.yaml` avec la configuration suivante :
@@ -146,9 +142,7 @@ Si vous souhaitez tester l’intégration Redis Metrics avant de configurer votr
     </Note>
   </Step>
 
-  <Step>
-    #### Configurer ClickStack pour charger une configuration personnalisée
-
+  <Step title="Configurer ClickStack pour charger une configuration personnalisée" id="load-custom">
     Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, vous devez :
 
     1. Monter le fichier de configuration personnalisé à l’emplacement `/etc/otelcol-contrib/custom.config.yaml`
@@ -214,9 +208,7 @@ Si vous souhaitez tester l’intégration Redis Metrics avant de configurer votr
     ```
   </Step>
 
-  <Step>
-    #### Vérifier les métriques dans HyperDX
-
+  <Step title="Vérifier les métriques dans HyperDX" id="verifying-metrics">
     Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les métriques sont bien collectées :
 
     1. Accédez à Metrics Explorer
@@ -234,9 +226,7 @@ Si vous souhaitez tester l’intégration Redis Metrics avant de configurer votr
 Pour les utilisateurs qui souhaitent tester l’intégration Redis Metrics avant de configurer leurs systèmes de production, nous fournissons un jeu de données pré-généré contenant des profils Redis Metrics réalistes.
 
 <Steps>
-  <Step>
-    #### Télécharger l’exemple de jeu de données de métriques
-
+  <Step title="Télécharger l’exemple de jeu de données de métriques" id="download-sample">
     Téléchargez les fichiers de métriques pré-générés (24 heures de Redis Metrics avec des profils réalistes) :
 
     ```bash
@@ -255,9 +245,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration Redis Metrics avant
     * **Profils de trafic quotidiens** - Pics pendant les heures ouvrées, baisse en soirée, micro-pics aléatoires
   </Step>
 
-  <Step>
-    #### Démarrer ClickStack
-
+  <Step title="Démarrer ClickStack" id="start-clickstack">
     Démarrez une instance ClickStack :
 
     ```bash
@@ -269,9 +257,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration Redis Metrics avant
     Attendez environ 30 secondes pour que ClickStack démarre complètement.
   </Step>
 
-  <Step>
-    #### Charger les métriques dans ClickStack
-
+  <Step title="Charger les métriques dans ClickStack" id="load-metrics">
     Chargez les métriques directement dans ClickHouse :
 
     ```bash
@@ -285,9 +271,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration Redis Metrics avant
     ```
   </Step>
 
-  <Step>
-    #### Vérifier les métriques dans HyperDX
-
+  <Step title="Vérifier les métriques dans HyperDX" id="verify-metrics">
     Une fois les données chargées, le moyen le plus rapide de visualiser vos métriques est d’utiliser le tableau de bord préconfiguré.
 
     Rendez-vous dans la section [Dashboards and visualization](#dashboards) pour importer le tableau de bord et afficher toutes les métriques Redis Metrics en une seule vue.
@@ -311,13 +295,11 @@ Pour les utilisateurs qui souhaitent tester l’intégration Redis Metrics avant
 Pour vous aider à démarrer la supervision de Redis avec ClickStack, nous fournissons les visualisations essentielles pour Redis Metrics.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  <Step title="Télécharger la configuration du tableau de bord" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">Télécharger le fichier de configuration du tableau de bord</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importer le tableau de bord préconfiguré
-
+  <Step title="Importer le tableau de bord préconfiguré" id="import-dashboard">
     1. Ouvrez HyperDX et accédez à la section Dashboards
     2. Cliquez sur **Import Dashboard** en haut à droite, dans le menu à points de suspension
 
@@ -328,9 +310,7 @@ Pour vous aider à démarrer la supervision de Redis avec ClickStack, nous fourn
     <Image img="/images/clickstack/import-redis-metrics-dashboard.webp" alt="Boîte de dialogue de fin d’importation" />
   </Step>
 
-  <Step>
-    #### Afficher le tableau de bord
-
+  <Step title="Afficher le tableau de bord" id="created-dashboard">
     Le tableau de bord sera créé avec toutes les visualisations préconfigurées :
 
     <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="Tableau de bord Redis Metrics" />
@@ -451,7 +431,7 @@ Assurez-vous que votre fichier Docker Compose ou vos commandes `docker run` plac
 * Surveillez plusieurs instances Redis en dupliquant la configuration du récepteur avec différents endpoints et noms de service
 
 <div id="going-to-production">
-  ## Passage en production
+  ## Passer en production
 </div>
 
-Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Envoyer des données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.
+Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une mise en route rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Envoyer des données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

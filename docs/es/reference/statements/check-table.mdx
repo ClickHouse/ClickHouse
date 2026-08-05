@@ -112,7 +112,7 @@ DB::Exception: No such data part '201003_111_222_0' to check in table 'default.t
 ```
 
 <div id="receiving-a-corrupted-result">
-  ### Obtener un resultado &#39;Corrupted&#39;
+  ### Obtener un resultado &#39;corrupto&#39;
 </div>
 
 <Warning>
@@ -162,6 +162,8 @@ SETTINGS check_query_single_value_result = 0
 │ default  │ t1       │ all_7_38_2  │         1 │         │
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
+
+Para comprobar el estado de toda una base de datos en lugar de la integridad de tablas individuales, utilice la consulta [`CHECK DATABASE`](/es/reference/statements/check-database). Está pensada principalmente para bases de datos con el motor [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake), donde verifica que el catálogo externo sea accesible.
 
 <div id="if-the-data-is-corrupted">
   ## Si los datos están corruptos

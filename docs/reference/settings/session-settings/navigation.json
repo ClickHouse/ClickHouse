@@ -1,8 +1,8 @@
 {
   "group": "Session Settings",
+  "root": "reference/settings/session-settings",
   "directory": "none",
   "pages": [
-    "reference/settings/session-settings",
     "reference/settings/session-settings/additional",
     "reference/settings/session-settings/aggregate",
     "reference/settings/session-settings/aggregation",
@@ -67,6 +67,7 @@
     "reference/settings/session-settings/enable-join",
     "reference/settings/session-settings/enable-lightweight",
     "reference/settings/session-settings/enable-optimize-predicate-expression",
+    "reference/settings/session-settings/enable-parallel",
     "reference/settings/session-settings/enable-positional-arguments",
     "reference/settings/session-settings/enable-software",
     "reference/settings/session-settings/engine-file",
@@ -131,6 +132,7 @@
     "reference/settings/session-settings/max-local",
     "reference/settings/session-settings/max-memory-usage",
     "reference/settings/session-settings/max-network",
+    "reference/settings/session-settings/max-number",
     "reference/settings/session-settings/max-parser",
     "reference/settings/session-settings/max-partitions",
     "reference/settings/session-settings/max-rand",
@@ -235,6 +237,7 @@
     "reference/settings/session-settings/timeout-overflow-mode",
     "reference/settings/session-settings/totals",
     "reference/settings/session-settings/trace-profile-events",
+    "reference/settings/session-settings/unique-key",
     "reference/settings/session-settings/update",
     "reference/settings/session-settings/url",
     "reference/settings/session-settings/use",
