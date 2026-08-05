@@ -2,8 +2,8 @@
 # Tags: no-fasttest, no-msan
 
 # Concurrent readers of the same DeltaLake table while its metadata is republished.
-# A data race is not visible in query output, so this exercises the racing path and
-# relies on the sanitizer builds to report a regression.
+# A data race is not visible in query output, so a regression shows up as a sanitizer
+# report rather than as a diff against the reference.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,16 +21,19 @@ CREATE="DROP TABLE IF EXISTS ${TABLE};
         CREATE TABLE ${TABLE} ENGINE = DeltaLakeLocal('${DELTA_DIR}')"
 $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 --multiquery "$CREATE"
 
-# total_rows is served only when the delta kernel is enabled. If the first query ever
-# reports a number, the concurrent phase no longer reaches the metadata republish.
+# total_rows is served only when the delta kernel is enabled.
 $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 \
     -q "SELECT total_rows IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
 $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=1 \
     -q "SELECT total_rows IS NOT NULL FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
 
-# Every query below republishes the table's metadata while the other queries read it, so
-# the republish and the reads overlap on the same object. One long-lived client per stream
-# keeps the queries back to back.
+# The probe above cached delta-kernel metadata, whose supportsUpdate() is true, so further
+# queries refresh it in place instead of reassigning the pointer. Re-creating under the
+# kernel-disabled setting caches metadata that has to be replaced instead.
+$CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 --multiquery "$CREATE"
+
+# The kernel-enabled readers below then replace that pointer concurrently while reading it.
+# One long-lived client per stream keeps the queries back to back.
 READS="SELECT total_rows, total_bytes FROM system.tables WHERE database = currentDatabase() FORMAT Null;"
 COUNTS="SELECT count() FROM ${TABLE} FORMAT Null;"
 for _ in {1..4}; do
