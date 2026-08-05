@@ -237,7 +237,7 @@ bool checkFunctionName(const String function_name, bool only_vector)
 
 /// Assign a numeric rank to each numeric TypeIndex for type promotion decisions.
 /// Higher rank means wider type; used by getType() to pick the wider of two numeric types.
-static constexpr int getTypeRank(TypeIndex idx)
+constexpr int getTypeRank(TypeIndex idx)
 {
     switch (idx)
     {
@@ -377,7 +377,7 @@ bool parseNumberLiteralFast(std::string_view literal, Field & result)
             float_str = clean_literal;
 
         ReadBufferFromMemory buf(float_str.data(), float_str.size());
-        Float64 float_value;
+        Float64 float_value{};
         if (tryReadFloatTextPrecise(float_value, buf) && buf.eof())
         {
             result = float_value;
@@ -389,8 +389,8 @@ bool parseNumberLiteralFast(std::string_view literal, Field & result)
     {
         // Handle integer parsing
         ReadBufferFromMemory buf(clean_literal.data(), clean_literal.size());
-        Int64 int_value;
-        UInt64 uint_value;
+        Int64 int_value{};
+        UInt64 uint_value{};
 
         // Try signed integer first
         if (negative)
@@ -559,23 +559,6 @@ String getFieldName(String input_name)
 }
 
 
-/// Get the innermost (last) function name from an AST literal position's function chain.
-String getLastFunctionName(const VectorQueryPlanCache::ASTLiteralPosition & position)
-{
-    if (position.function_list.empty())
-        return {};
-    return Poco::toLower(position.function_list.back());
-}
-
-/// Get the second-to-last function name from an AST literal position's function chain.
-/// Used to detect patterns like cosinedistance(CAST(...)) where the inner function is CAST.
-String getSecondLastFunctionName(const VectorQueryPlanCache::ASTLiteralPosition & position)
-{
-    if (position.function_list.size() < 2)
-        return {};
-    return Poco::toLower(position.function_list[position.function_list.size() - 2]);
-}
-
 /// Check whether a plan step's scope string matches the expected step type.
 /// step_type 1/4 → "ExpressionStep", step_type 2 → "FilterStep".
 bool scopeMatchesStepType(Int32 step_type, const String & scope)
@@ -609,9 +592,6 @@ bool candidateMatchesAstLiteral(
         return false;
     if (!position.identifier_name.empty() && candidate.identifier_names != position.identifier_name)
         return false;
-    const String ast_last_function = getLastFunctionName(position);
-    const String ast_second_last_function = getSecondLastFunctionName(position);
-
     if (!candidate.function_names.empty())
     {
         size_t number = candidate.function_names.size();
@@ -750,7 +730,7 @@ void findActionsDAGAndCollectConstants(
                     int column_const_number = 0;
                     int input_number = 0;
                     size_t function_size = function_names.size();
-                    String last_function_name = "";
+                    String last_function_name;
                     if (function_size >= 1)
                         last_function_name = function_names[function_size - 1];
                     current_field_name = " ";
@@ -1455,13 +1435,9 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
                     is_dot = false;
                     continue;
                 }
-                ParameterInfo::Type param_type;
+                ParameterInfo::Type param_type = ParameterInfo::Type::STRING;
                 if (token.type == TokenType::Number)
                     param_type = ParameterInfo::Type::NUMERIC;
-                else if (token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
-                    param_type = ParameterInfo::Type::STRING;
-                else
-                    param_type = ParameterInfo::Type::STRING;
 
                 String params_value = String(token.begin, token.size());
                 result.new_sql += params_value;
@@ -1711,11 +1687,11 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
             return;
         parent_list.push_back(ast);
         size_t function_size = function_list.size();
-        String last_function_name = "";
+        String last_function_name;
         bool is_cast = false;
         if (function_size >= 1)
             last_function_name = function_list[function_size - 1];
-        String last_second_function_name = "";
+        String last_second_function_name;
         if (function_size >= 2)
             last_second_function_name = function_list[function_size - 2];
         if (const auto * literal_node = ast->as<ASTLiteral>())
@@ -1847,7 +1823,7 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                     pos.identifier_name = " ";
                 }
             }
-            if (ident_name_list.size() >= 1  &&
+            if (!ident_name_list.empty()  &&
                     (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) ||
                         (is_cast && last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE)) ||
                         (is_cast && last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
@@ -2059,11 +2035,11 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
             return;
         parent_list.push_back(ast);
         size_t function_size = function_list.size();
-        String last_function_name = "";
+        String last_function_name;
         bool is_cast = false;
         if (function_size >= 1)
             last_function_name = function_list[function_size - 1];
-        String last_second_function_name = "";
+        String last_second_function_name;
         if (function_size >= 2)
             last_second_function_name = function_list[function_size - 2];
         if (auto * literal_node = ast->as<ASTLiteral>())
@@ -2191,7 +2167,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                     pos.identifier_name = " ";
                 }
             }
-            if (ident_name_list.size() >= 1  &&
+            if (!ident_name_list.empty()  &&
                     (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) ||
                         (is_cast && last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE)) ||
                         (is_cast && last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
@@ -2444,7 +2420,7 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
     const char * begin,
     const char * end) const
 {
-    String new_sql = "";
+    String new_sql;
     Lexer lexer(begin, end);
 
     if (!isSelectStatement(lexer))
@@ -2642,7 +2618,6 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
         if (!node || !visited.insert(node).second)
             continue;
 
-        const String step_name = node->step ? node->step->getName() : "Unknown";
         if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
             findActionsDAGAndCollectConstants(
                 expression_step->getExpression(),

@@ -105,9 +105,9 @@ size_t SourceStepWithFilterBase::updateFilterDagConstants(
 
     for (auto & dag : filter_dags)
     {
-        for (auto node_it = dag.getNodes().begin(); node_it != dag.getNodes().end(); ++node_it)
+        for (const auto & node : dag.getNodes())
         {
-            auto & dag_node = const_cast<ActionsDAG::Node &>(*node_it);
+            auto & dag_node = const_cast<ActionsDAG::Node &>(node);
             if (dag_node.type != ActionsDAG::ActionType::COLUMN || !dag_node.column || !isColumnConst(*dag_node.column))
                 continue;
 

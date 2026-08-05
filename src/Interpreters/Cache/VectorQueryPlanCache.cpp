@@ -852,7 +852,7 @@ void VectorQueryPlanCache::clearByTables(const std::vector<String> & table_names
 
     auto predicate = [&keys_to_remove](const Key & key, const Cache::MappedPtr &)
     {
-        return keys_to_remove.find(key) != keys_to_remove.end();
+        return keys_to_remove.contains(key);
     };
     cache->remove(predicate);
 
@@ -878,7 +878,7 @@ void VectorQueryPlanCache::clearByDatabases(const std::vector<String> & database
             for (auto it = table_to_keys.lower_bound(prefix); it != table_to_keys.end(); ++it)
             {
                 const auto & [table_name, keys] = *it;
-                if (table_name.rfind(prefix, 0) != 0)
+                if (!table_name.starts_with(prefix))
                     break;
                 keys_to_remove.insert(keys.begin(), keys.end());
             }
@@ -890,7 +890,7 @@ void VectorQueryPlanCache::clearByDatabases(const std::vector<String> & database
 
     auto predicate = [&keys_to_remove](const Key & key, const Cache::MappedPtr &)
     {
-        return keys_to_remove.find(key) != keys_to_remove.end();
+        return keys_to_remove.contains(key);
     };
     cache->remove(predicate);
 
