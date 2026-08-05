@@ -80,25 +80,6 @@
           "$ref": "../bring-your-own-cloud/navigation.json"
         },
         {
-          "group": "Connect and query",
-          "pages": [
-            "products/cloud/features/sql-console-features/sql-console",
-            "products/cloud/guides/sql-console/connection-details",
-            "products/cloud/features/sql-console-features/query-insights",
-            {
-              "expanded": false,
-              "group": "Query API endpoints",
-              "pages": [
-                "products/cloud/features/sql-console-features/query-endpoints",
-                "products/cloud/guides/sql-console/query-endpoints"
-              ]
-            },
-            "products/cloud/features/sql-console-features/dashboards",
-            "products/cloud/features/sql-console-features/user-defined-functions",
-            "products/cloud/features/sql-console-features/clickstack"
-          ]
-        },
-        {
           "group": "Data and integrations",
           "pages": [
             "products/cloud/features/integrations",
@@ -116,6 +97,25 @@
                 "products/cloud/guides/data-sources/accessing-iceberg-data-securely"
               ]
             }
+          ]
+        },
+        {
+          "group": "Connect and query",
+          "pages": [
+            "products/cloud/features/sql-console-features/sql-console",
+            "products/cloud/guides/sql-console/connection-details",
+            "products/cloud/features/sql-console-features/query-insights",
+            {
+              "expanded": false,
+              "group": "Query API endpoints",
+              "pages": [
+                "products/cloud/features/sql-console-features/query-endpoints",
+                "products/cloud/guides/sql-console/query-endpoints"
+              ]
+            },
+            "products/cloud/features/sql-console-features/dashboards",
+            "products/cloud/features/sql-console-features/user-defined-functions",
+            "products/cloud/features/sql-console-features/clickstack"
           ]
         },
         {
