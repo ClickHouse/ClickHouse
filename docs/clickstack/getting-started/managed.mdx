@@ -25,17 +25,22 @@ ClickHouse Cloud operates the ClickHouse backend while you retain control over t
 
 ## Before you begin {#before-you-begin}
 
+<Tip>
+Use the guide selector to choose the **OpenTelemetry** (recommended) or **Vector** path.
+</Tip>
+
+You can also send data directly to ClickHouse using a [supported integration](/integrations/home) and your own schema.
+
 ### Create a ClickHouse Cloud service {#create-a-managed-clickstack-service}
 
 Complete [Create a ClickHouse service](/get-started/setup/cloud#1-create-a-clickhouse-service) in the ClickHouse Cloud quickstart. Before continuing, confirm that the service is running.
 
-### Prepare your ingestion environment {#prepare-your-ingestion-environment}
+<View title="OpenTelemetry">
 
-Your ingestion path determines the remaining prerequisites:
+### Prepare your ingestion environment {#prepare-your-ingestion-environment}
 
 - To start a new [OpenTelemetry Collector](/clickstack/ingesting-data/collector), install [Docker](https://docs.docker.com/get-docker/).
 - To use an existing collector, configure it in the [gateway role](/clickstack/ingesting-data/collector#collector-roles) and ensure that you can update its configuration.
-- To use Vector, start with an [existing Vector pipeline](/clickstack/ingesting-data/vector) that can send data to ClickHouse.
 
 ## Set up Managed ClickStack {#set-up-managed-clickstack}
 
@@ -45,17 +50,13 @@ From your ClickHouse Cloud service, launch ClickStack. On the ClickStack **Getti
 
 <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Start ingestion" border/>
 
-On the **Choose an ingestion source** page, select [OpenTelemetry](https://opentelemetry.io/) or [Vector](https://vector.dev/). You can also send data directly to ClickHouse using a [supported integration](/integrations/home) and your own schema.
+On the **Choose an ingestion source** page, select [OpenTelemetry](https://opentelemetry.io/).
 
 <Info>
 **OpenTelemetry recommended**
 
 OpenTelemetry provides preconfigured schemas for logs, traces, metrics, and sessions.
 </Info>
-
-<Tabs>
-
-<Tab title="OpenTelemetry">
 
 <Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="Select OpenTelemetry as the ingestion source" border/>
 
@@ -129,9 +130,81 @@ For further details on configuring OpenTelemetry collectors, see [Ingesting with
 
 </Tabs>
 
-</Tab>
+</Step>
 
-<Tab title="Vector">
+<Step title="Send test data" id="send-test-data">
+Send a test log with the current timestamp:
+
+```shell
+NOW_NANO="$(date +%s)000000000"
+
+curl -i "http://localhost:4318/v1/logs" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<EOF
+{
+  "resourceLogs": [{
+    "resource": {
+      "attributes": [{
+        "key": "service.name",
+        "value": {"stringValue": "clickstack-docs-test"}
+      }]
+    },
+    "scopeLogs": [{
+      "scope": {"name": "clickstack-docs-test"},
+      "logRecords": [{
+        "timeUnixNano": "${NOW_NANO}",
+        "severityText": "INFO",
+        "body": {"stringValue": "ClickStack ingestion test"}
+      }]
+    }]
+  }]
+}
+EOF
+```
+
+If you use an existing collector, replace `http://localhost:4318` with its OTLP HTTP endpoint. If the receiver requires authentication, add the required header to the `curl` command.
+
+A successful request returns `HTTP/1.1 200 OK`.
+
+After a few seconds, confirm in the ClickHouse Cloud SQL console that the event reached the logs table:
+
+```sql
+SELECT Timestamp, Body
+FROM default.otel_logs
+WHERE Body = 'ClickStack ingestion test'
+ORDER BY Timestamp DESC
+LIMIT 1;
+```
+
+</Step>
+
+<Step title="Open ClickStack and confirm ingestion" id="open-clickstack-and-confirm-ingestion">
+ClickStack creates the OpenTelemetry data sources automatically. Open the logs view in ClickStack and search for `ClickStack ingestion test`.
+
+The result should include the test event with the `clickstack-docs-test` service name.
+
+<Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="ClickStack logs view showing the ClickStack ingestion test event" border/>
+
+</Step>
+</Steps>
+
+</View>
+
+<View title="Vector">
+
+### Prepare your ingestion environment {#prepare-your-ingestion-environment-vector}
+
+Start with an [existing Vector pipeline](/clickstack/ingesting-data/vector) that can send data to ClickHouse.
+
+## Set up Managed ClickStack {#set-up-managed-clickstack-vector}
+
+<Steps titleSize="h3">
+<Step title="Choose Vector and configure ingestion" id="choose-an-ingestion-source-vector">
+From your ClickHouse Cloud service, launch ClickStack. On the ClickStack **Getting Started** page, select **Start ingestion**.
+
+<Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Start ingestion" border/>
+
+On the **Choose an ingestion source** page, select [Vector](https://vector.dev/).
 
 <Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="Select Vector as the ingestion source" border/>
 
@@ -270,64 +343,9 @@ concat(
 
 For other source settings, see the [ClickStack configuration reference](/clickstack/managing/config).
 
-</Tab>
-
-</Tabs>
 </Step>
-<Step title="Send test data" id="send-test-data">
-Send a test event through the ingestion path you configured.
 
-<Tabs>
-
-<Tab title="OpenTelemetry">
-
-Send a test log with the current timestamp:
-
-```shell
-NOW_NANO="$(date +%s)000000000"
-
-curl -i "http://localhost:4318/v1/logs" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<EOF
-{
-  "resourceLogs": [{
-    "resource": {
-      "attributes": [{
-        "key": "service.name",
-        "value": {"stringValue": "clickstack-docs-test"}
-      }]
-    },
-    "scopeLogs": [{
-      "scope": {"name": "clickstack-docs-test"},
-      "logRecords": [{
-        "timeUnixNano": "${NOW_NANO}",
-        "severityText": "INFO",
-        "body": {"stringValue": "ClickStack ingestion test"}
-      }]
-    }]
-  }]
-}
-EOF
-```
-
-If you use an existing collector, replace `http://localhost:4318` with its OTLP HTTP endpoint. If the receiver requires authentication, add the required header to the `curl` command.
-
-A successful request returns `HTTP/1.1 200 OK`.
-
-After a few seconds, confirm in the ClickHouse Cloud SQL console that the event reached the logs table:
-
-```sql
-SELECT Timestamp, Body
-FROM default.otel_logs
-WHERE Body = 'ClickStack ingestion test'
-ORDER BY Timestamp DESC
-LIMIT 1;
-```
-
-</Tab>
-
-<Tab title="Vector">
-
+<Step title="Send test data" id="send-test-data-vector">
 Send a representative event through the input of your existing Vector pipeline.
 
 In the ClickHouse Cloud SQL console, confirm that the event reached the target table:
@@ -341,36 +359,17 @@ LIMIT 1;
 
 The result should contain the event you sent. For more Vector source and transformation examples, see [Ingesting with Vector](/clickstack/ingesting-data/vector).
 
-</Tab>
-
-</Tabs>
 </Step>
-<Step title="Open ClickStack and confirm ingestion" id="open-clickstack-and-confirm-ingestion">
-For OpenTelemetry, ClickStack creates the data sources automatically. Open the logs view in ClickStack.
 
-<Tabs>
-
-<Tab title="OpenTelemetry">
-
-Search for `ClickStack ingestion test`.
-
-The result should include the test event with the `clickstack-docs-test` service name.
-
-<Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="ClickStack logs view showing the ClickStack ingestion test event" border/>
-
-</Tab>
-
-<Tab title="Vector">
-
+<Step title="Open ClickStack and confirm ingestion" id="open-clickstack-and-confirm-ingestion-vector">
 Select the data source for your table and confirm that the logs view contains the event you sent.
 
 <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="Logs in the ClickStack UI"/>
 
-</Tab>
-
-</Tabs>
 </Step>
 </Steps>
+
+</View>
 
 You now have a Managed ClickStack service, a working ingestion path, and a test event that you can inspect in ClickStack.
 
