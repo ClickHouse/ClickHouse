@@ -66,6 +66,12 @@ SELECT 'USING is supported for INNER JOIN, where the result contains only the co
 SELECT x, toTypeName(x) FROM t_unsigned INNER JOIN (SELECT y AS x FROM t_signed) AS t USING (x) ORDER BY ALL;
 SELECT x FROM t_unsigned INNER JOIN (SELECT y AS x FROM t_signed) AS t USING (x) ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge';
 
+SELECT 'A USING key that is already Nullable still requires an accurate conversion';
+SELECT * FROM (SELECT CAST(18446744073709551615, 'Nullable(UInt64)') AS x) AS a
+INNER JOIN (SELECT CAST(-1, 'Int64') AS x) AS b USING (x);
+SELECT x, toTypeName(x) FROM (SELECT CAST(9223372036854775807, 'Nullable(UInt64)') AS x) AS a
+INNER JOIN (SELECT CAST(9223372036854775807, 'Int64') AS x) AS b USING (x);
+
 SELECT 'For the other kinds of JOIN the result also contains the values that are out of the common range';
 SELECT x FROM t_unsigned LEFT JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
 SELECT x FROM t_unsigned RIGHT JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
@@ -76,6 +82,14 @@ SELECT * FROM t_unsigned INNER JOIN t_signed ON x IS NOT DISTINCT FROM y; -- { s
 
 SELECT 'The ASOF inequality needs the order of the values, not only the equality';
 SELECT * FROM (SELECT x, 1 AS k FROM t_unsigned) AS a ASOF JOIN (SELECT y, 1 AS k FROM t_signed) AS b ON a.k = b.k AND a.x > b.y; -- { serverError NO_COMMON_TYPE }
+
+SELECT 'In ASOF JOIN USING only the last column needs the order of the values, the preceding ones are equality keys';
+SELECT * FROM (SELECT CAST(1, 'UInt64') AS k, 3 AS t) AS a
+ASOF JOIN (SELECT CAST(1, 'Int64') AS k, 2 AS t) AS b USING (k, t);
+SELECT * FROM (SELECT CAST(18446744073709551615, 'UInt64') AS k, 3 AS t) AS a
+ASOF JOIN (SELECT CAST(-1, 'Int64') AS k, 2 AS t) AS b USING (k, t);
+SELECT * FROM (SELECT 1 AS k, CAST(3, 'UInt64') AS t) AS a
+ASOF JOIN (SELECT 1 AS k, CAST(2, 'Int64') AS t) AS b USING (k, t); -- { serverError NO_COMMON_TYPE }
 
 DROP TABLE t_unsigned;
 DROP TABLE t_signed;

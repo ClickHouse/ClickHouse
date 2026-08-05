@@ -61,6 +61,10 @@ USING is supported for INNER JOIN, where the result contains only the common val
 0
 1
 9223372036854775807
+A USING key that is already Nullable still requires an accurate conversion
+9223372036854775807	Nullable(UInt64)
 For the other kinds of JOIN the result also contains the values that are out of the common range
 A null-safe comparison cannot be done this way, because NULL matches NULL there
 The ASOF inequality needs the order of the values, not only the equality
+In ASOF JOIN USING only the last column needs the order of the values, the preceding ones are equality keys
+1	3

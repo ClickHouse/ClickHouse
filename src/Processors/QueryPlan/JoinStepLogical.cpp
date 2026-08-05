@@ -771,11 +771,14 @@ static void predicateOperandsToCommonType(
     auto cast_transform = [&common_type, &planning_context, cast_to_subtype](auto & dag, auto && nodes)
     {
         auto arg = nodes.at(0);
+        /// The nodes in `actions_after_join_map` are plain `CAST`s (from `buildJoinUsingCondition`),
+        /// which wrap the values that are out of the range of the target type instead of turning them into NULL,
+        /// so they cannot be reused as the key conversions for the subtype fallback.
+        if (cast_to_subtype)
+            return &dag.addAccurateCastOrNull(*arg, common_type, {}, nullptr);
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
         if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
-        if (cast_to_subtype)
-            return &dag.addAccurateCastOrNull(*arg, common_type, {}, nullptr);
         return &dag.addCast(*arg, common_type, {}, nullptr);
     };
     if (!left_type->equals(*common_type))
