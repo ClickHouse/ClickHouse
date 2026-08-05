@@ -129,6 +129,21 @@ deadline_case "geohash_skipindex" \
      ENGINE = MergeTree ORDER BY tuple()" \
     "src_f"
 
+# The h3 pair checks `isKilled()` rather than `checkTimeLimit()`, which still observes a deadline in
+# the default `throw` mode: `CancellationChecker` calls `cancelQuery(TIMEOUT)` there, which sets
+# `is_killed`. Under `timeout_overflow_mode = 'break'` nothing sets it and these two run to completion,
+# so only the default mode is asserted here.
+deadline_case "h3cells_orderby_deadline" \
+    "CREATE TABLE t_h3cells_orderby_deadline (a Array(Tuple(Float64, Float64)), k UInt64)
+     ENGINE = MergeTree ORDER BY (k, length(h3PolygonToCells(a, 7)))" \
+    "src_g"
+# Resolution 8 rather than 7 for the same reason as the kill case below: at 7 this fixture finishes
+# inside the bound unfixed, so the case would pass either way.
+deadline_case "h3containment_orderby_deadline" \
+    "CREATE TABLE t_h3containment_orderby_deadline (a Array(Tuple(Float64, Float64)), k UInt64)
+     ENGINE = MergeTree ORDER BY (k, length(h3PolygonToCellsWithContainment(a, 8, 0)))" \
+    "src_g"
+
 # BASELINE. The same functions on a non-persisted path are bounded with and without this change, which
 # is what confines the defect to the persisted routes rather than to the functions themselves.
 for fn in "sum(length(geohashesInBox(a, a, a + toFloat64(1), a + toFloat64(1), 7))) FROM src_f" \
@@ -139,10 +154,8 @@ for fn in "sum(length(geohashesInBox(a, a, a + toFloat64(1), a + toFloat64(1), 7
         | grep -o -m1 "TIMEOUT_EXCEEDED" || echo "direct baseline: no timeout"
 done
 
-# `h3PolygonToCells` and `h3PolygonToCellsWithContainment` check `isKilled()` rather than
-# `checkTimeLimit()`, so their loop consults no deadline at all and only `KILL QUERY` can stop them.
-# A `max_execution_time` case on these two would stay red after a fully correct fix; that missing
-# deadline check is a separate defect and is out of scope here.
+# `KILL QUERY` needs its own channel for the h3 pair: it is the one cancellation their loop observes in
+# every overflow mode.
 kill_case() {
     local label="$1" ddl="$2"
     local query_id="04752_kill_${label}_${CLICKHOUSE_DATABASE}"

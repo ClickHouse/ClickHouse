@@ -19,6 +19,10 @@ base58_orderby: stopped promptly
 TIMEOUT_EXCEEDED
 geohash_skipindex: stopped promptly
 TIMEOUT_EXCEEDED
+h3cells_orderby_deadline: stopped promptly
+TIMEOUT_EXCEEDED
+h3containment_orderby_deadline: stopped promptly
+TIMEOUT_EXCEEDED
 TIMEOUT_EXCEEDED
 TIMEOUT_EXCEEDED
 h3cells_orderby: killed promptly
