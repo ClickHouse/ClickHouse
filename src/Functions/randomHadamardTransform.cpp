@@ -330,14 +330,7 @@ private:
 
                 written += k;
             }
-            else if (fixed_out_dims != 0)
-            {
-                /// The transform length of an empty vector is 0, and `output_dims` must not exceed
-                /// the transform length, so any explicit `output_dims` is out of bounds here.
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "output_dims ({}) of function {} exceeds the transform length 0 of an empty vector",
-                    fixed_out_dims, name);
-            }
+            /// An empty vector transforms to an empty vector; `output_dims` does not apply to it.
             result_offsets[row] = written;
             start = offsets[row];
         }
@@ -377,8 +370,7 @@ returning a longer vector. Use a supported length, or pass `output_dims` to comp
 projection of an arbitrary length (see below).
 
 The result has the same element type as the input; an empty input array returns an empty array
-(unless an explicit `output_dims` is passed, which is rejected for an empty array because it
-exceeds the transform length `0`).
+(`output_dims` does not apply to it).
 
 - `seed` (optional, default `0`): selects the sign pattern; the same seed always yields the same
   transform.
