@@ -688,6 +688,8 @@ bool ISerialization::isPrefetchUnneededSubstream(const DB::ISerialization::Subst
     if (prefix_len == 0 || prefix_len > path.size())
         return false;
 
+    /// These JSON shared data substreams are read by seeking to a specific mark that is known only
+    /// during deserialization, so prefetching them from the beginning of the granule is wasted.
     const auto type = path[prefix_len - 1].type;
     return type == Substream::ObjectSharedDataData || type == Substream::ObjectSharedDataSubstreams
         || type == Substream::ObjectSharedDataSubstreamsMarks;
