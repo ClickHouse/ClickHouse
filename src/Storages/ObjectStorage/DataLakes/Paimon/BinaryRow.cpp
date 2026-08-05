@@ -80,10 +80,9 @@ bool BinaryRow::isNullAt(Int32 pos)
 }
 
 template <typename T>
-T BinaryRow::getFixedSizeData(Int32 pos)
+T BinaryRow::getFixedSizeDataAt(Int32 absolute_offset)
 {
-    chassert(pos >= 0 && pos < arity);
-    seek(getFieldOffset(pos));
+    seek(absolute_offset);
     T t;
     readIntBinary(t, reader);
     LOG_TEST(log, "read value: {}, need_flip: {}", t, need_flip);
@@ -100,6 +99,13 @@ T BinaryRow::getFixedSizeData(Int32 pos)
         }
     }
     return t;
+}
+
+template <typename T>
+T BinaryRow::getFixedSizeData(Int32 pos)
+{
+    chassert(pos >= 0 && pos < arity);
+    return getFixedSizeDataAt<T>(getFieldOffset(pos));
 }
 
 bool BinaryRow::getBoolean(Int32 pos)
@@ -182,14 +188,33 @@ String BinaryRow::getBinary(Int32 pos)
     return getString(pos);
 }
 
-DateTime64 BinaryRow::getTimestamp(Int32 pos, Int32 scale)
+Timestamp BinaryRow::getTimestamp(Int32 pos, Int32 precision)
 {
-    if (scale <= 3)
-    {
-        return DateTime64(getFixedSizeData<Int64>(pos));
-    }
-    /// TODO: support larger precision
-    throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "scale {} is not supported, only support scale <= 3", scale);
+    /// A timestamp of precision <= 3 - `Timestamp.isCompact` in Paimon - fits in the 8-byte field
+    /// slot and is stored there as a plain number of milliseconds.
+    if (precision <= 3)
+        return Timestamp{.millisecond = getFixedSizeData<Int64>(pos), .nano_of_millisecond = 0};
+
+    /// Above that Paimon splits the value: the field slot holds
+    /// `(sub_offset << 32) | nano_of_millisecond` and the milliseconds live in the variable-length
+    /// part of the row, at `offset() + sub_offset`. See `BinaryRow.getTimestamp` and
+    /// `MemorySegmentUtils.readTimestampData` in Paimon.
+    const Int64 offset_and_nano_of_millisecond = getFixedSizeData<Int64>(pos);
+    const auto nano_of_millisecond = static_cast<Int32>(offset_and_nano_of_millisecond);
+    const auto sub_offset = static_cast<Int32>(offset_and_nano_of_millisecond >> 32);
+
+    /// Paimon rejects anything outside this range when it constructs a `Timestamp`, so a value out
+    /// of it means the bytes are not the timestamp we expect rather than an unusual timestamp.
+    if (nano_of_millisecond < 0 || nano_of_millisecond > 999999)
+        throw DB::Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Paimon timestamp of precision {} has nanoOfMillisecond {} outside of the range [0, 999999]",
+            precision,
+            nano_of_millisecond);
+
+    const Int64 millisecond = getFixedSizeDataAt<Int64>(offset() + sub_offset);
+    LOG_TEST(log, "sub_offset: {}, millisecond: {}, nano_of_millisecond: {}", sub_offset, millisecond, nano_of_millisecond);
+    return Timestamp{.millisecond = millisecond, .nano_of_millisecond = nano_of_millisecond};
 }
 
 }
