@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <thread>
 #include <vector>
 
 #include <Common/ThreadStatus.h>
@@ -156,71 +157,76 @@ private:
 /// stored snapshot is the first observation, and that both views' headers equal its sample block.
 TEST(InsertDependenciesSnapshot, TargetSharedByTwoViewsKeepsFirstSnapshot)
 {
-    /// `ThreadGroup::ThreadGroup`, reached per view, reads `CurrentThread::get()`, which throws
-    /// without a `ThreadStatus` on this thread.
-    ThreadStatus thread_status;
-
-    const auto & fixture = Fixture::instance();
-
-    auto insert_context = Context::createCopy(fixture.context);
-    insert_context->makeQueryContext();
-
-    /// Restore afterwards: `DatabaseCatalog` is shared with every other test in this binary.
-    auto original_handle = fixture.tgt->getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
-    const StorageInMemoryMetadata & original = *original_handle;
-    struct Restore
+    /// Run in a dedicated thread so `current_thread` starts as nullptr, independent of whatever
+    /// `ThreadStatus` other tests in `unit_tests_dbms` left behind. One is needed because
+    /// `ThreadGroup::ThreadGroup`, reached per view, reads `CurrentThread::get()`.
+    std::thread worker([]
     {
-        std::shared_ptr<DriftingStorage> tgt;
-        const StorageInMemoryMetadata & metadata;
-        ~Restore()
+        ThreadStatus thread_status;
+
+        const auto & fixture = Fixture::instance();
+
+        auto insert_context = Context::createCopy(fixture.context);
+        insert_context->makeQueryContext();
+
+        /// Restore afterwards: `DatabaseCatalog` is shared with every other test in this binary.
+        auto original_handle = fixture.tgt->getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        const StorageInMemoryMetadata & original = *original_handle;
+        struct Restore
         {
-            tgt->disableDrift();
-            tgt->setInMemoryMetadata(metadata);
+            std::shared_ptr<DriftingStorage> tgt;
+            const StorageInMemoryMetadata & metadata;
+            ~Restore()
+            {
+                tgt->disableDrift();
+                tgt->setInMemoryMetadata(metadata);
+            }
+        } restore{fixture.tgt, original};
+
+        auto insert_ast = make_intrusive<ASTInsertQuery>();
+        insert_ast->table_id = srcId();
+        ASTPtr insert_query = insert_ast;
+        auto insert_header = std::make_shared<const Block>(ColumnsWithTypeAndName{
+            {std::make_shared<DataTypeUInt32>()->createColumn(), std::make_shared<DataTypeUInt32>(), "k"}});
+
+        fixture.tgt->enableDrift();
+        auto builder = InsertDependenciesBuilder::create(
+            fixture.src, insert_query, insert_header, /*async_insert_=*/false, /*skip_destination_table_=*/false,
+            /*max_insert_threads=*/size_t{1}, insert_context);
+        fixture.tgt->disableDrift();
+
+        ASSERT_GE(fixture.tgt->readCount(), 2u) << "the fixture must observe the shared target more than once";
+
+        const auto & metadata_snapshots = builder->metadata_snapshots;
+        const auto & output_headers = builder->output_headers;
+
+        ASSERT_TRUE(metadata_snapshots.contains(tgtId()));
+        auto stored = metadata_snapshots.at(tgtId());
+
+        /// Drift only adds columns, so the column count identifies which observation a snapshot came
+        /// from, and the widest is the last one. The guards below keep a non-drifting fixture from
+        /// satisfying the assertions vacuously.
+        const auto & observed = fixture.tgt->observedColumnCounts();
+        ASSERT_GE(observed.size(), 2u) << "the fixture must observe the shared target more than once";
+        ASSERT_EQ(observed, [&]{ auto sorted = observed; std::ranges::sort(sorted); return sorted; }())
+            << "the drift hook must return monotonically widening column lists";
+        ASSERT_LT(observed.front(), observed.back()) << "the fixture never produced two different column lists";
+
+        EXPECT_LT(stored->getColumns().size(), observed.back())
+            << "the stored snapshot of " << tgtId().getNameForLogs()
+            << " is the LAST observation - a later visit replaced the first one";
+
+        size_t views_checked = 0;
+        for (const auto & [id, header] : output_headers)
+        {
+            if (id.empty() || !builder->inner_tables.contains(id) || builder->inner_tables.at(id) != StorageIDMaybeEmpty(tgtId()))
+                continue;
+            ++views_checked;
+            EXPECT_EQ(header->dumpStructure(), stored->getSampleBlock().dumpStructure())
+                << "output header of view " << id.getNameForLogs() << " disagrees with the stored snapshot of "
+                << tgtId().getNameForLogs();
         }
-    } restore{fixture.tgt, original};
-
-    auto insert_ast = make_intrusive<ASTInsertQuery>();
-    insert_ast->table_id = srcId();
-    ASTPtr insert_query = insert_ast;
-    auto insert_header = std::make_shared<const Block>(ColumnsWithTypeAndName{
-        {std::make_shared<DataTypeUInt32>()->createColumn(), std::make_shared<DataTypeUInt32>(), "k"}});
-
-    fixture.tgt->enableDrift();
-    auto builder = InsertDependenciesBuilder::create(
-        fixture.src, insert_query, insert_header, /*async_insert_=*/false, /*skip_destination_table_=*/false,
-        /*max_insert_threads=*/size_t{1}, insert_context);
-    fixture.tgt->disableDrift();
-
-    ASSERT_GE(fixture.tgt->readCount(), 2u) << "the fixture must observe the shared target more than once";
-
-    const auto & metadata_snapshots = builder->metadata_snapshots;
-    const auto & output_headers = builder->output_headers;
-
-    ASSERT_TRUE(metadata_snapshots.contains(tgtId()));
-    auto stored = metadata_snapshots.at(tgtId());
-
-    /// Drift only adds columns, so the column count identifies which observation a snapshot came
-    /// from, and the widest is the last one. The guards below keep a non-drifting fixture from
-    /// satisfying the assertions vacuously.
-    const auto & observed = fixture.tgt->observedColumnCounts();
-    ASSERT_GE(observed.size(), 2u) << "the fixture must observe the shared target more than once";
-    ASSERT_EQ(observed, [&]{ auto sorted = observed; std::ranges::sort(sorted); return sorted; }())
-        << "the drift hook must return monotonically widening column lists";
-    ASSERT_LT(observed.front(), observed.back()) << "the fixture never produced two different column lists";
-
-    EXPECT_LT(stored->getColumns().size(), observed.back())
-        << "the stored snapshot of " << tgtId().getNameForLogs()
-        << " is the LAST observation - a later visit replaced the first one";
-
-    size_t views_checked = 0;
-    for (const auto & [id, header] : output_headers)
-    {
-        if (id.empty() || !builder->inner_tables.contains(id) || builder->inner_tables.at(id) != StorageIDMaybeEmpty(tgtId()))
-            continue;
-        ++views_checked;
-        EXPECT_EQ(header->dumpStructure(), stored->getSampleBlock().dumpStructure())
-            << "output header of view " << id.getNameForLogs() << " disagrees with the stored snapshot of "
-            << tgtId().getNameForLogs();
-    }
-    EXPECT_EQ(views_checked, 2u) << "the fixture must reach the shared target through two views";
+        EXPECT_EQ(views_checked, 2u) << "the fixture must reach the shared target through two views";
+    });
+    worker.join();
 }
