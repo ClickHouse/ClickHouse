@@ -1,4 +1,5 @@
 #include <atomic>
+#include <optional>
 
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
@@ -50,12 +51,13 @@ TEST(ThreadPool, GlobalFullLargeQueue)
     auto occupy_thread = [&] { ++started; while (!release.load()) {} };
 
     {
-        ThreadPool pool(
+        std::optional<ThreadPool> pool(
+            std::in_place,
             CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
             capacity, capacity, capacity);
 
         for (size_t i = 0; i < capacity; ++i)
-            pool.scheduleOrThrowOnError(occupy_thread);
+            pool->scheduleOrThrowOnError(occupy_thread);
 
         /// All the threads of the global pool are taken now.
         while (started != capacity)
@@ -63,12 +65,39 @@ TEST(ThreadPool, GlobalFullLargeQueue)
 
         /// There is no thread left for a new one and there never will be while the jobs above run, so
         /// this has to fail instead of waiting for a thread that is never going to be free.
-        ThreadPool another_pool(
+        std::optional<ThreadPool> another_pool(
+            std::in_place,
             CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
-        EXPECT_THROW(another_pool.scheduleOrThrowOnError([] {}), DB::Exception);
+        bool threw = false;
+        try
+        {
+            another_pool->scheduleOrThrowOnError([] {});
+        }
+        catch (const DB::Exception &)
+        {
+            threw = true;
+        }
+        EXPECT_TRUE(threw) << "scheduling with no free thread in the global pool must throw";
 
         release = true;
-        pool.wait();
+        pool->wait();
+
+        if (!threw)
+        {
+            /// The unfixed pool silently put `another_pool`'s worker into the global queue instead of
+            /// throwing. Destroying `another_pool` now would join a "thread" whose function never
+            /// started — the very hang this test covers — so free the global slots first, letting the
+            /// queued worker run and exit, and skip the rest of the test.
+            pool.reset();
+            another_pool.reset();
+            global_pool.setMaxThreads(10000);
+            global_pool.setMaxFreeThreads(1000);
+            global_pool.setQueueSize(10000);
+            return;
+        }
+
+        another_pool.reset();
+        pool.reset();
     }
 
     /// The threads have exited, so their slots in the global pool are free again.
