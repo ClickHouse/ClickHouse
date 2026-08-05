@@ -917,6 +917,21 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         refresher->rename(new_table_id, getTargetTableId());
 }
 
+bool StorageMaterializedView::updateExternalTargetsAfterDatabaseRename(const String & old_database_name, const String & new_database_name)
+{
+    /// An inner target table moves together with the view and is referenced by UUID, so it needs no rewriting here.
+    /// Only an external "TO" target located in the renamed database has to be updated.
+    if (has_inner_table)
+        return false;
+
+    std::lock_guard guard(target_table_id_mutex);
+    if (target_table_id.database_name != old_database_name)
+        return false;
+
+    target_table_id.database_name = new_database_name;
+    return true;
+}
+
 void StorageMaterializedView::startup()
 {
     if (const auto configured_delay_ms = getContext()->getServerSettings()[ServerSetting::startup_mv_delay_ms]; configured_delay_ms)

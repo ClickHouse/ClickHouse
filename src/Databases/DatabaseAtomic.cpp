@@ -12,6 +12,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
@@ -32,6 +34,7 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+    extern const SettingsBool fsync_metadata;
 }
 
 namespace ErrorCodes
@@ -64,6 +67,31 @@ public:
     }
     UUID uuid() const override { return table()->getStorageID().uuid; }
 };
+
+namespace
+{
+    /// Rewrites the database name of external view targets (a materialized view's "TO" target or a
+    /// TimeSeries table's "SAMPLES"/"TAGS"/"METRICS" targets) from `old_database_name` to
+    /// `new_database_name`. Inner targets are referenced by a UUID or a constructed name (an empty
+    /// `table_id`) and are left untouched. Returns true if the query was changed.
+    bool renameDatabaseInViewTargets(ASTCreateQuery & create, const String & old_database_name, const String & new_database_name)
+    {
+        if (!create.targets)
+            return false;
+
+        bool changed = false;
+        for (auto & target : create.targets->targets)
+        {
+            auto & table_id = target.table_id;
+            if (!table_id.table_name.empty() && table_id.database_name == old_database_name)
+            {
+                table_id.database_name = new_database_name;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+}
 
 DatabaseAtomic::DatabaseAtomic(
     String name_,
@@ -730,7 +758,19 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
     waitDatabaseStarted();
+
+    /// The rename itself runs under `mutex` (released when the helper returns); persisting the rewritten
+    /// metadata must not hold it, because DatabaseReplicated takes `metadata_mutex` for persistence while
+    /// the digest checks lock `metadata_mutex` before `mutex` - taking them in the other order would deadlock.
+    auto rewritten = renameDatabaseLocked(query_context, new_name);
+    persistRewrittenViewTargetsMetadata(rewritten, query_context);
+}
+
+std::vector<RewrittenViewTargetsMetadata> DatabaseAtomic::renameDatabaseLocked(ContextPtr query_context, const String & new_name)
+{
     std::lock_guard lock(mutex);
+
+    const String old_database_name = database_name;
 
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
@@ -795,6 +835,59 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     {
         db_disk->moveDirectory(old_path_to_table_symlinks, path_to_table_symlinks);
         tryCreateMetadataSymlink();
+    }
+
+    /// All tables moved together with the database, so rewrite same-database external view targets
+    /// (a TimeSeries table's SAMPLES/TAGS/METRICS or a materialized view's external TO target) from the
+    /// old database name to the new one - both in memory and in the table metadata. The on-disk
+    /// persistence runs in the caller, after `mutex` is released.
+    return updateViewTargetsAndCollectMetadata(old_database_name, new_name, query_context);
+}
+
+std::vector<RewrittenViewTargetsMetadata> DatabaseAtomic::updateViewTargetsAndCollectMetadata(
+    const String & old_database_name, const String & new_database_name, const ContextPtr & query_context)
+{
+    auto db_disk = getDisk();
+    std::vector<RewrittenViewTargetsMetadata> rewritten;
+
+    for (const auto & [table_name, storage] : tables)
+    {
+        /// Update the references kept in memory by the storage so the table stays usable without a restart.
+        /// Only tables that actually had a same-database external target need their metadata rewritten.
+        if (!storage->updateExternalTargetsAfterDatabaseRename(old_database_name, new_database_name))
+            continue;
+
+        /// Rewrite the same references in the on-disk metadata so they survive a restart.
+        String table_metadata_path = getObjectMetadataPath(table_name);
+        String old_statement = readMetadataFile(db_disk, table_metadata_path);
+        ASTPtr ast = parseQueryFromMetadata(log, query_context, table_metadata_path, old_statement);
+        auto & create = ast->as<ASTCreateQuery &>();
+        bool changed_on_disk = renameDatabaseInViewTargets(create, old_database_name, new_database_name);
+
+        /// The in-memory storage and the on-disk create query are built from the same definition, so a
+        /// storage that reported an in-memory change must have a matching external target on disk too.
+        /// Keep them from silently diverging (which would re-introduce the bug after a restart).
+        chassert(changed_on_disk);
+        if (!changed_on_disk)
+            continue;
+
+        rewritten.push_back({table_name, std::move(old_statement), getObjectDefinitionFromCreateQuery(ast)});
+    }
+
+    return rewritten;
+}
+
+void DatabaseAtomic::persistRewrittenViewTargetsMetadata(
+    const std::vector<RewrittenViewTargetsMetadata> & rewritten, const ContextPtr & query_context)
+{
+    auto db_disk = getDisk();
+    bool fsync = query_context->getSettingsRef()[Setting::fsync_metadata];
+    for (const auto & item : rewritten)
+    {
+        String table_metadata_path = getObjectMetadataPath(item.table_name);
+        String table_metadata_tmp_path = table_metadata_path + create_suffix;
+        writeMetadataFile(db_disk, table_metadata_tmp_path, item.new_statement, fsync);
+        db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
     }
 }
 

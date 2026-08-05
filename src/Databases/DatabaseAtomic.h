@@ -9,6 +9,15 @@
 namespace DB
 {
 
+/// Describes a table whose on-disk metadata must be rewritten because RENAME DATABASE changed the
+/// database name of its external view targets (see DatabaseAtomic::renameDatabase).
+struct RewrittenViewTargetsMetadata
+{
+    String table_name;
+    String old_statement;
+    String new_statement;
+};
+
 /// All tables in DatabaseAtomic have persistent UUID and store data in
 /// /clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
 /// where xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy is UUID of the table.
@@ -80,6 +89,21 @@ public:
     void setDetachedTableNotInUseForce(const UUID & uuid) override;
 
 protected:
+    /// Performs the under-`mutex` part of renameDatabase (renames the database and its tables in memory)
+    /// and returns the metadata of the tables whose on-disk definition has to be rewritten. The lock is
+    /// released when this returns, so the caller can persist the metadata without holding `mutex`.
+    std::vector<RewrittenViewTargetsMetadata> renameDatabaseLocked(ContextPtr query_context, const String & new_name);
+
+    /// Updates the in-memory external view targets of every table of this (just renamed) database and
+    /// returns the metadata of the tables whose on-disk definition has to be rewritten because of the rename.
+    std::vector<RewrittenViewTargetsMetadata> updateViewTargetsAndCollectMetadata(
+        const String & old_database_name, const String & new_database_name, const ContextPtr & query_context) TSA_REQUIRES(mutex);
+
+    /// Persists the rewritten table metadata. The base implementation writes the local `.sql` files;
+    /// DatabaseReplicated also updates the metadata nodes and the digest in ZooKeeper.
+    virtual void persistRewrittenViewTargetsMetadata(
+        const std::vector<RewrittenViewTargetsMetadata> & rewritten, const ContextPtr & query_context);
+
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, ContextPtr query_context) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context) override;

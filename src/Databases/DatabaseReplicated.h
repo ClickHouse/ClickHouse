@@ -172,6 +172,9 @@ protected:
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
 
+    void persistRewrittenViewTargetsMetadata(
+        const std::vector<RewrittenViewTargetsMetadata> & rewritten, const ContextPtr & query_context) override;
+
 private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     void initDatabaseReplica(const ZooKeeperPtr & current_zookeeper, LoadingStrictnessLevel mode);

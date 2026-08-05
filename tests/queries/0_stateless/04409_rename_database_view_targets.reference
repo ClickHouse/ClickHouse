@@ -1,0 +1,14 @@
+-- Replicated: materialized view external TO target --
+mv reads target after rename:
+2
+mv reads target after reload:
+2
+digest consistent (probe table exists):
+1
+-- Atomic: TimeSeries external targets --
+samples target got the row routed through TimeSeries:
+3
+targets rewritten on disk (occurrences of old db name, want 0):
+0
+samples target still reachable after reload:
+4

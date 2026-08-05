@@ -84,6 +84,8 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
+    bool updateExternalTargetsAfterDatabaseRename(const String & old_database_name, const String & new_database_name) override;
+
     void startup() override;
     void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;

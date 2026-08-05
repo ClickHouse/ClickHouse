@@ -515,6 +515,15 @@ public:
      */
     virtual void renameInMemory(const StorageID & new_table_id);
 
+    /** Called for each table of a database renamed by RENAME DATABASE old_database_name TO new_database_name.
+      * All tables of the database move together, so a storage that references other tables of the same
+      * database by an explicit database-qualified name (a materialized view's external "TO" target or a
+      * TimeSeries table's "SAMPLES"/"TAGS"/"METRICS" targets) should rewrite those references in memory
+      * from old_database_name to new_database_name. The on-disk metadata is rewritten separately by the database.
+      * Returns true if any reference was changed.
+      */
+    virtual bool updateExternalTargetsAfterDatabaseRename(const String & /*old_database_name*/, const String & /*new_database_name*/) { return false; }
+
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
       */

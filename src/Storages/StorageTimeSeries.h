@@ -5,6 +5,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <array>
+#include <mutex>
 
 
 namespace DB
@@ -93,6 +94,8 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
+    bool updateExternalTargetsAfterDatabaseRename(const String & old_database_name, const String & new_database_name) override;
+
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
     void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder) override;
 
@@ -132,7 +135,10 @@ private:
 
     MultiVersion<TimeSeriesSettings> storage_settings;
 
-    const std::vector<Target> targets;
+    /// `targets` is initialized in the constructor and afterwards only the `table_id.database_name` of
+    /// external targets can change (when the database is renamed by RENAME DATABASE), guarded by `targets_mutex`.
+    mutable std::mutex targets_mutex;
+    std::vector<Target> targets;
     const bool has_inner_tables;
 };
 

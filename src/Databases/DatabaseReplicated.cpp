@@ -2433,6 +2433,35 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
     getZooKeeper()->set(db_name_path, getDatabaseName());
 }
 
+void DatabaseReplicated::persistRewrittenViewTargetsMetadata(
+    const std::vector<RewrittenViewTargetsMetadata> & rewritten, const ContextPtr & query_context)
+{
+    if (rewritten.empty())
+        return;
+
+    std::lock_guard lock{metadata_mutex};
+
+    /// Apply the changes in ZooKeeper before the local metadata files (ZooKeeper is the source of truth
+    /// for recovery) and adjust the digest to account for the rewritten statements.
+    Coordination::Requests ops;
+    UInt64 new_digest = tables_metadata_digest;
+    for (const auto & item : rewritten)
+    {
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(item.table_name);
+        ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, item.new_statement, -1));
+        new_digest -= DB::getMetadataHash(item.table_name, item.old_statement);
+        new_digest += DB::getMetadataHash(item.table_name, item.new_statement);
+    }
+    ops.emplace_back(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+    getZooKeeper()->multi(ops);
+
+    /// Now write the local metadata files and update the in-memory digest to match.
+    DatabaseAtomic::persistRewrittenViewTargetsMetadata(rewritten, query_context);
+    tables_metadata_digest = new_digest;
+
+    assertDigest(query_context);
+}
+
 void DatabaseReplicated::stopReplication()
 {
     try
