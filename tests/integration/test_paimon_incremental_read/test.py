@@ -3,6 +3,7 @@
 import os
 import threading
 import time
+import uuid
 
 import pytest
 
@@ -247,7 +248,10 @@ def test_paimon_incremental_read_at_most_once_on_crash(started_cluster):
     warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
     warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
     table_path = f"{USER_FILES_PATH}/{warehouse_name}/test.db/test_table"
-    keeper_path = "/clickhouse/paimon_at_most_once"
+    # Unique per run: committed_snapshot persists in Keeper, so a rerun
+    # against the same cluster must not inherit a failed run's watermark.
+    # A test-local value stays constant across the in-test server restart.
+    keeper_path = f"/clickhouse/paimon_at_most_once_{uuid.uuid4().hex}"
 
     _clean_warehouse(writer_container_id, warehouse_dir)
 
