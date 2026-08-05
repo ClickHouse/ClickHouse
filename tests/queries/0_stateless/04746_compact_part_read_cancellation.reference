@@ -8,3 +8,4 @@ part checks	0
 text part type	Compact
 text index used	1
 text timeout observed inside the part read
+text index reader ran	1

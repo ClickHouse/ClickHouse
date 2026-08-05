@@ -162,12 +162,29 @@ SELECT 'text index used', count() > 0 FROM (EXPLAIN indexes = 1 $text_query) WHE
 # the predicate is evaluated over the physical column, and the token then comes from the compact
 # reader's own check, so the assertion would pass with the text-index check reverted.
 text_err="${CLICKHOUSE_TMP}/04746_text_err.txt"
-${CLICKHOUSE_CLIENT} --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
+text_query_id="text_read_cancel_${CLICKHOUSE_DATABASE}_$$"
+${CLICKHOUSE_CLIENT} --query_id "$text_query_id" \
+    --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
     --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 \
     --max_execution_time 1 --timeout_overflow_mode throw \
     -q "$text_query" >/dev/null 2>"$text_err"
 echo -n 'text timeout observed '
 inside_part_read "$text_err"
 rm -f "$text_err"
+
+# The line above proves the query stopped inside a block read, and 'text index used' proves the
+# index pruned granules, but neither proves the text index READER served the query: the direct-read
+# rewrite is decided separately from pruning. This event is incremented only at the top of
+# MergeTreeReaderTextIndex::readRows, and its scope guard reports during unwinding, so it is
+# recorded even though this query leaves that function by throwing. Match
+# ExceptionWhileProcessing, not QueryFinish: the fixed server ends this query with a thrown
+# TIMEOUT_EXCEEDED, so there is no QueryFinish row.
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} -q "
+SELECT 'text index reader ran', ProfileEvents['TextIndexReaderTotalMicroseconds'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND query_id = '$text_query_id'
+  AND type = 'ExceptionWhileProcessing' AND event_date >= yesterday()
+ORDER BY event_time DESC LIMIT 1"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_text_read_cancel SYNC"
