@@ -3,7 +3,7 @@
 -- Regression test for duplicate ALIAS columns expanding to the same expression queried with
 -- GROUP BY under parallel replicas. Before the fix the duplicate columns collapsed by name on
 -- the replica and the position-based column match threw NUMBER_OF_COLUMNS_DOESNT_MATCH.
--- The bug lives in the analyzer's parallel-replicas query preparation, so force the new analyzer.
+-- The bug lives in the analyzer's parallel-replicas query preparation, so force the analyzer.
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
