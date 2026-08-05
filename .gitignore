@@ -201,3 +201,7 @@ ci/praktika/json.html.gz
 
 # Local design notes
 /NEW_DESIGN.md
+
+# Local CRM2 → VM `PLAYER_TAG_LONG` probe and `PLAYER_TAG_CACHE` stress-test artifacts.
+/tests/local_vm_concurrency/
+/tests/local_vm_rw_stress/
