@@ -98,7 +98,8 @@ public:
         std::optional<int32_t> processed_bucket_version;
     };
 
-    /// Return vector of indexes of filtered paths.
+    /// Remove the paths which keeper says are terminal (already processed, or failed),
+    /// recording the state of each removed path in `terminal_states`.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
@@ -107,6 +108,7 @@ public:
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
+        std::unordered_map<std::string, FileStatus::State> & terminal_states,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);

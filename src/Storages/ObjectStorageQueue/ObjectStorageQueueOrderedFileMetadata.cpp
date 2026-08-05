@@ -1095,6 +1095,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     ObjectStorageQueueBucketingMode bucketing_mode,
     ObjectStorageQueuePartitioningMode partitioning_mode,
     const ObjectStorageQueueFilenameParser * parser,
+    std::unordered_map<std::string, FileStatus::State> & terminal_states,
     LoggerPtr log_)
 {
     const bool use_buckets_for_processing = buckets_num > 1;
@@ -1148,6 +1149,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                     && path <= max_processed_file->second)
                 {
                     LOG_TEST(log_, "Skipping file {}: Processed", path);
+                    terminal_states.emplace(path, FileStatus::State::Processed);
                     continue;
                 }
             }
@@ -1156,6 +1158,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                 if (path <= last_processed_file_map[bucket][""])
                 {
                     LOG_TEST(log_, "Skipping file {}: Processed", path);
+                    terminal_states.emplace(path, FileStatus::State::Processed);
                     continue;
                 }
             }
@@ -1184,15 +1187,16 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     });
     for (size_t i = 0; i < responses.size(); ++i)
     {
-        const auto filename = std::move(paths[check_paths_indexes[i]]);
+        auto filename = std::move(paths[check_paths_indexes[i]]);
         check_code(responses[i].error, filename);
         if (responses[i].error == Coordination::Error::ZNONODE)
         {
-            result.push_back(filename);
+            result.push_back(std::move(filename));
         }
         else
         {
             LOG_TEST(log_, "Skipping file {}: Failed", filename);
+            terminal_states.emplace(std::move(filename), FileStatus::State::Failed);
         }
 
     }

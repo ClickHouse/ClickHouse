@@ -120,6 +120,9 @@ public:
     /// of all files stored in FileStatusesCache cache.
     const FileStatusesCache & getFileStatusesCache() const { return local_file_statuses; }
 
+    /// Peek at the cached file status of `path` without creating one.
+    ObjectStorageQueueIFileMetadata::FileStatusPtr tryGetFileStatus(const std::string & path);
+
     /// Get TableMetadata, which is the exact information we store in keeper.
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }

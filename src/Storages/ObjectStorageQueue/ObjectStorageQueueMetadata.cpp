@@ -270,6 +270,11 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
     }
 }
 
+ObjectStorageQueueIFileMetadata::FileStatusPtr ObjectStorageQueueMetadata::tryGetFileStatus(const std::string & path)
+{
+    return local_file_statuses.get(getMetadataCacheKey(path));
+}
+
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 {
     return mode == ObjectStorageQueueMode::ORDERED && (buckets_num > 1);

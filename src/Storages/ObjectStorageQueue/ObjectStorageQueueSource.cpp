@@ -469,9 +469,28 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     if (enable_hash_ring_filtering && mode == ObjectStorageQueueMode::UNORDERED)
         metadata->filterOutForProcessor(paths, storage_id);
 
+    using FileStatus = ObjectStorageQueueIFileMetadata::FileStatus;
+
+    /// A fresh cached observation of a foreign `processing` node is trusted:
+    /// skip the file without including it into the keeper requests below.
+    std::erase_if(paths, [&](const std::string & path)
+    {
+        const auto status = metadata->tryGetFileStatus(path);
+        if (!status
+            || !status->isProcessingByAnotherProcessor()
+            || status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec))
+            return false;
+
+        LOG_TEST(log, "Skipping file {}: Processing by another processor", path);
+        return true;
+    });
+
+    std::unordered_map<std::string, FileStatus::State> terminal_states;
+
     const auto & zookeeper_name = metadata->getZooKeeperName();
     if (mode == ObjectStorageQueueMode::UNORDERED)
-        ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
+        ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
+            paths, metadata->getPath(), zookeeper_name, terminal_states, log);
     else
         ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
             paths,
@@ -481,7 +500,24 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
             metadata->getBucketingMode(),
             metadata->getPartitioningMode(),
             metadata->getFilenameParser(),
+            terminal_states,
             log);
+
+    /// The states found terminal in keeper are terminal for the file status cache
+    /// (`system.s3queue_metadata_cache`) as well: without this a file committed by another
+    /// processor could stay cached as `Processing` until cache eviction.
+    for (const auto & [path, state] : terminal_states)
+    {
+        const auto status = metadata->tryGetFileStatus(path);
+        if (!status)
+            continue;
+
+        /// A locally owned `Processing` state is updated by its owner on commit.
+        if (status->state.load() == FileStatus::State::Processing && !status->isProcessingByAnotherProcessor())
+            continue;
+
+        status->updateState(state);
+    }
 
     std::unordered_set<std::string> paths_set;
     std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
