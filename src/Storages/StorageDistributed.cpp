@@ -1020,12 +1020,9 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
 }
 
-/// Identifier-to-name map of the table expression standing for `storage` in `query_tree`, looked up
-/// in the context that analyzed that tree. Only this table expression's columns may be renamed; the
-/// others belong to a joined or external table, whose columns the caller expects as identifiers.
-/// The node is matched by storage rather than by its own address because `buildQueryTreeForShard`
-/// may clone the tree, which invalidates any node pointer taken beforehand while `cloneImpl` carries
-/// the storage over.
+/// Identifier-to-name map for the table expression standing for `storage`, from the context that
+/// analyzed `query_tree`. Only its own columns may be renamed: the rest belong to a joined or
+/// external table, whose columns the caller expects as identifiers. Matched by storage, not address.
 std::unordered_map<std::string, std::string> collectColumnIdentifierToColumnName(
     const QueryTreeNodePtr & query_tree, const IStorage & storage, const PlannerContext & planner_context)
 {

@@ -56,10 +56,9 @@ CREATE TABLE dist_keys (v Int64)
     ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), keys);
 "
 
-# $1 label, $2 query. Asserts the column names of the result, its row count and its rows. A wrong
-# name shows up as an error or as rows replaced by a default, so all three are needed: the count
-# alone would miss a wrong value, the deduped prefix alone would miss a lost row.
-# The Buffer engine logs a warning for a type mismatch on every read, so server logs are silenced.
+# $1 label, $2 query. Asserts the result's column names, row count and rows: all three, because the
+# count alone would miss a wrong value and the deduped prefix alone would miss a lost row. Logs are
+# silenced because Buffer warns on every type-mismatched read.
 fetch() {
     echo "-- $1"
     ${CLICKHOUSE_CLIENT} --stage fetch_columns --send_logs_level none --format TSVWithNames \
