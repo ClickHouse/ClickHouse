@@ -124,12 +124,10 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
         if (compress_primary_key)
             primary_key_compression_codec = CompressionCodecFactory::instance().get(settings.primary_key_compression_codec);
 
-        /// For the NONE codec the compressor writes whole blocks directly into this file buffer
-        /// (see declareOutBufferExclusive), so it must fit `primary_key_compress_block_size` plus
-        /// the checksum-and-header prefix; otherwise the index would be re-chunked into smaller
-        /// frames, ignoring the setting. Keep the `DBMS_DEFAULT_BUFFER_SIZE` floor so small block
-        /// sizes do not multiply syscalls. Other codecs compress into the owned buffer of
-        /// `CompressedWriteBuffer`, so enlarging this buffer for them would just waste memory.
+        /// NONE-coded blocks are written directly into this file buffer (see declareOutBufferExclusive),
+        /// so it must fit `primary_key_compress_block_size` plus the block prefix, or the index would
+        /// be re-chunked into smaller frames. Keep the default floor so small block sizes do not
+        /// multiply syscalls; for other codecs the extra room would be wasted.
         const bool index_uses_none_zero_copy = primary_key_compression_codec && primary_key_compression_codec->isNone();
         const size_t index_file_buffer_size = index_uses_none_zero_copy
             ? std::max<size_t>(
@@ -143,7 +141,6 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
         {
             index_compressor_stream = std::make_unique<CompressedWriteBuffer>(
                 *index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size);
-            /// The index compressor is the sole writer of index_file_hashing_stream: enable the zero-copy NONE path.
             index_compressor_stream->declareOutBufferExclusive();
             index_source_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_compressor_stream);
         }

@@ -9,9 +9,7 @@ constexpr uint64_t DBMS_MAX_COMPRESSED_SIZE = 0x40000000ULL;    /// 1GB
 /** one byte for method, 4 bytes for compressed size, 4 bytes for uncompressed size */
 constexpr uint8_t COMPRESSED_BLOCK_HEADER_SIZE = 9;
 
-/** the service bytes that precede the payload of every compressed block:
-  * the checksum (CityHash128, 16 bytes) followed by the header
-  */
+/** the checksum (CityHash128, 16 bytes) and the header that precede the payload of every compressed block */
 constexpr uint8_t COMPRESSED_BLOCK_PREFIX_SIZE = 16 + COMPRESSED_BLOCK_HEADER_SIZE;
 
 namespace DB

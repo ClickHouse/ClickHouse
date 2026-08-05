@@ -77,9 +77,8 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     return CompressionCodecFactory::instance().get(settings.compression_codec);
 }
 
-/// With the NONE codec, CompressedWriteBuffer writes blocks directly into the file buffer
-/// (see declareOutBufferExclusive), so the buffer must also fit the checksum-and-header prefix,
-/// or every full block would be split one prefix short of settings.buffer_size.
+/// NONE-coded blocks are written directly into the file buffer (see declareOutBufferExclusive),
+/// so it must also fit the block prefix, or blocks would be split short of settings.buffer_size.
 inline size_t getFileBufferSize(const TemporaryDataOnDiskSettings & settings)
 {
     size_t buffer_size = settings.buffer_size;
@@ -410,7 +409,6 @@ TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScop
     , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size)
     , metrics(parent->getSettings().metrics)
 {
-    /// We are the sole writer of the underlying file buffer: enable the zero-copy NONE path.
     out_compressed_buf->declareOutBufferExclusive();
     WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
 }
