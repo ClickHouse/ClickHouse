@@ -406,8 +406,7 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert info["version"] == "26.6.2.2"
     assert info["commit_sha"] == commit_sha
     assert info["create_new_release"] is True
-    # A fresh patch release still owes its branch the post-release bump.
-    assert info["needs_branch_bump"] is True
+    assert info["is_branch_release"] is True  # gates the deferred version bump
 
     step("--push-release-tag", "--dry-run")
     step("--create-bump-version-pr", "--dry-run")
@@ -499,10 +498,8 @@ def test_prepare_recovers_from_tag(tmp_path):
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.1-stable"
     assert info["create_new_release"] is False
-    # The branch tip still describes this release (no post-release bump commit),
-    # so recovering it must also complete the deferred branch bump — otherwise
-    # the patch number stays pinned. See needs_branch_bump.
-    assert info["needs_branch_bump"] is True
+    # Branch tip still describes this release, so recovery must complete the bump.
+    assert info["is_branch_release"] is True
 
 
 def test_prepare_recovers_already_released_commit(tmp_path):
@@ -601,9 +598,8 @@ def test_prepare_recovers_already_released_commit(tmp_path):
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.1-stable"
     assert info["create_new_release"] is False
-    # Rerun on the un-bumped tip: the branch never advanced past this release, so
-    # the deferred bump is still owed and must run on this recovery.
-    assert info["needs_branch_bump"] is True
+    # Rerun on the un-bumped tip: the deferred version bump is still owed.
+    assert info["is_branch_release"] is True
 
 
 def test_prepare_refuses_out_of_order_commit(tmp_path):
@@ -711,11 +707,9 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
 def test_prepare_recovers_superseded_release_without_rebumping(tmp_path):
     """Recovering a superseded release via its tag must NOT re-bump the branch.
 
-    When the branch tip already describes a newer release (``26.6.4`` here), the
-    post-release bump for the recovered ``26.6.3`` has long since landed. The
-    self-heal that completes a missed bump (see needs_branch_bump) must not fire
-    here, or it would rewrite the branch version backwards. ``prepare`` recovers
-    (``create_new_release=false``) and leaves ``needs_branch_bump=false``.
+    The branch tip is a newer release (``26.6.4``) than the recovered ``26.6.3``,
+    so ``prepare`` recovers (``create_new_release=false``) with
+    ``is_branch_release=false`` and the deferred bump must not rewrite it back.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -812,7 +806,7 @@ def test_prepare_recovers_superseded_release_without_rebumping(tmp_path):
     assert info["release_tag"] == "v26.6.3.1-stable"
     assert info["create_new_release"] is False
     # Branch is already ahead — must not rewrite the newer version backwards.
-    assert info["needs_branch_bump"] is False
+    assert info["is_branch_release"] is False
 
 
 def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path):
@@ -1007,7 +1001,7 @@ def test_prepare_creates_from_branch_ref(tmp_path):
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.2-stable"
     assert info["create_new_release"] is True
-    assert info["needs_branch_bump"] is True
+    assert info["is_branch_release"] is True
 
 
 def test_prepare_fails_closed_on_stale_branch_version_file(tmp_path):
