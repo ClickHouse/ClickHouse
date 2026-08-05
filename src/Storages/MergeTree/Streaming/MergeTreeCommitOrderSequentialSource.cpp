@@ -324,6 +324,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , requested_num_streams(requested_num_streams_)
     , max_block_size(max_block_size_)
     , subscription(std::move(subscription_))
+    , bounded(query_info_.table_expression_modifiers->getStreamSettings()->bounded)
     , log(getLogger("MergeTreeCommitOrderSequentialSource"))
     , last_emitted_positions(buildMergeTreeCursor(query_info_.table_expression_modifiers->getStreamSettings()->cursor))
 {
@@ -383,35 +384,6 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
         return Status::Finished;
     }
 
-    /// A bounded stream reads only the first snapshot and then stops, instead of subscribing for updates.
-    if (subscription->isBounded() && first_snapshot_processed)
-    {
-        /// Tear down the spent snapshot sub-pipeline before finishing.
-        if (!current_sub_pipeline.empty())
-            return Status::UpdatePipeline;
-
-        output.finish();
-        return Status::Finished;
-    }
-
-    /// A bounded stream waits (atomically) for a determined snapshot, then reads all partitions or finishes if empty.
-    if (subscription->isBounded())
-    {
-        auto determined = subscription->snapshotIfDetermined();
-        if (!determined)
-            return Status::Async;
-
-        const auto determined_classification = getPartitionsClassification(*determined, last_emitted_positions);
-        if (!determined_classification.readable_partitions.empty())
-            return Status::Ready;
-
-        if (!current_sub_pipeline.empty())
-            return Status::UpdatePipeline;
-
-        output.finish();
-        return Status::Finished;
-    }
-
     const auto safe_block_numbers = subscription->snapshot();
     const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions);
 
@@ -424,11 +396,31 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
     return Status::Async;
 }
 
+IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfiguration()
+{
+    const auto result = handleReconfiguration();
+
+    if (result == Status::Async)
+    {
+        if (subscription->updatesCount() > 0)
+        {
+            outputs.front().finish();
+            return Status::Finished;
+        }
+        return Status::Async;
+    }
+
+    return result;
+}
+
 void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
 {
     /// A non-empty `reading_up_to_block_numbers` means a snapshot sub-pipeline has just finished.
     if (!reading_up_to_block_numbers.empty())
-        first_snapshot_processed = true;
+    {
+        ++finished_snapshots;
+        LOG_TEST(log, "Finished reading snapshot #{}", finished_snapshots);
+    }
 
     for (const auto & [partition_id, safe_block_number] : reading_up_to_block_numbers)
     {
@@ -450,6 +442,9 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
     if (!pending_snapshot.has_value())
         handlePipelineEnd();
 
+    if (bounded)
+        return handleBoundedReconfiguration();
+
     return handleReconfiguration();
 }
 
@@ -464,20 +459,7 @@ void MergeTreeCommitOrderSequentialSource::work()
     if (subscription->isDisabled())
         return;
 
-    /// For a bounded stream, read the map and "determined" flag atomically so a stale wake can't build a partial snapshot.
-    std::map<String, Int64> safe_block_numbers;
-    if (subscription->isBounded())
-    {
-        auto determined = subscription->snapshotIfDetermined();
-        if (!determined)
-            return;
-        safe_block_numbers = std::move(*determined);
-    }
-    else
-    {
-        safe_block_numbers = subscription->snapshot();
-    }
-
+    const auto safe_block_numbers = subscription->snapshot();
     const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions);
     if (classification.readable_partitions.empty())
         return;

@@ -20,6 +20,7 @@ class MergeTreeCommitOrderSequentialSource final : public IProcessor
 {
     Status handleRunningPipeline();
     Status handleReconfiguration();
+    Status handleBoundedReconfiguration();
     void handlePipelineEnd();
 
 public:
@@ -53,13 +54,15 @@ private:
     const size_t requested_num_streams;
     const UInt64 max_block_size;
     const MergeTreeBoundsSubscriptionPtr subscription;
+    /// Whether this is a bounded stream (read the first snapshot, then finish); a query property read from `query_info`.
+    const bool bounded;
     const LoggerPtr log;
 
     /// Query runtime information
     std::map<String, PartitionCursor> last_emitted_positions;
 
-    /// For bounded streams: set once the first snapshot has been fully read.
-    bool first_snapshot_processed = false;
+    /// Number of snapshots fully read so far (a metric; also gates a bounded stream's finish).
+    size_t finished_snapshots = 0;
 
     /// Current snapshot runtime information
     Processors current_sub_pipeline;

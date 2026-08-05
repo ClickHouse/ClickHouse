@@ -67,14 +67,6 @@ bool MergeTreeCursorPromoter::canPromote(Int64 block_number, Int64 left) const
     return true;
 }
 
-bool MergeTreeCursorPromoter::hasInFlightAfter(Int64 block_number) const
-{
-    if (committing_parts.upper_bound(block_number) != committing_parts.end())
-        return true;
-
-    return virtual_parts.getNext(block_number).has_value();
-}
-
 String MergeTreeCursorPromoter::dumpStructure() const
 {
     std::vector<String> committing_parts_strs;

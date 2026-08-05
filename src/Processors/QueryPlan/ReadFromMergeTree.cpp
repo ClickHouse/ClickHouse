@@ -3660,14 +3660,13 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
     SharedHeader header = getOutputHeader();
-    const bool bounded = query_info.table_expression_modifiers->getStreamSettings()->bounded;
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i, bounded);
+        auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i);
         data.subscription_manager.registerSubscription(subscription);
         pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSequentialSource>(
             header,

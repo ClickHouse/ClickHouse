@@ -46,13 +46,9 @@ EnrichmentResult enrichSubscription(
                 continue;
             }
 
-            /// Ask the promoter whether anything in that gap (cursor, part.min_block) is still in flight.
+            /// A block is still in flight in the gap (being committed, or not yet fetched): stop, don't skip past it.
             if (!promoter.canPromote(cursor, part.min_block))
-            {
-                /// A block is still in flight in the gap (being committed, or not yet fetched), so it is not determined.
-                result.pending = true;
                 break;
-            }
 
             cursor = part.max_block;
         }
@@ -62,23 +58,6 @@ EnrichmentResult enrichSubscription(
             subscription.advance(partition_id, cursor);
             result.enriched = true;
         }
-    }
-
-    /// A partition the promoter knows is in flight but that has no visible local part yet: mark pending so a bounded stream waits.
-    for (const auto & [partition_id, promoter] : promoters)
-    {
-        if (local_parts.contains(partition_id))
-            continue;
-
-        if (!partitionBelongsToSubscription(partition_id, subscription.query_subscriptions_count, subscription.current_subscription_index))
-            continue;
-
-        Int64 cursor = -1;
-        if (auto it = snapshot.find(partition_id); it != snapshot.end())
-            cursor = it->second;
-
-        if (promoter.hasInFlightAfter(cursor))
-            result.pending = true;
     }
 
     return result;
