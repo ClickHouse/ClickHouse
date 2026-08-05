@@ -445,6 +445,19 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             updated_batch_size -= merged_rows + updated_batch_size - merged_data.maxBlockSize();
         }
 
+        const size_t insertable_rows = updated_batch_size - static_cast<size_t>(batch_skip_last_row);
+        const size_t rows_before_flush = merged_data.rowsToInsertBeforeFlush(
+            current.impl->all_columns,
+            current.impl->getRow(),
+            insertable_rows,
+            current.impl->rows);
+
+        if (rows_before_flush < insertable_rows)
+        {
+            batch_skip_last_row = false;
+            updated_batch_size = rows_before_flush;
+        }
+
         bool limit_reached = false;
 
         if (limit && merged_rows + updated_batch_size >= limit && !batch_skip_last_row)
