@@ -20,6 +20,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Storages/MergeTree/ExportList.h>
 #include <Storages/IStorage.h>
@@ -121,8 +122,8 @@ namespace
         const IStorage & destination_storage,
         const ContextPtr & local_context)
     {
-        const auto destination_header
-            = destination_storage.getInMemoryMetadataPtr()->getSampleBlockNonMaterialized();
+        const auto destination_metadata = destination_storage.getInMemoryMetadataPtr(local_context, false);
+        const auto destination_header = destination_metadata->getSampleBlockNonMaterialized();
 
         auto dag = ActionsDAG::makeConvertingActions(
             plan_for_part.getCurrentHeader()->getColumnsWithTypeAndName(),
@@ -194,7 +195,7 @@ bool ExportPartTask::executeStep()
     if (metadata_snapshot->hasPartitionKey())
     {
         /// todo arthur do I need to init minmax_idx?
-        block_with_partition_values = manifest.data_part->minmax_idx->getBlock(storage);
+        block_with_partition_values = manifest.data_part->getMinMaxIndex()->getBlock(storage);
     }
 
     const auto & destination_storage = manifest.destination_storage_ptr;

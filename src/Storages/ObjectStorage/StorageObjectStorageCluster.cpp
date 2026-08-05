@@ -250,8 +250,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         object_storage,
         context_,
         getStorageID(),
-        IStorageCluster::getInMemoryMetadata().getColumns(),
-        IStorageCluster::getInMemoryMetadata().getConstraints(),
+        metadata.getColumns(),
+        metadata.getConstraints(),
         comment_,
         format_settings_,
         mode_,
@@ -266,10 +266,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         updated_configuration,
         sample_path);
 
-    auto virtuals_ = getVirtualsPtr();
-    if (virtuals_)
-        pure_storage->setVirtuals(*virtuals_);
-    pure_storage->setInMemoryMetadata(IStorageCluster::getInMemoryMetadata());
+    /// Virtual columns are a part of StorageInMemoryMetadata, so they are propagated together with it.
+    pure_storage->setInMemoryMetadata(metadata);
 }
 
 std::string StorageObjectStorageCluster::getName() const
@@ -572,14 +570,16 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
             new_metadata = *metadata_snapshot;
     }
 
-    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    auto updated_metadata = new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         new_metadata.columns,
         query_context,
         /* format_settings */ std::nullopt,
-        configuration->getPartitionStrategyType())));
+        configuration->getPartitionStrategyType()));
+
+    setInMemoryMetadata(updated_metadata);
 
     if (pure_storage)
-        pure_storage->setInMemoryMetadata(IStorageCluster::getInMemoryMetadata());
+        pure_storage->setInMemoryMetadata(updated_metadata);
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
@@ -785,11 +785,13 @@ void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr
     if (getClusterName(context).empty())
     {
         pure_storage->alter(params, context, alter_lock_holder);
-        setInMemoryMetadata(pure_storage->getInMemoryMetadata());
+        auto pure_metadata = pure_storage->getInMemoryMetadataPtr(context, false);
+        setInMemoryMetadata(*pure_metadata);
         return;
     }
     IStorageCluster::alter(params, context, alter_lock_holder);
-    pure_storage->setInMemoryMetadata(IStorageCluster::getInMemoryMetadata());
+    auto cluster_metadata = IStorageCluster::getInMemoryMetadataPtr(context, false);
+    pure_storage->setInMemoryMetadata(*cluster_metadata);
 }
 
 void StorageObjectStorageCluster::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
@@ -797,11 +799,11 @@ void StorageObjectStorageCluster::addInferredEngineArgsToCreateQuery(ASTs & args
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->getFormat(), context, /*with_structure=*/false);
 }
 
-StorageMetadataPtr StorageObjectStorageCluster::getInMemoryMetadataPtr(bool bypass_metadata_cache) const
+StorageMetadataHandle StorageObjectStorageCluster::getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const
 {
     if (pure_storage)
-        return pure_storage->getInMemoryMetadataPtr(bypass_metadata_cache);
-    return IStorageCluster::getInMemoryMetadataPtr(bypass_metadata_cache);
+        return pure_storage->getInMemoryMetadataPtr(context, bypass_metadata_cache);
+    return IStorageCluster::getInMemoryMetadataPtr(context, bypass_metadata_cache);
 }
 
 IDataLakeMetadata * StorageObjectStorageCluster::getExternalMetadata(ContextPtr query_context)

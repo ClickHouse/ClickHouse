@@ -12,6 +12,7 @@ from helpers.iceberg_utils import (
 )
 
 import logging
+import uuid
 import pyarrow.parquet as pq
 from helpers.config_cluster import minio_secret_key
 

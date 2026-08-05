@@ -1162,8 +1162,8 @@ def test_namespace_filter(started_cluster):
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}alpha.{table_name}`") == "0\n"
     assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}bravo.{table_name}`")
 
-    node.query(f"CREATE TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.{table2_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{namespace_prefix}alpha/a1/{table2_name}/', '{minio_access_key}', '{minio_secret_key}')")
-    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"CREATE TABLE {CATALOG_NAME}.`{namespace_prefix}bravo.{table2_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{namespace_prefix}bravo/{table2_name}/', '{minio_access_key}', '{minio_secret_key}')")
+    node.query(f"CREATE TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.{table2_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{namespace_prefix}alpha/a1/{table2_name}/', '{minio_access_key}', '{minio_secret_key}')")
+    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"CREATE TABLE {CATALOG_NAME}.`{namespace_prefix}bravo.{table2_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{namespace_prefix}bravo/{table2_name}/', '{minio_access_key}', '{minio_secret_key}')")
 
     node.query(f"DROP TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.{table_name}`")
     assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{namespace_prefix}bravo.{table_name}`")

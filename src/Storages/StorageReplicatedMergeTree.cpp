@@ -8608,8 +8608,8 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
         return ast ? ast->formatWithSecretsOneLine() : "";
     };
 
-    auto src_snapshot = getInMemoryMetadataPtr();
-    auto destination_snapshot = dest_storage->getInMemoryMetadataPtr();
+    auto src_snapshot = getInMemoryMetadataPtr(query_context, false);
+    auto destination_snapshot = dest_storage->getInMemoryMetadataPtr(query_context, false);
 
     /// Positional CAST matching, like `INSERT INTO dest SELECT * FROM src`.
     ExportPartitionUtils::verifyExportSchemaCastable(
@@ -8676,8 +8676,8 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
 
     MergeTreeData::IMutationsSnapshot::Params mutations_snapshot_params
     {
-        .metadata_version = getInMemoryMetadataPtr()->getMetadataVersion(),
-        .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(parts),
+        .metadata_version = src_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = MergeTreeData::getPartsSnapshotInfo(parts).min_metadata_version,
         .need_data_mutations = throw_on_pending_mutations,
         .need_alter_mutations = throw_on_pending_mutations || throw_on_pending_patch_parts,
         .need_patch_parts = throw_on_pending_patch_parts,

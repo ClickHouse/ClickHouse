@@ -34,8 +34,14 @@ from helpers.export_partition_helpers import (
 
 
 GLUE_BASE_URL = "http://glue:3000"
-GLUE_BASE_URL_LOCAL = "http://localhost:3000"
 CH_CATALOG_DB = "glue_export_catalog"
+# The Glue (Moto) container port is mapped to a dynamically allocated host port,
+# see `ClickHouseCluster.glue_catalog_port`, so the host-side URL is per-cluster.
+GLUE_WAREHOUSE_ENDPOINT = "http://minio1:9001/warehouse-glue"
+
+
+def get_glue_local_url(cluster):
+    return f"http://localhost:{cluster.glue_catalog_port}"
 
 
 # ---------------------------------------------------------------------------
@@ -104,17 +110,17 @@ def cleanup_tables(catalog_export_cluster):
 
 def connect_catalog(cluster):
     """
-    Connect to the Moto Glue mock from the test host via localhost:3000.
-    MinIO is accessed via the container IP for S3 operations.
+    Connect to the Moto Glue mock from the test host via its mapped host port.
+    MinIO is accessed via the container IP for S3 operations. Catalogs share the
+    standard MinIO container (`minio1`), exposed as `cluster.minio_ip`/`minio_port`.
     """
-    minio_ip = cluster.get_instance_ip("minio")
     return load_catalog(
         "glue_test",
         **{
             "type": "glue",
-            "glue.endpoint": GLUE_BASE_URL_LOCAL,
+            "glue.endpoint": get_glue_local_url(cluster),
             "glue.region": "us-east-1",
-            "s3.endpoint": f"http://{minio_ip}:9000",
+            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
             "s3.access-key-id": minio_access_key,
             "s3.secret-access-key": minio_secret_key,
         },
@@ -132,7 +138,7 @@ def setup_ch_catalog_db(node, db_name: str = CH_CATALOG_DB) -> None:
         ENGINE = DataLakeCatalog('{GLUE_BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
         SETTINGS catalog_type = 'glue',
                  warehouse = 'test',
-                 storage_endpoint = 'http://minio:9000/warehouse-glue',
+                 storage_endpoint = '{GLUE_WAREHOUSE_ENDPOINT}',
                  region = 'us-east-1'
         """
     )

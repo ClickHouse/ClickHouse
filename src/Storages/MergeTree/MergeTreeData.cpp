@@ -7053,7 +7053,7 @@ void MergeTreeData::exportPartToTable(const PartitionCommand & command, ContextP
 
     if (table_function_ptr->needStructureHint())
     {
-        const auto source_metadata_ptr = getInMemoryMetadataPtr();
+        const auto source_metadata_ptr = getInMemoryMetadataPtr(query_context, false);
 
         /// Grab only the readable columns from the source metadata to skip ephemeral columns
         const auto readable_columns = ColumnsDescription(source_metadata_ptr->getColumns().getReadable());
@@ -7117,8 +7117,8 @@ void MergeTreeData::exportPartToTable(
         return ast ? ast->formatWithSecretsOneLine() : "";
     };
 
-    auto source_metadata_ptr = getInMemoryMetadataPtr();
-    auto destination_metadata_ptr = dest_storage->getInMemoryMetadataPtr();
+    auto source_metadata_ptr = getInMemoryMetadataPtr(query_context, false);
+    auto destination_metadata_ptr = dest_storage->getInMemoryMetadataPtr(query_context, false);
 
     std::string iceberg_metadata_json;
 

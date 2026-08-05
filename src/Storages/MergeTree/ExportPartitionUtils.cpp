@@ -144,7 +144,7 @@ namespace ExportPartitionUtils
                 "or this replica has not yet received any part for this partition. "
                 "The commit will be retried.",
                 partition_id);
-        return parts.front()->minmax_idx->getBlock(storage);
+        return parts.front()->getMinMaxIndex()->getBlock(storage);
     }
 
     ContextPtr getContextCopyWithTaskSettings(const ContextPtr & context, const ExportReplicatedMergeTreePartitionManifest & manifest)
@@ -307,7 +307,8 @@ namespace ExportPartitionUtils
         if (!manifest.iceberg_metadata_json.empty())
         {
             iceberg_args.metadata_json_string = manifest.iceberg_metadata_json;
-            if (source_storage.getInMemoryMetadataPtr()->hasPartitionKey())
+            const auto source_metadata = source_storage.getInMemoryMetadataPtr(context, false);
+            if (source_metadata->hasPartitionKey())
                 iceberg_args.partition_source_block =
                     getPartitionSourceBlockForIcebergCommit(source_storage, manifest.partition_id);
         }

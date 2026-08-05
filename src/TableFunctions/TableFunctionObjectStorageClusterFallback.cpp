@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionObjectStorageClusterFallback.h>
+#include <TableFunctions/registerTableFunctions.h>
 #include <Common/typeid_cast.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 

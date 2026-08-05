@@ -557,7 +557,10 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
 
     std::shared_ptr<TableFunctionRemote> remote_table_function = std::dynamic_pointer_cast<TableFunctionRemote>(remote_function);
     if (remote_table_function)
-        remote_table_function->setActualTableStructure(getInMemoryMetadata().columns);
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+        remote_table_function->setActualTableStructure(metadata_snapshot->columns);
+    }
 
     auto storage = remote_function->execute(query_to_send, new_context, remote_function_name);
 

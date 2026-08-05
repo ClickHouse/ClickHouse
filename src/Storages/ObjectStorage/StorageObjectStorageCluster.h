@@ -94,7 +94,7 @@ public:
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
-    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override;
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -170,6 +170,8 @@ public:
     bool isObjectStorage() const override { return true; }
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+
+    bool isIcebergStorage() const { return configuration->isIcebergConfiguration(); }
 
 private:
     void updateQueryToSendIfNeeded(

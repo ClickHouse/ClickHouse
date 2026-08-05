@@ -36,11 +36,15 @@ from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_buck
 from helpers.test_tools import TSV, csv_compare
 from helpers.config_cluster import minio_secret_key
 
-ICEBERG_PORT = 8183
-
 BASE_URL = "http://rest:8181/v1"
-BASE_URL_LOCAL = f"http://localhost:{ICEBERG_PORT}/v1"
-BASE_URL_LOCAL_RAW = f"http://localhost:{ICEBERG_PORT}"
+# The REST catalog and MinIO containers are shared with the rest of the suite and their
+# host ports are allocated dynamically (`iceberg_rest_catalog_port` / `minio_port`), so
+# host-side URLs have to be derived from the cluster object.
+WAREHOUSE_ENDPOINT = "http://minio1:9001/warehouse-rest"
+
+
+def get_base_url_local_raw(cluster):
+    return f"http://localhost:{cluster.iceberg_rest_catalog_port}"
 
 CATALOG_NAME = "demo"
 
@@ -60,10 +64,6 @@ DEFAULT_SCHEMA = Schema(
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.iceberg_rest_external_port = ICEBERG_PORT
-        cluster.spark_iceberg_external_port = 10004
-        cluster.spark_iceberg_external_port_2 = 10005
-        cluster.spark_iceberg_external_port_3 = 10006
         cluster.add_instance(
             "node1",
             main_configs=["configs/timezone.xml", "configs/cluster.xml"],
@@ -89,9 +89,9 @@ def load_catalog_impl(started_cluster):
     return load_catalog(
         CATALOG_NAME,
         **{
-            "uri": BASE_URL_LOCAL_RAW,
+            "uri": get_base_url_local_raw(started_cluster),
             "type": "rest",
-            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
+            "s3.endpoint": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
             "s3.access-key-id": minio_access_key,
             "s3.secret-access-key": minio_secret_key,
         },
@@ -121,7 +121,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "rest",
         "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse-rest",
+        "storage_endpoint": WAREHOUSE_ENDPOINT,
     }
 
     settings.update(additional_settings)

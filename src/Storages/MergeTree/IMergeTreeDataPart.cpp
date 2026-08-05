@@ -378,18 +378,17 @@ Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) cons
 
     Block block;
 
-    const auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
     const auto & partition_key = metadata_snapshot->getPartitionKey();
 
-    const auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
-    const auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
-    const auto minmax_idx_size = minmax_column_types.size();
+    /// The minmax index may also contain block number/offset columns at the end,
+    /// they are not part of the partition key, so take only the partition key columns.
+    const auto minmax_columns = MergeTreeData::getMinMaxColumns(
+        partition_key, data.getSettings(), MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
 
-    for (size_t i = 0; i < minmax_idx_size; ++i)
+    size_t i = 0;
+    for (const auto & [column_name, data_type] : minmax_columns)
     {
-        const auto & data_type = minmax_column_types[i];
-        const auto & column_name = minmax_column_names[i];
-
         const auto column = data_type->createColumn();
 
         auto range = hyperrectangle.at(i);
@@ -402,6 +401,7 @@ Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) cons
         column->insert(max_val);
 
         block.insert(ColumnWithTypeAndName(column->getPtr(), data_type, column_name));
+        ++i;
     }
 
     return block;

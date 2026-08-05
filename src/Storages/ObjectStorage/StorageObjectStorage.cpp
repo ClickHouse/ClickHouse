@@ -682,10 +682,11 @@ SinkToStoragePtr StorageObjectStorage::import(
     if (isDataLake())
     {
         configuration->lazyInitializeIfNeeded(object_storage, local_context);
+        auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
         return configuration->getExternalMetadata()->import(
             catalog,
             new_file_path_callback,
-            std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock()),
+            std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
             *iceberg_metadata_json_string,
             format_settings_ ? format_settings_ : format_settings,
             local_context);
@@ -705,6 +706,8 @@ SinkToStoragePtr StorageObjectStorage::import(
 
     const auto base_path = configuration->getPathForWrite(partition_key, file_name).path;
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+
     return std::make_shared<MultiFileStorageObjectStorageSink>(
         base_path,
         /* transaction_id= */ file_name, /// not pretty, but the sink needs some sort of id to generate the commit file name. Using the source part name should be enough
@@ -715,7 +718,7 @@ SinkToStoragePtr StorageObjectStorage::import(
         overwrite_if_exists,
         new_file_path_callback,
         format_settings_ ? format_settings_ : format_settings,
-        std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock()),
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
         local_context);
 }
 
@@ -741,6 +744,7 @@ void StorageObjectStorage::commitExportPartitionTransaction(
         const auto partition_spec_id   = iceberg_metadata->getValue<Int64>(Iceberg::f_default_spec_id);
 
         configuration->lazyInitializeIfNeeded(object_storage, local_context);
+        auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
         configuration->getExternalMetadata()->commitExportPartitionTransaction(
             catalog,
             storage_id,
@@ -748,7 +752,7 @@ void StorageObjectStorage::commitExportPartitionTransaction(
             original_schema_id,
             partition_spec_id,
             iceberg_commit_export_partition_arguments.partition_source_block,
-            std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock()),
+            std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
             exported_paths,
             configuration,
             local_context);

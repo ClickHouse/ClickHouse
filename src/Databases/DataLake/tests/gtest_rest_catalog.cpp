@@ -198,6 +198,7 @@ bool restCatalogEmpty(CatalogShape shape)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         context);
 
     return catalog.empty();

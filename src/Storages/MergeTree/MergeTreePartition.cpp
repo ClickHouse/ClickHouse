@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
@@ -516,7 +517,7 @@ Block MergeTreePartition::getBlockWithPartitionValues(const NamesAndTypesList & 
     std::size_t i = 0;
     for (const auto & partition_column : partition_columns)
     {
-        auto column = partition_column.type->createColumnConst(1, value[i++]);
+        ColumnPtr column = partition_column.type->createColumnConst(1, value[i++]);
         result.insert({column, partition_column.type, partition_column.name});
     }
 

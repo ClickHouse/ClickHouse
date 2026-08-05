@@ -270,7 +270,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             /* comment */ String{},
             /* format_settings */ std::nullopt, /// No format_settings
             /* mode */ LoadingStrictnessLevel::CREATE,
-            configuration->getCatalog(context, /* attach */ false),
+            configuration->getCatalog(context, StorageID(getDatabaseName(), table_name)),
             /* if_not_exists */ false,
             /* is_datalake_query*/ false,
             /* is_table_function */ true);

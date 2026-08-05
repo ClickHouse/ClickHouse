@@ -8498,11 +8498,8 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, UInt64, export_merge_tree_partition_manifest_ttl, 86400) \
-<<<<<<< HEAD
-    MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
-=======
     MAKE_OBSOLETE(M, UInt64, export_merge_tree_partition_max_retries, 3) \
->>>>>>> 091776b7b65 (Merge pull request #1984 from Altinity/export-partition-retry-backoff)
+    MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
