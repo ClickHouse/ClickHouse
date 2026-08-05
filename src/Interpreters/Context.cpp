@@ -9,6 +9,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/config_version.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -83,6 +84,7 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -137,7 +139,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -284,6 +286,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+ContextPtr ContextData::global_context_instance;
+ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -3342,6 +3347,10 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
 {
     try
     {
+        /// `SET name` with no value only makes sense for a Bool setting, and the parser cannot tell:
+        /// it does not know the settings schema. `setSettingWithLock` takes a name and a value, so
+        /// the check has to happen here, where the change is still whole.
+        settings->checkShorthandChange(change);
         setSettingWithLock(change.name, change.value, lock);
         contextSanityClampSettingsWithLock(*this, *settings, lock);
     }
@@ -3385,6 +3394,7 @@ void Context::applySettingChange(const SettingChange & change)
 {
     try
     {
+        settings->checkShorthandChange(change);
         setSetting(change.name, change.value);
     }
     catch (Exception & e)
@@ -3412,6 +3422,7 @@ void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElement
 
 void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source)
 {
+    settings->checkShorthandChange(change);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, change, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
@@ -3419,6 +3430,7 @@ void Context::checkSettingsConstraintsWithLock(const SettingChange & change, Set
 
 void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source)
 {
+    settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
@@ -3426,6 +3438,7 @@ void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, 
 
 void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
+    settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
@@ -3458,6 +3471,7 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
+    settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
@@ -3726,6 +3740,21 @@ void Context::makeQueryContext()
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
+
+    /// A context that becomes a query context without going through a client-facing handshake -
+    /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
+    /// (`Kafka`, `NATS`, `RabbitMQ`, `FileLog`, `ObjectStorageQueue`), `MaterializedPostgreSQL`
+    /// replication, dictionary reloads, or asynchronous insert flushes - inherits the empty (zero)
+    /// client version of the global context. This server is the real initiator of such queries, so
+    /// fill the version with this server's version. Otherwise remote shards of any distributed
+    /// sub-query would treat the initiator as an ancient server and apply legacy compatibility
+    /// downgrades, and `RemoteQueryExecutor` rejects a zero version outright.
+    /// Contexts created for real client queries overwrite the client info afterwards
+    /// (see `Session::makeQueryContextImpl`), so this does not mask a client-reported version.
+    if (client_info.client_version_major == 0
+        && client_info.client_version_minor == 0
+        && client_info.client_version_patch == 0)
+        setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)

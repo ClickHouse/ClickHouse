@@ -21,7 +21,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -105,20 +107,17 @@ extern const int UNKNOWN_TABLE;
 namespace
 {
 
-bool columnIsPhysical(ColumnDefaultKind kind)
+/// The storage a database enumerates is not always the storage a read must go through: a
+/// `MaterializedPostgreSQL` database exposes the physical nested `ReplacingMergeTree` tables to
+/// generic enumerators and hands out the `StorageMaterializedPostgreSQL` wrapper for reads. Reading
+/// the nested table directly would bypass the wrapper's `_sign = 1` filter and forced `FINAL` and
+/// return stale and deleted rows. See `IDatabase::getTableForRead`.
+StoragePtr tableForRead(const DatabasePtr & database, const String & table_name, const StoragePtr & table, const ContextPtr & local_context)
 {
-    return kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized;
-}
+    if (!database)
+        return table;
 
-bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
-{
-    if (lhs == rhs)
-        return true;
-
-    if (columnIsPhysical(lhs) == columnIsPhysical(rhs))
-        return true;
-
-    return false;
+    return database->getTableForRead(table_name, table, local_context);
 }
 
 }
@@ -273,11 +272,16 @@ StoragePtr StorageMerge::traverseTablesUntilImpl(const ContextPtr & query_contex
 
     for (auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
+
         while (iterator->isValid())
         {
-            const auto & table = iterator->table();
-            if (table.get() != ignore_self && predicate(table))
-                return table;
+            const auto & nested = iterator->table();
+            if (nested.get() != ignore_self)
+            {
+                if (auto table = tableForRead(database, iterator->name(), nested, query_context); table && predicate(table))
+                    return table;
+            }
 
             iterator->next();
         }
@@ -374,9 +378,36 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
                 supported_columns.erase(column.name);
             }
         }
+
+        /// A column the child does not declare at all fails the same way: it is stripped from the
+        /// child's read list and filled with defaults only after the read, so a filter pushed into
+        /// that read has no input for it.
+        std::erase_if(supported_columns, [&](const auto & name) { return !table_columns.has(name); });
+
+        /// The loop above compares the root type against the child's *declared* columns. When the
+        /// child aggregates other tables itself (a nested `Merge`, a `MaterializedView`, ...), its
+        /// declared type can match while a leaf's differs. PREWHERE would then be built against the
+        /// root type and re-derived against the leaf's, so `ActionsDAG` sees a return type that
+        /// disagrees with the node it stored and throws `Unexpected return type from ...`.
+        /// Intersect with what the child itself allows, so the constraint holds transitively.
+        /// `supportsPrewhere` above is already transitive - it recurses through virtual dispatch.
+        if (const auto nested_supported_columns = table->supportedPrewhereColumns())
+            std::erase_if(supported_columns, [&](const auto & name) { return !nested_supported_columns->contains(name); });
     });
 
     return supported_columns;
+}
+
+bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    /// The filter is re-derived against every child, so a subcolumn rides its origin column
+    /// only if all of them resolve it.
+    bool include_subcolumns = true;
+    forEachTable([&](const StoragePtr & table)
+    {
+        include_subcolumns = include_subcolumns && table->supportedPrewhereColumnsIncludeSubcolumns();
+    });
+    return include_subcolumns;
 }
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
@@ -409,9 +440,12 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     for (const auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
+
         while (iterator->isValid())
         {
-            const auto & table = iterator->table();
+            const auto & nested = iterator->table();
+            auto table = nested.get() == this ? nested : tableForRead(database, iterator->name(), nested, local_context);
             if (table && table.get() != this)
             {
                 ++selected_table_size;
@@ -1336,6 +1370,11 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
+        /// The child plan is united into this pipeline in the same process, where nothing
+        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+        auto child_select_query_options = SelectQueryOptions(processed_stage);
+        child_select_query_options.is_local_plan_for_distributed_query = true;
+
         if (use_analyzer)
         {
             /// Converting query to AST because types might be different in the source table.
@@ -1343,7 +1382,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             auto ast = modified_query_info.query_tree->toAST();
             InterpreterSelectQueryAnalyzer interpreter(ast,
                 modified_context,
-                SelectQueryOptions(processed_stage));
+                child_select_query_options);
 
             auto & planner = interpreter.getPlanner();
             planner.buildQueryPlanIfNeeded();
@@ -1355,7 +1394,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             /// TODO: Find a way to support projections for StorageMerge
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
-                SelectQueryOptions(processed_stage)};
+                child_select_query_options};
 
             interpreter.buildQueryPlan(plan);
         }
@@ -1484,13 +1523,18 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     auto access = query_context->getAccess();
     for (const auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
         auto granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName());
         auto granted_select_on_all_tables = access->isGranted(AccessType::SELECT, iterator->databaseName());
         while (iterator->isValid())
         {
-            StoragePtr storage = iterator->table();
+            StoragePtr storage = tableForRead(database, iterator->name(), iterator->table(), query_context);
             if (!storage)
+            {
+                /// `next` must be called on every path, otherwise the loop never terminates.
+                iterator->next();
                 continue;
+            }
 
             if (storage.get() != storage_merge.get())
                 if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
