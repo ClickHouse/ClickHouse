@@ -38,3 +38,13 @@ SELECT bitmapMin(bitmapBuild(arrayMap(x -> toInt8(x - 128), range(33))));
 SELECT bitmapMax(bitmapBuild(arrayMap(x -> toInt8(x - 128), range(33))));
 SELECT bitmapContains(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-1]::Array(Int8))), 255);
 SELECT bitmapContains(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-1]::Array(Int8))), 254);
+-- promoted empty: bitmapMin must keep UINT32_MAX
+SELECT bitmapMin(bitmapXor(bitmapBuild(CAST(range(33), 'Array(UInt8)')), bitmapBuild(CAST(range(33), 'Array(UInt8)'))));
+SELECT bitmapMin(bitmapXor(bitmapBuild(CAST(range(33), 'Array(UInt16)')), bitmapBuild(CAST(range(33), 'Array(UInt16)'))));
+SELECT bitmapMin(bitmapXor(bitmapBuild(CAST(range(33), 'Array(Int8)')), bitmapBuild(CAST(range(33), 'Array(Int8)'))));
+SELECT bitmapMin(bitmapXor(bitmapBuild(CAST(range(33), 'Array(Int16)')), bitmapBuild(CAST(range(33), 'Array(Int16)'))));
+-- bitmapTransform uses the same UnsignedT domain as bitmapContains
+SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [255], [10])));
+SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-1]::Array(Int8))), [255], [10])));
+-- out-of-range mapping no-ops
+SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [256], [10])));

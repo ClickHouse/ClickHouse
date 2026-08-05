@@ -131,14 +131,16 @@ REGISTER_FUNCTION(Bitmap)
 
     /// Documentation for bitmapTransform
     FunctionDocumentation::Description description_bitmapTransform = R"(
-Changes up to N bits in a bitmap by swapping specific bit values in `from_array` with corresponding ones in `to_array`.
+Replaces elements in a bitmap according to a mapping from `from_array` to `to_array`.
+Values are interpreted as unsigned integers of the bitmap element type (same domain as [`bitmapContains`](/sql-reference/functions/bitmap-functions#bitmapContains)).
+For signed bitmaps, a negative element matches its unsigned counterpart (for example, `Int8` value `-1` matches `255`).
     )";
     FunctionDocumentation::Syntax syntax_bitmapTransform = "bitmapTransform(bitmap, from_array, to_array)";
     FunctionDocumentation::Arguments arguments_bitmapTransform =
     {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
-        {"from_array", "Array of original set bits to be replaced. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"to_array", "Array of new set bits to replace with. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"from_array", "Array of element values to replace, interpreted as unsigned integers of the bitmap element type. [`Array(UInt*)`](/sql-reference/data-types/array)."},
+        {"to_array", "Array of replacement values, interpreted as unsigned integers of the bitmap element type. Must have the same length as `from_array`. [`Array(UInt*)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_bitmapTransform = {"Returns a bitmap with elements transformed according to the given mapping", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapTransform =
@@ -147,6 +149,12 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
 ┌─res───────────────┐
 │ [1, 3, 5, 20, 40] │
 └───────────────────┘
+    )"},
+        {"Signed bitmap", "SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [255], [10]))) AS res;",
+        R"(
+┌─res─────┐
+│ [0, 10] │
+└─────────┘
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapTransform = {20, 1};

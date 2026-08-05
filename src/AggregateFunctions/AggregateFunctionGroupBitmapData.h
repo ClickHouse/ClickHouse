@@ -637,6 +637,13 @@ public:
             }
             return min_val;
         }
+        /// CRoaring returns UINT32_MAX / UINT64_MAX for an empty bitmap.
+        if (roaring_bitmap->isEmpty())
+        {
+            if constexpr (sizeof(T) >= 8)
+                return std::numeric_limits<UInt64>::max();
+            return std::numeric_limits<UInt32>::max();
+        }
         /// Narrow signed values are stored sign-extended in UInt32; truncate to UnsignedT to match the small-set.
         return static_cast<UnsignedT>(roaring_bitmap->minimum());
     }
@@ -662,7 +669,7 @@ public:
 
     /**
      * Replace value.
-     * It's used in transform and currently can only support UInt32
+     * It's used in transform, from/to are interpreted in the UnsignedT domain.
      */
     void rb_replace(const UInt64 * from_vals, const UInt64 * to_vals, size_t num) /// NOLINT
     {
@@ -673,9 +680,20 @@ public:
         {
             if (from_vals[i] == to_vals[i])
                 continue;
-            bool changed = roaring_bitmap->removeChecked(static_cast<Value>(from_vals[i]));
+
+            if constexpr (!std::is_same_v<T, UInt64>)
+            {
+                const auto max_u = static_cast<UInt64>(std::numeric_limits<UnsignedT>::max());
+                if (from_vals[i] > max_u || to_vals[i] > max_u)
+                    continue;
+            }
+
+            /// Cast through T so narrow signed values match sign-extended storage (e.g. Int8 255 -> -1 -> 0xFFFFFFFF).
+            const Value from_v = static_cast<Value>(static_cast<T>(from_vals[i]));
+            const Value to_v = static_cast<Value>(static_cast<T>(to_vals[i]));
+            bool changed = roaring_bitmap->removeChecked(from_v);
             if (changed)
-                roaring_bitmap->add(static_cast<Value>(to_vals[i]));
+                roaring_bitmap->add(to_v);
         }
     }
 
