@@ -10,6 +10,7 @@
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -30,7 +31,7 @@ namespace DB
  * Unlike ALP, the integerized values can be packed as zigzag deltas, which is much smaller on
  * smooth series whose neighboring values are close while the overall range is wide.
  * Unlike the streaming XOR codecs, whole-vector runs collapse into a constant vector,
- * and the XOR reference is picked from a ring of 64 recent values with an explicit index.
+ * and the XOR reference is picked from a ring of 256 recent values with an explicit index.
  *
  * Compressed payload layout (after the generic codec header):
  *
@@ -68,16 +69,16 @@ namespace DB
  *   - for each following value, one bit selects between a run and a single value:
  *     1: run; 10 bits of length L in [1, 1023]: the previous value repeats L more times;
  *     0: single value, followed by a 2-bit branch tag:
- *        00 EQUAL:       6-bit ring index; the value equals ring[index];
+ *        00 EQUAL:       8-bit ring index; the value equals ring[index];
  *        01 XOR_PREV:    3-bit leading-zero class, then unless omitted the exact trailing-zero
  *                        count (6 bits for Float64, 5 for Float32), then center bits;
  *                        the reference is the most recently inserted ring value;
- *        10 XOR_WINDOW:  6-bit ring index, then the same fields as XOR_PREV
+ *        10 XOR_WINDOW:  8-bit ring index, then the same fields as XOR_PREV
  *                        with ring[index] as the reference;
  *        11 RAW:         float_width * 8 bits.
  *        center = (value XOR reference) >> trailing, of
  *        (width - lead_class_value - trailing) bits, with trailing = 0 when omitted.
- *   The ring holds the 64 most recent single values (all four branches insert, runs do not),
+ *   The ring holds the 256 most recent single values (all four branches insert, runs do not),
  *   indexed by absolute slot; both sides start from a zeroed ring, so indices into slots that
  *   were not filled yet are well-defined.
  */
@@ -123,8 +124,8 @@ constexpr UInt32 WALLABY_HEADER_SIZE = 2 * sizeof(UInt8) + sizeof(UInt32);
 
 constexpr UInt32 WALLABY_VECTOR_VALUES = Compression::FFOR::DEFAULT_VALUES;
 
-constexpr UInt32 WALLABY_RING_SIZE = 64;
-constexpr UInt8 WALLABY_RING_INDEX_BITS = 6;
+constexpr UInt32 WALLABY_RING_SIZE = 256;
+constexpr UInt8 WALLABY_RING_INDEX_BITS = 8;
 static_assert(1u << WALLABY_RING_INDEX_BITS == WALLABY_RING_SIZE);
 
 constexpr UInt8 WALLABY_RUN_LENGTH_BITS = 10;
@@ -135,9 +136,6 @@ constexpr UInt8 WALLABY_LEAD_CLASSES = 1 << WALLABY_LEAD_CLASS_BITS;
 
 /// More exceptions than this per vector means the decimal modes do not fit the data.
 constexpr UInt32 WALLABY_MAX_EXCEPTIONS = 96;
-
-/// If the chosen decimal packing is wider than this, the XOR encoding is also tried.
-constexpr UInt8 WALLABY_XOR_ATTEMPT_BITS_THRESHOLD = 32;
 
 enum class VectorMode : UInt8
 {
@@ -179,6 +177,13 @@ struct WallabyTraits<UInt32>
     static constexpr UInt8 max_alpha = 10;
     static constexpr std::array<UInt8, WALLABY_LEAD_CLASSES> lead_classes{0, 4, 8, 10, 12, 14, 18, 24};
 };
+
+/// If the chosen decimal packing is wider than half the value width, the XOR encoding is also tried.
+template <typename T>
+constexpr UInt8 wallabyXorAttemptBitsThreshold()
+{
+    return WallabyTraits<T>::width_bits / 2;
+}
 
 template <typename T>
 UInt8 leadClassIndex(UInt8 lead)
@@ -253,44 +258,67 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     using Traits = WallabyTraits<T>;
     using SignedType = typename Traits::SignedType;
 
-    /// Determine the number of decimal places from a sample.
-    UInt8 alpha = 0;
+    /// Determine the number of decimal places from a sample. A single high-precision sample
+    /// must not force a huge scale onto the whole vector (it would overflow the quantization
+    /// of large values), so when the largest sampled alpha does not work out, the median
+    /// sampled alpha is tried too and the high-precision values become exceptions.
+    std::array<UInt8, 32> sampled_alphas;
+    UInt32 sampled_alpha_count = 0;
     {
         const UInt32 samples = std::min<UInt32>(count, 32);
         const UInt32 stride = std::max<UInt32>(1, count / samples);
         UInt32 failures = 0;
-        for (UInt32 i = 0; i < count; i += stride)
+        for (UInt32 i = 0; i < count && sampled_alpha_count < sampled_alphas.size(); i += stride)
         {
             if (auto sample_alpha = findAlpha<T>(values[i]))
-                alpha = std::max(alpha, *sample_alpha);
+                sampled_alphas[sampled_alpha_count++] = *sample_alpha;
             else if (++failures > 3)
                 return std::nullopt;
         }
+        if (sampled_alpha_count == 0)
+            return std::nullopt;
+        std::sort(sampled_alphas.begin(), sampled_alphas.begin() + sampled_alpha_count);
     }
 
     alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized;
     std::array<UInt16, WALLABY_MAX_EXCEPTIONS> exception_positions;
-
     UInt32 exception_count = 0;
-    SignedType previous_good = 0;
-    for (UInt32 i = 0; i < count; ++i)
+
+    const auto quantizeAll = [&](UInt8 candidate_alpha) -> bool
     {
-        SignedType q;
-        if (quantizeValue<T>(values[i], alpha, q))
+        exception_count = 0;
+        SignedType previous_good = 0;
+        for (UInt32 i = 0; i < count; ++i)
         {
-            quantized[i] = q;
-            previous_good = q;
+            SignedType q;
+            if (quantizeValue<T>(values[i], candidate_alpha, q))
+            {
+                quantized[i] = q;
+                previous_good = q;
+            }
+            else
+            {
+                if (exception_count == WALLABY_MAX_EXCEPTIONS)
+                    return false;
+                exception_positions[exception_count] = static_cast<UInt16>(i);
+                ++exception_count;
+                /// Any placeholder works since the value is patched at decompression;
+                /// the previous one keeps both FOR and DELTA packings narrow.
+                quantized[i] = previous_good;
+            }
         }
-        else
-        {
-            if (exception_count == WALLABY_MAX_EXCEPTIONS)
-                return std::nullopt;
-            exception_positions[exception_count] = static_cast<UInt16>(i);
-            ++exception_count;
-            /// Any placeholder works since the value is patched at decompression;
-            /// the previous one keeps both FOR and DELTA packings narrow.
-            quantized[i] = previous_good;
-        }
+        return true;
+    };
+
+    UInt8 alpha = sampled_alphas[sampled_alpha_count - 1];
+    if (!quantizeAll(alpha))
+    {
+        const UInt8 median_alpha = sampled_alphas[sampled_alpha_count / 2];
+        if (median_alpha == alpha)
+            return std::nullopt;
+        alpha = median_alpha;
+        if (!quantizeAll(alpha))
+            return std::nullopt;
     }
 
     /// Choose between Frame-of-Reference and zigzag delta packing by the resulting bit width.
@@ -380,6 +408,25 @@ ALWAYS_INLINE UInt8 highBitsProbeKey(T word)
     return static_cast<UInt8>((word >> (width - 8)) ^ (word >> (width - 16)));
 }
 
+/// Hash of the whole value used to probe the ring for an equal value (low-cardinality data).
+template <typename T>
+ALWAYS_INLINE UInt8 identityProbeKey(T word)
+{
+    if constexpr (sizeof(T) == 8)
+        return static_cast<UInt8>((word * 0x9E3779B97F4A7C15ULL) >> 56);
+    else
+        return static_cast<UInt8>((word * 0x9E3779B9U) >> 24);
+}
+
+constexpr UInt32 WALLABY_LOW_PROBE_BITS = 12;
+
+/// Low bits of a value; a reference sharing them yields an XOR result with many trailing zeros.
+template <typename T>
+ALWAYS_INLINE UInt16 lowBitsProbeKey(T word)
+{
+    return static_cast<UInt16>(word & ((1u << WALLABY_LOW_PROBE_BITS) - 1));
+}
+
 /** Encodes a vector with the XOR mode into scratch and returns the payload size in bytes,
   * or 0 when the encoding is abandoned because it cannot beat the RAW mode.
   */
@@ -389,27 +436,49 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
     using Traits = WallabyTraits<T>;
     constexpr UInt8 width = Traits::width_bits;
 
-    /// Decide whether the trailing-zero field pays off: sample XOR residues of neighbors.
+    /// Decide whether the trailing-zero field pays off: sample XOR residues of neighbors, and
+    /// estimate how often a reference sharing the low bits can be found (such references produce
+    /// XOR results with many trailing zeros, which only help when the field is present).
     UInt64 sampled_trail = 0;
     UInt32 sampled = 0;
-    for (UInt32 i = 8; i < count; i += 8)
+    UInt32 low_bits_collisions = 0;
     {
-        const T xored = words[i] ^ words[i - 1];
-        if (xored != 0)
+        std::array<UInt16, 128> sample_keys;
+        UInt32 keys = 0;
+        for (UInt32 i = 8; i < count && keys < sample_keys.size(); i += 8)
         {
-            sampled_trail += static_cast<UInt8>(std::countr_zero(xored));
-            ++sampled;
+            const T xored = words[i] ^ words[i - 1];
+            if (xored != 0)
+            {
+                sampled_trail += static_cast<UInt8>(std::countr_zero(xored));
+                ++sampled;
+            }
+            sample_keys[keys] = lowBitsProbeKey(words[i]);
+            ++keys;
         }
+        for (UInt32 a = 1; a < keys; ++a)
+            for (UInt32 b = (a < 8 ? 0 : a - 8); b < a; ++b)
+                if (sample_keys[a] == sample_keys[b])
+                {
+                    ++low_bits_collisions;
+                    break;
+                }
+        if (keys > 0)
+            low_bits_collisions = low_bits_collisions * 100 / keys;
     }
-    const bool omit_trail = sampled > 0 && sampled_trail / sampled < 3;
+    const bool omit_trail = sampled > 0 && sampled_trail / sampled < 3 && low_bits_collisions < 25;
     const UInt8 trail_field_bits = omit_trail ? 0 : Traits::trail_bits;
 
     BitWriter writer(scratch, scratch_size);
     writer.writeBits(8, omit_trail ? 1 : 0);
 
     std::array<T, WALLABY_RING_SIZE> ring{};
-    /// Probe table: high-bits hash -> ring slot of the most recent value with that hash.
+    /// Probe tables: high-bits hash and whole-value hash -> ring slot of the most recent value
+    /// with that hash. The former finds a reference with a similar magnitude, the latter finds
+    /// an equal value, which matters on low-cardinality columns.
     std::array<UInt8, 256> probe{};
+    std::array<UInt8, 256> equal_probe{};
+    std::array<UInt8, (1u << WALLABY_LOW_PROBE_BITS)> low_probe{};
 
     UInt32 ring_position = 0;
     UInt32 newest_slot = 0;
@@ -417,6 +486,8 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
     writer.writeBits(width, words[0]);
     ring[ring_position] = words[0];
     probe[highBitsProbeKey(words[0])] = static_cast<UInt8>(ring_position);
+    equal_probe[identityProbeKey(words[0])] = static_cast<UInt8>(ring_position);
+    low_probe[lowBitsProbeKey(words[0])] = static_cast<UInt8>(ring_position);
     newest_slot = ring_position;
     ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
     T previous = words[0];
@@ -447,14 +518,22 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
         UInt8 best_class = 0;
         UInt8 best_trail = 0;
 
-        /// O(1) candidate probes: the predecessor and the most recent value with the same high bits.
-        const UInt32 hashed_slot = probe[highBitsProbeKey(value)];
-        const UInt32 candidates[2] = {newest_slot, hashed_slot};
-        for (UInt32 candidate = 0; candidate < 2; ++candidate)
+        /// O(1) candidate probes: an equal value if the ring holds one, then the predecessor
+        /// and the most recent value with the same high bits.
+        const UInt32 equal_slot = equal_probe[identityProbeKey(value)];
+        if (ring[equal_slot] == value)
+        {
+            best_cost = 3 + WALLABY_RING_INDEX_BITS;
+            best_branch = Branch::Equal;
+            best_index = equal_slot;
+        }
+
+        const UInt32 candidates[3] = {newest_slot, probe[highBitsProbeKey(value)], low_probe[lowBitsProbeKey(value)]};
+        for (UInt32 candidate = 0; candidate < 3 && best_branch != Branch::Equal; ++candidate)
         {
             const UInt32 slot = candidates[candidate];
-            if (candidate == 1 && slot == newest_slot)
-                break;
+            if (candidate > 0 && slot == newest_slot)
+                continue;
 
             const T xored = value ^ ring[slot];
             if (xored == 0)
@@ -521,6 +600,8 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
 
         ring[ring_position] = value;
         probe[highBitsProbeKey(value)] = static_cast<UInt8>(ring_position);
+        equal_probe[identityProbeKey(value)] = static_cast<UInt8>(ring_position);
+        low_probe[lowBitsProbeKey(value)] = static_cast<UInt8>(ring_position);
         newest_slot = ring_position;
         ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
         previous = value;
@@ -640,7 +721,7 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
         const auto decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size);
 
         UInt32 xor_size = 0;
-        if (!decimal || decimal->bits > WALLABY_XOR_ATTEMPT_BITS_THRESHOLD)
+        if (!decimal || decimal->bits > wallabyXorAttemptBitsThreshold<T>())
             xor_size = encodeXor<T>(words.data(), count, xor_scratch.data(), scratch_size);
 
         const UInt32 raw_size = count * sizeof(T);
