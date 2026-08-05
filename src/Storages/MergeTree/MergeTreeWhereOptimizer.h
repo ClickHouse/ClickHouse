@@ -79,8 +79,8 @@ private:
         /// Does the condition presumably have good selectivity?
         bool good = false;
 
-        /// the lower the better
-        UInt64 estimated_row_count = 0;
+        /// The lower the better. Max means that statistics cannot estimate the condition.
+        UInt64 estimated_row_count = std::numeric_limits<UInt64>::max();
 
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
