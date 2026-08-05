@@ -140,6 +140,61 @@ def test_jbod_load_balancing_least_used_next_disk(start_cluster):
         node.query("DROP TABLE IF EXISTS data_least_used_next_disk SYNC")
 
 
+def test_jbod_load_balancing_least_used_default_ttl(start_cluster):
+    # The other least_used tests pin least_used_ttl_ms = 0, which rebuilds the volume's
+    # disk queue on every reservation. This one leaves the setting at its default so the
+    # cached queue is the thing under test: five 62MiB parts fit the volume (600MiB) but
+    # not any single disk, so placement has to move on once a disk fills up.
+    #
+    # The reload re-creates the volume, re-seeding its cached per-disk free space from
+    # statvfs, so a repeated run does not inherit the previous run's cache. It is fixture
+    # isolation only: with the reload in place this test still fails on an unfixed server.
+    node.query("SYSTEM RELOAD CONFIG")
+    try:
+        node.query(
+            """
+            CREATE TABLE data_least_used_default_ttl
+            (
+                s String CODEC(NONE)
+            )
+            ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy = 'jbod_least_used_default_ttl';
+
+            SYSTEM STOP MERGES data_least_used_default_ttl;
+            """
+        )
+
+        # Sequential inserts, one thread each, so every reservation observes the previous
+        # part already finalized.
+        for _ in range(5):
+            node.query(
+                """
+                INSERT INTO data_least_used_default_ttl
+                SELECT repeat('a', 100) FROM numbers(6e5) SETTINGS max_insert_threads = 1;
+                """
+            )
+
+        # Exact placement is not asserted: which disk wins depends on how many bytes each
+        # part rounds up to. What must hold is that the parts get spread instead of piling
+        # onto one disk until it is full.
+        total, disks_used = (
+            node.query(
+                """
+                SELECT count(), uniqExact(disk_name)
+                FROM system.parts
+                WHERE table = 'data_least_used_default_ttl' AND active
+                """
+            )
+            .strip()
+            .split("\t")
+        )
+        assert int(total) == 5
+        assert int(disks_used) >= 2
+    finally:
+        node.query("DROP TABLE IF EXISTS data_least_used_default_ttl SYNC")
+
+
 def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster):
     def get_parts_on_disks():
         parts = node.query(

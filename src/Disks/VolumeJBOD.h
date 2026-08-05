@@ -95,9 +95,10 @@ private:
             return free_size < rhs.free_size;
         }
 
-        ReservationPtr reserve(UInt64 bytes)
+        template <typename TryReserve>
+        ReservationPtr reserve(TryReserve && try_reserve)
         {
-            ReservationPtr reservation = disk->reserve(bytes);
+            ReservationPtr reservation = try_reserve(disk);
             if (!reservation)
                 return {};
 

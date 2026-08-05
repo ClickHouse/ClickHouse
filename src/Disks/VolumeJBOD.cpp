@@ -168,18 +168,13 @@ ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<Reserva
                 {
                     disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
                     least_used_update_watch.restart();
-
-                    DiskWithSize disk = disks_by_size.top();
-                    reservation = try_reserve(disk.disk);
                 }
-                else
-                {
-                    DiskWithSize disk = disks_by_size.top();
-                    disks_by_size.pop();
 
-                    reservation = try_reserve(disk.disk);
-                    disks_by_size.push(disk);
-                }
+                DiskWithSize disk = disks_by_size.top();
+                disks_by_size.pop();
+
+                reservation = disk.reserve(try_reserve);
+                disks_by_size.push(disk);
             }
 
             return reservation;

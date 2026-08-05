@@ -35,6 +35,19 @@
                     </disks>
                 </volumes>
             </jbod_least_used>
+            <jbod_least_used_default_ttl>
+                <volumes>
+                    <disks>
+                        <disk>jbod1</disk>
+                        <disk>jbod2</disk>
+                        <disk>jbod3</disk>
+
+                        <load_balancing>least_used</load_balancing>
+                        <!-- least_used_ttl_ms is deliberately not set here, so the default
+                             (60000) applies and the cached queue is actually consulted. -->
+                    </disks>
+                </volumes>
+            </jbod_least_used_default_ttl>
         </policies>
     </storage_configuration>
 </clickhouse>
