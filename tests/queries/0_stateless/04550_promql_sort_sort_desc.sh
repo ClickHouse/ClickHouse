@@ -79,7 +79,10 @@ echo "-- or preserves an ordered right suffix"
 promql_client -q "vector(99) or sort_desc(up)"
 
 echo "-- or preserves the relative order within an unsorted side that has multiple rows"
-promql_client -q 'sort_desc(up{instance="host1"}) or (up{instance="host2"} or up{instance="host3"})'
+# max_threads is pinned here because the row order within the unsorted side comes from physical
+# join/block emission order (no ORDER BY, since neither `up{host2}` nor `up{host3}` carries a
+# `sort_key`), which the test's random settings otherwise could reorder run to run.
+promql_client -q 'sort_desc(up{instance="host1"}) or (up{instance="host2"} or up{instance="host3"})' --max_threads 1
 
 echo "-- sort_desc ordering does not survive a subquery and range function"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "
