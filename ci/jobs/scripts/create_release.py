@@ -216,6 +216,15 @@ class ReleaseInfo:
     # Whether this run creates a new release (tag/version-bump/changelog). False
     # when re-publishing artifacts for an already-released or out-of-order ref.
     create_new_release: bool = False
+    # Whether the release branch still needs its post-release version bump
+    # (patch releases only). True both when creating a new patch release and on
+    # a recovery whose branch tip has not yet been bumped past the recovered
+    # release -- the case where an interrupted run pushed the tag but never
+    # advanced the branch, which would otherwise pin the patch number forever
+    # (every later run recovers the same release and skips the bump). False once
+    # the branch has moved on, so a genuine recovery never rewrites a newer
+    # version backwards.
+    needs_branch_bump: bool = False
     changelog_pr: str = ""
     version_bump_pr: str = ""
     prs_merged: bool = False
@@ -430,6 +439,13 @@ class ReleaseInfo:
                 )
             recover = False
         self.create_new_release = not recover
+        # A patch release branch must receive its post-release version bump
+        # whenever its tip has not already advanced past this release -- both
+        # when creating and when recovering an interrupted run that pushed the
+        # tag but never bumped the branch. `newer_release_exists` is True only
+        # once the branch is ahead (the bump has landed); recovering then must
+        # not re-run the bump and clobber the newer version.
+        self.needs_branch_bump = release_type == "patch" and not newer_release_exists
         self.release_type = release_type
         return self
 
@@ -521,6 +537,20 @@ class ReleaseInfo:
                 version.githash = CHVersion.get_release_version().githash
             else:
                 version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
+                # Sanity check: a patch release branch must only ever move
+                # forward. Refuse to write a version whose release triple is
+                # older than the branch tip -- a bug that reset the version
+                # backwards would otherwise silently pin the patch number (see
+                # `needs_branch_bump`). Writing the identical version is fine:
+                # the `git diff --quiet` check below turns a rerun into a no-op,
+                # so only a strictly older target is rejected.
+                branch_current = CHVersion.get_release_version()
+                assert not version.is_older(branch_current), (
+                    f"BUG: refusing to write version [{version.string}] onto "
+                    f"branch [{self.release_branch}] whose tip already describes "
+                    f"[{branch_current.string}]; the branch version must never "
+                    f"move backwards"
+                )
             version.write()
             update_contributors(raise_error=True)
             cmd_commit_version_upd = (
