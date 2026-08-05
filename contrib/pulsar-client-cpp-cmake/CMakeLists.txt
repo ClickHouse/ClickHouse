@@ -53,6 +53,15 @@ list(REMOVE_ITEM SRCS "${LIBRARY_DIR}/lib/lz4/lz4.cc")
 list(REMOVE_ITEM SRCS "${LIBRARY_DIR}/lib/CompressionCodecLZ4.cc")
 list(APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/patched/CompressionCodecLZ4.cc")
 
+# The SSE4.2/PCLMUL CRC32C implementation is dispatched at runtime via cpuid
+# (crc32c_initialize), so it is safe to compile this single file with the
+# required target features even when the build target (e.g. the compat build)
+# does not enable them globally. Upstream pulsar-client-cpp passes the same
+# flags for x86_64.
+if (ARCH_AMD64)
+    set_source_files_properties("${LIBRARY_DIR}/lib/checksum/crc32c_sse42.cc" PROPERTIES COMPILE_OPTIONS "-msse4.2;-mpclmul")
+endif()
+
 # Make sure the protobuf sources are generated before any library source is compiled.
 set_property(SOURCE ${SRCS} APPEND PROPERTY OBJECT_DEPENDS "${PULSAR_GENERATED_DIR}/lib/PulsarApi.pb.h")
 
