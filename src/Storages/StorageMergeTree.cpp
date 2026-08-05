@@ -43,6 +43,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
+#include <Storages/MergeTree/ColumnIdMappingStore.h>
 #include <Storages/MergeTree/ColumnIdMappingUpdate.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -224,8 +225,9 @@ StorageMergeTree::StorageMergeTree(
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
-    loadColumnIdMappingFromDisk(LoadingStrictnessLevel::ATTACH <= mode);
-    reconcileColumnIdMappingWithMetadata();
+    column_id_mapping_store = std::make_unique<DiskColumnIdMappingStore>(*this, log.load());
+    loadColumnIdMapping(*this, LoadingStrictnessLevel::ATTACH <= mode);
+    reconcileColumnIdMappingWithMetadata(*this);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
@@ -497,7 +499,7 @@ void StorageMergeTree::alter(
     /// Gated in two cases: the ALTER activates the mapping through add/drop/rename commands, or it
     /// leaves `with_column_ids` persisted on a table that has no mapping -- the condition CREATE
     /// gates on, and the one that has `ColumnIdMappingUpdate` create the mapping at commit time.
-    if (!hasColumnIdMapping()
+    if (!hasActiveColumnIdMapping()
         && !local_context->getSettingsRef()[Setting::allow_experimental_column_ids])
     {
         if (column_id_plan.column_ids_active || column_id_plan.persists_column_id_settings)

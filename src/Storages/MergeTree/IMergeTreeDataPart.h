@@ -83,6 +83,17 @@ enum class DataPartRemovalState : uint8_t
     REMOVE_RETRY,
 };
 
+/// Where one column stream's marks live: which marks file, and which entry of each mark. A Wide part
+/// keeps a marks file per stream with one entry per mark; a Compact part one file per part with an
+/// entry per column or substream. Always naming the stream lets callers cache loaders by that name.
+struct ColumnMarksLocation
+{
+    String marks_stream_name;
+    size_t index_in_mark;
+    /// Width of the marks file: how many entries every mark holds.
+    size_t columns_in_mark;
+};
+
 /// Description of the data part.
 /// Warning: `IStorage` must outlive all its `IMergeTreeDataPart`s. Whenever you hold a
 ///          MergeTreeDataPartPtr you must also hold the corresponding StoragePtr.
@@ -172,9 +183,9 @@ public:
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
 
-    /// True when at least one of this part's columns has a non-empty `column_id`,
-    /// indicating the part was written with the column-IDs feature active.
-    bool hasActiveColumnIds() const;
+    /// True when at least one of this part's columns carries a `column_id` (stamped at write /
+    /// merge time), i.e. this part's files are named by column IDs.
+    bool hasStampedColumnIds() const;
 
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
     /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
@@ -245,6 +256,12 @@ public:
 
     /// Removes marks from cache for all columns in part.
     virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
+
+    /// Locate the marks of one of @column's streams; an empty @substream_path asks for the stream
+    /// carrying the column itself. @column must be this part's own slot (see tryGetColumnBySnapshotName)
+    /// -- streams are addressed by its stamped id. `nullopt` if the part keeps no marks for that stream.
+    virtual std::optional<ColumnMarksLocation> getColumnMarksLocation(
+        const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const = 0;
 
     /// Loads index marks for secondary indices and saves them into the index mark cache.
     void loadIndexMarksToCache(MarkCache * index_mark_cache) const;
@@ -837,6 +854,11 @@ protected:
 
     /// Calculate the size of all files required to read a specified subcolumn.
     virtual ColumnSize calculateSubcolumnSize(const NameAndTypePair & /*subcolumn*/) const { return {}; }
+
+    /// Fail closed before resolving a column's streams: on a part written with column IDs a column
+    /// without one would fall back to resolution by logical name, which binds a foreign or absent
+    /// file instead of reporting the miss.
+    void checkColumnIdIsStamped(const NameAndTypePair & column) const;
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 

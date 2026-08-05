@@ -342,7 +342,6 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
     LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
 
-    /// Key serialization and stream names by each part column's id so the disk-side keys (e.g. "1.cmrk2") match.
     NameSet requested(column_names.begin(), column_names.end());
     for (const auto & column : getColumns())
     {
@@ -355,20 +354,20 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
         serialization->enumerateStreams([&](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-            if (!stream_name)
+            auto marks_location = getColumnMarksLocation(column, subpath);
+            if (!marks_location)
                 return;
 
             loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
                 info_for_read,
                 mark_cache,
-                index_granularity_info.getMarksFilePath(*stream_name),
+                index_granularity_info.getMarksFilePath(marks_location->marks_stream_name),
                 index_granularity->getMarksCount(),
                 index_granularity_info,
                 /*save_marks_in_cache=*/ true,
                 read_settings,
                 /*load_marks_threadpool=*/ nullptr,
-                /*num_columns_in_mark=*/ 1,
+                marks_location->columns_in_mark,
                 context->getSettingsRef()[Setting::use_streaming_marks_compression]));
 
             loaders.back()->startAsyncLoad();
@@ -384,7 +383,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
     if (!mark_cache)
         return;
 
-    /// Same id-keyed resolution as loadMarksToCache, so the cache keys we evict match those insertion produced.
+    /// Same resolution as loadMarksToCache, so the cache keys we evict match those insertion produced.
     const auto & part_columns = getColumns();
     for (const auto & column : part_columns)
     {
@@ -394,15 +393,27 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
 
         serialization->enumerateStreams([&](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-            if (!stream_name)
+            auto marks_location = getColumnMarksLocation(column, subpath);
+            if (!marks_location)
                 return;
 
-            auto mark_path = index_granularity_info.getMarksFilePath(*stream_name);
+            auto mark_path = index_granularity_info.getMarksFilePath(marks_location->marks_stream_name);
             auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
             mark_cache->remove(key);
         });
     }
+}
+
+std::optional<ColumnMarksLocation> MergeTreeDataPartWide::getColumnMarksLocation(
+    const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const
+{
+    checkColumnIdIsStamped(column);
+
+    auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+    if (!stream_name)
+        return std::nullopt;
+
+    return ColumnMarksLocation{.marks_stream_name = std::move(*stream_name), .index_in_mark = 0, .columns_in_mark = 1};
 }
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const

@@ -572,226 +572,48 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     }
 }
 
-void MergeTreeData::loadColumnIdMappingFromDisk(bool attach)
+ColumnIdMappingStore & MergeTreeData::getColumnIdMappingStore()
 {
-    const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
-
-    const DiskPtr authoritative_disk = getColumnIdMappingDisk(getStoragePolicy());
-    std::unique_ptr<ReadBufferFromFileBase> mapping_buf;
-    if (!authoritative_disk->isBroken())
-        mapping_buf = authoritative_disk->readFileIfExists(column_ids_path, getReadSettings());
-
-    if (!mapping_buf)
-    {
-        if (attach
-            && (*getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Table {} has `serialization_info_version = 'with_column_ids'` but `{}` cannot be read "
-                "from disk `{}`. It cannot be rebuilt either: DROP + re-ADD of the same column name "
-                "makes on-disk files indistinguishable from their column ID alone. Restore the table "
-                "from backup, or put the file back on that disk by hand.",
-                getStorageID().getNameForLogs(), column_ids_path.string(), authoritative_disk->getName());
-        return;
-    }
-
-    auto loaded_mapping = ColumnIdMapping::deserialize(*mapping_buf);
-    skipWhitespaceIfAny(*mapping_buf);
-    assertEOF(*mapping_buf);
-
-    if (loaded_mapping.isActive())
-        checkColumnIdMappingCoversMetadata(loaded_mapping);
-    setColumnIdMapping(std::move(loaded_mapping));
-}
-
-void MergeTreeData::writeColumnIdMappingToDisk() const
-{
-    auto mapping = getColumnIdMapping();
-    if (!mapping)
-        return;
-    writeColumnIdMappingToDisk(*mapping);
-}
-
-void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const
-{
-    writeColumnIdMappingToDisk(mapping, getStoragePolicy());
-}
-
-DiskPtr MergeTreeData::getColumnIdMappingDisk(const StoragePolicyPtr & target_policy) const
-{
-    const auto & disks = target_policy->getDisks();
-    if (disks.empty())
+    if (!column_id_mapping_store)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Storage policy for table {} has no disks to hold `{}`",
-            getStorageID().getNameForLogs(), COLUMN_IDS_FILE_NAME);
-    return disks.front();
+            "Table {} has no column ID mapping store: its engine never installed one",
+            getStorageID().getNameForLogs());
+    return *column_id_mapping_store;
 }
 
-void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) const
+bool MergeTreeData::hasActiveColumnIdMapping() const
 {
-    const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
-    const auto column_ids_tmp_path = fs::path(relative_data_path) / (String(COLUMN_IDS_FILE_NAME) + ".tmp");
-
-    auto disk = getColumnIdMappingDisk(target_policy);
-    if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Cannot hold the authoritative `{}` for table {}: the policy's "
-            "first disk `{}` is read-only/write-once/broken.  A column-ID table "
-            "requires a writable authoritative disk; change the storage policy "
-            "so a writable disk comes first.",
-            COLUMN_IDS_FILE_NAME, getStorageID().getNameForLogs(), disk->getName());
-
-    /// Two-step atomic publish on the single authoritative disk: write to
-    /// <name>.tmp, fsync, then replace.  A crash between the two leaves either
-    /// the previous file intact or only the .tmp behind; readers never see a
-    /// torn final file.  One filesystem, so no cross-disk divergence is possible.
-    try
-    {
-        {
-            auto buf = disk->writeFile(column_ids_tmp_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
-            mapping.serialize(*buf);
-            buf->finalize();
-            if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-                buf->sync();
-        }
-        disk->replaceFile(column_ids_tmp_path, column_ids_path);
-    }
-    catch (...)
-    {
-        try
-        {
-            disk->removeFileIfExists(column_ids_tmp_path);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        throw;
-    }
-
-    /// Best-effort: drop any stale copy on the other disks (e.g. left by the old
-    /// multi-disk format) so exactly one authoritative copy exists.
-    for (const auto & other : target_policy->getDisks())
-    {
-        if (other->getName() == disk->getName())
-            continue;
-        if (other->isBroken() || other->isReadOnly() || other->isWriteOnce())
-            continue;
-        try
-        {
-            other->removeFileIfExists(column_ids_path);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to remove stale column ID mapping copy");
-        }
-    }
+    return getActiveColumnIdMapping() != nullptr;
 }
 
-void MergeTreeData::removeColumnIdMappingFromDisk() const
+ColumnIdMappingPtr MergeTreeData::getActiveColumnIdMapping() const
 {
-    const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
-    for (const auto & disk : getStoragePolicy()->getDisks())
-    {
-        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
-            continue;
-        try
-        {
-            disk->removeFileIfExists(column_ids_path);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to remove column ID mapping from disk");
-        }
-    }
-}
-
-void MergeTreeData::checkColumnIdMappingCoversMetadata(const ColumnIdMapping & mapping) const
-{
-    auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
-
-    /// Fail loud if metadata names a column the mapping does not cover.
-    /// This is the mapping-behind-schema window: `column_ids.json` was
-    /// not updated while `metadata.sql` already added the column.  We
-    /// cannot recover by scanning disk because DROP + re-ADD of the
-    /// same column name makes on-disk files indistinguishable from the
-    /// column ID alone — silent rebuild could mix the new column with
-    /// orphaned data from a previously-dropped column.
-    Names missing_from_mapping;
-    for (const auto & col : metadata_snapshot->getColumns().getAllPhysical())
-    {
-        if (!mapping.hasLogicalName(col.name))
-            missing_from_mapping.push_back(col.name);
-    }
-    if (!missing_from_mapping.empty())
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Column ID mapping for table {} is missing entries for column(s): {}. "
-            "This indicates a torn write of `column_ids.json` (mapping not "
-            "updated while `metadata.sql` already committed the schema change). "
-            "The mapping cannot be rebuilt safely because DROP + re-ADD of the "
-            "same column name makes on-disk files indistinguishable from their "
-            "column ID alone. Restore the table from backup or fix "
-            "`column_ids.json` manually.",
-            getStorageID().getNameForLogs(),
-            fmt::join(missing_from_mapping, ", "));
-}
-
-void MergeTreeData::reconcileColumnIdMappingWithMetadata()
-{
-    if (!hasColumnIdMapping())
-        return;
-
     auto mapping = getColumnIdMapping();
-    auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
-    auto metadata_columns = metadata_snapshot->getColumns().getAllPhysical();
+    if (mapping && mapping->isActive())
+        return mapping;
+    return nullptr;
+}
 
-    checkColumnIdMappingCoversMetadata(*mapping);
+ColumnIdMappingPtr MergeTreeData::getColumnIdMapping() const
+{
+    auto metadata = getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+    return metadata->column_id_mapping;
+}
 
-    /// Trim mapping entries whose logical name is no longer in metadata
-    /// (mapping-ahead-of-schema window from a crash between the mapping
-    /// write and the `metadata.sql` truncation).  Safe to recover from
-    /// because the dropped/renamed column already lost its on-disk
-    /// authority via the schema commit; the mapping entry is just dead
-    /// weight.
-    ColumnIdMapping reconciled = *mapping;
-    bool changed = false;
-    for (const auto & col_name : mapping->logicalNames())
-    {
-        if (!metadata_columns.tryGetByName(col_name))
-        {
-            reconciled.removeColumn(col_name);
-            changed = true;
-        }
-    }
+/// Read-modify-write on the live metadata, correct only because every metadata publish is
+/// serialized under the alter lock.
+void MergeTreeData::setColumnIdMapping(ColumnIdMapping mapping_)
+{
+    auto metadata = getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+    StorageInMemoryMetadata new_metadata = *metadata;
+    new_metadata.column_id_mapping = std::make_shared<const ColumnIdMapping>(std::move(mapping_));
+    setInMemoryMetadata(new_metadata);
+}
 
-    if (changed)
-        persistMapping(std::move(reconciled));
-
-    /// Two-phase rename transiently maps two logical names to one column ID, but the trim above
-    /// has already dropped the old name by now -- so a surviving duplicate is real corruption that
-    /// would silently let two SQL columns share one on-disk stream.
-    auto final_mapping = getColumnIdMapping();
-    if (final_mapping)
-    {
-        std::unordered_map<String, std::vector<String>> id_to_logicals;
-        for (const auto & [logical, column_id] : final_mapping->getLogicalToId())
-            id_to_logicals[column_id].push_back(logical);
-
-        for (const auto & [column_id, logicals] : id_to_logicals)
-        {
-            if (logicals.size() > 1)
-                throw Exception(
-                    ErrorCodes::CORRUPTED_DATA,
-                    "Column ID mapping for table {} has multiple logical columns "
-                    "mapped to the same column ID '{}': {}.  All of them are "
-                    "still present in the schema, which indicates a corrupted "
-                    "`column_ids.json` (not a transient two-phase-rename state). "
-                    "Restore from backup or repair the file manually.",
-                    getStorageID().getNameForLogs(),
-                    column_id,
-                    fmt::join(logicals, ", "));
-        }
-    }
+void MergeTreeData::persistMapping(ColumnIdMapping mapping)
+{
+    getColumnIdMappingStore().store(mapping, getStoragePolicy());
+    setColumnIdMapping(std::move(mapping));
 }
 
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
@@ -5085,7 +4907,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             return c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN || c.type == AlterCommand::ADD_COLUMN;
         });
-        bool column_ids_active = hasColumnIdMapping() || (settings_enable_column_ids && has_compat_alter);
+        bool column_ids_active = hasActiveColumnIdMapping() || (settings_enable_column_ids && has_compat_alter);
 
         auto mutation_commands = commands.getMutationCommands(
             new_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
@@ -5103,7 +4925,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         return c.type == AlterCommand::MODIFY_SETTING || c.type == AlterCommand::RESET_SETTING;
     });
-    if (hasColumnIdMapping() && has_settings_commands)
+    if (hasActiveColumnIdMapping() && has_settings_commands)
     {
         /// Recompute effective settings from defaults, the way `changeSettings`
         /// does -- applying onto the current settings would let `RESET SETTING`
@@ -6161,7 +5983,7 @@ void MergeTreeData::tryRevertSettings(const ASTPtr & old_settings, AlterLockHold
 bool MergeTreeData::columnIdActivationPending() const
 {
     return (*getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
-        && !hasColumnIdMapping();
+        && !hasActiveColumnIdMapping();
 }
 
 MergeTreeData::SettingsChangeResult MergeTreeData::changeSettingsImpl(

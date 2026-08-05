@@ -1,0 +1,8 @@
+tuple_id_non_identity	1
+tuple_root_marks_null	1	1	1	1
+wide_late_column_marks_null	1	1	1
+row_exists_in_part	1
+row_exists_prewarm_ok
+row_exists_data	1	10
+row_exists_data	3	30
+row_exists_sibling_marks	1	1

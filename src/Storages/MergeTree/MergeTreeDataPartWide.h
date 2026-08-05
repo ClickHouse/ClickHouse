@@ -44,6 +44,9 @@ public:
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
     void removeMarksFromCache(MarkCache * mark_cache) const override;
 
+    std::optional<ColumnMarksLocation> getColumnMarksLocation(
+        const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const override;
+
     static void loadIndexGranularityImpl(
         MergeTreeIndexGranularityPtr & index_granularity_ptr,
         MergeTreeIndexGranularityInfo & index_granularity_info_,

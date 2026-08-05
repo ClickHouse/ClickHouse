@@ -13,7 +13,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
@@ -41,7 +40,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 class MergeTreeIndexSource final : public ISource, WithContext
@@ -79,15 +77,9 @@ protected:
         const auto & part = data_parts[part_index];
         const auto & index_granularity = part->index_granularity;
 
-        std::shared_ptr<MergeTreeMarksLoader> marks_loader;
-        if (with_marks && isCompactPart(part))
-        {
-            marks_loader = createMarksLoader(
-                part,
-                MergeTreeDataPartCompact::DATA_FILE_NAME,
-                part->index_granularity_info.mark_type.with_substreams ? part->getColumnsSubstreams().getTotalSubstreams()
-                                                                       : part->getColumns().size());
-        }
+        /// Both caches below describe one part, so drop what the previous part left.
+        part_streams_by_header_name.reset();
+        marks_loaders.clear();
 
         size_t num_columns = header->columns();
         size_t num_rows = index_granularity->getMarksCount();
@@ -166,7 +158,7 @@ protected:
             }
             else if (auto [first, second] = Nested::splitName(column_name, true); with_marks && second == "mark")
             {
-                result_columns[pos] = fillMarks(part, marks_loader, *column_type, first);
+                result_columns[pos] = fillMarks(part, *column_type, first);
             }
             else
             {
@@ -198,93 +190,67 @@ private:
             local_context->getSettingsRef()[Setting::use_streaming_marks_compression]);
     }
 
-    ColumnPtr fillMarks(
-        MergeTreeDataPartPtr part,
-        std::shared_ptr<MergeTreeMarksLoader> marks_loader,
-        const IDataType & data_type,
-        const String & column_name)
+    /// A stream as the part addresses it -- by the column's stamped ID.
+    struct PartStream
     {
-        size_t col_idx = 0;
-        bool has_marks_in_part = false;
+        NameAndTypePair column_in_part;
+        ISerialization::SubstreamPath substream_path;
+    };
+
+    /// An escaped stream name as the header spells it: from the source table's current logical
+    /// column names (see TableFunctionMergeTreeIndex), which is all `fillMarks` is handed.
+    using HeaderStreamName = String;
+
+    using PartStreamByHeaderName = std::unordered_map<HeaderStreamName, PartStream>;
+
+    PartStreamByHeaderName buildPartStreamsByHeaderName(const MergeTreeDataPartPtr & part) const
+    {
+        PartStreamByHeaderName streams;
+        ISerialization::StreamFileNameSettings stream_file_name_settings(*part->storage.getSettings());
+
+        for (const auto & column : source_metadata->getColumns().getAllPhysical())
+        {
+            auto column_in_part = part->tryGetColumnBySnapshotName(column.name, source_metadata);
+            if (!column_in_part)
+                continue;
+
+            /// The header also asks for the stream carrying the column itself, which for some types
+            /// (e.g. Tuple) is not among the substreams. Insert it first so that it wins over an
+            /// equally named substream, matching how the header was built.
+            streams.emplace(escapeForFileName(column.name), PartStream{*column_in_part, {}});
+
+            auto serialization = part->tryGetSerialization(column_in_part->getStorageKey());
+            if (!serialization)
+                continue;
+
+            serialization->enumerateStreams([&](const auto & substream_path)
+            {
+                auto stream_name = ISerialization::getFileNameForStream(column.name, substream_path, stream_file_name_settings);
+                streams.emplace(std::move(stream_name), PartStream{*column_in_part, substream_path});
+            });
+        }
+
+        return streams;
+    }
+
+    ColumnPtr fillMarks(const MergeTreeDataPartPtr & part, const IDataType & data_type, const HeaderStreamName & header_stream_name)
+    {
         size_t num_rows = part->index_granularity->getMarksCount();
 
-        const auto unescaped_name = unescapeForFileName(column_name);
+        if (!part_streams_by_header_name)
+            part_streams_by_header_name = buildPartStreamsByHeaderName(part);
 
-        /// An ID absent from the part means the column is missing here (NULL marks) -- never fall
-        /// back to a by-name lookup, which could bind a same-named orphan stream left by a DROP +
-        /// re-ADD. A name outside the mapping (non-ID table, or a virtual/helper column) keeps the
-        /// traditional by-name resolution.
-        const auto column_id_mapping = source_metadata->getActiveColumnIdMapping();
-        std::optional<ColumnId> column_id;
-        if (column_id_mapping)
-            column_id = column_id_mapping->tryGetColumnId(unescaped_name);
+        std::optional<ColumnMarksLocation> marks_location;
+        if (auto it = part_streams_by_header_name->find(header_stream_name); it != part_streams_by_header_name->end())
+            marks_location = part->getColumnMarksLocation(it->second.column_in_part, it->second.substream_path);
 
-        if (isWidePart(part))
-        {
-            std::optional<String> stream_name;
-            if (column_id)
-            {
-                if (auto column_in_part = part->tryGetColumn(*column_id))
-                    stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-                        *column_in_part, {}, ".bin", part->checksums, part->storage.getSettings());
-            }
-            else
-                stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums);
+        /// The part stores nothing for this stream, so the column has no marks here.
+        if (!marks_location)
+            return data_type.createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
 
-            if (stream_name)
-            {
-                col_idx = 0;
-                has_marks_in_part = true;
-                marks_loader = createMarksLoader(part, *stream_name, /*num_columns=*/ 1);
-            }
-        }
-        else if (isCompactPart(part))
-        {
-            if (part->index_granularity_info.mark_type.with_substreams)
-            {
-                /// column_name is a substream name. Resolve the part column by ID (id-active) and
-                /// locate its ID-keyed substream; a streamless-root column (e.g. a Tuple) has no
-                /// matching substream, so has_marks_in_part stays false (NULL marks). On non-id
-                /// parts the substream map is keyed by the logical name, so look it up by name.
-                if (column_id)
-                {
-                    auto column_position = part->getColumnPosition(*column_id);
-                    auto column_in_part = part->tryGetColumn(*column_id);
-                    if (column_position && column_in_part)
-                    {
-                        if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(
-                                *column_position, *column_in_part, {}, part->storage.getSettings()))
-                        {
-                            col_idx = *substream_position;
-                            has_marks_in_part = true;
-                        }
-                    }
-                }
-                else if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
-                {
-                    col_idx = *substream_position;
-                    has_marks_in_part = true;
-                }
-            }
-            else
-            {
-                if (auto column_position = part->getColumnPosition(column_id.value_or(ColumnId{unescaped_name})))
-                {
-                    col_idx = *column_position;
-                    has_marks_in_part = true;
-                }
-            }
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parts with type {} are not supported", part->getTypeName());
-        }
-
-        if (!has_marks_in_part)
-        {
-            auto column = data_type.createColumnConstWithDefaultValue(num_rows);
-            return column->convertToFullColumnIfConst();
-        }
+        auto & marks_loader = marks_loaders[marks_location->marks_stream_name];
+        if (!marks_loader)
+            marks_loader = createMarksLoader(part, marks_location->marks_stream_name, marks_location->columns_in_mark);
 
         auto compressed = ColumnUInt64::create(num_rows);
         auto uncompressed = ColumnUInt64::create(num_rows);
@@ -296,7 +262,7 @@ private:
 
         for (size_t i = 0; i < num_rows; ++i)
         {
-            auto mark = marks_getter->getMark(i, col_idx);
+            auto mark = marks_getter->getMark(i, marks_location->index_in_mark);
 
             compressed_data[i] = mark.offset_in_compressed_file;
             uncompressed_data[i] = mark.offset_in_decompressed_block;
@@ -314,11 +280,15 @@ private:
     MergeTreeData::DataPartsVector data_parts;
     bool with_marks;
     /// Source table's live metadata, captured once at pipeline init (this source holds no
-    /// StorageSnapshot of the source table). fillMarks resolves a current logical name to its
-    /// stable ID through its active column-ID mapping, then locates the part column by that ID.
+    /// StorageSnapshot of the source table). It carries the current logical names the header is built
+    /// from, and resolves them to a part's columns by their stable IDs.
     StorageMetadataHandle source_metadata;
 
     size_t part_index = 0;
+
+    std::optional<PartStreamByHeaderName> part_streams_by_header_name;
+    /// Keyed by marks stream name, so a Wide part gets a loader per column and a Compact part one.
+    std::unordered_map<String, std::shared_ptr<MergeTreeMarksLoader>> marks_loaders;
 };
 
 const ColumnWithTypeAndName StorageMergeTreeIndex::part_name_column{std::make_shared<DataTypeString>(), "part_name"};

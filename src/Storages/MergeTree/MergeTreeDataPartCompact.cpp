@@ -203,6 +203,11 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     }
 }
 
+size_t MergeTreeDataPartCompact::getNumColumnsInMark() const
+{
+    return index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size();
+}
+
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
     if (columns.empty())
@@ -211,7 +216,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     loadIndexGranularityImpl(
         index_granularity,
         index_granularity_info,
-        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
+        getNumColumnsInMark(),
         getDataPartStorage(),
         *storage.getSettings());
 }
@@ -236,7 +241,7 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         /*save_marks_in_cache=*/ true,
         context->getReadSettings(),
         /*load_marks_threadpool_=*/ nullptr,
-        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
+        getNumColumnsInMark(),
         context->getSettingsRef()[Setting::use_streaming_marks_compression]);
 
     loader.loadMarks();
@@ -250,6 +255,34 @@ void MergeTreeDataPartCompact::removeMarksFromCache(MarkCache * mark_cache) cons
     auto mark_path = index_granularity_info.getMarksFilePath(DATA_FILE_NAME);
     auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
     mark_cache->remove(key);
+}
+
+std::optional<ColumnMarksLocation> MergeTreeDataPartCompact::getColumnMarksLocation(
+    const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const
+{
+    checkColumnIdIsStamped(column);
+
+    auto column_position = getColumnPosition(column.getColumnId());
+    if (!column_position)
+        return std::nullopt;
+
+    if (!index_granularity_info.mark_type.with_substreams)
+    {
+        /// One mark per column, so only the stream carrying the column itself has marks here.
+        if (!substream_path.empty())
+            return std::nullopt;
+
+        return ColumnMarksLocation{
+            .marks_stream_name = DATA_FILE_NAME, .index_in_mark = *column_position, .columns_in_mark = getNumColumnsInMark()};
+    }
+
+    auto substream_position = columns_substreams.tryGetSubstreamPosition(
+        *column_position, column, substream_path, storage.getSettings());
+    if (!substream_position)
+        return std::nullopt;
+
+    return ColumnMarksLocation{
+        .marks_stream_name = DATA_FILE_NAME, .index_in_mark = *substream_position, .columns_in_mark = getNumColumnsInMark()};
 }
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const

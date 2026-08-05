@@ -2063,7 +2063,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 /// rename leaves `n.size0` in place and reads then look for a `m.size0` that was
                 /// never written.
                 if (from_nested_table_name != to_nested_table_name
-                    && !(merge_tree && merge_tree->hasColumnIdMapping()))
+                    && !(merge_tree && merge_tree->hasActiveColumnIdMapping()))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
             }

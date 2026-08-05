@@ -1205,8 +1205,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         && (*storage->getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
     {
         auto column_id_mapping = ColumnIdMapping::createIdentity(metadata.getColumns().getAllPhysical());
-        storage->setColumnIdMapping(std::move(column_id_mapping));
-        storage->writeColumnIdMappingToDisk();
+        storage->persistMapping(std::move(column_id_mapping));
     }
 
     return storage;
