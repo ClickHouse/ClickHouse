@@ -1034,10 +1034,10 @@ def test_function_over_time():
     do_query_test(
         "stddev_over_time(large_magnitude[20s])[20s:10s]",
         110,
-        '{"resultType": "matrix", "result": [{"metric": {"__name__": "large_magnitude"}, "values": [[100, "0"], [110, "0.5"]]}]}',
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[100, "0"], [110, "0.5"]]}]}',
         [
             [
-                "[('__name__','large_magnitude')]",
+                "[]",
                 "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.5)]",
             ]
         ],
@@ -1047,10 +1047,10 @@ def test_function_over_time():
     do_query_test(
         "stdvar_over_time(large_magnitude[20s])[20s:10s]",
         110,
-        '{"resultType": "matrix", "result": [{"metric": {"__name__": "large_magnitude"}, "values": [[100, "0"], [110, "0.25"]]}]}',
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[100, "0"], [110, "0.25"]]}]}',
         [
             [
-                "[('__name__','large_magnitude')]",
+                "[]",
                 "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.25)]",
             ]
         ],

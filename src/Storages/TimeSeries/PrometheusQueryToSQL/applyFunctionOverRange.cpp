@@ -96,13 +96,13 @@ namespace
             {"stddev_over_time",
              {
                  "timeSeriesStddevToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
              }},
 
             {"stdvar_over_time",
              {
                  "timeSeriesStdvarToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
              }},
 
             {"changes",
