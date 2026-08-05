@@ -6,6 +6,9 @@
 # merge_tree_compact_parts_min_granules_to_multibuffer_read) is randomized, and a fast enough
 # combination makes the unpatched read finish under the assertions below, which stops them
 # discriminating. max_block_size is randomized too, but every query that depends on it sets it.
+# The text arm additionally depends on use_skip_indexes_on_data_read and
+# query_plan_direct_read_from_text_index, which are randomized too; those it pins per query,
+# because each one on its own makes that assertion pass with the fix reverted.
 # no-random-merge-tree-settings: the read must go through a Compact part with
 # index_granularity = 1, and both that and min_bytes_for_wide_part are randomized. Redundant
 # today, since no-random-settings already disables the merge-tree randomizer, but kept so the
@@ -40,9 +43,10 @@ WHERE database = currentDatabase() AND table = 't_compact_read_cancel' AND activ
 
 read_query="SELECT count(), sum(length(a)+length(b)+length(c)+length(d)+length(e)+length(f)+length(g)+length(h)+length(i)) FROM t_compact_read_cancel"
 
-# Only readRows() appends this diagnostic, so its presence proves the query stopped inside the
-# block read rather than after it. The wall clock is not asserted: it depends on the machine,
-# while the interrupt site does not.
+# This diagnostic is appended by MergeTreeReadersChain::read, whose try covers only the in-block
+# startReadingChain call, so its presence proves the query stopped inside the block read rather
+# than after it. The wall clock is not asserted: it depends on the machine, while the interrupt
+# site does not.
 inside_part_read() {
     grep -qF 'While reading part' "$1" && echo 'inside the part read' || echo "not interrupted inside the part read: $(head -c 400 "$1")"
 }
@@ -112,3 +116,58 @@ WHERE event_date >= yesterday()
   AND message LIKE 'Enqueueing%for check%'"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_compact_read_cancel SYNC"
+
+# The text index reader has the same unchecked per-mark loop, and it is a separate reader: the
+# compact reader's check cannot fire for a query that reads no physical column, because such a
+# main reader is left out of the readers chain entirely.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_text_read_cancel SYNC"
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE t_text_read_cancel (k UInt64, s String, INDEX idx_s s TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000
+"
+
+${CLICKHOUSE_CLIENT} \
+    --max_block_size 400000 --max_insert_block_size 400000 \
+    --min_insert_block_size_rows 0 --min_insert_block_size_bytes 0 \
+    -q "INSERT INTO t_text_read_cancel
+        SELECT number, concat('tok', toString(number % 1000), ' filler text here') FROM numbers(400000)"
+
+${CLICKHOUSE_CLIENT} -q "
+SELECT 'text part type', part_type FROM system.parts
+WHERE database = currentDatabase() AND table = 't_text_read_cancel' AND active"
+
+# Every row carries 'filler', so no mark is pruned and the walk covers all 400k of them. Each
+# extra predicate adds a virtual column whose posting list is materialized per mark, which is what
+# makes one block's walk long enough to measure.
+text_pred="1"
+for i in $(seq 1 30); do
+    text_pred="$text_pred AND hasAnyTokens(s, ['filler', 'tok$i'])"
+done
+text_query="SELECT count() FROM t_text_read_cancel WHERE $text_pred"
+
+# Assert the text index is what serves the query: if it silently fell back to a full scan the
+# reader under test would never run.
+${CLICKHOUSE_CLIENT} --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 -q "
+SELECT 'text index used', count() > 0 FROM (EXPLAIN indexes = 1 $text_query) WHERE explain ILIKE '%Name: idx_s%'"
+
+# Both settings are pinned per query because both are randomized and each one silently disarms the
+# assertion below.
+# use_skip_indexes_on_data_read = 0: with it enabled a MergeTreeReaderIndex is placed ahead of the
+# text reader in the chain, so the text reader is driven by continueReadingChain, which sits
+# outside the try that appends the token. With it disabled the text reader is the first reader and
+# the token reports its interrupt site.
+# query_plan_direct_read_from_text_index = 1: with it disabled the text reader is not used at all,
+# the predicate is evaluated over the physical column, and the token then comes from the compact
+# reader's own check, so the assertion would pass with the text-index check reverted.
+text_err="${CLICKHOUSE_TMP}/04746_text_err.txt"
+${CLICKHOUSE_CLIENT} --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
+    --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 \
+    --max_execution_time 1 --timeout_overflow_mode throw \
+    -q "$text_query" >/dev/null 2>"$text_err"
+echo -n 'text timeout observed '
+inside_part_read "$text_err"
+rm -f "$text_err"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_text_read_cancel SYNC"

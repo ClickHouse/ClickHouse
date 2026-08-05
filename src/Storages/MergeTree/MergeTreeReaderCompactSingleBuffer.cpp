@@ -22,7 +22,7 @@ namespace
 {
 
 /// A cancelled or timed-out query says nothing about the part's health, so such an exception must
-/// not reach reportBroken().
+/// not reach reportBroken.
 bool isQueryCancellation(std::exception_ptr exception_ptr)
 {
     try
@@ -70,7 +70,7 @@ try
     while (read_rows < max_rows_to_read)
     {
         /// Throws QUERY_WAS_CANCELLED on a cancelled query and TIMEOUT_EXCEEDED past
-        /// max_execution_time in throw mode; cheap (a flag plus an elapsed-timer read).
+        /// max_execution_time in throw mode.
         if (query_status)
             query_status->checkTimeLimit();
 
