@@ -5,6 +5,7 @@ import pytest
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -71,49 +72,90 @@ def wait_full_consensus_mode(nodes, expected, resend_node, resend_cmd):
         assert get_full_consensus_mode(node) == expected
 
 
-def test_grace_period_not_applied_to_a_down_member(started_cluster):
-    # The grace period only covers a member that is alive but failing to sync.
-    # A member that stopped responding cannot catch up while it is down, so it
-    # must be excluded after the usual exclusion window instead of holding the
-    # commit for the whole grace period.
+BACKPRESSURE_MAX_HOLD_MS = 3000
+STALE_LOG_GAP = 100
+
+
+def wait_for_log(node, message, timeout=60):
+    for _ in range(timeout):
+        if node.contains_in_log(message):
+            return
+        time.sleep(1)
+    raise AssertionError(f"{node.name} did not log {message!r} within {timeout} s")
+
+
+def test_backpressure_not_applied_to_a_down_member(started_cluster):
+    # The leader only waits for a member that can actually catch up. A member
+    # that stopped responding cannot, so waiting for it would stall the whole
+    # cluster for nothing.
     zk = None
     try:
         wait_nodes()
 
-        grace_period_ms = 3000
         for node in [node1, node2, node3]:
             conf = keeper_utils.send_4lw_cmd(cluster, node, cmd="conf")
             assert (
-                f"full_consensus_lagging_member_grace_period_ms={grace_period_ms}"
+                f"slow_member_backpressure_max_hold_ms={BACKPRESSURE_MAX_HOLD_MS}"
                 in conf
             )
 
         leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
         followers = [node for node in [node1, node2, node3] if node != leader]
 
-        keeper_utils.send_4lw_cmd(cluster, leader, cmd="fcon")
-        wait_full_consensus_mode([node1, node2, node3], 1, leader, "fcon")
-
         zk = get_fake_zk(leader.name)
         followers[1].stop_clickhouse()
 
+        # Write more than `stale_log_gap` entries, so that the stopped member
+        # is far enough behind to be waited for if it were eligible.
         started_at = time.monotonic()
-        zk.create("/test_grace_period_down_member", b"value")
+        for i in range(STALE_LOG_GAP * 2):
+            zk.create(f"/test_backpressure_down_member_{i}", b"value")
         elapsed_ms = (time.monotonic() - started_at) * 1000
-        assert zk.get("/test_grace_period_down_member")[0] == b"value"
-        # The exclusion window is `full_consensus_leader_limit` (4) heartbeats,
-        # i.e. ~2 s here, and the point is only that it is not the grace period
-        # on top of that. The bound has to stay below operation_timeout_ms,
-        # otherwise the write fails before this can be checked.
-        assert elapsed_ms < 2000 + grace_period_ms, elapsed_ms
+
+        # Nowhere near the hold time per write: nothing was ever held.
+        assert elapsed_ms < BACKPRESSURE_MAX_HOLD_MS, elapsed_ms
+        assert not leader.contains_in_log("hold the commit index for it")
 
         followers[1].start_clickhouse()
         wait_nodes()
     finally:
+        destroy_zk_client(zk)
+
+
+def test_backpressure_holds_commit_for_lagging_member(started_cluster):
+    # A member that answers heartbeats but replicates slowly is the case the
+    # backpressure exists for: the leader must slow down to its speed instead
+    # of leaving it behind until it needs a snapshot.
+    zk = None
+    try:
+        wait_nodes()
+
+        leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+        followers = [node for node in [node1, node2, node3] if node != leader]
+        lagging = followers[1]
+
+        with PartitionManager() as pm:
+            # Large enough to fall behind, small enough to keep answering
+            # heartbeats within `full_consensus_leader_limit` (4) heartbeats.
+            pm.add_network_delay(lagging, 400)
+
+            zk = get_fake_zk(leader.name)
+            for i in range(STALE_LOG_GAP * 5):
+                zk.create(f"/test_backpressure_lagging_{i}", b"value")
+
+            wait_for_log(leader, "hold the commit index for it")
+
+        # Once the delay is gone the member must catch up and be released,
+        # rather than being left behind to recover from a snapshot.
+        wait_for_log(leader, "stop holding the commit index for it")
+
+        zk_lagging = get_fake_zk(lagging.name)
         try:
-            keeper_utils.send_4lw_cmd(cluster, node1, cmd="fcof")
-        except:
-            pass
+            last = STALE_LOG_GAP * 5 - 1
+            assert zk_lagging.exists(f"/test_backpressure_lagging_{last}") is not None
+        finally:
+            destroy_zk_client(zk_lagging)
+    finally:
         destroy_zk_client(zk)
 
 

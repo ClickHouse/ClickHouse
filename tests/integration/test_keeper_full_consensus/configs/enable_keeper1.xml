@@ -13,7 +13,8 @@
             <session_timeout_ms>30000</session_timeout_ms>
             <snapshot_distance>75</snapshot_distance>
             <raft_logs_level>trace</raft_logs_level>
-            <full_consensus_lagging_member_grace_period_ms>3000</full_consensus_lagging_member_grace_period_ms>
+            <slow_member_backpressure_max_hold_ms>3000</slow_member_backpressure_max_hold_ms>
+            <stale_log_gap>100</stale_log_gap>
         </coordination_settings>
 
         <raft_configuration>

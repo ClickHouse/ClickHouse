@@ -93,7 +93,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
-    extern const CoordinationSettingsMilliseconds full_consensus_lagging_member_grace_period_ms;
+    extern const CoordinationSettingsMilliseconds slow_member_backpressure_max_hold_ms;
     extern const CoordinationSettingsMilliseconds session_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
@@ -596,19 +596,18 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
         "nuraft_append_entries_backward_probe_throttle_threshold",
         log);
-    params.full_consensus_lagging_member_grace_period_ = getValueOrMaxInt32AndLogWarning(
-        coordination_settings[CoordinationSetting::full_consensus_lagging_member_grace_period_ms].totalMilliseconds(),
-        "full_consensus_lagging_member_grace_period_ms",
+    params.slow_member_backpressure_max_hold_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::slow_member_backpressure_max_hold_ms].totalMilliseconds(),
+        "slow_member_backpressure_max_hold_ms",
         log);
 
-    if (params.full_consensus_lagging_member_grace_period_ >= params.client_req_timeout_)
+    if (params.slow_member_backpressure_max_hold_ >= params.client_req_timeout_)
         LOG_WARNING(
             log,
-            "full_consensus_lagging_member_grace_period_ms ({}) is greater than or equal to operation_timeout_ms ({}). "
-            "While full consensus mode is on and a member is failing to sync, no write can be committed for the grace "
-            "period, so clients will see operation timeouts, and idle sessions expire once the grace period exceeds "
-            "session_timeout_ms ({}).",
-            params.full_consensus_lagging_member_grace_period_,
+            "slow_member_backpressure_max_hold_ms ({}) is greater than or equal to operation_timeout_ms ({}). "
+            "No write can be committed while the leader is waiting for a member that fell behind, so clients will "
+            "see operation timeouts, and idle sessions expire once the wait exceeds session_timeout_ms ({}).",
+            params.slow_member_backpressure_max_hold_,
             params.client_req_timeout_,
             coordination_settings[CoordinationSetting::session_timeout_ms].totalMilliseconds());
 
