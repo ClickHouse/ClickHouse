@@ -128,7 +128,7 @@ def setup_build_caches_env(info):
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
+        os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
@@ -323,7 +323,7 @@ def main():
         # the compiler during configuration. Non-fatal: build can proceed without it.
         if not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell("sccache stats", "sccache --show-stats", verbose=True)
         cmake_result_index = len(results)
         results.append(
             Result.from_commands_run(
@@ -441,7 +441,7 @@ def main():
             else:
                 results.append(retry_cmake)
 
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell("sccache stats", "sccache --show-stats", verbose=True)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
