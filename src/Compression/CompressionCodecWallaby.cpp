@@ -1,0 +1,881 @@
+#include <Compression/CompressionFactory.h>
+#include <Compression/CompressionInfo.h>
+#include <Compression/FFOR.h>
+#include <Compression/ICompressionCodec.h>
+#include <Compression/registerCompressionCodecs.h>
+#include <Common/BitHelpers.h>
+#include <Common/SipHash.h>
+#include <DataTypes/IDataType.h>
+#include <IO/BitHelpers.h>
+#include <Parsers/IAST.h>
+#include <base/unaligned.h>
+
+#include <bit>
+#include <cmath>
+#include <cstring>
+
+namespace DB
+{
+
+/** Wallaby codec: adaptive lossless compression for floating-point time series.
+ *
+ * The codec splits the input into vectors of up to 1024 values and picks the cheapest of five
+ * encodings per vector, combining the strengths of two codec families:
+ *   - integerization with Frame-of-Reference or delta packing (the family of ALP,
+ *     https://ir.cwi.nl/pub/33334) for values that originate from decimals,
+ *   - XOR compression against a window of recent values (the family of Gorilla,
+ *     https://doi.org/10.14778/2824032.2824078, and Chimp128,
+ *     https://doi.org/10.14778/3551793.3551852) for everything else.
+ *
+ * Unlike ALP, the integerized values can be packed as zigzag deltas, which is much smaller on
+ * smooth series whose neighboring values are close while the overall range is wide.
+ * Unlike the streaming XOR codecs, whole-vector runs collapse into a constant vector,
+ * and the XOR reference is picked from a ring of 32 recent values with an explicit index.
+ *
+ * Compressed payload layout (after the generic codec header):
+ *
+ *   u8  version                  (currently 1)
+ *   u8  float_width              (4 or 8)
+ *   u32 uncompressed byte size   (little endian, for validation)
+ *
+ * Then a sequence of vectors, each covering count = min(1024, values_remaining) values.
+ * Every vector starts with a u8 mode:
+ *
+ *   mode 0 CONST:         float_width bytes; all count values equal it bitwise.
+ *   mode 1 DECIMAL_FOR:   u8 alpha, u8 bits, Int64/Int32 base (LE), u16 exception_count,
+ *                         bits * 1024 / 8 bytes of FFOR-packed (q[i] - base) lanes,
+ *                         exception_count * { u16 position, float_width raw value }.
+ *   mode 2 DECIMAL_DELTA: u8 alpha, u8 bits, Int64/Int32 first_q (LE), u16 exception_count,
+ *                         bits * 1024 / 8 bytes of FFOR-packed zigzag(q[i] - q[i-1]) lanes
+ *                         (lane 0 is zero), exceptions as above.
+ *   mode 3 XOR:           u32 payload byte length (LE), then a bitstream described below.
+ *   mode 4 RAW:           count * float_width bytes verbatim.
+ *
+ * After the last vector, uncompressed_size % float_width trailing bytes are stored verbatim.
+ *
+ * DECIMAL modes reconstruct v[i] = Float(Float64(q[i]) / 10^alpha) with q[i] being
+ * base + unpacked[i] for FOR, or the running sum of un-zigzagged deltas starting at first_q
+ * for DELTA. The encoder verifies the round trip of every value bitwise and stores values that
+ * do not survive it as exceptions, patched after reconstruction, so the compression is lossless
+ * independently of any floating-point subtleties. Partial vectors are padded during packing;
+ * the decoder unpacks all 1024 lanes and uses the first count of them.
+ *
+ * XOR bitstream for count values:
+ *   - the first value is written raw (float_width * 8 bits);
+ *   - for each following value, one bit selects between a run and a single value:
+ *     1: run; 10 bits of length L in [1, 1023]: the previous value repeats L more times;
+ *     0: single value, followed by a 2-bit branch tag:
+ *        00 EQUAL:       5-bit ring index; the value equals ring[index];
+ *        01 XOR_PREV:    3-bit leading-zero class, exact trailing-zero count
+ *                        (6 bits for Float64, 5 for Float32), center bits;
+ *                        the reference is the most recently inserted ring value;
+ *        10 XOR_WINDOW:  5-bit ring index, then class, trailing count and center bits
+ *                        with ring[index] as the reference;
+ *        11 RAW:         float_width * 8 bits.
+ *        center = (value XOR reference) >> trailing, of
+ *        (width - lead_class_value - trailing) bits.
+ *   The ring holds the 32 most recent single values (all four branches insert, runs do not),
+ *   indexed by absolute slot; both sides start from a zeroed ring, so indices into slots that
+ *   were not filled yet are well-defined.
+ */
+class CompressionCodecWallaby final : public ICompressionCodec
+{
+public:
+    explicit CompressionCodecWallaby(UInt8 float_width_);
+
+    uint8_t getMethodByte() const override;
+    void updateHash(SipHash & hash) const override;
+
+protected:
+    UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+
+    bool isCompression() const override { return true; }
+    bool isGenericCompression() const override { return false; }
+    bool isFloatingPointTimeSeriesCodec() const override { return true; }
+    bool isExperimental() const override { return true; }
+    String getDescription() const override;
+
+private:
+    UInt8 float_width;
+};
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+constexpr UInt8 WALLABY_CODEC_VERSION = 1;
+
+/// Codec header: version (1) + float width (1) + uncompressed byte size (4).
+constexpr UInt32 WALLABY_HEADER_SIZE = 2 * sizeof(UInt8) + sizeof(UInt32);
+
+constexpr UInt32 WALLABY_VECTOR_VALUES = Compression::FFOR::DEFAULT_VALUES;
+
+constexpr UInt32 WALLABY_RING_SIZE = 32;
+constexpr UInt8 WALLABY_RING_INDEX_BITS = 5;
+static_assert(1u << WALLABY_RING_INDEX_BITS == WALLABY_RING_SIZE);
+
+constexpr UInt8 WALLABY_RUN_LENGTH_BITS = 10;
+static_assert((1u << WALLABY_RUN_LENGTH_BITS) == WALLABY_VECTOR_VALUES);
+
+constexpr UInt8 WALLABY_LEAD_CLASS_BITS = 3;
+constexpr UInt8 WALLABY_LEAD_CLASSES = 1 << WALLABY_LEAD_CLASS_BITS;
+
+/// More exceptions than this per vector means the decimal modes do not fit the data.
+constexpr UInt32 WALLABY_MAX_EXCEPTIONS = 96;
+
+/// If the chosen decimal packing is wider than this, the XOR encoding is also tried.
+constexpr UInt8 WALLABY_XOR_ATTEMPT_BITS_THRESHOLD = 32;
+
+enum class VectorMode : UInt8
+{
+    Const = 0,
+    DecimalFor = 1,
+    DecimalDelta = 2,
+    Xor = 3,
+    Raw = 4,
+};
+
+/// Exact powers of ten as Float64; all values are exactly representable.
+constexpr std::array<Float64, 19> WALLABY_POW10 =
+{
+    1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9,
+    1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18,
+};
+
+template <typename T>
+struct WallabyTraits;
+
+template <>
+struct WallabyTraits<UInt64>
+{
+    using FloatType = Float64;
+    using SignedType = Int64;
+    static constexpr UInt8 width_bits = 64;
+    static constexpr UInt8 trail_bits = 6;
+    static constexpr UInt8 max_alpha = 18;
+    static constexpr std::array<UInt8, WALLABY_LEAD_CLASSES> lead_classes{0, 8, 12, 16, 20, 24, 32, 44};
+};
+
+template <>
+struct WallabyTraits<UInt32>
+{
+    using FloatType = Float32;
+    using SignedType = Int32;
+    static constexpr UInt8 width_bits = 32;
+    static constexpr UInt8 trail_bits = 5;
+    static constexpr UInt8 max_alpha = 10;
+    static constexpr std::array<UInt8, WALLABY_LEAD_CLASSES> lead_classes{0, 4, 8, 10, 12, 14, 18, 24};
+};
+
+template <typename T>
+UInt8 leadClassIndex(UInt8 lead)
+{
+    const auto & classes = WallabyTraits<T>::lead_classes;
+    UInt8 index = 0;
+    for (UInt8 i = 1; i < WALLABY_LEAD_CLASSES; ++i)
+        if (classes[i] <= lead)
+            index = i;
+    return index;
+}
+
+/** Quantizes a value to alpha decimal places and verifies that the division reconstructs it
+  * bitwise. Returns false when the value cannot be represented this way losslessly.
+  */
+template <typename T>
+bool quantizeValue(typename WallabyTraits<T>::FloatType value, UInt8 alpha, typename WallabyTraits<T>::SignedType & quantized)
+{
+    using Traits = WallabyTraits<T>;
+    using SignedType = typename Traits::SignedType;
+    using FloatType = typename Traits::FloatType;
+
+    if (!std::isfinite(value))
+        return false;
+
+    const Float64 scaled = static_cast<Float64>(value) * WALLABY_POW10[alpha];
+    /// Stay inside the exact llround domain.
+    if (!(std::fabs(scaled) < 9.2e18))
+        return false;
+
+    const Int64 q = std::llround(scaled);
+    if constexpr (std::is_same_v<SignedType, Int32>)
+    {
+        if (q < std::numeric_limits<Int32>::min() || q > std::numeric_limits<Int32>::max())
+            return false;
+    }
+
+    const FloatType reconstructed = static_cast<FloatType>(static_cast<Float64>(q) / WALLABY_POW10[alpha]);
+    if (std::bit_cast<T>(reconstructed) != std::bit_cast<T>(value))
+        return false;
+
+    quantized = static_cast<SignedType>(q);
+    return true;
+}
+
+/// Returns the smallest number of decimal places that quantizes the value losslessly, if any.
+template <typename T>
+std::optional<UInt8> findAlpha(typename WallabyTraits<T>::FloatType value)
+{
+    typename WallabyTraits<T>::SignedType quantized;
+    for (UInt8 alpha = 0; alpha <= WallabyTraits<T>::max_alpha; ++alpha)
+        if (quantizeValue<T>(value, alpha, quantized))
+            return alpha;
+    return std::nullopt;
+}
+
+template <typename T>
+struct DecimalEncodingResult
+{
+    VectorMode mode;
+    UInt32 payload_size;
+    UInt8 bits;
+};
+
+/** Tries to encode a vector with one of the decimal modes into scratch.
+  * Returns std::nullopt when the data does not fit the decimal representation.
+  */
+template <typename T>
+std::optional<DecimalEncodingResult<T>> encodeDecimal(
+    const typename WallabyTraits<T>::FloatType * values, UInt32 count, char * scratch, UInt32 scratch_size)
+{
+    using Traits = WallabyTraits<T>;
+    using SignedType = typename Traits::SignedType;
+
+    /// Determine the number of decimal places from a sample.
+    UInt8 alpha = 0;
+    {
+        const UInt32 samples = std::min<UInt32>(count, 32);
+        const UInt32 stride = std::max<UInt32>(1, count / samples);
+        UInt32 failures = 0;
+        for (UInt32 i = 0; i < count; i += stride)
+        {
+            if (auto sample_alpha = findAlpha<T>(values[i]))
+                alpha = std::max(alpha, *sample_alpha);
+            else if (++failures > 3)
+                return std::nullopt;
+        }
+    }
+
+    alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized;
+    std::array<UInt16, WALLABY_MAX_EXCEPTIONS> exception_positions;
+
+    UInt32 exception_count = 0;
+    SignedType previous_good = 0;
+    for (UInt32 i = 0; i < count; ++i)
+    {
+        SignedType q;
+        if (quantizeValue<T>(values[i], alpha, q))
+        {
+            quantized[i] = q;
+            previous_good = q;
+        }
+        else
+        {
+            if (exception_count == WALLABY_MAX_EXCEPTIONS)
+                return std::nullopt;
+            exception_positions[exception_count] = static_cast<UInt16>(i);
+            ++exception_count;
+            /// Any placeholder works since the value is patched at decompression;
+            /// the previous one keeps both FOR and DELTA packings narrow.
+            quantized[i] = previous_good;
+        }
+    }
+
+    /// Choose between Frame-of-Reference and zigzag delta packing by the resulting bit width.
+    SignedType min_q = quantized[0];
+    SignedType max_q = quantized[0];
+    for (UInt32 i = 1; i < count; ++i)
+    {
+        min_q = std::min(min_q, quantized[i]);
+        max_q = std::max(max_q, quantized[i]);
+    }
+    const T for_range = static_cast<T>(max_q) - static_cast<T>(min_q);
+    const UInt8 bits_for = for_range == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(for_range));
+
+    T max_zigzag = 0;
+    bool delta_valid = true;
+    for (UInt32 i = 1; i < count && delta_valid; ++i)
+    {
+        SignedType delta;
+        if (__builtin_sub_overflow(quantized[i], quantized[i - 1], &delta))
+            delta_valid = false;
+        else
+            max_zigzag = std::max(max_zigzag, static_cast<T>((static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1))));
+    }
+    const UInt8 bits_delta = !delta_valid ? Traits::width_bits
+        : (max_zigzag == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(max_zigzag)));
+
+    const bool use_delta = delta_valid && bits_delta < bits_for;
+    const UInt8 bits = use_delta ? bits_delta : bits_for;
+    if (bits >= Traits::width_bits)
+        return std::nullopt;
+
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes;
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> packed;
+
+    if (use_delta)
+    {
+        lanes[0] = 0;
+        for (UInt32 i = 1; i < count; ++i)
+        {
+            const SignedType delta = quantized[i] - quantized[i - 1];
+            lanes[i] = (static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1));
+        }
+        for (UInt32 i = count; i < WALLABY_VECTOR_VALUES; ++i)
+            lanes[i] = 0;
+        Compression::FFOR::bitPack(lanes.data(), packed.data(), bits, T{0});
+    }
+    else
+    {
+        for (UInt32 i = 0; i < count; ++i)
+            lanes[i] = static_cast<T>(quantized[i]);
+        for (UInt32 i = count; i < WALLABY_VECTOR_VALUES; ++i)
+            lanes[i] = static_cast<T>(min_q);
+        Compression::FFOR::bitPack(lanes.data(), packed.data(), bits, static_cast<T>(min_q));
+    }
+
+    const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
+    const UInt32 payload_size = 2 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16)
+        + packed_bytes + exception_count * (sizeof(UInt16) + sizeof(T));
+    if (payload_size > scratch_size)
+        return std::nullopt;
+
+    char * out = scratch;
+    *out++ = static_cast<char>(alpha);
+    *out++ = static_cast<char>(bits);
+    unalignedStoreLittleEndian<SignedType>(out, use_delta ? quantized[0] : min_q);
+    out += sizeof(SignedType);
+    unalignedStoreLittleEndian<UInt16>(out, static_cast<UInt16>(exception_count));
+    out += sizeof(UInt16);
+    memcpy(out, packed.data(), packed_bytes);
+    out += packed_bytes;
+    for (UInt32 i = 0; i < exception_count; ++i)
+    {
+        unalignedStoreLittleEndian<UInt16>(out, exception_positions[i]);
+        out += sizeof(UInt16);
+        unalignedStoreLittleEndian<T>(out, std::bit_cast<T>(values[exception_positions[i]]));
+        out += sizeof(T);
+    }
+
+    return DecimalEncodingResult<T>{use_delta ? VectorMode::DecimalDelta : VectorMode::DecimalFor, payload_size, bits};
+}
+
+/// Encodes a vector with the XOR mode into scratch and returns the payload size in bytes.
+template <typename T>
+UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_size)
+{
+    using Traits = WallabyTraits<T>;
+    constexpr UInt8 width = Traits::width_bits;
+
+    BitWriter writer(scratch, scratch_size);
+
+    std::array<T, WALLABY_RING_SIZE> ring{};
+    UInt32 ring_position = 0;
+    UInt32 newest_slot = 0;
+
+    writer.writeBits(width, words[0]);
+    ring[ring_position] = words[0];
+    newest_slot = ring_position;
+    ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
+    T previous = words[0];
+
+    UInt32 i = 1;
+    while (i < count)
+    {
+        /// Collapse repeats of the previous value into a run.
+        UInt32 run_end = i;
+        while (run_end < count && words[run_end] == previous && run_end - i < WALLABY_VECTOR_VALUES - 1)
+            ++run_end;
+        const UInt32 run_length = run_end - i;
+        if (run_length >= 2)
+        {
+            writer.writeBits(1, 1);
+            writer.writeBits(WALLABY_RUN_LENGTH_BITS, run_length);
+            i = run_end;
+            continue;
+        }
+
+        const T value = words[i];
+
+        /// Branch costs in bits, all including the leading '0' selector and the 2-bit tag.
+        UInt32 best_cost = 3 + width; /// RAW
+        enum class Branch : UInt8 { Equal, XorPrev, XorWindow, Raw };
+        Branch best_branch = Branch::Raw;
+        UInt32 best_index = 0;
+        UInt8 best_class = 0;
+        UInt8 best_trail = 0;
+
+        for (UInt32 slot = 0; slot < WALLABY_RING_SIZE; ++slot)
+        {
+            const T xored = value ^ ring[slot];
+            if (xored == 0)
+            {
+                best_cost = 3 + WALLABY_RING_INDEX_BITS;
+                best_branch = Branch::Equal;
+                best_index = slot;
+                break;
+            }
+
+            const UInt8 lead = static_cast<UInt8>(std::countl_zero(xored));
+            const UInt8 trail = static_cast<UInt8>(std::countr_zero(xored));
+            const UInt8 class_index = leadClassIndex<T>(lead);
+            const UInt8 center_length = width - Traits::lead_classes[class_index] - trail;
+            const bool is_prev = slot == newest_slot;
+            const UInt32 cost = 3 + (is_prev ? 0 : WALLABY_RING_INDEX_BITS)
+                + WALLABY_LEAD_CLASS_BITS + Traits::trail_bits + center_length;
+            if (cost < best_cost)
+            {
+                best_cost = cost;
+                best_branch = is_prev ? Branch::XorPrev : Branch::XorWindow;
+                best_index = slot;
+                best_class = class_index;
+                best_trail = trail;
+            }
+        }
+
+        writer.writeBits(1, 0);
+        switch (best_branch)
+        {
+            case Branch::Equal:
+                writer.writeBits(2, 0b00);
+                writer.writeBits(WALLABY_RING_INDEX_BITS, best_index);
+                break;
+            case Branch::XorPrev:
+            case Branch::XorWindow:
+            {
+                if (best_branch == Branch::XorPrev)
+                {
+                    writer.writeBits(2, 0b01);
+                }
+                else
+                {
+                    writer.writeBits(2, 0b10);
+                    writer.writeBits(WALLABY_RING_INDEX_BITS, best_index);
+                }
+                const T xored = value ^ ring[best_index];
+                const UInt8 center_length = width - Traits::lead_classes[best_class] - best_trail;
+                writer.writeBits(WALLABY_LEAD_CLASS_BITS, best_class);
+                writer.writeBits(Traits::trail_bits, best_trail);
+                writer.writeBits(center_length, xored >> best_trail);
+                break;
+            }
+            case Branch::Raw:
+                writer.writeBits(2, 0b11);
+                writer.writeBits(width, value);
+                break;
+        }
+
+        ring[ring_position] = value;
+        newest_slot = ring_position;
+        ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
+        previous = value;
+        ++i;
+    }
+
+    writer.flush();
+    return static_cast<UInt32>((writer.count() + 7) / 8);
+}
+
+template <typename T>
+void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
+{
+    using Traits = WallabyTraits<T>;
+    constexpr UInt8 width = Traits::width_bits;
+
+    BitReader reader(payload, payload_size);
+
+    std::array<T, WALLABY_RING_SIZE> ring{};
+    UInt32 ring_position = 0;
+    UInt32 newest_slot = 0;
+
+    T previous = static_cast<T>(reader.readBits(width));
+    out[0] = previous;
+    ring[ring_position] = previous;
+    newest_slot = ring_position;
+    ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
+
+    UInt32 produced = 1;
+    while (produced < count)
+    {
+        if (reader.readBit())
+        {
+            const UInt32 run_length = static_cast<UInt32>(reader.readBits(WALLABY_RUN_LENGTH_BITS));
+            if (run_length == 0 || run_length > count - produced)
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt run length");
+            for (UInt32 j = 0; j < run_length; ++j)
+                out[produced + j] = previous;
+            produced += run_length;
+            continue;
+        }
+
+        T value;
+        const UInt8 tag = static_cast<UInt8>(reader.readBits(2));
+        switch (tag)
+        {
+            case 0b00:
+                value = ring[reader.readBits(WALLABY_RING_INDEX_BITS)];
+                break;
+            case 0b01:
+            case 0b10:
+            {
+                const UInt32 slot = tag == 0b01 ? newest_slot : static_cast<UInt32>(reader.readBits(WALLABY_RING_INDEX_BITS));
+                const UInt8 class_index = static_cast<UInt8>(reader.readBits(WALLABY_LEAD_CLASS_BITS));
+                const UInt8 trail = static_cast<UInt8>(reader.readBits(Traits::trail_bits));
+                const Int32 center_length = width - Traits::lead_classes[class_index] - trail;
+                if (center_length <= 0)
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt center length");
+                const T center = static_cast<T>(reader.readBits(static_cast<UInt8>(center_length)));
+                value = ring[slot] ^ (center << trail);
+                break;
+            }
+            default:
+                value = static_cast<T>(reader.readBits(width));
+                break;
+        }
+
+        out[produced] = value;
+        ++produced;
+        ring[ring_position] = value;
+        newest_slot = ring_position;
+        ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
+        previous = value;
+    }
+}
+
+template <typename T>
+UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
+{
+    using Traits = WallabyTraits<T>;
+    using FloatType = typename Traits::FloatType;
+
+    /// Scratch buffers for candidate encodings; the XOR encoding is at most ~5% larger than raw.
+    constexpr UInt32 scratch_size = WALLABY_VECTOR_VALUES * sizeof(T) + WALLABY_VECTOR_VALUES / 2 + 64;
+    std::array<char, scratch_size> decimal_scratch;
+    std::array<char, scratch_size> xor_scratch;
+    alignas(64) std::array<FloatType, WALLABY_VECTOR_VALUES> values;
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> words;
+
+    char * out = dest;
+    UInt32 processed = 0;
+    while (processed < values_count)
+    {
+        const UInt32 count = std::min<UInt32>(WALLABY_VECTOR_VALUES, values_count - processed);
+        memcpy(words.data(), source + static_cast<size_t>(processed) * sizeof(T), static_cast<size_t>(count) * sizeof(T));
+        memcpy(values.data(), words.data(), static_cast<size_t>(count) * sizeof(T));
+
+        bool all_equal = true;
+        for (UInt32 i = 1; i < count && all_equal; ++i)
+            all_equal = words[i] == words[0];
+
+        if (all_equal)
+        {
+            *out++ = static_cast<char>(VectorMode::Const);
+            unalignedStoreLittleEndian<T>(out, words[0]);
+            out += sizeof(T);
+            processed += count;
+            continue;
+        }
+
+        const auto decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size);
+
+        UInt32 xor_size = 0;
+        if (!decimal || decimal->bits > WALLABY_XOR_ATTEMPT_BITS_THRESHOLD)
+            xor_size = encodeXor<T>(words.data(), count, xor_scratch.data(), scratch_size);
+
+        const UInt32 raw_size = count * sizeof(T);
+        const UInt32 decimal_size = decimal ? decimal->payload_size : std::numeric_limits<UInt32>::max();
+        const UInt32 xor_total = xor_size == 0 ? std::numeric_limits<UInt32>::max() : xor_size + static_cast<UInt32>(sizeof(UInt32));
+
+        if (decimal_size <= xor_total && decimal_size < raw_size)
+        {
+            *out++ = static_cast<char>(decimal->mode);
+            memcpy(out, decimal_scratch.data(), decimal->payload_size);
+            out += decimal->payload_size;
+        }
+        else if (xor_total < raw_size)
+        {
+            *out++ = static_cast<char>(VectorMode::Xor);
+            unalignedStoreLittleEndian<UInt32>(out, xor_size);
+            out += sizeof(UInt32);
+            memcpy(out, xor_scratch.data(), xor_size);
+            out += xor_size;
+        }
+        else
+        {
+            *out++ = static_cast<char>(VectorMode::Raw);
+            memcpy(out, words.data(), raw_size);
+            out += raw_size;
+        }
+
+        processed += count;
+    }
+
+    return static_cast<UInt32>(out - dest);
+}
+
+template <typename T>
+UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt32 values_count)
+{
+    using Traits = WallabyTraits<T>;
+    using SignedType = typename Traits::SignedType;
+
+    const char * src = source;
+    const char * const src_end = source + source_size;
+    const auto require = [&](size_t bytes)
+    {
+        if (static_cast<size_t>(src_end - src) < bytes)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, source is truncated");
+    };
+
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes;
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> unpacked;
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> words;
+
+    char * out = dest;
+    UInt32 produced = 0;
+    while (produced < values_count)
+    {
+        const UInt32 count = std::min<UInt32>(WALLABY_VECTOR_VALUES, values_count - produced);
+        require(1);
+        const UInt8 mode_byte = static_cast<UInt8>(*src++);
+        if (mode_byte > static_cast<UInt8>(VectorMode::Raw))
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, unknown vector mode {}", static_cast<UInt32>(mode_byte));
+        const auto mode = static_cast<VectorMode>(mode_byte);
+
+        switch (mode)
+        {
+            case VectorMode::Const:
+            {
+                require(sizeof(T));
+                const T word = unalignedLoadLittleEndian<T>(src);
+                src += sizeof(T);
+                for (UInt32 i = 0; i < count; ++i)
+                    words[i] = word;
+                break;
+            }
+            case VectorMode::DecimalFor:
+            case VectorMode::DecimalDelta:
+            {
+                require(2 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16));
+                const UInt8 alpha = static_cast<UInt8>(*src++);
+                const UInt8 bits = static_cast<UInt8>(*src++);
+                const SignedType base = unalignedLoadLittleEndian<SignedType>(src);
+                src += sizeof(SignedType);
+                const UInt16 exception_count = unalignedLoadLittleEndian<UInt16>(src);
+                src += sizeof(UInt16);
+
+                if (alpha > Traits::max_alpha || bits >= Traits::width_bits || exception_count > WALLABY_MAX_EXCEPTIONS)
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal header");
+
+                const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
+                require(packed_bytes);
+                memcpy(lanes.data(), src, packed_bytes);
+                src += packed_bytes;
+
+                if (mode == VectorMode::DecimalFor)
+                {
+                    Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, static_cast<T>(base));
+                    for (UInt32 i = 0; i < count; ++i)
+                    {
+                        const auto q = static_cast<SignedType>(unpacked[i]);
+                        words[i] = std::bit_cast<T>(static_cast<typename Traits::FloatType>(static_cast<Float64>(q) / WALLABY_POW10[alpha]));
+                    }
+                }
+                else
+                {
+                    Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, T{0});
+                    T accumulator = static_cast<T>(base);
+                    for (UInt32 i = 0; i < count; ++i)
+                    {
+                        if (i > 0)
+                        {
+                            const T zigzag = unpacked[i];
+                            accumulator += (zigzag >> 1) ^ (T{0} - (zigzag & T{1}));
+                        }
+                        const auto q = static_cast<SignedType>(accumulator);
+                        words[i] = std::bit_cast<T>(static_cast<typename Traits::FloatType>(static_cast<Float64>(q) / WALLABY_POW10[alpha]));
+                    }
+                }
+
+                require(exception_count * (sizeof(UInt16) + sizeof(T)));
+                for (UInt32 i = 0; i < exception_count; ++i)
+                {
+                    const UInt16 position = unalignedLoadLittleEndian<UInt16>(src);
+                    src += sizeof(UInt16);
+                    const T raw = unalignedLoadLittleEndian<T>(src);
+                    src += sizeof(T);
+                    if (position >= count)
+                        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt exception position");
+                    words[position] = raw;
+                }
+                break;
+            }
+            case VectorMode::Xor:
+            {
+                require(sizeof(UInt32));
+                const UInt32 payload_size = unalignedLoadLittleEndian<UInt32>(src);
+                src += sizeof(UInt32);
+                require(payload_size);
+                decodeXor<T>(src, payload_size, words.data(), count);
+                src += payload_size;
+                break;
+            }
+            case VectorMode::Raw:
+            {
+                require(static_cast<size_t>(count) * sizeof(T));
+                memcpy(words.data(), src, static_cast<size_t>(count) * sizeof(T));
+                src += static_cast<size_t>(count) * sizeof(T);
+                break;
+            }
+        }
+
+        memcpy(out, words.data(), static_cast<size_t>(count) * sizeof(T));
+        out += static_cast<size_t>(count) * sizeof(T);
+        produced += count;
+    }
+
+    return static_cast<UInt32>(src - source);
+}
+
+}
+
+CompressionCodecWallaby::CompressionCodecWallaby(UInt8 float_width_)
+    : float_width(float_width_)
+{
+    setCodecDescription("Wallaby");
+}
+
+uint8_t CompressionCodecWallaby::getMethodByte() const
+{
+    return static_cast<uint8_t>(CompressionMethodByte::Wallaby);
+}
+
+void CompressionCodecWallaby::updateHash(SipHash & hash) const
+{
+    getCodecDesc()->updateTreeHash(hash, /* ignore_aliases */ true);
+}
+
+String CompressionCodecWallaby::getDescription() const
+{
+    return "Adaptive floating-point codec that picks per block between integerization with delta or frame-of-reference packing and windowed XOR; suitable for time series data.";
+}
+
+UInt32 CompressionCodecWallaby::getMaxCompressedDataSize(UInt32 uncompressed_size) const
+{
+    /// Worst case per vector is the RAW mode: one mode byte plus verbatim data.
+    const UInt32 vectors = uncompressed_size / (WALLABY_VECTOR_VALUES * sizeof(Float32)) + 1;
+    return WALLABY_HEADER_SIZE + uncompressed_size + vectors + 8;
+}
+
+UInt32 CompressionCodecWallaby::doCompressData(const char * source, UInt32 source_size, char * dest) const
+{
+    if (source_size == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress with Wallaby codec, source size is 0");
+
+    char * out = dest;
+    *out++ = WALLABY_CODEC_VERSION;
+    *out++ = static_cast<char>(float_width);
+    unalignedStoreLittleEndian<UInt32>(out, source_size);
+    out += sizeof(UInt32);
+
+    const UInt32 values_count = source_size / float_width;
+    const UInt32 trailing_bytes = source_size % float_width;
+
+    if (values_count > 0)
+    {
+        if (float_width == sizeof(Float64))
+            out += compressImpl<UInt64>(source, values_count, out);
+        else if (float_width == sizeof(Float32))
+            out += compressImpl<UInt32>(source, values_count, out);
+        else
+            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with Wallaby codec, unsupported float width {}", static_cast<UInt32>(float_width));
+    }
+
+    if (trailing_bytes > 0)
+    {
+        memcpy(out, source + source_size - trailing_bytes, trailing_bytes);
+        out += trailing_bytes;
+    }
+
+    return static_cast<UInt32>(out - dest);
+}
+
+UInt32 CompressionCodecWallaby::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+{
+    if (source_size < WALLABY_HEADER_SIZE)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, source is too small");
+
+    const UInt8 version = static_cast<UInt8>(source[0]);
+    const UInt8 data_float_width = static_cast<UInt8>(source[1]);
+    const UInt32 stored_size = unalignedLoadLittleEndian<UInt32>(source + 2);
+
+    if (version != WALLABY_CODEC_VERSION)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, unsupported version {}", static_cast<UInt32>(version));
+    if (stored_size != uncompressed_size)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, size mismatch");
+    if (data_float_width != sizeof(Float64) && data_float_width != sizeof(Float32))
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, unsupported float width {}", static_cast<UInt32>(data_float_width));
+
+    const char * src = source + WALLABY_HEADER_SIZE;
+    const UInt32 body_size = source_size - WALLABY_HEADER_SIZE;
+    const UInt32 values_count = uncompressed_size / data_float_width;
+    const UInt32 trailing_bytes = uncompressed_size % data_float_width;
+
+    UInt32 consumed = 0;
+    if (values_count > 0)
+    {
+        if (data_float_width == sizeof(Float64))
+            consumed = decompressImpl<UInt64>(src, body_size, dest, values_count);
+        else
+            consumed = decompressImpl<UInt32>(src, body_size, dest, values_count);
+    }
+
+    if (trailing_bytes > 0)
+    {
+        if (body_size - consumed < trailing_bytes)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, source is truncated");
+        memcpy(dest + uncompressed_size - trailing_bytes, src + consumed, trailing_bytes);
+    }
+
+    return uncompressed_size;
+}
+
+void registerCodecWallaby(CompressionCodecFactory & factory)
+{
+    const auto method_code = static_cast<UInt8>(CompressionMethodByte::Wallaby);
+    auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
+    {
+        if (arguments && !arguments->children.empty())
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "Wallaby codec must not have parameters, given {}", arguments->children.size());
+
+        UInt8 float_width = sizeof(Float64);
+        if (column_type)
+        {
+            if (!WhichDataType(column_type).isNativeFloat())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Codec Wallaby is not applicable for {} because the data type is not Float*",
+                    column_type->getName());
+
+            float_width = static_cast<UInt8>(column_type->getSizeOfValueInMemory());
+        }
+
+        return std::make_shared<CompressionCodecWallaby>(float_width);
+    };
+    factory.registerCompressionCodecWithType("Wallaby", method_code, codec_builder);
+}
+
+CompressionCodecPtr getCompressionCodecWallaby(UInt8 float_width)
+{
+    return std::make_shared<CompressionCodecWallaby>(float_width);
+}
+
+}

@@ -528,9 +528,10 @@ public:
 
 TEST_P(CodecTest, TranscodingWithDataType)
 {
-    /// Gorilla and ALP can only be applied to floating point columns
+    /// Gorilla, ALP and Wallaby can only be applied to floating point columns
     const auto & codec_statement = std::get<0>(GetParam()).codec_statement;
-    const bool codec_is_float_point = codec_statement.contains("Gorilla") || codec_statement.contains("ALP");
+    const bool codec_is_float_point
+        = codec_statement.contains("Gorilla") || codec_statement.contains("ALP") || codec_statement.contains("Wallaby");
     const WhichDataType which(std::get<1>(GetParam()).data_type.get());
     const bool data_is_float = which.isFloat();
     if (codec_is_float_point && !data_is_float)
@@ -831,7 +832,10 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("ALP(STD), ZSTD"),
     Codec("ALP(RD)"),
     Codec("ALP(RD), LZ4"),
-    Codec("ALP(RD), ZSTD")
+    Codec("ALP(RD), ZSTD"),
+    Codec("Wallaby"),
+    Codec("Wallaby, LZ4"),
+    Codec("Wallaby, ZSTD")
 );
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -935,7 +939,10 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(std::numbers::e_v<Float32>))),
@@ -959,7 +966,10 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(-std::numbers::e_v<Float32>))),
@@ -1019,7 +1029,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(std::numbers::e_v<Float32>))),
@@ -1043,7 +1056,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(-std::numbers::e_v<Float32>))),

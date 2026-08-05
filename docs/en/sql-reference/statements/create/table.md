@@ -449,6 +449,22 @@ The codec accepts an optional variant argument:
 This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
 :::
 
+#### Wallaby {#wallaby}
+
+`Wallaby()` — Adaptive lossless compression for floating-point time series. Supports `Float32` and `Float64`.
+
+The codec splits data into blocks of 1024 values and picks the cheapest of several encodings per block:
+
+- Constant blocks collapse to a single value.
+- Values that originate from decimals are represented as exact scaled integers and bit-packed either directly (Frame-of-Reference) or as deltas; the delta form is much smaller on smooth series whose neighboring values are close while the overall range is wide.
+- The remaining blocks are compressed with XOR against a window of 32 recent values, similar to `Gorilla` but with a wider choice of references.
+
+Values that cannot be represented exactly are stored as raw exceptions, so compression is always lossless, including `NaN` payloads, infinities, denormals and signed zeros.
+
+:::note
+This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+:::
+
 #### FPC {#fpc}
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
