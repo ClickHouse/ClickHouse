@@ -11,38 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int QUERY_WAS_CANCELLED;
-    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
-    extern const int TIMEOUT_EXCEEDED;
-}
-
-namespace
-{
-
-/// A cancelled or timed-out query says nothing about the part's health, so such an exception must
-/// not reach reportBroken.
-bool isQueryCancellation(std::exception_ptr exception_ptr)
-{
-    try
-    {
-        rethrow_exception(exception_ptr);
-    }
-    catch (const Exception & e)
-    {
-        return e.code() == ErrorCodes::QUERY_WAS_CANCELLED
-            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-            || e.code() == ErrorCodes::TIMEOUT_EXCEEDED;
-    }
-    catch (...) /// Ok: only DB::Exception carries an error code, so nothing else can be a cancellation.
-    {
-        return false;
-    }
-}
-
-}
-
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
     size_t from_mark, size_t current_task_last_mark,
     bool continue_reading, size_t max_rows_to_read,
