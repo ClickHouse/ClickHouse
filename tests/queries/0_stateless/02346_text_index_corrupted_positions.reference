@@ -1,0 +1,16 @@
+pos_stream_exists:
+1
+intact_matches_scan:
+1
+zeroed_directory:
+error
+truncated_blob:
+error
+inflated_directory:
+error
+fixture_directory_bytes:
+ 100 1 3
+declared_size_past_blob:
+error
+restored_matches_scan:
+1
