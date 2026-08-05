@@ -875,10 +875,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     secret = from.secret;
     name = from.name;
-    /// Every replica became a shard of its own, so a shard number here denotes a different shard than the
-    /// same number does in `from`. Spell the identity so it cannot equal any cluster name (those come from
-    /// XML element names), and keep it non-empty so empty keeps meaning "identifies nothing".
-    shard_scope_identity = from.shard_scope_identity + " (replicas as shards)";
+    /// Every replica became a shard of its own, so a shard number here denotes a different shard than the same
+    /// number does in `from`. The identity is left empty, and an empty identity authenticates nothing.
 
     initMisc();
 }

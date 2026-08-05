@@ -145,16 +145,37 @@ TEST(ParallelReplicasShardScope, RenumberedDerivedClusterIsForeign)
     ASSERT_EQ(derived->getShardCount(), 6u);
     ASSERT_EQ(derived->getName(), original->getName());
 
+    /// The renumbering is unauthenticable rather than differently authenticated, so pin the mechanism.
+    EXPECT_TRUE(derived->getShardScopeIdentity().empty());
+
     /// A shard number produced against the derived numbering says nothing about the original's shards.
     auto derived_context = makeContextWithScalar(makeShardNumScalar(6, derived->getShardScopeIdentity()));
     const auto foreign = getShardScopeForCluster(derived_context, *original);
     EXPECT_EQ(foreign.kind, ShardScopeKind::Foreign);
     EXPECT_EQ(foreign.shard_num, 6u);
 
-    /// The converse must still hold, or the arm could pass by making every scope foreign.
+    /// The converse must still hold, or the arm could pass by making every scope foreign. Only the original is
+    /// asserted: a derived cluster is reachable only as the producer of a scope, never as its target, so
+    /// asserting a kind against `*derived` would pin an accident rather than a contract.
     auto original_context = makeContextWithScalar(makeShardNumScalar(2, original->getShardScopeIdentity()));
     EXPECT_EQ(getShardScopeForCluster(original_context, *original).kind, ShardScopeKind::Scoped);
-    EXPECT_EQ(getShardScopeForCluster(derived_context, *derived).kind, ShardScopeKind::Scoped);
+}
+
+/// A derived cluster must carry no identity at all rather than a distinguishable spelling: cluster names and
+/// `Replicated` database names share one namespace, so any non-empty value a reader could construct is also a
+/// value a user could name a database, making the scope forgeable.
+TEST(ParallelReplicasShardScope, DerivedClusterIdentityIsNotForgeable)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    auto original = makeCluster(settings, "c", 2, 3);
+    auto derived = original->getClusterWithReplicasAsShards(settings);
+    ASSERT_EQ(derived->getShardCount(), 6u);
+
+    /// A cluster a user can produce by naming a `Replicated` database, which resolves to a cluster of that name.
+    auto impostor = makeCluster(settings, "c (replicas as shards)", 3);
+
+    auto context = makeContextWithScalar(makeShardNumScalar(6, derived->getShardScopeIdentity()));
+    EXPECT_EQ(getShardScopeForCluster(context, *impostor).kind, ShardScopeKind::Foreign);
 }
 
 /// Taking a subset of shards preserves each shard's number, so a shard number keeps its meaning and the
