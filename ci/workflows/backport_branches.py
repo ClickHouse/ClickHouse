@@ -60,6 +60,7 @@ workflow = Workflow.Config(
     enable_gh_summary_comment=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/check_backport_branch.py",
     ],

@@ -43,6 +43,8 @@ def test_get_docs_teams_to_request(changed_files, expected_teams):
 
 def test_check_requests_docs_teams(monkeypatch):
     class FakeInfo:
+        base_branch = "master"
+
         def get_kv_data(self, key):
             assert key == "changed_files"
             return [
@@ -77,6 +79,8 @@ def test_check_removes_review_requests_when_docs_only_pr_becomes_mixed(monkeypat
     )
 
     class FakeInfo:
+        base_branch = "master"
+
         def get_kv_data(self, key):
             assert key == "changed_files"
             return next(changed_files)
@@ -104,8 +108,38 @@ def test_check_removes_review_requests_when_docs_only_pr_becomes_mixed(monkeypat
     ]
 
 
+def test_check_clears_managed_requests_on_release_branch(monkeypatch):
+    class FakeInfo:
+        base_branch = "25.8"
+
+        def get_kv_data(self, key):
+            assert key == "changed_files"
+            return ["docs/integrations/clickpipes/home.mdx"]
+
+    synced = {}
+
+    def fake_sync(desired_teams, managed_teams):
+        synced["desired"] = desired_teams
+        synced["managed"] = managed_teams
+
+    monkeypatch.setattr(team_notifications, "Info", FakeInfo)
+    monkeypatch.setattr(
+        team_notifications.GH,
+        "sync_team_review_requests",
+        staticmethod(fake_sync),
+    )
+
+    assert team_notifications.check()
+    assert synced == {
+        "desired": [],
+        "managed": ("docs", "clickpipes", "integrations-ecosystem"),
+    }
+
+
 def test_check_preserves_existing_type_id_notification(monkeypatch):
     class FakeInfo:
+        base_branch = "master"
+
         def get_kv_data(self, key):
             assert key == "changed_files"
             return ["src/Core/TypeId.h"]
@@ -131,8 +165,33 @@ def test_check_preserves_existing_type_id_notification(monkeypatch):
     }
 
 
+def test_check_skips_existing_type_id_notification_on_release_branch(monkeypatch):
+    class FakeInfo:
+        base_branch = "25.8"
+
+        def get_kv_data(self, key):
+            assert key == "changed_files"
+            return ["src/Core/TypeId.h"]
+
+    monkeypatch.setattr(team_notifications, "Info", FakeInfo)
+    monkeypatch.setattr(
+        team_notifications.GH,
+        "sync_team_review_requests",
+        staticmethod(lambda desired_teams, managed_teams: None),
+    )
+    monkeypatch.setattr(
+        team_notifications.GH,
+        "post_updateable_comment",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected notification")),
+    )
+
+    assert team_notifications.check()
+
+
 def test_check_fails_when_changed_files_are_unavailable(monkeypatch):
     class FakeInfo:
+        base_branch = "master"
+
         def get_kv_data(self, key):
             assert key == "changed_files"
             return None

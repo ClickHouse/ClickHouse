@@ -52,10 +52,16 @@ def check():
         "most likely failed to fetch the PR file list from the GitHub API. "
         "See the Config Workflow logs for the underlying error."
     )
+    is_master_pr = info.base_branch == "master"
     GH.sync_team_review_requests(
-        desired_teams=get_docs_teams_to_request(changed_files),
+        desired_teams=(
+            get_docs_teams_to_request(changed_files) if is_master_pr else []
+        ),
         managed_teams=MANAGED_DOCS_TEAMS,
     )
+
+    if not is_master_pr:
+        return True
 
     if any(
         file.startswith(prefix)
