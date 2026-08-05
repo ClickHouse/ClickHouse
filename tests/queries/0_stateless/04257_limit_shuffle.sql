@@ -100,6 +100,29 @@ SETTINGS enable_analyzer = 1;
 
 DROP VIEW limit_shuffle_view;
 
+-- `EXPLAIN SYNTAX` of a non-`SELECT` top-level query over a parameterized view whose stored query uses
+-- `LIMIT SHUFFLE`, in both shapes the legacy fallback can see: the call left intact because of `FINAL`,
+-- and the call inlined into a subquery by `ExpandParameterizedViewsMatcher`.
+CREATE TABLE limit_shuffle_final_src (number UInt64) ENGINE = ReplacingMergeTree ORDER BY number;
+CREATE VIEW limit_shuffle_final_view AS SELECT number FROM limit_shuffle_final_src WHERE number < {n:UInt64} LIMIT 1 SHUFFLE SETTINGS allow_experimental_shuffle_query = 1;
+CREATE VIEW limit_shuffle_parameterized_view AS SELECT number FROM numbers({n:UInt64}) LIMIT 1 SHUFFLE SETTINGS allow_experimental_shuffle_query = 1;
+
+EXPLAIN SYNTAX
+INSERT INTO limit_shuffle_insert_sink
+SELECT *
+FROM limit_shuffle_final_view(n = 10) FINAL
+SETTINGS enable_analyzer = 1;
+
+EXPLAIN SYNTAX
+INSERT INTO limit_shuffle_insert_sink
+SELECT *
+FROM limit_shuffle_parameterized_view(n = 10)
+SETTINGS enable_analyzer = 1;
+
+DROP VIEW limit_shuffle_parameterized_view;
+DROP VIEW limit_shuffle_final_view;
+DROP TABLE limit_shuffle_final_src;
+
 EXPLAIN SYNTAX
 SELECT number
 FROM numbers(10)

@@ -21,6 +21,23 @@ SETTINGS enable_analyzer = 1
 SELECT *
 FROM limit_shuffle_view
 SETTINGS enable_analyzer = 1
+INSERT INTO limit_shuffle_insert_sink
+SETTINGS enable_analyzer = 1
+SELECT *
+FROM limit_shuffle_final_view(equals(n, 10))
+FINAL
+SETTINGS enable_analyzer = 1
+INSERT INTO limit_shuffle_insert_sink
+SETTINGS enable_analyzer = 1
+SELECT *
+FROM
+(
+    SELECT number
+    FROM numbers(_CAST(10, \'UInt64\'))
+    LIMIT 1 SHUFFLE
+    SETTINGS allow_experimental_shuffle_query = 1
+) AS limit_shuffle_parameterized_view
+SETTINGS enable_analyzer = 1
 SELECT number
 FROM numbers(10)
 LIMIT 3 SHUFFLE
