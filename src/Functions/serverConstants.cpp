@@ -474,9 +474,9 @@ Returns a string with the OS kernel version.
 SELECT getOSKernelVersion();
         )",
         R"(
-┌─getOSKernelVersion()─┐
-│ Linux 7.0.0-1004-aws │
-└──────────────────────┘
+┌─getOSKernelVersion()────┐
+│ Linux 4.15.0-55-generic │
+└─────────────────────────┘
         )"
     }
     };

@@ -78,6 +78,7 @@ Function/generateUUIDv4#1                 unstable  # the output is not the same
 Function/generateUUIDv7#0                 unstable  # the output is not the same on every run
 Function/generateUUIDv7#1                 unstable  # the output is not the same on every run
 Function/getMacro#0                       output  # the response describes the server or the machine it runs on
+Function/getOSKernelVersion#0             output  # the response describes the server or the machine it runs on
 Function/hostName#0                       output  # the response describes the server or the machine it runs on
 Function/localtime#0                      unstable  # the output is not the same on every run
 Function/lowCardinalityKeys#0             unstable  # the output is not the same on every run
