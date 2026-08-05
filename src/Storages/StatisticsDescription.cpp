@@ -2,6 +2,7 @@
 
 #include <map>
 #include <ranges>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -125,7 +126,12 @@ bool ColumnStatisticsDescription::hasSameExplicitStatistics(const ColumnStatisti
 
             ASTPtr ast = single_description.ast ? single_description.ast->clone() : nullptr;
             if (auto * function = ast ? ast->as<ASTFunction>() : nullptr)
+            {
+                /// Arguments are ordinary expressions, so canonicalize the function names in them
+                /// before overwriting the statistics type, which is not a registered function.
+                FunctionNameNormalizer::visitForComparison(function->arguments.get());
                 function->name = statisticsTypeToString(type);
+            }
             else if (auto * identifier = ast ? ast->as<ASTIdentifier>() : nullptr)
                 *identifier = ASTIdentifier(statisticsTypeToString(type));
             declarations.emplace(type, std::move(ast));

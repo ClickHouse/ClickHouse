@@ -102,4 +102,8 @@ TEST_F(ColumnsDescriptionTest, StatisticsTypeNameCaseIsNotSignificant)
     /// A different type, and a different parameter of the same type, are still different.
     EXPECT_NE(parse_one("tdigest"), parse_one("uniq"));
     EXPECT_NE(parse_one("tdigest(1)"), parse_one("tdigest(2)"));
+
+    /// Parameters are ordinary expressions, so the function names in them are canonicalized too.
+    EXPECT_EQ(parse_one("tdigest(ABS(-1))"), parse_one("TDigest(abs(-1))"));
+    EXPECT_NE(parse_one("tdigest(ABS(-1))"), parse_one("tdigest(ABS(-2))"));
 }
