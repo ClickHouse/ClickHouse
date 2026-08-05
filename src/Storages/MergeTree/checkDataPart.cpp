@@ -269,6 +269,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             else
             {
                 UInt64 numeric_id = 0;
+                /// Not `isColumnIdAtOrAboveCounter`: it reads a non-numeric token as 0, which is
+                /// below every counter, and this branch has to tell those two apart.
                 bool is_counter_format = tryParse(numeric_id, col.name.substr(0, col.name.find('.')))
                     && numeric_id < column_id_mapping->getNextColumnIdCounter();
                 /// Both shapes stay at TRACE: pre-activation IDs are the column names themselves, so a dropped

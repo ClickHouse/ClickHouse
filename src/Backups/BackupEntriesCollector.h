@@ -25,8 +25,8 @@ struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
-class ColumnIdMapping;
-using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 
 /// Collects backup entries for all databases and tables which should be put to a backup.
@@ -70,9 +70,15 @@ public:
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
 
-    /// Storage-side snapshot captured at `lockTablesForReading` time, or
-    /// nullptr if the storage opted out.  See `IStorage::captureBackupAuxSnapshot`.
-    ColumnIdMappingPtr getBackupAuxSnapshot(const QualifiedTableName & table_name) const;
+    /// What this backup archives a table as of, captured beside the CREATE it has to agree with.
+    struct BackupCapture
+    {
+        StorageMetadataPtr metadata;
+        std::optional<Int64> parts_bound;
+    };
+
+    /// The capture for @storage, or a fresh one if it was archived through a wrapper.
+    BackupCapture getBackupCapture(const IStorage & storage) const;
 
 private:
     void calculateRootPathInBackup();
@@ -97,6 +103,7 @@ private:
     void gatherTablesMetadata();
     std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
     void lockTablesForReading();
+    bool verifyCaptures(String & mismatch_description) const;
     bool compareWithPrevious(String & mismatch_description);
 
     void makeBackupEntriesForDatabasesDefs();
@@ -179,9 +186,8 @@ private:
         std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
         bool should_backup_data = true;
-        /// Storage-side state captured at lock-acquisition time, verified
-        /// by `backupData`.  See `IStorage::captureBackupAuxSnapshot`.
-        ColumnIdMappingPtr backup_aux_snapshot;
+        /// Captured beside `create_table_query`; empty metadata where the table was not captured.
+        BackupCapture backup_capture;
     };
 
     String current_stage;

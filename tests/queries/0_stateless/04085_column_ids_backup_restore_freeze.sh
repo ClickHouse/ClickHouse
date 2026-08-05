@@ -53,8 +53,8 @@ fi
 $CLIENT --query "ALTER TABLE t_backup UNFREEZE WITH NAME '${backup_name}_freeze'" > /dev/null
 $CLIENT --query "DROP TABLE t_backup SYNC"
 
-# Scenario 2: RESTORE ... allow_non_empty_tables = 1 into a destination whose
-# active mapping diverged from the backup's must throw, not silently rewrite.
+# Scenario 2: RESTORE ... allow_non_empty_tables = 1 into a destination that already
+# holds data must throw, not rewrite its mapping out from under its own parts.
 backup2="${CLICKHOUSE_TEST_UNIQUE_NAME}_b2"
 $CLIENT --query "DROP TABLE IF EXISTS t_restore SYNC"
 $CLIENT --query "
@@ -80,56 +80,16 @@ echo "INSERT INTO t_restore VALUES (3, 'z', 3.3)" | $CLIENT
 $CLIENT --query "
 RESTORE TABLE t_restore FROM Disk('backups', '${backup2}')
 SETTINGS allow_non_empty_tables = 1
-" 2>&1 | grep -qE "differs from destination's active column-ID mapping" && echo "throws_on_mismatch" || echo "missing_guard"
+" 2>&1 | grep -qE "Code: 36\..*cannot install the backup" && echo "throws_on_non_empty" || echo "missing_guard"
 
 # Existing destination data must still be readable with its own mapping.
 $CLIENT --query "SELECT a, b, c FROM t_restore ORDER BY a"
 
 $CLIENT --query "DROP TABLE t_restore SYNC"
 
-# Scenario 3: same logical_to_id but the backup's counter is ahead (its history
-# added then dropped a column, leaving orphan files).  RESTORE must bump the
-# destination's counter so a later ADD COLUMN cannot reuse the orphan's ID.
-backup3="${CLICKHOUSE_TEST_UNIQUE_NAME}_b3"
-$CLIENT --query "DROP TABLE IF EXISTS t_orphan SYNC"
-$CLIENT --query "
-CREATE TABLE t_orphan (a UInt32, b String, c Float64)
-ENGINE = MergeTree ORDER BY a
-SETTINGS serialization_info_version = 'with_column_ids',
-         min_bytes_for_wide_part = 0,
-         min_rows_for_wide_part = 0;
-"
-$CLIENT --query "ALTER TABLE t_orphan ADD COLUMN d UInt32 DEFAULT 0"
-echo "INSERT INTO t_orphan (a, b, c, d) VALUES (1, 'x', 1.5, 42)" | $CLIENT
-$CLIENT --query "ALTER TABLE t_orphan DROP COLUMN d"
-
-$CLIENT --query "BACKUP TABLE t_orphan TO Disk('backups', '${backup3}')" > /dev/null
-$CLIENT --query "DROP TABLE t_orphan SYNC"
-
-$CLIENT --query "
-CREATE TABLE t_orphan (a UInt32, b String, c Float64)
-ENGINE = MergeTree ORDER BY a
-SETTINGS serialization_info_version = 'with_column_ids',
-         min_bytes_for_wide_part = 0,
-         min_rows_for_wide_part = 0;
-"
-echo "INSERT INTO t_orphan VALUES (10, 'y', 99)" | $CLIENT
-# Fresh destination: same logical_to_id as the backup, but counter at 1.
-
-$CLIENT --query "
-RESTORE TABLE t_orphan FROM Disk('backups', '${backup3}')
-SETTINGS allow_non_empty_tables = 1
-" > /dev/null
-
-# Without the counter bump, 'e' would get the orphan's ID and read 42 instead of 99.
-$CLIENT --query "ALTER TABLE t_orphan ADD COLUMN e UInt32 DEFAULT 99"
-$CLIENT --query "SELECT a, b, c, e FROM t_orphan ORDER BY a"
-
-$CLIENT --query "DROP TABLE t_orphan SYNC"
-
-# Scenario 4: a legacy backup with no column_ids.json restored into a destination
+# Scenario 3: a legacy backup with no column_ids.json restored into a destination
 # with an active mapping must fail loudly, not attach logical-filename parts.
-backup4="${CLICKHOUSE_TEST_UNIQUE_NAME}_b4"
+backup3="${CLICKHOUSE_TEST_UNIQUE_NAME}_b3"
 $CLIENT --query "DROP TABLE IF EXISTS t_legacy SYNC"
 $CLIENT --query "
 CREATE TABLE t_legacy (a UInt32, b String, c Float64)
@@ -137,13 +97,13 @@ ENGINE = MergeTree ORDER BY a
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 "
 echo "INSERT INTO t_legacy VALUES (1, 'x', 1.5)" | $CLIENT
-$CLIENT --query "BACKUP TABLE t_legacy TO Disk('backups', '${backup4}')" > /dev/null
+$CLIENT --query "BACKUP TABLE t_legacy TO Disk('backups', '${backup3}')" > /dev/null
 $CLIENT --query "DROP TABLE t_legacy SYNC"
 
 # Simulate a backup taken before the column-IDs feature by removing
 # column_ids.json from the backup directory (current backups always include it).
 backups_root=$($CLIENT --query "SELECT path FROM system.disks WHERE name = 'backups'")
-find "${backups_root}${backup4}" -name 'column_ids.json' -type f -delete 2>/dev/null || true
+find "${backups_root}${backup3}" -name 'column_ids.json' -type f -delete 2>/dev/null || true
 
 $CLIENT --query "
 CREATE TABLE t_legacy (a UInt32, b String, c Float64)
@@ -156,14 +116,14 @@ $CLIENT --query "ALTER TABLE t_legacy ADD COLUMN c Float64"
 echo "INSERT INTO t_legacy VALUES (10, 'y', 99)" | $CLIENT
 
 $CLIENT --query "
-RESTORE TABLE t_legacy FROM Disk('backups', '${backup4}')
+RESTORE TABLE t_legacy FROM Disk('backups', '${backup3}')
 SETTINGS allow_non_empty_tables = 1, allow_different_table_def = 1
 " 2>&1 | grep -qE "backup has no .+ destination has an active" && echo "throws_on_legacy_into_active" || echo "missing_guard"
 
 $CLIENT --query "DROP TABLE t_legacy SYNC"
 
-# Scenario 5: ATTACH PARTITION FROM must reject a source whose next_column_id
-# counter is ahead of the destination's (orphan-ID reuse hazard).
+# Scenario 4: ATTACH PARTITION FROM must reject a part carrying a column ID the
+# destination has not handed out yet (orphan-ID reuse hazard).
 $CLIENT --query "DROP TABLE IF EXISTS t_attach_src SYNC"
 $CLIENT --query "DROP TABLE IF EXISTS t_attach_dst SYNC"
 
@@ -185,12 +145,12 @@ SETTINGS serialization_info_version = 'with_column_ids',
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 "
 echo "INSERT INTO t_attach_dst VALUES (10, 'y', 99)" | $CLIENT
-# Both tables now have logical_to_id = {a:a,b:b,c:c}, but src's counter is past
-# the orphan d's ID while dst's counter is still at 1.
+# Both tables now have logical_to_id = {a:a,b:b,c:c}, but the source part still
+# carries the orphan d's ID, which dst has not handed out.
 
 $CLIENT --query "
 ALTER TABLE t_attach_dst ATTACH PARTITION tuple() FROM t_attach_src
-" 2>&1 | grep -qE "column-ID counter \([0-9]+\) is ahead" && echo "throws_on_counter_mismatch" || echo "missing_guard"
+" 2>&1 | grep -qE "has not handed out yet" && echo "throws_on_foreign_column_id" || echo "missing_guard"
 
 # Destination still readable with its own mapping.
 $CLIENT --query "SELECT a, b, c FROM t_attach_dst ORDER BY a"
@@ -198,9 +158,9 @@ $CLIENT --query "SELECT a, b, c FROM t_attach_dst ORDER BY a"
 $CLIENT --query "DROP TABLE t_attach_src SYNC"
 $CLIENT --query "DROP TABLE t_attach_dst SYNC"
 
-# Scenario 6: an inactive leftover mapping must not travel with BACKUP, or RESTORE
-# adopts it over an empty destination's own mapping and scenario 4's guard never fires.
-backup5="${CLICKHOUSE_TEST_UNIQUE_NAME}_b5"
+# Scenario 5: an inactive leftover mapping must not travel with BACKUP, or RESTORE
+# adopts it over an empty destination's own mapping and scenario 3's guard never fires.
+backup4="${CLICKHOUSE_TEST_UNIQUE_NAME}_b4"
 $CLIENT --query "DROP TABLE IF EXISTS t_inactive SYNC"
 $CLIENT --query "
 CREATE TABLE t_inactive (a UInt32, b String)
@@ -213,13 +173,13 @@ $CLIENT --query "DETACH TABLE t_inactive SYNC"
 printf '%s' '{"active": false, "next_column_id": 1, "mapping": {}}' > "${table_dir}column_ids.json"
 $CLIENT --query "ATTACH TABLE t_inactive"
 
-$CLIENT --query "BACKUP TABLE t_inactive TO Disk('backups', '${backup5}')" > /dev/null
-[ "$(find "${backups_root}${backup5}" -name 'column_ids.json' -type f | wc -l)" = "0" ] \
+$CLIENT --query "BACKUP TABLE t_inactive TO Disk('backups', '${backup4}')" > /dev/null
+[ "$(find "${backups_root}${backup4}" -name 'column_ids.json' -type f | wc -l)" = "0" ] \
     && echo "inactive_mapping_not_backed_up" || echo "inactive_mapping_leaked"
 
 $CLIENT --query "DROP TABLE t_inactive SYNC"
 
-# Scenario 7: a part copied in from another table carries a column ID above this table's counter,
+# Scenario 6: a part copied in from another table carries a column ID above this table's counter,
 # and one that is a live logical name here -- loading it must throw, not alias that column.
 $CLIENT --query "DROP TABLE IF EXISTS t_ahead_src SYNC"
 $CLIENT --query "DROP TABLE IF EXISTS t_ahead_dst SYNC"

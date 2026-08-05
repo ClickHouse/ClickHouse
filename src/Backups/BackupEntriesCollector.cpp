@@ -20,6 +20,7 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/intExp2.h>
@@ -55,6 +56,11 @@ namespace Setting
     extern const SettingsBool cloud_mode;
 }
 
+namespace FailPoints
+{
+    extern const char backup_pause_after_gathering_metadata[];
+}
+
 namespace ErrorCodes
 {
     extern const int INCONSISTENT_METADATA_FOR_BACKUP;
@@ -84,6 +90,12 @@ namespace
     String tableNameWithTypeToString(const QualifiedTableName & table_name, bool first_upper)
     {
         return tableNameWithTypeToString(table_name.database, table_name.table, first_upper);
+    }
+
+    BackupEntriesCollector::BackupCapture captureTable(const IStorage & storage)
+    {
+        const StorageMetadataHandle metadata = storage.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        return {StorageMetadataPtr(metadata), storage.getBackupPartsBound()};
     }
 
     /// How long we should sleep after finding an inconsistency error.
@@ -158,6 +170,9 @@ BackupEntries BackupEntriesCollector::run()
 
     /// Find databases and tables which we're going to put to the backup.
     gatherMetadataAndCheckConsistency();
+
+    /// Lets a test land a DDL between the per-table capture and everything derived from it.
+    FailPointInjection::pauseFailPoint(FailPoints::backup_pause_after_gathering_metadata);
 
     /// Make backup entries for the definitions of the found databases.
     makeBackupEntriesForDatabasesDefs();
@@ -291,12 +306,22 @@ void BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(int attempt
         return;
     }
 
+    String mismatch_description;
+
+    /// Not a stability check across attempts like the comparison below, so not gated on
+    /// `compare_collected_metadata`, which the cloud leaves off.
+    if (!verifyCaptures(mismatch_description))
+    {
+        inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{}", mismatch_description};
+        need_another_attempt = true;
+        return;
+    }
+
     if (!compare_collected_metadata)
         return;
 
     /// We have to check consistency of collected information to protect from the case when some table or database is
     /// renamed during this collecting making the collected information invalid.
-    String mismatch_description;
     if (!compareWithPrevious(mismatch_description))
     {
         /// Usually two passes is minimum.
@@ -568,6 +593,12 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
 
+            /// Captured beside the CREATE because the two are one artifact; `verifyCaptures` rejects
+            /// the attempt if the schema moved in between.  A Replicated database hands back a null
+            /// storage for a table that lives on another replica, and that table archives no data.
+            if (storage)
+                res_table_info.backup_capture = captureTable(*storage);
+
             /// Record REPLACE targets of refreshable materialized views from the create query, not
             /// the storage object: for Replicated/Shared databases `getTablesForBackup` resolves it
             /// from a ZooKeeper snapshot and may return null if not yet created on this replica.
@@ -698,30 +729,7 @@ void BackupEntriesCollector::lockTablesForReading()
         checkIsQueryCancelled();
 
         table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-
-        /// Capture storage-side state (e.g. column-ID mapping) at lock-acquisition
-        /// time so `backupData` can detect ALTERs that bypass the share lock.
-        if (table_info.table_lock)
-            table_info.backup_aux_snapshot = storage->captureBackupAuxSnapshot();
-
-        /// Close the gather-vs-lock window for storages that opted into the
-        /// aux snapshot: re-read the current CREATE and reject if it diverges
-        /// from the captured one.  Runs unconditionally so the cloud-default
-        /// case (`compare_collected_metadata` off) is also covered; the
-        /// thrown `INCONSISTENT_METADATA_FOR_BACKUP` is caught by the
-        /// surrounding retry loop.
-        if (table_info.table_lock && table_info.backup_aux_snapshot && table_info.database)
-        {
-            ASTPtr current_create_query = table_info.database->tryGetCreateTableQuery(table_name.table, context);
-            if (current_create_query && table_info.create_table_query
-                && current_create_query->formatWithSecretsOneLine() != table_info.create_table_query->formatWithSecretsOneLine())
-            {
-                throw Exception(
-                    ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                    "Table {} CREATE changed between gather and lock acquisition; retrying.",
-                    tableNameWithTypeToString(table_name, false));
-            }
-        }
+        /// A table that could not be locked is erased by the `std::erase_if` below.
     }
 
     std::erase_if(
@@ -733,12 +741,38 @@ void BackupEntriesCollector::lockTablesForReading()
         });
 }
 
-ColumnIdMappingPtr BackupEntriesCollector::getBackupAuxSnapshot(const QualifiedTableName & table_name) const
+BackupEntriesCollector::BackupCapture BackupEntriesCollector::getBackupCapture(const IStorage & storage) const
 {
-    auto it = table_infos.find(table_name);
-    if (it == table_infos.end())
-        return nullptr;
-    return it->second.backup_aux_snapshot;
+    const auto storage_id = storage.getStorageID();
+    if (auto it = table_infos.find(QualifiedTableName{storage_id.database_name, storage_id.table_name});
+        it != table_infos.end() && it->second.backup_capture.metadata)
+        return it->second.backup_capture;
+
+    /// Not gathered, so not captured: a wrapper's inner table, reached through the wrapper's own
+    /// `backupData`.  Capturing now is atomic, and it has no archived CREATE of its own to tie it to.
+    return captureTable(storage);
+}
+
+/// Identity of the mapping, not of the metadata object: a debug build hands out a fresh copy of the
+/// metadata on every read, while a publish installs a fresh mapping only when the mapping changed --
+/// so this catches what the capture depends on and costs no retry for an unrelated ALTER.
+bool BackupEntriesCollector::verifyCaptures(String & mismatch_description) const
+{
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        if (!table_info.backup_capture.metadata)
+            continue;
+
+        const StorageMetadataHandle current = table_info.storage->getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        if (table_info.backup_capture.metadata->column_id_mapping != current->column_id_mapping)
+        {
+            mismatch_description = fmt::format(
+                "{} was altered while the backup was gathering metadata",
+                tableNameWithTypeToString(table_name.database, table_name.table, false));
+            return false;
+        }
+    }
+    return true;
 }
 
 /// Check consistency of collected information about databases and tables.
@@ -755,15 +789,7 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
     for (const auto & [database_name, database_info] : database_infos)
         databases_metadata.emplace_back(database_name, database_info.create_database_query ? database_info.create_database_query->formatWithSecretsOneLine() : "");
     for (const auto & [table_name, table_info] : table_infos)
-    {
-        String metadata_str = table_info.create_table_query->formatWithSecretsOneLine();
-        /// Append the aux-snapshot pointer so an ALTER that flips per-table
-        /// state without touching CREATE (e.g. column-ID DROP+ADD same name)
-        /// still triggers a retry.
-        if (table_info.backup_aux_snapshot)
-            metadata_str += fmt::format("|aux_snapshot={}", reinterpret_cast<uintptr_t>(table_info.backup_aux_snapshot.get()));
-        tables_metadata.emplace_back(table_name, std::move(metadata_str));
-    }
+        tables_metadata.emplace_back(table_name, table_info.create_table_query->formatWithSecretsOneLine());
 
     /// We need to sort the lists to make the comparison below correct.
     ::sort(databases_metadata.begin(), databases_metadata.end());

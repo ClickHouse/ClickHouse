@@ -708,13 +708,6 @@ public:
     /// identity still discriminates "did it change".
     ColumnIdMappingPtr getColumnIdMapping() const;
 
-    /// A fresh mapping pointer is installed per publish, so pointer identity is what lets
-    /// `backupData` detect a column-ID ALTER -- see `IStorage::captureBackupAuxSnapshot`.
-    ColumnIdMappingPtr captureBackupAuxSnapshot() const override
-    {
-        return getColumnIdMapping();
-    }
-
     /// Republishes the current in-memory metadata carrying @mapping_ (the mapping is a metadata field).
     void setColumnIdMapping(ColumnIdMapping mapping_);
 

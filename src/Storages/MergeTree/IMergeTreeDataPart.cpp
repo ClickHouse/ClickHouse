@@ -2420,7 +2420,7 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnIdsToLogicalNames(
         }
 
         /// The counter only grows, and every load raises it past every ID in the mapping.
-        if (ColumnIdMapping::extractNumericCounter(column.name) >= mapping.getNextColumnIdCounter())
+        if (mapping.isColumnIdAtOrAboveCounter(column.name))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Part {} of table {} lists column ID '{}' in columns.txt, at or above the table's next "
                 "column ID counter ({}). The part cannot be attached here -- it most likely comes from "

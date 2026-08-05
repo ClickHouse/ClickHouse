@@ -32,8 +32,6 @@ using StorageActionBlockType = size_t;
 
 class ASTCreateQuery;
 class ASTInsertQuery;
-class ColumnIdMapping;
-using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 
 struct Settings;
 
@@ -244,14 +242,9 @@ public:
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
 
-    /// Storage-side state that must stay stable between table-metadata and data capture during
-    /// BACKUP.  Needed where an ALTER can change how existing files are interpreted without
-    /// rewriting them, leaving the data not self-describing -- generic BACKUP assumes it is,
-    /// because for a plain table the only rename is a mutation, which rewrites the parts and is
-    /// itself archived.  Called by `BackupEntriesCollector` under the per-table share lock;
-    /// `backupData` compares against the current state and fails closed on divergence.  The token
-    /// is opaque: only null-checked and identity-compared, never dereferenced.
-    virtual ColumnIdMappingPtr captureBackupAuxSnapshot() const { return nullptr; }
+    /// The highest block number a part may carry to belong in a BACKUP capturing this table now;
+    /// `nullopt` where the schema bounds nothing, as it does for a self-describing part file.
+    virtual std::optional<Int64> getBackupPartsBound() const { return {}; }
 
     /// Extracts data from the backup and put it to the storage.
     virtual void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);

@@ -8463,34 +8463,19 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
                 "into a fresh non-column-ID table instead.",
                 COLUMN_IDS_FILE_NAME);
     }
+    else if (getTotalActiveSizeInBytes() > 0)
+    {
+        /// Neither mapping can be rewritten onto the other side's parts, so there is nothing to
+        /// reconcile here.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "RESTORE with `allow_non_empty_tables` cannot install the backup's `{}` on a table that "
+            "already holds data: the two column-ID mappings cannot both be in effect.  Restore into "
+            "an empty table instead.",
+            COLUMN_IDS_FILE_NAME);
+    }
     else
     {
-        /// Overwriting a non-empty destination's active mapping would make its own parts resolve
-        /// through the backup's mapping, so require the two to agree.  The counter must then take
-        /// the higher of the two, or a later `ADD COLUMN` would reuse an ID that restored parts
-        /// still carry orphan files for.
-        if (getTotalActiveSizeInBytes() > 0)
-        {
-            auto current = getColumnIdMapping();
-            const bool same_mapping = current && current->isActive()
-                && current->getLogicalToId() == restored->getLogicalToId();
-            if (!same_mapping)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "RESTORE: backup's `{}` differs from destination's active "
-                    "column-ID mapping; existing parts would be read under the "
-                    "wrong column IDs.  Restore into an empty table.",
-                    COLUMN_IDS_FILE_NAME);
-
-            if (restored->getNextColumnIdCounter() > current->getNextColumnIdCounter())
-            {
-                persistMapping(std::move(*restored));
-            }
-            /// Else: destination's counter is at least as high — leave it alone.
-        }
-        else
-        {
-            persistMapping(std::move(*restored));
-        }
+        persistMapping(std::move(*restored));
     }
 
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
@@ -10788,33 +10773,23 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
 
-    auto my_mapping = getActiveColumnIdMapping();
-    auto src_mapping = src_data->getActiveColumnIdMapping();
-    bool my_has_mapping = (my_mapping != nullptr);
-    bool src_has_mapping = (src_mapping != nullptr);
-    if (my_has_mapping != src_has_mapping)
+    /// Off the same snapshots whose columns were just compared, not off live state: the two are
+    /// one object since the mapping became a metadata field, and reading one of each would compare
+    /// the columns of one instant against the mapping of another.
+    auto my_mapping = my_snapshot->getActiveColumnIdMapping();
+    auto src_mapping = src_snapshot->getActiveColumnIdMapping();
+    if (static_cast<bool>(my_mapping) != static_cast<bool>(src_mapping))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Tables have incompatible column ID mapping state: "
             "one table has column IDs active while the other does not");
-    if (my_has_mapping && src_has_mapping)
-    {
-        if (my_mapping->getLogicalToId() != src_mapping->getLogicalToId())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Tables have different column ID mappings; "
-                "partition operations require identical logical-to-ID column mappings");
 
-        /// Counter compatibility: source parts can carry orphan column files at
-        /// IDs the destination's counter has not yet handed out.  Transferring
-        /// such parts and later ADDing a column on the destination would
-        /// allocate one of those IDs and read the stale orphan bytes.
-        if (src_mapping->getNextColumnIdCounter() > my_mapping->getNextColumnIdCounter())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Source table's column-ID counter ({}) is ahead of destination's "
-                "({}); transferred parts may carry orphan column IDs the "
-                "destination would later reuse.  Bump the destination's counter "
-                "(e.g. via ADD/DROP COLUMN cycles) before the partition operation.",
-                src_mapping->getNextColumnIdCounter(), my_mapping->getNextColumnIdCounter());
-    }
+    /// Only the binding has to match.  A source counter ahead of the destination's is not itself a
+    /// problem -- it matters only if a part actually carries such an ID, which the transfer checks
+    /// per part, where it can say which part and refuse only that transfer.
+    if (my_mapping && my_mapping->getLogicalToId() != src_mapping->getLogicalToId())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Tables have different column ID mappings; "
+            "partition operations require identical logical-to-ID column mappings");
 
     return *src_data;
 }
@@ -11140,14 +11115,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
     const auto data_parts = getVisibleDataPartsVector(local_context);
 
-    /// FREEZE PARTITION holds only `lockForShare`, but column-ID ALTERs run
-    /// under the separate `lockForAlter`.  A `RENAME` or `DROP`+`ADD` can
-    /// therefore slip in between the visible-parts snapshot above and the
-    /// mapping snapshot below.  Pin the mapping pointer now and re-check it
-    /// after the freeze loop -- if it changed the shadow tree would hold
-    /// frozen parts from the old layout paired with a newer mapping, which
-    /// makes offline readers resolve columns through the wrong IDs.
-    auto column_ids_mapping_snapshot = getColumnIdMapping();
+    /// Read after the parts, never before: the counter only grows, so a mapping read afterwards names
+    /// every ID those parts carry, whatever ALTER landed in between.
+    auto column_id_mapping = getColumnIdMapping();
 
     bool has_zero_copy_part = false;
     for (const auto & part : data_parts)
@@ -11240,25 +11210,13 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    /// Pointer equality is the column-ID mapping version check: MultiVersion::set
-    /// always installs a fresh unique_ptr, so a changed pointer means a
-    /// column-ID `ALTER` (RENAME, DROP+ADD activation, ...) ran between the
-    /// parts snapshot and now.  The user must retry FREEZE for the
-    /// mapping/parts pair to be coherent.
-    if (getColumnIdMapping().get() != column_ids_mapping_snapshot.get())
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Column ID mapping changed concurrently with FREEZE; the shadow "
-            "tree would mix frozen parts from the old layout with a newer "
-            "mapping.  Retry the FREEZE without a concurrent column-ID ALTER.");
-
     /// Off-line readers (`mergeTreeParts()`, clickhouse-local) need the mapping
     /// alongside the frozen parts to resolve non-identity IDs.  A shadow tree is
     /// an immutable, portable, PER-DISK artifact consumed one disk at a time, so
     /// -- unlike the mutable live copy -- write `column_ids.json` into EACH disk's
     /// shadow subtree that produced a frozen part.  Per-disk redundancy is correct
     /// here precisely because the shadow never changes (no torn-write concern).
-    if (column_ids_mapping_snapshot && column_ids_mapping_snapshot->isActive() && !result.empty())
+    if (column_id_mapping && column_id_mapping->isActive() && !result.empty())
     {
         const auto column_ids_in_freeze = fs::path(backup_path) / relative_data_path / COLUMN_IDS_FILE_NAME;
         for (const auto & disk : getStoragePolicy()->getDisks())
@@ -11270,7 +11228,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
             disk->createDirectories(fs::path(column_ids_in_freeze).parent_path());
             auto buf = disk->writeFile(column_ids_in_freeze, 4096, WriteMode::Rewrite, local_context->getWriteSettings());
-            column_ids_mapping_snapshot->serialize(*buf);
+            column_id_mapping->serialize(*buf);
             buf->finalize();
         }
     }

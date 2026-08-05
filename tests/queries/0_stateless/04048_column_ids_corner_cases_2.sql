@@ -21,8 +21,8 @@ SELECT a, b FROM t_ids_part_dst;
 DROP TABLE t_ids_part_src SYNC;
 DROP TABLE t_ids_part_dst SYNC;
 
--- why: a source counter ahead of the destination is rejected -- transferred parts may
--- carry orphan files at IDs the destination would later hand out via ADD COLUMN.
+-- why: a source counter ahead of the destination is not itself a problem -- what matters is
+-- whether a part carries such an ID, and this part was written after the drop, so it does not.
 CREATE TABLE t_ids_part_src_b (a UInt64, b String) ENGINE = MergeTree ORDER BY a PARTITION BY a
 SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'with_column_ids';
 CREATE TABLE t_ids_part_dst_b (a UInt64, b String) ENGINE = MergeTree ORDER BY a PARTITION BY a
@@ -30,7 +30,8 @@ SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'with_column_
 ALTER TABLE t_ids_part_src_b ADD COLUMN c UInt64;
 ALTER TABLE t_ids_part_src_b DROP COLUMN c;
 INSERT INTO t_ids_part_src_b VALUES (1, 'hello');
-ALTER TABLE t_ids_part_dst_b ATTACH PARTITION 1 FROM t_ids_part_src_b; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_ids_part_dst_b ATTACH PARTITION 1 FROM t_ids_part_src_b;
+SELECT a, b FROM t_ids_part_dst_b ORDER BY a;
 DROP TABLE t_ids_part_src_b SYNC;
 DROP TABLE t_ids_part_dst_b SYNC;
 

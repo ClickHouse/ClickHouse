@@ -4,14 +4,12 @@
 2	y	9.9
 price	1
 freeze_mapping_present
-throws_on_mismatch
+throws_on_non_empty
 1	x	0
 2	y	0
 3	z	3.3
-1	x	1.5	99
-10	y	99	99
 throws_on_legacy_into_active
-throws_on_counter_mismatch
+throws_on_foreign_column_id
 10	y	99
 inactive_mapping_not_backed_up
 throws_on_above_counter_id

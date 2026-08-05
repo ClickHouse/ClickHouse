@@ -71,6 +71,13 @@ public:
 
     static UInt64 extractNumericCounter(const String & s);
 
+    /// An ID at or above the counter is unreadable here: a later `ADD COLUMN` gets handed the same
+    /// one.  A pre-activation ID (a bare column name) is never one.
+    bool isColumnIdAtOrAboveCounter(const String & column_id) const
+    {
+        return extractNumericCounter(column_id) >= next_column_id;
+    }
+
     /// Throws if `logical_name` is not in the mapping.
     String getColumnId(const String & logical_name) const;
 

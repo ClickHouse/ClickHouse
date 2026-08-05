@@ -107,6 +107,8 @@ public:
 
     CancellationCode killMutation(const String & mutation_id) override;
 
+    std::optional<Int64> getBackupPartsBound() const override;
+
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
