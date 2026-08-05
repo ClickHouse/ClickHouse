@@ -162,15 +162,20 @@ FROM numbers(100) SETTINGS max_execution_time = 0, max_block_size = 200000;
 -- 10. The poll must read the EXECUTING query, not the one that built the function. `ALTER` rebuilds the
 --     partition key from its own query context and `adjustPartitionKey` hands that same object to later
 --     inserts, rebuilding only when the key contains `modulo`, hence the plain key here. Reading a
---     per-instance `QueryStatus` would fail this insert on the ALTER's expired limit, so the limit only
---     has to be finite and elapse, not tight: a tight one can time the ALTER itself out on a loaded host.
---     The insert only needs one stride crossing for the poll to fire, and padded rows reach it with few
---     enough rows to keep the partition count low.
+--     per-instance `QueryStatus` would fail this insert on the ALTER's expired limit, so the ALTER's
+--     limit has to be shorter than the wait below: with a limit longer than the wait, a stale timer has
+--     not expired by the time the insert runs and the case passes either way.
+--     `break` is what lets the limit be that short without the ALTER timing itself out: on expiry
+--     `CancellationChecker::cancelTask` calls `checkTimeLimit` instead of `cancelQuery(TIMEOUT)`, so
+--     `is_killed` is never set and the ALTER always completes, while the stopwatch a stale status would
+--     read keeps running. The insert only needs one stride crossing for the poll to fire, and padded
+--     rows reach it with few enough rows to keep the partition count low.
 DROP TABLE IF EXISTS t_04691_retained;
 CREATE TABLE t_04691_retained (q String, n UInt64)
 ENGINE = MergeTree PARTITION BY cityHash64(formatQuery(q)) ORDER BY n;
-ALTER TABLE t_04691_retained ADD COLUMN extra UInt8 DEFAULT 0 SETTINGS max_execution_time = 30;
-SELECT sleep(1), sleep(0.2) FORMAT Null SETTINGS max_execution_time = 0;
+ALTER TABLE t_04691_retained ADD COLUMN extra UInt8 DEFAULT 0
+SETTINGS max_execution_time = 0.5, timeout_overflow_mode = 'break';
+SELECT sleep(1) FORMAT Null SETTINGS max_execution_time = 0;
 INSERT INTO t_04691_retained (q, n)
 SELECT 'SELECT ' || toString(number % 4) || ' -- ' || repeat('x', 700), number FROM numbers(200)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
