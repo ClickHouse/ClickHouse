@@ -27,6 +27,12 @@ public:
 
     std::string getName() const override { return "Alias"; }
 
+    bool isMergeTree() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->isMergeTree();
+    }
+
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
@@ -92,6 +98,8 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override { getTargetTable()->checkMutationIsPossible(commands, settings); }
 
+    void checkInsertIsAllowed(ContextPtr local_context) const override { getTargetTable()->checkInsertIsAllowed(local_context); }
+
     /// Mutate target table
     void mutate(
         const MutationCommands & commands,
@@ -107,11 +115,11 @@ public:
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
 
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
     {
         auto target = tryGetTargetTable();
         if (!target)
-            return std::make_shared<const StorageInMemoryMetadata>();
+            return std::make_shared<StorageInMemoryMetadata>();
 
         return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
     }
@@ -128,6 +136,7 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getTargetTable()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool canMoveConditionsToPrewhere() const override
     {
         auto target = tryGetTargetTable();
@@ -261,6 +270,7 @@ public:
     }
 
     ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
+    ColumnSizeByName getColumnSizes(const Names & columns) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns) : ColumnSizeByName{}; }
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override
     {
         auto target = tryGetTargetTable();
@@ -271,6 +281,9 @@ public:
     }
 
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
+
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
 

@@ -1,0 +1,7 @@
+-- cheap modality filter is placed before the Map-key predicate
+1
+-- correctness: result is the same regardless of ordering
+0
+0
+-- legacy InterpreterSelectQuery path: cheap filter first
+1

@@ -143,6 +143,18 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
+    /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
+    /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
+    /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
+    /// client-side AST rewrite — so the server parses it the same way the client did. No-op outside
+    /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
+    void pinOutboundDialectForJSONDialect(const String & outbound_query);
+
+    /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
+    /// reset, so the server re-derives them from `compatibility` itself and honors its own constraints (a profile
+    /// may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when nothing
+    /// was derived from `compatibility`, so the caller can send the client settings without copying them.
+    std::optional<Settings> settingsWithoutCompatibilityDerived() const;
     void processParsedSingleQuery(
         std::string_view query_,
         ASTPtr parsed_query,
@@ -211,6 +223,17 @@ protected:
     /// regular client and clickhouse-local. For any other specific option
     /// please use processOptions method.
     void addOptionsToTheClientConfiguration(const CommandLineOptions & options);
+    /// Remap the underscore XML spellings of some boolean keys (e.g. <echo_query_id/>) to the
+    /// dashed keys the read sites use, unless the dashed key is already set (e.g. by a CLI
+    /// flag). Call it right after the config file is merged into the client configuration,
+    /// before validateClientConfiguration.
+    void remapClientConfigurationAliases();
+    /// Fail-fast validation of option values that may come from the client config file rather
+    /// than the command line. The config file is loaded after the command line is processed,
+    /// so the CLI-side validation in `addOptionsToTheClientConfiguration` never sees these
+    /// values. Call it right after the config file is merged into the client configuration,
+    /// so that an invalid value cannot let a query start before the error is reported.
+    void validateClientConfiguration();
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments,
@@ -227,6 +250,11 @@ protected:
 
     static fs::path getHistoryFilePath();
 private:
+    /// Runs a small service query against `system.documentation` (used by `processHelpCommand`),
+    /// substituting `{word:String}`, and returns the concatenated result. The query bypasses the normal
+    /// output path, so it neither prints anything nor disturbs the visible query state.
+    Block fetchDocumentation(const String & query, const String & word);
+
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
@@ -274,6 +302,12 @@ private:
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
     virtual bool supportsLocalMetaCommands() const { return false; }
+
+    /// Implements the interactive `help`/`man` meta-command: looks `word` up in `system.documentation`
+    /// and renders its embedded documentation, formatted from Markdown, in the terminal. When nothing
+    /// matches exactly, lists similar names and entities whose documentation mentions the word.
+    /// Always returns true: the input was consumed as a meta-command.
+    bool processHelpCommand(const String & word);
 
 protected:
 
@@ -326,6 +360,11 @@ protected:
     ContextMutablePtr global_context;
     ContextMutablePtr client_context;
 
+    /// The client local time zone, captured on the first connect() before it may switch the
+    /// process default to the server time zone. Used to seed `session_timezone` per query when
+    /// `use_client_time_zone` is set, so server-side literal parsing matches the client side.
+    String client_local_timezone;
+
     String default_database;
     String query_id;
     Int32 suggestion_limit{};
@@ -341,6 +380,7 @@ protected:
     bool echo_queries = false; /// Print queries before execution (defaults to on in interactive mode, off in batch mode).
     bool echo_query_formatted = false; /// Format echoed queries (defaults to on in interactive mode, off in batch mode).
     bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
+    String echo_query_separator; /// Optional separator printed before the formatted echoed query (empty = disabled).
     bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
@@ -453,6 +493,7 @@ protected:
     bool have_error = false;
 
     std::list<ExternalTable> external_tables; /// External tables info.
+    std::list<ExternalTable> external_scalars; /// External scalars info.
     bool send_external_tables = false;
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 
@@ -502,6 +543,11 @@ protected:
 
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
+
+    /// True when the current query text was parsed via the `clickhouse_json` dialect JSON path. Captured
+    /// before any in-query `SET` is applied, so `pinOutboundDialectForJSONDialect` can keep the outbound
+    /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
+    bool current_query_parsed_as_json_dialect = false;
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;

@@ -13,6 +13,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -161,6 +162,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Decimal256 &, UInt32 sc
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 {
+    checkStackSize();
+
     DataTypes element_types;
     element_types.reserve(x.size());
 
@@ -173,6 +176,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
 {
+    checkStackSize();
+
     DataTypes element_types;
     element_types.reserve(tuple.size());
 
@@ -185,6 +190,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 {
+    checkStackSize();
+
     DataTypes key_types;
     DataTypes value_types;
     key_types.reserve(map.size());

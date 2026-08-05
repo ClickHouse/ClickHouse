@@ -1,0 +1,176 @@
+---
+description: 'ClickHouse에서 리소스 사용량 쿼터를 구성하고 관리하는 방법에 대한 가이드'
+sidebarTitle: '쿼터'
+slug: /operations/quotas
+title: '쿼터'
+doc_type: 'guide'
+---
+
+<Info>
+  **ClickHouse Cloud의 쿼터**
+
+  ClickHouse Cloud에서도 쿼터를 지원하지만, [DDL 구문](/ko/reference/statements/create/quota)을 사용해 생성해야 합니다. 아래에 설명된 XML 구성 방식은 **지원되지 않습니다**.
+</Info>
+
+쿼터를 사용하면 일정 기간 동안의 리소스 사용량을 제한하거나 리소스 사용을 추적할 수 있습니다.
+쿼터는 사용자 구성 파일에 설정되며, 일반적으로 &#39;users.xml&#39;을 사용합니다.
+
+시스템에는 단일 쿼리의 복잡도를 제한하는 기능도 있습니다. [쿼리 복잡도 제한](/ko/concepts/features/configuration/settings/query-complexity) 섹션을 참조하십시오.
+
+쿼리 복잡도 제한과 달리, 쿼터에는 다음과 같은 특징이 있습니다.
+
+* 단일 쿼리를 제한하는 대신, 일정 기간 동안 실행할 수 있는 쿼리 집합에 제한을 둡니다.
+* 분산 쿼리 처리 중 모든 원격 서버에서 사용된 리소스를 집계합니다.
+
+이제 쿼터를 정의하는 &#39;users.xml&#39; 파일의 섹션을 살펴보겠습니다.
+
+```xml
+<!-- 쿼터 -->
+<quotas>
+    <!-- 쿼터 이름. -->
+    <default>
+        <!-- 시간 범위에 대한 제한 설정입니다. 서로 다른 제한을 가진 여러 인터벌을 설정할 수 있습니다. -->
+        <interval>
+            <!-- 인터벌의 길이. -->
+            <duration>3600</duration>
+
+            <!-- 무제한. 지정된 시간 인터벌 동안 데이터를 수집하기만 합니다. -->
+            <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
+            <errors>0</errors>
+            <result_rows>0</result_rows>
+            <read_rows>0</read_rows>
+            <execution_time>0</execution_time>
+        </interval>
+    </default>
+```
+
+기본적으로 QUOTA는 사용량을 제한하지 않으면서 매시간 리소스 사용량을 추적합니다.
+각 인터벌별로 계산된 리소스 사용량은 각 요청 후 서버 로그에 출력됩니다.
+
+```xml
+<statbox>
+    <!-- 시간 범위에 대한 제한입니다. 서로 다른 제한을 가진 여러 인터벌을 설정할 수 있습니다. -->
+    <interval>
+        <!-- 인터벌의 길이입니다. -->
+        <duration>3600</duration>
+
+        <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
+        <errors>100</errors>
+        <result_rows>1000000000</result_rows>
+        <read_rows>100000000000</read_rows>
+        <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
+    </interval>
+
+    <interval>
+        <duration>86400</duration>
+
+        <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
+        <errors>1000</errors>
+        <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
+        <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
+        <execution_time>7200</execution_time>
+    </interval>
+</statbox>
+```
+
+&#39;statbox&#39; 쿼터의 경우, 제한은 매시간 및 24시간마다(86,400초) 설정됩니다. 시간 인터벌은 구현에 따라 정의된 고정 시점을 기준으로 계산됩니다. 즉, 24시간 인터벌이 반드시 자정에 시작되는 것은 아닙니다.
+
+인터벌이 끝나면 수집된 모든 값이 초기화됩니다. 다음 1시간 동안의 쿼터 계산이 다시 시작됩니다.
+
+제한할 수 있는 항목은 다음과 같습니다:
+
+`queries` – 총 요청 수입니다.
+
+`query_selects` – 총 select 요청 수입니다.
+
+`query_inserts` – 총 insert 요청 수입니다.
+
+`errors` – 예외를 발생시킨 쿼리 수입니다.
+
+`result_rows` – 결과로 반환된 총 행 수입니다.
+
+`result_bytes` - 결과로 반환된 행의 총 크기입니다.
+
+`read_rows` – 모든 원격 server에서 쿼리를 실행하기 위해 table에서 읽은 source 행의 총수입니다.
+
+`read_bytes` - 모든 원격 server에서 쿼리를 실행하기 위해 table에서 읽은 총 크기입니다.
+
+`written_bytes` - 쓰기 작업의 총 크기입니다.
+
+`execution_time` – 총 쿼리 실행 시간(초, wall time)입니다.
+
+`failed_sequential_authentications` - 연속 인증 오류의 총횟수입니다.
+
+`queries_per_normalized_hash` – 단일 정규화된 쿼리의 최대 실행 횟수입니다. 정규화된 쿼리란 리터럴이 플레이스홀더로 대체된 쿼리를 의미하므로, `SELECT 1`과 `SELECT 2`는 동일한 정규화된 쿼리로 간주됩니다. 이 제한은 각기 다른 정규화된 쿼리 패턴별로 독립적으로 추적됩니다.
+
+하나 이상의 시간 인터벌에서 이 제한을 초과하면, 어떤 제한이 초과되었는지, 어떤 인터벌에 해당하는지, 그리고 새 인터벌이 언제 시작되는지(다시 쿼리를 보낼 수 있는 시점)를 설명하는 텍스트와 함께 예외가 발생합니다.
+
+QUOTA는 여러 키의 리소스를 각각 독립적으로 보고하기 위해 &quot;QUOTA key&quot; 기능을 사용할 수 있습니다. 다음은 그 예시입니다:
+
+```xml
+<!-- For the global reports designer. -->
+<web_global>
+    <!-- keyed – The quota_key "key" is passed in the query parameter,
+            and the quota is tracked separately for each key value.
+        For example, you can pass a username as the key,
+            so the quota will be counted separately for each username.
+        Using keys makes sense only if quota_key is transmitted by the program, not by a user.
+
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
+        (But keep in mind that users can change the IPv6 address fairly easily.)
+
+        Instead of <keyed_by_ip /> you can use <keyed_by_forwarded_ip />, so the address
+        from the X-Forwarded-For header is used as the quota key.
+
+        For both <keyed_by_ip /> and <keyed_by_forwarded_ip /> you can additionally specify
+        <ipv4_prefix_bits> and <ipv6_prefix_bits> to group clients by subnet instead of by a
+        single address: the IP address is masked to the given prefix length before being used
+        as the quota key. For example, <ipv4_prefix_bits>24</ipv4_prefix_bits> shares one bucket
+        across a /24 IPv4 subnet, and <ipv6_prefix_bits>64</ipv6_prefix_bits> across a /64 IPv6
+        subnet. These elements can only be used together with <keyed_by_ip /> or
+        <keyed_by_forwarded_ip />.
+    -->
+    <keyed />
+```
+
+정규화된 쿼리 해시를 기준으로 QUOTA를 설정할 수도 있으며, 그러면 서로 다른 각 쿼리 패턴에 독립적인 QUOTA 버킷이 할당됩니다. XML 구성에서는 이를 `<keyed_by_normalized_query_hash />`로 작성합니다:
+
+```xml
+<my_quota>
+    <keyed_by_normalized_query_hash />
+    <interval>
+        <duration>3600</duration>
+        <queries>100</queries>
+    </interval>
+</my_quota>
+```
+
+같은 내용은 DDL 구문으로도 표현할 수 있습니다:
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+이 예시에서는 서로 다른 각 정규화된 쿼리를 시간당 최대 100회까지 실행할 수 있습니다. `SELECT number FROM numbers(1)`와 `SELECT number FROM numbers(2)`는 동일한 버킷을 공유하지만(정규화된 형식이 같기 때문), `SELECT number, number FROM numbers(1)`는 별도의 버킷을 사용합니다.
+
+이 QUOTA는 config의 &#39;users&#39; 섹션에서 사용자에게 할당됩니다. &quot;접근 권한&quot; 섹션을 참조하십시오.
+
+분산 쿼리 처리에서는 누적된 값이 요청을 보낸 서버에 저장됩니다. 따라서 사용자가 다른 서버로 이동하면 해당 서버의 QUOTA는 &quot;처음부터 다시&quot; 시작됩니다.
+
+서버를 재시작하면 QUOTA가 재설정됩니다.
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* 블로그: [ClickHouse로 싱글 페이지 애플리케이션 구축하기](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

@@ -1,10 +1,9 @@
+#include <algorithm>
+#include <Common/StringUtils.h>
 #include <Access/Common/AccessEntityType.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <base/range.h>
-#include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/predicate.hpp>
-#include <boost/algorithm/string/replace.hpp>
 
 
 namespace DB
@@ -45,13 +44,13 @@ const AccessEntityTypeInfo & AccessEntityTypeInfo::get(AccessEntityType type_)
         {
             String & init_name = init_names[i];
             String & init_alias = init_aliases[i];
-            boost::to_upper(init_name);
-            boost::replace_all(init_name, "_", " ");
+            toUpperASCII(init_name);
+            std::replace(init_name.begin(), init_name.end(), '_', ' ');
             if (auto underscore_pos = init_name.find_first_of(' '); underscore_pos != String::npos)
                 init_alias = init_name.substr(underscore_pos + 1);
         }
         String init_name_for_output_with_entity_name = init_names[0];
-        boost::to_lower(init_name_for_output_with_entity_name);
+        toLowerASCII(init_name_for_output_with_entity_name);
         return AccessEntityTypeInfo{raw_name_, plural_raw_name_, std::move(init_names[0]), std::move(init_aliases[0]), std::move(init_names[1]), std::move(init_aliases[1]), std::move(init_name_for_output_with_entity_name), unique_char_, not_found_error_code_};
     };
 
@@ -97,7 +96,7 @@ AccessEntityType AccessEntityTypeInfo::parseType(const String & name_)
     for (auto type : collections::range(AccessEntityType::MAX))
     {
         const auto & info = get(type);
-        if (boost::iequals(info.name, name_))
+        if (equalsCaseInsensitive(info.name, name_))
             return type;
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type: {}", name_);
