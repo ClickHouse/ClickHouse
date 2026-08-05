@@ -26,6 +26,7 @@ Regression coverage for two flavours of "Unknown job error" in
 visible `Result` so investigators notice the file is corrupt.
 """
 
+import ast
 import os
 import sys
 from pathlib import Path
@@ -38,6 +39,11 @@ from ci.jobs.stress_job import (
     process_results,
     read_test_results,
     sanitize_test_result_line,
+)
+from ci.jobs.scripts.stress.stress import (
+    HUNG_CHECK_INFO_BUDGET,
+    build_hung_check_info,
+    escape_tsv_info,
 )
 
 
@@ -243,6 +249,98 @@ def test_dpkg_progress_in_info_does_not_split_row(tmp_path):
         "Test script exit code",
     ]
     assert malformed == []
+
+
+_VERDICT = "Found hung queries in processlist:"
+
+
+def _hung_log(tmp_path: Path, content) -> Path:
+    path = tmp_path / "hung_check.log"
+    path.write_bytes(content if isinstance(content, bytes) else content.encode("utf-8"))
+    return path
+
+
+def _processlist(count: int) -> str:
+    # `ORDER BY elapsed DESC`: query 0 is the longest-running one.
+    return "".join(
+        f"query:   SELECT hung_query_{i} FROM t\nelapsed: {count - i}.0\n"
+        for i in range(count)
+    )
+
+
+def test_verdict_survives_a_large_log_statistics_section(tmp_path):
+    """Regression: `--report-logs-stats` output is unbounded in bytes and printed
+    last, so reading the end of the log embedded statistics and never the verdict.
+    On the real 309 KB artifact that section is 9.4x the whole budget."""
+    log = _hung_log(
+        tmp_path,
+        "banner\n" * 100
+        + f"{_VERDICT}\n"
+        + _processlist(1200)
+        + "Top patterns of log messages:\n"
+        + "count message_format_string\n" * 2000,
+    )
+    info = build_hung_check_info(log)
+    assert _VERDICT in info
+    assert "hung_query_0 " in info
+    assert "message_format_string" not in info
+
+
+def test_oldest_query_is_kept_when_the_processlist_exceeds_the_budget(tmp_path):
+    """The discriminating case: a genuine processlist larger than the budget, with
+    no statistics section at all. Reading the end loses the verdict here too."""
+    log = _hung_log(tmp_path, f"banner\n{_VERDICT}\n" + _processlist(1200))
+    info = build_hung_check_info(log)
+    assert _VERDICT in info
+    assert "hung_query_0 " in info
+    assert "hung_query_1199 " not in info
+    assert "showing the first 32 KiB" in info
+
+
+def test_a_single_query_line_longer_than_the_budget_is_still_shown(tmp_path):
+    """`system.processes.query` is unbounded and `Vertical` does not escape it, so
+    one fuzzer query is one line longer than the budget. The window must keep its
+    trailing fragment; trimming to a line boundary would erase the processlist."""
+    huge = "SELECT hung_query_0, " + "x" * (2 * HUNG_CHECK_INFO_BUDGET)
+    log = _hung_log(tmp_path, f"banner\n{_VERDICT}\nquery:   {huge}\n")
+    info = build_hung_check_info(log)
+    assert "hung_query_0" in info
+    assert len(info) > HUNG_CHECK_INFO_BUDGET
+
+
+def test_hung_check_polling_loop_is_throttled():
+    """The loop prints one progress token per probe *before* the verdict, so an
+    unthrottled loop can fill the embedded window in the genuine-hang case."""
+    source = Path(__file__).resolve().parents[2] / "tests" / "clickhouse-test"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+
+    def calls(node, name):
+        return [
+            n
+            for n in ast.walk(node)
+            if isinstance(n, ast.Call) and getattr(n.func, "id", None) == name
+        ]
+
+    loops = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.While) and calls(n, "get_processlist_size")
+    ]
+    assert len(loops) == 1, f"expected one hung-check polling loop, found {len(loops)}"
+    assert calls(loops[0], "sleep"), "the hung-check polling loop must not spin"
+
+
+def test_small_log_is_embedded_whole_and_round_trips(tmp_path):
+    raw = b"banner\nNo queries hung.\nnul\0tab\tcr\rlf\ninvalid utf-8: \xff\n"
+    log = _hung_log(tmp_path, raw)
+    info = build_hung_check_info(log)
+    assert info == raw.decode("utf-8", errors="replace")
+    assert "truncated" not in info
+    path = _write(tmp_path, f"row\tFAIL\t\\N\t{escape_tsv_info(info)}\n")
+    results, malformed = read_test_results(path)
+    assert malformed == []
+    # `read_test_results` restores tab/CR/LF; NUL stays escaped as `\0`.
+    assert [r.info for r in results] == [info.replace("\0", "\\0")]
 
 
 if __name__ == "__main__":
