@@ -30,6 +30,8 @@ struct QueryPlanOptimizationSettings
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
+    void keepOnlyExplicitlyEnabled(const Settings & from);
+
     /// Allows to globally disable all plan-level optimizations.
     /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
     bool optimize_plan;
@@ -52,11 +54,13 @@ struct QueryPlanOptimizationSettings
     bool merge_filters;
     bool filter_push_down;
     bool convert_outer_join_to_inner_join;
+    bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
+    bool distinct_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
@@ -92,6 +96,7 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
+    bool use_query_condition_cache_for_top_k;
     bool read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
@@ -177,12 +182,14 @@ struct QueryPlanOptimizationSettings
 
     /// JOIN runtime filter settings
     bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
+    bool enable_join_runtime_filters_index_analysis = false; /// Filter left side using pk/skip indexes
     UInt64 join_runtime_filter_exact_values_limit = 0;
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
     Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
     UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
+    UInt64 join_runtime_filter_min_probe_rows = 1000;
     bool join_runtime_filter_size_from_hash_table_stats = false;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
@@ -212,6 +219,7 @@ struct QueryPlanOptimizationSettings
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
+    bool enable_parallel_replicas = false;
 };
 
 }

@@ -35,8 +35,7 @@ For following this guide you will need:
 ## Setup {#setup}
 
 <Steps>
-<Step>
-### Create a Google Cloud service account {#create-gcs-account}
+<Step title="Create a Google Cloud service account" id="create-gcs-account">
 
 1. In the Google Cloud Console, navigate to IAM & Admin → Service Accounts
 
@@ -74,8 +73,7 @@ Make note of the service account email address:
 
 <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt=""/>
 </Step>
-<Step>
-### Grant bucket access to the service account {#grant-bucket-access-to-service-account}
+<Step title="Grant bucket access to the service account" id="grant-bucket-access-to-service-account">
 
 You can grant access at either the project level or individual bucket level.
 
@@ -106,8 +104,7 @@ You can grant access at either the project level or individual bucket level.
 Grant access only to the specific buckets that ClickHouse needs to access, rather than project-wide permissions.
 </Warning>
 </Step>
-<Step>
-### Generate HMAC keys for the service account {#generate-hmac-keys-for-service-account}
+<Step title="Generate HMAC keys for the service account" id="generate-hmac-keys-for-service-account">
 
 Navigate to `Cloud Storage` → `Settings` → `Interoperability`:
 

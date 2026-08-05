@@ -1,0 +1,10 @@
+with row policy, metadata columns stay readable
+a
+b
+100
+with row policy, codec_block_counts denied
+row policy dropped
+['LZ4']
+row policy with always-true condition
+['LZ4']
+1000
