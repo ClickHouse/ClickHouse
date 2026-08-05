@@ -1,6 +1,7 @@
 import random
 import sys
 import threading
+import time
 
 import pytest
 
@@ -56,17 +57,38 @@ NUM_QUERY_WORKERS = 24
 WORKER_QUERY_TIMEOUT = 20
 WORKER_QUERY_SETTINGS = {"connect_timeout": 5, "receive_timeout": 10}
 
+# The workload fails closed, mirroring manual_cgroup_oom_repro.py: `query_and_get_answer_with_error`
+# only raises on the timeout backstop and otherwise returns an `(answer, error)` tuple even when the
+# client exits non-zero, so a workload broken from the start (connection refused, a SQL error, an early
+# `MEMORY_LIMIT_EXCEEDED`) would otherwise loop on failed queries for the whole wait window and be
+# reported as a generic timeout. A worker that sees an error before any worker query has succeeded
+# records the real error and aborts the run; once `workload_ok` is set, errors are expected and
+# tolerated - queries start dying with memory errors and lost connections as the cgroup fills and the
+# canary is killed.
+stop = threading.Event()
+workload_ok = threading.Event()  # set on the first fully successful worker query
+workload_failures = []  # pre-success failures as (sql, error); append is atomic, only [0] is read
+
 
 def run_worker_query(sql, settings=None):
+    if stop.is_set():
+        return
     merged = dict(WORKER_QUERY_SETTINGS)
     if settings:
         merged.update(settings)
     try:
-        node.query_and_get_answer_with_error(
+        _, error = node.query_and_get_answer_with_error(
             sql, timeout=WORKER_QUERY_TIMEOUT, settings=merged
         )
     except QueryTimeoutExceedException:
-        pass
+        # Expected under memory pressure or after the OOM kill; the caller re-checks `stop`.
+        return
+    if not error:
+        workload_ok.set()
+    elif not workload_ok.is_set():
+        # Fail closed: the workload is broken, not OOMed - record the real error and abort all workers.
+        workload_failures.append((sql, error))
+        stop.set()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -119,8 +141,6 @@ def test_fuzzer_scenario_triggers_kernel_oom_and_server_survives():
         node.query(f"DROP TABLE IF EXISTS num_10k__fuzz_{t} SYNC")
         node.query(f"CREATE TABLE num_10k__fuzz_{t} (number UInt64) ENGINE = MergeTree ORDER BY tuple()")
 
-    stop = threading.Event()
-
     # The explosive bitmap self-join mutation, taken verbatim from fuzzer.log.
     BITMAP_QUERY = (
         "SELECT dim, sum(idnum) FROM test_bm_join RIGHT JOIN (SELECT dim, bitmapOrCardinality(ids, ids2) AS idnum "
@@ -171,8 +191,18 @@ def test_fuzzer_scenario_triggers_kernel_oom_and_server_survives():
     try:
         # Aggregate memory drifts over the cgroup, the kernel kills the canary, and the server runs its
         # OOM response. A cancelled merge is rescheduled, so there is no stable end state; we wait for the
-        # response to reach the merge-cancellation step.
-        node.wait_for_log_line("Cancelled all running merges", timeout=600)
+        # response to reach the merge-cancellation step. The wait is chunked so that a workload aborted by
+        # a pre-success worker failure stops within one chunk and reports the real error below, instead of
+        # burning the whole window and reporting a generic timeout. `wait_for_log_line` raises when its
+        # chunk elapses without a match; the look-behind re-scan makes the chunks lose no log lines.
+        deadline = time.monotonic() + 600
+        while True:
+            try:
+                node.wait_for_log_line("Cancelled all running merges", timeout=30)
+                break
+            except Exception:
+                if stop.is_set() or time.monotonic() >= deadline:
+                    raise
     finally:
         stop.set()
         # The join window comfortably exceeds the per-call worker timeout above, so a worker mid-query
@@ -185,6 +215,14 @@ def test_fuzzer_scenario_triggers_kernel_oom_and_server_survives():
                 f"WARNING: {len(stuck)} worker(s) still running after join "
                 "(a query did not return within its timeout)",
                 file=sys.stderr,
+            )
+        # Fail closed on a workload that never got off the ground: surface the first real worker error
+        # instead of the `wait_for_log_line` timeout it would otherwise hide behind.
+        if workload_failures and not workload_ok.is_set():
+            failed_sql, error = workload_failures[0]
+            pytest.fail(
+                f"A worker query failed before any worker query succeeded - the workload is broken, "
+                f"not OOMed. First failure: {failed_sql!r}: {error}"
             )
 
     # The kernel OOM killer really fired: the canary died with cgroup OOM evidence, recorded in
