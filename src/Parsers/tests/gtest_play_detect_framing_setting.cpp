@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -90,6 +91,19 @@ struct FramingSetting
     bool user_sets_session_framing;
 };
 
+/// Mirror of `settingName` in play.html: `ParserSetQuery` parses the setting name with a full
+/// identifier parser, so the name may also be spelled as a quoted identifier - a backquoted
+/// `framing_output_format` is the same real setting. Compare by the unquoted, lowercased name;
+/// returns an empty optional for a token that cannot be a setting name.
+std::optional<std::string> settingName(const Tok & tok)
+{
+    if (tok.type == DB::TokenType::BareWord)
+        return toLower(tok.text);
+    if (tok.type == DB::TokenType::QuotedIdentifier && tok.text.size() >= 2)
+        return toLower(tok.text.substr(1, tok.text.size() - 2));
+    return std::nullopt;
+}
+
 /// Faithful port of `detectFramingSetting` from play.html.
 FramingSetting detectFramingSetting(const std::string & query)
 {
@@ -129,7 +143,7 @@ FramingSetting detectFramingSetting(const std::string & query)
             /// setting.
             if ((is_settings || is_set)
                 && i + 2 < tokens.size()
-                && tokens[i + 1].type == DB::TokenType::BareWord
+                && settingName(tokens[i + 1]).has_value()
                 && tokens[i + 2].type == DB::TokenType::Equals)
             {
                 /// Walk the settings list itself - `name = value` pairs separated by commas - and
@@ -137,10 +151,10 @@ FramingSetting detectFramingSetting(const std::string & query)
                 /// list (e.g. a trailing `FORMAT` clause) is scanned as if it were a setting.
                 size_t j = i + 1;
                 while (j + 1 < tokens.size()
-                    && tokens[j].type == DB::TokenType::BareWord
+                    && settingName(tokens[j]).has_value()
                     && tokens[j + 1].type == DB::TokenType::Equals)
                 {
-                    const std::string name = toLower(tokens[j].text);
+                    const std::string name = *settingName(tokens[j]);
                     j += 2;
                     /// A numeric value may carry a sign (`SETTINGS priority = -1`), which the lexer
                     /// reports as a separate token.
@@ -305,6 +319,27 @@ TEST(PlayDetectFramingSetting, ColumnNamedSettingsDoesNotOpenAContext)
     /// The settings context ends with the list grammar: a signed numeric value does not break the
     /// walk before a later `framing_output_format` entry in the same list.
     expectFraming("SELECT 1 SETTINGS priority = -1, framing_output_format = 'None'", false, true);
+}
+
+TEST(PlayDetectFramingSetting, QuotedSettingNameIsARealSetting)
+{
+    /// The reported bug: `ParserSetQuery` parses the setting name with a full identifier parser, so
+    /// a quoted spelling of the name is the same real setting. A detector that requires a bare word
+    /// would miss it: the page would then add its own framing while the server honors the quoted
+    /// query-level setting, and the response would be dispatched down the wrong branch.
+    expectFraming("SELECT 1 SETTINGS `framing_output_format` = 'JSONEachPacketString'", true, false);
+    expectFraming("SELECT 1 SETTINGS `framing_output_format` = 'None'", false, true);
+    expectFraming("SELECT 1 SETTINGS \"framing_output_format\" = 'EventStream'", true, false);
+    /// Case-insensitive like the bare-word spelling, and mixed spellings in one list still walk the
+    /// whole list (the last assignment wins).
+    expectFraming("SELECT 1 SETTINGS `FRAMING_OUTPUT_FORMAT` = 'None'", false, true);
+    expectFraming("SELECT 1 SETTINGS `max_threads` = 1, framing_output_format = 'None'", false, true);
+    expectFraming("SELECT 1 SETTINGS framing_output_format = 'None', `framing_output_format` = 'EventStream'", true, false);
+    /// The standalone `SET` form is refused as a session-level change for the quoted spelling too.
+    expectFraming("SET `framing_output_format` = 'JSONEachPacketString'", false, false, true);
+    expectFraming("SET `framing_output_format` = 'None'", false, false, true);
+    /// A quoted identifier in the query body is still not a setting.
+    expectFraming("SELECT `framing_output_format` = 'None' FROM values('framing_output_format String', ('None'))", false, false);
 }
 
 TEST(PlayDetectFramingSetting, CommentIsNotASetting)

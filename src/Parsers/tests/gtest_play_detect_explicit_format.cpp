@@ -152,7 +152,7 @@ std::optional<FormatClause> detectExplicitFormatClause(const std::string & query
         else if (depth == 0
             && t.type == DB::TokenType::BareWord
             && toLower(t.text) == "format"
-            && tokens[i + 1].type == DB::TokenType::BareWord
+            && (tokens[i + 1].type == DB::TokenType::BareWord || tokens[i + 1].type == DB::TokenType::QuotedIdentifier)
             && endsExpression(i > 0 ? &tokens[i - 1] : nullptr))
         {
             /// A real `FORMAT` clause is the last clause of the statement: only `;` or a trailing
@@ -162,7 +162,13 @@ std::optional<FormatClause> detectExplicitFormatClause(const std::string & query
                 || tokens[i + 2].type == DB::TokenType::Semicolon
                 || (tokens[i + 2].type == DB::TokenType::BareWord && toLower(tokens[i + 2].text) == "settings"))
             {
-                return FormatClause{tokens[i + 1].text, t.start, tokens[i + 1].end};
+                /// The server parses the format name with an identifier parser, so a backquoted
+                /// spelling is a real clause too; report the unquoted name while the span keeps the
+                /// quotes so the download strips the whole clause.
+                std::string name = tokens[i + 1].text;
+                if (tokens[i + 1].type == DB::TokenType::QuotedIdentifier && name.size() >= 2)
+                    name = name.substr(1, name.size() - 2);
+                return FormatClause{name, t.start, tokens[i + 1].end};
             }
         }
     }
@@ -224,6 +230,28 @@ TEST(PlayDetectExplicitFormat, RealFormatClause)
     expectFormat("SELECT 1 FORMAT JSON;", "JSON");
     /// The `SETTINGS` clause may follow the `FORMAT` clause.
     expectFormat("SELECT 1 FORMAT TSV SETTINGS max_threads = 1", "TSV");
+}
+
+TEST(PlayDetectExplicitFormat, QuotedFormatNameIsARealClause)
+{
+    /// The reported bug: the server parses the format name with an identifier parser, so a quoted
+    /// spelling of the name is a real clause. A detector that requires a bare word would miss it:
+    /// the page would then add its own framing (losing e.g. the chart path of `JSONCompactColumns`)
+    /// and the download would fail to strip the clause. The reported name is unquoted, while the
+    /// stripped span covers the quotes.
+    expectFormat("SELECT 1 FORMAT `JSON`", "JSON");
+    expectFormat("SELECT * FROM system.numbers LIMIT 1 FORMAT `JSONCompactColumns`", "JSONCompactColumns");
+    expectFormat("SELECT 1 FORMAT \"TSV\"", "TSV");
+    expectFormat("SELECT 1 FORMAT `TSV` SETTINGS max_threads = 1", "TSV");
+    expectFormat("SELECT 1 FORMAT `JSON`;", "JSON");
+    expectStrip("SELECT 1 FORMAT `JSON`", "SELECT 1 ");
+    expectStrip("SELECT 1 FORMAT `TSV` SETTINGS max_threads = 1", "SELECT 1  SETTINGS max_threads = 1");
+    /// A quoted identifier in the query body is still not a clause: after `SELECT` an operand is
+    /// expected, so a backquoted word there is a column, aliased by the next word.
+    expectFormat("SELECT format `JSONCompactColumns` FROM values('format UInt8', (1))", std::nullopt);
+    /// A quoted `format` word is an identifier, never the clause keyword - even in trailing
+    /// position (`JSON` is then its alias).
+    expectFormat("SELECT `format` JSON", std::nullopt);
 }
 
 TEST(PlayDetectExplicitFormat, StringLiteralIsNotAFormatClause)

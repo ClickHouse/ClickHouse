@@ -12892,16 +12892,17 @@ async function detectFramingSetting(query)
 {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
         /// Without the lexer, require a `SETTINGS`/`SET` keyword before the assignment so that a bare
-        /// comparison in the query body is not mistaken for a setting.
-        const has_setting = /\b(?:settings|set)\b[\s\S]*\bframing_output_format\s*=/i.test(query);
+        /// comparison in the query body is not mistaken for a setting. The name may be spelled as a
+        /// quoted identifier, so an optional closing quote is allowed between the name and the `=`.
+        const has_setting = /\b(?:settings|set)\b[\s\S]*\bframing_output_format[`"]?\s*=/i.test(query);
         /// A standalone `SET framing_output_format = ...` (the statement begins with `SET`) changes the
         /// session default, which this page cannot honor; detect it by the leading keyword.
-        const sets_session = /^\s*set\b[\s\S]*\bframing_output_format\s*=/i.test(query);
+        const sets_session = /^\s*set\b[\s\S]*\bframing_output_format[`"]?\s*=/i.test(query);
         /// The server applies duplicate `SETTINGS` entries in order, so classify by the last
         /// assignment's value rather than by any `= 'None'` occurrence. `None` disables framing;
         /// `DEFAULT` and a query-parameter placeholder (`{fmt:String}`) may resolve to `None`,
         /// so they are classified conservatively as disabling too.
-        const assignments = [...query.matchAll(/\bframing_output_format\s*=\s*('?\w+'?|\{[^}]*\})/gi)];
+        const assignments = [...query.matchAll(/\bframing_output_format[`"]?\s*=\s*('?\w+'?|\{[^}]*\})/gi)];
         const raw_value = assignments.length ? assignments[assignments.length - 1][1] : '';
         const last_value = raw_value.replace(/'/g, '').toLowerCase();
         const disables = has_setting && !sets_session
@@ -12914,6 +12915,16 @@ async function detectFramingSetting(query)
     }
 
     const tokens = (await tokenize(query)).filter(t => t.significant);
+    /// `ParserSetQuery` parses the setting name with a full identifier parser, so the name may also
+    /// be spelled as a quoted identifier: a backquoted `framing_output_format` in `SETTINGS` or `SET`
+    /// is the same real setting. Accept both spellings and compare by the unquoted, lowercased name;
+    /// returns null for a token that cannot be a setting name.
+    const settingName = (tok) => {
+        if (!tok) return null;
+        if (tok.type === TT.BareWord) return tok.token.toLowerCase();
+        if (tok.type === TT.QuotedIdentifier) return tok.token.slice(1, -1).toLowerCase();
+        return null;
+    };
     let depth = 0;
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
@@ -12942,15 +12953,15 @@ async function detectFramingSetting(query)
             /// followed by a `,`/`FROM`/operator instead, so it does not open a settings context
             /// and the comparison next to it is not mistaken for a setting.
             if ((is_settings || is_set)
-                && tokens[i + 1] && tokens[i + 1].type === TT.BareWord
+                && settingName(tokens[i + 1]) !== null
                 && tokens[i + 2] && tokens[i + 2].type === TT.Equals) {
                 /// Walk the settings list itself - `name = value` pairs separated by commas - and
                 /// leave the settings context where the list grammar ends, so nothing after the
                 /// list (e.g. a trailing `FORMAT` clause) is scanned as if it were a setting.
                 let j = i + 1;
-                while (tokens[j] && tokens[j].type === TT.BareWord
+                while (settingName(tokens[j]) !== null
                     && tokens[j + 1] && tokens[j + 1].type === TT.Equals) {
-                    const name = tokens[j].token.toLowerCase();
+                    const name = settingName(tokens[j]);
                     j += 2;
                     /// A numeric value may carry a sign (`SETTINGS priority = -1`), which the lexer
                     /// reports as a separate token.
@@ -13026,7 +13037,8 @@ async function detectFramingSetting(query)
 /// text, and it counts `FORMAT` only as a real trailing clause: a `BareWord` `format` at bracket
 /// depth 0, PRECEDED by a token that ends an expression (a literal, an identifier, `*`, or a
 /// closing bracket - the clause is tried exactly where an alias could appear, mirroring the server
-/// parser), immediately followed by the format name (another `BareWord`), after which the query has
+/// parser), immediately followed by the format name (a `BareWord`, or a `QuotedIdentifier` - the
+/// server parses it with an identifier parser, so a backquoted name is a real clause), after which the query has
 /// nothing more except an optional statement-terminating `;` or a trailing `SETTINGS` clause (the
 /// `FORMAT` and `SETTINGS` clauses may appear in either order). This ignores a `FORMAT` mention
 /// inside a string literal or a comment and, crucially, a column named `format` in the query body:
@@ -13092,7 +13104,7 @@ async function detectExplicitFormatClause(query)
         } else if (depth === 0
             && t.type === TT.BareWord
             && t.token.toLowerCase() === 'format'
-            && tokens[i + 1].type === TT.BareWord
+            && (tokens[i + 1].type === TT.BareWord || tokens[i + 1].type === TT.QuotedIdentifier)
             && endsExpression(i > 0 ? tokens[i - 1] : null)) {
             /// A real `FORMAT` clause is the last clause of the statement: only `;` or a trailing
             /// `SETTINGS` list may follow the format name.
@@ -13100,7 +13112,14 @@ async function detectExplicitFormatClause(query)
             if (!after
                 || after.type === TT.Semicolon
                 || (after.type === TT.BareWord && after.token.toLowerCase() === 'settings')) {
-                return { name: tokens[i + 1].token, start: t.start, end: tokens[i + 1].end };
+                /// The server parses the format name with an identifier parser, so a backquoted
+                /// spelling is a real clause too; report the unquoted name while the span keeps the
+                /// quotes so the download strips the whole clause.
+                const name_token = tokens[i + 1];
+                const name = name_token.type === TT.QuotedIdentifier
+                    ? name_token.token.slice(1, -1)
+                    : name_token.token;
+                return { name, start: t.start, end: name_token.end };
             }
         }
     }
