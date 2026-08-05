@@ -12,8 +12,12 @@ bool isRetryableAzureException(const Azure::Core::RequestFailedException & e)
     if (dynamic_cast<const Azure::Core::Http::TransportException *>(&e))
         return true;
 
-    /// 403 is always retryable so a transient RBAC-propagation 403 isn't misreported as POTENTIALLY_BROKEN_DATA_PART.
+    /// Always retry 403 (RBAC-propagation lag); never treat it as data corruption.
     if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden)
+        return true;
+
+    /// 408 request-timeout is transient; retry it.
+    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::RequestTimeout)
         return true;
 
     /// Retry other 5xx errors just in case.
