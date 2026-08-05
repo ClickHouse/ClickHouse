@@ -39,10 +39,10 @@ endif()
 # We require a C++20 compliant compiler
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(ARROW_VERSION "23.0.0")
+set(ARROW_VERSION "25.0.0")
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ARROW_BASE_VERSION "${ARROW_VERSION}")
 
-set(ARROW_VERSION_MAJOR "23")
+set(ARROW_VERSION_MAJOR "25")
 set(ARROW_VERSION_MINOR "0")
 set(ARROW_VERSION_PATCH "0")
 
@@ -82,7 +82,10 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         COMMAND ${PROTOBUF_EXECUTABLE}
         -I ${PROTO_DIR}
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
-        "${PROTO_DIR}/orc_proto.proto")
+        "${PROTO_DIR}/orc_proto.proto"
+        # Without these, the generated sources are not regenerated when the schema or
+        # `protoc` itself changes, and a stale `orc_proto.pb.h` is compiled instead.
+        DEPENDS "${PROTO_DIR}/orc_proto.proto" ${PROTOBUF_EXECUTABLE})
 
 # === flatbuffers
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
@@ -145,6 +148,8 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/ColumnWriter.cc"
         "${ORC_SOURCE_SRC_DIR}/ColumnWriter.hh"
         "${ORC_SOURCE_SRC_DIR}/Common.cc"
+        "${ORC_SOURCE_SRC_DIR}/Dictionary.cc"
+        "${ORC_SOURCE_SRC_DIR}/DictionaryLoader.cc"
         "${ORC_SOURCE_SRC_DIR}/Compression.cc"
         "${ORC_SOURCE_SRC_DIR}/Compression.hh"
         "${ORC_SOURCE_SRC_DIR}/ConvertColumnReader.cc"
@@ -153,6 +158,7 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/CpuInfoUtil.hh"
         "${ORC_SOURCE_SRC_DIR}/Dispatch.hh"
         "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
+        "${ORC_SOURCE_SRC_DIR}/Geospatial.cc"
         "${ORC_SOURCE_SRC_DIR}/Int128.cc"
         "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.cc"
         "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.hh"
@@ -340,6 +346,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/extension_type.cc"
         "${LIBRARY_DIR}/extension/bool8.cc"
         "${LIBRARY_DIR}/extension/json.cc"
+        "${LIBRARY_DIR}/extension/parquet_variant.cc"
         "${LIBRARY_DIR}/extension/uuid.cc"
         "${LIBRARY_DIR}/integration/c_data_integration_internal.cc"
         "${LIBRARY_DIR}/io/buffered.cc"
@@ -389,7 +396,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/bitmap_ops.cc"
         "${LIBRARY_DIR}/util/bpacking.cc"
         "${LIBRARY_DIR}/util/bpacking_scalar.cc"
-        "${LIBRARY_DIR}/util/bpacking_simd_default.cc"
+        "${LIBRARY_DIR}/util/bpacking_simd_128.cc"
         "${LIBRARY_DIR}/util/byte_size.cc"
         "${LIBRARY_DIR}/util/byte_stream_split_internal.cc"
         "${LIBRARY_DIR}/util/cancel.cc"
@@ -428,6 +435,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/trie.cc"
         "${LIBRARY_DIR}/util/union_util.cc"
         "${LIBRARY_DIR}/util/unreachable.cc"
+        "${LIBRARY_DIR}/util/ulp_distance.cc"
         "${LIBRARY_DIR}/util/uri.cc"
         "${LIBRARY_DIR}/util/utf8.cc"
         "${LIBRARY_DIR}/util/value_parsing.cc"
@@ -501,6 +509,11 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::bzip2
     ch_contrib::curl
 )
+# Arrow 25 uses xsimd unconditionally (`cpu_info.cc` calls `xsimd::cpu_features`, and
+# `bpacking_simd_128.cc` includes `bpacking_simd_kernel_internal.h`), independently of the
+# ARROW_HAVE_* SIMD defines. PUBLIC so the headers are visible to _parquet too (it links _arrow
+# PUBLIC).
+target_link_libraries(_arrow PUBLIC ch_contrib::xsimd)
 target_link_libraries(_arrow PUBLIC _orc)
 
 add_dependencies(_arrow protoc)
@@ -526,7 +539,6 @@ set(PARQUET_SRCS
         "${LIBRARY_DIR}/arrow/reader_internal.cc"
         "${LIBRARY_DIR}/arrow/schema.cc"
         "${LIBRARY_DIR}/arrow/schema_internal.cc"
-        "${LIBRARY_DIR}/arrow/variant_internal.cc"
         "${LIBRARY_DIR}/arrow/writer.cc"
         "${LIBRARY_DIR}/benchmark_util.cc"
         "${LIBRARY_DIR}/bloom_filter.cc"
