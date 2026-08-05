@@ -819,7 +819,7 @@ class ClickhouseIntegrationTestsRunner:
         logging.info(query)
 
         url = (
-            f"{CLICKHOUSE_PLAY_URL}/?user={CLICKHOUSE_PLAY_USER}"
+            f"{CLICKHOUSE_PLAY_URL}?user={CLICKHOUSE_PLAY_USER}"
             f"&password={requests.compat.quote(CLICKHOUSE_PLAY_PASSWORD)}"
             f"&query={requests.compat.quote(query)}"
         )
