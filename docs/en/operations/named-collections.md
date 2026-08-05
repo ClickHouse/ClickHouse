@@ -4,7 +4,6 @@ sidebar_label: 'Named collections'
 sidebar_position: 69
 slug: /operations/named-collections
 title: 'Named collections'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -97,16 +96,6 @@ To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keepe
 ```
 
 An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
-
-You can inspect the active storage type through `system.server_settings` and `getServerSetting`:
-
-```sql
-SELECT value, getServerSetting('named_collections_storage_type')
-FROM system.server_settings
-WHERE name = 'named_collections_storage.type';
-```
-
-Changing the storage type requires a server restart; `SYSTEM RELOAD CONFIG` does not change the active backend.
 
 ## Storing named collections in configuration files {#storing-named-collections-in-configuration-files}
 
@@ -332,8 +321,6 @@ The description of parameters see [postgresql](../sql-reference/table-functions/
 - `username` for `user`
 - `db` for `database`.
 
-The connection-pool settings of the [PostgreSQL table engine](../engines/table-engines/integrations/postgresql.md) (`postgresql_connection_pool_size` and the other `postgresql_*` settings) can also be stored in the collection or passed as `key = value` overrides. They apply to the `PostgreSQL` table engine, the `postgresql` table function, and the `PostgreSQL` database engine; an explicit `SETTINGS` clause on a table takes precedence over the values from the collection.
-
 Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudo code explains the priority:
 
 ```sql
@@ -380,6 +367,8 @@ SELECT * FROM postgresql(mypg, table = 'test');
 │ 2 │ two │
 │ 1 │ one │
 └───┴─────┘
+
+
 SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
 
 ┌─a─┐
@@ -560,7 +549,7 @@ SETTINGS kafka_num_consumers = 4,
 
 ## Named collections for backups {#named-collections-for-backups}
 
-For the description of parameters see [Backup and Restore](/operations/backup/overview).
+For the description of parameters see [Backup and Restore](./backup.md).
 
 ### DDL example {#ddl-example-4}
 

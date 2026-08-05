@@ -6,7 +6,6 @@ keywords: ['TemplateIgnoreSpaces']
 output_format: false
 slug: /interfaces/formats/TemplateIgnoreSpaces
 title: 'TemplateIgnoreSpaces'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

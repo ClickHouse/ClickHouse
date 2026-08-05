@@ -33,7 +33,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionBitmaskToList final : public IFunction
+class FunctionBitmaskToList : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToList";
@@ -72,14 +72,10 @@ public:
             || (res = executeType<UInt16>(arguments, input_rows_count))
             || (res = executeType<UInt32>(arguments, input_rows_count))
             || (res = executeType<UInt64>(arguments, input_rows_count))
-            || (res = executeType<UInt128>(arguments, input_rows_count))
-            || (res = executeType<UInt256>(arguments, input_rows_count))
             || (res = executeType<Int8>(arguments, input_rows_count))
             || (res = executeType<Int16>(arguments, input_rows_count))
             || (res = executeType<Int32>(arguments, input_rows_count))
-            || (res = executeType<Int64>(arguments, input_rows_count))
-            || (res = executeType<Int128>(arguments, input_rows_count))
-            || (res = executeType<Int256>(arguments, input_rows_count))))
+            || (res = executeType<Int64>(arguments, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                             arguments[0].column->getName(), getName());
 
@@ -136,7 +132,7 @@ private:
 };
 
 
-class FunctionBitmaskToArray final : public IFunction
+class FunctionBitmaskToArray : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToArray";
@@ -209,14 +205,10 @@ public:
             tryExecute<UInt16>(in_column, out_column) ||
             tryExecute<UInt32>(in_column, out_column) ||
             tryExecute<UInt64>(in_column, out_column) ||
-            tryExecute<UInt128>(in_column, out_column) ||
-            tryExecute<UInt256>(in_column, out_column) ||
             tryExecute<Int8>(in_column, out_column) ||
             tryExecute<Int16>(in_column, out_column) ||
             tryExecute<Int32>(in_column, out_column) ||
-            tryExecute<Int64>(in_column, out_column) ||
-            tryExecute<Int128>(in_column, out_column) ||
-            tryExecute<Int256>(in_column, out_column))
+            tryExecute<Int64>(in_column, out_column))
             return out_column;
 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
@@ -224,7 +216,7 @@ public:
     }
 };
 
-class FunctionBitPositionsToArray final : public IFunction
+class FunctionBitPositionsToArray : public IFunction
 {
 public:
     static constexpr auto name = "bitPositionsToArray";
@@ -282,14 +274,15 @@ public:
 
             if constexpr (is_big_int_v<UnsignedType>)
             {
-                for (unsigned limb = 0; limb < UnsignedType::_impl::item_count; ++limb)
+                size_t position = 0;
+
+                while (x)
                 {
-                    UInt64 item = x.items[UnsignedType::_impl::little(limb)];
-                    while (item)
-                    {
-                        result_array_values_data.push_back(limb * 64 + std::countr_zero(item));
-                        item &= (item - 1);
-                    }
+                    if (x & 1)
+                        result_array_values_data.push_back(position);
+
+                    x >>= 1;
+                    ++position;
                 }
             }
             else
@@ -321,6 +314,7 @@ public:
 
         if (!((result_column = executeType<UInt8>(in_column, input_rows_count))
               || (result_column = executeType<UInt16>(in_column, input_rows_count))
+              || (result_column = executeType<UInt32>(in_column, input_rows_count))
               || (result_column = executeType<UInt32>(in_column, input_rows_count))
               || (result_column = executeType<UInt64>(in_column, input_rows_count))
               || (result_column = executeType<UInt128>(in_column, input_rows_count))
@@ -378,7 +372,7 @@ Signed input integers are first casted to an unsigned integer.
     };
     FunctionDocumentation::IntroducedIn bitPositionsToArray_introduced_in = {21, 7};
     FunctionDocumentation::Category bitPositionsToArray_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bitPositionsToArray_documentation = {bitPositionsToArray_description, bitPositionsToArray_syntax, bitPositionsToArray_arguments, {}, bitPositionsToArray_returned_value, bitPositionsToArray_examples, bitPositionsToArray_introduced_in, bitPositionsToArray_category};
+    FunctionDocumentation bitPositionsToArray_documentation = {bitPositionsToArray_description, bitPositionsToArray_syntax, bitPositionsToArray_arguments, bitPositionsToArray_returned_value, bitPositionsToArray_examples, bitPositionsToArray_introduced_in, bitPositionsToArray_category};
 
     FunctionDocumentation::Description bitmaskToArray_description = R"(
 This function decomposes an integer into a sum of powers of two.
@@ -409,7 +403,7 @@ The powers of two are returned as an ascendingly ordered array.
     };
     FunctionDocumentation::IntroducedIn bitmaskToArray_introduced_in = {1, 1};
     FunctionDocumentation::Category bitmaskToArray_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bitmaskToArray_documentation = {bitmaskToArray_description, bitmaskToArray_syntax, bitmaskToArray_arguments, {}, bitmaskToArray_returned_value, bitmaskToArray_examples, bitmaskToArray_introduced_in, bitmaskToArray_category};
+    FunctionDocumentation bitmaskToArray_documentation = {bitmaskToArray_description, bitmaskToArray_syntax, bitmaskToArray_arguments, bitmaskToArray_returned_value, bitmaskToArray_examples, bitmaskToArray_introduced_in, bitmaskToArray_category};
 
     FunctionDocumentation::Description bitmaskToList_description = R"(
 Like bitmaskToArray but returns the powers of two as a comma-separated string.
@@ -431,7 +425,7 @@ Like bitmaskToArray but returns the powers of two as a comma-separated string.
     };
     FunctionDocumentation::IntroducedIn bitmaskToList_introduced_in = {1, 1};
     FunctionDocumentation::Category bitmaskToList_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bitmaskToList_documentation = {bitmaskToList_description, bitmaskToList_syntax, bitmaskToList_arguments, {}, bitmaskToList_returned_value, bitmaskToList_examples, bitmaskToList_introduced_in, bitmaskToList_category};
+    FunctionDocumentation bitmaskToList_documentation = {bitmaskToList_description, bitmaskToList_syntax, bitmaskToList_arguments, bitmaskToList_returned_value, bitmaskToList_examples, bitmaskToList_introduced_in, bitmaskToList_category};
 
     factory.registerFunction<FunctionBitPositionsToArray>(bitPositionsToArray_documentation);
     factory.registerFunction<FunctionBitmaskToArray>(bitmaskToArray_documentation);

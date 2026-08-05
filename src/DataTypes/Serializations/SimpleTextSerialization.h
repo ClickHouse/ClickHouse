@@ -1,7 +1,5 @@
 #pragma once
-#include <Columns/IColumn.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <Formats/ParseError.h>
 
 namespace DB
 {
@@ -89,18 +87,13 @@ protected:
 
     virtual bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
     {
-        size_t prev_size = column.size();
         try
         {
             deserializeText(column, istr, settings, whole);
             return true;
         }
-        catch (...) // Ok: tryDeserializeText is a try-pattern
+        catch (...)
         {
-            /// A failed parse must leave the column as it was: deserializeText may have inserted before throwing.
-            if (column.size() > prev_size)
-                column.popBack(column.size() - prev_size);
-            rethrowIfNotParseError();
             return false;
         }
     }

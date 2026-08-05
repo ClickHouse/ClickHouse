@@ -1,7 +1,6 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrorCodes.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -20,7 +19,6 @@ namespace DB
 ColumnsDescription ErrorLogElement::getColumnsDescription()
 {
     ParserCodec codec_parser;
-    DataTypePtr symbolized_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     return ColumnsDescription {
         {
                 "hostname",
@@ -63,30 +61,6 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 std::make_shared<DataTypeUInt8>(),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Remote exception (i.e. received during one of the distributed queries)."
-            },
-        {
-                "last_error_time",
-                std::make_shared<DataTypeDateTime>(),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "The time when the last error happened."
-            },
-        {
-                "last_error_message",
-                std::make_shared<DataTypeString>(),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "Message for the last error."
-            },
-            {
-                "last_error_query_id",
-                std::make_shared<DataTypeString>(),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "Id of a query that caused the last error (if available)."
-            },
-        {
-                "last_error_trace",
-                std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "A stack trace that represents a list of physical addresses where the called methods are stored."
             }
     };
 }
@@ -102,11 +76,6 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(ErrorCodes::getName(code));
     columns[column_idx++]->insert(value);
     columns[column_idx++]->insert(remote);
-    columns[column_idx++]->insert(last_error_time);
-    columns[column_idx++]->insert(last_error_message);
-    columns[column_idx++]->insert(last_error_query_id);
-
-    columns[column_idx++]->insert(Array(last_error_trace.begin(), last_error_trace.end()));
 }
 
 struct ValuePair
@@ -117,56 +86,34 @@ struct ValuePair
 
 void ErrorLog::stepFunction(TimePoint current_time)
 {
-    std::lock_guard lock(previous_values_mutex);
+    /// Static lazy initialization to avoid polluting the header with implementation details
+    static std::vector<ValuePair> previous_values(ErrorCodes::end());
 
     auto event_time = std::chrono::system_clock::to_time_t(current_time);
-
-    auto to_addrs = [](const auto & trace)
-    {
-        std::vector<UInt64> addrs;
-        addrs.reserve(trace.size());
-        for (auto * ptr : trace)
-            addrs.push_back(reinterpret_cast<uintptr_t>(ptr));
-        return addrs;
-    };
 
     for (ErrorCodes::ErrorCode code = 0, end = ErrorCodes::end(); code < end; ++code)
     {
         const auto & error = ErrorCodes::values[code].get();
-        /// previous_values is guarded by the mutex held above; thread-safety analysis cannot see the lock
-        /// through the add() callback, so suppress the false positive on the accesses made inside it.
         if (error.local.count != previous_values.at(code).local)
         {
-            this->add([&](ErrorLogElement & element)
-            {
-                element = ErrorLogElement {
-                    .event_time=event_time,
-                    .code=code,
-                    .value=error.local.count - TSA_SUPPRESS_WARNING_FOR_READ(previous_values).at(code).local,
-                    .remote=false,
-                    .last_error_time=(error.local.error_time_ms / 1000),
-                    .last_error_message=error.local.message,
-                    .last_error_query_id=error.local.query_id,
-                    .last_error_trace=to_addrs(error.local.trace)
-                };
-            });
+            ErrorLogElement local_elem {
+                .event_time=event_time,
+                .code=code,
+                .value=error.local.count - previous_values.at(code).local,
+                .remote=false
+            };
+            this->add(std::move(local_elem));
             previous_values[code].local = error.local.count;
         }
         if (error.remote.count != previous_values.at(code).remote)
         {
-            add([&](ErrorLogElement & element)
-            {
-                element = ErrorLogElement {
-                    .event_time=event_time,
-                    .code=code,
-                    .value=error.remote.count - TSA_SUPPRESS_WARNING_FOR_READ(previous_values).at(code).remote,
-                    .remote=true,
-                    .last_error_time=(error.remote.error_time_ms / 1000),
-                    .last_error_message=error.remote.message,
-                    .last_error_query_id=error.remote.query_id,
-                    .last_error_trace=to_addrs(error.remote.trace)
-                };
-            });
+            ErrorLogElement remote_elem {
+                .event_time=event_time,
+                .code=code,
+                .value=error.remote.count - previous_values.at(code).remote,
+                .remote=true
+            };
+            add(std::move(remote_elem));
             previous_values[code].remote = error.remote.count;
         }
     }

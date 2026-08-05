@@ -1,18 +1,10 @@
 #include <Parsers/ASTDataType.h>
-#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 String ASTDataType::getID(char delim) const
 {
@@ -21,50 +13,16 @@ String ASTDataType::getID(char delim) const
 
 ASTPtr ASTDataType::clone() const
 {
-    auto res = make_intrusive<ASTDataType>(*this);
-    const auto & arguments = getArguments();
+    auto res = std::make_shared<ASTDataType>(*this);
     res->children.clear();
 
     if (arguments)
-        res->children.push_back(arguments->clone());
+    {
+        res->arguments = arguments->clone();
+        res->children.push_back(res->arguments);
+    }
 
     return res;
-}
-
-ASTPtr ASTDataType::getArguments() const
-{
-    if (!children.empty())
-        return children[0];
-    return nullptr;
-}
-
-void ASTDataType::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "DataType");
-    w.writeString("name", name);
-    if (auto args = getArguments())
-        w.writeChild("arguments", args);
-}
-
-void ASTDataType::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-
-    name = r.getString("name");
-    if (name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTDataType");
-
-    /// `arguments` is the `ASTExpressionList` produced by `ParserDataType`. `formatImpl` only prints
-    /// the `(...)` when this child has its own `children`, so a non-list node here would be silently
-    /// dropped (e.g. `Nullable(UInt8)` formatting as bare `Nullable`). Reject it at the JSON boundary.
-    auto args = r.readChildOfType<ASTExpressionList>("arguments");
-    if (args)
-        children.push_back(args);
-}
-
-void ASTDataType::resetArguments()
-{
-    children.clear();
 }
 
 void ASTDataType::updateTreeHashImpl(SipHash & hash_state, bool) const
@@ -78,7 +36,6 @@ void ASTDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings
 {
     ostr << name;
 
-    const auto & arguments = getArguments();
     if (arguments && !arguments->children.empty())
     {
         ostr << '(';

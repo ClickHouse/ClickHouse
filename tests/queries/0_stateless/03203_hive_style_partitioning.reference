@@ -31,7 +31,7 @@ Elizabeth	Delgado
 Elizabeth	Cross
 42	2020-01-01
 [1,2,3]	42.42
-Array(Int64)	Float64
+Array(Int64)	LowCardinality(Float64)
 101
 2071
 2071

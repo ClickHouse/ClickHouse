@@ -47,15 +47,6 @@ def test_cluster_discovery_with_auxiliary_keeper_startup_and_stop(start_cluster)
     then stop/start some nodes and check that it (dis)appeared in cluster.
     """
 
-    # Ensure all nodes are running (previous run may have left some stopped)
-    for name in ["node1", "node3"]:
-        nodes[name].start_clickhouse(start_wait_sec=60)
-
-    # Clean up table from previous run (drop locally on each node since ON CLUSTER
-    # requires all nodes to be healthy and discoverable)
-    for node in nodes.values():
-        node.query("DROP TABLE IF EXISTS tbl SYNC")
-
     check_nodes_count = functools.partial(
         check_on_cluster, what="count()", msg="Wrong nodes count in cluster"
     )
@@ -93,10 +84,10 @@ def test_cluster_discovery_with_auxiliary_keeper_startup_and_stop(start_cluster)
         == 3
     )
 
-    # Query SYSTEM CLEAR DNS CACHE may reload cluster configuration
+    # Query SYSTEM DROP DNS CACHE may reload cluster configuration
     # check that it does not affect cluster discovery
-    nodes["node1"].query("SYSTEM CLEAR DNS CACHE")
-    nodes["node0"].query("SYSTEM CLEAR DNS CACHE")
+    nodes["node1"].query("SYSTEM DROP DNS CACHE")
+    nodes["node0"].query("SYSTEM DROP DNS CACHE")
 
     check_shard_num(
         [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_shards

@@ -82,15 +82,11 @@ TotalsHavingTransform::TotalsHavingTransform(
     finalizeBlock(finalized_header, aggregates_mask);
 
     /// Port for Totals.
-    /// Use updateHeader (same method as transformHeader for the main output) to ensure
-    /// the totals port header has the same column constness as the main output port.
-    /// Previously this used ExpressionActions::execute which can produce different constness
-    /// via a different code path in defaultImplementationForNulls at 0 rows.
     if (expression)
     {
-        /// Use updateHeader (dry-run evaluation) instead of expression->execute(),
-        /// because sets from subqueries may not be ready yet at this point.
-        auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);
+        auto totals_header = finalized_header;
+        size_t num_rows = totals_header.rows();
+        expression->execute(totals_header, num_rows);
         filter_column_pos = totals_header.getPositionByName(filter_column_name);
         if (remove_filter)
             totals_header.erase(filter_column_name);
@@ -253,7 +249,7 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
         if (const auto * column = typeid_cast<const ColumnAggregateFunction *>(current.get()))
         {
             auto & totals_column = typeid_cast<ColumnAggregateFunction &>(*current_totals[col]);
-            chassert(totals_column.size() == 1);
+            assert(totals_column.size() == 1);
 
             /// Accumulate all aggregate states from a column of a source chunk into
             /// the corresponding totals column.
@@ -287,7 +283,7 @@ void TotalsHavingTransform::prepareTotals()
         if (totals_mode == TotalsMode::BEFORE_HAVING
             || totals_mode == TotalsMode::AFTER_HAVING_INCLUSIVE
             || (totals_mode == TotalsMode::AFTER_HAVING_AUTO
-                && static_cast<double>(passed_keys) / static_cast<double>(total_keys) >= auto_include_threshold))
+                && static_cast<double>(passed_keys) / total_keys >= auto_include_threshold))
             addToTotals(overflow_aggregates, nullptr);
     }
 

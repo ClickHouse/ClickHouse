@@ -6,6 +6,7 @@
 import argparse
 import io
 import os.path
+import struct
 import subprocess
 import sys
 import tempfile

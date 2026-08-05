@@ -3,11 +3,12 @@
 #include <algorithm>
 
 #include <Common/KnownObjectNames.h>
-#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Common/maskURIPassword.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -19,10 +20,16 @@ namespace
     /// (which strips the same fields from persisted backup metadata). Returns true if anything was masked.
     bool maskS3URICredentials(String & url)
     {
-        /// Both scans live in `Common/maskURIPassword.h` and are checked against the regular
-        /// expressions they replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
-        bool changed = maskURIUserinfo(url);
-        changed |= maskPresignedURLParameters(url);
+        bool changed = false;
+        /// Greedy up to the last at-sign before the path, so a userinfo whose password itself
+        /// contains an at-sign is masked whole, not just up to the first one.
+        static re2::RE2 userinfo_pattern = "^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@";
+        if (RE2::Replace(&url, userinfo_pattern, "\\1[HIDDEN]@"))
+            changed = true;
+        static re2::RE2 presign_pattern
+            = "([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\\-]*|X-Goog-[A-Za-z0-9\\-]*)=)[^&#]*";
+        if (RE2::GlobalReplace(&url, presign_pattern, "\\1[HIDDEN]"))
+            changed = true;
         return changed;
     }
 }
@@ -149,7 +156,7 @@ void FunctionSecretArgumentsFinder::maskS3PositionalSecrets(
         return url_slot + slot < positional.size()
             && tryGetStringFromArgument(positional[url_slot + slot], &value) && predicate(value);
     };
-    auto is_nosign = [&](size_t slot) { return value_is(slot, [](const String & v) { return equalsCaseInsensitive(v, "NOSIGN"); }); };
+    auto is_nosign = [&](size_t slot) { return value_is(slot, [](const String & v) { return boost::iequals(v, "NOSIGN"); }); };
     auto is_format = [&](size_t slot) { return value_is(slot, [](const String & v) { return v == "auto" || KnownFormatNames::instance().exists(v); }); };
 
     bool secret_access_key = false; /// slot 2
@@ -223,28 +230,26 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
     }
     else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
              (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
-             (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3") ||
-             (function->name() == "paimon") || (function->name() == "paimonS3"))
+             (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3"))
     {
         /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
         findS3FunctionSecretArguments(/* is_cluster_function= */ false);
     }
     else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
-             (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-             (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster") ||
+             (function ->name() == "deltaLakeCluster") || (function ->name() == "icebergS3Cluster") ||
              (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster"))
     {
         /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
         findS3FunctionSecretArguments(/* is_cluster_function= */ true);
     }
     else if ((function->name() == "azureBlobStorage") || (function->name() == "deltaLakeAzure") ||
-             (function->name() == "icebergAzure") || (function->name() == "paimonAzure"))
+             (function->name() == "icebergAzure"))
     {
         /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
         findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
     }
     else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") ||
-             (function->name() == "deltaLakeAzureCluster") || (function->name() == "paimonAzureCluster"))
+             (function->name() == "paimonAzureCluster"))
     {
         /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
         findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
@@ -261,11 +266,6 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
         /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
         findEncryptionFunctionSecretArguments();
     }
-    else if (equalsCaseInsensitive(function->name(), "HMAC"))
-    {
-        /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
-        findHMACSecretArguments();
-    }
     else if (function->name() == "url" || function->name() == "urlCluster")
     {
         /// url('url', ...) keeps the url at slot 0; urlCluster('cluster', 'url', ...) at slot 1.
@@ -278,10 +278,6 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
     else if (function->name() == "ytsaurus")
     {
         findYTsaurusStorageTableEngineSecretArguments();
-    }
-    else if ((function->name() == "arrowFlight") || (function->name() == "arrowflight"))
-    {
-        findArrowFlightSecretArguments();
     }
     else if ((function->name() == "jdbc") || (function->name() == "odbc"))
     {
@@ -317,9 +313,7 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
             return;
 
         /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
-        if (findNamedArgument(&uri, "uri", 1) == -1)
-            return;
-
+        findNamedArgument(&uri, "uri", 1);
         result.are_named = true;
         result.start = 1;
     }
@@ -357,20 +351,6 @@ void FunctionSecretArgumentsFinder::findRedisTableEngineSecretArguments()
         // Redis('host:port', 'db_index', 'password', 'pool_size')
         markSecretArgument(2, false);
         return;
-    }
-}
-
-void FunctionSecretArgumentsFinder::findArrowFlightSecretArguments()
-{
-    if (isNamedCollectionName(0))
-    {
-        /// ArrowFlight(named_collection, ..., password = 'password')
-        findSecretNamedArgument("password", 1);
-    }
-    else
-    {
-        /// ArrowFlight('host:port', 'dataset', 'username', 'password')
-        markSecretArgument(3);
     }
 }
 
@@ -478,6 +458,14 @@ void FunctionSecretArgumentsFinder::findS3FunctionSecretArguments(bool is_cluste
     maskS3PositionalSecrets(positional, url_slot, with_structure);
 }
 
+void FunctionSecretArgumentsFinder::findS3NamedCollectionSecretArguments(size_t start)
+{
+    /// After the collection name every argument must be a named `option = value` override or a nested
+    /// map; a positional argument is invalid but logged before validation rejects it, so fail closed
+    /// and hide every positional the classification returns.
+    maskS3PositionalsFrom(classifyS3Arguments(start), 0);
+}
+
 void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function)
 {
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
@@ -541,7 +529,8 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
 
     if (!url_arg.starts_with("http"))
     {
-        if (maskConnectionStringKey(url_arg, "AccountKey="))
+        static re2::RE2 account_key_pattern = "AccountKey=.*?(;|$)";
+        if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
         {
             chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
             result.start = url_arg_idx;
@@ -551,7 +540,8 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
             return true;
         }
 
-        if (maskConnectionStringKey(url_arg, "SharedAccessSignature="))
+        static re2::RE2 sas_signature_pattern = "SharedAccessSignature=.*?(;|$)";
+        if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
         {
             chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
             result.start = url_arg_idx;
@@ -752,18 +742,6 @@ void FunctionSecretArgumentsFinder::findEncryptionFunctionSecretArguments()
     result.count = function->arguments->size() - 1;
 }
 
-void FunctionSecretArgumentsFinder::findHMACSecretArguments()
-{
-    if (function->arguments->size() < 3)
-        return;
-
-    /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
-    /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
-    /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
-    result.start = 2;
-    result.count = function->arguments->size() - 2;
-}
-
 void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
 {
     const String & engine_name = function->name();
@@ -787,7 +765,6 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") || (engine_name == "GCS")
              || (engine_name == "DeltaLake") || (engine_name == "DeltaLakeS3") || (engine_name == "Hudi")
              || (engine_name == "Iceberg") || (engine_name == "IcebergS3")
-             || (engine_name == "Paimon") || (engine_name == "PaimonS3")
              || (engine_name == "S3Queue"))
     {
         /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
@@ -808,18 +785,6 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     else if (engine_name == "YTsaurus")
     {
         findYTsaurusStorageTableEngineSecretArguments();
-    }
-    else if (engine_name == "ArrowFlight")
-    {
-        findArrowFlightSecretArguments();
-    }
-    else if ((engine_name == "Remote") || (engine_name == "RemoteSecure"))
-    {
-        /// Remote('addresses_expr', db, table, 'user', 'password', ...)
-        /// RemoteSecure(...) - same as Remote(...)
-        /// The arguments are identical to the `remote`/`remoteSecure` table functions, so reuse
-        /// the same finder (it also handles the named-collection form `Remote(named_collection, ...)`).
-        findRemoteFunctionSecretArguments();
     }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
     {
@@ -1183,7 +1148,7 @@ bool FunctionSecretArgumentsFinder::isNamedCollectionName(size_t arg_idx) const
     return function->arguments->at(arg_idx)->isIdentifier();
 }
 
-ssize_t FunctionSecretArgumentsFinder::findNamedArgument(String * res, std::string_view key, size_t start)
+ssize_t FunctionSecretArgumentsFinder::findNamedArgument(String * res, const std::string_view & key, size_t start)
 {
     for (size_t i = start; i < function->arguments->size(); ++i)
     {
@@ -1209,24 +1174,15 @@ ssize_t FunctionSecretArgumentsFinder::findNamedArgument(String * res, std::stri
     return -1;
 }
 
-bool FunctionSecretArgumentsFinder::findSecretNamedArgument(std::string_view key, size_t start)
+bool FunctionSecretArgumentsFinder::findSecretNamedArgument(const std::string_view & key, size_t start)
 {
-    bool found = false;
-    for (ssize_t arg_idx = findNamedArgument(nullptr, key, start); arg_idx >= 0;
-         arg_idx = findNamedArgument(nullptr, key, static_cast<size_t>(arg_idx) + 1))
+    ssize_t arg_idx = findNamedArgument(nullptr, key, start);
+    if (arg_idx >= 0)
     {
         markSecretArgument(arg_idx, /* argument_is_named= */ true);
-        found = true;
+        return true;
     }
-    return found;
-}
-
-void FunctionSecretArgumentsFinder::findS3NamedCollectionSecretArguments(size_t start)
-{
-    /// After the collection name every argument must be a named `option = value` override or a nested
-    /// map; a positional argument is invalid but logged before validation rejects it, so fail closed
-    /// and hide every positional the classification returns.
-    maskS3PositionalsFrom(classifyS3Arguments(start), 0);
+    return false;
 }
 
 }

@@ -1,7 +1,6 @@
 services:
   dotnet:
-    image: clickhouse/mysql_dotnet_client:${DOCKER_MYSQL_DOTNET_CLIENT_TAG:-latest}
+    image: clickhouse/mysql_dotnet_client:${mysql:-latest}
     # to keep container running
     command: sleep infinity
     stop_grace_period: 5s
-    cpus: 3

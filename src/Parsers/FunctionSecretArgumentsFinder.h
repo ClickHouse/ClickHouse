@@ -62,7 +62,8 @@ public:
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=secretkey;...', ...)` should be replaced with
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=[HIDDEN];...', ...)`.
         std::string replacement;
-        /// Whether to wrap a result using full argument replacement in quotes.
+        /// Whether `replacement` is a plain string value to wrap in quotes, or already-formatted,
+        /// verbatim SQL text (e.g. a reconstructed nested function call) that must not be quoted.
         bool quote_replacement = true;
         /// Per-argument replacements by raw argument index; the text is emitted verbatim (it must carry
         /// its own quoting). Used when only a part of an argument is secret, e.g. a presigned S3 URL
@@ -148,7 +149,6 @@ protected:
     void findMySQLFunctionSecretArguments();
     void findMongoDBSecretArguments();
     void findRedisTableEngineSecretArguments();
-    void findArrowFlightSecretArguments();
     void findXDBCSecretArguments();
 
     /// Similar to `findSecretNamedArgument`, but if the value is a URI with credentials,
@@ -156,6 +156,10 @@ protected:
     void maskXDBCSecretNamedArgument(std::string_view key, size_t start);
 
     void findS3FunctionSecretArguments(bool is_cluster_function);
+    /// s3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
+    /// s3Cluster('cluster_name', named_collection, ..., secret_access_key = 'secret_access_key', ...)
+    /// `start` is the index right after the named collection name.
+    void findS3NamedCollectionSecretArguments(size_t start);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
@@ -178,7 +182,6 @@ protected:
         std::optional<QualifiedTableName> & res_qualified_table_name) const;
 
     void findEncryptionFunctionSecretArguments();
-    void findHMACSecretArguments();
     void findTableEngineSecretArguments();
     void findExternalDistributedTableEngineSecretArguments();
     void findS3TableEngineSecretArguments();
@@ -189,6 +192,11 @@ protected:
     void findMySQLDatabaseSecretArguments();
     void findS3DatabaseSecretArguments();
     void findDataLakeCatalogSecretArguments();
+    /// The `Backup` database engine (`Backup(database_name, backup_destination)`) is not itself an S3
+    /// form, so it is never routed through `findS3DatabaseSecretArguments`; when the destination is a
+    /// nested `S3(...)` call, that call is not recognized as an S3 engine either when the formatter
+    /// recurses into it (it is an argument, not `function`), so its secrets must be masked here by
+    /// reconstructing it with the secret arguments replaced.
     void findBackupDatabaseSecretArguments();
     void findBackupNameSecretArguments();
 
@@ -197,17 +205,11 @@ protected:
 
     /// Looks for an argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// Returns -1 if no argument was found.
-    ssize_t findNamedArgument(String * res, std::string_view key, size_t start = 0);
+    ssize_t findNamedArgument(String * res, const std::string_view & key, size_t start = 0);
 
-    /// Looks for secret arguments with a specified name in format `key=value` and marks them secret.
-    /// Marks *every* occurrence, not just the first: a malformed query is formatted for logging before
-    /// duplicate-key validation runs, so `session_token = 'a', session_token = 'b'` must hide both.
-    bool findSecretNamedArgument(std::string_view key, size_t start = 0);
-
-    /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,
-    /// in any order; the span covering them may hide a non-secret argument in between, which is safe)
-    /// and the `headers(...)` / `extra_credentials(...)` map overrides.
-    void findS3NamedCollectionSecretArguments(size_t start = 0);
+    /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
+    /// If the argument is found, it is marked as a secret.
+    bool findSecretNamedArgument(const std::string_view & key, size_t start = 0);
 };
 
 }

@@ -1,6 +1,0 @@
-uniqMerge over rollup	16
-uniqMerge over rollup, OrDefault	16
-aggregating merge tree insert	16
-two-level single-thread	18
-multi-threaded merge	18
-memory engine, uniqMerge over rollup	16
