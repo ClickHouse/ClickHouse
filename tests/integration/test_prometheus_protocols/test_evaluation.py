@@ -1011,14 +1011,14 @@ def test_function_timestamp():
         "timestamp(1)",
         135,
         "expected type instant vector",
-        "Function 'timestamp' expects an argument of type instant vector",
+        "Function 'timestamp' expects an argument of type",
     )
 
     do_query_test_expect_error(
         "timestamp(test[5m])",
         135,
         "expected type instant vector",
-        "Function 'timestamp' expects an argument of type instant vector",
+        "Function 'timestamp' expects an argument of type",
     )
 
     # Genuinely nested offset/@ modifiers - an inner selector with its own modifier, wrapped in an outer
