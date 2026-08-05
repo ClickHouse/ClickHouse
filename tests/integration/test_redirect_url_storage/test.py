@@ -145,11 +145,14 @@ def test_url_reconnect(started_cluster):
             "insert into table function hdfs('hdfs://hdfs1:9000/storage_big', 'TSV', 'id Int32') select number from numbers(500000)"
         )
 
+        # `PartitionManager` executes iptables inside the container now, so block the
+        # outgoing connections to the datanode web port with a silent DROP: the client
+        # then observes connect timeouts (asserted below) and retries.
         pm_rule = {
             "instance": node1,
-            "destination": node1.ip_address,
-            "source_port": 50075,
-            "action": "REJECT",
+            "protocol": "tcp",
+            "destination_port": 50075,
+            "action": "DROP",
         }
         pm.add_rule(pm_rule)
 
@@ -164,7 +167,7 @@ def test_url_reconnect(started_cluster):
         thread.start()
 
         time.sleep(4)
-        pm._delete_rule(pm_rule)
+        pm.delete_rule(pm_rule)
 
         thread.join()
 
