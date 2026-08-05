@@ -61,6 +61,18 @@ struct KeyDescription
         const ContextPtr & context,
         const NamesAndTypesList & additional_columns = {});
 
+    /// Build a primary key description from an explicit PRIMARY KEY. The PRIMARY KEY names a
+    /// prefix of the sorting key but cannot express per-column directions (`DESC`); the physical
+    /// order of the named columns is defined by ORDER BY, so the directions are inherited from the
+    /// sorting key. An implicitly defined primary key is built from the ORDER BY AST itself and
+    /// carries the directions naturally.
+    static KeyDescription getPrimaryKeyFromAST(
+        const ASTPtr & definition_ast,
+        const KeyDescription & sorting_key,
+        const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
+        const ContextPtr & context);
+
     /// Build an empty key description. It's different from the default constructor with some
     /// additional initializations.
     static KeyDescription buildEmptyKey();

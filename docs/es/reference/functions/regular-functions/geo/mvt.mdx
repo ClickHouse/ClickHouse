@@ -35,7 +35,7 @@ para `MVTEncodeGeom` y `ST_AsMVT` para `MVTEncode`.
 </div>
 
 Proyecta una geometría dada en coordenadas geográficas (longitud/latitud) al espacio de píxeles local de la tesela del
-mapa Slippy identificada por `zoom`, `tile_x` y `tile_y`, la recorta a la tesela, la ajusta a la cuadrícula de píxeles enteros
+mapa Slippy identificada por `zoom`, `tile_x` y `tile_y`, la ajusta a la cuadrícula de píxeles enteros, la recorta a la tesela
 y devuelve la geometría en el espacio de la tesela.
 
 La proyección es Web Mercator sobre todo el rango de coordenadas `UInt32`. Las coordenadas devueltas tienen su origen en la
@@ -46,6 +46,10 @@ Tile, por lo que el resultado puede pasarse directamente a `MVTEncode`. Las coor
 Cuando `clip` está habilitado (de forma predeterminada), la geometría se recorta a la tesela expandida en `búfer` píxeles (el rango
 `[-buffer, extent + buffer]` en cada eje); la geometría que queda completamente fuera pasa a ser `NULL`. Esto es análogo a
 PostGIS `ST_AsMVTGeom`.
+
+Las coordenadas del polígono se limitan a una ventana de `2^30` antes de la validación, exactamente el intervalo en píxeles de todo el mundo con
+`zoom` 18 y `extent` 4096, por lo que en teselas realistas la geometría se valida pero nunca se recorta, y este límite solo
+afecta a la geometría situada en valores extremos de `zoom` o `extent`.
 
 El tipo de geometría de salida depende de la entrada: un `Point` devuelve un `Point`; un `LineString` o `MultiLineString` devuelve un
 `MultiLineString`; un `Ring`, `Polygon` o `MultiPolygon` devuelve un `MultiPolygon` (el recorte puede dividir una geometría en
@@ -326,21 +330,3 @@ en tablas grandes, amplía la consulta interna como se muestra en [Agrupación](
 </div>
 
 * La proyección Web Mercator restringe la latitud a `±85.05112878°` y no admite entradas que crucen el antimeridiano.
-
-* **El recorte de polígonos no garantiza una salida MVT válida.** El recorte corrige la orientación y el cierre de los anillos, pero no las autointersecciones. Por tanto, un anillo autointersectante (&quot;bow-tie&quot;) no se corrige: según cómo se cruce con la tesela, se emite sin cambios (y sigue siendo inválido) o se descarta como `NULL`. Por ejemplo, un bow-tie que queda completamente dentro de la tesela se descarta, mientras que las mismas cuatro esquinas trazadas como un anillo simple se conservan:
-
-```sql
--- self-intersecting ring -> dropped (NULL)
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
--- simple ring, same four corners -> kept
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
-```
-
-* **Geometry se recorta antes de redondearse a la cuadrícula de píxeles enteros.** PostGIS primero ajusta la geometría a la cuadrícula de píxeles enteros y después la recorta; `MVTEncodeGeom` primero recorta (sobre las coordenadas proyectadas de coma flotante) y después redondea. Cerca del borde de una tesela, esto puede hacer que se descarte una coordenada que, de otro modo, habría acabado redondeándose al píxel del borde. Por ejemplo, con `buffer = 0`, un punto situado justo al este del borde de la tesela se recorta, aunque se redondee al píxel del borde `4096` que un enfoque que redondeara primero conservaría:
-
-```sql
--- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
--- the same point projected without clipping rounds onto the edge pixel:
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
-```
