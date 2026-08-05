@@ -119,7 +119,7 @@ TEST(TreeHashCompleteness, SetQueryStandaloneFlagIsSignificant)
         const String json = serializeASTToJSON(*parse(query));
 
         /// `writeJSON` omits the flag for an embedded node, so the carrier injects it.
-        const String key = "\"type\":\"SetQuery\",";
+        const String key = R"("type":"SetQuery",)";
         const auto pos = json.find(key);
         ASSERT_NE(pos, String::npos) << query;
         String with_flag = json;
