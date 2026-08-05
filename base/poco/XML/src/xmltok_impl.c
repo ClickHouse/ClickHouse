@@ -17,7 +17,6 @@
    Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
    Copyright (c) 2020      Boris Kolpackov <boris@codesynthesis.com>
    Copyright (c) 2022      Martin Ettl <ettl.martin78@googlemail.com>
-   Copyright (c) 2026      Nick Begg <nick@stunttruck.net>
    Licensed under the MIT license:
 
    Permission is hereby granted, free of charge, to any person obtaining
@@ -84,7 +83,7 @@
       *nextTokPtr = ptr;                                                       \
       return XML_TOK_INVALID;                                                  \
     }                                                                          \
-    EXPAT_FALLTHROUGH;                                                         \
+    /* fall through */                                                         \
   case BT_NMSTRT:                                                              \
   case BT_HEX:                                                                 \
   case BT_DIGIT:                                                               \
@@ -113,7 +112,7 @@
       *nextTokPtr = ptr;                                                       \
       return XML_TOK_INVALID;                                                  \
     }                                                                          \
-    EXPAT_FALLTHROUGH;                                                         \
+    /* fall through */                                                         \
   case BT_NMSTRT:                                                              \
   case BT_HEX:                                                                 \
     ptr += MINBPC(enc);                                                        \
@@ -210,7 +209,7 @@ PREFIX(scanDecl)(const ENCODING *enc, const char *ptr, const char *end,
         *nextTokPtr = ptr;
         return XML_TOK_INVALID;
       }
-      EXPAT_FALLTHROUGH;
+      /* fall through */
     case BT_S:
     case BT_CR:
     case BT_LF:
@@ -324,7 +323,7 @@ PREFIX(scanPi)(const ENCODING *enc, const char *ptr, const char *end,
         *nextTokPtr = ptr + MINBPC(enc);
         return tok;
       }
-      EXPAT_FALLTHROUGH;
+      /* fall through */
     default:
       *nextTokPtr = ptr;
       return XML_TOK_INVALID;
@@ -616,7 +615,7 @@ PREFIX(scanAtts)(const ENCODING *enc, const char *ptr, const char *end,
           return XML_TOK_INVALID;
         }
       }
-      EXPAT_FALLTHROUGH;
+      /* fall through */
     case BT_EQUALS: {
       int open;
 #  ifdef XML_NS
@@ -899,7 +898,7 @@ PREFIX(contentTok)(const ENCODING *enc, const char *ptr, const char *end,
           return XML_TOK_INVALID;
         }
       }
-      EXPAT_FALLTHROUGH;
+      /* fall through */
     case BT_AMP:
     case BT_LT:
     case BT_NONXML:
@@ -1060,7 +1059,7 @@ PREFIX(prologTok)(const ENCODING *enc, const char *ptr, const char *end,
       /* indicate that this might be part of a CR/LF pair */
       return -XML_TOK_PROLOG_S;
     }
-    EXPAT_FALLTHROUGH;
+    /* fall through */
   case BT_S:
   case BT_LF:
     for (;;) {
@@ -1075,7 +1074,7 @@ PREFIX(prologTok)(const ENCODING *enc, const char *ptr, const char *end,
         /* don't split CR/LF pair */
         if (ptr + MINBPC(enc) != end)
           break;
-        EXPAT_FALLTHROUGH;
+        /* fall through */
       default:
         *nextTokPtr = ptr;
         return XML_TOK_PROLOG_S;
@@ -1190,7 +1189,7 @@ PREFIX(prologTok)(const ENCODING *enc, const char *ptr, const char *end,
       tok = XML_TOK_NMTOKEN;
       break;
     }
-    EXPAT_FALLTHROUGH;
+    /* fall through */
   default:
     *nextTokPtr = ptr;
     return XML_TOK_INVALID;
@@ -1485,7 +1484,7 @@ PREFIX(isPublicId)(const ENCODING *enc, const char *ptr, const char *end,
     case BT_NMSTRT:
       if (! (BYTE_TO_ASCII(enc, ptr) & ~0x7f))
         break;
-      EXPAT_FALLTHROUGH;
+      /* fall through */
     default:
       switch (BYTE_TO_ASCII(enc, ptr)) {
       case 0x24: /* $ */

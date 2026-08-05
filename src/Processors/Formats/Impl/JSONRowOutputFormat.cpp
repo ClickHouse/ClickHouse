@@ -183,7 +183,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
 
 ## Description {#description}
 
-Differs from the [JSON](/reference/formats/JSON/JSON) format only in that data fields are output as strings, not as typed JSON values. This is an output-only format.
+Differs from the [JSON](./JSON.md) format only in that data fields are output as strings, not as typed JSON values. This is an output-only format.
 
 ## Example usage {#example-usage}
 

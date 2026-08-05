@@ -65,6 +65,12 @@ public:
 
     std::string_view getTypeName() const override { return "scheduler"; }
 
+    bool equals(ISchedulerNode *) override
+    {
+        chassert(false);
+        return false;
+    }
+
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override
     {
         child = std::static_pointer_cast<ISpaceSharedNode>(child_);

@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -27,7 +26,7 @@ public:
 
     const Names & getColumns() const { return columns; }
 
-    void applyOrder(const SortDescription & sort_description);
+    void applyOrder();
 
 private:
     void updateOutputHeader() override
@@ -40,7 +39,7 @@ private:
 
     Names columns;
 
-    SortDescription sorted_columns_descr;
+    bool in_order = false;
 };
 
 }

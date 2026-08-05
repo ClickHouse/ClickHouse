@@ -10,7 +10,6 @@
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
-#include <Storages/StorageURL.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -113,19 +112,7 @@ void StorageObjectStorageConfiguration::initialize(
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
-    {
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
-
-        /// A base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from the named
-        /// collection. Materialize the resolved URL back into the engine args as a `url='...'`
-        /// override, so that the persisted DDL (`SHOW CREATE TABLE`, DETACH/ATTACH, server
-        /// restart) does not depend on the value of the setting at attach time.
-        /// `skip_userinfo=true` keeps credentials that may originate from the base setting
-        /// out of the persisted arguments.
-        if (!configuration_to_initialize.url_overridden_by_base_setting.empty())
-            StorageURL::overrideURLInEngineArgs(
-                engine_args, configuration_to_initialize.url_overridden_by_base_setting, local_context, /*skip_userinfo=*/ true);
-    }
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
 
@@ -293,12 +280,12 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
 bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
-    return path.contains(PARTITION_ID_WILDCARD);
+    return path.find(PARTITION_ID_WILDCARD) != String::npos;
 }
 
 bool StorageObjectStorageConfiguration::Path::hasSchemaHashWildcard() const
 {
-    return path.contains(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD);
+    return path.find(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD) != String::npos;
 }
 
 bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders() const
@@ -331,11 +318,7 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
 
 void StorageObjectStorageConfiguration::check(ContextPtr)
 {
-    /// `auto` is a sentinel meaning the format must be inferred from the data; it is not a real format
-    /// name and is resolved (and thus validated) during schema/format inference. Skipping it here lets
-    /// `check` run before inference (e.g. to enforce HTTP host/header filters first).
-    if (format != "auto")
-        FormatFactory::instance().checkFormatName(format);
+    FormatFactory::instance().checkFormatName(format);
 }
 
 bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
@@ -379,6 +362,5 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
     partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
     partition_columns_in_data_file_was_set = parsed_arguments.partition_columns_in_data_file_was_set;
     partition_strategy = parsed_arguments.partition_strategy;
-    url_overridden_by_base_setting = parsed_arguments.url_overridden_by_base_setting;
 }
 }
