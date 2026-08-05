@@ -3292,13 +3292,6 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
 
-    /// The conversion only produces its own leading sort columns; the extra merge columns of a
-    /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
-    /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
-    if (widened_over_previous_request && virtual_row_conversion
-        && virtual_row_conversion->getSampleBlock().columns() < prefix_size)
-        resetVirtualRowConversions();
-
     /// In case of read-in-order, don't create too many reading streams.
     /// Almost always we are reading from a single stream at a time because of merge sort.
     if (output_streams_limit)
