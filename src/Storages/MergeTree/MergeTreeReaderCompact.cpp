@@ -565,7 +565,7 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
     /// be read. Offsets hidden inside a Map or Tuple belong to the suppressed column's own data:
     /// reading them sizes array-shaped Tuple elements while their scalar siblings stay empty.
     size_t max_level = columns_for_offsets[column_pos]->level;
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(columns_to_read[column_pos].type.get()))
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(columns_to_read[column_pos].getTypeInStorage().get()))
         max_level = std::min(max_level, array_type->getNumberOfDimensions() - 1);
 
     return max_level < ISerialization::getArrayLevel(substream);

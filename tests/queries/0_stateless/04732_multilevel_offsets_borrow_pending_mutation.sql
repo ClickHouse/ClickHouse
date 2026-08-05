@@ -37,6 +37,34 @@ SELECT count() >= 1 FROM system.mutations WHERE database = currentDatabase() AND
 SELECT * FROM t_ml_drop ORDER BY c0;
 DROP TABLE t_ml_drop;
 
+-- A subcolumn is deeper than its storage column, so the bound has to be taken in storage
+-- coordinates. Substream marks present: the subcolumn tree is read directly.
+DROP TABLE IF EXISTS t_ml_sub_on;
+CREATE TABLE t_ml_sub_on (c0 Int, a Array(Tuple(k Array(UInt32), v String)))
+ENGINE = MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 1073741824, min_rows_for_wide_part = 1000000,
+    write_marks_for_substreams_in_compact_parts = 1;
+SYSTEM STOP MERGES t_ml_sub_on;
+INSERT INTO t_ml_sub_on VALUES (1, [([7, 8], 'x'), ([9], 'y')]);
+ALTER TABLE t_ml_sub_on CLEAR COLUMN a SETTINGS alter_sync = 0;
+SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_ml_sub_on' AND active;
+SELECT count() > 0 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_ml_sub_on);
+SELECT c0, a.k, arrayMap(x -> length(x), a.k), a.v FROM t_ml_sub_on ORDER BY c0;
+DROP TABLE t_ml_sub_on;
+
+-- Same subcolumn read without substream marks: the whole storage column is deserialized and the
+-- subcolumn extracted in memory, so needSkipStream is asked about the storage substream tree.
+DROP TABLE IF EXISTS t_ml_sub_off;
+CREATE TABLE t_ml_sub_off (c0 Int, a Array(Tuple(k Array(UInt32), v String)))
+ENGINE = MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 1073741824, min_rows_for_wide_part = 1000000,
+    write_marks_for_substreams_in_compact_parts = 0;
+SYSTEM STOP MERGES t_ml_sub_off;
+INSERT INTO t_ml_sub_off VALUES (1, [([7, 8], 'x'), ([9], 'y')]);
+ALTER TABLE t_ml_sub_off CLEAR COLUMN a SETTINGS alter_sync = 0;
+SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_ml_sub_off' AND active;
+SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_ml_sub_off);
+SELECT c0, a.k, arrayMap(x -> length(x), a.k), a.v FROM t_ml_sub_off ORDER BY c0;
+DROP TABLE t_ml_sub_off;
+
 -- Real Array(Array(T)) dimensions must still be borrowed: per-row lengths stay non-empty.
 DROP TABLE IF EXISTS t_ml_dims;
 CREATE TABLE t_ml_dims (c0 Int, n Array(Array(UInt8)))
