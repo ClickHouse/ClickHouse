@@ -11,6 +11,10 @@ without FROM the bound is rejected only when every anchor wraps
 84	5	254
 25	-125	-5
 [5]
+STALENESS caps the sequence before TO, so the TO bound is not rejected
+20	5	24
+20	-24	-5
+7	5	23
 in-range filling is unchanged
 [1,2,3,4,5,6,7,8,9]
 [-1,-2,-3,-4,-5,-6,-7]
