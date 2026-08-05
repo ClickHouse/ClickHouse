@@ -1025,7 +1025,19 @@ def test_kill_transaction_mutation_orphan_not_applied_on_fly(start_cluster):
             pass
 
     # The orphaned entry is registered now and, with merges stopped, nothing
-    # removes it.  Reading with apply_mutations_on_fly must ignore it.
+    # removes it.  Pin that precondition: the entry must still be present in
+    # system.mutations (whatever its is_done state), otherwise the assertions
+    # below pass trivially with no orphan at all and stop exercising the
+    # consumer-side filters.
+    assert (
+        node.query(
+            "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+            " AND table='mt_kill_txn_on_fly'"
+        ).strip()
+        == "1"
+    )
+
+    # Reading with apply_mutations_on_fly must ignore the orphaned entry.
     assert (
         node.query(
             "SELECT sum(value) FROM mt_kill_txn_on_fly",
@@ -1249,3 +1261,126 @@ def test_kill_transaction_mutation_rollback_window(start_cluster):
     )
 
     node.query("DROP TABLE IF EXISTS mt_kill_txn_rollback_window SYNC")
+
+
+def test_kill_transaction_dead_rename_mutation_does_not_block_alter(start_cluster):
+    """
+    Regression test for the non-barrier ALTER prewait against a dead
+    transactional rename mutation (https://github.com/ClickHouse/ClickHouse/issues/83252).
+
+    Before changing metadata, a non-barrier ALTER waits for the latest pending
+    RENAME COLUMN mutation, so that the rename is not applied to parts using
+    the wrong schema.  A rolled-back transactional rename mutation will never
+    finish, and waitForMutation reports it as killed, so picking it as the
+    mutation to wait for would fail the ALTER with "Mutation ... was killed".
+    The prewait must skip dead entries, exactly as the barrier-ALTER prewait
+    does.
+
+    The dead rename entry is created deterministically: a transactional
+    ALTER RENAME COLUMN (throw_on_unsupported_query_inside_transaction = 0)
+    registers the rename mutation, and KILL TRANSACTION is held inside the
+    rollback window by the transaction_rollback_pause_before_kill_mutations
+    failpoint, so the entry is still registered while its transaction is
+    already cancelled.  Merges are stopped so the rename mutation stays
+    pending until the transaction is killed.
+    """
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_dead_rename SYNC")
+    node.query(
+        "CREATE TABLE mt_kill_txn_dead_rename (key UInt64, value UInt64)"
+        " ENGINE=MergeTree ORDER BY key"
+    )
+    node.query("INSERT INTO mt_kill_txn_dead_rename SELECT number, 0 FROM numbers(100)")
+
+    # The rename mutation must stay pending until the transaction is killed.
+    node.query("SYSTEM STOP MERGES mt_kill_txn_dead_rename")
+
+    session = 45
+    kill_thread = None
+    try:
+        tx(session, "BEGIN TRANSACTION")
+        tid = tx(session, "SELECT transactionID()").strip()
+        assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
+
+        # alter_sync = 0: the rename's own mutation cannot finish while merges
+        # are stopped, and only the registered entry is needed.
+        tx(
+            session,
+            "ALTER TABLE mt_kill_txn_dead_rename RENAME COLUMN value TO renamed"
+            " SETTINGS throw_on_unsupported_query_inside_transaction = 0,"
+            " alter_sync = 0",
+        )
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+                " AND table='mt_kill_txn_dead_rename'"
+            ).strip()
+            == "1"
+        )
+
+        node.query(
+            "SYSTEM ENABLE FAILPOINT transaction_rollback_pause_before_kill_mutations"
+        )
+
+        def run_kill():
+            try:
+                node.query(f"KILL TRANSACTION WHERE tid = {tid}")
+            except Exception:
+                pass
+
+        kill_thread = threading.Thread(target=run_kill)
+        kill_thread.start()
+
+        # The transaction is cancelled now, but its mutations are not killed
+        # yet, so the dead rename entry is still registered: exactly the state
+        # the prewait must skip.
+        node.query(
+            "SYSTEM WAIT FAILPOINT"
+            " transaction_rollback_pause_before_kill_mutations PAUSE"
+        )
+        assert (
+            node.query(
+                f"SELECT count() FROM system.transactions WHERE tid = {tid}"
+            ).strip()
+            == "1"
+        ), "The transaction must still be in the running list inside the window"
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+                " AND table='mt_kill_txn_dead_rename'"
+            ).strip()
+            == "1"
+        ), "The dead rename mutation entry must still be registered"
+
+        # A non-barrier metadata ALTER must not pick the dead rename mutation
+        # as the one to wait for.  Unfixed, it either fails with
+        # "Mutation ... was killed" or waits for the dead rename until
+        # max_execution_time expires.
+        node.query(
+            "ALTER TABLE mt_kill_txn_dead_rename ADD COLUMN extra UInt8",
+            settings={"max_execution_time": 60},
+        )
+    finally:
+        # Let the rollback finish: killMutation removes the rename mutation.
+        node.query(
+            "SYSTEM DISABLE FAILPOINT transaction_rollback_pause_before_kill_mutations"
+        )
+
+        if kill_thread is not None:
+            kill_thread.join()
+
+        try:
+            tx(session, "ROLLBACK")
+        except Exception:
+            pass
+
+        node.query("SYSTEM START MERGES mt_kill_txn_dead_rename")
+
+    # The dead rename mutation is removed by the finished rollback.
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+        " AND table='mt_kill_txn_dead_rename' AND is_done = 0",
+        "0",
+    )
+
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_dead_rename SYNC")

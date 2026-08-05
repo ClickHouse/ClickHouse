@@ -648,10 +648,14 @@ void StorageMergeTree::alter(
         {
             int64_t mutation_to_wait = 0;
             {
+                /// Skip rolled-back / orphaned transactional rename mutations, exactly as the
+                /// barrier scan above does: they will never finish, and
+                /// `getIncompleteMutationsStatusUnlocked` reports them as killed, so waiting
+                /// for one would fail this `ALTER` with `Mutation ... was killed`.
                 std::lock_guard lock(currently_processing_in_background_mutex);
                 for (const auto & [version, mutation_entry] : current_mutations_by_version | std::views::reverse)
                 {
-                    if (mutation_entry.commands->containBarrierCommand())
+                    if (mutation_entry.commands->containBarrierCommand() && !isDeadTransactionalMutation(mutation_entry))
                     {
                         mutation_to_wait = version;
                         break;
