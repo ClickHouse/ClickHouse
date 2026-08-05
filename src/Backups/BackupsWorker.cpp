@@ -197,6 +197,9 @@ enum class BackupsWorker::ThreadPoolId : uint8_t
     /// Making a list of files to copy or copying those files.
     BACKUP,
 
+    /// Dedicated pool for creating lightweight snapshots, so it is not starved by a concurrent heavy BACKUP sharing the BACKUP pool.
+    CREATE_SNAPSHOT,
+
     /// Creating of tables and databases during RESTORE and filling them with data.
     RESTORE,
 
@@ -251,6 +254,7 @@ public:
         switch (thread_pool_id)
         {
             case ThreadPoolId::BACKUP:
+            case ThreadPoolId::CREATE_SNAPSHOT:
             case ThreadPoolId::ASYNC_BACKGROUND_BACKUP:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP:
             case ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP:
@@ -261,7 +265,7 @@ public:
                 metric_scheduled_threads = CurrentMetrics::BackupsThreadsScheduled;
                 max_threads = num_backup_threads;
                 /// We don't use thread pool queues for thread pools with a lot of tasks otherwise that queue could be memory-wasting.
-                use_queue = (thread_pool_id != ThreadPoolId::BACKUP);
+                use_queue = (thread_pool_id != ThreadPoolId::BACKUP && thread_pool_id != ThreadPoolId::CREATE_SNAPSHOT);
                 break;
             }
 
@@ -666,6 +670,10 @@ void BackupsWorker::doBackup(
 
     bool is_internal_backup = backup_settings.internal;
 
+    /// Snapshot creation uses a dedicated thread pool so it is not starved by a concurrent heavy BACKUP occupying the shared BACKUP pool.
+    const ThreadPoolId backup_thread_pool_id
+        = backup_settings.experimental_lightweight_snapshot ? ThreadPoolId::CREATE_SNAPSHOT : ThreadPoolId::BACKUP;
+
     /// Record the engine's effective settings for observability (see `system.backups`).
     /// A non-internal `BACKUP ON CLUSTER` initiator only writes metadata/lock files locally; the data
     /// files are written by the per-host internal operations (which are filtered out of `system.backups`)
@@ -707,7 +715,7 @@ void BackupsWorker::doBackup(
                 backup_coordination,
                 read_settings,
                 context,
-                getThreadPool(ThreadPoolId::BACKUP));
+                getThreadPool(backup_thread_pool_id));
             backup_entries = backup_entries_collector.run();
         }
 
@@ -715,8 +723,8 @@ void BackupsWorker::doBackup(
         chassert(backup);
         chassert(backup_coordination);
         chassert(context);
-        buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, context->getProcessListElement());
-        writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, context->getProcessListElement());
+        buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, backup_thread_pool_id, context->getProcessListElement());
+        writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, backup_thread_pool_id, context->getProcessListElement());
 
         /// We have written our backup entries (there is no need to sync it with other hosts because it's the last stage).
         backup_coordination->setStage(Stage::COMPLETED, "", /* sync = */ false);
@@ -754,10 +762,10 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "", /* sync = */ true);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP), process_list_element));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element));
 }
 
 
@@ -767,6 +775,7 @@ void BackupsWorker::writeBackupEntries(
     const OperationID & backup_id,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     bool is_internal_backup,
+    ThreadPoolId thread_pool_id,
     QueryStatusPtr process_list_element)
 {
     LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
@@ -786,7 +795,7 @@ void BackupsWorker::writeBackupEntries(
     std::atomic_bool failed = false;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
-    auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP);
+    auto & thread_pool = getThreadPool(thread_pool_id);
 
     std::vector<size_t> writing_order;
     if (test_randomize_order)
