@@ -2010,7 +2010,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor(context_).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
 
     return ast;
 }
