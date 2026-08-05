@@ -19,17 +19,13 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
-<<<<<<< HEAD
 class Block;
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table);
-=======
 QueryTreeNodePtr buildQueryTreeForShard(
     const PlannerContextPtr & planner_context,
     QueryTreeNodePtr query_tree_to_modify,
     bool allow_global_join_for_right_table,
     bool find_cross_join = false);
->>>>>>> e9beb426145 (Merge pull request #1782 from Altinity/frontport/antalya-26.3/json_part2)
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context, bool force_prefer_global_join = false);
 void rewriteInToGlobalIn(QueryTreeNodePtr & query_tree_to_modify, ContextPtr context, bool rewrite_for_distributed = false);

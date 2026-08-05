@@ -57,11 +57,8 @@ namespace Setting
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool enable_add_distinct_to_in_subqueries;
     extern const SettingsInt64 optimize_const_name_size;
-<<<<<<< HEAD
     extern const SettingsOverflowMode transfer_overflow_mode;
-=======
     extern const SettingsObjectStorageClusterJoinMode object_storage_cluster_join_mode;
->>>>>>> e9beb426145 (Merge pull request #1782 from Altinity/frontport/antalya-26.3/json_part2)
 }
 
 namespace ErrorCodes

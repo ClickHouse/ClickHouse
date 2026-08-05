@@ -1362,13 +1362,9 @@ def test_namespace_filter(started_cluster):
     assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.a2.{table_name}`")
 
 
-<<<<<<< HEAD
 # TODO - turn on after merge alternative syntax
-def _test_cluster_joins(started_cluster):
-=======
 @pytest.mark.parametrize("join_mode", ["local", "global"])
-def test_cluster_joins(started_cluster, join_mode):
->>>>>>> e9beb426145 (Merge pull request #1782 from Altinity/frontport/antalya-26.3/json_part2)
+def _test_cluster_joins(started_cluster, join_mode):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_join_tables_{uuid.uuid4()}"
