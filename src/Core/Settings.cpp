@@ -4780,7 +4780,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
-    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, false, R"(
+    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, true, R"(
 Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
 queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
 exactly partitions rows into defaults and non-defaults of `col`. The count is then
@@ -4820,7 +4820,7 @@ Possible values:
 See also:
 
 - [optimize_trivial_count_query](#optimize_trivial_count_query)
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -6651,6 +6651,8 @@ Possible values:
 
 - `left` - Decorrelation process will produce LEFT JOINs and input table will appear on the left side.
 - `right` - Decorrelation process will produce RIGHT JOINs and input table will appear on the right side.
+
+When the subquery input is shared through an in-memory buffer (see `correlated_subqueries_use_in_memory_buffer`), `right` is used regardless of this setting, because only that layout evaluates the buffer writer before its reader. The join kind is an internal detail of the decorrelated plan and does not change the result.
 )", 0) \
     DECLARE(Bool, correlated_subqueries_use_in_memory_buffer, true, R"(
 Use in-memory buffer for correlated subquery input to avoid its repeated evaluation.
