@@ -1208,7 +1208,8 @@ InputOrderInfoPtr buildInputOrderInfo(
                     auto strictness = table_join.strictness();
                     if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
                     {
-                        LOG_WARNING(getLogger("optimizeReadInOrder"), "Read in order for inner join without virtual row optimization can lead to excessive data read");
+                        LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
+                        return nullptr;
                     }
                 }
             }
