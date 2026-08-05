@@ -311,11 +311,19 @@ public:
     {
     }
     String getName() const override { return "PushingToWindowViewSink"; }
+
+    /// The real pre-write checks (the `Too many parts` check) run inside the sinks of the inner table,
+    /// and `writeIntoWindowView` creates a fresh one per chunk of every parallel branch of the query.
+    /// Keep the registry to thread it into those sinks, so the check still runs once per query - a late
+    /// sink must not count a part committed on behalf of the same query by a sibling branch (or by an
+    /// earlier chunk of the same branch).
+    void setInsertStartGateRegistry(InsertStartGatesPtr gates) override { insert_start_gates = std::move(gates); }
+
     void consume(Chunk & chunk) override
     {
         Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
         StorageWindowView::writeIntoWindowView(
-            window_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
+            window_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context, insert_start_gates);
 
         if (auto process = context->getProcessListElement())
             process->updateProgressIn(local_progress);
@@ -327,6 +335,7 @@ public:
 private:
     StorageWindowView & window_view;
     ContextPtr context;
+    InsertStartGatesPtr insert_start_gates;
 };
 
 
@@ -1870,7 +1879,10 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
         auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
-        sink->setInsertStartGate(insert_start_gates->get(inner_table_id));
+        /// The real pre-write checks run inside the sinks of the window view's inner table, created by
+        /// `writeIntoWindowView` per chunk of every parallel branch: hand the registry over so they
+        /// share this query's gates and the `Too many parts` check runs once per query.
+        sink->setInsertStartGateRegistry(insert_start_gates);
         result.addSink(std::move(sink));
     }
     else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))

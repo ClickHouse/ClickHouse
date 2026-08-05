@@ -1496,7 +1496,11 @@ void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
 }
 
 void StorageWindowView::writeIntoWindowView(
-    StorageWindowView & window_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr local_context)
+    StorageWindowView & window_view,
+    Block && block,
+    Chunk::ChunkInfoCollection && chunk_infos,
+    ContextPtr local_context,
+    const InsertStartGatesPtr & insert_start_gates)
 {
     window_view.throwIfWindowViewIsDisabled(local_context);
     while (window_view.modifying_query)
@@ -1672,6 +1676,15 @@ void StorageWindowView::writeIntoWindowView(
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr(local_context, false);
     auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context, /*async_insert=*/false);
     output->addTableLock(lock);
+    if (insert_start_gates)
+    {
+        /// The sinks created by all the calls of this function on behalf of one INSERT query share the
+        /// query's gate of the inner table, so the `Too many parts` rejection check runs once per query,
+        /// strictly before the first of them writes anything - a sink of a later chunk must not count
+        /// a part the query itself has already written. See InsertStartGates.h.
+        output->setInsertStartGate(insert_start_gates->get(inner_table->getStorageID()));
+        output->setInsertStartGateRegistry(insert_start_gates);
+    }
 
     if (!blocksHaveEqualStructure(builder.getHeader(), output->getHeader()))
     {

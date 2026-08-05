@@ -4,6 +4,7 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
@@ -172,7 +173,17 @@ public:
 
     BlockIO populate();
 
-    static void writeIntoWindowView(StorageWindowView & window_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr context);
+    /// `insert_start_gates` is the per-query registry of the INSERT query the write runs on behalf of.
+    /// Every call creates a fresh sink of the inner table, and one query performs a call per chunk of
+    /// every parallel branch, so the pre-write checks of those sinks (the `Too many parts` check) have
+    /// to be shared across the calls: a sink of a later chunk must not count a part the query itself
+    /// has already written. See InsertStartGates.h.
+    static void writeIntoWindowView(
+        StorageWindowView & window_view,
+        Block && block,
+        Chunk::ChunkInfoCollection && chunk_infos,
+        ContextPtr context,
+        const InsertStartGatesPtr & insert_start_gates);
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
 
