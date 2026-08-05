@@ -1875,12 +1875,14 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     auto * possible_read_from_merge_tree_node = sorting_node->children.front();
 
+    bool passed_expression_step = false;
     if (typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get()))
     {
         if (possible_read_from_merge_tree_node->children.size() != 1)
             return 0;
 
         possible_read_from_merge_tree_node = possible_read_from_merge_tree_node->children.front();
+        passed_expression_step = true;
     }
 
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(possible_read_from_merge_tree_node->step.get());
@@ -1936,6 +1938,15 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
         bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         if (!can_read)
             return 0;
+
+        /// The `ExpressionStep` between the read and the sort materializes the window
+        /// `PARTITION BY` / `ORDER BY` keys per stream, in parallel. Keep the per-stream
+        /// pipeline parallel: `PrefetchingConcatProcessor` would otherwise collapse a
+        /// single-part filtered read into one stream and serialize that work (the same
+        /// reason the residual-CPU paths above opt out).
+        if (passed_expression_step)
+            read_from_merge_tree->setPreferMultipleStreams();
+
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);
     }
 
