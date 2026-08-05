@@ -18,7 +18,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` 및 `type`은 문자열 리터럴입니다. 지원되는 압축 타입은 `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`입니다.
 
-`level`은 숫자 리터럴입니다. 다음 범위의 양의 정수를 지원합니다: `lz4` 타입은 `1-12`, `zstd` 타입은 `1-22`, 기타 압축 타입은 `1-9`입니다.
+`level`은 숫자 리터럴입니다. 다음 범위의 양의 정수를 지원합니다: `gzip`, `deflate`, `lz4` 타입은 `1-12`, `zstd` 타입은 `1-22`, 기타 압축 타입은 `1-9`입니다. `gzip` 및 `deflate`의 경우 `9`를 초과하는 수준을 사용하려면 `libdeflate`가 포함된 기본 build가 필요하며, `libdeflate`가 없는 build는 `1-9` 수준만 지원합니다.
 
 <div id="implementation-details">
   ## 구현 세부 정보

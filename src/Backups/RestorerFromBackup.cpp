@@ -1005,15 +1005,6 @@ void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
     data_restore_tasks.push_back(std::move(new_task));
 }
 
-void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
-{
-    if (current_stage != Stage::INSERTING_DATA_TO_TABLES)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of data-restoring tasks is not allowed");
-
-    std::lock_guard lock{mutex};
-    insertAtEnd(data_restore_tasks, std::move(new_tasks));
-}
-
 void RestorerFromBackup::runDataRestoreTasks()
 {
     /// Iterations are required here because data restore tasks are allowed to call addDataRestoreTask() and add other data restore tasks.

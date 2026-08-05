@@ -75,7 +75,7 @@ Elasticsearch では、インデックス作成前にドキュメントを変換
   ### クエリ言語
 </div>
 
-Elasticsearch は、[DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl)、[ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql)、[EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql)、[KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql) (Lucene スタイル) クエリを含む、[複数のクエリ言語](https://www.elastic.co/docs/explore-analyze/query-filter/languages)をサポートしていますが、join のサポートは限定的で、[`ES|QL`](https://www.elastic.co/guide/en/elasticsearch/reference/8.x/esql-commands.html#esql-lookup-join) 経由で利用できるのは **left outer joins** のみです。ClickHouse は、[すべての join タイプ](/ja/reference/statements/select/join#supported-types-of-join)、[window functions](/ja/reference/functions/window-functions/index)、サブクエリ (相関サブクエリを含む) 、CTE を含む **完全な SQL 構文** をサポートしています。これは、オブザーバビリティシグナルとビジネスデータまたはインフラストラクチャデータを相関付ける必要がある場合に大きな利点となります。
+Elasticsearch は、[DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl)、[ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql)、[EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql)、[KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql) (Lucene スタイル) クエリを含む、[複数のクエリ言語](https://www.elastic.co/docs/explore-analyze/query-filter/languages)をサポートしていますが、join のサポートは限定的で、[`ES|QL`](https://www.elastic.co/docs/reference/query-languages/esql/commands/lookup-join) 経由で利用できるのは **left outer joins** のみです。ClickHouse は、[すべての join タイプ](/ja/reference/statements/select/join#supported-types-of-join)、[window functions](/ja/reference/functions/window-functions/index)、サブクエリ (相関サブクエリを含む) 、CTE を含む **完全な SQL 構文** をサポートしています。これは、オブザーバビリティシグナルとビジネスデータまたはインフラストラクチャデータを相関付ける必要がある場合に大きな利点となります。
 
 ClickStack では、ClickHouse バックエンド経由で完全な SQL をサポートするとともに、移行しやすいように [Lucene 互換の検索インターフェイスを UI で提供しています](/ja/clickstack/features/search)。この構文は、[Elastic query string](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) の構文に近いものです。この構文の正確な比較については、[&quot;Searching in ClickStack and Elastic&quot;](/ja/clickstack/migration/elastic/search) を参照してください。
 
@@ -162,15 +162,15 @@ Elasticsearch のインデックスルーティングでは、特定のドキュ
 
 どちらのシステムもデータの集計をサポートしていますが、ClickHouse は統計、近似、特化した分析関数などを含む、[より多くの関数](/ja/reference/functions/aggregate-functions/reference-index)を提供しています。
 
-オブザーバビリティのユースケースでは、集計の最も一般的な用途の 1 つは、特定のログメッセージやイベントがどれくらいの頻度で発生するかを数えることです (頻度が異常な場合はアラートします) 。
+オブザーバビリティのユースケースでは、集計の最も一般的な用途の 1 つは、特定のログメッセージやイベントがどれくらいの頻度で発生するかを数えることです (頻度が異常な場合はアラートします)。
 
 ClickHouse の `SELECT count(*) FROM ... GROUP BY ...` SQLクエリに相当する Elasticsearch の機能は、[terms aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html) で、これは Elasticsearch の [bucket aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket.html) の 1 つです。
 
 ClickHouse の `count(*)` を使った `GROUP BY` と Elasticsearch の terms aggregation は、機能面では概ね同等ですが、実装、パフォーマンス、結果の品質には大きな違いがあります。
 
-Elasticsearch におけるこの集計は、クエリ対象のデータが複数の分片にまたがる場合、[&quot;top-N&quot; クエリの結果を推定します](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-terms-aggregation#terms-agg-doc-count-error) (たとえば、件数上位 10 件のホスト) 。この推定によって速度は向上しますが、正確性が損なわれる可能性があります。この誤差は、[`doc_count_error_upper_bound` を確認](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#terms-agg-doc-count-error)し、`shard_size` パラメータを増やすことで抑えられますが、その代償としてメモリ使用量の増加とクエリパフォーマンスの低下が生じます。
+Elasticsearch におけるこの集計は、クエリ対象のデータが複数の分片にまたがる場合、[&quot;top-N&quot; クエリの結果を推定します](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-terms-aggregation#terms-agg-doc-count-error) (たとえば、件数上位 10 件のホスト)。この推定によって速度は向上しますが、正確性が損なわれる可能性があります。この誤差は、[`doc_count_error_upper_bound` を確認](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#terms-agg-doc-count-error)し、`shard_size` パラメータを増やすことで抑えられますが、その代償としてメモリ使用量の増加とクエリパフォーマンスの低下が生じます。
 
-Elasticsearch では、すべてのバケット集約に対して [`size` 設定](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size) も必要です。上限を明示的に設定せずに、すべての一意なグループを返す方法はありません。高カーディナリティの集計では、[`max_buckets` 制限](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets) に達するおそれがあるほか、[composite 集約](https://www.elastic.co/docs/reference/aggregations/bucket/composite-aggregation) を使ったページネーションが必要になる場合がありますが、これはしばしば複雑で非効率です。
+Elasticsearch では、すべてのバケット集約に対して [`size` 設定](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size) も必要です。上限を明示的に設定せずに、すべての一意なグループを返す方法はありません。高カーディナリティの集計では、[`max_buckets` 制限](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets) に達するおそれがあるほか、[composite 集約](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-composite-aggregation) を使ったページネーションが必要になる場合がありますが、これはしばしば複雑で非効率です。
 
 これに対して ClickHouse は、追加の設定なしで正確な集計を実行します。`count(*)` のような関数は設定調整を必要とせずに正確な結果を返すため、クエリの挙動がよりシンプルで予測しやすくなります。
 
