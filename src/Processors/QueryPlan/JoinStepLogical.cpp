@@ -15,8 +15,11 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/ComparisonNames.h>
@@ -1517,6 +1520,235 @@ void JoinStepLogical::buildPhysicalJoin(
     node = std::move(new_node);
 }
 
+/// True when `condition` would become a join key, i.e. an equality comparing one side against the
+/// other. Such a predicate must stay in the `ON` clause: `addJoinPredicatesToTableJoin` turns it into
+/// a key, and extracting it would leave the join keyless, replacing a hash join by a full product.
+static bool wouldBecomeJoinKey(const JoinActionRef & condition)
+{
+    /// Recursive, because `tryAddDisjunctiveConditions` derives one clause per disjunct and each needs
+    /// a key of its own, so an `OR` (or an `AND` nested in one) holding such an equality is itself
+    /// key-forming. Extracting it would accept a shape only the hash join implements.
+    if (condition.isFunction(JoinConditionOperator::Or) || condition.isFunction(JoinConditionOperator::And))
+    {
+        for (const auto & argument : condition.getArguments())
+        {
+            if (wouldBecomeJoinKey(argument))
+                return true;
+        }
+        return false;
+    }
+
+    auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+    if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+        return false;
+
+    return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+}
+
+/// True when every value of `type` shares one comparison order, so comparing two of them never has
+/// to find a supertype first. An allowlist over scalars: `Dynamic` and `Variant` compare whatever
+/// they contain, and a container is only as safe as its element type.
+static bool isTotallyOrderedByValue(const DataTypePtr & type)
+{
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return isTotallyOrderedByValue(array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        /// A zero-sized tuple would satisfy `all_of` vacuously, and comparing one is not implemented.
+        return !tuple->getElements().empty() && std::ranges::all_of(tuple->getElements(), isTotallyOrderedByValue);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return isTotallyOrderedByValue(map->getKeyType()) && isTotallyOrderedByValue(map->getValueType());
+
+    const auto which = WhichDataType(type);
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isEnum() || which.isDecimal()
+        || which.isStringOrFixedString() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
+        || which.isTime() || which.isTime64() || which.isUUID() || which.isIPv4() || which.isIPv6()
+        || which.isNothing() || which.isInterval();
+}
+
+/// True only for functions established to return a value for every input of their argument types.
+/// An allowlist: no property in the codebase reports "can throw", so a name is admitted only after
+/// its totality has been checked against its implementation.
+static bool isTotalOverItsArgumentTypes(const IFunctionBase & function)
+{
+    /// Logical connectives only combine already-computed `UInt8`s, so they have no input to reject.
+    static const std::unordered_set<std::string_view> total_names = {
+        NameAnd::name, NameOr::name, NameNot::name, NameXor::name,
+    };
+    if (total_names.contains(function.getName()))
+        return true;
+
+    const auto & argument_types = function.getArgumentTypes();
+    auto stripped = [&](size_t i) { return removeNullable(removeLowCardinality(argument_types[i])); };
+
+    /// A calendar field of a whole day or second, which every value of these types has. Not
+    /// `DateTime64`, where rescaling ticks raises `Decimal math overflow`.
+    if (function.getName() == "toYYYYMM")
+        return argument_types.size() == 1
+            && (isDateOrDate32(stripped(0)) || isDateTime(stripped(0)));
+
+    static const std::unordered_set<std::string_view> comparison_names = {
+        NameEquals::name, NameNotEquals::name, NameLess::name,
+        NameGreater::name, NameLessOrEquals::name, NameGreaterOrEquals::name,
+    };
+    if (!comparison_names.contains(function.getName()))
+        return false;
+
+    /// A comparison converts only to reach a common type, so equal types are exactly the case that
+    /// cannot overflow. Mixed widths are declined: `Decimal256(0)` against `Decimal32(9)` raises.
+    if (argument_types.size() != 2 || !stripped(0)->equals(*stripped(1)))
+        return false;
+
+    /// Not sufficient alone: two equally-typed `Variant` columns can still meet at rows whose
+    /// contained types have no supertype, which raises `NO_COMMON_TYPE`.
+    return isTotallyOrderedByValue(stripped(0));
+}
+
+/// True when moving `condition` below the join could change the query's answer: every node in it must
+/// be of a kind known to be safe to relocate. The switch is exhaustive and deliberately has no
+/// `default`, so a new `ActionType` breaks this build rather than being silently admitted.
+static bool isUnsafeToEvaluateBelowJoin(const JoinActionRef & condition)
+{
+    std::vector<const ActionsDAG::Node *> stack = {condition.getNode()};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(node).second)
+            continue;
+
+        switch (node->type)
+        {
+            /// A column read, a constant and a rename evaluate the same wherever they are placed.
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::COLUMN:
+            case ActionsDAG::ActionType::ALIAS:
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                /// Without a `function_base` neither statefulness nor determinism can be established,
+                /// so such a node is unsafe rather than skipped.
+                if (!node->function_base || node->function_base->isStateful()
+                    || !node->function_base->isDeterministicInScopeOfQuery())
+                    return true;
+                /// Below the join the predicate also sees the rows a surviving key rejects, so a
+                /// function that raises on such a row turns an answer into an error.
+                if (!isTotalOverItsArgumentTypes(*node->function_base))
+                    return true;
+                break;
+            }
+            /// `arrayJoin` changes the number of rows, and a correlated column has no value here.
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                return true;
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return false;
+}
+
+/// Maps each input node of the join expression belonging to `side` to its POSITION in that side's
+/// input header. The mapping must be positional, not by name: a header may legitimately carry several
+/// columns sharing a name, and `Block::findByName` keeps only the first occurrence of each.
+static std::unordered_map<const ActionsDAG::Node *, size_t>
+mapInputsToHeaderPositions(const JoinExpressionActions & expression_actions, JoinTableSide side)
+{
+    std::unordered_map<const ActionsDAG::Node *, size_t> positions;
+    size_t next_position = 0;
+    /// The constructors of `JoinExpressionActions` create one input per header column, left header
+    /// first, and `ActionsDAG::getInputs` preserves creation order, so the k-th input attributed to a
+    /// side is that side's k-th header column. `canRemoveUnusedColumns` also counts positions.
+    for (const auto * input : expression_actions.getActionsDAG()->getInputs())
+    {
+        auto ref = JoinActionRef(input, expression_actions);
+        const bool belongs_to_side = side == JoinTableSide::Left ? ref.fromLeft() : ref.fromRight();
+        if (belongs_to_side)
+            positions.emplace(input, next_position++);
+    }
+    return positions;
+}
+
+/// Collects, for `condition`, the inputs belonging to the OPPOSITE relation together with the value
+/// each one is to be replaced by, and returns them iff every one of them is a plan-time constant.
+/// A `nullopt` result means the condition must be left in the `ON` clause.
+static std::optional<std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName>>
+collectOppositeSideConstants(
+    const JoinActionRef & condition,
+    const JoinExpressionActions & expression_actions,
+    const Block & opposite_header,
+    const Block & current_header,
+    JoinTableSide side)
+{
+    const auto opposite_side = side == JoinTableSide::Left ? JoinTableSide::Right : JoinTableSide::Left;
+    const auto opposite_positions = mapInputsToHeaderPositions(expression_actions, opposite_side);
+
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
+    std::unordered_set<std::string_view> current_side_input_names;
+    std::vector<const ActionsDAG::Node *> stack = {condition.getNode()};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            /// Membership is decided by SOURCE RELATION, never by name: names are not unique across
+            /// the two sides here, and the memoized per-node mapping `fromLeft`/`fromRight` read is
+            /// authoritative, because the constructors record one relation per input node.
+            auto position = opposite_positions.find(node);
+            if (position == opposite_positions.end())
+            {
+                auto ref = JoinActionRef(node, expression_actions);
+                if (side == JoinTableSide::Left ? ref.fromLeft() : ref.fromRight())
+                    current_side_input_names.insert(node->result_name);
+                continue;
+            }
+            if (position->second >= opposite_header.columns())
+                return {};
+
+            /// The value comes from that input's OWN header occurrence, BY POSITION. Constness is read
+            /// from the header column, never from the other side's row count: a one-row table is not a
+            /// constant, and inlining a value not yet known would give wrong results.
+            const auto & opposite_column = opposite_header.getByPosition(position->second);
+            if (!opposite_column.column || !isColumnConst(*opposite_column.column))
+                return {};
+            /// `ActionsDAG::substitute` asserts the replacement type matches the node it replaces.
+            if (!opposite_column.type->equals(*node->result_type))
+                return {};
+
+            substitutions.emplace(node, opposite_column);
+            continue;
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    if (substitutions.empty())
+        return {};
+
+    /// Decline when a referenced CURRENT-side name is duplicated in the header, because the
+    /// substituted predicate is bound to the stream BY NAME. Counted by position, as
+    /// `canRemoveUnusedColumns` does: the name index keeps one position per name.
+    for (const auto & name : current_side_input_names)
+    {
+        size_t count = 0;
+        for (size_t i = 0; i < current_header.columns(); ++i)
+        {
+            if (current_header.getByPosition(i).name == name && ++count > 1)
+                return {};
+        }
+    }
+
+    return substitutions;
+}
+
 std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(JoinTableSide side, const SharedHeader & stream_header)
 {
     if (!canPushDownFromOn(join_operator, side))
@@ -1529,19 +1761,104 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
         return side == JoinTableSide::Left ? condition.fromLeft() || condition.fromNone() : condition.fromRight();
     };
 
-    auto conditions = std::ranges::to<std::vector>(join_expression | std::views::filter(belongs_to_side));
+    /// Only INNER/CROSS/comma with ALL strictness qualifies: only there is the residual just a filter
+    /// over the product, so evaluating it earlier drops no row an output row could contain. OUTER
+    /// decides matching, ANY/SEMI/ANTI which row is picked, and `canPushDownFromOn` admits neither.
+    const bool residual_is_post_join_filter = join_operator.strictness == JoinStrictness::All
+        && (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind));
+
+    const Block * opposite_header = nullptr;
+    if (const auto & input_headers = getInputHeaders(); residual_is_post_join_filter && input_headers.size() == 2)
+        opposite_header = input_headers[side == JoinTableSide::Left ? 1 : 0].get();
+
+    /// Requiring BOTH relations is what makes this a candidate at all, and it is the usual shape of
+    /// bounds passed through `ON` (`ON t.d >= b.lo AND t.d <= b.hi`, constant `b`): `belongs_to_side`
+    /// rejects it, so it becomes a residual filter ABOVE the join, where index analysis never sees it.
+    auto references_both_relations = [](const JoinActionRef & condition)
+    {
+        const auto & source_relations = condition.getSourceRelations();
+        return source_relations.test(0) && source_relations.test(1);
+    };
+
+    /// Requiring both also leaves a condition belonging solely to the OPPOSITE side alone: substituting
+    /// its constants would fold it into a tautology here and erase it from `ON`, so that side would
+    /// lose a filter it should have got. Equality propagation does derive such conditions.
+    auto substitutions_for = [&](const JoinActionRef & condition)
+        -> std::optional<std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName>>
+    {
+        if (!opposite_header || !references_both_relations(condition) || wouldBecomeJoinKey(condition)
+            || isUnsafeToEvaluateBelowJoin(condition))
+            return {};
+        return collectOppositeSideConstants(condition, expression_actions, *opposite_header, *stream_header, side);
+    };
+
+    auto is_substitutable = [&](const JoinActionRef & condition) { return substitutions_for(condition).has_value(); };
+
+    auto should_extract = [&](const JoinActionRef & condition)
+    {
+        return belongs_to_side(condition) || is_substitutable(condition);
+    };
+
+    auto conditions = std::ranges::to<std::vector>(join_expression | std::views::filter(should_extract));
     if (conditions.empty())
         return {};
+
+    /// Accumulated per SUBSTITUTABLE conjunct, never over the combined predicate: the duplicate-name
+    /// veto is a property of the conjunct being substituted, so a one-sided conjunct AND-ed alongside
+    /// must not be able to trigger it and discard a filter this side would otherwise get.
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> originals;
+    for (const auto & extracted : conditions)
+    {
+        if (auto per_conjunct = substitutions_for(extracted))
+            originals.insert(per_conjunct->begin(), per_conjunct->end());
+    }
+    const bool has_substitutions = !originals.empty();
 
     auto condition = conditions.size() == 1
         ? toBoolIfNeeded(conditions.front())
         : toBoolIfNeeded(JoinActionRef::transform(conditions, JoinActionRef::AddFunction(JoinConditionOperator::And)));
 
-    auto filter_actions = ActionsDAG::createActionsForConjunction({condition.getNode()}, stream_header->getColumnsWithTypeAndName());
+    /// Without substitutions the predicate is already expressed over this side's columns, so keep
+    /// using its node directly and leave the DAG untouched.
+    std::optional<ActionsDAG> substituted;
+    if (has_substitutions)
+    {
+        /// The WHOLE predicate is cloned in ONE call, so a column referenced by several conjuncts yields
+        /// a single input in the clone; cloning conjuncts separately would produce one input per
+        /// conjunct sharing a name, of which only the first is bound to the stream column.
+        ActionsDAG::NodeMapping original_to_clone;
+        /// A CLONE, because `ActionsDAG::substitute` rewrites in place while the join's DAG is shared
+        /// with this query's pre-join and post-join actions, and because the rewrite preserves node
+        /// identity while side attribution is memoized per node, so in place it would also be inert.
+        substituted = ActionsDAG::cloneSubDAG({condition.getNode()}, original_to_clone, /* remove_aliases= */ false);
+
+        /// Keyed by the ORIGINAL-to-CLONE map, so each clone input is substituted exactly when its
+        /// ORIGINAL was classified as opposite-side. Looking clone inputs up by name would reintroduce
+        /// the name-versus-source-relation confusion `collectOppositeSideConstants` exists to avoid.
+        std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
+        for (const auto & [original, value] : originals)
+        {
+            auto it = original_to_clone.find(original);
+            if (it == original_to_clone.end())
+                return {};
+            substitutions.emplace(it->second, value);
+        }
+
+        substituted->substitute(substitutions);
+        /// Fold the substituted values so that a predicate which became constant is recognized as
+        /// such by `createActionsForConjunction` (which declines to push a constant filter).
+        substituted->removeUnusedActions(/* allow_remove_inputs= */ false, /* allow_constant_folding= */ true, /* evaluate_constants= */ true);
+    }
+
+    const auto * filter_node = has_substitutions ? substituted->getOutputs().front() : condition.getNode();
+
+    auto filter_actions = ActionsDAG::createActionsForConjunction({filter_node}, stream_header->getColumnsWithTypeAndName());
     if (!filter_actions)
         return {};
 
-    std::erase_if(join_expression, belongs_to_side);
+    /// Erase only after the filter is built: a failed build must leave the join condition intact,
+    /// otherwise the predicate is lost and the join returns wrong results.
+    std::erase_if(join_expression, should_extract);
     return filter_actions;
 }
 
