@@ -75,17 +75,36 @@ def _read_avro(path):
             reader.close()
 
 
-def _assert_pre_drop_entry_carries_post_drop_schema(table_name):
+def _current_data_file_paths(table_name):
+    """Data file paths reachable from the table's current snapshot."""
+    metadata = _latest_metadata(table_name)
+    current_snapshot_id = metadata["current-snapshot-id"]
+    snapshot = next(
+        snap
+        for snap in metadata["snapshots"]
+        if snap["snapshot-id"] == current_snapshot_id
+    )
+    _, manifest_entries = _read_avro(snapshot["manifest-list"])
+    paths = set()
+    for manifest_entry in manifest_entries:
+        _, records = _read_avro(manifest_entry["manifest_path"])
+        paths.update(record["data_file"]["file_path"] for record in records)
+    return paths
+
+
+def _assert_pre_drop_entry_carries_post_drop_schema(table_name, pre_drop_files):
     """Pin the manifest-MERGING half of the precondition.
 
-    The bug needs a carried-forward (EXISTING) entry for the pre-drop data file to live in a
-    manifest whose own Avro `schema` header records the POST-drop schema id: that header is what
-    ManifestFileIterator falls back to once the pre-drop snapshot is gone. Without merging the entry
-    stays in a manifest whose header still carries the pre-drop schema, the fallback resolves
-    correctly, and the fixture stops reproducing the bug while every other assertion still passes.
+    The bug needs a carried-forward (EXISTING) entry for one of the data files written BEFORE the
+    drop to live in a manifest whose own Avro `schema` header records the POST-drop schema id: that
+    header is what ManifestFileIterator falls back to once the pre-drop snapshot is gone. Without
+    merging that entry stays in a manifest whose header still carries the pre-drop schema, the
+    fallback resolves correctly, and the fixture stops reproducing the bug while every other
+    assertion still passes.
 
-    MERGE_PROPERTIES and the rewrite_manifests call each produce that state on their own, so this
-    checks the state itself rather than either mechanism.
+    The entry is matched by the pre-drop file's own path, so a merge that rewrote only the
+    post-drop manifest would not satisfy this. MERGE_PROPERTIES and the rewrite_manifests call each
+    produce the state on their own, so this checks the state itself rather than either mechanism.
     """
     metadata = _latest_metadata(table_name)
     current_schema_id = metadata["current-schema-id"]
@@ -95,15 +114,20 @@ def _assert_pre_drop_entry_carries_post_drop_schema(table_name):
         for manifest_entry in manifest_entries:
             manifest_meta, records = _read_avro(manifest_entry["manifest_path"])
             schema_id = json.loads(manifest_meta["schema"])["schema-id"]
-            statuses = {record["status"] for record in records}
-            seen.append((schema_id, sorted(statuses)))
-            if schema_id == current_schema_id and MANIFEST_ENTRY_EXISTING in statuses:
+            carried = {
+                record["data_file"]["file_path"]
+                for record in records
+                if record["status"] == MANIFEST_ENTRY_EXISTING
+            }
+            seen.append((schema_id, sorted(os.path.basename(path) for path in carried)))
+            if schema_id == current_schema_id and carried & pre_drop_files:
                 return
     raise AssertionError(
-        f"no merged manifest carries the pre-drop data file under the post-drop schema id "
-        f"{current_schema_id}; neither MERGE_PROPERTIES nor rewrite_manifests merges manifests "
-        f"any more, so the fixture does not reproduce the bug "
-        f"(manifest schema-id / entry statuses found: {seen})"
+        f"no merged manifest carries a pre-drop data file "
+        f"({sorted(os.path.basename(path) for path in pre_drop_files)}) as an EXISTING entry under "
+        f"the post-drop schema id {current_schema_id}; neither MERGE_PROPERTIES nor "
+        f"rewrite_manifests moves the pre-drop entry any more, so the fixture does not reproduce "
+        f"the bug (manifest schema-id / carried-forward files found: {seen})"
     )
 
 
@@ -118,6 +142,8 @@ def _prepare(spark, table_name, readd_dropped_name):
         """
     )
     spark.sql(f"INSERT INTO {table_name} VALUES (1, 'x'), (2, 'y'), (3, 'z');")
+    pre_drop_files = _current_data_file_paths(table_name)
+    assert pre_drop_files, "the pre-drop insert wrote no data file"
     spark.sql(f"ALTER TABLE {table_name} DROP COLUMN legacy_col;")
     if readd_dropped_name:
         # Spark assigns a NEW field id to the re-added column. The old data file still holds the
@@ -144,7 +170,7 @@ def _prepare(spark, table_name, readd_dropped_name):
         "no longer reproduces the bug, because the pre-drop snapshot still resolves the old "
         "file's schema"
     )
-    _assert_pre_drop_entry_carries_post_drop_schema(table_name)
+    _assert_pre_drop_entry_carries_post_drop_schema(table_name, pre_drop_files)
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
