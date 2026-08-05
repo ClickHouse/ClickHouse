@@ -215,7 +215,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ALL_CONNECTION_TRIES_FAILED;
-    extern const int ACCESS_DENIED;
 }
 
 namespace ActionLocks
@@ -2520,7 +2519,9 @@ void registerStorageRemote(StorageFactory & factory)
             /* dependent_table_id = */ &args.table_id);
 
         auto & parsed = validated.parsed;
-        ColumnsDescription columns = args.columns.empty() ? std::move(validated.inferred_columns) : args.columns;
+        ColumnsDescription columns = args.columns;
+        if (columns.empty())
+            columns = std::move(validated.inferred_columns);
 
         DistributedSettings distributed_settings = args.getContext()->getDistributedSettings();
         if (args.storage_def->settings)
