@@ -6,8 +6,10 @@
 -- expressions and filter trees are not collision candidates, so no wrapper (it is
 -- opaque to the planner and would pessimize shard-side optimization) must appear for
 -- them. The rewritten query the initiator sends to the shard is read back from
--- system.query_log (scoped by log_comment and the current database name inside the
--- query text), which pins the presence and the absence of the `__actionName` wrapper.
+-- system.query_log (the shard-side entries are scoped to this test through the
+-- initial_query_id of the initiator queries, which ran with current_database =
+-- currentDatabase()), which pins the presence and the absence of the `__actionName`
+-- wrapper.
 -- The rewrite lives in the analyzer's distributed planning (`buildQueryTreeDistributed`),
 -- so the test is restricted to the analyzer.
 
@@ -58,14 +60,20 @@ SYSTEM FLUSH LOGS query_log;
 
 -- For each query above: the query sent to the shard must be logged, and must contain
 -- the `__actionName` wrapper exactly when a collapse had to be prevented.
+WITH
+    (
+        SELECT groupArray(query_id) FROM system.query_log
+        WHERE current_database = currentDatabase() AND is_initial_query = 1
+            AND type = 'QueryFinish' AND event_date >= yesterday()
+            AND log_comment LIKE '04700\_%'
+    ) AS initiators
 SELECT
     log_comment,
     count() > 0 AS shard_query_logged,
     countIf(query LIKE '%__actionName%') > 0 AS wrapped
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
-    AND log_comment LIKE '04700\_%'
-    AND query LIKE concat('%', currentDatabase(), '%')
+    AND has(initiators, initial_query_id)
 GROUP BY log_comment
 ORDER BY log_comment;
 
