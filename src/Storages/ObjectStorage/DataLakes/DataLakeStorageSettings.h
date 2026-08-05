@@ -102,7 +102,6 @@ Replica name for Paimon incremental read state. Must be set and unique per repli
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_delta_kernel_rs, true) \
-    MAKE_OBSOLETE(M, Bool, allow_delta_kernel_rs, true) \
     MAKE_OBSOLETE(M, Bool, delta_lake_read_schema_same_as_table_schema, false) \
     MAKE_OBSOLETE(M, Bool, allow_dynamic_metadata_for_data_lakes, true)
 // clang-format on

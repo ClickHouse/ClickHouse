@@ -672,6 +672,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"apply_patch_parts", true, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
             {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
+            {"allow_delta_kernel_rs", false, true, "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"vector_search_filter_strategy", "auto", "auto", "New setting"},
             {"vector_search_postfilter_multiplier", 1.0, 1.0, "New setting"},
