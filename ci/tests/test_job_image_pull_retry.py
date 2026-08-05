@@ -1,42 +1,24 @@
 """
 Regression tests for the retried job-image pull in `Runner._run`.
 
-Background
-----------
-`docker run` pulls the job image implicitly, inside the same invocation that runs
-the job, and praktika executes that invocation exactly once (via `TeePopen`, which
-has no retry facility). So when the registry transfer is reset mid-stream the job
-dies with **zero tests executed** and is reported as a plain job-level `error`:
+`docker run` pulled the image implicitly and praktika ran it once, so a reset
+registry transfer killed the job with zero tests run:
 
-    <N> layers: Pull complete
     docker: failed to copy: read tcp <runner>:<port>-><registry>:443: read: connection reset by peer
 
-    Run 'docker run --help' for more information
+The pull is now its own step before `TeePopen`, guarded by `docker image inspect`,
+retried on transport-class errors and bounded per attempt.
 
-praktika retries transient registry errors everywhere else it owns a registry
-interaction as a distinct step (`docker.py` image build, `gh_auth.py`,
-`prefetch-integration-test-images`), but the job image pull was not a distinct
-step, so it inherited no retry. `Runner._run` now pulls it explicitly before
-`TeePopen`, retried on transport-class errors and bounded per attempt.
-
-Retrying `docker run` itself is not an option: `{job.command}` is inside that
-command string (a retry would re-run a whole test job) and its exit code is
-ambiguous by construction -- a container command exiting 125 gives docker rc=125,
-exactly what a pull failure returns.
-
-What these tests pin
---------------------
-Arms 2, 3, 4 and 8 drive the **real** `Shell.run` retry loop with fake shell
-commands, so they exercise praktika's actual matching semantics rather than a
-model of them. Arms 1, 5, 6 and 7 drive `Runner._run`'s docker branch with the
-side-effecting collaborators stubbed out. No docker daemon and no `jq` is needed.
-
-Two properties make the narrow allowlist safe, and both are asserted here:
+Two properties keep the narrow allowlist safe, and both are asserted here.
 `retry_errors` is matched against **stderr only** (`Shell.run` collects
-`err_output` from the stderr thread alone), while a successful pull writes its
-progress to **stdout** -- so pull progress can never trigger a retry. And the
-pulled command contains no job command at all, so nothing the job prints can
-reach this matcher.
+`err_output` from the stderr thread alone) while a pull writes progress to stdout:
+progress is never retried (arm 4), and the production error itself is one attempt
+on stdout (arm 4b) where on stderr it is retried (arm 2). And the pulled command
+contains no job command, so nothing the job prints reaches this matcher.
+
+Arms 2, 3, 4, 4b and 8 drive the **real** `Shell.run` loop with fake shell
+commands; arms 1, 5, 6 and 7 drive `Runner._run`'s docker branch with stubbed
+collaborators. Neither docker nor `jq` is needed.
 """
 
 import os
@@ -285,13 +267,30 @@ def test_permanent_error_is_not_retried(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# 4. Pull PROGRESS on stdout can never trigger a retry.
+# 4. Pull PROGRESS is not an error: it can never trigger a retry.
 # --------------------------------------------------------------------------- #
 def test_pull_progress_on_stdout_does_not_trigger_a_retry(tmp_path):
-    """`retry_errors` is matched against stderr only, and a successful pull writes
-    its progress to stdout. Pin that split: progress plus an empty stderr must
-    yield exactly one attempt even on a non-zero exit."""
+    """A successful pull writes progress lines like `Pull complete`, and none of
+    them is an allowlisted phrase, so a non-zero exit whose only output is
+    progress must be a single attempt."""
     cmd, counter = _counting_command(tmp_path, PULL_PROGRESS, [], exit_code=1)
+    rc = Shell.run(
+        cmd, retries=_IMAGE_PULL_RETRIES, retry_errors=_IMAGE_PULL_RETRY_ERRORS
+    )
+    assert rc != 0
+    assert _attempts(counter) == 1
+
+
+# --------------------------------------------------------------------------- #
+# 4b. The stderr-only split itself: the SAME phrase on stdout must NOT retry.
+# --------------------------------------------------------------------------- #
+def test_allowlisted_phrase_on_stdout_does_not_trigger_a_retry(tmp_path):
+    """Arm 4 carries no allowlisted phrase, so it reads one attempt under a
+    stderr-only matcher AND under one that also matched stdout: it cannot pin the
+    split. This arm can. It sends the verbatim production error to stdout with an
+    empty stderr and must still be a single attempt, while arm 2 sends that same
+    line to stderr and is retried."""
+    cmd, counter = _counting_command(tmp_path, [PRODUCTION_RESET], [], exit_code=1)
     rc = Shell.run(
         cmd, retries=_IMAGE_PULL_RETRIES, retry_errors=_IMAGE_PULL_RETRY_ERRORS
     )
