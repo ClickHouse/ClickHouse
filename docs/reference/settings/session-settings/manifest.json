@@ -1,5 +1,5 @@
 {
-  "settings": 1274,
+  "settings": 1276,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -8,6 +8,7 @@
     "aggregate_functions_null_for_empty": "/reference/settings/session-settings/aggregate",
     "aggregation_in_order_max_block_bytes": "/reference/settings/session-settings/aggregation",
     "aggregation_memory_efficient_merge_threads": "/reference/settings/session-settings/aggregation",
+    "ai_function_allow_insecure_endpoint": "/reference/settings/session-settings/ai-function",
     "ai_function_embedding_default_credentials": "/reference/settings/session-settings/ai-function",
     "ai_function_embedding_max_batch_size": "/reference/settings/session-settings/ai-function",
     "ai_function_max_api_calls_per_query": "/reference/settings/session-settings/ai-function",
@@ -1192,6 +1193,7 @@
     "text_index_posting_list_apply_mode": "/reference/settings/session-settings/text-index",
     "throw_if_no_data_to_insert": "/reference/settings/session-settings/other",
     "throw_on_error_from_cache_on_write_operations": "/reference/settings/session-settings/throw-on",
+    "throw_on_hive_partitioning_resolution_failure": "/reference/settings/session-settings/throw-on",
     "throw_on_max_partitions_per_insert_block": "/reference/settings/session-settings/throw-on",
     "throw_on_unsupported_query_inside_transaction": "/reference/settings/session-settings/throw-on",
     "timeout_before_checking_execution_speed": "/reference/settings/session-settings/other",
