@@ -323,6 +323,12 @@ private:
     /// stale marker over its successor's replacement snapshot.
     void assertReplicationLeadershipIsLive() const;
 
+    /// Give up the leadership after a `startSynchronization` attempt failed before a consumer got
+    /// running (best effort; called from `coordinationFunc`). The failure may be local to this replica,
+    /// and camping on /leader would keep every healthy peer on standby - most importantly for the
+    /// single-table engine, whose one failed snapshot load has to abort the whole startup.
+    void releaseLeadershipAfterFailedStartup();
+
     ConsumerPtr getConsumer();
 
     StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);

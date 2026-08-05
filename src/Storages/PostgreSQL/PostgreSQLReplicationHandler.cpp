@@ -89,6 +89,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char materialized_postgresql_fail_teardown_after_shutdown[];
+    extern const char materialized_postgresql_fail_load_from_snapshot[];
     extern const char materialized_postgresql_pause_before_register_replica[];
     extern const char materialized_postgresql_pause_before_marking_snapshot_completed[];
 }
@@ -1096,9 +1097,15 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
                 tryLogCurrentException(log);
 
-                /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
-                /// (unlike database engine where it is done in a separate thread).
-                if (throw_on_error && !is_materialized_postgresql_database)
+                /// The single-table engine has exactly one table, so when its snapshot failed there is
+                /// nothing useful a consumer could do. Without coordination the initial setup is done
+                /// immediately and `throw_on_error` decides between failing the query and the startup-task
+                /// retry. In coordinated mode the retry is driven by `coordinationFunc` (`throw_on_error`
+                /// is false), but the failure must still abort this attempt: proceeding would construct a
+                /// consumer with an empty `nested_storages` map that keeps advancing the shared slot's
+                /// `confirmed_flush_lsn` while applying nothing, silently discarding WAL that a healthy
+                /// peer could have applied.
+                if ((throw_on_error || coordination_enabled) && !is_materialized_postgresql_database)
                     throw;
             }
         }
@@ -1256,6 +1263,12 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
 StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection & connection, String & snapshot_name, const String & table_name,
                                                           StorageMaterializedPostgreSQL * materialized_storage)
 {
+    fiu_do_on(FailPoints::materialized_postgresql_fail_load_from_snapshot,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED,
+            "Injected failure while loading table `{}` from the initial snapshot", table_name);
+    });
+
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
 
     std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
@@ -1664,11 +1677,46 @@ void PostgreSQLReplicationHandler::coordinationFunc()
     catch (...)
     {
         tryLogCurrentException(log);
+        releaseLeadershipAfterFailedStartup();
         reschedule_ms = retry_poll_ms;
     }
 
     if (!stop_synchronization)
         coordination_task->scheduleAfter(reschedule_ms);
+}
+
+
+void PostgreSQLReplicationHandler::releaseLeadershipAfterFailedStartup()
+{
+    /// A leader whose startup failed before a consumer got running must not camp on the leadership: the
+    /// failure may be local to this replica (for example, only its snapshot load keeps failing), and while
+    /// it holds /leader every healthy peer stays on standby. Release the leadership so the peers can
+    /// compete; this replica re-enters the election on its next iteration and may win again once its
+    /// problem clears. A consumer that is already running is left alone: post-startup failures are handled
+    /// by the consumer/session-expiry paths.
+    if (!leader_node || !coordination_zookeeper || consumer)
+        return;
+
+    try
+    {
+        /// Remove the node through the leadership session and only forget it when the removal is
+        /// confirmed. If the removal fails the node may still exist, and dropping the reference to it
+        /// would leave a leader node nobody tracks, blocking every peer until the whole Keeper session
+        /// expires - keep the leadership state instead, so the regular retained-leadership retry and
+        /// session-expiry handling stay responsible for it.
+        coordination_zookeeper->remove(coordination_keeper_path + "/leader");
+        leader_node->setAlreadyRemoved();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to release the replication leadership after a failed startup attempt, keeping it");
+        return;
+    }
+
+    is_active_worker.store(false);
+    leader_node.reset();
+    coordination_zookeeper.reset();
+    LOG_WARNING(log, "Released replication leadership after a failed startup attempt");
 }
 
 
