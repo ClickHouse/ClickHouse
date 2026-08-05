@@ -3,6 +3,7 @@ B single PREWHERE on the converted column
 {'b':2}
 G Array parent, single PREWHERE
 ['10','20','30']
+['50','60']
 C single row policy on the converted column
 {'a':1}
 {'a':1,'b':2}
@@ -21,6 +22,9 @@ W Nullable parent, filters on distinct columns
 W2 LowCardinality parent, both filters on the same column
 y
 Z bare-column row policy and PREWHERE on the same column
-5
+1
+2
+Y Nullable parent, both filters on the same column
+8
 D matching types, row policy and PREWHERE
 {'a':1,'b':2}

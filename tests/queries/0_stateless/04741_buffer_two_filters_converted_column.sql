@@ -15,6 +15,8 @@ DROP TABLE IF EXISTS t04741_lc_dst;
 DROP TABLE IF EXISTS t04741_lc_buf;
 DROP TABLE IF EXISTS t04741_bare_dst;
 DROP TABLE IF EXISTS t04741_bare_buf;
+DROP TABLE IF EXISTS t04741_nul_dst;
+DROP TABLE IF EXISTS t04741_nul_buf;
 DROP ROW POLICY IF EXISTS p04741_map ON t04741_map_buf;
 DROP ROW POLICY IF EXISTS p04741_map_k ON t04741_map_buf;
 DROP ROW POLICY IF EXISTS p04741_arr ON t04741_arr_buf;
@@ -22,8 +24,9 @@ DROP ROW POLICY IF EXISTS p04741_same ON t04741_same_buf;
 DROP ROW POLICY IF EXISTS p04741_wrap ON t04741_wrap_buf;
 DROP ROW POLICY IF EXISTS p04741_lc ON t04741_lc_buf;
 DROP ROW POLICY IF EXISTS p04741_bare ON t04741_bare_buf;
+DROP ROW POLICY IF EXISTS p04741_nul ON t04741_nul_buf;
 
--- Every destination holds one row both filters accept, one only the row policy rejects and one only
+-- Each destination holds a row both filters accept, a row only the row policy rejects and a row only
 -- the PREWHERE rejects, so dropping either filter changes the output of every two-filter arm.
 CREATE TABLE t04741_map_dst (k UInt8, m Array(Tuple(String, UInt64))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t04741_map_dst VALUES (1, [('a', 1), ('b', 2)]), (2, [('b', 2)]), (3, [('a', 1)]);
@@ -31,7 +34,7 @@ CREATE TABLE t04741_map_buf (k UInt8, m Map(String, UInt64))
     ENGINE = Buffer(currentDatabase(), t04741_map_dst, 1, 100, 100, 1000, 10000, 1000000, 10000000);
 
 CREATE TABLE t04741_arr_dst (k UInt8, a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t04741_arr_dst VALUES (1, [10, 20, 30]), (2, []), (3, [40]);
+INSERT INTO t04741_arr_dst VALUES (1, [10, 20, 30]), (2, []), (3, [40]), (4, [50, 60]);
 CREATE TABLE t04741_arr_buf (k UInt8, a Array(String))
     ENGINE = Buffer(currentDatabase(), t04741_arr_dst, 1, 100, 100, 1000, 10000, 1000000, 10000000);
 
@@ -46,9 +49,14 @@ CREATE TABLE t04741_lc_buf (k UInt8, l LowCardinality(String))
     ENGINE = Buffer(currentDatabase(), t04741_lc_dst, 1, 100, 100, 1000, 10000, 1000000, 10000000);
 
 CREATE TABLE t04741_bare_dst (k UInt8, f UInt8) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t04741_bare_dst VALUES (1, 5), (2, 0), (3, 1);
+INSERT INTO t04741_bare_dst VALUES (1, 5), (2, 0), (3, 1), (4, 2);
 CREATE TABLE t04741_bare_buf (k UInt8, f UInt64)
     ENGINE = Buffer(currentDatabase(), t04741_bare_dst, 1, 100, 100, 1000, 10000, 1000000, 10000000);
+
+CREATE TABLE t04741_nul_dst (k UInt8, n Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t04741_nul_dst VALUES (1, 7), (2, NULL), (3, 9), (4, 8);
+CREATE TABLE t04741_nul_buf (k UInt8, n Nullable(String))
+    ENGINE = Buffer(currentDatabase(), t04741_nul_dst, 1, 100, 100, 1000, 10000, 1000000, 10000000);
 
 CREATE TABLE t04741_same_dst (k UInt8, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t04741_same_dst VALUES (1, map('a', 1, 'b', 2)), (2, map('b', 2)), (3, map('a', 1));
@@ -87,8 +95,9 @@ SELECT 'N additional_table_filters and PREWHERE';
 SELECT m FROM t04741_map_buf PREWHERE mapContains(m, 'b') ORDER BY m
 SETTINGS additional_table_filters = {'t04741_map_buf': 'mapContains(m, \'a\')'};
 
--- A different parent type reaches a different cast, so cover it too.
-CREATE ROW POLICY p04741_arr ON t04741_arr_buf USING length(a) > 0 TO ALL;
+-- A different parent type reaches a different cast, so cover it too. The policy needs a conjunct the
+-- PREWHERE does not imply, or a row rejected only by the policy cannot exist.
+CREATE ROW POLICY p04741_arr ON t04741_arr_buf USING length(a) > 0 AND k != 4 TO ALL;
 
 SELECT 'F Array parent, row policy and PREWHERE';
 SELECT a FROM t04741_arr_buf PREWHERE length(a) > 1 ORDER BY a;
@@ -109,7 +118,14 @@ SELECT l FROM t04741_lc_buf PREWHERE length(l) < 2 ORDER BY l;
 CREATE ROW POLICY p04741_bare ON t04741_bare_buf USING f TO ALL;
 
 SELECT 'Z bare-column row policy and PREWHERE on the same column';
-SELECT f FROM t04741_bare_buf PREWHERE f > 1 ORDER BY f;
+SELECT f FROM t04741_bare_buf PREWHERE f < 4 ORDER BY f;
+
+-- A Nullable parent with both filters on the same column. The PREWHERE must accept the NULL row,
+-- otherwise it implies the policy and the arm cannot detect a lost row policy.
+CREATE ROW POLICY p04741_nul ON t04741_nul_buf USING n != '9' TO ALL;
+
+SELECT 'Y Nullable parent, both filters on the same column';
+SELECT n FROM t04741_nul_buf PREWHERE n != '7' ORDER BY n;
 
 CREATE ROW POLICY p04741_same ON t04741_same_buf USING mapContains(m, 'a') TO ALL;
 
@@ -121,6 +137,7 @@ DROP ROW POLICY p04741_same ON t04741_same_buf;
 DROP ROW POLICY p04741_wrap ON t04741_wrap_buf;
 DROP ROW POLICY p04741_lc ON t04741_lc_buf;
 DROP ROW POLICY p04741_bare ON t04741_bare_buf;
+DROP ROW POLICY p04741_nul ON t04741_nul_buf;
 DROP TABLE t04741_map_buf;
 DROP TABLE t04741_map_dst;
 DROP TABLE t04741_arr_buf;
@@ -133,3 +150,5 @@ DROP TABLE t04741_lc_buf;
 DROP TABLE t04741_lc_dst;
 DROP TABLE t04741_bare_buf;
 DROP TABLE t04741_bare_dst;
+DROP TABLE t04741_nul_buf;
+DROP TABLE t04741_nul_dst;
