@@ -89,10 +89,14 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         /// `latest_fail_reason` in `system.mutations`, and a synchronous wait
         /// (`mutations_sync` = 1/2) issued on this replica could fail for a long-running mutation
         /// that another replica is still executing.
+        /// Because no exception is thrown, the queue's exponential backoff is not armed, so request
+        /// a postponed retry explicitly - otherwise the same entry would be re-scheduled immediately
+        /// in a loop while another replica is still mutating the part.
         return PrepareResult{
             .prepared_successfully = false,
             .need_to_check_missing_part_in_fetch = false,
             .part_log_writer = part_log_writer,
+            .postpone_next_attempt = true,
         };
     }
 
