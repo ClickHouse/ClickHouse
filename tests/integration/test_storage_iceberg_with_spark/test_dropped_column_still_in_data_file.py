@@ -1,4 +1,6 @@
-import time
+import json
+import os
+import re
 
 import pytest
 
@@ -9,15 +11,42 @@ from helpers.iceberg_utils import (
 )
 
 
-# Manifest merging rewrites the pre-drop data file's EXISTING manifest entry into a manifest whose
-# Avro header records the post-drop schema id, and expiring the pre-drop snapshot removes the only
-# other way to resolve that entry's schema. The reader then gets the post-drop field id map for a
-# file that still physically carries the dropped column.
+# Manifest merging rewrites the pre-drop file's manifest entry into a manifest whose Avro header
+# records the post-drop schema id; with the pre-drop snapshot expired that header is the only
+# remaining schema hint, so the reader gets the post-drop field id map for a pre-drop file.
 MERGE_PROPERTIES = (
     "'format-version' = '2', "
     "'commit.manifest-merge.enabled' = 'true', "
     "'commit.manifest.min-count-to-merge' = '1'"
 )
+FAR_FUTURE = "2099-12-31 23:59:59"
+
+
+def _metadata_version_from_name(filename):
+    """Return the leading metadata version from `v<N>.metadata.json` (0 if not parseable)."""
+    match = re.match(r"v?0*(\d+)", filename)
+    return int(match.group(1)) if match else 0
+
+
+def _snapshot_ids(table_name):
+    """Snapshot ids recorded in the table's latest metadata file.
+
+    A tie on `last-updated-ms` is broken by the metadata version, so the answer does not depend on
+    os.listdir order.
+    """
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    best = None
+    best_key = None
+    for filename in os.listdir(metadata_dir):
+        if not filename.endswith(".json"):
+            continue
+        with open(os.path.join(metadata_dir, filename)) as f:
+            data = json.load(f)
+        key = (data.get("last-updated-ms", 0), _metadata_version_from_name(filename))
+        if best_key is None or key > best_key:
+            best_key = key
+            best = data
+    return {snap.get("snapshot-id") for snap in (best or {}).get("snapshots", [])}
 
 
 def _prepare(spark, table_name, readd_dropped_name):
@@ -40,14 +69,22 @@ def _prepare(spark, table_name, readd_dropped_name):
     else:
         spark.sql(f"INSERT INTO {table_name} VALUES (4), (5);")
     spark.sql(f"CALL system.rewrite_manifests('{table_name}')")
-    # Expire everything older than now, keeping only the current snapshot, so the pre-drop snapshot
-    # is gone and the manifest header is the only remaining schema hint for the old data file.
-    time.sleep(1)
+    before = _snapshot_ids(table_name)
+    assert len(before) >= 2, (
+        f"expected at least the pre-drop and post-drop snapshots before expiry, got {before}; "
+        "the fixture no longer reproduces the bug"
+    )
     spark.sql(
         f"CALL system.expire_snapshots("
         f"table => '{table_name}', "
-        f"older_than => TIMESTAMP '{time.strftime('%Y-%m-%d %H:%M:%S')}', "
+        f"older_than => TIMESTAMP '{FAR_FUTURE}', "
         f"retain_last => 1)"
+    )
+    after = _snapshot_ids(table_name)
+    assert len(after) == 1 and after < before, (
+        f"expire_snapshots did not drop the pre-drop snapshot ({before} -> {after}); the fixture "
+        "no longer reproduces the bug, because the pre-drop snapshot still resolves the old "
+        "file's schema"
     )
 
 
