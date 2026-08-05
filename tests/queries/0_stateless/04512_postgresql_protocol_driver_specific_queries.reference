@@ -1,0 +1,23 @@
+RESET
+RESET
+RESET
+UNLISTEN
+UNLISTEN
+DISCARD ALL
+DISCARD PLANS
+DISCARD SEQUENCES
+DISCARD TEMP
+DISCARD TEMP
+connection_is_still_usable
+1
+(1 row)
+unsupported 'LISTEN some_channel' not silently accepted
+unsupported 'NOTIFY some_channel' not silently accepted
+multi-statement packet not silently accepted
+malformed 'DISCARD FOO' not silently accepted
+malformed 'DISCARD' not silently accepted
+malformed 'RESET' not silently accepted
+malformed 'RESET foo bar' not silently accepted
+malformed 'UNLISTEN * garbage' not silently accepted
+malformed 'DISCARD ALL extra' not silently accepted
+malformed 'RESET1foo' not silently accepted

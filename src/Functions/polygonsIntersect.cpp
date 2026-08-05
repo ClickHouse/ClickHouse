@@ -44,6 +44,7 @@ public:
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSpatialPredicate() const override { return std::is_same_v<Point, CartesianPoint>; }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -76,6 +77,11 @@ public:
                     || std::is_same_v<ColumnToMultiLineStringsConverter<Point>, RightConverter>)
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiLineString", getName());
+                else if constexpr (
+                    std::is_same_v<ColumnToMultiPointsConverter<Point>, LeftConverter>
+                    || std::is_same_v<ColumnToMultiPointsConverter<Point>, RightConverter>)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
                 else
                 {
                     auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
@@ -110,7 +116,7 @@ REGISTER_FUNCTION(polygonsIntersect)
 {
     factory.registerFunction<FunctionpolygonsIntersect<CartesianPoint>>(FunctionDocumentation{
         .description = R"(
-        Returns true if the two [`Polygon`](sql-reference/data-types/geo#polygon) or [`MultiPolygon`](sql-reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
+        Returns true if the two [`Polygon`](/reference/data-types/geo#polygon) or [`MultiPolygon`](/reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
     )",
         .syntax = "polygonsIntersectCartesian(polygon1, polygon2)",
         .arguments
@@ -128,16 +134,16 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-                ┌─polygonsIntersectCartesian()─┐
-                │ 1 │
-                └───────────────────┘
+┌─polygonsIntersectCartesian()─┐
+│                            1 │
+└──────────────────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
 
     factory.registerFunction<FunctionpolygonsIntersect<SphericalPoint>>(FunctionDocumentation{
         .description = R"(
-        Returns true if the two [`Polygon`](sql-reference/data-types/geo#polygon) or [`MultiPolygon`](sql-reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
+        Returns true if the two [`Polygon`](/reference/data-types/geo#polygon) or [`MultiPolygon`](/reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
     )",
         .syntax = "polygonsIntersectSpherical(polygon1, polygon2)",
         .arguments
@@ -156,9 +162,9 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-                ┌─polygonsIntersectSpherical()─┐
-                │ 1 │
-                └───────────────────┘
+┌─polygonsIntersectSpherical()─┐
+│                            1 │
+└──────────────────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});

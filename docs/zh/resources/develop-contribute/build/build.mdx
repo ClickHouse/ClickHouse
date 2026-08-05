@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   `clickhouse-server`、`clickhouse-client` 以及类似的二进制文件，在构建完成后都是 `programs/` 目录中指向 `clickhouse` 可执行文件的符号链接。
+</Note>
 
-  :::tip
+<Tip>
   CMake 为上述命令提供了简写方式：
 
   ```sh
   cmake -S . -B build  # 配置构建，在仓库顶层目录中运行
   cmake --build build  # 编译
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## 运行 ClickHouse 可执行文件

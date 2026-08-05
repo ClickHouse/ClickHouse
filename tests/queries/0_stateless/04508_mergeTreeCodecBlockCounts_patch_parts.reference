@@ -1,0 +1,21 @@
+all rows
+all_1_1_0	a	a	['LZ4']
+all_1_1_0	b	b	['LZ4']
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_block_number	_block_number	['Delta(1), LZ4']
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_block_offset	_block_offset	['Delta(1), LZ4']
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_part	_part	['LZ4']
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_part	_part.dict	['LZ4']
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_part_data_version	_part_data_version	['LZ4']
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_part_offset	_part_offset	['Delta(1), LZ4']
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	b	b	['LZ4']
+where column = b, both the regular and the patch part
+all_1_1_0	b
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	b
+patch part substream sizes
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_block_number	80
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_block_offset	80
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_part	26
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_part.dict	27
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_part_data_version	80
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	_part_offset	80
+patch-d9dff7d4cface4172f96b0bae7cb2e83-all_3_3_0_2	b	80
