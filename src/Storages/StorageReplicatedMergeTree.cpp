@@ -1783,8 +1783,16 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
 
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(fs::path(zookeeper_prefix) / "metadata", &metadata_stat);
+
+    Coordination::Stat columns_stat;
+    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
+
+    /// Parse the ZooKeeper-side metadata against the ZooKeeper-side columns: if the table was
+    /// altered concurrently, the metadata may reference a column the local snapshot does not
+    /// have yet, and parsing it against the local columns would throw before the non-strict
+    /// concurrent-`ALTER` handling below.
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
-        metadata_str, metadata_snapshot->getColumns(),
+        metadata_str, columns_from_zk,
         metadata_snapshot->add_minmax_index_for_numeric_columns,
         metadata_snapshot->add_minmax_index_for_string_columns,
         getContext());
@@ -1792,9 +1800,6 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
 
     if (metadata_version)
         *metadata_version = metadata_stat.version;
-
-    Coordination::Stat columns_stat;
-    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
 
     const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
     if (columns_from_zk == old_columns && is_metadata_equal)
