@@ -126,3 +126,65 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'join-load'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
+
+------------------------------------------------------------
+-- getEstimates honors use_statistics_cache
+-- `getEstimates` is exercised through part pruning
+-- (`use_statistics_for_part_pruning`) and through `system.parts_columns`.
+-- Once statistics are materialized, the per-part estimates cache is populated;
+-- cache=1 hits it (no load), cache=0 bypasses it (load from disk).
+------------------------------------------------------------
+DROP TABLE IF EXISTS sc_prune SYNC;
+
+CREATE TABLE sc_prune (a UInt64, b UInt64 STATISTICS(basic))
+ENGINE = MergeTree ORDER BY a
+SETTINGS refresh_statistics_interval = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO sc_prune SELECT number, number % 100 FROM numbers(50000) SETTINGS materialize_statistics_on_insert = 1;
+
+-- Warm up the per-part cache so the cache=1 queries below deterministically hit it.
+SELECT count() FROM sc_prune WHERE b > 90
+SETTINGS use_statistics_for_part_pruning = 1, use_statistics = 0, use_statistics_cache = 1, log_comment = 'prune-warm' FORMAT Null;
+
+-- cache=1 hits the per-part cache (ms = 0).
+SELECT count() FROM sc_prune WHERE b > 90
+SETTINGS use_statistics_for_part_pruning = 1, use_statistics = 0, use_statistics_cache = 1, log_comment = 'prune-hit' FORMAT Null;
+
+-- cache=0 bypasses the cache and reloads from disk (ms > 0).
+SELECT count() FROM sc_prune WHERE b > 90
+SETTINGS use_statistics_for_part_pruning = 1, use_statistics = 0, use_statistics_cache = 0, log_comment = 'prune-bypass' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'part-pruning',
+    toUInt8(maxIf(ProfileEvents['LoadedStatisticsMicroseconds'] = 0, log_comment = 'prune-hit')),
+    toUInt8(maxIf(ProfileEvents['LoadedStatisticsMicroseconds'] > 0, log_comment = 'prune-bypass'))
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
+  AND log_comment IN ('prune-hit', 'prune-bypass');
+
+-- Warm up the per-part cache for the system-table path.
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'sc_prune' AND statistics != []
+SETTINGS use_statistics_cache = 1, log_comment = 'parts-warm' FORMAT Null;
+
+-- cache=1 hits the per-part cache (ms = 0).
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'sc_prune' AND statistics != []
+SETTINGS use_statistics_cache = 1, log_comment = 'parts-hit' FORMAT Null;
+
+-- cache=0 bypasses the cache and reloads from disk (ms > 0).
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'sc_prune' AND statistics != []
+SETTINGS use_statistics_cache = 0, log_comment = 'parts-bypass' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'parts-columns',
+    toUInt8(maxIf(ProfileEvents['LoadedStatisticsMicroseconds'] = 0, log_comment = 'parts-hit')),
+    toUInt8(maxIf(ProfileEvents['LoadedStatisticsMicroseconds'] > 0, log_comment = 'parts-bypass'))
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
+  AND log_comment IN ('parts-hit', 'parts-bypass');
+
+DROP TABLE sc_prune SYNC;

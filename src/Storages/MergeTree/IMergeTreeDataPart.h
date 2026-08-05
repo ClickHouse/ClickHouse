@@ -238,7 +238,7 @@ public:
 
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
-    Estimates getEstimates() const;
+    Estimates getEstimates(bool use_cache = true) const;
     void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).

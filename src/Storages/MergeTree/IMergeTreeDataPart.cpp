@@ -102,6 +102,7 @@ namespace ProfileEvents
     extern const Event LoadedPrimaryIndexFiles;
     extern const Event LoadedPrimaryIndexRows;
     extern const Event LoadedPrimaryIndexBytes;
+    extern const Event LoadedStatisticsMicroseconds;
 }
 
 namespace DimensionalMetrics
@@ -1341,8 +1342,20 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     return loadStatisticsWide(required_columns_set);
 }
 
-Estimates IMergeTreeDataPart::getEstimates() const
+Estimates IMergeTreeDataPart::getEstimates(bool use_cache) const
 {
+    /// `use_statistics_cache = 0` bypasses the per-part estimates cache: read statistics straight
+    /// from disk, and do not populate the cache as a side effect.
+    if (!use_cache)
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
+        Estimates result;
+        auto statistics = loadStatistics();
+        for (const auto & [column_name, stats] : statistics)
+            result.emplace(column_name, stats->getEstimate());
+        return result;
+    }
+
     std::lock_guard lock(estimates_mutex);
 
     if (estimates.has_value())
@@ -1351,6 +1364,7 @@ Estimates IMergeTreeDataPart::getEstimates() const
     /// The raw statistics are transient, so load them in the default arena; only the cached
     /// estimates map is long-lived (kept on the part until reload), so build it in the dedicated
     /// arena, like the rest of the part's metadata.
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     auto statistics = loadStatistics();
 
     {

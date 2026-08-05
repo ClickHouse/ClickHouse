@@ -3,6 +3,7 @@
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -15,12 +16,18 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_statistics_cache;
+}
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
@@ -137,11 +144,12 @@ void StorageSystemPartsColumns::processNextStorage(
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
         std::optional<Estimates> estimates;
 
-        /// Lazy initialize statistics estimates if they are queried.
+        /// Lazy initialize statistics estimates if they are queried. `use_statistics_cache = 0`
+        /// bypasses the per-part estimates cache.
         auto find_estimate = [&](const auto & column_name)
         {
             if (!estimates.has_value())
-                estimates = part->getEstimates();
+                estimates = part->getEstimates(context->getSettingsRef()[Setting::use_statistics_cache]);
 
             return estimates->find(column_name);
         };
