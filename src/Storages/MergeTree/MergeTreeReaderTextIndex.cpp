@@ -980,10 +980,14 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
         for (size_t u = 0; u < unique_tokens.size(); ++u)
         {
             const auto & token_info = *unique_infos[u];
+            /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
+            if ((token_info.position_bytes == 0) || (token_info.position_offset > pos_file_size)
+                || (token_info.position_bytes > pos_file_size - token_info.position_offset))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
+                    token_info.position_bytes, token_info.position_offset, pos_file_size);
             positions_stream->seekToMark({token_info.position_offset, 0});
-            /// Bound by this token's blob so a corrupt directory cannot read into the next token's bytes.
-            const size_t in_file = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
-            const size_t available = std::min<size_t>(token_info.position_bytes, in_file);
+            const size_t available = token_info.position_bytes;
             dirs[u] = TextIndexBlockedPositionsCodec::readDirectory(
                 *data_buffer, token_info.position_offset, token_info.position_cardinality, available);
             blocks_total += dirs[u].numBlocks();

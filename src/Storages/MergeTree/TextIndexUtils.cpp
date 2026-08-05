@@ -587,13 +587,16 @@ bool MergeTextIndexesTask::executeStep()
                 has_positions = true;
                 auto * pos_stream = input_streams[current->order].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
                 auto * pos_data_buffer = pos_stream->getDataBuffer();
-                pos_stream->seekToMark({token_info.position_offset, 0});
-
-                /// Bytes left for this token; decode rejects a larger declared size.
+                /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
                 const size_t pos_file_size = pos_stream->getFileSize();
-                /// Bound by this token's own blob, as in the phrase reader.
-                const size_t pos_in_file = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
-                const size_t pos_available = std::min<size_t>(token_info.position_bytes, pos_in_file);
+                if ((token_info.position_bytes == 0) || (token_info.position_offset > pos_file_size)
+                    || (token_info.position_bytes > pos_file_size - token_info.position_offset))
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
+                        token_info.position_bytes, token_info.position_offset, pos_file_size);
+
+                pos_stream->seekToMark({token_info.position_offset, 0});
+                const size_t pos_available = token_info.position_bytes;
 
                 position_entries = decodeBlockedPositions(
                     *pos_data_buffer, read_postings, token_info.position_cardinality, pos_available, blocked_decode_scratch);
