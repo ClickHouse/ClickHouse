@@ -862,7 +862,11 @@ def main():
     # recoverable. ("new" bumps earlier, above, because the merge step below
     # merges the master bump PR it opens.)
     # Gated on `is_branch_release` so an un-bumped recovery still completes the bump.
-    if is_branch_release and args.release_type == "patch":
+    if (
+        is_branch_release
+        and args.release_type == "patch"
+        and not (args.only_repo or args.only_docker)
+    ):
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
