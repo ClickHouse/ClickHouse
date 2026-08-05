@@ -55,8 +55,8 @@ public:
     void setPreventInputRemoval() { prevent_input_removal = true; }
     bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
-    /// Worth evaluating by several threads if the pipeline is a single stream here. `transformPipeline`
-    /// decides whether it is also safe, so this may be set on any expression.
+    /// `transformPipeline` decides on its own whether the parallel evaluation is also safe,
+    /// so this may be set on any expression.
     void setParallelizeSingleStream() { parallelize_single_stream = true; }
     bool isSingleStreamParallelized() const { return parallelize_single_stream; }
 

@@ -78,8 +78,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     /// `SortChunksBySequenceNumber` restores the order of the chunks, not the order in which the streams
     /// reach a function, so a stateful or non-deterministic function would observe an arbitrary
-    /// interleaving. Deriving it here rather than trusting the flag keeps it right for every optimization
-    /// that rebuilds this step from another DAG.
+    /// interleaving.
     const size_t num_parallel_streams = std::min(settings.max_threads, pipeline.getNumThreads());
     const bool parallelize = parallelize_single_stream && pipeline.getNumStreams() == 1 && num_parallel_streams > 1
         && !actions_dag.hasStatefulFunctions() && !actions_dag.hasNonDeterministic();
@@ -113,7 +112,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     if (parallelize)
-        pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), pipeline.getNumStreams()));
+        pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), num_parallel_streams));
 }
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
@@ -136,7 +135,7 @@ void ExpressionStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(*input_headers.front(), actions_dag));
 }
 
-/// `parallelize_single_stream` is left out of the wire format: it only affects performance, and keeping it
+/// `parallelize_single_stream` is left out of the wire format: it only affects performance, and adding it
 /// would need a `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` bump.
 void ExpressionStep::serialize(Serialization & ctx) const
 {
