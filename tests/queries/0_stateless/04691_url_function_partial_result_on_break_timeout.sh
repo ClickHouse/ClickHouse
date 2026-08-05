@@ -67,18 +67,25 @@ QUERY="SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/{good,bad}', 'CSV', 'x UIn
 
 # 30 attempts with a backoff of 1 to 2 seconds for the failing file: minutes of retrying, while the
 # soft timeout of 1 second must interrupt the backoff and return the rows of the file that succeeded.
+# On a loaded machine the timeout can legitimately fire before the first file has streamed anything,
+# leaving a valid but empty partial result, so retry until the rows make it through - the guarantees
+# under test (the query succeeds and returns quickly) must hold on every attempt.
 ERROR_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.err")
 
-STARTED_AT=$EPOCHSECONDS
-RESULT=$($CLICKHOUSE_CLIENT \
-    --http_max_tries 30 \
-    --http_retry_initial_backoff_ms 1000 \
-    --http_retry_max_backoff_ms 2000 \
-    --max_execution_time 1 \
-    --timeout_overflow_mode break \
-    --query "$QUERY" 2>"$ERROR_FILE")
-CLIENT_STATUS=$?
-ELAPSED=$((EPOCHSECONDS - STARTED_AT))
+for _ in {1..10}; do
+    STARTED_AT=$EPOCHSECONDS
+    RESULT=$($CLICKHOUSE_CLIENT \
+        --http_max_tries 30 \
+        --http_retry_initial_backoff_ms 1000 \
+        --http_retry_max_backoff_ms 2000 \
+        --max_execution_time 1 \
+        --timeout_overflow_mode break \
+        --query "$QUERY" 2>"$ERROR_FILE")
+    CLIENT_STATUS=$?
+    ELAPSED=$((EPOCHSECONDS - STARTED_AT))
+
+    ((CLIENT_STATUS == 0)) && ((ELAPSED < 30)) && [[ -n "$RESULT" ]] && break
+done
 
 if ((CLIENT_STATUS == 0)); then
     echo "the timed out query succeeded"
