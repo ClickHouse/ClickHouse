@@ -70,7 +70,7 @@ tb   751E76E8199196D454941C45D1B3A323F1433BD6
 
 Introduzido em: v25.6.0
 
-Codifica uma string de dados binários, juntamente com uma parte legível para humanos (HRP), usando os algoritmos [Bech32 ou Bech32m](https://en.bitcoin.it/wiki/Bech32).
+Codifica uma string de dados binários, juntamente com uma parte legível por humanos (HRP), usando os algoritmos [Bech32 ou Bech32m](https://en.bitcoin.it/wiki/Bech32).
 
 <Note>
   Ao usar o tipo de dados [`FixedString`](/pt-BR/reference/data-types/fixedstring), se um valor não preencher completamente a linha, ele será completado com caracteres nulos.
@@ -100,7 +100,7 @@ Retorna uma string de endereço Bech32, composta pela parte legível por humanos
 **Bech32m padrão**
 
 ```sql title=Query
--- Quando nenhuma versão de witness é fornecida, o padrão é 1, o algoritmo Bech32m atualizado.
+-- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
@@ -111,7 +111,7 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
 **Algoritmo Bech32**
 
 ```sql title=Query
--- Uma versão de witness igual a 0 resultará em uma string de endereço diferente.
+-- A witness version of 0 will result in a different address string.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
@@ -122,8 +122,8 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
 **HRP personalizado**
 
 ```sql title=Query
--- Embora 'bc' (Mainnet) e 'tb' (Testnet) sejam os únicos valores hrp permitidos para o
--- formato de endereço SegWit, o Bech32 permite qualquer hrp que satisfaça os requisitos acima.
+-- While 'bc' (Mainnet) and 'tb' (Testnet) are the only allowed hrp values for the
+-- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
 ```
 
@@ -134,8 +134,8 @@ abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
 **Endereço do Cosmos SDK (BIP173, sem witness version)**
 
 ```sql title=Query
--- Usar a variante 'bech32' codifica dados brutos sem um byte de versão de witness,
--- compatível com Cosmos SDK, Injective, Osmosis e outras cadeias não-SegWit.
+-- Using 'bech32' variant encodes raw data without a witness version byte,
+-- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
 SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
 ```
 
@@ -1092,8 +1092,8 @@ Se você quiser converter o resultado em um número, pode usar as funções `rev
 
 Aceita letras `A-F`, tanto maiúsculas quanto minúsculas.
 A quantidade de dígitos hexadecimais não precisa ser par.
-Se for ímpar, o último dígito será interpretado como a metade menos significativa do byte `00-0F`.
-Se a string do argumento contiver qualquer caractere que não seja um dígito hexadecimal, será retornado algum resultado definido pela implementação (nenhuma exceção é lançada).
+Se for ímpar, o último dígito é interpretado como a metade menos significativa do byte `00-0F`.
+Se a string do argumento contiver qualquer caractere que não seja um dígito hexadecimal, algum resultado definido pela implementação será retornado (nenhuma exceção é lançada).
 Para um argumento numérico, `unhex()` não executa o inverso de `hex(N)`.
 
 **Sintaxe**
@@ -1108,7 +1108,7 @@ unhex(arg)
 
 **Valor retornado**
 
-Retorna uma sequência binária de caracteres (BLOB). [`String`](/pt-BR/reference/data-types/string)
+Retorna uma string binária (BLOB). [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
