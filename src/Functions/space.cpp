@@ -21,7 +21,7 @@ namespace
 
 /// Prints whitespace n-times. Actually, space() could also be pushed down to repeat(). Chose a standalone-implementation because
 /// we can do memset() whereas repeat() does memcpy().
-class FunctionSpace final : public IFunction
+class FunctionSpace : public IFunction
 {
 private:
     static constexpr auto space = ' ';
