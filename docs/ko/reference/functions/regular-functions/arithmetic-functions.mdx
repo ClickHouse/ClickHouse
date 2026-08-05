@@ -325,11 +325,11 @@ divideDecimal(x, y[, result_scale])
 
 **인수**
 
-* `x` — 첫 번째 값: [Decimal](/ko/reference/data-types/decimal). - `y` — 두 번째 값: [Decimal](/ko/reference/data-types/decimal). - `result_scale` — 결과의 소수 자릿수입니다. 유형은 [Int/UInt](/ko/reference/data-types/int-uint)입니다.
+* `x` — 첫 번째 값: [Decimal](/ko/reference/data-types/decimal). - `y` — 두 번째 값: [Decimal](/ko/reference/data-types/decimal). - `result_scale` — 결과의 스케일입니다. 유형은 [Int/UInt](/ko/reference/data-types/int-uint)입니다.
 
 **반환 값**
 
-지정된 소수 자릿수가 적용된 나눗셈 결과입니다. [`Decimal256`](/ko/reference/data-types/decimal)
+지정된 스케일이 적용된 나눗셈 결과입니다. [`Decimal256`](/ko/reference/data-types/decimal)
 
 **예시**
 
@@ -774,8 +774,8 @@ max2(x, y)
 
 **인수**
 
-* `x` — 첫 번째 값 [`(U)Int8/16/32/64`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
-* `y` — 두 번째 값 [`(U)Int8/16/32/64`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
+* `x` — 첫 번째 값 [`(U)Int8/16/32/64`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float), [`BFloat16`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
+* `y` — 두 번째 값 [`(U)Int8/16/32/64`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float), [`BFloat16`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
 
 **반환 값**
 
@@ -895,8 +895,8 @@ min2(x, y)
 
 **인수**
 
-* `x` — 첫 번째 값: [`(U)Int8/16/32/64`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
-* `y` — 두 번째 값: [`(U)Int8/16/32/64`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
+* `x` — 첫 번째 값: [`(U)Int8/16/32/64`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float), [`BFloat16`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
+* `y` — 두 번째 값: [`(U)Int8/16/32/64`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float), [`BFloat16`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
 
 **반환 값**
 
@@ -1046,7 +1046,8 @@ SELECT moduloLegacy(10, 3)
 
 도입 버전: v25.5.0
 
-`a`를 `b`로 나눌 때의 나머지를 계산합니다. 함수 `modulo`와 유사하지만, `moduloOrNull`은 오른쪽 인수가 0이면 NULL을 반환합니다.
+`a`를 `b`로 나눌 때의 나머지를 계산합니다. 함수 `modulo`와 유사하지만, `moduloOrNull`은 연산 시 부동소수점 예외가 발생하는 경우 `NULL`을 반환합니다.
+부동소수점 인수의 경우 이는 제수가 `0`일 때만 발생합니다. 정수 인수의 경우에는 최소 음수 값을 `-1`로 나눈 나머지까지 추가로 포함합니다(예: `Int8`의 `-128 % -1`).
 
 **구문**
 
@@ -1063,7 +1064,8 @@ moduloOrNull(x, y)
 
 **반환 값**
 
-`x`를 `y`로 나눈 나머지를 반환합니다. 제수가 0이면 null을 반환합니다.
+연산으로 인해 부동소수점 예외가 발생하는 경우 `NULL`을 반환하고, 그렇지 않으면 `x`를 `y`로 나눈 나머지를 반환합니다.
+즉, 제수가 0이거나, 정수 인수의 경우 최소 음수 값을 `-1`로 modulo 연산할 때입니다.
 
 **예시**
 
@@ -1071,6 +1073,16 @@ moduloOrNull(x, y)
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**최소 음수 정수를 -1로 나눌 때의 moduloOrNull**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1154,7 +1166,7 @@ SELECT multiply(5,5)
 
 도입 버전: v22.12.0
 
-두 개의 decimal 값에 대해 곱셈을 수행합니다. 결과 값의 유형은 [Decimal256](/ko/reference/data-types/decimal)입니다.
+두 개의 Decimal 값에 대해 곱셈을 수행합니다. 결과 값의 유형은 [Decimal256](/ko/reference/data-types/decimal)입니다.
 결과 스케일은 `result_scale` 인수(범위 `[0, 76]`의 상수 Integer)로 명시적으로 지정할 수 있습니다. 지정하지 않으면 결과 스케일은 주어진 인수 중 최대 스케일이 됩니다.
 
 <Note>
@@ -1193,7 +1205,8 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 **일반 곱셈과의 차이점**
 
 ```sql title=Query
-SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
+SELECT multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
+SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 ```
 
 ```response title=Response
@@ -1365,7 +1378,8 @@ SELECT positiveModulo(-1, 10)
 
 도입 버전: v25.5.0
 
-`a`를 `b`로 나눌 때의 나머지를 계산합니다. 함수 `positiveModulo`와 유사하지만, `positiveModuloOrNull`은 오른쪽 인수가 0이면 NULL을 반환합니다.
+`a`를 `b`로 나눌 때의 나머지를 계산합니다. 함수 `positiveModulo`와 유사하지만, `positiveModuloOrNull`은 연산 시 부동소수점 예외가 발생하는 경우 `NULL`을 반환합니다.
+부동소수점 인수에서는 제수가 `0`일 때만 이런 일이 발생합니다. 정수 인수에서는 여기에 더해 최소 음수 값을 `-1`로 나눈 modulo도 포함됩니다(예: `Int8`의 `-128 % -1`).
 
 **구문**
 
@@ -1381,11 +1395,11 @@ positiveModuloOrNull(x, y)
 
 **반환 값**
 
-`x`에서 `y`로 나누어떨어지는 `x` 이하의 가장 큰 정수를 뺀 값을 반환합니다. 제수가 0이면 `null`을 반환합니다.
+`x`에서 `y`로 나누어떨어지는 `x` 이하의 가장 큰 정수를 뺀 값을 반환합니다. 또는 연산 중 부동소수점 예외가 발생하는 경우 `NULL`을 반환합니다. 즉, 제수가 0이거나, 정수 인수의 경우 최소 음수 값을 `-1`로 modulo 연산할 때입니다.
 
 **예시**
 
-**positiveModuloOrNull**
+**0으로 나누는 positiveModuloOrNull**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
@@ -1393,6 +1407,50 @@ SELECT positiveModuloOrNull(5, 0)
 
 ```response title=Response
 \N
+```
+
+**최소 음의 정수를 -1로 나눌 때의 positiveModuloOrNull**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
+```
+
+```response title=Response
+\N
+```
+
+<div id="sqr">
+  ## sqr
+</div>
+
+도입 버전: v26.7.0
+
+값 `x`의 제곱을 계산합니다.
+
+**구문**
+
+```sql
+sqr(x)
+```
+
+**인수**
+
+* `x` — 제곱할 값. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
+
+**반환 값**
+
+`x`를 자기 자신으로 곱한 값을 반환합니다.
+
+**예시**
+
+**숫자 제곱하기**
+
+```sql title=Query
+SELECT sqr(5)
+```
+
+```response title=Response
+25
 ```
 
 {/*AUTOGENERATED_END*/}

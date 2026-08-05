@@ -25,7 +25,7 @@ A key-value pair consists of a key followed by a `key_value_delimiter` and a val
 
 **Syntax**
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Arguments**
@@ -33,7 +33,7 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 - `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring).
 - `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to `\space`, `,` and `;`. [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring).
 - `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring).
-- `unexpected_quoting_character_strategy` - Strategy to handle quoting characters in unexpected places during `read_key` and `read_value` phase. Possible values: `invalid`, `accept` and `promote`. Invalid will discard key/value and transition back to `WAITING_KEY` state. Accept will treat it as a normal character. Promote will transition to `READ_QUOTED_{KEY/VALUE}` state and start from next character. The default value is `INVALID`
+- `unexpected_quoting_character_strategy` - Strategy to handle quoting characters in unexpected places during `read_key` and `read_value` phase. Possible values: `invalid`, `accept` and `promote`. Invalid will discard key/value and transition back to `WAITING_KEY` state. Accept will treat it as a normal character. Promote will transition to `READ_QUOTED_{KEY/VALUE}` state and start from next character. The default value is `PROMOTE`
 
 **Returned values**
 - The extracted key-value pairs in a Map(String, String).
@@ -78,7 +78,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv────────────────┐
-│ {'abc':'5'}  │
+│ {'abc':'5'}       │
 └───────────────────┘
 ```
 
@@ -144,15 +144,15 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
 Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 
-┌─kv────────────────────┐
+┌─kv─────────────────────┐
 │ {'age':'a\\x0A\\n\\0'} │
-└───────────────────────┘
+└────────────────────────┘
 ```
 
 **Syntax**
 
 ```sql
-extractKeyValuePairs(input)
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Aliases**: `str_to_map`, `mapFromString`
@@ -190,15 +190,15 @@ SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
 
 Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 
-┌─kv───────────────┐
+┌─kv────────────────┐
 │ {'age':'a\n\n\0'} │
-└──────────────────┘
+└───────────────────┘
 ```
 
 **Syntax**
 
 ```sql
-extractKeyValuePairsWithEscaping(input)
+extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Arguments**
@@ -742,7 +742,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Introduced in: v21.2.0
 
 Returns the keys of a given map.
-This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings#optimize_functions_to_subcolumns).
+This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 With the setting enabled, the function only reads the `keys` subcolumn instead of the entire map.
 The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM table`.
 
@@ -1039,7 +1039,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Introduced in: v21.2.0
 
 Returns the values of a given map.
-This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings#optimize_functions_to_subcolumns).
+This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 With the setting enabled, the function only reads the `values` subcolumn instead of the entire map.
 The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
 

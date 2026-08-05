@@ -39,4 +39,12 @@ SELECT 'exact_multigranule',
 WITH (SELECT vec FROM quantize_pq_mg WHERE id = 5000) AS ref
 SELECT 'nearest_is_self', (SELECT id FROM quantize_pq_mg ORDER BY L2Distance(vec, ref) ASC LIMIT 1 SETTINGS vector_search_index_fetch_multiplier = 100, max_block_size = 1024) = 5000;
 
+-- The codebook subcolumn stream is a single per-part value; the wide reader seeks a substream to its own mark only
+-- conditionally (skipped on prefetch / continue_reading), so this stream could be left at a sibling (codes) offset and
+-- read short (`Cannot read all data of type FixedString`). Read it across granules with prefetch + threadpool reads +
+-- page cache on, which exercises the conditional-seek path; every granule must still see the full 65536-byte codebook.
+SELECT 'codebook_prefetch', countIf(length(vec.product_quantization_codebook) = 65536), count() FROM quantize_pq_mg
+SETTINGS max_block_size = 1024, local_filesystem_read_method = 'pread_threadpool', local_filesystem_read_prefetch = 1,
+    use_page_cache_for_local_disks = 1, merge_tree_min_rows_for_concurrent_read = 1, max_threads = 4;
+
 DROP TABLE quantize_pq_mg;
