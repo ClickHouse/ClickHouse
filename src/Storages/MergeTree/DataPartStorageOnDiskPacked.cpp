@@ -41,13 +41,18 @@ DataPartStorageOnDiskPacked::DataPartStorageOnDiskPacked(
     std::string part_dir_,
     DiskTransactionPtr transaction_,
     const ReadSettings & read_settings_,
+    std::optional<UInt64> buffered_part_max_bytes_,
     bool initialize)
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_))
 {
     if (initialize)
         resetReader(read_settings_);
     if (transaction)
-        resetWriterFromTransaction(MergeTreeSettings{});
+    {
+        buffered_part_max_bytes = buffered_part_max_bytes_.value_or(
+            MergeTreeSettings{}[MergeTreeSetting::max_bytes_to_buffer_for_packed_part]);
+        resetWriterFromTransaction(*buffered_part_max_bytes);
+    }
 }
 
 DataPartStorageOnDiskPacked::DataPartStorageOnDiskPacked(
@@ -71,12 +76,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::create(
 
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings()));
+    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), buffered_part_max_bytes));
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionNoInitialize(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false));
+    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), buffered_part_max_bytes, false));
 }
 
 DataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name) const
@@ -529,7 +534,8 @@ void DataPartStorageOnDiskPacked::beginTransaction(const MergeTreeSettings & set
             "Uncommitted{}transaction already exists", has_shared_transaction ? " shared " : " ");
 
     transaction = volume->getDisk()->createTransaction();
-    resetWriterFromTransaction(settings);
+    buffered_part_max_bytes = settings[MergeTreeSetting::max_bytes_to_buffer_for_packed_part];
+    resetWriterFromTransaction(*buffered_part_max_bytes);
 }
 
 void DataPartStorageOnDiskPacked::precommitTransaction()
@@ -716,12 +722,12 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
     return skip_indices_packed_reader;
 }
 
-void DataPartStorageOnDiskPacked::resetWriterFromTransaction(const MergeTreeSettings & settings)
+void DataPartStorageOnDiskPacked::resetWriterFromTransaction(UInt64 max_bytes_to_buffer_for_packed_part)
 {
     auto disk = volume->getDisk();
     String spill_root_path = fs::path(root_path) / part_dir / "tmp_packed";
     auto spill_config = std::make_shared<PackedFilesWriter::SpillConfig>(
-        settings[MergeTreeSetting::max_bytes_to_buffer_for_packed_part],
+        max_bytes_to_buffer_for_packed_part,
         [disk, spill_root_path](const String & file) -> std::unique_ptr<WriteBufferFromFileBase>
         {
             return disk->writeFile(fs::path(spill_root_path) / file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, WriteSettings{});
@@ -907,7 +913,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
     if (params.external_transaction)
     {
-        dest_storage = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(single_disk_volume, to, dir_path, params.external_transaction, read_settings));
+        dest_storage = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(single_disk_volume, to, dir_path, params.external_transaction, read_settings, settings[MergeTreeSetting::max_bytes_to_buffer_for_packed_part]));
         params.external_transaction->createDirectories(dest_storage->getRelativePath());
     }
     else
@@ -1047,7 +1053,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
     bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
     if (params.external_transaction)
     {
-        dest_storage = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(single_disk_volume, to, dir_path, params.external_transaction, read_settings));
+        dest_storage = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(single_disk_volume, to, dir_path, params.external_transaction, read_settings, settings[MergeTreeSetting::max_bytes_to_buffer_for_packed_part]));
         params.external_transaction->createDirectories(dest_storage->getRelativePath());
     }
     else
