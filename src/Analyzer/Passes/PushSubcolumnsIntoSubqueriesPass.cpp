@@ -124,6 +124,12 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
     if (!column_node)
         return {};
 
+    /// Only query and union sources are rewritten. In particular, a materialized CTE that is
+    /// referenced more than once stays a TableNode over its temporary table (single-use ones
+    /// are inlined and covered by the query branch). The temporary table serves all references
+    /// of the CTE, so pruning the parent column there would require proving that no reference
+    /// needs the whole column, and adding the subcolumn without removing the parent column
+    /// would only make the materialized table bigger. Such references are deliberately left as is.
     auto column_source = column_node->getColumnSourceOrNull();
     if (!column_source || !isQueryOrUnionNode(column_source))
         return {};
@@ -192,9 +198,6 @@ void collectEligibleTargets(const QueryTreeNodePtr & join_tree_node, bool can_be
 bool canAddProjectionColumns(const QueryNode & subquery)
 {
     if (subquery.isDistinct() || subquery.hasGroupBy() || subquery.hasInterpolate())
-        return false;
-
-    if (subquery.hasProjectionAliasesToOverride())
         return false;
 
     if (hasAggregateFunctionNodes(subquery.getProjectionNode())

@@ -662,6 +662,10 @@ public:
     void addProjectionColumn(QueryTreeNodePtr projection_node, NameAndTypePair projection_column)
     {
         getProjection().getNodes().push_back(std::move(projection_node));
+        /// The alias list of `(SELECT ...) AS t(a, b)` must stay in sync with the projection
+        /// columns: it overrides their names positionally if the query node is resolved again.
+        if (!projection_aliases_to_override.empty())
+            projection_aliases_to_override.push_back(projection_column.name);
         projection_columns.push_back(std::move(projection_column));
     }
 
