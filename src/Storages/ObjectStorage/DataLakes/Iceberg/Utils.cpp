@@ -510,6 +510,15 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt8:
+        {
+            if (isBool(type))
+                return {"boolean", true};
+            return {"int", true};
+        }
+        case TypeIndex::Int8:
+        case TypeIndex::UInt16:
+        case TypeIndex::Int16:
         case TypeIndex::UInt32:
         case TypeIndex::Int32:
             return {"int", true};
@@ -536,6 +545,17 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"string", true};
         case TypeIndex::UUID:
             return {"uuid", true};
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        {
+            Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+            result->set("type", "decimal");
+            result->set("precision", static_cast<Int32>(getDecimalPrecision(*type)));
+            result->set("scale", static_cast<Int32>(getDecimalScale(*type)));
+            return {result, true};
+        }
         case TypeIndex::Tuple:
         {
             auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);

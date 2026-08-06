@@ -39,7 +39,6 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int DATALAKE_DATABASE_ERROR;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
 }
@@ -53,7 +52,6 @@ extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 namespace DB::FailPoints
 {
 extern const char iceberg_writes_cleanup[];
-extern const char iceberg_alter_orphan_metadata_cleanup_fail[];
 }
 
 namespace DB::Iceberg
@@ -592,8 +590,7 @@ void mutate(
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method,
             /* force_fetch_latest_metadata */ true,
-            /* ignore_explicit_metadata_file_path */ true,
-            /* select_by_table_uuid */ true);
+            /* ignore_explicit_metadata_file_path */ true);
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
@@ -723,14 +720,11 @@ void alter(
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
     if (params.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg alter supports exactly one command at a time, got {}", params.size());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
-    /// The command was marked as a no-op by AlterCommands::prepare (e.g. RENAME/DROP COLUMN IF EXISTS
-    /// for a missing column, or ADD COLUMN IF NOT EXISTS for an existing one).
-    if (params[0].ignore)
-        return;
-
-    for (size_t i = 0; i < MAX_TRANSACTION_RETRIES; ++i)
+    size_t i = 0;
+    bool succeeded = false;
+    while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
 
@@ -749,8 +743,7 @@ void alter(
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
                 /* force_fetch_latest_metadata */ true,
-                /* ignore_explicit_metadata_file_path */ true,
-                /* select_by_table_uuid */ true);
+                /* ignore_explicit_metadata_file_path */ true);
             last_version = last_version_info.version;
             metadata_path = last_version_info.path;
             compression_method = last_version_info.compression_method;
@@ -783,18 +776,13 @@ void alter(
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
                 /* force_fetch_latest_metadata */ true,
-                /* ignore_explicit_metadata_file_path */ false,
-                /* select_by_table_uuid */ true);
+                /* ignore_explicit_metadata_file_path */ false);
             last_version = last_version_info.version;
             metadata_path = last_version_info.path;
             compression_method = last_version_info.compression_method;
         }
 
-        FileNamesGenerator filename_generator(
-            persistent_table_components.path_resolver.getTableLocation(),
-            catalog && catalog->isTransactional(),
-            CompressionMethod::None,
-            write_format);
+        FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
@@ -815,8 +803,7 @@ void alter(
                 metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
                 break;
             case AlterCommand::Type::MODIFY_COLUMN:
-                if (!metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type))
-                    return;
+                metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
                 break;
             case AlterCommand::Type::RENAME_COLUMN:
                 metadata_json_generator.generateRenameColumnMetadata(params[0].column_name, params[0].rename_to);
@@ -856,7 +843,7 @@ void alter(
                 context,
                 data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
         {
-            LOG_WARNING(log, "Iceberg alter: failed to write metadata (attempt {}), retrying", i + 1);
+            ++i;
             continue;
         }
 
@@ -864,34 +851,24 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, metadata))
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
             {
-                if (!catalog_writes_metadata_file)
-                {
-                    try
-                    {
-                        fiu_do_on(FailPoints::iceberg_alter_orphan_metadata_cleanup_fail,
-                        {
-                            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Failpoint: orphan metadata cleanup failed");
-                        });
-                        auto storage_metadata_name = persistent_table_components.path_resolver.resolve(metadata_info.path);
-                        object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, "Iceberg alter: failed to remove orphan metadata file after catalog commit failure");
-                    }
-                }
-                LOG_WARNING(log, "Iceberg alter: catalog commit failed (attempt {}), retrying", i + 1);
+                ++i;
                 continue;
             }
         }
 
-        persistent_table_components.invalidateMetadataCache();
-        return;
+        succeeded = true;
+        break;
     }
 
-    throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessful retries to alter iceberg table");
+    if (!succeeded)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
+
+    /// Invalidate the metadata files cache so that subsequent operations on this table see the
+    /// schema we just wrote. See `PersistentTableComponents::invalidateMetadataCache` for the
+    /// rationale.
+    persistent_table_components.invalidateMetadataCache();
 }
 
 #endif

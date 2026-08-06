@@ -70,3 +70,37 @@ def test_add_column_errors(started_cluster_iceberg_no_spark, format_version, sto
     assert instance.query(
         f"SELECT name FROM system.columns WHERE database = currentDatabase() AND table = '{TABLE_NAME}' ORDER BY name"
     ) == "id\nvalue\n"
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_add_column_bool_and_decimal(started_cluster_iceberg_no_spark, format_version, storage_type):
+    """ADD COLUMN with Bool (Iceberg boolean) and Decimal (Iceberg decimal) types."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_add_column_bool_dec_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String))",
+        format_version,
+    )
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'a'), (2, 'b');", settings=INSERT_SETTINGS)
+
+    instance.query(f"ALTER TABLE {TABLE_NAME} ADD COLUMN flag Nullable(Bool);", settings=INSERT_SETTINGS)
+    instance.query(f"ALTER TABLE {TABLE_NAME} ADD COLUMN price Nullable(Decimal(10, 2));", settings=INSERT_SETTINGS)
+
+    assert instance.query(f"SELECT id, value, flag, price FROM {TABLE_NAME} ORDER BY id") == (
+        "1\ta\t\\N\t\\N\n2\tb\t\\N\t\\N\n"
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (3, 'c', true, 99.95), (4, 'd', false, 123.40);",
+        settings=INSERT_SETTINGS,
+    )
+    assert instance.query(f"SELECT id, flag, price FROM {TABLE_NAME} ORDER BY id") == (
+        "1\t\\N\t\\N\n2\t\\N\t\\N\n3\ttrue\t99.95\n4\tfalse\t123.40\n"
+    )
