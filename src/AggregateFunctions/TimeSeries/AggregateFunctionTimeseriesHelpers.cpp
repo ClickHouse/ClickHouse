@@ -6,12 +6,15 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesChanges.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesOverTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/readDecimalText.h>
 #include <Core/Settings.h>
 #include <Core/Field.h>
+
+#include <fmt/format.h>
 
 #include <string_view>
 
@@ -259,6 +262,49 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
         "Illegal type {} of 2nd argument (value) for aggregate function {}", value_type->getName(), name);
 }
 
+}
+
+/// Registers one function of the PromQL `*_over_time` family (timeSeries{Max,Min,Avg,Sum,Count,Stddev,
+/// Stdvar,Present}ToGrid). They all share the signature `f(start_timestamp, end_timestamp, grid_step,
+/// staleness)(timestamp, value)` and return one value per grid point computed over the samples in the point's
+/// staleness window (NULL for an empty window), so one helper with a per-function description registers them all.
+template <template <typename, typename, typename> class Function>
+static void registerOverTimeGridFunction(AggregateFunctionFactory & factory, const char * function_name, const char * promql_name)
+{
+    FunctionDocumentation::Description description = fmt::format(R"(
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like {}](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) over the samples within the specified time window of each point of a regular time grid described by start timestamp, end timestamp and step.
+
+:::warning
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
+:::
+    )", promql_name);
+    FunctionDocumentation::Syntax syntax = fmt::format("{}(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)", function_name);
+    FunctionDocumentation::Parameters parameters = {
+        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
+        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
+        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+    };
+    FunctionDocumentation::Arguments arguments = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the aggregated values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window of a particular grid point.", {"Array(Nullable(Float64))"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, {}, introduced_in, category};
+
+    factory.registerFunction(function_name,
+        {[](const String & name, const DataTypes & argument_types, const Array & parameters_, const Settings * settings) -> AggregateFunctionPtr
+        {
+            assertParametersCount(name, parameters_, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            {
+                return std::make_shared<Function<TimestampType, IntervalType, ValueType>>(argument_types, parameters_, start, end, step, window, scale);
+            };
+            return createAggregateFunctionTimeseries(name, argument_types, parameters_, settings, make_function);
+        },
+        documentation});
 }
 
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
@@ -1145,6 +1191,16 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
         },
         documentation_timeSeriesResampleToGridWithStaleness});
     factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness");
+
+    /// The PromQL `*_over_time` family (see AggregateFunctionTimeseriesOverTime.h).
+    registerOverTimeGridFunction<AggregateFunctionTimeseriesMaxToGrid>(factory, "timeSeriesMaxToGrid", "max_over_time");
+    registerOverTimeGridFunction<AggregateFunctionTimeseriesMinToGrid>(factory, "timeSeriesMinToGrid", "min_over_time");
+    registerOverTimeGridFunction<AggregateFunctionTimeseriesAvgToGrid>(factory, "timeSeriesAvgToGrid", "avg_over_time");
+    registerOverTimeGridFunction<AggregateFunctionTimeseriesSumToGrid>(factory, "timeSeriesSumToGrid", "sum_over_time");
+    registerOverTimeGridFunction<AggregateFunctionTimeseriesCountToGrid>(factory, "timeSeriesCountToGrid", "count_over_time");
+    registerOverTimeGridFunction<AggregateFunctionTimeseriesStddevToGrid>(factory, "timeSeriesStddevToGrid", "stddev_over_time");
+    registerOverTimeGridFunction<AggregateFunctionTimeseriesStdvarToGrid>(factory, "timeSeriesStdvarToGrid", "stdvar_over_time");
+    registerOverTimeGridFunction<AggregateFunctionTimeseriesPresentToGrid>(factory, "timeSeriesPresentToGrid", "present_over_time");
 }
 
 }

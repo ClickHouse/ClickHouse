@@ -111,17 +111,57 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"max_over_time",
+             {
+                 "timeSeriesMaxToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"min_over_time",
+             {
+                 "timeSeriesMinToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"avg_over_time",
+             {
+                 "timeSeriesAvgToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"sum_over_time",
+             {
+                 "timeSeriesSumToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"count_over_time",
+             {
+                 "timeSeriesCountToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stddev_over_time",
+             {
+                 "timeSeriesStddevToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "timeSeriesStdvarToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"present_over_time",
+             {
+                 "timeSeriesPresentToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
             /// predict_linear
-            /// avg_over_time
-            /// min_over_time
-            /// max_over_time
-            /// sum_over_time
-            /// count_over_time
             /// quantile_over_time
-            /// stddev_over_time"
-            /// stdvar_over_time
-            /// present_over_time
             /// absent_over_time
             /// mad_over_time
             /// ts_of_min_over_time
