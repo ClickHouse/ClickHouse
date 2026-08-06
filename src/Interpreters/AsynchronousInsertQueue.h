@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
 #include <Common/Logger.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SharedMutex.h>
@@ -168,7 +169,10 @@ private:
             const String query_id;
             const String async_dedup_token;
             const String format;
-            MemoryTracker * const user_memory_tracker;
+            /// The group of the query that pushed this data. Held so that the data stays charged to that query,
+            /// and therefore to its user, for as long as the queue holds it, and is released against the same
+            /// tracker that was charged for it.
+            const ThreadGroupPtr pushing_thread_group;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
 
@@ -177,7 +181,7 @@ private:
                 String && query_id_,
                 const String & async_dedup_token_,
                 const String & format_,
-                MemoryTracker * user_memory_tracker_);
+                ThreadGroupPtr pushing_thread_group_);
 
             void resetChunk();
             void finish(ResultProgress result = {});
@@ -202,14 +206,15 @@ private:
 
         ~InsertData()
         {
-            auto it = entries.begin();
-            // Entries must be destroyed in context of user who runs async insert.
-            // Each entry in the list may correspond to a different user,
-            // so we need to switch current thread's MemoryTracker parent on each iteration.
-            while (it != entries.end())
+            /// The data of each entry goes back to whoever is charged for it, see `resetChunk`. What is left,
+            /// the entries and the list itself, is the queue's own bookkeeping, allocated without charging the
+            /// pushing query, so releasing it must not credit whichever query flushes the queue either.
+            for (auto & entry : entries)
+                entry->resetChunk();
+
             {
-                MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
-                it = entries.erase(it);
+                MemoryTrackerBlockerInThread queued_data_not_charged_to_the_flush;
+                entries.clear();
             }
 
             ready_promise.set_value();
@@ -309,7 +314,7 @@ private:
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group = nullptr);
 
     static void processData(
-        InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+        const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(
