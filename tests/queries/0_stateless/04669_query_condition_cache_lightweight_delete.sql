@@ -15,9 +15,11 @@ DROP TABLE IF EXISTS t_qcc_lwd;
 
 -- auto_statistics_types = '': randomized auto statistics would prune the whole part for the
 -- never-matching predicates below, leaving nothing to read and the granule counts below vacuous.
+-- add_minmax_index_for_numeric_columns = 0: an implicit minmax index on `v` would prune everything
+-- for the same predicates, making the priming reads select no marks at all, for the same reason.
 CREATE TABLE t_qcc_lwd (id UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_qcc_lwd SELECT number, number FROM numbers(1000000);
 
@@ -107,7 +109,7 @@ DROP TABLE IF EXISTS t_qcc_lwd_pending;
 
 CREATE TABLE t_qcc_lwd_pending (id UInt64, v UInt64, w UInt64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_qcc_lwd_pending SELECT number, number, number FROM numbers(1000000);
 
