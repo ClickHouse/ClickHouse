@@ -19,8 +19,10 @@ DROP TABLE IF EXISTS t_prewhere_stats_cost;
 CREATE TABLE t_prewhere_stats_cost (id UInt64, modality LowCardinality(String), h Map(String, String))
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 
+-- Split `modality` 50/50: the reject-count ratio is then ~2x while the Map column dwarfs the
+-- scalar, so the cost gap dominates and cheap-filter-first stays stable under randomized serialization.
 INSERT INTO t_prewhere_stats_cost
-SELECT number, if(number < 1000, 'active', ''), map('k', repeat('v', 300), 'k2', repeat('w', 300))
+SELECT number, if(number % 2 = 0, 'active', ''), map('k', repeat('v', 300), 'k2', repeat('w', 300))
 FROM numbers(200000);
 OPTIMIZE TABLE t_prewhere_stats_cost FINAL;
 
