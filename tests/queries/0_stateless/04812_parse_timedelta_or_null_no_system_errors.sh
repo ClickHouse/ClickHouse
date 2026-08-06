@@ -43,16 +43,16 @@ SELECT 'bare function raised: ',
      - (SELECT value FROM parse_timedelta_errors_baseline) > 0;
 
 -- The thrown Exception keeps its own format string rather than collapsing to \"{}\", so failures
--- stay groupable in system.errors / system.text_log / query_log.
+-- stay groupable in system.errors and system.text_log.
 SELECT last_error_format_string FROM system.errors
     WHERE name = 'BAD_ARGUMENTS' AND NOT remote AND last_error_time > now() - 60;
 
 DROP TABLE parse_timedelta_errors_baseline;
 "
 
-# ... and it also keeps each formatted argument, which is what system.text_log.valueN and
-# query_log.exception_format_string_args expose. Two different patterns are asserted so the
-# arguments are shown to track the pattern rather than being a fixed pair.
+# ... and it also keeps each formatted argument, which is what system.text_log.valueN exposes.
+# Two different patterns are asserted so the arguments are shown to track the pattern rather
+# than being a fixed pair.
 $CLICKHOUSE_CLIENT -m -q "
 SYSTEM FLUSH LOGS text_log;
 
