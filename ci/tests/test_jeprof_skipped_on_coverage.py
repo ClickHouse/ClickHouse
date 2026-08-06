@@ -11,17 +11,21 @@ the raw `.heap` profiles still ship and can be rendered offline.
 import ast
 import os
 import sys
+import tarfile
+import types
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
+from ci.jobs import functional_tests as job_module
 from ci.jobs.scripts import clickhouse_proc as module
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.praktika.utils import Shell
 
 FLAG = "is_llvm_coverage"
+PER_TEST_FLAG = "is_per_test_coverage"
 NPIDS = 3
 TREE = ast.parse(Path(module.__file__).read_text())
 COLLECTOR = next(
@@ -62,8 +66,12 @@ def _run(monkeypatch, tmp_path, is_llvm_coverage):
 
     `Shell.check` is wrapped rather than replaced, so the code under test keeps
     running its own predicates and the archive really appears on disk.
+
+    Returns the basenames of the profiles written, so an assertion over the
+    archive cannot drift from the fixture by re-deriving them.
     """
     (tmp_path / "jemalloc_profiles").mkdir(parents=True)
+    written = set()
     for pid in range(600, 600 + NPIDS):
         for n in (1, 2):
             f = (
@@ -72,6 +80,7 @@ def _run(monkeypatch, tmp_path, is_llvm_coverage):
                 / f"clickhouse.jemalloc.{pid}.{n}.m{n}.heap"
             )
             f.write_text("x")
+            written.add(f.name)
     monkeypatch.setattr(module, "temp_dir", str(tmp_path))
     monkeypatch.setattr(module, "p_temp_dir", tmp_path)
     issued, real = [], Shell.check
@@ -80,7 +89,7 @@ def _run(monkeypatch, tmp_path, is_llvm_coverage):
     )
     proc = ClickHouseProc.__new__(ClickHouseProc)
     setattr(proc, FLAG, is_llvm_coverage)
-    return issued, proc._get_jemalloc_profiles()
+    return issued, proc._get_jemalloc_profiles(), written
 
 
 def test_the_guard_encloses_the_render_loop():
@@ -129,11 +138,90 @@ def test_only_a_coverage_build_skips_the_render(
 ):
     """The `False` case is the positive control: without it these tests cannot
     tell "skips on coverage" from "skips always"."""
-    issued, returned = _run(monkeypatch, tmp_path, is_llvm_coverage=coverage)
+    issued, returned, written = _run(monkeypatch, tmp_path, is_llvm_coverage=coverage)
     assert len([c for c in issued if "jeprof " in c]) == renders
     assert len([c for c in issued if "jemalloc.tar.zst" in c]) == 1
     assert returned == [f"{tmp_path}/jemalloc.tar.zst"]
-    assert (tmp_path / "jemalloc.tar.zst").exists()
+    archive = tmp_path / "jemalloc.tar.zst"
+    assert archive.exists()
+    # Losslessness is the whole contract of skipping the render, so assert the
+    # archive's contents and not merely that it appeared. Despite the name the
+    # production command is `tar -czf`, i.e. gzip, which `tarfile` reads.
+    # Compare basename SETS: a count is also satisfied by copies of one profile.
+    with tarfile.open(archive) as tar:
+        shipped = {Path(n).name for n in tar.getnames() if n.endswith(".heap")}
+    assert shipped == written, f"profiles missing from the archive: {written - shipped}"
+
+
+def _derive_flags(parameter):
+    """Run `main`'s real option-parsing loop on a job parameter string.
+
+    The loop is located structurally rather than by line number, and the two
+    option dictionaries come from the module so they cannot drift from a copy.
+    """
+    job_tree = ast.parse(Path(job_module.__file__).read_text())
+    main = next(
+        n for n in job_tree.body if isinstance(n, ast.FunctionDef) and n.name == "main"
+    )
+    loops = [
+        s
+        for s in main.body
+        if isinstance(s, ast.For)
+        and isinstance(s.target, ast.Name)
+        and s.target.id == "to"
+    ]
+    assert (
+        len(loops) == 1
+    ), f"expected one `for to in ...` loop in main(), got {len(loops)}"
+    loop = loops[0]
+    # Seed exactly the names the loop reads; the `is_*` accumulators are read
+    # off the AST too, so a new flag cannot silently become an undefined name.
+    flags = sorted(
+        {
+            n.id
+            for n in ast.walk(loop)
+            if isinstance(n, ast.Name)
+            and isinstance(n.ctx, ast.Store)
+            and n.id.startswith("is_")
+        }
+    )
+    assert FLAG in flags and PER_TEST_FLAG in flags
+    ns = {
+        "OPTIONS_TO_INSTALL_ARGUMENTS": job_module.OPTIONS_TO_INSTALL_ARGUMENTS,
+        "OPTIONS_TO_TEST_RUNNER_ARGUMENTS": job_module.OPTIONS_TO_TEST_RUNNER_ARGUMENTS,
+        "config_installs_args": "",
+        "runner_options": "",
+        "batch_num": 0,
+        "total_batches": 1,
+        "args": types.SimpleNamespace(test=[], options=parameter),
+        "test_options": [to.strip() for to in parameter.split(",")],
+        **{f: False for f in flags},
+    }
+    exec(compile(ast.Module(body=[loop], type_ignores=[]), "<loop>", "exec"), ns)
+    return ns[FLAG], ns[PER_TEST_FLAG]
+
+
+@pytest.mark.parametrize(
+    "parameter,coverage,per_test",
+    [
+        ("amd_llvm_coverage, ParallelReplicas, s3 storage, parallel", True, False),
+        (
+            "amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, WasmEdge, sequential, 1/2",
+            True,
+            False,
+        ),
+        ("amd_llvm_coverage_per_test, per_test_coverage, 1/4", True, True),
+        ("amd_asan_ubsan, db disk, distributed plan, sequential, 1/3", False, False),
+        ("amd_binary_excluded_from_llvm", False, False),
+    ],
+)
+def test_the_flag_is_derived_from_the_job_parameter(parameter, coverage, per_test):
+    """The ctor wiring above says the flag reaches the collector; this says the
+    right jobs compute it in the first place. Without it a change to the
+    `amd_`-prefix/`"coverage" in to` selector leaves every arm green while every
+    coverage job renders `jeprof` again. The two `False` rows are the positive
+    controls: they distinguish "detects coverage" from "returns True always"."""
+    assert _derive_flags(parameter) == (coverage, per_test)
 
 
 if __name__ == "__main__":
