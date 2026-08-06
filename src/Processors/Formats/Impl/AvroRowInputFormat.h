@@ -227,6 +227,10 @@ public:
     /// column, without consulting `input_format_skip_unknown_fields`.
     bool alwaysSkipsUnknownFields() const override { return true; }
 
+    /// The Avro schema names its fields and `AvroDeserializer` maps them onto the destination
+    /// columns by (exact) name.
+    bool mapsColumnsByName() const override { return true; }
+
     /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
     /// Tuple instead of Nullable(Tuple). Schema inference passes
     /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type

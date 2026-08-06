@@ -31,6 +31,11 @@ public:
     bool hasExactTypesFromData() const override { return format_settings.json.validate_types_from_metadata; }
     bool schemaDescribesParsedData() const override { return format_settings.json.validate_types_from_metadata; }
 
+    /// The data carries named columns that the parser maps onto the destination by name
+    /// (`JSONColumnsBlockInputFormatBase::read`), resolving them through `CaseAwareBlockNameMap`.
+    bool mapsColumnsByName() const override { return true; }
+    bool honorsColumnNameMatchingMode() const override { return true; }
+
 private:
     const FormatSettings format_settings;
 };

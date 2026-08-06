@@ -89,14 +89,30 @@ public:
 
     /// True when the parser maps the input's fields to destination columns by name rather than by
     /// position. Besides the inherently name-based formats (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...,
-    /// which also return `hasStrictOrderOfColumns() == false`), a `*WithNames*` format carries a names
-    /// header and the parser maps its columns by name when configured to use that header
-    /// (`input_format_with_names_use_header`) — even for a format that does not advertise
-    /// `FormatFactory::checkIfFormatSupportsSubsetOfColumns` (e.g. `RowBinaryWithNamesAndTypes` and
-    /// `RowBinaryWithNamesAndTypesAndDefaults`). A caller comparing an inferred schema against an
-    /// expected one uses this to match columns by name (tolerating a reordered header) instead of
+    /// which also return `hasStrictOrderOfColumns() == false`), this holds for a `*WithNames*` format
+    /// whose names header the parser is configured to use (`input_format_with_names_use_header`), and
+    /// for the formats that store named columns and read them by name into the destination: `Native`,
+    /// `Avro`, the external-schema `Protobuf` / `CapnProto` families, the columnar `Parquet` / `Arrow` /
+    /// `ORC`, and the named columnar JSON formats. Note that
+    /// `FormatFactory::checkIfFormatSupportsSubsetOfColumns` is NOT a valid proxy for this property:
+    /// `Npy` supports reading a subset of columns yet writes its single column positionally (while its
+    /// schema reader always names that column `array`), and `RowBinaryWithNamesAndTypes` maps columns
+    /// by name without advertising the subset capability. A caller comparing an inferred schema against
+    /// an expected one uses this to match columns by name (tolerating a reordered header) instead of
     /// positionally.
     virtual bool mapsColumnsByName() const { return false; }
+
+    /// True when the parser resolves the input's field names against the destination columns through
+    /// `CaseAwareBlockNameMap`, honoring `input_format_column_name_matching_mode` (`auto` by default:
+    /// an exact-case match first, then a case-insensitive one). This is how the `JSONEachRow` family,
+    /// `BSONEachRow`, the columnar JSON formats and the `*WithNames*` header mapping (through
+    /// `ColumnMapping`) work. It is false for the by-name parsers that look names up exactly regardless
+    /// of that setting — `TSKV` and `Form` (a plain `HashMap`), `Native` and `Avro`
+    /// (`Block::getByName`), the external-schema and columnar formats. A caller comparing an inferred
+    /// schema against an expected one uses this to resolve names the same way the parser does: treating
+    /// a case-only difference as a match for an exact-lookup parser would suppress a mismatch the
+    /// parser detects (an unknown-field error), and the reverse would invent one.
+    virtual bool honorsColumnNameMatchingMode() const { return false; }
 
     /// True when the parser accepts a bare numeric value into an `IPv4` destination column. Most formats
     /// require a (quoted) string for `IPv4` — the text / JSON deserializers reject a number — but the

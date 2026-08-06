@@ -271,7 +271,10 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
             /// If format doesn't have names for columns, use names from setting column_names_for_schema_inference or default names 'c1', 'c2', ...
             String column_name;
             if (column_name_opt.has_value())
+            {
                 column_name = *column_name_opt;
+                column_names_read_from_data = true;
+            }
             else if (iteration < column_names_from_settings.size())
                 column_name = column_names_from_settings[iteration];
             else

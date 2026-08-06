@@ -1,0 +1,6 @@
+-- TSKV, case-only field name difference with skip_unknown_fields = 0: the parser rejects the unknown field, and the differing structure is explained
+explanation present
+-- TSKV, exact field names, a value-level error only: no false positive
+explanation missing
+-- JSONEachRow resolves names case-aware: a genuine mismatch under a case-only name difference is still explained
+explanation present

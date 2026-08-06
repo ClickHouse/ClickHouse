@@ -107,6 +107,10 @@ public:
     bool readsTypedJSONValueTokens() const override { return !json_strings; }
     bool readsStringValuesAsWholeText() const override { return json_strings; }
 
+    /// The parser resolves field names through `CaseAwareBlockNameMap`, honoring
+    /// `input_format_column_name_matching_mode`.
+    bool honorsColumnNameMatchingMode() const override { return true; }
+
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;

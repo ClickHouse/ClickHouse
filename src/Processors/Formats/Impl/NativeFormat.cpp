@@ -110,6 +110,10 @@ public:
         return block.getNamesAndTypesList();
     }
 
+    /// The data carries named columns that the parser maps onto the destination by (exact) name,
+    /// see `NativeReader::read`.
+    bool mapsColumnsByName() const override { return true; }
+
 private:
     const FormatSettings settings;
 };

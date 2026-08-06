@@ -104,6 +104,17 @@ public:
 
     bool readsTypedJSONValueTokens() const override { return true; }
 
+    /// The named columnar JSON formats (`JSONColumns`) carry the column names in the data and the
+    /// parser maps them onto the destination by name (`JSONColumnsBlockInputFormatBase::read` looks
+    /// each name up in `name_to_index`); the nameless `JSONCompactColumns` maps the columns
+    /// positionally. Whether the data carries names is only known once `readSchema` has seen it, so
+    /// the property is latched there.
+    bool mapsColumnsByName() const override { return column_names_read_from_data; }
+
+    /// The name lookup above goes through `CaseAwareBlockNameMap`, honoring
+    /// `input_format_column_name_matching_mode`.
+    bool honorsColumnNameMatchingMode() const override { return true; }
+
 private:
     NamesAndTypesList readSchema() override;
 
@@ -121,6 +132,9 @@ private:
     size_t total_rows_read = 0;
     size_t max_rows_to_read;
     size_t max_bytes_to_read;
+    /// Whether the data carries column names (`JSONColumns`) or not (`JSONCompactColumns`);
+    /// latched by `readSchema`.
+    bool column_names_read_from_data = false;
 };
 
 }

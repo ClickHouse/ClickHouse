@@ -219,6 +219,10 @@ public:
         return (with_names || names_detected_from_data) && format_settings.with_names_use_header;
     }
 
+    /// The header names are resolved against the destination through `CaseAwareBlockNameMap`
+    /// (see `ColumnMapping::addColumns`), honoring `input_format_column_name_matching_mode`.
+    bool honorsColumnNameMatchingMode() const override { return true; }
+
 protected:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 

@@ -94,6 +94,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_reads_string_values_as_whole_text = false;
     bool format_reads_any_value_into_string_column = true;
     bool format_maps_columns_by_name = false;
+    bool format_honors_column_name_matching_mode = false;
     bool format_reads_numeric_into_ipv4 = false;
     bool format_stores_typed_numeric_values = false;
     bool format_always_skips_unknown_fields = false;
@@ -125,6 +126,7 @@ String getInsertDataSchemaMismatchDescription(
         format_reads_string_values_as_whole_text = schema_reader->readsStringValuesAsWholeText();
         format_reads_any_value_into_string_column = schema_reader->readsAnyValueIntoStringColumn();
         format_maps_columns_by_name = schema_reader->mapsColumnsByName();
+        format_honors_column_name_matching_mode = schema_reader->honorsColumnNameMatchingMode();
         format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
         format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
         format_always_skips_unknown_fields = schema_reader->alwaysSkipsUnknownFields();
@@ -524,18 +526,17 @@ String getInsertDataSchemaMismatchDescription(
     /// order formats (`TSV`, `CSV`, `Values`) yield positional placeholder names like `c1`, `c2`, ...
     /// that do not line up with the destination column names, so compare those positionally.
 
-    /// Whether the format identifies fields by name is decided by the format itself, mirroring the real
-    /// parser. Three cases map fields to columns by name: formats that can read a subset of the
-    /// destination columns (`JSONEachRow`, `TSKV`, the `*WithNames*` family when
-    /// `input_format_with_names_use_header` is enabled, ...); formats whose schema reader does not impose
-    /// a strict column order (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...); and formats whose schema reader
-    /// reports that the parser maps columns by name from a names header (the `*WithNames*` family that
-    /// does not advertise the subset-of-columns capability, e.g. `RowBinaryWithNamesAndTypes`). Everything
-    /// else is compared by position — in particular a `*WithNames*` format read with the header disabled,
-    /// where the parser ignores the file's names and maps columns positionally even though schema
-    /// inference still reports those names.
-    const bool format_reads_by_name = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
-
+    /// Whether the format identifies fields by name is decided by the format's schema reader, mirroring
+    /// the real parser. Two cases map fields to columns by name: formats whose schema reader does not
+    /// impose a strict column order (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...), and formats whose
+    /// schema reader reports that the parser maps columns by name (the `*WithNames*` family when
+    /// `input_format_with_names_use_header` is enabled, and the formats that store named columns:
+    /// `Native`, `Avro`, `Parquet` / `Arrow` / `ORC`, the named columnar JSON formats, ...). Everything
+    /// else is compared by position — in particular a `*WithNames*` format read with the header
+    /// disabled, where the parser ignores the file's names and maps columns positionally even though
+    /// schema inference still reports those names, and `Npy`, whose parser writes its single column
+    /// positionally even though its schema reader always names that column `array` (which is why
+    /// `FormatFactory::checkIfFormatSupportsSubsetOfColumns` must not be used as the signal here).
     /// A destination with duplicate column names cannot be matched by name unambiguously (a degenerate
     /// case that does not occur for a real table); compare it positionally, as before.
     std::unordered_set<std::string_view> expected_names;
@@ -543,7 +544,7 @@ String getInsertDataSchemaMismatchDescription(
         expected_names.insert(column.name);
 
     const bool match_by_name = expected_names.size() == expected.size()
-        && (format_reads_by_name || format_maps_columns_by_name || !format_has_strict_order_of_columns);
+        && (format_maps_columns_by_name || !format_has_strict_order_of_columns);
 
     /// With `input_format_import_nested_json` enabled, the row-based JSON parsers map a top-level
     /// object field (`{"n": {...}}`) onto the dotted columns of a `Nested` carrier (`n.i`, ...).
@@ -562,13 +563,21 @@ String getInsertDataSchemaMismatchDescription(
     bool corresponds = true;
     if (match_by_name)
     {
-        /// Resolve names the same way the real parser does — through `CaseAwareBlockNameMap`, which honors
-        /// `input_format_column_name_matching_mode` (`auto` by default: an exact-case match first, then a
-        /// case-insensitive one). A plain exact lookup would miss, for example, a `JSONEachRow` field `A`
-        /// destined for a column `a`, dropping the diagnostic for a mismatch the parser does detect.
+        /// Resolve names the same way the real parser does. The parsers that resolve field names through
+        /// `CaseAwareBlockNameMap` honor `input_format_column_name_matching_mode` (`auto` by default: an
+        /// exact-case match first, then a case-insensitive one) — a plain exact lookup would miss, for
+        /// example, a `JSONEachRow` field `A` destined for a column `a`, dropping the diagnostic for a
+        /// mismatch the parser does detect. But not every by-name parser does that: `TSKV` and `Form`
+        /// look names up in a plain hash map and `Native` / `Avro` use `Block::getByName`, all exact
+        /// regardless of the setting — there a case-only difference (`A=...` into a column `a`) is a
+        /// genuine unknown field the parser rejects (`input_format_skip_unknown_fields` permitting), so
+        /// treating it as a match would suppress the explanation. Use the parser's own resolution mode,
+        /// reported by the schema reader.
         std::vector<DataTypePtr> expected_types;
         expected_types.reserve(expected.size());
-        CaseAwareBlockNameMap expected_by_name(format_settings.input_format_column_matching_case_sensitivity);
+        CaseAwareBlockNameMap expected_by_name(
+            format_honors_column_name_matching_mode ? format_settings.input_format_column_matching_case_sensitivity
+                                                    : FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE);
         expected_by_name.setSize(expected.size());
         for (const auto & column : expected)
         {
