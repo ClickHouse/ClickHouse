@@ -1,4 +1,6 @@
 #include <Access/ContextAccess.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
@@ -110,7 +112,7 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
     else if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
         auto old_children = node->children;
-        std::vector<const ActionsDAG::Node *> new_children;
+        ActionsDAG::NodeRawConstPtrs new_children;
 
         for (const auto & child : old_children)
             new_children.push_back(replaceNodes(dag, child, replacements));
@@ -172,7 +174,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
     auto context = read_from_merge_tree_step->getContext();
 
-    std::unordered_set<DataPartPtr> unique_parts;
+    UnorderedSetWithMemoryTracking<DataPartPtr> unique_parts;
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
@@ -224,7 +226,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
 /// `captured` maps a lambda's captured-column names to the nodes that supply their values in the
 /// outer DAG, so references to them inside the lambda body are inlined (typically as literals)
 /// instead of being emitted as bare, unresolvable identifiers.
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured = {});
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const UnorderedMapWithMemoryTracking<std::string, const ActionsDAG::Node *> & captured = {});
 
 /// Reconstructs a captured lambda (e.g. the `x -> f(x)` inside arrayMap) as `lambda(tuple(args), body)`.
 /// `captured_values` are the columns supplied for the capture, aligned with capture.captured_names.
@@ -236,7 +238,7 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
         return nullptr;
 
     /// Bind each captured column to the value passed into the capture so the body has no dangling refs.
-    std::unordered_map<std::string, const ActionsDAG::Node *> body_captured;
+    UnorderedMapWithMemoryTracking<std::string, const ActionsDAG::Node *> body_captured;
     for (size_t i = 0; i < capture.captured_names.size(); ++i)
         body_captured.emplace(capture.captured_names[i], captured_values[i]);
 
@@ -256,7 +258,7 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
     return lambda;
 }
 
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured)
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const UnorderedMapWithMemoryTracking<std::string, const ActionsDAG::Node *> & captured)
 {
     switch (node.type)
     {
@@ -349,7 +351,7 @@ public:
         const auto * filter_node = &actions_dag.findInOutputs(filter_column_name);
 
         /// Cache for added input nodes for each virtual column.
-        std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
+        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> virtual_column_to_node;
 
         /// Pre-populate the cache with any text-index virtual column inputs that are already present in this DAG from a previous
         /// optimization pass. This prevents them from being re-added to `added_columns` when the same DAG is processed again.
@@ -406,7 +408,7 @@ private:
     struct NodeReplacement
     {
         const ActionsDAG::Node * node = nullptr;
-        std::unordered_map<String, VirtualColumnDescription> added_virtual_columns;
+        UnorderedMapWithMemoryTracking<String, VirtualColumnDescription> added_virtual_columns;
     };
 
     ActionsDAG & actions_dag;
@@ -490,7 +492,7 @@ private:
 
     NodeReplacement processFunctionNode(
         const ActionsDAG::Node & function_node,
-        std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
+        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> & virtual_column_to_node,
         const ContextPtr & context)
     {
         NodeReplacement replacement;
@@ -701,7 +703,7 @@ private:
                 /// containment compaction is unsound after a postprocessor (see stringToTokens) and could
                 /// drop a required token, disagreeing with the materialized index.
                 tokens = postprocessor->processTokens(std::move(tokens));
-                std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
+                UnorderedSetWithMemoryTracking<String> unique_tokens(tokens.begin(), tokens.end());
                 needles_field = Array(unique_tokens.begin(), unique_tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
@@ -725,7 +727,7 @@ private:
     void replaceFunctionsToVirtualColumns(
         NodeReplacement & replacement,
         const VectorWithMemoryTracking<SelectedCondition> & all_conditions,
-        std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
+        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> & virtual_column_to_node,
         const ContextPtr & context)
     {
         const ActionsDAG::Node & function_node = *replacement.node;

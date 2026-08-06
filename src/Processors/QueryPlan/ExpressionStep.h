@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 
 namespace DB
@@ -45,7 +46,7 @@ public:
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     /// Prevent future input removal by removeUnusedColumns.

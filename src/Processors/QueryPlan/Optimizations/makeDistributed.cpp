@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #if CLICKHOUSE_CLOUD
@@ -88,7 +89,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node
 /// ROLLUP/CUBE feed subtotals from a step the exchanges do not support. Such plans stay single-node.
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
 {
-    std::vector<const QueryPlan::Node *> stack = {&root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -111,7 +112,7 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
 /// transforms (the only source of exchanges) already ran on it.
 bool planContainsLogicalExchange(const QueryPlan::Node & root)
 {
-    std::vector<const QueryPlan::Node *> stack = {&root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -129,7 +130,7 @@ bool planContainsLogicalExchange(const QueryPlan::Node & root)
 /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
 void checkDistributedReadSupported(const QueryPlan::Node & root)
 {
-    std::vector<const QueryPlan::Node *> stack = {&root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -798,7 +799,7 @@ void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPl
         size_t next_child = 0;
     };
 
-    std::vector<Frame> stack;
+    VectorWithMemoryTracking<Frame> stack;
     stack.push_back({.node = &root});
 
     while (!stack.empty())
@@ -887,7 +888,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     DistributedQueryTask main_task;
 
     QueryPlan plan_fragment;
-    std::unordered_map<String, String> main_stage_depends_on;
+    UnorderedMapWithMemoryTracking<String, String> main_stage_depends_on;
 
     {
         struct Frame
@@ -895,19 +896,19 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             QueryPlan::Node * node = nullptr;
             size_t next_child = 0;
             VectorWithMemoryTracking<QueryPlanPtr> child_plans{};
-            std::unordered_map<String, DistributedQueryTask> list_of_shards{};
-            std::unordered_map<String, String> depends_on_stages{};
+            UnorderedMapWithMemoryTracking<String, DistributedQueryTask> list_of_shards{};
+            UnorderedMapWithMemoryTracking<String, String> depends_on_stages{};
             /// True if the tasks in list_of_shards produce copies of the same data (the case right
             /// after a BroadcastExchange) rather than a partition of it.
             bool shards_are_copies = false;
         };
 
-        std::vector<Frame> stack;
+        VectorWithMemoryTracking<Frame> stack;
         stack.push_back({.node = root});
 
         std::unique_ptr<QueryPlan> current_plan = std::make_unique<QueryPlan>();
-        std::unordered_map<String, DistributedQueryTask> current_list_of_shards;     /// Tasks for shards that can be processed in parallel by the current_plan
-        std::unordered_map<String, String> current_stage_depends_on;
+        UnorderedMapWithMemoryTracking<String, DistributedQueryTask> current_list_of_shards;     /// Tasks for shards that can be processed in parallel by the current_plan
+        UnorderedMapWithMemoryTracking<String, String> current_stage_depends_on;
         bool current_shards_are_copies = false;
 
         while (!stack.empty())
@@ -1044,7 +1045,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     }
 
                     /// Prepare tasks for the next stage
-                    std::unordered_map<String, DistributedQueryTask> destination_stage_tasks;
+                    UnorderedMapWithMemoryTracking<String, DistributedQueryTask> destination_stage_tasks;
                     for (const auto & destination_shard : list_of_exchange_shards)
                     {
                         DistributedQueryTask destination_task;
@@ -1077,7 +1078,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             {
                 /// No children, this means that this is a leaf step.
 
-                auto populate_shards = [&](std::vector<String> shards_for_read, std::vector<String> read_buckets = {})
+                auto populate_shards = [&](Strings shards_for_read, VectorWithMemoryTracking<String> read_buckets = {})
                 {
                     for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
                     {
@@ -1103,7 +1104,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 {
                     /// Ship each bucket's authoritative marks (and FINAL borders + index) the same way the
                     /// replica path does, so the worker reads exactly its slice and does FINAL per-lane.
-                    std::vector<String> read_buckets = read_merge_tree->serializeDistributedReadBuckets();
+                    VectorWithMemoryTracking<String> read_buckets = read_merge_tree->serializeDistributedReadBuckets();
 
                     auto worker_step = ReadFromMergeTreeAtWorker::createFrom(*read_merge_tree);
                     auto shards_for_read = worker_step->getShardsForDistributedRead();
@@ -1120,7 +1121,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                     /// Ship each MergeTree bucket its authoritative marks as a task parameter (object-storage
                     /// reads carry no per-bucket marks and keep using only `bucket_id` / `total_buckets`).
-                    std::vector<String> read_buckets;
+                    VectorWithMemoryTracking<String> read_buckets;
                     if (auto * read_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
                         read_buckets = read_merge_tree_step->serializeDistributedReadBuckets();
 

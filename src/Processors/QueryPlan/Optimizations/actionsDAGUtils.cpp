@@ -1,4 +1,7 @@
 #include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
@@ -27,9 +30,9 @@ MatchedTrees::Matches matchTrees(
     bool check_monotonicity,
     size_t max_size_for_sets_from_tuple_to_compare)
 {
-    using Parents = std::set<const ActionsDAG::Node *>;
-    std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs;
+    using Parents = SetWithMemoryTracking<const ActionsDAG::Node *>;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Parents> inner_parents;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> inner_inputs;
 
     {
         std::stack<const ActionsDAG::Node *> stack;
@@ -412,10 +415,10 @@ void applyActionsToSortDescription(
     };
 
     VectorWithMemoryTracking<SortColumn> sort_columns(descr_size);
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_to_sort_column;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_to_sort_column;
 
     {
-        std::unordered_map<std::string_view, size_t> desc_name_to_pos;
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> desc_name_to_pos;
         for (size_t pos = 0; pos < descr_size; ++pos)
             desc_name_to_pos.emplace(description[pos].column_name, pos);
 
@@ -489,9 +492,9 @@ void applyActionsToSortDescription(
     description.resize(prefix_size);
 }
 
-std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
+std::optional<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
     const MatchedTrees::Matches & matches,
-    const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     struct Frame
@@ -501,8 +504,8 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     };
 
     std::stack<Frame> stack;
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
 
     for (const auto * node : nodes)
     {

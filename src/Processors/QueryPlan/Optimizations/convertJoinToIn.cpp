@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
@@ -48,12 +49,12 @@ static InConversion buildInConversion(
     size_t max_size_for_index)
 {
     ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> lhs_outputs;
     for (const auto & output : lhs_dag.getOutputs())
         lhs_outputs.emplace(output->result_name, output);
 
     ActionsDAG rhs_dag(in_source->getCurrentHeader()->getColumnsWithTypeAndName());
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> rhs_outputs;
     for (const auto & output : rhs_dag.getOutputs())
         rhs_outputs.emplace(output->result_name, output);
 

@@ -1,4 +1,5 @@
 #include <Interpreters/JoinOperator.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/IColumn.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -344,7 +345,7 @@ String toString(const JoinActionRef & node)
     return out.str();
 }
 
-static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const ActionsDAG::Node *, size_t> & node_to_id, const VectorWithMemoryTracking<JoinActionRef> & nodes)
+static void serializeNodeList(WriteBuffer & out, const UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> & node_to_id, const VectorWithMemoryTracking<JoinActionRef> & nodes)
 {
     writeVarUInt(nodes.size(), out);
     for (const auto & action : nodes)

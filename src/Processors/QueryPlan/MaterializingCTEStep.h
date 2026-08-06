@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/MaterializedCTE.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -60,7 +61,7 @@ class DelayedMaterializingCTEsStep final : public IQueryPlanStep
 {
 public:
 
-    DelayedMaterializingCTEsStep(SharedHeader input_header, std::vector<MaterializedCTEPtr> ctes_);
+    DelayedMaterializingCTEsStep(SharedHeader input_header, VectorWithMemoryTracking<MaterializedCTEPtr> ctes_);
 
     String getName() const override { return "DelayedMaterializingCTEs"; }
 
@@ -70,7 +71,7 @@ public:
     /// atomically marking each as materialized. CTEs already marked are skipped.
     /// The plans must have already been optimized via `optimizePlans` in the
     /// first traversal of `resolveMaterializingCTEs`.
-    static std::vector<std::unique_ptr<QueryPlan>> makePlansForCTEs(DelayedMaterializingCTEsStep && step);
+    static VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> makePlansForCTEs(DelayedMaterializingCTEsStep && step);
 
     /// Optimize each owned CTE's pre-built plan. Called by
     /// `resolveMaterializingCTEs`'s first traversal; the matching second
@@ -84,7 +85,7 @@ public:
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 
-    std::vector<MaterializedCTEPtr> ctes;
+    VectorWithMemoryTracking<MaterializedCTEPtr> ctes;
 };
 
 /// Strip every `DelayedMaterializingCTEsStep` node from `plan`'s tree, at

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/useDataParallelAggregation.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -143,7 +144,7 @@ void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_
     Stack stack;
     stack.push_back({.node = &root});
 
-    std::vector<StreamDisjointnessProperty> properties;
+    VectorWithMemoryTracking<StreamDisjointnessProperty> properties;
 
     while (!stack.empty())
     {

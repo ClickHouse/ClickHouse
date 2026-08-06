@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
 #include <Common/GetPriorityForLoadBalancing.h>
@@ -155,8 +157,8 @@ private:
 
 ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
-    const std::unordered_set<std::string> & projection_names,
-    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    const NameSet & projection_names,
+    const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context);
 

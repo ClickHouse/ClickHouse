@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/ActionsDAG.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
@@ -59,13 +60,13 @@ struct ProjectionCandidate
     ReadFromMergeTree::AnalysisResultPtr merge_tree_projection_select_result_ptr;
 
     /// Parent parts that need to be read due to missing this projection
-    std::unordered_set<const IMergeTreeDataPart *> parent_parts;
+    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> parent_parts;
 };
 
 /// Removes parts not in valid_parts from reading_select_result and updates related counters.
 /// Returns the number of parts removed.
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts);
+    ReadFromMergeTree::AnalysisResult & reading_select_result, const UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> & valid_parts);
 
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.

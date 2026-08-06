@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <unordered_set>
 #include <vector>
@@ -18,6 +19,6 @@ struct Settings;
 std::vector<String> parseIdentifiersOrStringLiterals(const String & str, const Settings & settings);
 
 /// Parse a list of identifiers or string literals into an unordered_set of strings.
-std::unordered_set<String> parseIdentifiersOrStringLiteralsToSet(const String & str, const Settings & settings);
+UnorderedSetWithMemoryTracking<String> parseIdentifiersOrStringLiteralsToSet(const String & str, const Settings & settings);
 
 }

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
@@ -634,7 +635,7 @@ ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyCondit
     return std::make_shared<ConditionTemplate<KeyCondition>>(std::move(sub_filter_dag), std::move(factory), metadata_snapshot, context, skip_folding);
 }
 
-std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
+std::optional<UnorderedSetWithMemoryTracking<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const RangesInDataParts & parts,
@@ -672,7 +673,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         {
             ConstantFilterDescription filter_description(*output_node.column);
             if (filter_description.always_false)
-                return std::unordered_set<String>{};
+                return UnorderedSetWithMemoryTracking<String>{};
         }
         return {};
     }
@@ -693,7 +694,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,
     const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
-    const std::optional<std::unordered_set<String>> & part_values,
+    const std::optional<UnorderedSetWithMemoryTracking<String>> & part_values,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const ContextPtr & context,
@@ -2838,7 +2839,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     const RangesInDataParts & parts,
-    const std::optional<std::unordered_set<String>> & part_values,
+    const std::optional<UnorderedSetWithMemoryTracking<String>> & part_values,
     const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,

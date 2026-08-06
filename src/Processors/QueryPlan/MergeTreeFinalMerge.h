@@ -68,7 +68,7 @@ Pipe buildFullFinalMergePipe(
 /// non-intersecting lanes, all united. `read_lane_in_order` and `read_non_intersecting` turn lane marks into
 /// pipes (the part-source seam).
 Pipe buildDistributedFinalPipe(
-    const std::vector<DistributedReadBucket> & lanes,
+    const VectorWithMemoryTracking<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
     MergeTreeData::MergingParams merging_params,
     size_t max_block_size_rows,

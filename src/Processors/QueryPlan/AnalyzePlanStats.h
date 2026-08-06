@@ -1,6 +1,8 @@
 #pragma once
 
 #include <utility>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -46,8 +48,8 @@ class AnalyzeStepsStats
 
     /// Per-processor elapsed times collected per (step, group) to compute the distribution.
     /// A multiset keeps the values sorted and preserves duplicates so the median stays correct.
-    using ElapsedTimes = std::multiset<UInt64>;
-    using ElapsedTimesPerStepGroup = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
+    using ElapsedTimes = MultiSetWithMemoryTracking<UInt64>;
+    using ElapsedTimesPerStepGroup = UnorderedMapWithMemoryTracking<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
 
 public:
     AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_);
@@ -61,8 +63,8 @@ private:
     ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
 
-    std::unordered_map<const IQueryPlanStep *, StepStats> stats_by_step;
-    std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>> stats_by_step_group;
+    UnorderedMapWithMemoryTracking<const IQueryPlanStep *, StepStats> stats_by_step;
+    UnorderedMapWithMemoryTracking<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>> stats_by_step_group;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;

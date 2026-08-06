@@ -1,4 +1,6 @@
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -48,13 +50,13 @@ namespace
             LOG_DEBUG(getLogger("redundantDistinct"), "{} :\n{}", prefix, actions.dumpDAG());
     }
 
-    using DistinctColumns = std::set<std::string_view>;
+    using DistinctColumns = SetWithMemoryTracking<std::string_view>;
     DistinctColumns getDistinctColumns(const DistinctStep * distinct)
     {
         /// find non-const columns in DISTINCT
         const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputHeader()->getColumnsWithTypeAndName();
-        std::set<std::string_view> non_const_columns;
-        std::unordered_set<std::string_view> column_names(cbegin(distinct->getColumnNames()), cend(distinct->getColumnNames()));
+        SetWithMemoryTracking<std::string_view> non_const_columns;
+        UnorderedSetWithMemoryTracking<std::string_view> column_names(cbegin(distinct->getColumnNames()), cend(distinct->getColumnNames()));
         for (const auto & column : distinct_columns)
         {
             if (!isColumnConst(*column.column) && column_names.contains(column.name))
@@ -88,8 +90,8 @@ namespace
         logDebug("aggregation_keys size", aggregation_keys.size());
         logDebug("distinct_columns size", distinct_columns.size());
 
-        std::set<String> current_columns(begin(distinct_columns), end(distinct_columns));
-        std::set<String> source_columns;
+        SetWithMemoryTracking<String> current_columns(begin(distinct_columns), end(distinct_columns));
+        SetWithMemoryTracking<String> source_columns;
         for (auto & actions : actions_chain)
         {
             auto tmp_actions = buildActionsForPlanPath(actions);

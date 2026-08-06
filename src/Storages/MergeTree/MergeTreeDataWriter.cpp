@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -387,7 +388,7 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
     if (!materialize_skip_indexes)
         return indices;
 
-    std::unordered_set<String> exclude_index_names;
+    UnorderedSetWithMemoryTracking<String> exclude_index_names;
     if (!exclude_indexes_string.empty())
         exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, settings);
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Core/Joins.h>
@@ -106,7 +107,7 @@ private:
     size_t max_streams;
 
     const NameSet required_output;
-    std::set<size_t> columns_to_remove;
+    SetWithMemoryTracking<size_t> columns_to_remove;
     JoinLocality locality = JoinLocality::Unspecified;
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;

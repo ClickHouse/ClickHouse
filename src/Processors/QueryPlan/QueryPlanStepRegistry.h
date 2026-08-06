@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -25,7 +26,7 @@ public:
         IQueryPlanStep::Deserialization & ctx) const;
 
 private:
-    std::unordered_map<std::string, StepCreateFunction> steps;
+    UnorderedMapWithMemoryTracking<std::string, StepCreateFunction> steps;
 
 };
 

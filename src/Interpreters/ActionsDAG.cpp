@@ -1,4 +1,7 @@
 #include <Interpreters/ActionsDAG.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
@@ -785,7 +788,7 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
 
 bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding, bool evaluate_constants)
 {
-    std::unordered_set<const Node *> used_inputs;
+    UnorderedSetWithMemoryTracking<const Node *> used_inputs;
     if (!allow_remove_inputs)
     {
         for (const auto * input : inputs)
@@ -794,7 +797,7 @@ bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
     return removeUnusedActions(used_inputs, allow_constant_folding, evaluate_constants);
 }
 
-bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding, bool evaluate_constants)
+bool ActionsDAG::removeUnusedActions(const UnorderedSetWithMemoryTracking<const Node *> & used_inputs, bool allow_constant_folding, bool evaluate_constants)
 {
     NodeRawConstPtrs roots;
     roots.reserve(outputs.size() + used_inputs.size());
@@ -810,8 +813,8 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
             roots.push_back(&node);
     }
 
-    std::unordered_set<const Node *> required_nodes;
-    std::unordered_set<const Node *> non_deterministic_nodes;
+    UnorderedSetWithMemoryTracking<const Node *> required_nodes;
+    UnorderedSetWithMemoryTracking<const Node *> non_deterministic_nodes;
 
     struct Frame
     {
@@ -901,12 +904,12 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 }
 
 
-size_t ActionsDAG::removeNodes(const std::unordered_set<const Node *> & to_remove)
+size_t ActionsDAG::removeNodes(const UnorderedSetWithMemoryTracking<const Node *> & to_remove)
 {
     if (to_remove.empty())
         return 0;
 
-    std::unordered_set<const Node *> required;
+    UnorderedSetWithMemoryTracking<const Node *> required;
     std::stack<const Node *> stack;
     for (const auto * out : outputs)
         if (required.insert(out).second)
@@ -936,7 +939,7 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
     std::stack<Node *> stack;
     stack.push(const_cast<Node *>(&filter_node));
 
-    std::unordered_set<const Node *> visited;
+    UnorderedSetWithMemoryTracking<const Node *> visited;
     visited.insert(stack.top());
 
     while (!stack.empty())
@@ -1232,7 +1235,7 @@ void ActionsDAG::deduplicateSubtrees()
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
-    std::unordered_map<const Node *, const Node *> copy_map;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> copy_map;
     return cloneSubDAG(outputs, copy_map, remove_aliases);
 }
 
@@ -1508,7 +1511,7 @@ ActionsDAG::MatchedInputPositions ActionsDAG::matchInputPositionsToHeader(const 
     return matchInputNodesToHeader(inputs, header);
 }
 
-ActionsDAG::SplitOutputPositions ActionsDAG::splitOutputPositions(const std::vector<size_t> & output_positions) const
+ActionsDAG::SplitOutputPositions ActionsDAG::splitOutputPositions(const VectorWithMemoryTracking<size_t> & output_positions) const
 {
     SplitOutputPositions result;
     const size_t num_dag_outputs = outputs.size();
@@ -1634,11 +1637,11 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     return result_columns;
 }
 
-ActionsDAG ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, const Node *> & new_inputs, const NodeRawConstPtrs & required_outputs)
+ActionsDAG ActionsDAG::foldActionsByProjection(const UnorderedMapWithMemoryTracking<const Node *, const Node *> & new_inputs, const NodeRawConstPtrs & required_outputs)
 {
     ActionsDAG dag;
-    std::unordered_map<const Node *, const Node *> inputs_mapping;
-    std::unordered_map<const Node *, const Node *> mapping;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> inputs_mapping;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> mapping;
     struct Frame
     {
         const Node * node;
@@ -1786,7 +1789,7 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases)
     }
 }
 
-void ActionsDAG::project(const NamesWithAliases & projection, const std::unordered_set<const Node *> & keep_inputs)
+void ActionsDAG::project(const NamesWithAliases & projection, const UnorderedSetWithMemoryTracking<const Node *> & keep_inputs)
 {
     std::unordered_map<std::string_view, const Node *> names_map;
     for (const auto * output_node : outputs)
@@ -1956,11 +1959,11 @@ void ActionsDAG::removeFromOutputs(const NameSet & node_names)
 
 ActionsDAG ActionsDAG::clone() const
 {
-    std::unordered_map<const Node *, const Node *> old_to_new_nodes;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> old_to_new_nodes;
     return clone(old_to_new_nodes);
 }
 
-ActionsDAG ActionsDAG::clone(std::unordered_map<const Node *, const Node *> & old_to_new_nodes) const
+ActionsDAG ActionsDAG::clone(UnorderedMapWithMemoryTracking<const Node *, const Node *> & old_to_new_nodes) const
 {
     ActionsDAG actions;
 
@@ -1984,7 +1987,7 @@ ActionsDAG ActionsDAG::clone(std::unordered_map<const Node *, const Node *> & ol
 }
 
 #if USE_EMBEDDED_COMPILER
-void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     compileFunctions(min_count_to_compile_expression, lazy_executed_nodes);
     removeUnusedActions(/*allow_remove_inputs = */ false);
@@ -2366,11 +2369,11 @@ ActionsDAG ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 
 void ActionsDAG::mergeInplace(ActionsDAG && second)
 {
-    std::unordered_map<const Node *, const Node *> inputs_map;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> inputs_map;
     mergeInplace(std::move(second), inputs_map, false);
 }
 
-void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Node *, const Node *> & inputs_map, bool remove_dangling_inputs)
+void ActionsDAG::mergeInplace(ActionsDAG && second, UnorderedMapWithMemoryTracking<const Node *, const Node *> & inputs_map, bool remove_dangling_inputs)
 {
     auto & first = *this;
     /// first: x (1), x (2), y ==> x (2), z, x (3)
@@ -2476,7 +2479,7 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
     for (auto & node : second.getOutputs())
         nodes_to_process.push_back({const_node_to_node.at(node), false /*visited_children*/});
 
-    std::unordered_set<const ActionsDAG::Node *> nodes_to_move_from_second_dag;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> nodes_to_move_from_second_dag;
 
     while (!nodes_to_process.empty())
     {
@@ -2545,7 +2548,7 @@ void ActionsDAG::unite(ActionsDAG && second)
     outputs.append_range(second.outputs);
 }
 
-ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
+ActionsDAG::SplitResult ActionsDAG::split(UnorderedSetWithMemoryTracking<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
 {
     /// Split DAG into two parts.
     /// (first_nodes, first_outputs) is a part which will have split_nodes in result.
@@ -2784,7 +2787,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     second_actions.outputs.swap(second_outputs);
     second_actions.inputs.swap(second_inputs);
 
-    std::unordered_map<const Node *, const Node *> split_nodes_mapping;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> split_nodes_mapping;
     if (create_split_nodes_mapping)
     {
         for (const auto * node : split_nodes)
@@ -2803,8 +2806,8 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
         size_t next_child_to_visit = 0;
     };
 
-    std::unordered_set<const Node *> split_nodes;
-    std::unordered_set<const Node *> visited_nodes;
+    UnorderedSetWithMemoryTracking<const Node *> split_nodes;
+    UnorderedSetWithMemoryTracking<const Node *> visited_nodes;
 
     std::stack<Frame> stack;
 
@@ -2879,7 +2882,7 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::getParents(const Node * target) const
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameSet & sort_columns) const
 {
-    std::unordered_set<const Node *> split_nodes;
+    UnorderedSetWithMemoryTracking<const Node *> split_nodes;
     for (const auto & sort_column : sort_columns)
         if (const auto * node = tryFindInOutputs(sort_column))
         {
@@ -2980,7 +2983,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         column_name,
                         dumpDAG());
 
-    std::unordered_set<const Node *> split_nodes = {node};
+    UnorderedSetWithMemoryTracking<const Node *> split_nodes = {node};
     /// The filter name may also be an input name. Two same-named outputs of different structure in the
     /// first half would break the Block invariant, so let split() rename the promoted node and repair
     /// the second half. The mapping carries the final name of the filter node.
@@ -3001,17 +3004,17 @@ struct ConjunctionNodes
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
 /// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
-ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
+ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
 {
     ConjunctionNodes conjunction;
-    std::unordered_set<const ActionsDAG::Node *> allowed;
-    std::unordered_set<const ActionsDAG::Node *> rejected;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> allowed;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> rejected;
 
     /// Parts of predicate in case predicate is conjunction (or just predicate itself).
-    std::unordered_set<const ActionsDAG::Node *> predicates;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> predicates;
     {
         std::stack<const ActionsDAG::Node *> stack;
-        std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited_nodes;
         stack.push(predicate);
         visited_nodes.insert(predicate);
         while (!stack.empty())
@@ -3043,7 +3046,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     };
 
     std::stack<Frame> stack;
-    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited_nodes;
 
     stack.push({.node = predicate});
     visited_nodes.insert(predicate);
@@ -3109,10 +3112,10 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
 /// constant like `1` or a folded `NULL`). Such a conjunct must not be pushed to a disabled
 /// (non-preserved) side: it would be evaluated on that side's input before the join, and the
 /// non-matched rows the OUTER join fabricates would not be constrained by it.
-bool conjunctDependsOnAllowedInput(const ActionsDAG::Node * conjunct, const std::unordered_set<const ActionsDAG::Node *> & allowed_nodes)
+bool conjunctDependsOnAllowedInput(const ActionsDAG::Node * conjunct, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_nodes)
 {
     std::stack<const ActionsDAG::Node *> stack;
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     stack.push(conjunct);
     visited.insert(conjunct);
     while (!stack.empty())
@@ -3162,7 +3165,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
 
     FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> nodes_mapping;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> nodes_mapping;
     std::unordered_map<std::string, std::list<const Node *>> required_inputs;
 
     struct Frame
@@ -3299,7 +3302,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     if (predicate->type == ActionType::COLUMN)
         return {};
 
-    std::unordered_set<const Node *> allowed_nodes;
+    UnorderedSetWithMemoryTracking<const Node *> allowed_nodes;
 
     /// Get input nodes from available_inputs names.
     {
@@ -3343,8 +3346,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const Names & right_stream_available_columns_to_push_down,
     const Block & right_stream_header,
     const Names & equivalent_columns_to_push_down,
-    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
+    const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
+    const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -3360,7 +3363,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     auto get_input_nodes = [this](const Names & inputs_names)
     {
-        std::unordered_set<const Node *> allowed_nodes;
+        UnorderedSetWithMemoryTracking<const Node *> allowed_nodes;
 
         std::unordered_map<std::string_view, std::list<const Node *>> inputs_map;
         for (const auto & input_node : inputs)
@@ -3399,7 +3402,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     /// output row. This is applied only to a disabled side: pushing a constant to an enabled (preserved)
     /// side is equivalent to keeping it in the post-join filter and is the intended push-down behaviour,
     /// so the classification for enabled sides is left intact.
-    auto keep_conjuncts_depending_on_allowed_input = [](ConjunctionNodes & conjunctions, const std::unordered_set<const Node *> & allowed_nodes)
+    auto keep_conjuncts_depending_on_allowed_input = [](ConjunctionNodes & conjunctions, const UnorderedSetWithMemoryTracking<const Node *> & allowed_nodes)
     {
         NodeRawConstPtrs kept;
         for (const auto * conjunct : conjunctions.allowed)
@@ -3427,8 +3430,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
 
-    std::unordered_set<const Node *> left_stream_allowed_conjunctions_set(left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end());
-    std::unordered_set<const Node *> right_stream_allowed_conjunctions_set(right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end());
+    UnorderedSetWithMemoryTracking<const Node *> left_stream_allowed_conjunctions_set(left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end());
+    UnorderedSetWithMemoryTracking<const Node *> right_stream_allowed_conjunctions_set(right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end());
 
     for (const auto * both_streams_push_down_allowed_conjunction_node : both_streams_push_down_conjunctions.allowed)
     {
@@ -3439,7 +3442,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
     }
 
-    std::unordered_set<const Node *> rejected_conjunctions_set;
+    UnorderedSetWithMemoryTracking<const Node *> rejected_conjunctions_set;
     rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());
     rejected_conjunctions_set.insert(right_stream_push_down_conjunctions.rejected.begin(), right_stream_push_down_conjunctions.rejected.end());
     rejected_conjunctions_set.insert(both_streams_push_down_conjunctions.rejected.begin(), both_streams_push_down_conjunctions.rejected.end());
@@ -3459,7 +3462,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         const ActionsDAG & filter,
         size_t filter_pos,
         const Block & stream_header,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
+        const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & columns_to_replace)
     {
         std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> input_nodes_to_replace;
         for (const auto & node : filter.getNodes())
@@ -3468,8 +3471,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             if (it == columns_to_replace.end())
                 continue;
 
-            std::unordered_set<const ActionsDAG::Node *> visited_nodes;
-            std::unordered_set<const ActionsDAG::Node *> seen_input_nodes;
+            UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited_nodes;
+            UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> seen_input_nodes;
             std::vector<const ActionsDAG::Node *> input_nodes;
             std::stack<const ActionsDAG::Node *> stack;
             stack.push(&node);
@@ -3698,7 +3701,7 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         }
     }
 
-    std::unordered_set<const Node *> used_inputs;
+    UnorderedSetWithMemoryTracking<const Node *> used_inputs;
     for (const auto * input : inputs)
         used_inputs.insert(input);
 
@@ -3726,7 +3729,7 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
 
     ActionsDAG result_dag;
     std::unordered_map<std::string, const ActionsDAG::Node *> result_inputs;
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
 
     size_t filter_nodes_size = filter_nodes.size();
 
@@ -3940,7 +3943,7 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
 ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const
 {
     ActionsDAG actions;
-    std::unordered_map<const Node *, const Node *> copy_map;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> copy_map;
     std::unordered_map<const ActionsDAG::Node *, bool> can_compute;
 
     /// Phase 1: Traverse the DAG and determine which nodes can be computed
@@ -4290,9 +4293,9 @@ static ColumnConst::Ptr deserializeConstant(
     return ColumnConst::create(std::move(column), 0);
 }
 
-std::unordered_map<const ActionsDAG::Node *, size_t> ActionsDAG::getNodeToIdMap() const
+UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> ActionsDAG::getNodeToIdMap() const
 {
-    std::unordered_map<const Node *, size_t> node_to_id;
+    UnorderedMapWithMemoryTracking<const Node *, size_t> node_to_id;
     for (const auto & node : nodes)
         node_to_id.emplace(&node, node_to_id.size());
 
@@ -4308,7 +4311,7 @@ std::vector<const ActionsDAG::Node *> ActionsDAG::getIdToNode() const
 }
 
 /// Reorder DAG nodes so that the whole subgraph of the inputs is listed before the node itself
-static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reordered_nodes, std::unordered_set<const ActionsDAG::Node *> & already_added_nodes, const ActionsDAG::Node * node)
+static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reordered_nodes, UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & already_added_nodes, const ActionsDAG::Node * node)
 {
     if (already_added_nodes.contains(node))
         return;
@@ -4328,7 +4331,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
     /// Reorder nodes so that children are serialized before parents. Otherwise deserialization will be more complicated.
     std::vector<const Node *> reordered_nodes;
     {
-        std::unordered_set<const Node *> already_added_nodes;
+        UnorderedSetWithMemoryTracking<const Node *> already_added_nodes;
         for (const auto & node : nodes)
             addChildrenBeforeNode(reordered_nodes, already_added_nodes, &node);
     }
@@ -4565,7 +4568,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
     size_t inputs_size = 0;
     readVarUInt(inputs_size, in);
     std::vector<const Node *> inputs;
-    std::unordered_set<const Node *> inputs_set;
+    UnorderedSetWithMemoryTracking<const Node *> inputs_set;
     inputs.reserve(inputs_size);
     for (size_t i = 0; i < inputs_size; ++i)
     {

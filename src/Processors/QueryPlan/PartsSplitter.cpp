@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <base/sort.h>
 
 #include <Core/Field.h>
@@ -274,8 +275,8 @@ public:
     }
 
 private:
-    std::unordered_map<size_t, size_t> part_index_to_current_ranges_in_data_parts_index;
-    std::unordered_map<size_t, size_t> part_index_to_initial_ranges_in_data_parts_index;
+    UnorderedMapWithMemoryTracking<size_t, size_t> part_index_to_current_ranges_in_data_parts_index;
+    UnorderedMapWithMemoryTracking<size_t, size_t> part_index_to_initial_ranges_in_data_parts_index;
     RangesInDataParts ranges_in_data_parts;
     const RangesInDataParts & initial_ranges_in_data_parts;
 };
@@ -522,7 +523,7 @@ SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_par
         intersecting_ranges_in_data_parts_builder.addRange(part_index, mark_range);
     };
 
-    std::unordered_map<PartRangeIndex, MarkRange, PartRangeIndexHash> part_index_start_to_range;
+    UnorderedMapWithMemoryTracking<PartRangeIndex, MarkRange, PartRangeIndexHash> part_index_start_to_range;
 
     chassert(!parts_ranges.empty());
     chassert(parts_ranges[0].event == PartsRangesIterator::EventType::RangeStart);
@@ -752,9 +753,9 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
     }
 
     /// The beginning of currently started (but not yet finished) range of marks of a part in the current layer.
-    std::unordered_map<PartRangeIndex, size_t, PartRangeIndexHash> current_part_range_begin;
+    UnorderedMapWithMemoryTracking<PartRangeIndex, size_t, PartRangeIndexHash> current_part_range_begin;
     /// The current ending of a range of marks of a part in the current layer.
-    std::unordered_map<PartRangeIndex, size_t, PartRangeIndexHash> current_part_range_end;
+    UnorderedMapWithMemoryTracking<PartRangeIndex, size_t, PartRangeIndexHash> current_part_range_end;
 
     /// Determine borders between layers.
     VectorWithMemoryTracking<Values> borders;
@@ -1109,7 +1110,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
 
 static void reorderColumns(ActionsDAG & dag, const Block & header, const std::string & filter_column)
 {
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs_map;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> inputs_map;
     for (const auto * input : dag.getInputs())
         inputs_map[input->result_name] = input;
 

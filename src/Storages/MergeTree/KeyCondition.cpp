@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -1953,7 +1954,7 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
     for (const auto * node : expr_nodes)
         expr_set.insert(node);
 
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> projection_inputs;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> projection_inputs;
     projection_inputs.reserve(expr_nodes.size());
     for (const auto * node : expr_nodes)
         projection_inputs.emplace(node, rename_node);

@@ -1,4 +1,5 @@
 #include <DataTypes/IDataType.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 
 #include <Columns/ColumnConst.h>
@@ -284,7 +285,7 @@ bool QueryDAG::build(QueryPlan::Node & node)
 }
 
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts)
+    ReadFromMergeTree::AnalysisResult & reading_select_result, const UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> & valid_parts)
 {
     size_t filtered_parts = 0;
     auto & parts_with_ranges = reading_select_result.parts_with_ranges;
@@ -410,7 +411,7 @@ bool analyzeProjectionCandidate(
     if (!projection_result_ptr->isUsable())
         return false;
 
-    std::unordered_set<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
+    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
     for (auto & part : projection_result_ptr->parts_with_ranges)
         valid_parts.emplace(part.data_part->getParentPart());
 
@@ -440,7 +441,7 @@ void filterPartsAndCollectProjectionCandidates(
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
-    std::unordered_set<const IMergeTreeDataPart *> valid_parts;
+    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> valid_parts;
 
     /// Route a drifted projection part (see projectionPartHasRequiredColumns) to a parent read rather
     /// than evaluating the filter over it, which would prune the wrong parent rows. Only the filter

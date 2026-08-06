@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -2070,7 +2071,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (partition_pruner.isUseless() && !valid)
         return {};
 
-    std::unordered_set<String> part_values;
+    UnorderedSetWithMemoryTracking<String> part_values;
     if (valid)
     {
         virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts);

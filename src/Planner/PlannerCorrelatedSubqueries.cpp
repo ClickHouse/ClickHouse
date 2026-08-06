@@ -1,4 +1,5 @@
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Analyzer/QueryNode.h>
@@ -289,7 +290,7 @@ QueryPlan decorrelateQueryPlan(
             JoinOperator(JoinKind::Cross),
             std::move(join_expression_actions),
             output_columns,
-            std::unordered_map<String, const ActionsDAG::Node *>{},
+            UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
             settings[Setting::join_use_nulls],
             JoinSettings(settings),
             SortingStep::Settings(settings));
@@ -601,7 +602,7 @@ QueryPlan buildLogicalJoin(
         JoinOperator(join_kind_to_use, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
-        std::unordered_map<String, const ActionsDAG::Node *>{},
+        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
         /*join_use_nulls=*/false,
         JoinSettings(settings),
         SortingStep::Settings(settings));

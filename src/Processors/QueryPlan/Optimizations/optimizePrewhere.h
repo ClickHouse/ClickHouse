@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 
 namespace DB
 {
@@ -27,8 +29,8 @@ ActionsDAG splitAndFillPrewhereInfo(
     bool remove_prewhere_column,
     ActionsDAG filter_expression,
     const String & filter_column_name,
-    const std::unordered_set<const ActionsDAG::Node *> & prewhere_nodes,
-    const std::list<const ActionsDAG::Node *> & prewhere_nodes_list);
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & prewhere_nodes,
+    const ListWithMemoryTracking<const ActionsDAG::Node *> & prewhere_nodes_list);
 
 }
 

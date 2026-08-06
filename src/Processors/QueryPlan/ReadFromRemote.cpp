@@ -1,4 +1,8 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Analyzer/QueryNode.h>
@@ -243,12 +247,12 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 /// It should not be needed after we send a full plan for distributed queries.
 ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
-    const std::unordered_set<std::string> & projection_names,
-    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    const NameSet & projection_names,
+    const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context)
 {
-    std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
     struct Frame
     {
@@ -472,11 +476,11 @@ static void addFilters(
     /// We are building a set with projection names and a map with execution names here.
     /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
 
-    std::unordered_set<std::string> projection_names;
+    NameSet projection_names;
     for (const auto & col : query_node->getProjectionColumns())
         projection_names.insert(col.name);
 
-    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
+    UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
     for (const auto & node : query_node->getProjection())
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
@@ -620,7 +624,7 @@ void ReadFromRemote::addLazyPipe(
 
         // In case reading from parallel replicas is allowed, lazy case is not triggered,
         // so in this case it's required to get only one connection from the pool
-        std::vector<ConnectionPoolWithFailover::TryResult> try_results;
+        std::vector<ConnectionPoolWithFailover::TryResult> try_results; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         std::exception_ptr exception_ptr;
         try
         {
@@ -698,7 +702,7 @@ void ReadFromRemote::addLazyPipe(
         if (exception_ptr)
             std::rethrow_exception(exception_ptr);
 
-        std::vector<IConnectionPool::Entry> connections;
+        ConnectionPoolEntries connections;
         connections.reserve(try_results.size());
         for (auto & try_result : try_results)
             connections.emplace_back(std::move(try_result.entry));
@@ -1107,7 +1111,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeade
     LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
     using ProcessorWeakPtr = std::weak_ptr<IProcessor>;
-    std::unordered_map<size_t, ProcessorWeakPtr> remote_sources;
+    UnorderedMapWithMemoryTracking<size_t, ProcessorWeakPtr> remote_sources;
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
         if (exclude_pool_index.has_value() && i == exclude_pool_index)
@@ -1139,7 +1143,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeade
     if (!wait_for_unused_replicas)
     {
         coordinator->setReadCompletedCallback(
-            [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
+            [sources = std::move(remote_sources)](const SetWithMemoryTracking<size_t> & used_replicas)
             {
                 for (const auto & [replica_num, processor] : sources)
                 {

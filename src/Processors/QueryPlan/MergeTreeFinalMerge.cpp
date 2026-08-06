@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/Exception.h>
 #include <Core/Settings.h>
@@ -180,7 +181,7 @@ Pipe buildFullFinalMergePipe(
 }
 
 Pipe buildDistributedFinalPipe(
-    const std::vector<DistributedReadBucket> & lanes,
+    const VectorWithMemoryTracking<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
     MergeTreeData::MergingParams merging_params,
     size_t max_block_size_rows,

@@ -1,4 +1,5 @@
 #include <Planner/Utils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -99,7 +100,7 @@ QueryPipelineBuilderPtr MaterializingCTEsStep::updatePipeline(QueryPipelineBuild
 
 DelayedMaterializingCTEsStep::DelayedMaterializingCTEsStep(
     SharedHeader input_header,
-    std::vector<MaterializedCTEPtr> ctes_
+    VectorWithMemoryTracking<MaterializedCTEPtr> ctes_
 )
     : ctes(std::move(ctes_))
 {
@@ -138,9 +139,9 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
     }
 }
 
-std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
+VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
 {
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     for (auto & materialized_cte : step.ctes)
     {
         if (materialized_cte->is_materialization_planned.exchange(true))

@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -137,7 +139,7 @@ bool ExpressionStep::canRemoveUnusedColumns() const
     return true;
 }
 
-ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
+ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & required_output_positions, bool remove_inputs)
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
@@ -161,7 +163,7 @@ ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(co
     auto passthrough_input_header_positions = actions_dag.matchInputPositionsToHeader(*input_header).passthrough;
 
     /// Determine which pass-through inputs are required by the caller.
-    std::set<size_t> required_passthrough_header_positions;
+    SetWithMemoryTracking<size_t> required_passthrough_header_positions;
     for (size_t pt_idx : required_passthrough_indices)
     {
         if (pt_idx >= passthrough_input_header_positions.size())
@@ -211,14 +213,14 @@ ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(co
     {
         /// Build the set of required input header positions: DAG inputs that survived pruning + required pass-throughs.
         auto matched_positions = actions_dag.matchInputPositionsToHeader(*input_header).matched;
-        std::set<size_t> required_input_positions(matched_positions.begin(), matched_positions.end());
+        SetWithMemoryTracking<size_t> required_input_positions(matched_positions.begin(), matched_positions.end());
 
         /// Add required pass-through input positions.
         for (size_t pt_pos : required_passthrough_header_positions)
             required_input_positions.insert(pt_pos);
 
         /// Build the result vector and update the input header.
-        std::vector<size_t> result_positions(required_input_positions.begin(), required_input_positions.end());
+        VectorWithMemoryTracking<size_t> result_positions(required_input_positions.begin(), required_input_positions.end());
 
         Block new_input_header{};
         for (size_t pos : result_positions)

@@ -1,4 +1,5 @@
 #include <ranges>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <tuple>
 #include <utility>
 #include <Access/AccessControl.h>
@@ -878,7 +879,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (const auto & column_sizes = storage->getColumnSizes(queried_columns); !column_sizes.empty())
             {
                 /// Extract column compressed sizes.
-                std::unordered_map<std::string, UInt64> column_compressed_sizes;
+                UnorderedMapWithMemoryTracking<std::string, UInt64> column_compressed_sizes;
                 for (const auto & [name, sizes] : column_sizes)
                     column_compressed_sizes[name] = sizes.data_compressed;
 

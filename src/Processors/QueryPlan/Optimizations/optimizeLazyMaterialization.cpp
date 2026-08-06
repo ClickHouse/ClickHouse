@@ -1,4 +1,7 @@
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
@@ -48,7 +51,7 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 /// The second vector contains other positions (sorted).
 static std::pair<VectorWithMemoryTracking<size_t>, VectorWithMemoryTracking<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
-    std::unordered_map<std::string, std::list<size_t>> name_to_position;
+    UnorderedMapWithMemoryTracking<std::string, ListWithMemoryTracking<size_t>> name_to_position;
     for (size_t i = 0; i < header.columns(); ++i)
         name_to_position[header.getByPosition(i).name].push_back(i);
 
@@ -86,7 +89,7 @@ struct PlanStepWithRequiredDAGPositions
 /// The number of DAG outputs may differ from required_output_positions.size().
 static VectorWithMemoryTracking<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, VectorWithMemoryTracking<bool> required_output_positions)
 {
-    std::unordered_set<const ActionsDAG::Node *> required_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> required_nodes;
     std::stack<const ActionsDAG::Node *> stack;
 
     size_t num_matched_outputs = std::min(dag.getOutputs().size(), required_output_positions.size());
@@ -163,12 +166,12 @@ struct SplitExpressionStepResult
 /// Remove them from the DAG.
 static void removeDanglingNodes(ActionsDAG & dag)
 {
-    std::unordered_set<const ActionsDAG::Node *> used_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_nodes;
     for (const auto & node : dag.getNodes())
         for (const auto * child : node.children)
             used_nodes.insert(child);
 
-    std::unordered_set<const ActionsDAG::Node *> inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> inputs;
     for (const auto & input : dag.getInputs())
         inputs.insert(input);
 
@@ -188,9 +191,9 @@ static void removeDanglingNodes(ActionsDAG & dag)
 /// It's useful because the main branch of lazy materialization can return more columns than actually required.
 /// As an example, for the query `select a from table prewhere b > 0 order by c limit 1`, only column `c` is required for ORDER BY,
 /// but the column `a` is returned as well (it's needed for PREWHERE).
-static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std::unordered_set<const ActionsDAG::Node *> & nodes)
+static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & nodes)
 {
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     struct Frame
     {
         const ActionsDAG::Node * node;
@@ -255,7 +258,7 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
 
     const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
 
-    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         if (required_inputs[header_positions[i]])
@@ -313,7 +316,7 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const V
 
     const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
 
-    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
         if (required_inputs[header_positions[i]])
             split_nodes.insert(inputs[i]);
@@ -426,7 +429,7 @@ static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & b
 /// upfront and leave such plans alone.
 static bool hasInputNameShadowedByComputedNode(const ActionsDAG & dag)
 {
-    std::unordered_set<std::string_view> input_names;
+    UnorderedSetWithMemoryTracking<std::string_view> input_names;
     for (const auto * input : dag.getInputs())
         input_names.insert(input->result_name);
 
@@ -521,7 +524,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     bool has_filter = false;
 
-    std::vector<PlanStepWithRequiredDAGPositions> steps_to_split;
+    VectorWithMemoryTracking<PlanStepWithRequiredDAGPositions> steps_to_split;
 
     auto * node = chain_top_node;
     while (!node->children.empty())
@@ -632,8 +635,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         // std::cerr << ".. Lazy header " << lazy_reading->getOutputHeader()->dumpNames() << std::endl;
     }
 
-    std::list<std::variant<ActionsDAG, FilterDAGInfo>> main_steps;
-    std::list<ActionsDAG> lazy_steps;
+    ListWithMemoryTracking<std::variant<ActionsDAG, FilterDAGInfo>> main_steps;
+    ListWithMemoryTracking<ActionsDAG> lazy_steps;
 
     for (const auto & step_to_split : steps_to_split | std::views::reverse)
     {

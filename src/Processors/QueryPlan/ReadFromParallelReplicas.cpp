@@ -1,4 +1,6 @@
 #include <memory>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
@@ -97,7 +99,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
 {
     chassert(cluster->getShardCount() == 1);
 
-    std::vector<String> replicas;
+    VectorWithMemoryTracking<String> replicas;
     replicas.reserve(pools_to_use.size());
 
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
@@ -128,7 +130,7 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
 {
     Pipes pipes;
 
-    std::vector<std::string_view> addresses;
+    VectorWithMemoryTracking<std::string_view> addresses;
     addresses.reserve(pools_to_use.size());
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
@@ -140,7 +142,7 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
     LOG_DEBUG(getLogger("ReadFromParallelReplicas"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
     using ProcessorWeakPtr = std::weak_ptr<IProcessor>;
-    std::unordered_map<size_t, ProcessorWeakPtr> remote_sources;
+    UnorderedMapWithMemoryTracking<size_t, ProcessorWeakPtr> remote_sources;
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
         if (exclude_pool_index.has_value() && i == exclude_pool_index)
@@ -172,7 +174,7 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
     if (!wait_for_unused_replicas)
     {
         coordinator->setReadCompletedCallback(
-            [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
+            [sources = std::move(remote_sources)](const SetWithMemoryTracking<size_t> & used_replicas)
             {
                 for (const auto & [replica_num, processor] : sources)
                 {

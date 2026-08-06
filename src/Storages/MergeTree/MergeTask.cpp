@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
@@ -383,7 +384,7 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
+void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const UnorderedSetWithMemoryTracking<String> & exclude_index_names) const
 {
     const auto & sorting_key_expr = global_ctx->metadata_snapshot->getSortingKey().expression;
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
@@ -763,7 +764,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const auto & merge_tree_settings = global_ctx->data_settings;
 
     /// Get list of skip indexes to exclude from merge
-    std::unordered_set<String> exclude_index_names;
+    UnorderedSetWithMemoryTracking<String> exclude_index_names;
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
     {
         auto exclude_indexes_string = (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();

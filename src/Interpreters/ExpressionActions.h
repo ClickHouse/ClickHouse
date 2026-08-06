@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
@@ -156,7 +157,7 @@ private:
     ExpressionActions() = default;
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
-    void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
+    void linearizeActions(const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes);
 };
 
 namespace ExpressionActionsChainSteps

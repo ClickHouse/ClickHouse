@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 #include <iterator>
 #include <set>
 #include <unordered_map>
@@ -156,7 +157,7 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
     out << "\n";
 
     /// Collect the stages (step groups) that actually have timing stats.
-    std::vector<std::pair<size_t, const StepGroupStats *>> stages;
+    VectorWithMemoryTracking<std::pair<size_t, const StepGroupStats *>> stages;
     for (size_t group : step->getStepGroups())
     {
         const auto group_it = stats_by_step_group.find(std::make_pair(step, group));

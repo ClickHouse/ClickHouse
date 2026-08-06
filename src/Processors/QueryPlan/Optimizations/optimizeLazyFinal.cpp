@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -61,7 +62,7 @@ static void exposeNodesAsDAGOutputs(ActionsDAG & dag, const NameSet & names)
     if (names.empty())
         return;
 
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
     for (const auto & node : dag.getNodes())
     {
         if (names.contains(node.result_name) && !outputs.contains(&node))
@@ -132,7 +133,7 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
 /// filter has consumed it.
 static bool exposeInputAsDAGOutput(ActionsDAG & dag, const String & column_name)
 {
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
     bool added = false;
     for (const auto * input : dag.getInputs())
     {
