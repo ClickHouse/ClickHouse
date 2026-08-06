@@ -56,6 +56,12 @@ SELECT '-- timeSeriesSelect*Groups: states survive serialization to a MergeTree 
 CREATE TABLE topk_states (part UInt8, st AggregateFunction(timeSeriesSelectTopKGroups, UInt64, Array(Nullable(Float64)), UInt8)) ENGINE = MergeTree ORDER BY part;
 INSERT INTO topk_states SELECT g % 2, timeSeriesSelectTopKGroupsState(g, v, 2) FROM topk_input GROUP BY g % 2;
 SELECT timeSeriesSelectTopKGroupsMerge(st) FROM topk_states;
+
+-- There is no fixed cap on the number of time steps: a state with more than a million steps (a range of about 13 days at 1-second resolution) survives the same round trip.
+TRUNCATE TABLE topk_states;
+INSERT INTO topk_states SELECT 0, timeSeriesSelectTopKGroupsState(g, arrayWithConstant(1100000, toNullable(toFloat64(g))), 1) FROM (SELECT number + 1 AS g FROM numbers(2));
+SELECT arrayMap(x -> (x.1, length(x.2), arraySum(x.2)), timeSeriesSelectTopKGroupsMerge(st)) FROM topk_states;
+
 DROP TABLE topk_states;
 
 SELECT '-- timeSeriesSelect*Groups: invalid arguments';
@@ -68,8 +74,10 @@ SELECT timeSeriesSelectTopKGroups(g, v, -1::Int64) FROM topk_input; -- { serverE
 SELECT timeSeriesSelectTopKGroups(g, [1]::Array(UInt64), 1) FROM topk_input; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT timeSeriesSelectLimitKGroups(g, v, 1) FROM topk_input; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT timeSeriesSelectTopKGroups(1)(g, v, 1) FROM topk_input; -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
--- A corrupted serialized state claiming 2^56 - 1 time steps must fail fast instead of attempting a huge allocation.
-SELECT finalizeAggregation(CAST(unhex('0101FFFFFFFFFFFFFF7F'), 'AggregateFunction(timeSeriesSelectTopKGroups, UInt64, Array(Nullable(Float64)), UInt64)')); -- { serverError TOO_LARGE_ARRAY_SIZE }
+-- A corrupted serialized state claiming 2^56 - 1 time steps must fail once the actual payload runs out instead of attempting a huge allocation.
+SELECT finalizeAggregation(CAST(unhex('0101FFFFFFFFFFFFFF7F'), 'AggregateFunction(timeSeriesSelectTopKGroups, UInt64, Array(Nullable(Float64)), UInt64)')); -- { serverError CANNOT_READ_ALL_DATA }
+-- A corrupted serialized state claiming more entries at a time step than k must be rejected.
+SELECT finalizeAggregation(CAST(unhex('010101010000000000000002'), 'AggregateFunction(timeSeriesSelectTopKGroups, UInt64, Array(Nullable(Float64)), UInt64)')); -- { serverError INCORRECT_DATA }
 
 DROP TABLE topk_input;
 

@@ -19,6 +19,7 @@
 [(1,[1])]
 -- timeSeriesSelect*Groups: states survive serialization to a MergeTree table and merging
 [(1,[0,1,0,1]),(2,[1,0,1,1]),(3,[1,1,1,0])]
+[(2,1100000,1100000)]
 -- timeSeriesSelect*Groups: invalid arguments
 -- PromQL topk/bottomk/limitk end to end
 -- topk(2), range
