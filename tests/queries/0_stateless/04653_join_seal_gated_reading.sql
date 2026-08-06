@@ -80,6 +80,16 @@ INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(1000
 SELECT /* seal_final */ count(), sum(p.k) FROM t_seal_probe_final AS p FINAL JOIN t_seal_build AS b ON p.k = b.k;
 DROP TABLE t_seal_probe_final;
 
+-- A reverse-sorted primary key must be analyzed with its sort direction: the seal-gated
+-- pruning has to keep exactly the marks containing the build keys.
+DROP TABLE IF EXISTS t_seal_probe_desc;
+CREATE TABLE t_seal_probe_desc (k UInt64, v String) ENGINE = MergeTree ORDER BY (k DESC)
+    SETTINGS index_granularity = 128;
+INSERT INTO t_seal_probe_desc SELECT number, toString(number) FROM numbers(1000000);
+OPTIMIZE TABLE t_seal_probe_desc FINAL;
+SELECT /* seal_gated_reverse_key */ count(), sum(p.k) FROM t_seal_probe_desc AS p JOIN t_seal_build AS b ON p.k = b.k;
+DROP TABLE t_seal_probe_desc;
+
 -- A gated read skips the redundant read-time index analysis by the same runtime filter:
 -- the marks are dropped by the refiner at task-cut time and no granules reach the
 -- read-time pruning.
@@ -162,6 +172,17 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query LIKE '%seal_gated_prefetched%'
+    AND query NOT LIKE '%query_log%';
+
+-- The reverse-sorted key prunes just like the ascending one (and the matching rows,
+-- checked above, prove the surviving marks are the right ones).
+SELECT
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 7000 AS dropped_marks,
+    read_rows < 100000 AS read_few_rows
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query LIKE '%seal_gated_reverse_key%'
     AND query NOT LIKE '%query_log%';
 
 -- The gated read pruned at task-cut time and the read-time pruning by the same filter was

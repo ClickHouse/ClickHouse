@@ -445,9 +445,9 @@ public:
     /// addJoinRuntimeFilterIndexAnalysisOnDataRead) is redundant on a gated read and skipped.
     /// Reads under FINAL, parallel replicas or a join sharded by PK ranges are not gated; the
     /// mark has no effect there and the join wiring falls back gracefully.
-    void enableSealGatedReading(const String & key_column_name, const String & filter_id)
+    void enableSealGatedReading(const String & key_column_name, const DataTypePtr & key_column_type, const String & filter_id)
     {
-        seal_gated_reading = SealGatedReading{key_column_name, filter_id};
+        seal_gated_reading = SealGatedReading{key_column_name, key_column_type, filter_id};
     }
 
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
@@ -698,6 +698,7 @@ private:
     struct SealGatedReading
     {
         String key_column_name;
+        DataTypePtr key_column_type;
         String filter_id;
     };
     std::optional<SealGatedReading> seal_gated_reading;

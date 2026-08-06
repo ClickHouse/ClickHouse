@@ -4406,7 +4406,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         && result.split_parts.layers.empty())
     {
         seal_gate_refiner = std::make_shared<RuntimeFilterReadRangesRefiner>(
-            storage_snapshot->metadata, context, seal_gated_reading->key_column_name);
+            storage_snapshot->metadata, context, seal_gated_reading->key_column_name, seal_gated_reading->key_column_type);
     }
 
     /// The runtime filters to apply during reading. A read gated on a filter's seal already

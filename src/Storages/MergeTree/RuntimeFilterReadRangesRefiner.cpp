@@ -12,10 +12,11 @@ namespace DB
 {
 
 RuntimeFilterReadRangesRefiner::RuntimeFilterReadRangesRefiner(
-    StorageMetadataPtr metadata_snapshot_, ContextPtr context_, String key_column_name_)
+    StorageMetadataPtr metadata_snapshot_, ContextPtr context_, String key_column_name_, DataTypePtr key_column_type_)
     : metadata_snapshot(std::move(metadata_snapshot_))
     , context(std::move(context_))
     , key_column_name(std::move(key_column_name_))
+    , key_column_type(std::move(key_column_type_))
 {
 }
 
@@ -34,17 +35,17 @@ void RuntimeFilterReadRangesRefiner::setFilterImpl(const RuntimeFilterConstPtr &
     /// used by the read-time index analysis, and turn it into a primary key condition. A null
     /// predicate means the filter recorded nothing usable (e.g. key tracking was not enabled,
     /// or an ANTI join); then only the row-level filter applies.
-    auto key_type = metadata_snapshot->getColumns().getPhysical(key_column_name).type;
-
     ActionsDAG dag;
-    const auto * predicate = convertRuntimeFilterToKeyConditionDAG(*filter, key_column_name, key_type, dag, context);
+    const auto * predicate = convertRuntimeFilterToKeyConditionDAG(*filter, key_column_name, key_column_type, dag, context);
     if (!predicate)
         return;
     dag.getOutputs() = {predicate};
 
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    /// The KeyDescription overload: the condition must honor the per-column sort directions
+    /// of the primary key, or a reverse-sorted key would be analyzed as ascending and the
+    /// refinement would prune wrong marks.
     ActionsDAGWithInversionPushDown inverted_dag(predicate, context, /*boolean_context=*/true);
-    condition = std::make_shared<const KeyCondition>(inverted_dag, context, primary_key.column_names, primary_key.expression);
+    condition = std::make_shared<const KeyCondition>(inverted_dag, context, metadata_snapshot->getPrimaryKey());
 }
 
 MarkRanges RuntimeFilterReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const

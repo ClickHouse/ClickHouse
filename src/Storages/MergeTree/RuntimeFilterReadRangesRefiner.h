@@ -26,7 +26,10 @@ class KeyCondition;
 class RuntimeFilterReadRangesRefiner : public IMergeTreeReadRangesRefiner
 {
 public:
-    RuntimeFilterReadRangesRefiner(StorageMetadataPtr metadata_snapshot_, ContextPtr context_, String key_column_name_);
+    /// The key column name and type describe the probe-side join key column the runtime
+    /// filter was built for, as referenced by the pushed-down `__applyFilter` conjunct.
+    RuntimeFilterReadRangesRefiner(
+        StorageMetadataPtr metadata_snapshot_, ContextPtr context_, String key_column_name_, DataTypePtr key_column_type_);
     ~RuntimeFilterReadRangesRefiner() override;
 
     /// Idempotent and thread-safe: the seal is copied to every gated reading stream, so this
@@ -41,6 +44,7 @@ private:
     const StorageMetadataPtr metadata_snapshot;
     const ContextPtr context;
     const String key_column_name;
+    const DataTypePtr key_column_type;
 
     /// Written once by setFilter before any refine call (guaranteed by the gating edge).
     std::once_flag set_filter_once;
