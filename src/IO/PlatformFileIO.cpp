@@ -58,7 +58,11 @@ Int64 platformRead(int fd, char * to, size_t bytes)
     DWORD bytes_read = 0;
     if (!ReadFile(handle, to, clampCount(bytes), &bytes_read, nullptr))
     {
-        if (GetLastError() == ERROR_HANDLE_EOF)
+        /// A pipe (or redirected stdin) whose write end has been closed reports the normal end
+        /// of the stream as `ERROR_BROKEN_PIPE`, not `ERROR_HANDLE_EOF`; POSIX `read` returns 0
+        /// there. `ERROR_NO_DATA` is the same condition on a nonblocking pipe.
+        const DWORD error = GetLastError();
+        if (error == ERROR_HANDLE_EOF || error == ERROR_BROKEN_PIPE || error == ERROR_NO_DATA)
             return 0;
         errno = EIO;
         return -1;
