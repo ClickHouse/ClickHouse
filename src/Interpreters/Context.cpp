@@ -8019,8 +8019,8 @@ bool Context::isServerCompletelyStarted() const
 
 bool Context::isShutdownCalled() const
 {
-    /// No lock: ContextSharedPart::shutdown holds shared->mutex while doing its work, so a
-    /// locking accessor would block exactly when this flag needs to be observed.
+    /// No lock: the flag is an atomic set once at the start of shutdown, so a relaxed load is
+    /// sufficient and a locking accessor would only contend with shutdown's own critical sections.
     return shared->shutdown_called.load(std::memory_order_relaxed);
 }
 
