@@ -495,7 +495,13 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+        /// The source database may have been dropped (`UNKNOWN_DATABASE`), or it may be the internal
+        /// database of temporary tables, which `getDatabaseIterator` refuses to enumerate
+        /// (`DATABASE_ACCESS_DENIED`). Neither should prevent resolving the table's own metadata:
+        /// the virtual columns of the source tables are a best-effort enrichment, and an actual read
+        /// still throws in `getDatabaseIterators`. In particular, loading a stored table definition
+        /// (`ATTACH`, backup `RESTORE`, replicated-database replay) validates the storage through here.
+        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::DATABASE_ACCESS_DENIED)
             throw;
     }
 
@@ -1950,10 +1956,15 @@ void registerStorageMerge(StorageFactory & factory)
         /// With an explicit column list, `CREATE` (or a full-definition `ATTACH`, which is CREATE-like user input)
         /// does not need schema inference and would not read the source tables, so the unusable table definition
         /// would be stored; deny it right away, the same way as reading does, see `DatabaseNameOrRegexp::getDatabaseIterator`.
-        /// Only loads of previously stored metadata (server startup, short-syntax `ATTACH`) are exempt.
-        bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+        /// Only fresh user-supplied definitions are denied. Loads of previously stored metadata (server startup,
+        /// short-syntax `ATTACH`) and replays of definitions that already exist elsewhere (`SECONDARY_CREATE`:
+        /// replicated-database DDL replay, backup `RESTORE`) stay loadable, so a table created before this check
+        /// existed can still be restored or materialized on a new replica. Reading from such a table is denied
+        /// anyway, so unlike `StorageDistributed` there is nothing a restoring user could reach through it.
+        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
         if (!is_regexp && source_database_name_or_regexp == DatabaseCatalog::TEMPORARY_DATABASE
-            && !loading_from_existing_metadata)
+            && fresh_user_definition)
             throw Exception(
                 ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
 
