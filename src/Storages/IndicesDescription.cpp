@@ -11,6 +11,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
 #include <Common/Exception.h>
@@ -26,6 +27,25 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
+void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+{
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    for (const auto & child : arguments->children)
+    {
+        const auto * func = child->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
+            continue;
+
+        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
+        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
+        {
+            ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
+            ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
+        }
+    }
+}
 
 ASTPtr makePersistedIndexDefinitionAST(
     const String & name,
@@ -156,7 +176,12 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
     if (index_type && index_type->arguments)
+    {
         result.arguments = index_type->arguments->clone();
+
+        if (result.type == TEXT_INDEX_NAME)
+            expandTextIndexTransformAliases(result.arguments, columns);
+    }
 
     result.definition_ast = makePersistedIndexDefinitionAST(
         result.name, persisted_expression_list, *index_type, result.granularity);
