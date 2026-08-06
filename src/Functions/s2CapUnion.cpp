@@ -33,7 +33,7 @@ namespace
  * This function returns the smallest cap that contains both of input caps.
  * It is represented by identifier of the center and a radius.
  */
-class FunctionS2CapUnion final : public IFunction
+class FunctionS2CapUnion : public IFunction
 {
 public:
     static constexpr auto name = "s2CapUnion";

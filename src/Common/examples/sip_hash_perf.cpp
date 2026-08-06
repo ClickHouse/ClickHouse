@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
 
 
 /** Test this way:

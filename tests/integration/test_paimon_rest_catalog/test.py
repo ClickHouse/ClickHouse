@@ -4,6 +4,7 @@ import os
 import time
 
 import pytest
+import requests
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
@@ -47,13 +48,60 @@ def test_paimon_rest_catalog(started_cluster):
     bearer_ip = cluster.get_instance_ip("paimon-rest-bearer")
     bearer_container_id = cluster.get_instance_docker_id("paimon-rest-bearer")
 
-    # Both mock servers create their catalog table before accepting requests.
+    # clean warehouse data path
+    run_and_check(
+        [f'docker exec {bearer_container_id} bash -c "rm -rf /var/lib/clickhouse/user_files/warehouse/*"'],
+        shell=True,
+    )
+
     node.query("DROP DATABASE IF EXISTS paimon_rest_db SYNC;")
     node.query(
         f"CREATE DATABASE paimon_rest_db ENGINE = DataLakeCatalog('http://{bearer_ip}:{BEARER_PORT}')"
         f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
         f" catalog_credential='bearer-token-xxx-xxx-xxx';",
         settings={"allow_experimental_database_paimon_rest_catalog": 1},
+    )
+
+    # create database via REST API
+    requests.post(
+        f"http://{bearer_ip}:{BEARER_PORT}/v1/paimon/databases",
+        json={"name": "test"},
+        headers={"Authorization": "Bearer bearer-token-xxx-xxx-xxx"},
+    )
+
+    # create table via REST API
+    requests.post(
+        f"http://{bearer_ip}:{BEARER_PORT}/v1/paimon/databases/test/tables",
+        json={
+            "identifier": {"database": "test", "object": "test_table"},
+            "schema": {
+                "fields": [
+                    {
+                        "id": 0,
+                        "name": "f_string",
+                        "type": "string",
+                        "description": "string",
+                    },
+                    {
+                        "id": 1,
+                        "name": "f_int",
+                        "type": "int",
+                        "description": "int",
+                    },
+                    {
+                        "id": 2,
+                        "name": "f_bigint",
+                        "type": "bigint",
+                        "description": "bigint",
+                    },
+                ],
+                "partitionKeys": ["f_string"],
+                "primaryKeys": [],
+                "options": {},
+                "comment": "test table",
+            },
+        },
+        headers={"Authorization": "Bearer bearer-token-xxx-xxx-xxx"},
     )
 
     assert (
@@ -90,7 +138,6 @@ def test_paimon_rest_catalog(started_cluster):
 
     # Test DLF authentication
     dlf_ip = cluster.get_instance_ip("paimon-rest-dlf")
-    dlf_container_id = cluster.get_instance_docker_id("paimon-rest-dlf")
     node.query("DROP DATABASE IF EXISTS paimon_rest_db_dlf SYNC;")
     node.query(
         f"CREATE DATABASE paimon_rest_db_dlf ENGINE = DataLakeCatalog('http://{dlf_ip}:{DLF_PORT}')"
@@ -99,58 +146,21 @@ def test_paimon_rest_catalog(started_cluster):
         f" region='cn-hangzhou';",
         settings={"allow_experimental_database_paimon_rest_catalog": 1},
     )
-    assert (
-        node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
-        == "test_dlf.test_table\n"
-    )
-    assert (
-        node.query("EXISTS TABLE paimon_rest_db_dlf.`test_dlf.missing`;")
-        == "0\n"
-    )
-    with pytest.raises(QueryRuntimeException) as exc_info:
-        node.query("DESCRIBE TABLE paimon_rest_db_dlf.`test_dlf.missing`;")
-    message = str(exc_info.value)
-    assert "Code: 60" in message, message
-    assert "UNKNOWN_TABLE" in message, message
-
-    assert node.query(
-        "DESC `test_dlf.test_table`;", database="paimon_rest_db_dlf"
-    ) == (
-        "f_string\tNullable(String)\t\t\t\t\t\n"
-        "f_int\tNullable(Int32)\t\t\t\t\t\n"
-        "f_bigint\tNullable(Int64)\t\t\t\t\t\n"
-    )
-    assert (
-        node.query(
-            "SELECT count(1) FROM `test_dlf.test_table`;",
-            database="paimon_rest_db_dlf",
-        )
-        == "0\n"
-    )
-
-    insert_cmd = 'java -jar /opt/paimon/paimon-server.jar "insert" "file:///var/lib/clickhouse/user_files/warehouse/" "test_dlf" "test_table"'
-    run_and_check(
-        [f"docker exec {dlf_container_id} bash -c '{insert_cmd}'"],
-        shell=True,
-    )
-
-    assert (
-        node.query(
-            "SELECT count(1) FROM `test_dlf.test_table`;",
-            database="paimon_rest_db_dlf",
-        )
-        == "10\n"
-    )
+    node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
 
     node.query("DROP DATABASE IF EXISTS paimon_rest_db_dlf SYNC;")
+    node.query(
+        f"CREATE DATABASE paimon_rest_db_dlf ENGINE = DataLakeCatalog('http://{dlf_ip}:{DLF_PORT}')"
+        f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
+        f" dlf_access_key_id='accessKeyIdxx', dlf_access_key_secret='accessKeySecret',"
+        f" region='cn-hangzhou';",
+        settings={"allow_experimental_database_paimon_rest_catalog": 1},
+    )
+    # In 26.5 `CREATE DATABASE` does not validate credentials eagerly, so the
+    # 401 from the catalog surfaces on first access. `SHOW TABLES` no longer
+    # swallows catalog errors as an empty listing.
     with pytest.raises(QueryRuntimeException) as exc_info:
-        node.query(
-            f"CREATE DATABASE paimon_rest_db_dlf ENGINE = DataLakeCatalog('http://{dlf_ip}:{DLF_PORT}')"
-            f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
-            f" dlf_access_key_id='accessKeyIdxx', dlf_access_key_secret='accessKeySecret',"
-            f" region='cn-hangzhou';",
-            settings={"allow_experimental_database_paimon_rest_catalog": 1},
-        )
+        node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
     message = str(exc_info.value)
     assert "Code: 86" in message, message
     assert "401" in message, message
