@@ -566,6 +566,30 @@ def do_clickhouse_only_query_test(
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
+def do_clickhouse_only_range_query_test(
+    query,
+    start_time,
+    end_time,
+    step,
+    result,
+    chresult,
+    eps=0,
+):
+    actual_chresult = execute_range_query_in_clickhouse_sql(
+        query, start_time, end_time, step
+    )
+    assert tsv_close_to(
+        actual_chresult, chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
+
+    actual_result_from_http_api = execute_range_query_in_clickhouse_http_api(
+        query, start_time, end_time, step
+    )
+    assert http_api_response_close_to(
+        actual_result_from_http_api, result, eps=eps
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
 def test_up():
     do_query_test(
         "up",
@@ -1223,7 +1247,9 @@ def test_unary_operators():
         [["[('job','unary')]", "1970-01-01 00:20:00.000", -4]],
     )
 
-    do_range_query_test(
+    # Prometheus v3.5.0 rejects duplicate labelsets across a range result even when
+    # the samples occur at different timestamps, so this checks ClickHouse directly.
+    do_clickhouse_only_range_query_test(
         '-{job="unary"}',
         0,
         1200,

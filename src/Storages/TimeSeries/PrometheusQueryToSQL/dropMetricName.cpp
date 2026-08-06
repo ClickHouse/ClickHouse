@@ -16,6 +16,11 @@ namespace DB::ErrorCodes
 namespace DB::PrometheusQueryToSQL
 {
 
+namespace
+{
+constexpr auto MergedValues = "merged_values";
+}
+
 SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & context)
 {
     if (query_piece.metric_name_dropped)
@@ -54,7 +59,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
 
             /// Step 1:
             /// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group,
-            ///        anyForEach(values) AS values
+            ///        anyForEach(values) AS merged_values
             /// FROM <vector_grid>
             /// GROUP BY new_group
             /// HAVING timeSeriesThrowDuplicateSeriesIf(
@@ -68,7 +73,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
                 builder.select_list.push_back(makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-                builder.select_list.back()->setAlias(ColumnNames::Values);
+                builder.select_list.back()->setAlias(MergedValues);
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
@@ -92,7 +97,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             }
 
             /// Step 2:
-            /// SELECT new_group AS group, values
+            /// SELECT new_group AS group, merged_values AS values
             /// FROM step1
             ASTPtr column_renaming_query;
             {
@@ -101,7 +106,8 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
                 builder.select_list.back()->setAlias(ColumnNames::Group);
 
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(MergedValues));
+                builder.select_list.back()->setAlias(ColumnNames::Values);
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(metric_name_removing_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
