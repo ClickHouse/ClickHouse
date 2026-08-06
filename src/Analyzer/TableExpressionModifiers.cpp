@@ -3,6 +3,9 @@
 #include <Common/SipHash.h>
 
 #include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/StreamingVirtualColumns.h>
+
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -110,6 +113,25 @@ String TableExpressionModifiers::formatForErrorMessage() const
     }
 
     return buffer.str();
+}
+
+StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers)
+{
+    if (!modifiers.hasStream())
+        return metadata;
+
+    const auto & stream_settings = modifiers.getStreamSettings();
+    if (!stream_settings->watermark)
+        return metadata;
+
+    auto column = metadata->getColumns().tryGetColumn(GetColumnsOptions::AllPhysical, stream_settings->watermark->column);
+    if (!column)
+        return metadata;
+
+    auto extended = std::make_shared<StorageInMemoryMetadata>(*metadata);
+    extended->virtuals.addEphemeral(std::string(TimeAttributeColumn::name), column->type, "Event-time value of the current row.", VirtualsMaterializationPlace::Streaming);
+    extended->virtuals.addEphemeral(std::string(WatermarkColumn::name), column->type, "Running watermark in effect for the current row.", VirtualsMaterializationPlace::Streaming);
+    return extended;
 }
 
 }
