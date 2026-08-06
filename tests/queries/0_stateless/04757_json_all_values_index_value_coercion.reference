@@ -6,6 +6,14 @@ ipv4 array index  	4
 ipv4 array noindex	4
 ipv4 has index  	4
 ipv4 has noindex	4
+ipv4 tuple index  	4
+ipv4 tuple noindex	4
+ipv4 map index  	4
+ipv4 map noindex	4
+ipv4 tuple array index  	4
+ipv4 tuple array noindex	4
+ipv4 map array index  	4
+ipv4 map array noindex	4
 absent int default index  	8
 absent int default noindex	8
 missing typed default index  	4

@@ -8,7 +8,9 @@
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
@@ -43,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace Setting
@@ -905,7 +908,7 @@ static std::optional<JSONAllValuesMatchKind> tryMatchNodeToJSONAllValuesIndex(
 }
 
 /// `convertFieldToType` needs the source type to preserve domain-specific representations such as
-/// `Date` to `DateTime`. Propagate that information recursively for array constants.
+/// `Date` to `DateTime`. Propagate that information recursively through composite constants.
 static Field tryConvertFieldToTypeForJSONAllValues(
     const Field & value,
     const DataTypePtr & source_type,
@@ -927,6 +930,62 @@ static Field tryConvertFieldToTypeForJSONAllValues(
                 return {};
 
             converted_values.emplace_back(std::move(converted_value));
+        }
+
+        return converted_values;
+    }
+
+    const auto * source_tuple = typeid_cast<const DataTypeTuple *>(source_type.get());
+    const auto * target_tuple = typeid_cast<const DataTypeTuple *>(target_type.get());
+    if (source_tuple && target_tuple && value.getType() == Field::Types::Tuple)
+    {
+        const auto & source_types = source_tuple->getElements();
+        const auto & target_types = target_tuple->getElements();
+        const auto & source_values = value.safeGet<Tuple>();
+        if (source_types.size() != target_types.size() || source_values.size() != target_types.size())
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", source_type->getName(), target_type->getName());
+
+        Tuple converted_values;
+        converted_values.reserve(source_values.size());
+
+        for (size_t i = 0; i < source_values.size(); ++i)
+        {
+            auto converted_value = tryConvertFieldToTypeForJSONAllValues(source_values[i], source_types[i], target_types[i]);
+            if (converted_value.isNull() && !canContainNull(*target_types[i]))
+                return {};
+
+            converted_values.emplace_back(std::move(converted_value));
+        }
+
+        return converted_values;
+    }
+
+    const auto * source_map = typeid_cast<const DataTypeMap *>(source_type.get());
+    const auto * target_map = typeid_cast<const DataTypeMap *>(target_type.get());
+    if (source_map && target_map && value.getType() == Field::Types::Map)
+    {
+        const auto & source_values = value.safeGet<Map>();
+        Map converted_values;
+        converted_values.reserve(source_values.size());
+
+        for (const auto & source_entry_field : source_values)
+        {
+            const auto & source_entry = source_entry_field.safeGet<Tuple>();
+            if (source_entry.size() != 2)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", source_type->getName(), target_type->getName());
+
+            Tuple converted_entry(2);
+            converted_entry[0] = tryConvertFieldToTypeForJSONAllValues(
+                source_entry[0], source_map->getKeyType(), target_map->getKeyType());
+            if (converted_entry[0].isNull() && !canContainNull(*target_map->getKeyType()))
+                return {};
+
+            converted_entry[1] = tryConvertFieldToTypeForJSONAllValues(
+                source_entry[1], source_map->getValueType(), target_map->getValueType());
+            if (converted_entry[1].isNull() && !canContainNull(*target_map->getValueType()))
+                return {};
+
+            converted_values.emplace_back(std::move(converted_entry));
         }
 
         return converted_values;

@@ -9,7 +9,16 @@ DROP TABLE IF EXISTS t_json_all_values_coercion;
 
 CREATE TABLE t_json_all_values_coercion
 (
-    data JSON(ip IPv4, ips Array(IPv4), missing Int64, ts DateTime, x UInt16),
+    data JSON(
+        ip IPv4,
+        ips Array(IPv4),
+        map_ip Map(String, IPv4),
+        map_ips Array(Map(String, IPv4)),
+        missing Int64,
+        ts DateTime,
+        tuple_ip Tuple(ip IPv4),
+        tuple_ips Array(Tuple(ip IPv4)),
+        x UInt16),
     INDEX idx_values JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
 )
 ENGINE = MergeTree
@@ -18,10 +27,10 @@ SETTINGS index_granularity = 4;
 
 -- Two parts of one granule each, so a wrongly built probe drops the granule holding the match.
 INSERT INTO t_json_all_values_coercion
-SELECT '{"ip":"1.2.3.4","ips":["1.2.3.4"],"ts":"2026-01-01 00:00:00","x":256,"dynamic_x":256}'
+SELECT '{"ip":"1.2.3.4","ips":["1.2.3.4"],"map_ip":{"a":"1.2.3.4"},"map_ips":[{"a":"1.2.3.4"}],"ts":"2026-01-01 00:00:00","tuple_ip":{"ip":"1.2.3.4"},"tuple_ips":[{"ip":"1.2.3.4"}],"x":256,"dynamic_x":256}'
 FROM numbers(4);
 INSERT INTO t_json_all_values_coercion
-SELECT '{"ip":"8.8.8.8","ips":["8.8.8.8"],"missing":1,"ts":"2020-05-05 10:00:00","x":1,"dynamic_x":1}'
+SELECT '{"ip":"8.8.8.8","ips":["8.8.8.8"],"map_ip":{"a":"8.8.8.8"},"map_ips":[{"a":"8.8.8.8"}],"missing":1,"ts":"2020-05-05 10:00:00","tuple_ip":{"ip":"8.8.8.8"},"tuple_ips":[{"ip":"8.8.8.8"}],"x":1,"dynamic_x":1}'
 FROM numbers(4);
 
 -- The index holds "1.2.3.4"; probing the literal as written would look for "16909060".
@@ -38,6 +47,19 @@ SELECT 'ipv4 array noindex', count() FROM t_json_all_values_coercion WHERE data.
 
 SELECT 'ipv4 has index  ', count() FROM t_json_all_values_coercion WHERE has(data.ips, toUInt32(16909060));
 SELECT 'ipv4 has noindex', count() FROM t_json_all_values_coercion WHERE has(data.ips, toUInt32(16909060)) SETTINGS use_skip_indexes = 0;
+
+-- Source-type propagation also applies recursively through tuples, maps, and arrays containing them.
+SELECT 'ipv4 tuple index  ', count() FROM t_json_all_values_coercion WHERE data.tuple_ip = tuple(toUInt32(16909060));
+SELECT 'ipv4 tuple noindex', count() FROM t_json_all_values_coercion WHERE data.tuple_ip = tuple(toUInt32(16909060)) SETTINGS use_skip_indexes = 0;
+
+SELECT 'ipv4 map index  ', count() FROM t_json_all_values_coercion WHERE data.map_ip = map('a', toUInt32(16909060));
+SELECT 'ipv4 map noindex', count() FROM t_json_all_values_coercion WHERE data.map_ip = map('a', toUInt32(16909060)) SETTINGS use_skip_indexes = 0;
+
+SELECT 'ipv4 tuple array index  ', count() FROM t_json_all_values_coercion WHERE data.tuple_ips = [tuple(toUInt32(16909060))];
+SELECT 'ipv4 tuple array noindex', count() FROM t_json_all_values_coercion WHERE data.tuple_ips = [tuple(toUInt32(16909060))] SETTINGS use_skip_indexes = 0;
+
+SELECT 'ipv4 map array index  ', count() FROM t_json_all_values_coercion WHERE data.map_ips = [map('a', toUInt32(16909060))];
+SELECT 'ipv4 map array noindex', count() FROM t_json_all_values_coercion WHERE data.map_ips = [map('a', toUInt32(16909060))] SETTINGS use_skip_indexes = 0;
 
 -- A cast of an absent dynamic path can produce a default value that `JSONAllValues` did not record,
 -- so non-identity casts of dynamic paths do not use the index.
