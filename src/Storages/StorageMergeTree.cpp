@@ -3898,6 +3898,30 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
     }
 
+    /// Under `leader_election`, the old destination partition cannot be retired via
+    /// `removePartsInRangeFromWorkingSet` below: it records the removal only in local memory and
+    /// through `VersionMetadataOnDisk`, which defers or skips non-transactional writes, so nothing
+    /// on shared storage says the old parts are gone. Until the lazy cleanup deletes their
+    /// directories, a failover or restart would make the next leader load both the old partition
+    /// and the cloned parts. Retire the old parts by covering them with empty parts instead —
+    /// staged here and published below in the SAME fenced transaction as the cloned parts, so the
+    /// retirement cannot be separated from the publish by a stale lease. The snapshot taken here
+    /// is exactly the set `removePartsInRangeFromWorkingSet` would remove: merges and mutations in
+    /// the partition are blocked by `merges_blocker`, and any concurrent insert gets a block
+    /// number above `drop_range.max_block` (its `block_holder` was allocated above), so it
+    /// survives the REPLACE in both designs.
+    DataPartsVector parts_to_cover;
+    MutableDataPartsVector new_empty_covering_parts;
+    std::vector<scope_guard> empty_parts_locks;
+    if (replace && leader_election_ptr)
+    {
+        parts_to_cover = getVisibleDataPartsVectorInPartition(local_context, partition_id);
+        std::erase_if(parts_to_cover, [&](const auto & part) { return part->info.max_block > drop_range.max_block; });
+        auto future_parts = initCoverageWithNewEmptyParts(parts_to_cover);
+        std::tie(new_empty_covering_parts, empty_parts_locks)
+            = createEmptyDataParts(*this, future_parts, local_context->getCurrentTransaction());
+    }
+
     /// Atomically add new parts and remove old ones
     try
     {
@@ -3923,6 +3947,17 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             {
                 block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
                 renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ true);
+            }
+
+            /// Stage the covering empty parts that retire the old destination partition (see the
+            /// comment where they are created) into the same transaction, so the retirement is
+            /// published under the same fence — and undone together with the cloned parts if the
+            /// lease goes stale in the middle of the batch.
+            DataPartsVector covered_parts;
+            for (auto & part : new_empty_covering_parts)
+            {
+                auto covered_by_one_part = renameTempPartAndReplaceUnlocked(part, data_parts_lock, transaction, /*rename_in_transaction=*/ true);
+                std::move(covered_by_one_part.begin(), covered_by_one_part.end(), std::back_inserter(covered_parts));
             }
 
             /// Under `leader_election`, re-fence at the epoch captured at admission BEFORE
@@ -3955,6 +3990,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                     /// stale leftovers.
                     for (auto & part : dst_parts)
                         part->is_temp = true;
+                    for (auto & part : new_empty_covering_parts)
+                        part->is_temp = true;
                 }
                 throw;
             }
@@ -3964,7 +4001,21 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
             if (replace)
-                removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, data_parts_lock);
+            {
+                if (leader_election_ptr)
+                {
+                    /// The old parts were retired by the covering empty parts committed above.
+                    /// Remove them without waiting for `old_parts_lifetime`, like the other
+                    /// coverage-based retirements (see `renameAndCommitEmptyParts`).
+                    for (const auto & part : covered_parts)
+                        part->remove_time.store(0, std::memory_order_relaxed);
+                    if (deduplication_log)
+                        for (const auto & part : covered_parts)
+                            deduplication_log->dropPart(part->info);
+                }
+                else
+                    removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, data_parts_lock);
+            }
         }
 
         /// Note: same elapsed time and profile events for all parts is used

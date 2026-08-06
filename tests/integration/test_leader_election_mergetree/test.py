@@ -2312,3 +2312,99 @@ def test_insert_publish_undone_when_lease_goes_stale_before_commit(started_clust
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_REPLACE_RETIRE = "12345678-abcd-abcd-abcd-12345678ab25"
+
+
+def test_replace_partition_old_parts_retired_durably(started_cluster):
+    """
+    Regression for the unfenced second phase of `REPLACE PARTITION FROM`
+    (`StorageMergeTree::replacePartitionFrom`): the cloned parts were published through the fenced
+    transaction, but the old destination partition was then retired via
+    `removePartsInRangeFromWorkingSet`, which records the removal only in local memory — the
+    non-transactional removal metadata write is deferred or skipped on these disks, so nothing on
+    shared storage said the old parts were gone. Reloading the part set (restart, failover) before
+    the lazy cleanup deleted the directories resurrected the replaced partition alongside the
+    replacement, and a lease flip right after `transaction.commit` left the command reported as
+    successful with the old partition still fully in place.
+
+    The retirement is now published as covering empty parts in the SAME fenced transaction as the
+    cloned parts, so it is (a) durable on shared storage and (b) undone together with the cloned
+    parts when the lease goes stale in the middle of the batch.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_mid_batch_rename"
+    table = "test_replace_retire"
+    plain = "test_replace_retire_src"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_REPLACE_RETIRE}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1), (3)")
+
+        # Unlike ATTACH, REPLACE clones on the same disk, so the source must be on the same
+        # storage policy (a regular table there, without `leader_election`).
+        node1.query(
+            f"CREATE TABLE {plain} (x UInt64) ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x"
+            " SETTINGS storage_policy = 's3'"
+        )
+        node1.query(f"INSERT INTO {plain} VALUES (11)")
+        node1.query(f"INSERT INTO {plain} VALUES (13)")
+
+        # A lease lost in the middle of the publish batch must undo BOTH halves of the command:
+        # the cloned parts and the covering empty parts that retire the old partition.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="middle of publishing a batch"):
+                node1.query(f"ALTER TABLE {table} REPLACE PARTITION 1 FROM {plain}")
+            assert node1.query(
+                f"SELECT x FROM {table} WHERE x > 0 ORDER BY x"
+            ).split() == ["1", "3"], (
+                "REPLACE PARTITION was rejected but the destination partition changed"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # Reload the part set from shared storage: nothing of the rejected command may survive.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+        assert node1.query(
+            f"SELECT x FROM {table} WHERE x > 0 ORDER BY x"
+        ).split() == ["1", "3"], (
+            "A part of the rejected REPLACE PARTITION was left on shared storage"
+        )
+
+        # With the failpoint cleared the same command succeeds and replaces the partition.
+        node1.query(f"ALTER TABLE {table} REPLACE PARTITION 1 FROM {plain}")
+        assert node1.query(
+            f"SELECT x FROM {table} WHERE x > 0 ORDER BY x"
+        ).split() == ["11", "13"]
+
+        # The decisive check: reload the part set from shared storage. Before the fix the removal
+        # of the old parts existed only in this server's memory, so the replaced partition
+        # resurrected here and the query returned 1, 3, 11, 13.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+        assert node1.query(
+            f"SELECT x FROM {table} WHERE x > 0 ORDER BY x"
+        ).split() == ["11", "13"], (
+            "The replaced partition resurrected after reloading from shared storage"
+        )
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        for name in (table, plain):
+            try:
+                node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+            except Exception:
+                pass
