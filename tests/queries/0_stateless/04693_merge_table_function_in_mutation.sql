@@ -64,6 +64,59 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_merge_mutation
     DELETE WHERE id IN (SELECT id FROM merge('^t_merge_mutation_src$')) SETTINGS mutations_sync = 2;
 SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_merge_mutation ORDER BY id;
 
+-- An `UPDATE` and a lightweight `DELETE` use the database of the updated table as well, both in the
+-- expression of the predicate and in the expressions of the assignments. The source table exists in
+-- both databases with a different row, so an expression resolved in the database of the session
+-- silently updates a different row instead of failing.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu VALUES (1, 0), (2, 0), (3, 0);
+
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu_src VALUES (2);
+CREATE TABLE t_lwu_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_lwu_src VALUES (3);
+
+-- The explicitly qualified forms give the same answer with and without the substitution.
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu SET v = 1 WHERE id IN (SELECT id FROM merge({CLICKHOUSE_DATABASE_1:String}, '^t_lwu_src$'));
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 1;
+
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu SET v = 2 WHERE id IN (SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu_src);
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 2;
+
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu SET v = 3 WHERE id IN (SELECT id FROM merge('^t_lwu_src$'));
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 3;
+
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu SET v = 4 WHERE id IN (SELECT id FROM t_lwu_src);
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 4;
+
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu SET v = 5 WHERE id IN (SELECT id FROM merge(currentDatabase(), '^t_lwu_src$'));
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 5;
+
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu SET v = (SELECT max(id) FROM merge('^t_lwu_src$')) WHERE id = 1;
+SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 1;
+
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu SET v = (SELECT max(id) FROM t_lwu_src) WHERE id = 3;
+SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 3;
+
+-- A lightweight `DELETE` is rewritten to an `UPDATE`, so it uses the same substitution.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd (id UInt64) ENGINE = MergeTree ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd VALUES (1), (2), (3);
+
+DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd WHERE id IN (SELECT id FROM merge('^t_lwu_src$'))
+    SETTINGS lightweight_delete_mode = 'lightweight_update';
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd ORDER BY id;
+
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd_plain (id UInt64) ENGINE = MergeTree ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd_plain VALUES (1), (2), (3);
+
+DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd_plain WHERE id IN (SELECT id FROM t_lwu_src)
+    SETTINGS lightweight_delete_mode = 'lightweight_update';
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd_plain ORDER BY id;
+
+DROP TABLE t_lwu_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP TABLE t_merge_mutation;
 DROP TABLE t_merge_mutation_src;

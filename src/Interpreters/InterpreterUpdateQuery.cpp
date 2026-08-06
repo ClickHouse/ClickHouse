@@ -3,6 +3,7 @@
 
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -90,8 +91,15 @@ BlockIO InterpreterUpdateQuery::execute()
     /// is the hidden virtual marker; on an engine where it is an ordinary physical column it is a normal
     /// update. Resolve the table best-effort (null for a non-local ON CLUSTER target) and fail closed.
     StoragePtr table_for_access;
-    if (auto table_id_for_access = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
-        table_for_access = DatabaseCatalog::instance().tryGetTable(table_id_for_access, getContext());
+    auto resolved_table_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
+    if (resolved_table_id)
+    {
+        /// The database has to be pinned before the access rights and the distributed dispatch are built
+        /// from it: otherwise they are expanded to the configured default database of each host, so the
+        /// rights that are checked and the table that is updated can name different databases.
+        update_query.setDatabase(resolved_table_id.database_name);
+        table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
+    }
     const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
 
     bool deletes_via_row_exists = false;
@@ -112,6 +120,18 @@ BlockIO InterpreterUpdateQuery::execute()
 
     if (!update_query.cluster.empty())
     {
+        /// Substitute the database into table functions that use the current database implicitly, e.g.
+        /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with the
+        /// database of the session. The table identifiers are qualified on each host instead.
+        if (resolved_table_id)
+        {
+            AddDefaultDatabaseVisitor visitor(getContext(), resolved_table_id.getDatabaseName());
+            if (update_query.predicate)
+                visitor.substituteDatabaseInTableFunctions(*update_query.predicate);
+            if (update_query.assignments)
+                visitor.substituteDatabaseInTableFunctions(*update_query.assignments);
+        }
+
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -138,6 +158,19 @@ BlockIO InterpreterUpdateQuery::execute()
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+    }
+
+    /// Add default database to table identifiers that we can encounter in the update expression.
+    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+    if (update_query.predicate)
+    {
+        ASTPtr predicate = update_query.predicate->ptr();
+        visitor.visit(predicate);
+    }
+    if (update_query.assignments)
+    {
+        ASTPtr assignments = update_query.assignments->ptr();
+        visitor.visit(assignments);
     }
 
     MutationCommands commands;
