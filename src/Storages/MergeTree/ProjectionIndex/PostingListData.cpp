@@ -676,17 +676,35 @@ private:
             encodeDelta1(large_block_ranges.data(), n * 2, UInt32{0}, tmp);
 
             /// UInt64 offsets — abpfor delta-1 encoded.
-            encodeDelta1(large_block_pst_offsets.data(), n, UInt64{0}, tmp);
+            ///
+            /// `start` MUST be the `(T)-1` sentinel, not 0. These offset arrays begin at 0
+            /// (the first large block starts at offset 0 of its stream), and abpfor's delta-1
+            /// coding computes `delta[0] = values[0] - start - 1`. With `start == 0` that is
+            /// `0 - 0 - 1 == UINT64_MAX`, a 64-bit-wide delta. `abpfor::encodeBlock` cannot
+            /// represent width 64 in its 6-bit header field, so it emits a `kRaw` block
+            /// (header 0xFF) — but `decodeBlockDelta1` has no `kRaw` branch and misparses
+            /// 0xFF as a "constant" block of width 63, decoding offset 0 back as
+            /// `(UINT64_MAX & mask(63)) + 1 == 0x8000000000000000`. That bogus offset then
+            /// reaches `pread`, which rejects it with EINVAL.
+            ///
+            /// `(T)-1` makes `delta[0] = values[0] - (T)-1 - 1 == values[0]`, keeping every
+            /// delta in range. This matches the sentinel already used for the cumulative-bytes
+            /// arrays below and in `flushLargeBlock`. The reader must pass the identical
+            /// sentinel — see `decode_delta1_64` in `PostingListStream::read`.
+            ///
+            /// The UInt32 `large_block_ranges` above is unaffected: a 32-bit `-1` delta stays
+            /// within abpfor's representable width and round-trips via unsigned wraparound.
+            encodeDelta1(large_block_pst_offsets.data(), n, static_cast<UInt64>(-1), tmp);
 
             if (write_block_index)
             {
                 chassert(large_block_pidx_offsets.size() == n);
-                encodeDelta1(large_block_pidx_offsets.data(), n, UInt64{0}, tmp);
+                encodeDelta1(large_block_pidx_offsets.data(), n, static_cast<UInt64>(-1), tmp);
 
                 if (pos_out)
                 {
                     chassert(large_block_pos_offsets.size() == n);
-                    encodeDelta1(large_block_pos_offsets.data(), n, UInt64{0}, tmp);
+                    encodeDelta1(large_block_pos_offsets.data(), n, static_cast<UInt64>(-1), tmp);
                 }
             }
 
@@ -1299,13 +1317,13 @@ void PostingListStream::read(
         UInt32 remaining = count;
         while (remaining >= ABPFOR_BLOCK_SIZE)
         {
-            src = abpfor::b256::decodeBlockDelta1(src, out + pos, prev) + src;
+            src += abpfor::b256::decodeBlockDelta1(src, out + pos, prev);
             prev = out[pos + ABPFOR_BLOCK_SIZE - 1];
             pos += ABPFOR_BLOCK_SIZE;
             remaining -= ABPFOR_BLOCK_SIZE;
         }
         if (remaining > 0)
-            src = abpfor::b256::decodeTailDelta1(src, remaining, out + pos, prev) + src;
+            src += abpfor::b256::decodeTailDelta1(src, remaining, out + pos, prev);
     };
 
     auto decode_delta1_64 = [](const uint8_t *& src, UInt32 count, UInt64 * out, uint64_t prev)
@@ -1314,28 +1332,33 @@ void PostingListStream::read(
         UInt32 remaining = count;
         while (remaining >= ABPFOR_BLOCK_SIZE)
         {
-            src = abpfor::b256::decodeBlockDelta1(src, out + pos, prev) + src;
+            src += abpfor::b256::decodeBlockDelta1(src, out + pos, prev);
             prev = out[pos + ABPFOR_BLOCK_SIZE - 1];
             pos += ABPFOR_BLOCK_SIZE;
             remaining -= ABPFOR_BLOCK_SIZE;
         }
         if (remaining > 0)
-            src = abpfor::b256::decodeTailDelta1(src, remaining, out + pos, prev) + src;
+            src += abpfor::b256::decodeTailDelta1(src, remaining, out + pos, prev);
     };
 
     std::vector<UInt32> lb_ranges(num_large_blocks * 2);
     decode_delta1(ptr, num_large_blocks * 2, lb_ranges.data(), 0);
 
+    /// The UInt64 offset arrays are delta-1 encoded against the `(T)-1` sentinel, NOT 0 —
+    /// these arrays start at offset 0, and a `start` of 0 would make the first delta
+    /// `0 - 0 - 1 == UINT64_MAX`, which abpfor cannot round-trip (it encodes as a `kRaw`
+    /// block that `decodeBlockDelta1` misparses, yielding 0x8000000000000000). Must stay in
+    /// sync with `LargePostingBlockWriter::writeLargeBlockMeta`, which documents this in full.
     std::vector<UInt64> pst_offsets(num_large_blocks);
-    decode_delta1_64(ptr, num_large_blocks, pst_offsets.data(), 0);
+    decode_delta1_64(ptr, num_large_blocks, pst_offsets.data(), static_cast<UInt64>(-1));
 
     std::vector<UInt64> pidx_offsets(num_large_blocks, 0);
     if (index_params.has_block_index)
-        decode_delta1_64(ptr, num_large_blocks, pidx_offsets.data(), 0);
+        decode_delta1_64(ptr, num_large_blocks, pidx_offsets.data(), static_cast<UInt64>(-1));
 
     std::vector<UInt64> pos_offsets(num_large_blocks, 0);
     if (index_params.has_block_index && index_params.enable_phrase_query_support)
-        decode_delta1_64(ptr, num_large_blocks, pos_offsets.data(), 0);
+        decode_delta1_64(ptr, num_large_blocks, pos_offsets.data(), static_cast<UInt64>(-1));
 
     if (ptr != entry_end) [[unlikely]]
         throw Exception(

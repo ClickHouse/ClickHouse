@@ -1,8 +1,12 @@
 #include <gtest/gtest.h>
 #include <config.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
+#include <base/types.h>
+
+#include <abpfor.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <random>
 #include <span>
 #include <vector>
@@ -858,4 +862,60 @@ TEST(PostingListCodecTest, PortableEncodeDecodedBySSEAndSSEEncodeDecodedByPortab
 #else
     GTEST_SKIP() << "SSE not available on this platform.";
 #endif
+}
+
+/// Regression: the projection text index encodes its UInt64 large-block offset arrays
+/// (`.pst`/`.pidx`/`.pos`) with abpfor delta-1 coding. Those arrays start at offset 0, and
+/// delta-1 computes `delta[0] = values[0] - start - 1`, so `start == 0` makes the first delta
+/// `UINT64_MAX`. abpfor is documented as performance-first and validates nothing, and for a
+/// 64-bit-wide delta the tail codec does not round-trip: offset 0 decodes back as
+/// 0x8000000000000000. That value became `index_offset`, reached `pread`, and failed with
+/// EINVAL (`Cannot read from file ... posting.pidx`).
+///
+/// The corruption only shows up for `n == 1`; `n >= 2` happens to round-trip even with
+/// `start == 0`, which is why it survived initial probing. A single-large-block token is the
+/// common case, so this fired on the very first query. Both writer and reader must use the
+/// `(T)-1` sentinel, which makes `delta[0] == values[0]`.
+TEST(PostingListCodecTest, AbpforDelta1SentinelRoundTripsZeroFirstElement)
+{
+    auto round_trip_u64 = [](const std::vector<UInt64> & values, UInt64 start)
+    {
+        std::vector<uint8_t> buf(abpfor::b256::maxCompressedSize<UInt64>(values.size()) + 64, 0);
+        const auto n = static_cast<unsigned>(values.size());
+        const size_t written = abpfor::b256::encodeTailDelta1(values.data(), n, buf.data(), start);
+        std::vector<UInt64> decoded(values.size(), 0);
+        const size_t consumed = abpfor::b256::decodeTailDelta1(buf.data(), n, decoded.data(), start);
+        EXPECT_EQ(written, consumed) << "encode/decode byte counts must agree";
+        return decoded;
+    };
+
+    /// The exact shape that broke: a single-large-block token whose offset array is {0}.
+    /// With start = 0 this decodes to 0x8000000000000000 rather than 0.
+    EXPECT_EQ(round_trip_u64({0}, 0)[0], 0x8000000000000000ULL)
+        << "guard: if abpfor gains a kRaw delta-1 branch this corruption disappears and the "
+           "sentinel requirement below can be relaxed";
+
+    /// Only n == 1 is corrupted by start = 0. Pin that too, so a future reader who probes
+    /// with a multi-element array does not wrongly conclude start = 0 is safe.
+    EXPECT_EQ(round_trip_u64({0, 100}, 0), (std::vector<UInt64>{0, 100}))
+        << "n >= 2 round-trips even with start = 0 — this is why n == 1 is the trap";
+
+    /// With the (T)-1 sentinel the same arrays round-trip exactly.
+    for (const std::vector<UInt64> & values :
+         {std::vector<UInt64>{0}, std::vector<UInt64>{0, 100}, std::vector<UInt64>{0, 64, 4096, 1 << 20}})
+    {
+        EXPECT_EQ(round_trip_u64(values, static_cast<UInt64>(-1)), values)
+            << "UInt64 delta-1 must round-trip with the (T)-1 sentinel";
+    }
+
+    /// UInt32 range arrays keep `start == 0`: a 32-bit -1 delta stays representable and
+    /// round-trips via unsigned wraparound. Pin that so the two paths don't get "unified".
+    const std::vector<UInt32> ranges{0, 9, 10, 10};
+    std::vector<uint8_t> buf(abpfor::b256::maxCompressedSize<UInt32>(ranges.size()) + 64, 0);
+    const auto n32 = static_cast<unsigned>(ranges.size());
+    const size_t written = abpfor::b256::encodeTailDelta1(ranges.data(), n32, buf.data(), 0);
+    std::vector<UInt32> decoded(ranges.size(), 0);
+    const size_t consumed = abpfor::b256::decodeTailDelta1(buf.data(), n32, decoded.data(), 0);
+    EXPECT_EQ(written, consumed);
+    EXPECT_EQ(decoded, ranges) << "UInt32 interleaved ranges must round-trip with start = 0";
 }
