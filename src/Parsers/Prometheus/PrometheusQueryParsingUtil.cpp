@@ -27,11 +27,6 @@ namespace
             *error_pos = value;
     }
 
-    bool isUnicodeSurrogate(UInt32 code_point)
-    {
-        return code_point >= 0xD800 && code_point <= 0xDFFF;
-    }
-
     /// Parses escape sequences in a string literal and replaces them with the characters which they mean.
     bool tryUnescapeStringLiteral(std::string_view input, String & res_string, String * error_message, size_t * error_pos)
     {
@@ -155,7 +150,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    if (isUnicodeSurrogate(code_point))
+                    if (UTF8::isSurrogateCodePoint(code_point))
                     {
                         setErrorMessage(error_message,
                                         "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
@@ -197,7 +192,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    if (isUnicodeSurrogate(code_point))
+                    if (UTF8::isSurrogateCodePoint(code_point))
                     {
                         setErrorMessage(error_message,
                                         "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",

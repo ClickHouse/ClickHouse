@@ -5,6 +5,8 @@
 #include <sstream>
 #include <string_view>
 
+#include <Common/UTF8Helpers.h>
+
 #define STRING_SIMILARITY_GTEST_UNIT_TEST
 #include "Functions/FunctionsStringDistance.cpp" // NOLINT(bugprone-suspicious-include)
 
@@ -355,7 +357,7 @@ TEST(StringSimilarity, EditDistanceStressUtf8)
         while (true)
         {
             UInt32 cp = cp_dist(rng);
-            if (cp >= 0xD800 && cp <= 0xDFFF)
+            if (UTF8::isSurrogateCodePoint(cp))
                 continue; // skip surrogate range
             return cp;
         }
