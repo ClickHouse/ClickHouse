@@ -308,6 +308,9 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
             # Both conditions must land in the SAME batch, so pin the listing batch size instead
             # of relying on the engine default (1000) happening to exceed files_to_generate.
             "list_objects_batch_size": files_to_generate,
+            # The conflict node below is planted in `<keeper_path>/processing`, so the engine must
+            # use that directory rather than `persistent_processing`.
+            "use_persistent_processing_nodes": 0,
         },
     )
 
