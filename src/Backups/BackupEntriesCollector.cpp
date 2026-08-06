@@ -508,6 +508,17 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
     if (table_name)
     {
+        /// A read-only `Overlay` facade owns no tables (`getTablesForBackup` returns nothing for
+        /// it), so an explicit `BACKUP TABLE` on the facade would misreport the table as missing.
+        /// Reject it up front — unconditionally, before any source lookup, so the error does not
+        /// depend on whether the table exists and cannot be used as an existence oracle.
+        if (database_name != DatabaseCatalog::TEMPORARY_DATABASE && DatabaseOverlay::asReadonlyFacade(database_info.database.get()))
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Database {} is an Overlay facade (read-only) and owns no tables. "
+                "Run BACKUP TABLE on the underlying database that owns the table",
+                backQuote(database_name));
+
         auto & table_params = database_info.tables[*table_name];
         if (throw_if_table_not_found)
             table_params.throw_if_table_not_found = true;

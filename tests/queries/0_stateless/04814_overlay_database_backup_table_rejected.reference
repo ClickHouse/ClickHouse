@@ -1,0 +1,8 @@
+backup table through the facade (existing table)
+CANNOT_BACKUP_TABLE
+backup table through the facade (nonexistent table): same error
+CANNOT_BACKUP_TABLE
+backup table from the owning database works
+OK
+backup database of the facade still works
+OK
