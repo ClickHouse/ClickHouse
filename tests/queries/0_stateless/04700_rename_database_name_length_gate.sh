@@ -75,7 +75,8 @@ new_db_with_table() {
 # The replica-status row a Replicated DDL returns is not part of what is asserted. A failure here
 # still surfaces, because the rename arm then reports -unexpected-error.
 new_replicated_db_with_table() {
-    $CLICKHOUSE_CLIENT -q "CREATE DATABASE \`$1\` ENGINE = Replicated('/clickhouse/databases/test/$1', 's1', 'r1'); CREATE TABLE \`$1\`.t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple()" >/dev/null
+    $CLICKHOUSE_CLIENT -q "CREATE DATABASE \`$1\` ENGINE = Replicated('/clickhouse/databases/test/$1', 's1', 'r1');
+        CREATE TABLE \`$1\`.t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple()" >/dev/null
 }
 
 # Same, with the table detached: the detached arms need exactly this state before the rename.
