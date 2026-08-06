@@ -979,114 +979,119 @@ def test_kill_transaction_mutation_orphan_not_applied_on_fly(start_cluster):
     # is not reached while merges are stopped.
     node.query("SYSTEM STOP MERGES mt_kill_txn_on_fly")
 
-    session = 43
-    alter_thread = None
     try:
-        node.query("SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register")
+        session = 43
+        alter_thread = None
+        try:
+            node.query("SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register")
 
-        tx(session, "BEGIN TRANSACTION")
-        tid = tx(session, "SELECT transactionID()").strip()
-        assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
+            tx(session, "BEGIN TRANSACTION")
+            tid = tx(session, "SELECT transactionID()").strip()
+            assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
 
-        def run_alter():
+            def run_alter():
+                try:
+                    tx(
+                        session,
+                        "ALTER TABLE mt_kill_txn_on_fly UPDATE value = 1 WHERE 1"
+                        " SETTINGS max_execution_time = 60",
+                    )
+                except Exception:
+                    pass
+
+            alter_thread = threading.Thread(target=run_alter)
+            alter_thread.start()
+
+            node.query(
+                "SYSTEM WAIT FAILPOINT mt_start_mutation_pause_before_register PAUSE"
+            )
+
+            node.query(f"KILL TRANSACTION WHERE tid = {tid}")
+            assert_eq_with_retry(
+                node,
+                f"SELECT count() FROM system.transactions WHERE tid = {tid}",
+                "0",
+            )
+        finally:
+            node.query(
+                "SYSTEM DISABLE FAILPOINT mt_start_mutation_pause_before_register"
+            )
+
+            if alter_thread is not None:
+                alter_thread.join()
+
             try:
-                tx(
-                    session,
-                    "ALTER TABLE mt_kill_txn_on_fly UPDATE value = 1 WHERE 1"
-                    " SETTINGS max_execution_time = 60",
-                )
+                tx(session, "ROLLBACK")
             except Exception:
                 pass
 
-        alter_thread = threading.Thread(target=run_alter)
-        alter_thread.start()
+        # The orphaned entry is registered now and, with merges stopped, nothing
+        # removes it.  Pin that precondition: the entry must still be present in
+        # system.mutations (whatever its is_done state), otherwise the assertions
+        # below pass trivially with no orphan at all and stop exercising the
+        # consumer-side filters.
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+                " AND table='mt_kill_txn_on_fly'"
+            ).strip()
+            == "1"
+        )
 
+        # Reading with apply_mutations_on_fly must ignore the orphaned entry.
+        assert (
+            node.query(
+                "SELECT sum(value) FROM mt_kill_txn_on_fly",
+                settings={"apply_mutations_on_fly": 1},
+            ).strip()
+            == "0"
+        )
+
+        # And the entry must not be reported as an unfinished mutation either.
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+                " AND table='mt_kill_txn_on_fly' AND is_done = 0"
+            ).strip()
+            == "0"
+        )
+
+        # The table-level mutation counters must not count it either: they are
+        # reported by system.tables and disable the count-from-defaultness
+        # optimization for as long as a data mutation looks pending.
+        assert (
+            node.query(
+                "SELECT active_on_fly_data_mutations, active_on_fly_alter_mutations,"
+                " active_on_fly_metadata_mutations FROM system.tables"
+                " WHERE database = currentDatabase() AND name = 'mt_kill_txn_on_fly'"
+            ).strip()
+            == "0\t0\t0"
+        )
+
+        # A barrier ALTER waits for the latest mutation before changing the metadata.
+        # The orphan must not be picked as that mutation: it never finishes and is
+        # reported as killed, so the ALTER would fail with "Mutation ... was killed".
+        # alter_sync = 0 because the RENAME's own mutation cannot finish while merges
+        # are stopped; only the prewait before the metadata change is under test.
         node.query(
-            "SYSTEM WAIT FAILPOINT mt_start_mutation_pause_before_register PAUSE"
+            "ALTER TABLE mt_kill_txn_on_fly RENAME COLUMN value TO val",
+            settings={"alter_sync": 0},
         )
 
-        node.query(f"KILL TRANSACTION WHERE tid = {tid}")
-        assert_eq_with_retry(
-            node,
-            f"SELECT count() FROM system.transactions WHERE tid = {tid}",
-            "0",
+        # Once the background scheduling runs again, the orphan is removed and
+        # subsequent mutations of the same parts are not blocked.
+        node.query("SYSTEM START MERGES mt_kill_txn_on_fly")
+        node.query(
+            "ALTER TABLE mt_kill_txn_on_fly UPDATE val = 2 WHERE 1",
+            settings={"mutations_sync": 1},
         )
+        assert node.query("SELECT sum(val) FROM mt_kill_txn_on_fly").strip() == "200"
     finally:
-        node.query(
-            "SYSTEM DISABLE FAILPOINT mt_start_mutation_pause_before_register"
-        )
-
-        if alter_thread is not None:
-            alter_thread.join()
-
-        try:
-            tx(session, "ROLLBACK")
-        except Exception:
-            pass
-
-    # The orphaned entry is registered now and, with merges stopped, nothing
-    # removes it.  Pin that precondition: the entry must still be present in
-    # system.mutations (whatever its is_done state), otherwise the assertions
-    # below pass trivially with no orphan at all and stop exercising the
-    # consumer-side filters.
-    assert (
-        node.query(
-            "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
-            " AND table='mt_kill_txn_on_fly'"
-        ).strip()
-        == "1"
-    )
-
-    # Reading with apply_mutations_on_fly must ignore the orphaned entry.
-    assert (
-        node.query(
-            "SELECT sum(value) FROM mt_kill_txn_on_fly",
-            settings={"apply_mutations_on_fly": 1},
-        ).strip()
-        == "0"
-    )
-
-    # And the entry must not be reported as an unfinished mutation either.
-    assert (
-        node.query(
-            "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
-            " AND table='mt_kill_txn_on_fly' AND is_done = 0"
-        ).strip()
-        == "0"
-    )
-
-    # The table-level mutation counters must not count it either: they are
-    # reported by system.tables and disable the count-from-defaultness
-    # optimization for as long as a data mutation looks pending.
-    assert (
-        node.query(
-            "SELECT active_on_fly_data_mutations, active_on_fly_alter_mutations,"
-            " active_on_fly_metadata_mutations FROM system.tables"
-            " WHERE database = currentDatabase() AND name = 'mt_kill_txn_on_fly'"
-        ).strip()
-        == "0\t0\t0"
-    )
-
-    # A barrier ALTER waits for the latest mutation before changing the metadata.
-    # The orphan must not be picked as that mutation: it never finishes and is
-    # reported as killed, so the ALTER would fail with "Mutation ... was killed".
-    # alter_sync = 0 because the RENAME's own mutation cannot finish while merges
-    # are stopped; only the prewait before the metadata change is under test.
-    node.query(
-        "ALTER TABLE mt_kill_txn_on_fly RENAME COLUMN value TO val",
-        settings={"alter_sync": 0},
-    )
-
-    # Once the background scheduling runs again, the orphan is removed and
-    # subsequent mutations of the same parts are not blocked.
-    node.query("SYSTEM START MERGES mt_kill_txn_on_fly")
-    node.query(
-        "ALTER TABLE mt_kill_txn_on_fly UPDATE val = 2 WHERE 1",
-        settings={"mutations_sync": 1},
-    )
-    assert node.query("SELECT sum(val) FROM mt_kill_txn_on_fly").strip() == "200"
-
-    node.query("DROP TABLE IF EXISTS mt_kill_txn_on_fly SYNC")
+        # Always restore merges and drop the table: a failed assertion above
+        # must not leave the shared node with merges disabled for the rest
+        # of the module.
+        node.query("SYSTEM START MERGES mt_kill_txn_on_fly")
+        node.query("DROP TABLE IF EXISTS mt_kill_txn_on_fly SYNC")
 
 
 def test_kill_transaction_mutation_rollback_window(start_cluster):
