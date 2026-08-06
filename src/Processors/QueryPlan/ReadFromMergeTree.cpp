@@ -66,7 +66,6 @@
 #include <Storages/MergeTree/RuntimeFilterReadRangesRefiner.h>
 #include <Storages/MergeTree/SealGatedReadTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
-#include <Columns/ColumnConst.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
