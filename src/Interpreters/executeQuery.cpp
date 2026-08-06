@@ -1603,6 +1603,15 @@ static BlockIO executeQueryImpl(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "run_query_in_background cannot be used for an internal query");
 
+                if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "run_query_in_background cannot be used for a secondary query");
+
+                if (stage != QueryProcessingStage::Complete)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "run_query_in_background cannot be used with the {} query processing stage",
+                        QueryProcessingStage::toString(stage));
+
                 /// HTTP handler needs to know if run_query_in_background = 1 before calling executeQuery,
                 /// so it can make detached query context (which is copied from global context, not session context).
                 /// So this setting should not be set via query (i.e. `SETTINGS run_query_in_background = 1`).

@@ -100,6 +100,14 @@ function native_tests()
     $CLICKHOUSE_CLIENT -q "INSERT INTO t SETTINGS run_query_in_background = 1, implicit_transaction = 1 SELECT 1" 2>&1 \
         | grep -o -m1 "Background queries with 'implicit_transaction' are not supported"
 
+    echo '--- a secondary query is rejected synchronously'
+    $CLICKHOUSE_CLIENT --query_kind secondary_query --run_query_in_background 1 -q "SELECT 1" 2>&1 \
+        | grep -o -m1 "run_query_in_background cannot be used for a secondary query"
+
+    echo '--- a query processing stage other than Complete is rejected synchronously'
+    $CLICKHOUSE_CLIENT --stage with_mergeable_state --run_query_in_background 1 -q "SELECT 1" 2>&1 \
+        | grep -o -m1 "run_query_in_background cannot be used with the WithMergeableState query processing stage"
+
     echo '--- distributed INSERT in background: shards run in the foreground, all rows land'
     $CLICKHOUSE_CLIENT -q "CREATE TABLE t_dist (n UInt64) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), t, rand())"
     local dist_id="dist_${CLICKHOUSE_DATABASE}"

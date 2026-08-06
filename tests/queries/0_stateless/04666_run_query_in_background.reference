@@ -40,6 +40,10 @@ BAD_ARGUMENTS
 --- transactions are rejected synchronously
 Background queries inside transactions are not supported
 Background queries with 'implicit_transaction' are not supported
+--- a secondary query is rejected synchronously
+run_query_in_background cannot be used for a secondary query
+--- a query processing stage other than Complete is rejected synchronously
+run_query_in_background cannot be used with the WithMergeableState query processing stage
 --- distributed INSERT in background: shards run in the foreground, all rows land
 100
 0

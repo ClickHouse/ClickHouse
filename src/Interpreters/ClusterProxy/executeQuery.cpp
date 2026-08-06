@@ -236,7 +236,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::limit].changed = false;
     }
 
-    new_settings[Setting::run_query_in_background].changed = false;
+    new_settings[Setting::run_query_in_background] = false;
 
     /// Setting additional_table_filters may be applied to Distributed table.
     /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.
