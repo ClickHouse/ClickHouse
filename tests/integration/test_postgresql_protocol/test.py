@@ -600,6 +600,8 @@ def test_cancel_request_does_not_cancel_foreign_query(started_cluster):
             result["output"] = node.http_query(
                 "SELECT count() FROM (SELECT sleepEachRow(0.3) FROM numbers(10))",
                 params={"query_id": query_id},
+                user="default",
+                password="123",
             )
         except Exception as e:
             result["error"] = str(e)
@@ -611,7 +613,8 @@ def test_cancel_request_does_not_cancel_foreign_query(started_cluster):
         while time.monotonic() < deadline:
             if (
                 node.query(
-                    f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+                    f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'",
+                    password="123",
                 ).strip()
                 == "1"
             ):
