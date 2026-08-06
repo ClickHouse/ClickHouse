@@ -1805,18 +1805,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// not. Relying on the property instead of a name list also covers `getSettingOrDefault`, which shares
         /// the same implementation as `getSetting`.
         ///
-        /// Server-constant functions (`hostName`, `serverUUID`, `tcpPort`, the transaction functions, ...) must
-        /// NOT be shared either: their `FunctionBase` captures `context->isDistributed()` at construction (via
-        /// `FunctionConstantBase`), which gates `isSuitableForConstantFolding`. Reusing the `FunctionBase` built
-        /// in one scope for a different scope (e.g. an inner sub-SELECT over `clusterAllReplicas` versus the outer
-        /// query) lets the wrong `is_distributed` decide whether to fold the call, producing a header mismatch
-        /// between the local plan and the distributed shards.
+        /// Server-constant functions (`hostName`, `serverUUID`, `tcpPort`, the transaction functions, ...)
+        /// capture `context->isDistributed()` at construction (via `FunctionConstantBase`), which gates
+        /// `isSuitableForConstantFolding`. Reusing a `FunctionBase` built in a scope with a different
+        /// distribution state (e.g. an inner sub-SELECT over `clusterAllReplicas` versus the outer query)
+        /// would let the wrong `is_distributed` decide whether to fold the call, producing a header mismatch
+        /// between the local plan and the distributed shards - so the cache key includes the flag. Sharing
+        /// between scopes that agree on it stays: a time-dependent server constant (e.g. `uptime`) snapshots
+        /// its value at build time, and identical calls must resolve to a single constant within the query
+        /// even when analysis crosses a second boundary, as `isDeterministicInScopeOfQuery` promises.
         if (function && !function->isDeterministic()
-            && function->isDeterministicInScopeOfQuery()
-            && !function->isServerConstant())
+            && function->isDeterministicInScopeOfQuery())
         {
             auto hash = function_node_ptr->getTreeHash();
-            function_base_cache = &functions_cache[hash];
+            function_base_cache = &functions_cache[{hash, scope.context->isDistributed()}];
         }
     }
 
