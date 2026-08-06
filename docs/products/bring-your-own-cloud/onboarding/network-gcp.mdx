@@ -57,8 +57,8 @@ The ClickHouse service should now be accessible from the peered VPC.
 
 To access ClickHouse privately, a private load balancer and endpoint are provisioned for secure connectivity from the user's peered VPC. The private endpoint follows the public endpoint format with a `-private` suffix. For example:
 
-- **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
-- **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
+- **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
+- **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
 </Step>
 </Steps>
 
@@ -129,7 +129,7 @@ You need to point all subdomains (wildcard) of the "DNS name" to GCP PSC endpoin
 3. In the opened flyout, copy the `DNS name`.
    <Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="md" alt="Private Endpoint DNS Name" border />
    <Note>
-   Access to ClickHouse services via PSC is controlled by ClickHouse Cloud's service-level **Istio Authorization Policy**.
+   Access to ClickHouse services via PSC is controlled by the service-level **Istio Authorization Policy**, managed by ClickHouse within your BYOC infrastructure.
    </Note>
 </Step>
 </Steps>
