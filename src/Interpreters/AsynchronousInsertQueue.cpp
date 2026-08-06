@@ -439,7 +439,13 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     /// For table functions we check access while executing
     /// InterpreterInsertQuery::getTable() -> ITableFunction::execute().
     if (insert_query.table_id)
+    {
         query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
+        /// The sink, and with it the access check the storage itself performs, is created later in a
+        /// background flush: by then the query has already returned success to the user (with
+        /// `wait_for_async_insert = 0`) and the user's privileges may have changed.
+        table->checkInsertIsAllowed(query_context);
+    }
 
     insert_query.columns = make_intrusive<ASTExpressionList>();
     for (const auto & column : sample_block)
@@ -583,7 +589,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         }
 
         if (inserted)
-            it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>(timeout_ms)}).first;
+            it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>(timeout_ms)});
 
         auto queue_it = it->second;
         auto & data = queue_it->second.data;
@@ -940,7 +946,7 @@ try
         elem.flush_time_microseconds = timeInMicroseconds(flush_time);
         elem.exception = flush_exception;
         elem.status = flush_exception.empty() ? Status::Ok : Status::FlushError;
-        log.add(std::move(elem));
+        log.add([&](AsynchronousInsertLogElement & element) { element = elem; });
     }
 }
 catch (...)
@@ -1145,7 +1151,7 @@ try
         else if (!elem.exception.empty())
         {
             elem.status = AsynchronousInsertLogElement::ParsingError;
-            async_insert_log->add(std::move(elem));
+            async_insert_log->add([&](AsynchronousInsertLogElement & element) { element = elem; });
         }
         else
         {

@@ -1,23 +1,6 @@
--- A huge Millisecond-typed wait timeout must saturate, not wrap. 9223372036854775 = INT64_MAX / 1000.
-SELECT toUInt64(value) <= 9223372036854775
-FROM system.settings WHERE name = 'queue_max_wait_ms'
-SETTINGS queue_max_wait_ms = 18446744073709551615;
-
-SELECT toUInt64(value) <= 9223372036854775
-FROM system.settings WHERE name = 'replace_running_query_max_wait_ms'
-SETTINGS replace_running_query_max_wait_ms = 18446744073709551615;
-
-SELECT toUInt64(value) <= 9223372036854775
-FROM system.settings WHERE name = 'low_priority_query_wait_time_ms'
-SETTINGS low_priority_query_wait_time_ms = 18446744073709551615;
-
-SELECT toUInt64(value) <= 9223372036854775
-FROM system.settings WHERE name = 'connection_pool_max_wait_ms'
-SETTINGS connection_pool_max_wait_ms = 18446744073709551615;
-
-SELECT toUInt64(value) <= 9223372036854775
-FROM system.settings WHERE name = 'kafka_max_wait_ms'
-SETTINGS kafka_max_wait_ms = 18446744073709551615;
+-- A `Milliseconds`-typed wait timeout that does not fit into Int64 microseconds is rejected by
+-- `SettingFieldTimespan` itself, which `gtest_settings` covers; what is left to the settings that
+-- reach a `wait_for` unchecked, such as the plain UInt64 `interactive_delay`, is the clamp below.
 
 -- A query carrying a huge interactive_delay must still complete (lazy-output queue wait is clamped).
 SELECT 1 SETTINGS interactive_delay = 100000000000000000;

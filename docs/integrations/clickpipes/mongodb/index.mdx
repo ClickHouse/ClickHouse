@@ -10,7 +10,7 @@ integration:
    - category: 'clickpipes'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/clickpipes/_changing_tls_settings.mdx';
@@ -62,7 +62,7 @@ Make sure you're logged in to your ClickHouse Cloud account. If you don't have a
 4. Fill in the connection details for your source MongoDB database which you configured in the prerequisites step.
 
 <Info>
-   Before you start adding your connection details make sure that you have whitelisted ClickPipes IP addresses in your firewall rules. On the following page you can find a [list of ClickPipes IP addresses](/integrations/clickpipes/home#list-of-static-ips).
+   Before you start adding your connection details make sure that you have whitelisted ClickPipes IP addresses in your firewall rules. On the following page you can find a [list of ClickPipes IP addresses](/integrations/clickpipes/networking/static-ips).
    For more information refer to the source MongoDB setup guides linked at [the top of this page](#prerequisites).
 </Info>
 
@@ -85,7 +85,7 @@ You can specify SSH tunneling details if your source MongoDB database isn't publ
 4. Click on "Verify Connection" to verify the connection.
 
 <Note>
-Make sure to whitelist [ClickPipes IP addresses](/integrations/clickpipes/home#list-of-static-ips) in your firewall rules for the SSH bastion host so that ClickPipes can establish the SSH tunnel.
+Make sure to whitelist [ClickPipes IP addresses](/integrations/clickpipes/networking/static-ips) in your firewall rules for the SSH bastion host so that ClickPipes can establish the SSH tunnel.
 </Note>
 
 Once the connection details are filled in, click `Next`.
@@ -123,4 +123,3 @@ Here are a few caveats to note when using this connector:
 - We require MongoDB version 5.1.0+.
 - We use MongoDB's native Change Streams API for CDC, which relies on the MongoDB oplog to capture real-time changes. 
 - Documents from MongoDB are replicated into ClickHouse as JSON type by default. This allows for flexible schema management and makes it possible to use the rich set of JSON operators in ClickHouse for querying and analytics. You can learn more about querying JSON data [here](/reference/data-types/newjson).
-- Self-serve PrivateLink configuration isn't currently available. If you're on AWS and require PrivateLink, please reach out to db-integrations-support@clickhouse.com or create a support ticket — we will work with you to enable it.

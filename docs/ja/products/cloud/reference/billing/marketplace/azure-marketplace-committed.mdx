@@ -20,23 +20,23 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 登録手順
 </div>
 
-1. Private Offer を確認して承諾するためのリンクが記載されたメールを受信しているはずです。
+1. プライベートオファーを確認して承諾するためのリンクが記載されたメールを受信しているはずです。
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-1.webp" size="md" alt="Azure Marketplace の Private Offer メール" border />
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-1.webp" size="md" alt="Azure Marketplace Private Offer のメール" border />
 
 <br />
 
-2. メール内の **Review Private Offer** リンクをクリックします。Private Offer の詳細が表示された Azure Marketplace のページに移動します。
+2. メール内の **Review Private Offer** リンクをクリックします。Azure Marketplace のページに移動し、Private Offer の詳細が表示されます。
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-2.webp" size="md" alt="Azure Marketplace の Private Offer 詳細" border />
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-2.webp" size="md" alt="Azure Marketplace Private Offer の詳細" border />
 
 <br />
 
-3. オファーを承諾すると、**Private Offer Management** 画面に移動します。Azure が購入可能な状態にオファーを準備するまで、少し時間がかかる場合があります。
+3. オファーを承諾すると、**Private Offer Management** 画面に移動します。Azure が購入可能な状態にするまで、オファーの準備に少し時間がかかる場合があります。
 
 <br />
 
@@ -44,15 +44,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-4.webp" size="md" alt="読み込み中の Azure Marketplace Private Offer Management ページ" border />
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-4.webp" size="md" alt="読み込み中の Azure Marketplace の Private Offer Management ページ" border />
 
 <br />
 
-4. 数分後にページを更新します。オファーが **Purchase** 可能になっているはずです。
+4. 数分後にページを更新してください。オファーが **Purchase** 可能になっているはずです。
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-5.webp" size="md" alt="Purchase が有効になった Azure Marketplace Private Offer Management ページ" border />
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-5.webp" size="md" alt="購入可能になった Azure Marketplace の Private Offer Management ページ" border />
 
 <br />
 
@@ -60,9 +60,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-* サブスクリプションとリソース グループ
-* SaaS サブスクリプションの名前を入力する
-* Private Offer の対象となっている課金プランを選択します。金額が設定されているのは、Private Offer 作成時に指定された契約期間 (たとえば 1 年) のみです。その他の課金期間オプションは $0 になります。
+* サブスクリプションとリソースグループ
+* SaaS サブスクリプションの名前を入力します
+* Private Offer が適用される請求プランを選択します。金額が設定されているのは、Private Offer が作成された契約期間 (たとえば 1 年) のみです。その他の請求期間オプションは $0 になります。
 * 定期課金を有効にするかどうかを選択します。定期課金を選択しない場合、契約は請求期間の終了時に終了し、リソースは廃止予定の状態に設定されます。
 * **Review + subscribe** をクリックします。
 
@@ -72,7 +72,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-6. 次の画面で、すべての詳細を確認し、**Subscribe** をクリックします。
+6. 次の画面で、すべての詳細を確認して **Subscribe** をクリックします。
 
 <br />
 
@@ -84,11 +84,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-8.webp" size="md" alt="Azure Marketplace のサブスクリプション送信ページ" border />
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-8.webp" size="md" alt="送信中の Azure Marketplace サブスクリプションページ" border />
 
 <br />
 
-8. 準備が完了したら、**Configure account now** をクリックできます。これは、Azure サブスクリプションを、お使いのアカウントの ClickHouse Cloud 組織に関連付ける重要な手順です。この手順を行わないと、Marketplace サブスクリプションは完了しません。
+8. 準備ができたら、**Configure account now** をクリックできます。これは Azure サブスクリプションを、お使いのアカウントの ClickHouse Cloud 組織に関連付ける重要な手順です。この手順を行わないと、Marketplace サブスクリプションは完了しません。
 
 <br />
 
@@ -96,30 +96,30 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-9. ClickHouse Cloud の登録またはサインイン ページにリダイレクトされます。新しいアカウントで登録することも、既存のアカウントでサインインすることもできます。サインインすると、新しい組織が作成され、Azure Marketplace 経由で利用および課金できる状態になります。
+9. ClickHouse Cloud のサインアップまたはサインインページにリダイレクトされます。新しいアカウントでサインアップすることも、既存のアカウントでサインインすることもできます。サインインが完了すると、新しい組織が作成され、Azure Marketplace 経由で課金される状態で利用できるようになります。
 
-10. 続行する前に、住所や会社情報など、いくつかの質問に回答する必要があります。
-
-<br />
-
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud の登録情報フォーム" border />
+10. 次に進む前に、住所や会社情報など、いくつかの質問に回答する必要があります。
 
 <br />
 
-11. **Complete sign up** をクリックすると、ClickHouse Cloud 内の組織に移動します。そこで、Azure Marketplace 経由で課金されていることを課金画面で確認でき、サービスを作成できます。
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud のサインアップ情報フォーム" border />
 
 <br />
 
-<br />
-
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="sm" alt="ClickHouse Cloud の登録情報フォーム" border />
+11. **Complete sign up** をクリックすると、ClickHouse Cloud 内の組織に移動します。そこで請求画面を確認して Azure Marketplace 経由で課金されていることを確かめたり、サービスを作成したりできます。
 
 <br />
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="ClickHouse Cloud の登録情報フォーム" border />
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="sm" alt="ClickHouse Cloud のサインアップ情報フォーム" border />
 
 <br />
 
-問題が発生した場合は、遠慮なく[サポートチーム](https://clickhouse.com/support/program)までお問い合わせください。
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="ClickHouse Cloud のサインアップ情報フォーム" border />
+
+<br />
+
+問題が発生した場合は、[サポートチーム](https://clickhouse.com/support/program)までお気軽にご連絡ください。

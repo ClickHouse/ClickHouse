@@ -16,7 +16,7 @@ Comprendre les principes d’une conception de schéma efficace est essentiel po
 
 Pour les exemples de ce guide, nous utilisons un sous-ensemble du jeu de données Stack Overflow. Il contient tous les posts, votes, utilisateurs, commentaires et badges de Stack Overflow de 2008 à avril 2024. Ces données sont disponibles au format Parquet, selon les schémas ci-dessous, dans le bucket S3 `s3://datasets-documentation/stackoverflow/parquet/` :
 
-> Les clés primaires et les relations indiquées ne sont pas appliquées au moyen de contraintes (Parquet est un format de fichier, pas un format de table) et servent uniquement à montrer comment les données sont liées ainsi que les clés uniques qu’elles possèdent.
+> Les clés primaires et les relations indiquées ne sont pas imposées par des contraintes (Parquet est un format de fichier, pas un format de table) et servent uniquement à montrer comment les données sont liées ainsi que les clés uniques qu’elles possèdent.
 
 <Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Schéma Stack Overflow" />
 
@@ -246,7 +246,7 @@ La clé choisie dans ClickHouse détermine non seulement l&#39;index, mais aussi
 Quelques règles simples peuvent vous aider à choisir une clé de tri. Les critères ci-dessous peuvent parfois entrer en conflit ; examinez-les donc dans cet ordre. Ce processus vous permettra d&#39;identifier plusieurs clés, 4 à 5 étant généralement suffisantes :
 
 * Sélectionnez les colonnes qui correspondent à vos filtres les plus courants. Si une colonne est fréquemment utilisée dans des clauses `WHERE`, privilégiez son inclusion dans votre clé par rapport à des colonnes moins souvent utilisées.
-  Privilégiez les colonnes qui permettent d&#39;exclure une grande partie du total des lignes lorsqu&#39;un filtre est appliqué, afin de réduire la quantité de données à lire.
+  Préférez les colonnes qui permettent d&#39;exclure un pourcentage élevé du nombre total de lignes lors du filtrage, afin de réduire la quantité de données à lire.
 * Privilégiez les colonnes susceptibles d&#39;être fortement corrélées avec d&#39;autres colonnes de la table. Cela contribuera à garantir que ces valeurs sont elles aussi stockées de manière contiguë, ce qui améliore la compression.
   Les opérations `GROUP BY` et `ORDER BY` sur les colonnes de la clé de tri peuvent ainsi devenir plus économes en mémoire.
 
