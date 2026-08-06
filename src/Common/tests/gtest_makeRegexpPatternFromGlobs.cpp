@@ -817,10 +817,21 @@ TEST(Common, GlobASTLiteralBraceGroupBesideEnum)
     GlobAST::GlobString doubled("file_{{a,b}}.csv");
     EXPECT_FALSE(doubled.hasExactlyOneEnum());
 
-    /// A literal '}' with no opening brace is not a brace group; the legacy parser expands
-    /// this shape (it counts only '{'), so it stays expandable.
+    /// A stray '}' or ',' before the enum's '{' makes the legacy expandSelectionGlob
+    /// scanner throw BAD_ARGUMENTS, so such patterns must stay off the exact-key path.
     GlobAST::GlobString closing_only("dir_}/file_{a,b}.csv");
-    EXPECT_TRUE(closing_only.hasExactlyOneEnum());
+    EXPECT_FALSE(closing_only.hasExactlyOneEnum());
+
+    GlobAST::GlobString comma_prefix("dir_,/file_{a,b}.csv");
+    EXPECT_FALSE(comma_prefix.hasExactlyOneEnum());
+
+    /// After the enum the legacy scanner never sees them (it stops at the enum's '}'
+    /// and the expanded remainders contain no braces), so they stay expandable.
+    GlobAST::GlobString closing_suffix("file_{a,b}_}.csv");
+    EXPECT_TRUE(closing_suffix.hasExactlyOneEnum());
+
+    GlobAST::GlobString comma_suffix("file_{a,b}_,.csv");
+    EXPECT_TRUE(comma_suffix.hasExactlyOneEnum());
 }
 
 TEST(Common, GlobASTMatchDeepRecursionGuard)

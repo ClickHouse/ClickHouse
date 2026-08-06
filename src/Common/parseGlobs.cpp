@@ -228,13 +228,21 @@ bool GlobString::hasExactlyOneEnum() const
         switch (expression.type())
         {
             case ExpressionType::CONSTANT:
+            {
+                const auto text = std::get<std::string_view>(expression.getData());
                 /// A literal '{' in constant text is a brace group the parser rejected
                 /// (e.g. "{0}" or "{a}"). The legacy exact-expansion contract
                 /// (hasExactlyOneBracketsExpansion) requires the enum's '{' to be the
                 /// only one in the pattern, so such patterns stay on the listing path.
-                if (std::get<std::string_view>(expression.getData()).contains('{'))
+                if (text.contains('{'))
+                    return false;
+                /// The legacy expandSelectionGlob scanner throws BAD_ARGUMENTS on a stray
+                /// '}' or ',' before the enum's '{' (after the enum they are plain text),
+                /// so such legacy-invalid patterns must not take the exact-key path either.
+                if (enum_counter == 0 && text.find_first_of("},") != std::string_view::npos)
                     return false;
                 continue;
+            }
             case ExpressionType::WILDCARD:
                 return false;
             case ExpressionType::RANGE:
