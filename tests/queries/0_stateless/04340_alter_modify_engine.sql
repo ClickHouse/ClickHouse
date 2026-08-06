@@ -409,8 +409,9 @@ DROP TABLE t_graphite_null;
 -- A nullable version column stays allowed: the rollup compares it with `compareAt` and copies it with
 -- `insertFrom`, both of which handle NULL. The two rows must share the same path and the same unrounded
 -- time, because the version comparison is only reached for rows the algorithm considers the same key; two
--- rows merely landing in one retention window skip it. A NULL version sorts below a set one, so the
--- asserted Value and Version change if that comparison is wrong rather than only the row count.
+-- rows merely landing in one retention window skip it. The algorithm compares with a null direction
+-- hint of 1, so a NULL version sorts above a set one and its row wins, which is why the asserted Value
+-- and Version change if that comparison is wrong rather than only the row count.
 CREATE TABLE t_graphite_null (key UInt32, Path String, Time DateTime('UTC'), Value Float64, Version Nullable(UInt32))
     ENGINE = MergeTree ORDER BY key;
 INSERT INTO t_graphite_null VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:10', 'UTC'), 1, NULL);
