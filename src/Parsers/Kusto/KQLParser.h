@@ -90,6 +90,7 @@ private:
     bool at(KQLTokenType type) const { return current().type == type; }
     /// KQL keywords are case-insensitive; every keyword test goes through here.
     bool atKeyword(std::string_view keyword) const;
+    bool tokenIsKeyword(size_t position, std::string_view keyword) const;
     bool consumeKeyword(std::string_view keyword);
     bool consume(KQLTokenType type);
     void expect(KQLTokenType type);
@@ -103,6 +104,11 @@ private:
     /// True when what follows a `let name =` is `( parameters ) {`, which no other form is.
     bool atFunctionDefinition() const;
     void parseFunctionDefinition(const String & name);
+    /// Whether the token range `[begin, end)` - any number of `let` statements followed by one
+    /// expression - reads as a pipeline rather than a scalar expression. `tabular_names` seeds
+    /// the names known to stand for a table; the range's own `let`s add theirs while scanning.
+    bool bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names);
+    bool expressionLooksTabular(size_t begin, size_t end, const std::set<String> & tabular_names) const;
 
     /// Calls. Which one applies is decided by where the name appears: a scalar expression
     /// position evaluates the body as an expression, a source position as a pipeline.

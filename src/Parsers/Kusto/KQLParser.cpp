@@ -184,9 +184,14 @@ const char * KQLParser::getEndPosition() const
 
 bool KQLParser::atKeyword(std::string_view keyword) const
 {
-    if (current().type != KQLTokenType::BareWord)
+    return tokenIsKeyword(index, keyword);
+}
+
+bool KQLParser::tokenIsKeyword(size_t position, std::string_view keyword) const
+{
+    if (position >= tokens.size() || tokens[position].type != KQLTokenType::BareWord)
         return false;
-    const std::string_view text = current().text();
+    const std::string_view text = tokens[position].text();
     if (text.size() != keyword.size())
         return false;
     for (size_t i = 0; i < text.size(); ++i)
@@ -417,61 +422,187 @@ void KQLParser::parseFunctionDefinition(const String & name)
     if (definition.body_end == definition.body_begin)
         fail("a function body cannot be empty");
 
-    /// Classify the body while it is at hand. A tabular parameter can only feed a pipeline,
-    /// and otherwise the body is a pipeline when - past its own leading `let` statements -
-    /// it starts with a source keyword or contains a top-level `|`.
+    /// Classify the body while it is at hand: `let name = call(...);` has to decide how to
+    /// bind long before any call parses the body. A tabular parameter can only feed a
+    /// pipeline; otherwise the classification reads the body's tokens.
     for (const auto & parameter : definition.parameters)
         if (parameter.is_tabular)
             definition.body_looks_tabular = true;
 
     if (!definition.body_looks_tabular)
     {
-        const auto is_bare_keyword = [&](size_t position, std::string_view keyword)
-        {
-            return tokens[position].type == KQLTokenType::BareWord
-                && Poco::icompare(String(tokens[position].text()), String(keyword)) == 0;
-        };
+        /// The names the body may stand on to be tabular without saying so: the enclosing
+        /// tabular bindings and tabular-bodied functions it can see (`let F = () { Base };`).
+        /// A parameter shadows anything of the same name outside.
+        std::set<String> tabular_names;
+        for (const auto & [tabular_name, _] : scope.tabulars)
+            tabular_names.insert(tabular_name);
+        for (const auto & [function_name, function] : scope.functions)
+            if (function.body_looks_tabular)
+                tabular_names.insert(function_name);
+        for (const auto & parameter : definition.parameters)
+            tabular_names.erase(parameter.name);
 
-        size_t probe = definition.body_begin;
-        while (probe < definition.body_end && is_bare_keyword(probe, "let"))
-        {
-            while (probe < definition.body_end && tokens[probe].type != KQLTokenType::Semicolon)
-                ++probe;
-            if (probe < definition.body_end)
-                ++probe;
-        }
+        definition.body_looks_tabular = bodyLooksTabular(definition.body_begin, definition.body_end, std::move(tabular_names));
+    }
 
-        if (probe < definition.body_end
-            && (is_bare_keyword(probe, "print") || is_bare_keyword(probe, "datatable") || is_bare_keyword(probe, "range")
-                || is_bare_keyword(probe, "union")))
-            definition.body_looks_tabular = true;
+    scope.functions[name] = std::move(definition);
+}
 
-        int body_nesting = 0;
-        for (size_t position = probe; position < definition.body_end && !definition.body_looks_tabular; ++position)
+bool KQLParser::bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names)
+{
+    DepthGuard guard(*this, "function body");
+
+    /// The first ';' outside any brackets ends a `let` statement; an inner function
+    /// definition hides its own ';'s inside `{ }`.
+    const auto statement_end = [&](size_t position)
+    {
+        int nesting = 0;
+        for (; position < end; ++position)
         {
             switch (tokens[position].type)
             {
                 case KQLTokenType::OpeningRoundBracket:
                 case KQLTokenType::OpeningSquareBracket:
                 case KQLTokenType::OpeningCurlyBrace:
-                    ++body_nesting;
+                    ++nesting;
                     break;
                 case KQLTokenType::ClosingRoundBracket:
                 case KQLTokenType::ClosingSquareBracket:
                 case KQLTokenType::ClosingCurlyBrace:
-                    --body_nesting;
+                    --nesting;
                     break;
-                case KQLTokenType::Pipe:
-                    if (body_nesting == 0)
-                        definition.body_looks_tabular = true;
+                case KQLTokenType::Semicolon:
+                    if (nesting <= 0)
+                        return position;
                     break;
                 default:
                     break;
             }
         }
+        return end;
+    };
+
+    /// Each leading `let` that binds something tabular adds a name the expression after them
+    /// may stand on. Anything not of the `let <name> = <rhs>;` shape is left for the parse
+    /// to reject.
+    size_t probe = begin;
+    while (probe < end && tokenIsKeyword(probe, "let"))
+    {
+        const size_t let_end = statement_end(probe);
+
+        if (probe + 3 < let_end && tokens[probe + 1].type == KQLTokenType::BareWord && tokens[probe + 2].type == KQLTokenType::Equals)
+        {
+            const String bound_name(tokens[probe + 1].text());
+            const size_t rhs = probe + 3;
+
+            /// A function definition - an optional `view`, a parenthesized parameter list, a
+            /// braced body - binds a name that is tabular when its own body is.
+            bool is_function_definition = false;
+            size_t parameters = rhs + (tokenIsKeyword(rhs, "view") ? 1 : 0);
+            if (parameters < let_end && tokens[parameters].type == KQLTokenType::OpeningRoundBracket)
+            {
+                int nesting = 1;
+                size_t body = parameters + 1;
+                while (body < let_end && nesting > 0)
+                {
+                    if (tokens[body].type == KQLTokenType::OpeningRoundBracket)
+                        ++nesting;
+                    else if (tokens[body].type == KQLTokenType::ClosingRoundBracket)
+                        --nesting;
+                    ++body;
+                }
+                if (nesting == 0 && body < let_end && tokens[body].type == KQLTokenType::OpeningCurlyBrace)
+                {
+                    is_function_definition = true;
+                    if (tokens[let_end - 1].type == KQLTokenType::ClosingCurlyBrace && bodyLooksTabular(body + 1, let_end - 1, tabular_names))
+                        tabular_names.insert(bound_name);
+                }
+            }
+
+            if (!is_function_definition && expressionLooksTabular(rhs, let_end, tabular_names))
+                tabular_names.insert(bound_name);
+        }
+
+        probe = let_end < end ? let_end + 1 : end;
     }
 
-    scope.functions[name] = std::move(definition);
+    return expressionLooksTabular(probe, end, tabular_names);
+}
+
+bool KQLParser::expressionLooksTabular(size_t begin, size_t end, const std::set<String> & tabular_names) const
+{
+    /// Where the bracket at `position` closes, or `end`.
+    const auto matching_close = [&](size_t position)
+    {
+        int nesting = 0;
+        for (; position < end; ++position)
+        {
+            switch (tokens[position].type)
+            {
+                case KQLTokenType::OpeningRoundBracket:
+                case KQLTokenType::OpeningSquareBracket:
+                case KQLTokenType::OpeningCurlyBrace:
+                    ++nesting;
+                    break;
+                case KQLTokenType::ClosingRoundBracket:
+                case KQLTokenType::ClosingSquareBracket:
+                case KQLTokenType::ClosingCurlyBrace:
+                    --nesting;
+                    if (nesting == 0)
+                        return position;
+                    break;
+                default:
+                    break;
+            }
+        }
+        return end;
+    };
+
+    /// `(Events | take 1)` pipes behind parentheses; strip any number of full wraps.
+    while (begin < end && tokens[begin].type == KQLTokenType::OpeningRoundBracket && matching_close(begin) == end - 1)
+    {
+        ++begin;
+        --end;
+    }
+
+    if (begin >= end)
+        return false;
+
+    if (tokenIsKeyword(begin, "print") || tokenIsKeyword(begin, "datatable") || tokenIsKeyword(begin, "range")
+        || tokenIsKeyword(begin, "union"))
+        return true;
+
+    int nesting = 0;
+    for (size_t position = begin; position < end; ++position)
+    {
+        switch (tokens[position].type)
+        {
+            case KQLTokenType::OpeningRoundBracket:
+            case KQLTokenType::OpeningSquareBracket:
+            case KQLTokenType::OpeningCurlyBrace:
+                ++nesting;
+                break;
+            case KQLTokenType::ClosingRoundBracket:
+            case KQLTokenType::ClosingSquareBracket:
+            case KQLTokenType::ClosingCurlyBrace:
+                --nesting;
+                break;
+            case KQLTokenType::Pipe:
+                if (nesting == 0)
+                    return true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    /// A name known to be tabular, standing alone (`Base`) or called (`F()`, `F(x)`).
+    if (tokens[begin].type != KQLTokenType::BareWord || !tabular_names.contains(String(tokens[begin].text())))
+        return false;
+    if (begin + 1 == end)
+        return true;
+    return tokens[begin + 1].type == KQLTokenType::OpeningRoundBracket && matching_close(begin + 1) == end - 1;
 }
 
 KQLParser::Scope KQLParser::bindArguments(const String & name, const FunctionDefinition & definition, const KQLToken & call_token)
