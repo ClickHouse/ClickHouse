@@ -1,0 +1,27 @@
+-- columns cached in metadata at DDL time --
+x	Nullable(UInt64)
+y	UInt64
+-- a plain read still works: the conversion step after read fixes the type up --
+0	1
+1	2
+2	3
+-- PREWHERE on the drifted column must be rejected, not abort --
+-- a column whose type did not drift still supports PREWHERE --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+-- a row policy on the drifted column is filtered above the read, not pushed --
+1	2
+2	3
+3	4
+1	2
+2	3
+3	4
+-- a policy on the non-drifted column is still pushed down and works --
+3	4
+4	5
+5	6
