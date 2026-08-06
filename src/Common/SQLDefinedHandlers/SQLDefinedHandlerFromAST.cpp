@@ -7,6 +7,7 @@
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <algorithm>
+#include <string_view>
 
 #include <fmt/ranges.h>
 
@@ -50,6 +51,11 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
         case IAST::QueryKind::Describe:
         case IAST::QueryKind::Explain:
         case IAST::QueryKind::Check:
+        /// Session- and transaction-mutating statements (`USE`, `SET` / `SET ROLE`, `BEGIN` / `COMMIT` / `ROLLBACK` /
+        /// `SET TRANSACTION SNAPSHOT`) run under `readonly = 2` - the mode the HTTP execution path sets for safe
+        /// methods such as `GET` - so this readonly-mirror predicate reports them as runnable over a safe method.
+        /// Their session-visible side effects are fenced off separately by `queryKindHasSideEffectsUnderReadonly`,
+        /// which requires *every* method of such a handler to be a mutating one.
         case IAST::QueryKind::Use:
         case IAST::QueryKind::Set:
         case IAST::QueryKind::Begin:
@@ -128,15 +134,51 @@ bool queryConsumesRequestBody(const IAST & query)
 }
 
 /// Whether `readonly = 2` (the mode the HTTP execution path sets for safe methods such as `GET`) still lets a
-/// query of this kind produce durable side effects. `BACKUP` writes an archive to disk or object storage and
-/// `RESTORE` writes data into tables, yet `BackupsWorker` rejects them only under the strict, user-set
-/// `readonly = 1` - so the runtime `readonly` enforcement cannot fence them off. HTTP requires safe methods to be
+/// query of this kind produce side effects. Two groups:
+/// - `BACKUP` writes an archive to disk or object storage and `RESTORE` writes data into tables, yet
+///   `BackupsWorker` rejects them only under the strict, user-set `readonly = 1`.
+/// - Session- and transaction-mutating statements: `SET` changes session settings (allowed under `readonly = 2`,
+///   which forbids only changing `readonly` itself), `SET ROLE` changes the active roles, `USE` changes the
+///   session database, and `BEGIN` / `COMMIT` / `ROLLBACK` / `SET TRANSACTION SNAPSHOT` mutate the current
+///   transaction - none of which `readonly` blocks. When the client uses `session_id`, these effects persist
+///   across requests, so a `GET` could invisibly commit a transaction or alter session state.
+/// The runtime `readonly` enforcement cannot fence any of these off. HTTP requires safe methods to be
 /// side-effect-free: `GET` is expected to have no effects, and a handler declared for `GET` is also served for
 /// `HEAD` (see `HTTPHandlerFactory`), where the suppressed response body would hide the effect entirely. Such
 /// queries therefore must not be reachable over safe methods at all.
 bool queryKindHasSideEffectsUnderReadonly(IAST::QueryKind kind)
 {
-    return kind == IAST::QueryKind::Backup || kind == IAST::QueryKind::Restore;
+    switch (kind)
+    {
+        case IAST::QueryKind::Backup:
+        case IAST::QueryKind::Restore:
+        case IAST::QueryKind::Set:
+        case IAST::QueryKind::Use:
+        case IAST::QueryKind::Begin:
+        case IAST::QueryKind::Commit:
+        case IAST::QueryKind::Rollback:
+        case IAST::QueryKind::SetTransactionSnapshot:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// A short description of a side-effecting-under-readonly query kind for the error message.
+std::string_view describeSideEffectsUnderReadonly(IAST::QueryKind kind)
+{
+    switch (kind)
+    {
+        case IAST::QueryKind::Backup: return "a BACKUP query, which writes a backup";
+        case IAST::QueryKind::Restore: return "a RESTORE query, which writes data into tables";
+        case IAST::QueryKind::Set: return "a SET or SET ROLE query, which changes session state";
+        case IAST::QueryKind::Use: return "a USE query, which changes the session database";
+        case IAST::QueryKind::Begin: return "a BEGIN TRANSACTION query, which changes transaction state";
+        case IAST::QueryKind::Commit: return "a COMMIT query, which changes transaction state";
+        case IAST::QueryKind::Rollback: return "a ROLLBACK query, which changes transaction state";
+        case IAST::QueryKind::SetTransactionSnapshot: return "a SET TRANSACTION SNAPSHOT query, which changes transaction state";
+        default: return "a query with side effects";
+    }
 }
 
 /// The HTTP methods that are allowed to run modifying queries (see `setReadOnlyIfHTTPMethodIdempotent`).
@@ -196,20 +238,21 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
             create.handler_name, fmt::join(handler->methods, ", "));
     }
 
-    /// The `readonly` enforcement above cannot fence off `BACKUP` / `RESTORE`: they run under the `readonly = 2`
-    /// mode that safe methods set, yet they have durable side effects. A safe method must never trigger them -
-    /// `GET` is expected to be side-effect-free, and a declared `GET` is also served for `HEAD` (see
-    /// `HTTPHandlerFactory`), where the suppressed response body would hide the effect entirely. So require
-    /// *every* allowed method of such a handler to be a mutating one.
+    /// The `readonly` enforcement above cannot fence off queries whose side effects survive `readonly = 2` - the
+    /// mode that safe methods set: `BACKUP` / `RESTORE` write durable data, and `SET` / `SET ROLE` / `USE` /
+    /// transaction control mutate session state that persists across requests when `session_id` is in use. A safe
+    /// method must never trigger them - `GET` is expected to be side-effect-free, and a declared `GET` is also
+    /// served for `HEAD` (see `HTTPHandlerFactory`), where the suppressed response body would hide the effect
+    /// entirely. So require *every* allowed method of such a handler to be a mutating one.
     if (queryKindHasSideEffectsUnderReadonly(create.query->getQueryKind())
         && !std::all_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Handler `{}` runs a {} query, which has side effects that the read-only mode of safe HTTP methods "
-            "does not prevent, but its allowed HTTP methods ({}) include read-only ones. "
+            "Handler `{}` runs {}. The read-only mode of safe HTTP methods does not prevent these side effects, "
+            "but the handler's allowed HTTP methods ({}) include read-only ones. "
             "List only mutating methods (POST, PUT, or DELETE) in the METHODS clause.",
             create.handler_name,
-            create.query->getQueryKind() == IAST::QueryKind::Backup ? "BACKUP" : "RESTORE",
+            describeSideEffectsUnderReadonly(create.query->getQueryKind()),
             fmt::join(handler->methods, ", "));
     }
 
