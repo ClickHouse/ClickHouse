@@ -3,6 +3,7 @@ plain (9000) and the secure (9440) native ports concurrently. The plain port is 
 answers (backward compatibility), and TLS is enabled automatically when only the secure port is
 reachable, e.g. for servers whose plain port is firewalled, like play.clickhouse.com."""
 
+import ipaddress
 import threading
 import time
 import uuid
@@ -84,12 +85,12 @@ def unfirewall_plain_port(action):
     )
 
 
-def redirect_plain_port_to_secure(add):
-    """Redirect connections from node_plain_only to the plain port (9000) of node_both_ports
-    to its secure port (9440). A native (non-TLS) connection to the plain port is then answered
-    by the TLS listener, simulating a proxy that accepts TCP on the plain port but only serves
-    TLS there. The TCP connection succeeds (so the probe prefers the plain port), but the native
-    handshake fails."""
+def redirect_plain_port_to_secure(add, source=None):
+    """Redirect connections from `source` (node_plain_only by default) to the plain port (9000)
+    of node_both_ports to its secure port (9440). A native (non-TLS) connection to the plain port
+    is then answered by the TLS listener, simulating a proxy that accepts TCP on the plain port but
+    only serves TLS there. The TCP connection succeeds (so the probe prefers the plain port), but
+    the native handshake fails."""
     node_both_ports.exec_in_container(
         [
             "iptables",
@@ -103,7 +104,7 @@ def redirect_plain_port_to_secure(add):
             "--dport",
             "9000",
             "-s",
-            node_plain_only.ip_address,
+            (source or node_plain_only).ip_address,
             "-j",
             "REDIRECT",
             "--to-ports",
@@ -355,28 +356,54 @@ def test_automatic_choice_is_forgotten_after_a_failed_connection():
             unfirewall_plain_port("REJECT")
 
 
-def unresponsive_address():
-    """An address for the black hole below. It is in the same subnet as the client and differs from
-    the client's own address in as few of the lowest bits as possible: the resolver sorts the
-    addresses of a host by the longest prefix they share with the source address, so this one is
-    sorted in front of the address of the server, which is what the test needs. (If the server
-    happens to be even closer to the client, the black hole may end up last instead and the test
-    simply passes without exercising the ordering.)"""
-    octets = node_plain_only.ip_address.split(".")
-    last = int(octets[3])
-    taken = {node_plain_only.ip_address, node_both_ports.ip_address, ".".join(octets[:3] + ["1"])}
-    for flipped_bits in range(1, 256):
-        candidate_last = last ^ flipped_bits
-        candidate = ".".join(octets[:3] + [str(candidate_last)])
-        if candidate not in taken and candidate_last not in (0, 255):
-            return candidate
+def probe_client_and_blackhole():
+    """A client instance and an address for the black hole below. The resolver sorts the addresses
+    of a host by the longest prefix they share with the source address (RFC 3484 rule 9), and the
+    tests need the black hole sorted deterministically in front of the address of the server, so
+    the black hole has to share a strictly longer prefix with the client than the server does. When
+    the server is the closest possible neighbour of the client (their addresses differ in the
+    lowest bit only), no such black hole exists, so the client is chosen between two instances:
+    the server cannot be the closest neighbour of both."""
+    server = int(ipaddress.IPv4Address(node_both_ports.ip_address))
+    other_instances = {
+        int(ipaddress.IPv4Address(node_plain_only.ip_address)),
+        int(ipaddress.IPv4Address(node_extra.ip_address)),
+    }
+    # The black hole does not have to be a free address: the packets to it are dropped before they
+    # leave the client, so it may be the address of a live container, as long as it is not the
+    # server the test connects to. A free address is still preferred when there is a choice.
+    for allow_other_instances in (False, True):
+        for client in (node_plain_only, node_extra):
+            client_address = int(ipaddress.IPv4Address(client.ip_address))
+            server_prefix = 32 - (client_address ^ server).bit_length()
+            # A candidate beats the server when it agrees with the client in more than
+            # `server_prefix` leading bits, i.e. differs from it only below that.
+            for delta in range(1, 1 << max(0, 31 - server_prefix)):
+                candidate = client_address ^ delta
+                # The lowest and the highest address of a subnet, and the conventional address of
+                # the gateway (the network address plus one), are never used as the black hole.
+                if candidate & 0xFF in (0, 1, 255) or candidate == server:
+                    continue
+                if candidate in other_instances and not allow_other_instances:
+                    continue
+                return client, str(ipaddress.IPv4Address(candidate))
     raise RuntimeError("Cannot find an address for the black hole")
 
 
-def blackhole_address(address, add):
+def assert_the_black_hole_is_resolved_first(client, hostname, blackhole):
+    """The elapsed-time assertions below prove nothing when the healthy address is sorted in front
+    of the black hole, so check the order the resolver actually returns instead of relying on the
+    reasoning in probe_client_and_blackhole alone."""
+    resolved = client.exec_in_container(["getent", "ahosts", hostname])
+    assert resolved.split()[0] == blackhole, (
+        f"The resolver has to return the black hole {blackhole} first:\n{resolved}"
+    )
+
+
+def blackhole_address(client, address, add):
     """Silently drop everything the client sends to this address, so that connecting to it stalls
     until the connection timeout instead of failing right away."""
-    node_plain_only.exec_in_container(
+    client.exec_in_container(
         [
             "iptables",
             "--wait",
@@ -413,9 +440,9 @@ def test_the_probed_address_is_used_for_the_connection():
         "CREATE TABLE IF NOT EXISTS reconnect_trigger (x UInt8, CONSTRAINT c CHECK x < 5)"
         " ENGINE = Memory"
     )
-    blackhole = unresponsive_address()
-    blackhole_address(blackhole, add=True)
-    node_plain_only.exec_in_container(
+    client, blackhole = probe_client_and_blackhole()
+    blackhole_address(client, blackhole, add=True)
+    client.exec_in_container(
         [
             "bash",
             "-c",
@@ -424,8 +451,9 @@ def test_the_probed_address_is_used_for_the_connection():
         user="root",
     )
     try:
+        assert_the_black_hole_is_resolved_first(client, "multiaddress", blackhole)
         start = time.time()
-        output = node_plain_only.exec_in_container(
+        output = client.exec_in_container(
             [
                 "bash",
                 "-c",
@@ -445,7 +473,7 @@ def test_the_probed_address_is_used_for_the_connection():
         node_both_ports.query("DROP TABLE IF EXISTS reconnect_trigger")
         # `/etc/hosts` is bind-mounted into the container, so it can only be rewritten in place:
         # `sed -i` renames its temporary file over it and fails with `Device or resource busy`.
-        node_plain_only.exec_in_container(
+        client.exec_in_container(
             [
                 "bash",
                 "-c",
@@ -453,7 +481,7 @@ def test_the_probed_address_is_used_for_the_connection():
             ],
             user="root",
         )
-        blackhole_address(blackhole, add=False)
+        blackhole_address(client, blackhole, add=False)
 
 
 def test_the_probed_address_is_used_for_the_secure_fallback():
@@ -465,10 +493,10 @@ def test_the_probed_address_is_used_for_the_secure_fallback():
     # addresses from the start, it would pay a whole connection timeout on the black hole, which is
     # exactly the delay the probing exists to avoid. The connect timeout is raised to 60 seconds, so
     # the query cannot possibly finish in time unless the fallback skips the black hole.
-    redirect_plain_port_to_secure(add=True)
-    blackhole = unresponsive_address()
-    blackhole_address(blackhole, add=True)
-    node_plain_only.exec_in_container(
+    client, blackhole = probe_client_and_blackhole()
+    redirect_plain_port_to_secure(add=True, source=client)
+    blackhole_address(client, blackhole, add=True)
+    client.exec_in_container(
         [
             "bash",
             "-c",
@@ -477,9 +505,10 @@ def test_the_probed_address_is_used_for_the_secure_fallback():
         user="root",
     )
     try:
+        assert_the_black_hole_is_resolved_first(client, "tlsproxyhost", blackhole)
         query_id = str(uuid.uuid4())
         start = time.time()
-        output = node_plain_only.exec_in_container(
+        output = client.exec_in_container(
             [
                 "bash",
                 "-c",
@@ -502,7 +531,7 @@ def test_the_probed_address_is_used_for_the_secure_fallback():
         )
     finally:
         # `/etc/hosts` is bind-mounted into the container, so it can only be rewritten in place.
-        node_plain_only.exec_in_container(
+        client.exec_in_container(
             [
                 "bash",
                 "-c",
@@ -510,8 +539,8 @@ def test_the_probed_address_is_used_for_the_secure_fallback():
             ],
             user="root",
         )
-        blackhole_address(blackhole, add=False)
-        redirect_plain_port_to_secure(add=False)
+        blackhole_address(client, blackhole, add=False)
+        redirect_plain_port_to_secure(add=False, source=client)
 
 
 def firewall_plain_port_of(server, add, action, extra=()):
