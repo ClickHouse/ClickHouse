@@ -85,12 +85,6 @@ class LogCluster:
         # The INSERT transport: the read-only endpoint cannot serve it, and
         # silently sending data there would lose it.
         assert not self.readonly, "LogCluster: writes need the writer endpoint"
-        if not self.is_ready():
-            print("ERROR: LogCluster not ready")
-            return False
-
-        if not self._session:
-            self._session = requests.Session()
 
         params = {
             "query": query,
@@ -110,6 +104,18 @@ class LogCluster:
 
         response = None
         for retry in range(retries):
+            # is_ready is a cheap `SELECT 1` against the same writer endpoint,
+            # so it fails during the same pressure spikes as the INSERT itself.
+            # Probing it once outside the loop would defeat the retries: a
+            # single transient Code 241 on the probe would drop the upload
+            # before any POST is attempted. Retry it on the same schedule as
+            # `select` below does.
+            if not self.is_ready():
+                print("WARNING: LogCluster not ready")
+                time.sleep(5 * (retry + 1))
+                continue
+            if not self._session:
+                self._session = requests.Session()
             # A retry re-sends the whole body. requests consumes a file-like
             # body on the first attempt, and re-posting the exhausted stream
             # would run an INSERT with an empty body: it succeeds and the
@@ -147,6 +153,11 @@ class LogCluster:
             print(
                 f"ERROR: Failed to query LogCluster, query:\n {query}\n    reason:\n {response.text}"
             )
+        else:
+            # Every attempt gave up before its POST: the endpoint never became
+            # ready. Say so, otherwise the caller's fail-close assert reports a
+            # lost upload with no reason in the log.
+            print("ERROR: LogCluster not ready")
         return False
 
     def select(self, query, retries=8, timeout=60):
