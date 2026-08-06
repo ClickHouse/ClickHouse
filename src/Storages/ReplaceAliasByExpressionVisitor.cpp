@@ -1,6 +1,5 @@
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -39,7 +38,7 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTFunction & function, ASTPtr
 
     /// Mask lambda parameters so a name shadowing an ALIAS column is not expanded.
     Names local_aliases;
-    for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(function))
+    for (const auto & name : getASTLambdaArgumentNames(function))
         if (data.private_aliases.insert(name).second)
             local_aliases.push_back(name);
 
@@ -67,7 +66,7 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
             {
                 if (const auto * func = sub_ast->as<ASTFunction>(); func && func->name == "lambda")
                 {
-                    for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*func))
+                    for (const auto & name : getASTLambdaArgumentNames(*func))
                         bound.erase(name);
                 }
                 else if (const auto * identifier = sub_ast->as<ASTIdentifier>())
