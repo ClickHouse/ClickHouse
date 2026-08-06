@@ -50,8 +50,17 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --qu
     SETTINGS webassembly_udf_max_fuel = 0, max_threads = 1, max_block_size = 10000000, max_rows_to_read = 0
 " >"$output_file" 2>&1 &
 
-# Wait for the failpoint to be hit — proves the WASM guest code is actually executing
-${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT wasm_guest_pause PAUSE"
+# Wait for the failpoint to be hit — proves the WASM guest code is actually executing.
+# The wait has no built-in timeout, so bound it: if the guest never reaches
+# _wasm_signal_ready (a regression before guest execution starts), fail explicitly
+# instead of hanging the whole check. Kill the stuck query (async — a SYNC kill of an
+# unkillable query would hang again) and exit without waiting for the background job.
+if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT wasm_guest_pause PAUSE"
+then
+    echo "FAIL: timed out waiting for the wasm_guest_pause failpoint — the WASM guest code did not start executing"
+    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+    exit 1
+fi
 
 # Kill the query (ASYNC) — this triggers onCancel -> cancelExecution -> interrupt_source.request_stop()
 # The StopCallback registered in invokeImpl sets WasmEdge's cost limit to 0,
