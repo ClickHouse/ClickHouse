@@ -3,8 +3,9 @@
 #include <google/cloud/storage/client.h>
 #include <iostream>
 #include <string>
+#include <Examples/clickhouse_examples.h>
 
-int main(int argc, char* argv[])
+int mainEntryExampleGcloudStorage(int argc, char* argv[])
 {
     if (argc != 2)
     {

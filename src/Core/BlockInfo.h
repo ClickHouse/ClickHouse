@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/ProtocolDefines.h>
 #include <base/types.h>
+
+#include <vector>
 
 namespace DB
 {

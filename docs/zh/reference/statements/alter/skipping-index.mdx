@@ -1,0 +1,41 @@
+---
+description: '用于管理数据跳过索引的文档'
+sidebarTitle: 'INDEX'
+slug: /sql-reference/statements/alter/skipping-index
+title: '管理数据跳过索引'
+toc_hidden_folder: true
+doc_type: 'reference'
+---
+
+可执行的操作如下：
+
+<div id="add-index">
+  ## ADD INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - 向表的元数据中添加索引描述。
+
+<div id="drop-index">
+  ## DROP INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - 从表的元数据中移除索引描述，并删除磁盘上的索引文件。该操作以[变更](/zh/reference/statements/alter/index#mutations)的形式实现。
+
+<div id="materialize-index">
+  ## MATERIALIZE INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - 为指定的 `partition_name` 重建二级索引 `name`。该操作以[变更](/zh/reference/statements/alter/index#mutations)的形式实现。如果省略 `IN PARTITION` 部分，则会为整个表的数据重建该索引。
+
+<div id="clear-index">
+  ## CLEAR INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]` - 从磁盘中删除二级索引文件，但不移除其描述信息。该操作实现为一种[变更](/zh/reference/statements/alter/index#mutations)。
+
+命令 `ADD`、`DROP` 和 `CLEAR` 都是轻量级的，也就是说，它们只会更改元数据或删除文件。
+此外，这些命令也会被复制，并通过 ClickHouse Keeper 或 ZooKeeper 同步索引元数据。
+
+<Note>
+  只有使用 [`*MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎的表 (包括[复制型](/zh/reference/engines/table-engines/mergetree-family/replication)变体) 才支持索引操作。
+</Note>

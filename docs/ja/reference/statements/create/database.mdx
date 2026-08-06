@@ -1,0 +1,101 @@
+---
+description: 'CREATE DATABASE に関するドキュメント'
+sidebarTitle: 'DATABASE'
+slug: /sql-reference/statements/create/database
+title: 'CREATE DATABASE'
+doc_type: 'reference'
+---
+
+新しいデータベースを作成します。
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
+```
+
+<div id="clauses">
+  ## 句
+</div>
+
+<div id="if-not-exists">
+  ### IF NOT EXISTS
+</div>
+
+`db_name` データベースがすでに存在する場合、ClickHouse は新しいデータベースを作成せず、次のように動作します。
+
+* この句が指定されている場合、例外はスローされません。
+* この句が指定されていない場合、例外がスローされます。
+
+<div id="on-cluster">
+  ### ON CLUSTER
+</div>
+
+ClickHouse は、指定したクラスターを構成するすべてのサーバー上に `db_name` データベースを作成します。詳しくは、[Distributed DDL](/ja/reference/statements/distributed-ddl) を参照してください。
+
+<div id="engine">
+  ### エンジン
+</div>
+
+デフォルトでは、ClickHouse は独自の [Atomic](/ja/reference/engines/database-engines/atomic) データベースエンジンを使用します。これ以外にも、[MySQL](/ja/reference/engines/database-engines/mysql)、[PostgresSQL](/ja/reference/engines/database-engines/postgresql)、[MaterializedPostgreSQL](/ja/reference/engines/database-engines/materialized-postgresql)、[Replicated](/ja/reference/engines/database-engines/replicated)、[SQLite](/ja/reference/engines/database-engines/sqlite) などがあります。
+
+<div id="comment">
+  ### コメント
+</div>
+
+データベースの作成時にコメントを追加できます。
+
+コメントは、すべてのデータベースエンジンでサポートされています。
+
+**構文**
+
+```sql
+CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
+```
+
+**例**
+
+```sql title="Query"
+CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
+SELECT name, comment FROM system.databases WHERE name = 'db_comment';
+```
+
+```text title="Response"
+┌─name───────┬─comment────────────────┐
+│ db_comment │ The temporary database │
+└────────────┴────────────────────────┘
+```
+
+<div id="settings">
+  ### 設定
+</div>
+
+<div id="lazy-load-tables">
+  #### lazy_load_tables
+</div>
+
+有効にすると、データベースの起動時にテーブルは完全には読み込まれません。代わりに、各テーブルに対して軽量なプロキシが作成され、実際のテーブルエンジンは最初のアクセス時に実体化されます。これにより、多数のテーブルを含み、実際にクエリされるのがその一部に限られるデータベースで、起動時間とメモリ使用量を削減できます。
+
+```sql
+CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+```
+
+ディスク上にテーブルメタデータを保存するデータベースエンジン (例: `Atomic`、`Ordinary`) に適用されます。ビュー、materialized view、辞書、およびテーブル関数を使用するテーブルは、この設定に関係なく常に即座にロードされます。
+
+**使用するケース:** この設定は、多数のテーブル (数百〜数千) があり、そのうち一部だけが実際にクエリされるデータベースで有用です。テーブルエンジンオブジェクトの生成、データパーツのスキャン、バックグラウンドスレッドの初期化を最初のアクセスまで遅らせることで、サーバーの起動時間とメモリ使用量を削減します。
+
+**`system.tables` への影響:**
+
+* テーブルにアクセスされる前は、`system.tables` ではそのエンジンが `TableProxy` として表示されます。最初のアクセス後は、実際のエンジン名 (例: `MergeTree`) が表示されます。
+* `total_rows` や `total_bytes` などのカラムは、実際のストレージがまだ作成されていないため、未ロードのテーブルでは `NULL` を返します。
+
+**DDL 操作との相互作用:**
+
+* `SELECT`、`INSERT`、`ALTER`、`DROP` は、最初に使用された時点で実際のテーブルエンジンのロードを透過的にトリガーします。
+* `RENAME TABLE` はロードをトリガーせずに動作します。
+* テーブルはいったんロードされると、サーバープロセスの存続中はロードされたままになります。
+
+**制限事項:**
+
+* `system.tables` のメタデータ (例: `total_rows`、`engine`) に依存する監視ツールでは、未ロードのテーブルについて不完全な情報が表示される場合があります。
+* 未ロードのテーブルに対する最初のクエリでは、一回限りのロードコスト (保存された `CREATE TABLE` ステートメントのパースとエンジンの初期化) が発生します。
+
+デフォルト値: `0` (無効) 。

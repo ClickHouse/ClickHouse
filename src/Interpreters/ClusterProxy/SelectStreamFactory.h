@@ -7,6 +7,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/UnavailableShardTracker.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -89,7 +90,8 @@ public:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -101,7 +103,8 @@ public:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
     SharedHeader header;
     const StorageSnapshotPtr storage_snapshot;
@@ -119,7 +122,8 @@ private:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator) const;
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker) const;
 };
 
 }

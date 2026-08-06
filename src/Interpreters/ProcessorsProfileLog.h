@@ -2,7 +2,6 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Processors/IProcessor.h>
 #include <Storages/ColumnsDescription.h>
@@ -18,7 +17,7 @@ struct ProcessorProfileLogElement
     UInt64 id{};
     VectorWithMemoryTracking<UInt64> parent_ids;
 
-    UInt64 plan_step;
+    UInt64 plan_step{};
     UInt64 plan_group{};
     String plan_step_name;
     String plan_step_description;
@@ -53,9 +52,9 @@ public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
 };
 
-std::vector<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
+VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
 
 void logProcessorProfile(ContextPtr context, const Processors & processors);
-void logProcessorProfile(ContextPtr context, const std::vector<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
+void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
 
 }

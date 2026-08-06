@@ -5,6 +5,7 @@
 
 #include <compare>
 #include <optional>
+#include <unordered_set>
 
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -112,6 +113,10 @@ namespace
                 return std::nullopt;
             }
         }
+        else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
+        {
+            return std::nullopt;
+        }
         else
         {
             /// For all other types except decimal binary representation
@@ -155,24 +160,21 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesSortedBySor
     return true;
 }
 
-std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
+std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
 {
-    Int64 result = 0;
+    UInt64 result = 0;
+    /// `record_count` is a required file-level field in all format versions, so the sum is
+    /// exact: no fallback to optional per-column statistics is needed. The field is parsed
+    /// as a raw Int64 though, so a corrupted manifest file may carry a negative value; it
+    /// is reported as "count unavailable" rather than summed (a negative contribution would
+    /// silently produce a wrong -- or, after the conversion to size_t, absurdly huge --
+    /// count) and rather than rejected (the count is only an optimization, a malformed
+    /// value must not make the table unreadable).
     for (const auto & file : getFilesWithoutDeleted(content))
     {
-        /// Have at least one column with rows count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.rows_count.has_value())
-            {
-                result += *column_info.rows_count;
-                found = true;
-                break;
-            }
-        }
-        if (!found)
+        if (file->parsed_entry->record_count < 0)
             return std::nullopt;
+        result += static_cast<UInt64>(file->parsed_entry->record_count);
     }
     return result;
 }
@@ -219,15 +221,12 @@ ManifestFileIterator::~ManifestFileIterator() = default;
 
 std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
-    const String & manifest_file_name_,
-    Int32 format_version_,
-    const String & common_path_,
+    const IcebergPathFromMetadata & path_to_manifest_file_,
+    const IcebergPathResolver & path_resolver_,
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
-    const String & table_location_,
     DB::ContextPtr context_,
-    const String & path_to_manifest_file_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
 {
@@ -235,10 +234,15 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         context_,
         manifest_file_deserializer_->getMetadataContent(),
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
-        common_path_,
+        path_resolver_.getTableRoot(),
         path_to_manifest_file_,
         std::nullopt,
         std::nullopt);
+
+    /// The manifest file's own format version governs how it is parsed. A v2 table may
+    /// still reference v1 manifests produced before an external upgrade from v1 to v2,
+    /// and those must remain readable (the Iceberg spec assigns them sequence_number = 0).
+    const Int32 manifest_format_version = static_cast<Int32>(manifest_file_deserializer_->getFormatVersionFromManifestFileMetadata());
 
     for (const auto & column_name : {f_status, f_data_file})
     {
@@ -246,10 +250,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             throw Exception(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
-
-    if (format_version_ > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
 
     Poco::JSON::Parser parser;
 
@@ -261,6 +261,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
     DB::NamesAndTypesList partition_columns_description;
+    std::unordered_set<String> partition_columns_seen;
     auto partition_key_ast = make_intrusive<ASTFunction>();
     partition_key_ast->name = "tuple";
     partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
@@ -271,7 +272,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
-            manifest_file_name_,
+            path_to_manifest_file_,
             f_schema);
 
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
@@ -302,23 +303,25 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             continue;
 
         partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
-        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
+        /// One source column may back several partition fields (e.g. hours(ts) and identity ts).
+        /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
+        /// against these input columns, which must contain each source column at most once.
+        if (partition_columns_seen.insert(numeric_column_name).second)
+            partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 
     std::optional<DB::KeyDescription> partition_key_description;
     if (!partition_columns_description.empty())
         partition_key_description.emplace(
-            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context_));
+            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context_));
 
     size_t total_rows = manifest_file_deserializer_->rows();
 
     return std::shared_ptr<ManifestFileIterator>(new ManifestFileIterator(
         std::move(manifest_file_deserializer_),
         path_to_manifest_file_,
-        manifest_file_name_,
-        format_version_,
-        common_path_,
-        table_location_,
+        manifest_format_version,
+        path_resolver_,
         schema_processor,
         inherited_sequence_number_,
         inherited_snapshot_id_,
@@ -333,11 +336,9 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
 ManifestFileIterator::ManifestFileIterator(
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
-    const String & path_to_manifest_file_,
-    const String & manifest_file_name_,
+    const IcebergPathFromMetadata & path_to_manifest_file_,
     Int32 format_version_,
-    const String & common_path_,
-    const String & table_location_,
+    const IcebergPathResolver & path_resolver_,
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
@@ -350,10 +351,8 @@ ManifestFileIterator::ManifestFileIterator(
     Int32 table_snapshot_schema_id_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)
-    , manifest_file_name(manifest_file_name_)
     , format_version(format_version_)
-    , common_path(common_path_)
-    , table_location(table_location_)
+    , path_resolver(path_resolver_)
     , inherited_sequence_number(inherited_sequence_number_)
     , inherited_snapshot_id(inherited_snapshot_id_)
     , context(context_)
@@ -387,7 +386,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             context,
             manifest_file_deserializer->getContent(row_index),
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
-            common_path,
+            path_resolver.getTableRoot(),
             path_to_manifest_file,
             row_index,
             std::nullopt);
@@ -395,9 +394,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
 
     /// Compute inherited/resolved fields
-    const auto file_path = getProperFilePathFromMetadataInfo(parsed_entry->file_path_key, common_path, table_location);
 
-    Int64 resolved_snapshot_id;
+    Int64 resolved_snapshot_id = 0;
     if (parsed_entry->parsed_snapshot_id.has_value())
     {
         resolved_snapshot_id = *parsed_entry->parsed_snapshot_id;
@@ -406,9 +404,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     {
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
-            manifest_file_name,
-            resolved_snapshot_id);
+            "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id 'null' for which write file schema is unknown",
+            path_to_manifest_file);
     }
     else
     {
@@ -418,20 +415,19 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     const auto schema_id_opt = schema_processor_ptr->tryGetSchemaIdForSnapshot(resolved_snapshot_id);
     if (!schema_id_opt.has_value())
     {
-        /// Error logged but not thrown to avoid breaking whole query because of backward compatibility reasons.
-        /// That's actually an error because it can lead to incorrect query results, so we are creating an exception to put it to system.error_log.
-        try
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
-                manifest_file_name,
-                resolved_snapshot_id);
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException("ICEBERG_SPECIFICATION_VIOLATION", "", LogsLevel::error);
-        }
+        /// This is expected when the referenced snapshot was expired by the catalog (snapshot expiry is a
+        /// normal Iceberg housekeeping operation). For example, after a compaction ("replace" operation),
+        /// the new snapshot's manifest list inherits manifests from the now-expired parent snapshot, and
+        /// those manifests still carry the original snapshot_id. The manifest file's own Avro header
+        /// records the correct schema_id for the data files it describes, so falling back to
+        /// manifest_schema_id is safe and correct in this case.
+        LOG_DEBUG(
+            getLogger("ManifestFileIterator"),
+            "Manifest file '{}' has entry with snapshot_id '{}' whose snapshot metadata is not present "
+            "(snapshot may have been expired by the catalog). Falling back to manifest schema_id {}.",
+            path_to_manifest_file,
+            resolved_snapshot_id,
+            manifest_schema_id);
     }
     const auto resolved_schema_id = schema_id_opt.has_value() ? *schema_id_opt : manifest_schema_id;
 
@@ -455,7 +451,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
 
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
-        parsed_entry, common_partition_specification, file_path, resolved_sequence_number, resolved_schema_id);
+        parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
 
 
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
@@ -483,7 +479,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                     continue;
 
                 if (const auto type_id = name_and_type.type->getTypeId();
-                    type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array)
+                    type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
+                    || type_id == DB::TypeIndex::Variant)
                     continue;
 
                 auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
@@ -502,7 +499,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         context,
         manifest_file_deserializer->getContent(row_index),
         DB::IcebergMetadataLogLevel::ManifestFileEntry,
-        common_path,
+        path_resolver.getTableRoot(),
         path_to_manifest_file,
         row_index,
         pruning_status);

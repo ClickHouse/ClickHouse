@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class ColumnPermuteTransform : public ISimpleTransform
+class ColumnPermuteTransform final : public ISimpleTransform
 {
 public:
     ColumnPermuteTransform(SharedHeader header_, const VectorWithMemoryTracking<size_t> & permutation_);

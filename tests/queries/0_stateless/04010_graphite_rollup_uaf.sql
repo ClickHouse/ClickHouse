@@ -6,6 +6,8 @@
 
 SET joined_subquery_requires_alias = 0;
 SET allow_suspicious_low_cardinality_types = 1;
+SET optimize_trivial_insert_select = 0;
+SET optimize_on_insert = 1;
 
 DROP TABLE IF EXISTS test_graphite_fuzz;
 

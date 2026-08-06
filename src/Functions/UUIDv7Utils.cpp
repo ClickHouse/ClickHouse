@@ -1,9 +1,13 @@
 #include <Functions/UUIDv7Utils.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
 namespace UUIDv7Utils
 {
+
+CounterFields Data::fields;
+SharedMutex Data::mutex;
 
 
 void setTimestampAndVersion(UUID & uuid, uint64_t timestamp)

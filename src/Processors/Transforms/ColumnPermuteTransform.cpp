@@ -1,4 +1,5 @@
 #include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -6,10 +7,10 @@ namespace DB
 namespace
 {
 
-template <typename Container, typename Perm>
-void applyPermutation(Container & data, const Perm & permutation)
+template <typename T, typename Allocator>
+void applyPermutation(std::vector<T, Allocator> & data, const VectorWithMemoryTracking<size_t> & permutation)
 {
-    Container res;
+    std::vector<T, Allocator> res;
     res.reserve(permutation.size());
     for (size_t i : permutation)
         res.push_back(data[i]);

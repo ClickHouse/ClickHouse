@@ -50,7 +50,7 @@ def test_metadata_file_path_security(started_cluster_iceberg_with_spark):
         )
 
     # Test 2: Null byte injection should be rejected
-    with pytest.raises(Exception, match = "ICEBERG_SPECIFICATION_VIOLATION"):
+    with pytest.raises(Exception, match = "BAD_ARGUMENTS"):
         create_iceberg_table(
             "local",
             instance,
@@ -60,7 +60,7 @@ def test_metadata_file_path_security(started_cluster_iceberg_with_spark):
         )
 
     # Test 3: Null byte in middle of path should be rejected
-    with pytest.raises(Exception, match = "PATH_ACCESS_DENIED"):
+    with pytest.raises(Exception, match = "BAD_ARGUMENTS"):
         create_iceberg_table(
             "local",
             instance,

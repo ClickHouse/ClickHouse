@@ -7,6 +7,7 @@
 #include <Disks/DiskObjectStorage/Replication/BlobKillerThread.h>
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <base/scope_guard.h>
 
@@ -36,9 +37,9 @@ public:
         ClusterConfigurationPtr cluster_,
         MetadataStoragePtr metadata_storage_,
         ObjectStorageRouterPtr object_storages_,
+        DiskObjectStorageConstPtr wrapped_disk_,
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        bool use_fake_transaction_ = true);
+        const String & config_prefix);
     ~DiskObjectStorage() override;
 
     /// Create fake transaction
@@ -152,10 +153,11 @@ public:
 
     ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    void prepareRead(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
@@ -180,6 +182,10 @@ public:
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {}
         ) override;
+
+    void waitBlobsCleanup();
+    int64_t getDeadBlobsQueueEstimate() const;
+    int64_t getMissingBlobsQueueEstimate() const;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
@@ -219,6 +225,7 @@ public:
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
+    DiskObjectStorageConstPtr getWrappedDisk() const;
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
@@ -255,6 +262,9 @@ private:
     BlobKillerThreadPtr blob_killer;
     BlobCopierThreadPtr blob_copier;
 
+    /// Thread pool used to parallelize `copyObjectToAnotherObjectStorage` calls.
+    std::shared_ptr<ThreadPool> copy_object_pool;
+
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
@@ -272,7 +282,7 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
-    const bool use_fake_transaction;
+    std::atomic<bool> wait_blob_removal;
     UInt64 remove_shared_recursive_file_limit;
 };
 
@@ -302,7 +312,7 @@ public:
 private:
     DiskObjectStoragePtr disk;
     UInt64 size;
-    UInt64 unreserved_space;
+    UInt64 unreserved_space{};
     CurrentMetrics::Increment metric_increment;
 };
 

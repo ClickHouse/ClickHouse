@@ -6,8 +6,8 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Core/NamesAndTypes.h>
-#include <Storages/IStorage.h>
+#include <Interpreters/MaterializedCTE.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 #include <Common/MultiVersion.h>
 
@@ -22,7 +22,7 @@ struct MemorySettings;
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public IStorage
+class StorageMemory final : public StorageWithCommonVirtualColumns
 {
 friend class MemorySink;
 
@@ -52,7 +52,7 @@ public:
 
     const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -64,7 +64,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
@@ -126,7 +126,16 @@ public:
       */
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
+    /// Stored as a weak_ptr to break the reference cycle: MaterializedCTE owns the StorageMemory
+    /// (via its `storage` and `table_holder` members), and this back-pointer lets us recover the
+    /// CTE descriptor from the storage. If we kept a shared_ptr here, neither object would ever
+    /// be destroyed, and the temporary table would never be removed from `DatabaseMemory`.
+    void setMaterializedCTE(MaterializedCTEPtr materialized_cte_) { materialized_cte = materialized_cte_; }
+    MaterializedCTEPtr getMaterializedCTE() const { return materialized_cte.lock(); }
+
 private:
+    static VirtualColumnsDescription createVirtuals();
+
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
@@ -137,6 +146,7 @@ private:
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
+    MaterializedCTEWeakPtr materialized_cte;
 
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;

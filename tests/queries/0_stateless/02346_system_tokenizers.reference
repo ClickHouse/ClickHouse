@@ -1,4 +1,6 @@
 array
+asciiCJK
+icu
 ngrambf_v1
 ngrams
 sparseGrams
@@ -6,3 +8,5 @@ sparse_grams
 splitByNonAlpha
 splitByString
 tokenbf_v1
+unicodeWord
+unicode_word

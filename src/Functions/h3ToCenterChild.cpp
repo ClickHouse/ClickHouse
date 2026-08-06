@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 namespace
 {
-    class FunctionH3ToCenterChild : public IFunction
+    class FunctionH3ToCenterChild final : public IFunction
     {
     public:
         static constexpr auto name = "h3ToCenterChild";
@@ -106,7 +106,11 @@ namespace
 
             UInt64 res = 0;
             if (validator.validateCell(data_hindex[row]))
-                res = cellToCenterChild(data_hindex[row], data_resolution[row]);
+            {
+                H3Index child = 0;
+                if (!cellToCenterChild(data_hindex[row], data_resolution[row], &child))
+                    res = child;
+            }
 
             dst_data[row] = res;
         }

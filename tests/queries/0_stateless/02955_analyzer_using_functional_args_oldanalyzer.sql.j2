@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
 
 SET enable_analyzer = 0;
+SET enable_optimize_predicate_expression = 1; -- CI may inject False; old analyzer fails to resolve ALIAS column y in JOIN USING (y) when predicate expression optimization is disabled
 
 {% for column_expression_type in ['ALIAS', 'MATERIALIZED'] %}
 

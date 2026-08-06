@@ -11,9 +11,12 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <IO/WriteHelpers.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/config_version.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
@@ -42,6 +45,7 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int USER_EXPIRED;
+    extern const int ACCESS_DENIED;
 }
 
 
@@ -323,7 +327,7 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
-            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
+            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo(), certificate_info);
         }
     }
 }
@@ -352,7 +356,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     {
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
-            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
+            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e, certificate_info);
 
         throw;
     }
@@ -405,8 +409,8 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     chassert(!auth_result.user_name.empty());
     prepared_client_info->current_user = auth_result.user_name;
     prepared_client_info->authenticated_user = auth_result.user_name;
-    prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
-    prepared_client_info->connection_address = std::make_shared<Poco::Net::SocketAddress>(connection_address ? *connection_address : address);
+    prepared_client_info->current_address = Poco::Net::SocketAddress(address);
+    prepared_client_info->connection_address = Poco::Net::SocketAddress(connection_address ? *connection_address : address);
 }
 
 void Session::checkIfUserIsStillValid()
@@ -427,9 +431,30 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     {
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
-        info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
-        session_log->addLoginFailure(auth_id, info_for_log, user_name, e);
+        info_for_log.current_address = Poco::Net::SocketAddress(address_);
+        session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
     }
+}
+
+void Session::setClientCertificate(const X509Certificate & certificate)
+{
+#if USE_SSL
+    ClientCertificateInfo info;
+
+    auto subjects = certificate.extractAllSubjects();
+    for (auto type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
+        for (const auto & subject : subjects.at(type))
+            info.subjects.push_back(subjects.toString(type) + ":" + subject);
+
+    info.serial = certificate.serialNumber();
+    info.issuer = certificate.issuerName();
+    info.not_before = certificate.notBefore();
+    info.not_after = certificate.notAfter();
+
+    certificate_info = std::move(info);
+#else
+    (void)certificate;
+#endif
 }
 
 const ClientInfo & Session::getClientInfo() const
@@ -697,7 +722,22 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set parameters of initial query.
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::NO_QUERY)
+    {
         query_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+
+        /// A query initiated at this server through an interface that does not report a client
+        /// version (e.g. a raw HTTP request via `curl`, or a MySQL/PostgreSQL client) leaves the
+        /// version at 0.0.0. This server is the real initiator of the query and of any distributed
+        /// sub-query it spawns, so fill the version with this server's version; otherwise remote
+        /// shards treat the initiator as a pre-23.3 server and apply legacy compatibility
+        /// downgrades - in particular disabling the analyzer (see `TCPHandler`) - diverging from the
+        /// initiator, and `RemoteQueryExecutor` now rejects such a zero version outright.
+        const auto & new_client_info = query_context->getClientInfo();
+        if (new_client_info.client_version_major == 0
+            && new_client_info.client_version_minor == 0
+            && new_client_info.client_version_patch == 0)
+            query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+    }
 
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
@@ -705,9 +745,28 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setInitialAddress(*query_context->getClientInfo().current_address);
     }
 
+    /// On a secret interserver query, enable the initiator's current roles (external, bypassing the grant check)
+    /// and drop defaults so row policies match. Gate on the session interface, not the client-controlled per-query one.
+    std::vector<UUID> effective_external_roles = external_roles;
+    const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
+        && query_context->getClientInfo().current_roles.has_value()
+        && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
+    if (apply_initiator_roles)
+    {
+        const auto & role_names = *query_context->getClientInfo().current_roles;
+        effective_external_roles = global_context->getAccessControl().find<Role>(role_names);
+        /// Fail closed: a role unknown here cannot be honored; dropping it could drop a restrictive policy.
+        if (effective_external_roles.size() != role_names.size())
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
+    }
+
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, external_roles);
+        query_context->setUser(*user_id, effective_external_roles);
+
+    if (apply_initiator_roles && user_id)
+        query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);
 
     /// Query context is ready.
     query_context_created = true;
@@ -740,7 +799,8 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      access->getAccess(),
                                      getClientInfo(),
                                      user,
-                                     user_authenticated_with);
+                                     user_authenticated_with,
+                                     certificate_info);
     }
 
     notified_session_log_about_login = true;

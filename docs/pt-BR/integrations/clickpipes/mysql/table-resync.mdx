@@ -1,0 +1,30 @@
+---
+title: 'Ressincronização de tabelas específicas'
+description: 'Ressincronização de tabelas específicas em um ClickPipe do MySQL'
+slug: /integrations/clickpipes/mysql/table_resync
+sidebarTitle: 'Ressincronizar tabela'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Há cenários em que pode ser útil ressincronizar tabelas específicas de um pipe. Alguns exemplos de casos de uso incluem alterações significativas de schema no MySQL ou alguma remodelagem de dados no ClickHouse.
+
+Embora a ressincronização de tabelas individuais com um clique ainda esteja em desenvolvimento, este guia mostra as etapas para fazer isso hoje no ClickPipe do MySQL.
+
+<Steps>
+  <Step title="Remova a tabela do pipe" id="removing-table">
+    Isso pode ser feito seguindo o [guia de remoção de tabela](/pt-BR/integrations/clickpipes/mysql/remove-table).
+  </Step>
+
+  <Step title="Trunque ou exclua a tabela no ClickHouse" id="truncate-drop-table">
+    Esta etapa serve para evitar duplicação de dados quando adicionarmos essa tabela novamente na próxima etapa. Você pode fazer isso acessando a aba **SQL Console** no ClickHouse Cloud e executando uma consulta.
+    Observe que temos uma validação para bloquear a adição da tabela se ela já existir no ClickHouse e não estiver vazia.
+  </Step>
+
+  <Step title="Adicione a tabela ao ClickPipe novamente" id="add-table-again">
+    Isso pode ser feito seguindo o [guia de adição de tabela](/pt-BR/integrations/clickpipes/mysql/add-table).
+  </Step>
+</Steps>

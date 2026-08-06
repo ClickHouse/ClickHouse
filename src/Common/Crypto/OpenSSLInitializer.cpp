@@ -15,6 +15,12 @@
 namespace DB
 {
 
+OpenSSLInitializer & OpenSSLInitializer::instance()
+{
+    static OpenSSLInitializer instance;
+    return instance;
+}
+
 #if USE_SSL
 std::atomic<bool> DB::OpenSSLInitializer::initialize_done{false};
 std::atomic<bool> DB::OpenSSLInitializer::cleanup_done{false};
@@ -32,8 +38,8 @@ void OpenSSLInitializer::initialize()
 #if USE_SSL
 
 #ifndef NDEBUG
-    assert(!initialize_done);
-    assert(!cleanup_done);
+    chassert(!initialize_done);
+    chassert(!cleanup_done);
 #endif
 
     if (!initialize_done)
@@ -77,8 +83,8 @@ void OpenSSLInitializer::cleanup()
 #if USE_SSL
 
 #ifndef NDEBUG
-    assert(initialize_done);
-    assert(!cleanup_done);
+    chassert(initialize_done);
+    chassert(!cleanup_done);
 #endif
 
     if (!cleanup_done)

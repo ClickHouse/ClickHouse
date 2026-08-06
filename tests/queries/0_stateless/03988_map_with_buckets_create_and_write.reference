@@ -1,0 +1,68 @@
+1a: zero-level uses_with_buckets
+0
+1a: merged uses_with_buckets
+1
+1b: zero-level uses_with_buckets
+1
+1b: merged uses_with_buckets
+1
+2a: part_type
+Wide
+2a: uses_with_buckets, bucket_count
+1	4
+2b: part_type
+Compact
+2b: uses_with_buckets, bucket_count
+1	4
+3: constant avg=1 max=4, zero-level bucket_count
+4
+3: constant avg=1 max=4, merged bucket_count
+4
+4: sqrt coeff=1 avg=4 max=8, zero-level bucket_count
+2
+4: sqrt coeff=1 avg=4 max=8, merged bucket_count
+2
+4: sqrt coeff=1 avg=9 max=8, zero-level bucket_count
+3
+4: sqrt coeff=1 avg=9 max=8, merged bucket_count
+3
+4: sqrt coeff=2 avg=4 max=8, zero-level bucket_count
+4
+4: sqrt coeff=2 avg=4 max=8, merged bucket_count
+4
+4: sqrt coeff=1 avg=16 max=3 (capped), zero-level bucket_count
+3
+4: sqrt coeff=1 avg=16 max=3 (capped), merged bucket_count
+3
+5: linear coeff=1 avg=2 max=8, zero-level bucket_count
+2
+5: linear coeff=1 avg=2 max=8, merged bucket_count
+2
+5: linear coeff=1 avg=3 max=8, zero-level bucket_count
+3
+5: linear coeff=1 avg=3 max=8, merged bucket_count
+3
+5: linear coeff=2 avg=3 max=8, zero-level bucket_count
+6
+5: linear coeff=2 avg=3 max=8, merged bucket_count
+6
+5: linear coeff=1 avg=10 max=4 (capped), zero-level bucket_count
+4
+5: linear coeff=1 avg=10 max=4 (capped), merged bucket_count
+4
+6: sqrt min_avg=4 avg=1 (below threshold), zero-level bucket_count
+1
+6: sqrt min_avg=4 avg=1 (below threshold), merged bucket_count
+1
+6: sqrt min_avg=4 avg=3 (below threshold), zero-level bucket_count
+1
+6: sqrt min_avg=4 avg=3 (below threshold), merged bucket_count
+1
+6: sqrt min_avg=4 avg=4 (at threshold), zero-level bucket_count
+2
+6: sqrt min_avg=4 avg=4 (at threshold), merged bucket_count
+2
+6: sqrt min_avg=4 avg=9 (above threshold), zero-level bucket_count
+3
+6: sqrt min_avg=4 avg=9 (above threshold), merged bucket_count
+3

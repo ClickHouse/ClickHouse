@@ -9,13 +9,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_LOCAL --multiquery "
-SET allow_experimental_statistics = 1;
+SET allow_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE t_stats_time_mismatch
 (
     c0 Int8,
-    c1 Int16 STATISTICS(MinMax, Uniq),
+    c1 Int16 STATISTICS(basic, Uniq),
     c5 Date
 ) ENGINE = MergeTree()
 ORDER BY tuple();

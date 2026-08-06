@@ -1,4 +1,5 @@
 --- Verifies that tokenizer is properly passed to supported functions when a text index is partially materialized.
+SET explain_query_plan_default = 'legacy';
 
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
@@ -26,7 +27,7 @@ SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'hello') SETTINGS use_skip_indexes_on_data_read = 1
 )
-WHERE explain LIKE '%Filter column%';
+WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'hello');
 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'world');
@@ -59,7 +60,7 @@ SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab_partially WHERE hasAnyToken(text, 'hello') SETTINGS use_skip_indexes_on_data_read = 1
 )
-WHERE explain LIKE '%Filter column%';
+WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab_partially WHERE hasAnyToken(text, 'hello');
 SELECT count() FROM tab_partially WHERE hasAnyToken(text, 'world');

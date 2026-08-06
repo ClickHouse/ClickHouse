@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Columns/ColumnSparse.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
@@ -10,7 +11,6 @@
 
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
 
 
@@ -29,41 +29,91 @@ constexpr auto KEY_VERSION = "version";
 constexpr auto KEY_NUM_ROWS = "num_rows";
 constexpr auto KEY_COLUMNS = "columns";
 constexpr auto KEY_NUM_DEFAULTS = "num_defaults";
+constexpr auto KEY_EXACT_NUM_DEFAULTS = "exact_num_defaults";
 constexpr auto KEY_KIND = "kind";
 constexpr auto KEY_NAME = "name";
 
 constexpr auto KEY_TYPES_SERIALIZATION_VERSIONS = "types_serialization_versions";
 constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
+constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
+
+void writeJSONKey(std::string_view key, WriteBuffer & out)
+{
+    writeJSONString(key, out, {});
+    writeChar(':', out);
+}
+
+void writeJSONKeyValue(std::string_view key, std::string_view value, WriteBuffer & out)
+{
+    writeJSONKey(key, out);
+    writeJSONString(value, out, {});
+}
+
+void writeJSONKeyValue(std::string_view key, size_t value, WriteBuffer & out)
+{
+    writeJSONKey(key, out);
+    writeIntText(value, out);
+}
+
+void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
+{
+    writeJSONKey(key, out);
+    writeString(value ? "true" : "false", out);
+}
 
 }
 
-void SerializationInfo::Data::add(const IColumn & column)
+void SerializationInfo::Data::add(const IColumn & column, bool exact)
 {
+    bool was_empty = (num_rows == 0);
     size_t rows = column.size();
-    double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
-
     num_rows += rows;
-    num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
+
+    if (exact)
+    {
+        num_defaults += column.getNumberOfDefaultRows();
+        /// First exact contribution into a fresh `Data` starts exact tracking.
+        if (was_empty)
+            exact_num_defaults = true;
+    }
+    else
+    {
+        /// Sampled estimate: cheap, but unfit for trivial-count / pruning consumers.
+        double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
+        num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
+    }
 }
 
 void SerializationInfo::Data::add(const Data & other)
 {
+    /// On the first contribution into a fresh `Data` take exactness from `other`.
+    /// The default value of `exact_num_defaults` is false and would otherwise pin
+    /// the merged result to non exact even when every input is exact.
+    bool was_empty = (num_rows == 0);
     num_rows += other.num_rows;
     num_defaults += other.num_defaults;
+    exact_num_defaults = was_empty ? other.exact_num_defaults : (exact_num_defaults && other.exact_num_defaults);
 }
 
 void SerializationInfo::Data::remove(const Data & other)
 {
     num_rows -= other.num_rows;
     num_defaults -= other.num_defaults;
+    exact_num_defaults = exact_num_defaults && other.exact_num_defaults;
 }
 
 void SerializationInfo::Data::addDefaults(size_t length)
 {
+    /// Every added row is known to be a default. Seed exactness on the first
+    /// contribution so a part synthesised entirely from defaults reports exact
+    /// stats.
+    bool was_empty = (num_rows == 0);
     num_rows += length;
     num_defaults += length;
+    if (was_empty)
+        exact_num_defaults = true;
 }
 
 SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_)
@@ -81,7 +131,7 @@ SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, cons
 
 void SerializationInfo::add(const IColumn & column)
 {
-    data.add(column);
+    data.add(column, settings.compute_exact_num_defaults);
     if (settings.choose_kind)
         kind_stack = chooseKindStack(data, settings);
 }
@@ -206,7 +256,7 @@ void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
 
 void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
 {
-    UInt8 type;
+    UInt8 type = 0;
     readBinary(type, in);
     auto maybe_type = magic_enum::enum_cast<KindStackBinarySerializationType>(type);
     if (!maybe_type)
@@ -231,11 +281,11 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
             break;
         case KindStackBinarySerializationType::COMBINATION:
         {
-            size_t num_kinds;
+            size_t num_kinds = 0;
             readVarUInt(num_kinds, in);
             for (size_t i = 0; i != num_kinds; ++i)
             {
-                UInt8 kind;
+                UInt8 kind = 0;
                 readBinary(kind, in);
                 auto maybe_kind = magic_enum::enum_cast<ISerialization::Kind>(kind);
                 if (!maybe_kind)
@@ -248,11 +298,49 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     }
 }
 
+void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) const
+{
+    writeJSONKeyValue(KEY_KIND, ISerialization::kindStackToString(kind_stack), out);
+
+    if (name)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_NAME, *name, out);
+    }
+
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_NUM_DEFAULTS, data.num_defaults, out);
+
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_NUM_ROWS, data.num_rows, out);
+
+    /// Only emit the key when true. A missing key reads back as false, so writing
+    /// `"exact_num_defaults": false` would just add noise to `serialization.json`
+    /// for parts that don't carry exact counts.
+    if (data.exact_num_defaults)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_EXACT_NUM_DEFAULTS, true, out);
+    }
+}
+
+void SerializationInfo::writeJSON(WriteBuffer & out, const String * name) const
+{
+    writeChar('{', out);
+    writeJSONFields(out, name);
+    writeChar('}', out);
+}
+
 void SerializationInfo::toJSON(Poco::JSON::Object & object) const
 {
     object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
+    /// Only emit the key when true. A missing key reads back as false, so writing
+    /// `"exact_num_defaults": false` would just add noise to `serialization.json`
+    /// for parts that don't carry exact counts.
+    if (data.exact_num_defaults)
+        object.set(KEY_EXACT_NUM_DEFAULTS, true);
 }
 
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
@@ -264,6 +352,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 
     data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
     data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
+    data.exact_num_defaults = object.has(KEY_EXACT_NUM_DEFAULTS) && object.getValue<bool>(KEY_EXACT_NUM_DEFAULTS);
     kind_stack = ISerialization::stringToKindStack(object.getValue<String>(KEY_KIND));
 }
 
@@ -376,40 +465,57 @@ bool SerializationInfoByName::needsPersistence() const
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
-    Poco::JSON::Object object;
-    Poco::JSON::Array column_infos;
+    auto version = getVersion();
 
+    writeChar('{', out);
+    writeJSONKey(KEY_COLUMNS, out);
+    writeChar('[', out);
+
+    bool first = true;
     for (const auto & [name, info] : *this)
     {
-        Poco::JSON::Object info_json;
-        info->toJSON(info_json);
-        info_json.set(KEY_NAME, name);
-        column_infos.add(std::move(info_json)); /// NOLINT
-    }
+        if (!first)
+            writeChar(',', out);
+        first = false;
 
-    auto version = getVersion();
-    object.set(KEY_VERSION, static_cast<uint8_t>(version));
-    object.set(KEY_COLUMNS, std::move(column_infos)); /// NOLINT
+        info->writeJSON(out, &name);
+    }
+    writeChar(']', out);
+
+    if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES && settings.propagate_types_serialization_versions_to_nested_types)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types, out);
+    }
 
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
-        Poco::JSON::Object type_versions_obj;
-        type_versions_obj.set(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
-        if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
-            type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
-        object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
+        writeChar(',', out);
+        writeJSONKey(KEY_TYPES_SERIALIZATION_VERSIONS, out);
+        writeChar('{', out);
 
-        /// Write flag propagate_types_serialization_versions_to_nested_types only if it's set,
-        /// so old versions can read this info if the flag is disabled.
-        if (settings.propagate_types_serialization_versions_to_nested_types)
-            object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types);
+        bool first_type_version = true;
+        auto write_type_version = [&](std::string_view key, size_t value)
+        {
+            if (!first_type_version)
+                writeChar(',', out);
+            first_type_version = false;
+
+            writeJSONKeyValue(key, value, out);
+        };
+
+        if (settings.map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
+            write_type_version(KEY_MAP_SERIALIZATION_VERSION, static_cast<size_t>(settings.map_serialization_version));
+        if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
+            write_type_version(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
+        write_type_version(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
+
+        writeChar('}', out);
     }
 
-    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    oss.exceptions(std::ios::failbit);
-    Poco::JSON::Stringifier::stringify(object, oss);
-
-    writeString(oss.str(), out);
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_VERSION, static_cast<size_t>(version), out);
+    writeChar('}', out);
 }
 
 SerializationInfoByName SerializationInfoByName::clone() const
@@ -466,6 +572,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     MergeTreeNullableSerializationVersion nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
+    MergeTreeMapSerializationVersion map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         /// types_serialization_versions is mandatory in WITH_TYPES mode
@@ -493,6 +600,13 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
                     throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
                 nullable_serialization_version = *maybe_enum;
             }
+            else if (type_name == KEY_MAP_SERIALIZATION_VERSION)
+            {
+                auto maybe_enum = magic_enum::enum_cast<MergeTreeMapSerializationVersion>(version_value);
+                if (!maybe_enum.has_value())
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
+                map_serialization_version = *maybe_enum;
+            }
             else
             {
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown field '{}' in types_serialization_versions", type_name);
@@ -503,9 +617,11 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     SerializationInfoSettings settings(
         1.0 /* Doesn't matter when constructing from JSON */,
         false /* Cannot choose kind when constructing from JSON */,
+        false /* compute_exact_num_defaults: irrelevant when reading existing JSON */,
         version,
         string_serialization_version,
         nullable_serialization_version,
+        map_serialization_version,
         propagate_types_serialization_versions_to_nested_types);
 
     SerializationInfoByName infos(settings);

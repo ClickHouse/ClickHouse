@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
@@ -8,8 +9,8 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/VectorWithMemoryTracking.h>
 
+#include <unordered_map>
 #include <unordered_set>
 
 namespace DB
@@ -63,14 +64,14 @@ namespace DB
 /// Has several inputs and single output.
 /// Read from inputs chunks with partially aggregated data, group them by bucket number
 ///  and write data from single bucket as single chunk.
-class GroupingAggregatedTransform : public IProcessor
+class GroupingAggregatedTransform final : public IProcessor
 {
 public:
     GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_);
     String getName() const override { return "GroupingAggregatedTransform"; }
 
 protected:
-    Status prepare(const PortNumbers & updated_input_ports, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts &) override;
     void work() override;
 
 private:
@@ -80,7 +81,7 @@ private:
     VectorWithMemoryTracking<Int32> last_bucket_number; /// Last bucket read from each input.
 
     /// See `ConvertingAggregatedToChunksTransform` to learn about sending buckets out of order.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
+    std::vector<VectorWithMemoryTracking<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
     std::unordered_map<Int32, size_t> out_of_order_buckets; /// Mapping bucket_id -> number of inputs delayed that bucket.
 
     std::map<Int32, VectorWithMemoryTracking<Chunk>> chunks_map; /// bucket -> chunks
@@ -93,6 +94,7 @@ private:
     bool all_inputs_finished = false;
     bool initialized_index_to_input = false;
     VectorWithMemoryTracking<InputPorts::iterator> index_to_input;
+    std::unordered_map<const InputPort *, uint64_t> input_port_to_index;
     HashSet<uint64_t> wait_input_ports_numbers;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
@@ -108,11 +110,13 @@ private:
 };
 
 /// Merge aggregated data from single bucket.
-class MergingAggregatedBucketTransform : public ISimpleTransform
+class MergingAggregatedBucketTransform final : public ISimpleTransform
 {
 public:
     explicit MergingAggregatedBucketTransform(
-        AggregatingTransformParamsPtr params, const SortDescription & required_sort_description_ = {});
+        AggregatingTransformParamsPtr params,
+        const SortDescription & required_sort_description_ = {},
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_ = nullptr);
     String getName() const override { return "MergingAggregatedBucketTransform"; }
 
 protected:
@@ -121,12 +125,13 @@ protected:
 private:
     AggregatingTransformParamsPtr params;
     const SortDescription required_sort_description;
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 };
 
 /// Has several inputs and single output.
 /// Read from inputs merged bucket with aggregated data, sort them by bucket number and write to output.
 /// Presumption: inputs return chunks with increasing bucket number, there is at most one chunk per bucket.
-class SortingAggregatedTransform : public IProcessor
+class SortingAggregatedTransform final : public IProcessor
 {
 public:
     SortingAggregatedTransform(size_t num_inputs, AggregatingTransformParamsPtr params);

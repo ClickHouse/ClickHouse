@@ -1,0 +1,8 @@
+read-in-order DESC, narrowing enabled
+1	0
+read-in-order ASC, narrowing enabled
+1	0
+sorted subqueries in union, narrowing enabled
+1	0
+read-in-order DESC, default narrowing settings
+1	0

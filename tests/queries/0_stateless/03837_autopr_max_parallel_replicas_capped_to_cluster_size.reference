@@ -1,1 +1,3 @@
-3
+log_comment	stats_collected	pr_used
+03837_autopr_max_parallel_replicas_capped_query_0	1	0
+03837_autopr_max_parallel_replicas_capped_query_1	0	0

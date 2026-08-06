@@ -13,7 +13,7 @@ namespace DB
 
 class Block;
 
-class TTLCalcTransform : public IAccumulatingTransform
+class TTLCalcTransform final : public IAccumulatingTransform
 {
 public:
     TTLCalcTransform(
