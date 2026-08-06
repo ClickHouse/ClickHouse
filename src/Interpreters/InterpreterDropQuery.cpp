@@ -302,10 +302,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
+            /// The detached table cannot be looked up through `DatabaseCatalog` anymore, but its
+            /// metadata still references the named collections it uses, so they must not be dropped
+            /// while it can be attached back.
+            NamedCollectionFactory::instance().markDependenciesDetached(table_id);
+
             if (query.permanently)
             {
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-                NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
             }
@@ -800,9 +804,25 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!drop && !truncate)
         database->assertCanBeDetached(true);
 
+    /// The tables of a database that does not have to be empty on detach (`Atomic`, ...) stay inside
+    /// it: remember their named collection dependencies as detached, like `DETACH TABLE` does.
+    if (!drop && !truncate && !database->shouldBeEmptyOnDetach())
+    {
+        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        {
+            if (auto table_ptr = iterator->table())
+                NamedCollectionFactory::instance().markDependenciesDetached(table_ptr->getStorageID());
+        }
+    }
+
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
     if (!truncate)
         DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+
+    /// `DROP DATABASE` drops the detached tables of the database too: their entries would otherwise
+    /// keep blocking `DROP NAMED COLLECTION` until the server restart.
+    if (drop)
+        NamedCollectionFactory::instance().removeDetachedDependencies(database_name);
 
     return {};
 }

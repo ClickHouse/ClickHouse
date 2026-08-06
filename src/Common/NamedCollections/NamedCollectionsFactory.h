@@ -11,6 +11,9 @@
 #include <boost/multi_index/composite_key.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 
+#include <set>
+#include <tuple>
+
 namespace DB
 {
 class ASTCreateNamedCollectionQuery;
@@ -92,16 +95,26 @@ public:
 
     void addDependency(const String & collection_name, const StorageID & table_id);
     void removeDependencies(const StorageID & table_id);
-    /// Remove the dependency of a single table on a single collection, leaving the dependencies of the
-    /// same table on the other collections in place.
-    void removeDependency(const String & collection_name, const StorageID & table_id);
     void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     std::vector<StorageID> getDependents(const String & collection_name) const;
+
+    /// `DETACH TABLE` moves the dependencies of the table here: a detached table is not in
+    /// `DatabaseCatalog`, but the metadata it is attached from still references the collections, so they
+    /// must not be dropped. `ATTACH` registers the dependencies again and removes the entries. The list
+    /// is kept in memory only and is deliberately imprecise: dropping the collection may still be
+    /// refused for a while after the detached table itself is gone.
+    void markDependenciesDetached(const StorageID & table_id);
+    /// The names of the detached tables that referenced the collection when they were detached.
+    std::vector<String> getDetachedDependents(const String & collection_name) const;
+    /// `DROP DATABASE` drops the detached tables of the database too: forget about them.
+    void removeDetachedDependencies(const String & database_name);
 
 protected:
     mutable NamedCollectionsMap loaded_named_collections;
     mutable std::mutex mutex;
     NamedCollectionDependencies dependencies;
+    /// (collection name, database name, table name) of the dependencies of detached tables.
+    std::set<std::tuple<String, String, String>> detached_dependencies;
 
     const LoggerPtr log = getLogger("NamedCollectionFactory");
 

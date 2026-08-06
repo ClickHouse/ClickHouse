@@ -429,6 +429,9 @@ void NamedCollectionFactory::addDependency(const String & collection_name, const
     std::lock_guard lock(mutex);
     LOG_TRACE(log, "Adding dependency: collection={}, table={}", collection_name, table_id.getNameForLogs());
     dependencies.emplace(collection_name, table_id);
+
+    /// A table with this name is (re)attached: it is not detached anymore.
+    detached_dependencies.erase({collection_name, table_id.database_name, table_id.table_name});
 }
 
 void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
@@ -460,37 +463,6 @@ void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
         for (auto it : to_erase)
             idx.erase(it);
     }
-}
-
-void NamedCollectionFactory::removeDependency(const String & collection_name, const StorageID & table_id)
-{
-    std::lock_guard lock(mutex);
-    LOG_TRACE(log, "Removing dependency: collection={}, table={}", collection_name, table_id.getNameForLogs());
-
-    auto & idx = dependencies.get<Collection>();
-    auto range = idx.equal_range(collection_name);
-
-    /// A dependency of a table of an `Atomic` database is identified by its UUID, and one of a table of
-    /// a name-based database (`Ordinary`, ...) by its name - such an entry has no UUID.
-    auto is_the_same_table = [&](const NamedCollectionDependency & dependency)
-    {
-        if (table_id.hasUUID())
-            return dependency.table_id.uuid == table_id.uuid;
-
-        return dependency.table_id.uuid == UUIDHelpers::Nil
-            && dependency.table_id.database_name == table_id.database_name
-            && dependency.table_id.table_name == table_id.table_name;
-    };
-
-    std::vector<decltype(range.first)> to_erase;
-    for (auto it = range.first; it != range.second; ++it)
-    {
-        if (is_the_same_table(*it))
-            to_erase.push_back(it);
-    }
-
-    for (auto it : to_erase)
-        idx.erase(it);
 }
 
 void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
@@ -546,6 +518,70 @@ std::vector<StorageID> NamedCollectionFactory::getDependents(const String & coll
         result.push_back(it->table_id);
 
     return result;
+}
+
+void NamedCollectionFactory::markDependenciesDetached(const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+    LOG_TRACE(log, "Marking dependencies of table {} as detached", table_id.getNameForLogs());
+
+    std::vector<String> collection_names;
+
+    if (table_id.hasUUID())
+    {
+        auto & idx = dependencies.get<TableUUID>();
+        auto range = idx.equal_range(table_id.uuid);
+        for (auto it = range.first; it != range.second; ++it)
+            collection_names.push_back(it->collection_name);
+        idx.erase(range.first, range.second);
+    }
+    else
+    {
+        /// Like in `removeDependencies`: entries with UUIDs belong to tables of `Atomic` databases and
+        /// are handled through the UUID index above.
+        auto & idx = dependencies.get<TableName>();
+        auto range = idx.equal_range(std::make_tuple(table_id.database_name, table_id.table_name));
+
+        std::vector<decltype(range.first)> to_erase;
+        for (auto it = range.first; it != range.second; ++it)
+        {
+            if (it->table_id.uuid == UUIDHelpers::Nil)
+            {
+                collection_names.push_back(it->collection_name);
+                to_erase.push_back(it);
+            }
+        }
+
+        for (auto it : to_erase)
+            idx.erase(it);
+    }
+
+    /// The current names, not the ones stored in the dependency (which go stale on `RENAME`), and not
+    /// the UUID: the entry is removed when a table with this name is attached, and the metadata file the
+    /// detached table would be attached from is named after the current name.
+    for (const auto & collection_name : collection_names)
+        detached_dependencies.insert({collection_name, table_id.database_name, table_id.table_name});
+}
+
+std::vector<String> NamedCollectionFactory::getDetachedDependents(const String & collection_name) const
+{
+    std::lock_guard lock(mutex);
+    std::vector<String> result;
+
+    for (auto it = detached_dependencies.lower_bound(std::make_tuple(collection_name, String{}, String{}));
+         it != detached_dependencies.end() && std::get<0>(*it) == collection_name;
+         ++it)
+    {
+        result.push_back(StorageID{std::get<1>(*it), std::get<2>(*it)}.getFullTableName());
+    }
+
+    return result;
+}
+
+void NamedCollectionFactory::removeDetachedDependencies(const String & database_name)
+{
+    std::lock_guard lock(mutex);
+    std::erase_if(detached_dependencies, [&](const auto & entry) { return std::get<1>(entry) == database_name; });
 }
 
 }

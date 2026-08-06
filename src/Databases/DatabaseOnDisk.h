@@ -90,13 +90,10 @@ public:
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
-    /// `DETACH TABLE ... PERMANENTLY` keeps the metadata file of the table, and marks it with a flag file
-    /// of this name, so that the table is not loaded at the next server start.
-    static constexpr const char * detached_suffix = ".detached";
-
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
+    static constexpr const char * detached_suffix = ".detached";
 
     using IteratingFunction = std::function<void(const String &)>;
 

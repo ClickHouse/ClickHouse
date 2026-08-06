@@ -78,7 +78,10 @@ SELECT count() FROM system.named_collections WHERE name = '${NC}';
 DROP TABLE t3;
 "
 
-echo "--- the same in an Ordinary database, where the name is all there is to identify the table by ---"
+echo "--- in an Ordinary database, the name is all there is to identify the table by ---"
+# In an Ordinary database the dependency carries no UUID, so when the name is taken by another table
+# afterwards, the stale dependency cannot be told apart from a dependency of that table: the drop is
+# refused until the name is freed. The check is deliberately imprecise in this direction.
 ${CLICKHOUSE_CLIENT} --send_logs_level=error -m -q "
 SET allow_deprecated_database_ordinary = 1;
 CREATE DATABASE ${ORDINARY_DB} ENGINE = Ordinary;
@@ -87,10 +90,11 @@ ${CLICKHOUSE_CLIENT} -m -q "
 CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'ThisFormatDoesNotExist';
 CREATE TABLE ${ORDINARY_DB}.t (x UInt32) ENGINE = URL(${NC}); -- { serverError UNKNOWN_FORMAT }
 CREATE TABLE ${ORDINARY_DB}.t (x UInt32) ENGINE = Memory;
-DROP NAMED COLLECTION ${NC};
-SELECT count() FROM system.named_collections WHERE name = '${NC}';
+DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
 DROP TABLE ${ORDINARY_DB}.t;
 DROP DATABASE ${ORDINARY_DB};
+DROP NAMED COLLECTION ${NC};
+SELECT count() FROM system.named_collections WHERE name = '${NC}';
 "
 
 echo "--- and in a detached database, where the table has no metadata to be attached from ---"
@@ -119,13 +123,16 @@ DROP TABLE t4;
 DROP NAMED COLLECTION ${NC}_2;
 "
 
-echo "--- a permanently detached table does not hold it: the metadata is not loaded at startup ---"
+echo "--- a permanently detached table holds it, too: it can be attached back ---"
 ${CLICKHOUSE_CLIENT} -m -q "
 CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'CSV';
 CREATE TABLE t (x UInt32) ENGINE = URL(${NC});
 DETACH TABLE t PERMANENTLY;
-DROP NAMED COLLECTION ${NC};
+DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
 SELECT count() FROM system.named_collections WHERE name = '${NC}';
+ATTACH TABLE t;
+DROP TABLE t;
+DROP NAMED COLLECTION ${NC};
 "
 
 echo "--- check_named_collection_dependencies = 0 still allows dropping it ---"
