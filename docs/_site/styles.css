@@ -1909,6 +1909,7 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
 .cloudNotSupportedBadge {
     background-color: #F6E5FF;
     color: #660099;
+    text-decoration: none;
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -1916,6 +1917,10 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
     display: inline-flex;
     margin-right: 5px;
     font-size: 0.875rem;
+}
+
+.cloudNotSupportedBadge:hover {
+    text-decoration: underline;
 }
 
 .cloudNotSupportedIcon {

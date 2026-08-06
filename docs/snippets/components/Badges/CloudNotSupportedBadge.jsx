@@ -13,8 +13,8 @@ const Icon = () => {
 
 export const CloudNotSupportedBadge = () => {
     return (
-        <div className="cloudNotSupportedBadge">
+        <a href="https://clickhouse.com/docs/products/cloud/guides/cloud-compatibility#clickhouse-cloud-architecture" className="cloudNotSupportedBadge">
             <Icon />Not supported in ClickHouse Cloud
-        </div>
+        </a>
     )
 }
