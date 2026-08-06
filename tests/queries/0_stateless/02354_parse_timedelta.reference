@@ -10,3 +10,16 @@
 1.001001001
 1.001001001
 1.11111111111
+11s+22min	1331
+1h 30m	5400
+	\N
+11s+22min	1331
+1h 30m	5400
+	0
+11s	11	11
+\N	\N	\N
+junk	\N	0
+Float64	Nullable(Float64)	Float64
+LowCardinality(Nullable(Float64))	LowCardinality(Float64)
+String	\N	0
+Nullable(Float64)	Nullable(Float64)	Nullable(Float64)

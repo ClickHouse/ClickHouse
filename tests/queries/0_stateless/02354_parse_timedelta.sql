@@ -24,3 +24,28 @@ SELECT parseTimeDelta('1-yr'); -- {serverError BAD_ARGUMENTS}
 SELECT parseTimeDelta('1 1yr'); -- {serverError BAD_ARGUMENTS}
 SELECT parseTimeDelta('1yyr'); -- {serverError BAD_ARGUMENTS}
 SELECT parseTimeDelta('1yr-2mo-4w + 12 days, 3 hours : 1 minute ;. 33 seconds'); -- {serverError BAD_ARGUMENTS}
+
+-- parseTimeDeltaOrNull / parseTimeDeltaOrZero: unparseable input yields NULL / 0 instead of throwing
+SELECT s, parseTimeDeltaOrNull(s) FROM values('s String', ('11s+22min'), ('1h 30m'), (''));
+SELECT s, parseTimeDeltaOrZero(s) FROM values('s String', ('11s+22min'), ('1h 30m'), (''));
+
+-- a NULL row stays NULL for both wrappers, because the engine re-applies the null map
+SELECT s, parseTimeDeltaOrNull(s), parseTimeDeltaOrZero(s) FROM values('s Nullable(String)', ('11s'), (NULL), ('junk'));
+
+SELECT toTypeName(parseTimeDelta('1s')), toTypeName(parseTimeDeltaOrNull('1s')), toTypeName(parseTimeDeltaOrZero('1s'));
+SELECT toTypeName(parseTimeDeltaOrNull(toLowCardinality('1s'))), toTypeName(parseTimeDeltaOrZero(toLowCardinality('1s')));
+
+-- errors about the call itself still raise for the wrappers
+SELECT parseTimeDeltaOrNull(); -- {serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION}
+SELECT parseTimeDeltaOrZero(); -- {serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION}
+SELECT parseTimeDeltaOrNull('1yr', 1); -- {serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION}
+SELECT parseTimeDeltaOrZero('1yr', 1); -- {serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION}
+SELECT parseTimeDeltaOrNull(1); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT parseTimeDeltaOrZero(1); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+
+-- over a Dynamic column an unparseable String alternative is recovered, ...
+SELECT dynamicType(d), parseTimeDeltaOrNull(d), parseTimeDeltaOrZero(d) FROM (SELECT materialize(CAST('junk' AS Dynamic)) AS d);
+SELECT toTypeName(parseTimeDelta(d)), toTypeName(parseTimeDeltaOrNull(d)), toTypeName(parseTimeDeltaOrZero(d)) FROM (SELECT materialize(CAST('1s' AS Dynamic)) AS d);
+-- ... while a non-String alternative is still a call error, as for the bare function
+SELECT parseTimeDeltaOrNull(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT parseTimeDeltaOrZero(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
