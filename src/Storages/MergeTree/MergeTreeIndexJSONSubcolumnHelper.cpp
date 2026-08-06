@@ -119,8 +119,17 @@ static bool isJSONAllValuesMatchSafe(
     if (!dag_node)
         return false;
 
-    const auto type_id = dag_node->result_type->getTypeId();
-    return type_id != TypeIndex::Dynamic && type_id != TypeIndex::Variant;
+    const auto & result_type = *dag_node->result_type;
+    if (isDynamic(result_type) || isVariant(result_type))
+        return false;
+
+    bool contains_dynamic_or_variant = false;
+    result_type.forEachChild([&](const IDataType & child)
+    {
+        contains_dynamic_or_variant |= isDynamic(child) || isVariant(child);
+    });
+
+    return !contains_dynamic_or_variant;
 }
 
 std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
