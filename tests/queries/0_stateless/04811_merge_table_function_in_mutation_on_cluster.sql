@@ -65,5 +65,12 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu ON CLUSTER test_shard_localhost
     SET v = 3 WHERE id IN (SELECT id FROM t_lwu_src);
 SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 3;
 
+-- `currentDatabase()` inside a table function is substituted on the initiator, before the query
+-- reaches the distributed DDL queue: the host cannot recover it, because the queue rewrite has
+-- already replaced it with the database of the session.
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu ON CLUSTER test_shard_localhost
+    SET v = 4 WHERE id IN (SELECT id FROM merge(currentDatabase(), '^t_lwu_src$'));
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 4;
+
 DROP TABLE t_lwu_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
