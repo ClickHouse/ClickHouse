@@ -51,7 +51,8 @@ def check():
         "most likely failed to fetch the PR file list from the GitHub API. "
         "See the Config Workflow logs for the underlying error."
     )
-    GH.request_team_reviews(get_docs_teams_to_request(changed_files))
+    if info.event_action == "opened":
+        GH.request_team_reviews(get_docs_teams_to_request(changed_files))
 
     if any(
         file.startswith(prefix)

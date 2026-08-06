@@ -30,6 +30,13 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
             ],
         ),
         (
+            [
+                "docs/pt-BR/integrations/clickpipes/home.mdx",
+                "docs/ja/integrations/connectors/navigation.json",
+            ],
+            ["docs"],
+        ),
+        (
             ["docs/integrations/clickpipes/home.mdx", "src/Core/Block.cpp"],
             [],
         ),
@@ -43,6 +50,8 @@ def test_get_docs_teams_to_request(changed_files, expected_teams):
 
 def test_check_requests_docs_teams(monkeypatch):
     class FakeInfo:
+        event_action = "opened"
+
         def get_kv_data(self, key):
             assert key == "changed_files"
             return [
@@ -64,38 +73,28 @@ def test_check_requests_docs_teams(monkeypatch):
     assert requested == ["clickpipes", "integrations-ecosystem", "docs"]
 
 
-def test_check_requests_no_teams_when_docs_pr_becomes_mixed(monkeypatch):
-    changed_files = iter(
-        [
-            ["docs/integrations/clickpipes/home.mdx"],
-            ["docs/integrations/clickpipes/home.mdx", "src/Core/Block.cpp"],
-        ]
-    )
-
+def test_check_does_not_manage_docs_reviews_after_open(monkeypatch):
     class FakeInfo:
+        event_action = "synchronize"
+
         def get_kv_data(self, key):
             assert key == "changed_files"
-            return next(changed_files)
-
-    requests = []
-
-    def fake_request(team_slugs):
-        requests.append(team_slugs)
+            return ["docs/integrations/clickpipes/home.mdx"]
 
     monkeypatch.setattr(team_notifications, "Info", FakeInfo)
     monkeypatch.setattr(
         team_notifications.GH,
         "request_team_reviews",
-        staticmethod(fake_request),
+        staticmethod(lambda *_args: pytest.fail("unexpected review request")),
     )
 
     assert team_notifications.check()
-    assert team_notifications.check()
-    assert requests == [["clickpipes", "docs"], []]
 
 
 def test_check_preserves_existing_type_id_notification(monkeypatch):
     class FakeInfo:
+        event_action = "synchronize"
+
         def get_kv_data(self, key):
             assert key == "changed_files"
             return ["src/Core/TypeId.h"]
@@ -109,7 +108,7 @@ def test_check_preserves_existing_type_id_notification(monkeypatch):
     monkeypatch.setattr(
         team_notifications.GH,
         "request_team_reviews",
-        staticmethod(lambda team_slugs: None),
+        staticmethod(lambda *_args: pytest.fail("unexpected review request")),
     )
     monkeypatch.setattr(
         team_notifications.GH, "post_updateable_comment", staticmethod(fake_post)
@@ -123,6 +122,8 @@ def test_check_preserves_existing_type_id_notification(monkeypatch):
 
 def test_check_fails_when_changed_files_are_unavailable(monkeypatch):
     class FakeInfo:
+        event_action = "opened"
+
         def get_kv_data(self, key):
             assert key == "changed_files"
             return None
