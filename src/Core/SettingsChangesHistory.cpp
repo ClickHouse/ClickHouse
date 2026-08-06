@@ -1351,6 +1351,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"leader_election", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"},
             {"leader_election_heartbeat_interval", 10, 10, "New setting to control leader lease renewal interval"},
             {"leader_election_session_timeout", 30, 30, "New setting to control leader lease expiry threshold"},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
         });
