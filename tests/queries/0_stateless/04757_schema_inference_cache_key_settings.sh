@@ -100,6 +100,36 @@ echo "-- Parquet depth, low limit alone throws (control)"
 $CLICKHOUSE_LOCAL -q "DESC file('${T}_deep_b.parquet', 'Parquet') SETTINGS max_parser_depth = 2 FORMAT Null" \
     2>&1 | grep -c TOO_DEEP_RECURSION
 
+# --- input_format_parquet_local_time_as_utc -----------------------------------------------
+# Selects the timezone of the inferred DateTime64 for a non-UTC-adjusted timestamp column,
+# so each pair must report DateTime64(3, 'UTC') for the =1 query and DateTime64(3) for the =0
+# query, whichever ran first. A stale entry also changes the value read back, not just the name.
+for suffix in a b; do cp "$CUR_DIR"/data_parquet/not_utc.parquet "${T}_lt_${suffix}.parquet"; done
+touch -d "$AGE" "${T}"_lt_*.parquet
+echo "-- Parquet local_time_as_utc, utc=1 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_lt_a.parquet', 'Parquet') SETTINGS input_format_parquet_local_time_as_utc = 1;
+    DESC file('${T}_lt_a.parquet', 'Parquet') SETTINGS input_format_parquet_local_time_as_utc = 0;" | cut -f2
+echo "-- Parquet local_time_as_utc, utc=0 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_lt_b.parquet', 'Parquet') SETTINGS input_format_parquet_local_time_as_utc = 0;
+    DESC file('${T}_lt_b.parquet', 'Parquet') SETTINGS input_format_parquet_local_time_as_utc = 1;" | cut -f2
+
+# --- input_format_parquet_allow_geoparquet_parser -----------------------------------------
+# Decides whether a GeoParquet geometry column is inferred as a geo type or as its raw String
+# representation, so each pair must report LineString for the =1 query and Nullable(String)
+# for the =0 query, whichever ran first.
+for suffix in a b; do cp "$CUR_DIR"/data_parquet/03445_geoparquet_null_linestring.parquet "${T}_geo_${suffix}.parquet"; done
+touch -d "$AGE" "${T}"_geo_*.parquet
+echo "-- Parquet allow_geoparquet_parser, geo=1 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_geo_a.parquet', 'Parquet') SETTINGS input_format_parquet_allow_geoparquet_parser = 1;
+    DESC file('${T}_geo_a.parquet', 'Parquet') SETTINGS input_format_parquet_allow_geoparquet_parser = 0;" | awk -F'\t' '$1 == "geometry" {print $2}'
+echo "-- Parquet allow_geoparquet_parser, geo=0 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_geo_b.parquet', 'Parquet') SETTINGS input_format_parquet_allow_geoparquet_parser = 0;
+    DESC file('${T}_geo_b.parquet', 'Parquet') SETTINGS input_format_parquet_allow_geoparquet_parser = 1;" | awk -F'\t' '$1 == "geometry" {print $2}'
+
 # --- Template ----------------------------------------------------------------------------
 # The row format's own field rule (CSV here) must key the entry, not format_regexp_escaping_rule.
 # The field must be rule-specific: an Escaped field infers String at both exponent values.
@@ -131,10 +161,11 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_exp_a.form', 'Form') FORMAT Null;
     SELECT additional_format_info != '' FROM system.schema_inference_cache;"
 
-echo "-- Parquet key carries max_parser_depth"
+echo "-- Parquet key carries max_parser_depth and both new Parquet fields"
 $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_deep_a.parquet', 'Parquet') SETTINGS max_parser_depth = 1000 FORMAT Null;
-    SELECT extract(additional_format_info, 'max_parser_depth=\d+') FROM system.schema_inference_cache;"
+    SELECT extract(additional_format_info, 'max_parser_depth=\d+'), extract(additional_format_info, 'local_time_as_utc=\w+'), extract(additional_format_info, 'allow_geoparquet_parser=\w+')
+    FROM system.schema_inference_cache;"
 
 echo "-- Template key follows the row format's rule, not format_regexp_escaping_rule"
 $CLICKHOUSE_LOCAL -m -q "

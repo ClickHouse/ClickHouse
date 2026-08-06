@@ -39,6 +39,18 @@ Nullable(Float64)
 1
 -- Parquet depth, low limit alone throws (control)
 1
+-- Parquet local_time_as_utc, utc=1 first
+Nullable(DateTime64(3, \'UTC\'))
+Nullable(DateTime64(3))
+-- Parquet local_time_as_utc, utc=0 first
+Nullable(DateTime64(3))
+Nullable(DateTime64(3, \'UTC\'))
+-- Parquet allow_geoparquet_parser, geo=1 first
+LineString
+Nullable(String)
+-- Parquet allow_geoparquet_parser, geo=0 first
+Nullable(String)
+LineString
 -- Template exponent, exp=1 first
 Nullable(Float64)
 Nullable(String)
@@ -52,7 +64,7 @@ input_format_try_infer_exponent_floats=true	max_parser_depth=1000
 input_format_try_infer_exponent_floats=true
 -- Form key is no longer empty
 1
--- Parquet key carries max_parser_depth
-max_parser_depth=1000
+-- Parquet key carries max_parser_depth and both new Parquet fields
+max_parser_depth=1000	local_time_as_utc=true	allow_geoparquet_parser=true
 -- Template key follows the row format's rule, not format_regexp_escaping_rule
 1	0
