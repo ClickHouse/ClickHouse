@@ -228,9 +228,10 @@ def test_select_constant_array_over_wire(started_cluster):
     try:
         cur = conn.cursor()
         cur.execute("SELECT [1, 2] AS a, ['x', 'y'] AS s")
-        # Arrays are advertised as text in the RowDescription of a direct SELECT, so the client sees
-        # the PostgreSQL literal itself (every scalar element is quoted).
-        assert cur.fetchall() == [('{"1","2"}', '{"x","y"}')]
+        # The RowDescription of a direct SELECT advertises the array OID of the element type, so the
+        # client decodes the streamed PostgreSQL array literal into a native array.
+        assert [d.type_code for d in cur.description] == [1005, 1009]
+        assert cur.fetchall() == [([1, 2], ["x", "y"])]
     finally:
         conn.close()
 
