@@ -33,7 +33,7 @@ PRIMARY KEY(primary_key_name);
 **Serialization**
 
 
-When the `DB_INDEX` contains other none serialized key and value, `select * from redis_table` without key filter will throw `Code: 33: CANNOT_READ_ALL_DATA`. Remove the non-serialized key and value to enable scanning query.
+When the `DB_INDEX` contains other none serialized key and value, `SELECT * FROM redis_table` without key filter will throw `Code: 33: CANNOT_READ_ALL_DATA`. Remove the non-serialized key and value to enable scanning query.
 `PRIMARY KEY` supports only one column. The primary key will be serialized in binary as a Redis key.
 Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
 </Info>
