@@ -62,7 +62,7 @@ std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageS
         BSON_APPEND_UTF8(bson_doc, "version", VERSION_STRING);
         BSON_APPEND_UTF8(bson_doc, "gitVersion", VERSION_GITHASH);
         BSON_APPEND_BOOL(bson_doc, "debug", false);
-        BSON_APPEND_INT32(bson_doc, "maxBsonObjectSize", 16777216);
+        BSON_APPEND_INT32(bson_doc, "maxBsonObjectSize", static_cast<int32_t>(MAX_BSON_OBJECT_SIZE));
 
         bson_t version_array;
         bson_append_array_begin(bson_doc, "versionArray", -1, &version_array);

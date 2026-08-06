@@ -39,6 +39,12 @@ enum class OperationCode : Int32
 /// client never sends anything bigger.
 static constexpr UInt32 MAX_MESSAGE_SIZE = 48000000;
 
+/// The largest BSON document we are willing to produce or accept, which is the
+/// `maxBsonObjectSize` we advertise. A reply is itself one BSON document, so a result
+/// that does not fit must be rejected rather than sent: there is no cursor to continue
+/// from - every reply carries the whole result and a cursor id of 0.
+static constexpr UInt32 MAX_BSON_OBJECT_SIZE = 16777216;
+
 /// The smallest possible BSON document: a 4-byte length and the terminating zero byte.
 static constexpr UInt32 MIN_DOCUMENT_SIZE = 5;
 

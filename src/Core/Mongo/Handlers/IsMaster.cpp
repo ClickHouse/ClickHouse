@@ -11,7 +11,7 @@ std::vector<Document> IsMasterHandler::handle(const std::vector<OpMessageSection
 
     BSON_APPEND_BOOL(bson_doc, "ismaster", true);
     BSON_APPEND_BOOL(bson_doc, "isWritablePrimary", true);
-    BSON_APPEND_INT32(bson_doc, "maxBsonObjectSize", 16777216);
+    BSON_APPEND_INT32(bson_doc, "maxBsonObjectSize", static_cast<int32_t>(MAX_BSON_OBJECT_SIZE));
     BSON_APPEND_INT32(bson_doc, "maxMessageSizeBytes", static_cast<int32_t>(MAX_MESSAGE_SIZE));
     BSON_APPEND_INT32(bson_doc, "maxWriteBatchSize", 100000);
     BSON_APPEND_INT64(bson_doc, "localTime", static_cast<int64_t>(time(nullptr)) * 1000);

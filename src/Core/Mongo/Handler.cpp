@@ -30,6 +30,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LIMIT_EXCEEDED;
 }
 
 namespace DB::MongoProtocol
@@ -498,6 +499,12 @@ executeSelectIntoCursor(const String & sql_query, const CollectionRef & collecti
         if (data_it == result_json.MemberEnd() || !data_it->value.IsArray())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no rows");
 
+        /// The reply is one BSON document holding the whole result: the cursor id is always 0,
+        /// so there is no `getMore` to continue from, and a result that does not fit into the
+        /// `maxBsonObjectSize` advertised by `isMaster` must be rejected rather than sent as an
+        /// oversized reply the driver would refuse to read. The bound is checked while the rows
+        /// are collected, so an oversized result is dropped before it is held whole in memory.
+        size_t batch_size = 0;
         for (const auto & json_data : data_it->value.GetArray())
         {
             if (!json_data.IsObject())
@@ -506,6 +513,14 @@ executeSelectIntoCursor(const String & sql_query, const CollectionRef & collecti
             bson_t * row_document = bson_new();
             appendFieldTree(row_document, tree, json_data, columns);
             selected.emplace_back(row_document);
+
+            batch_size += selected.back().getBson()->len;
+            if (batch_size > MAX_BSON_OBJECT_SIZE)
+                throw Exception(
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "The result is larger than the largest reply that can be sent ({} bytes). "
+                    "Ask for less at a time, with a filter, a projection, 'limit' and 'skip'",
+                    MAX_BSON_OBJECT_SIZE);
         }
     }
 
