@@ -1067,7 +1067,9 @@ void QueryPlan::explainPlan(
     /// In compact mode, collect all indexes from the entire plan tree
     /// (including child plans like Merge table sub-plans), aggregate them,
     /// and print a flat summary after the reading step header.
-    if (options.compact && options.indexes)
+    /// `EXPLAIN ANALYZE` (steps_to_stats) must keep the full traversal,
+    /// otherwise the per-step runtime stats would be lost.
+    if (options.compact && options.indexes && !steps_to_stats)
     {
         std::vector<IndexesDescription> descriptions;
         bool supported_shape = collectIndexesFromPlan(*this, descriptions);
