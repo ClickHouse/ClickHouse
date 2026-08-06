@@ -2082,6 +2082,17 @@ static void tryStreamWindowFunctions(QueryPlan::Node & node)
 
     const auto & window_order_by = window->getWindowDescription().order_by;
 
+    /// `lagInFrame` does not require an `ORDER BY`.  Without one the regular window path
+    /// still sorts by the full `partition_by` (`full_sort_description` degenerates to it),
+    /// while the streaming path would merge by `prefix_description` alone and visit the rows
+    /// of each suffix partition in storage-key order instead.  `lagInFrame` is
+    /// order-sensitive, so toggling the setting would change which row is considered
+    /// "previous" inside a partition.  The suffix partition columns are by definition not
+    /// covered by the storage-order prefix, so the full `partition_by` order cannot be
+    /// preserved without an actual sort — fall back to `WindowTransform`.
+    if (window_order_by.empty())
+        return;
+
     /// The storage key must fully cover prefix + window ORDER BY columns.
     if (prefix_description.size() + window_order_by.size() > full_key_size)
         return;
