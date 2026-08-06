@@ -74,6 +74,7 @@ void serveStaticPage(FiberSocket & client, const StaticPageConfig & page)
     }
 
     String body;
+    bool have_body = false;
     {
         /// Reading a file from disk blocks; step out of the cooperative scheduler while doing it.
         silk::FiberScheduler::ThreadModeScope thread_mode;
@@ -81,6 +82,7 @@ void serveStaticPage(FiberSocket & client, const StaticPageConfig & page)
         {
             ReadBufferFromFile file(page.file);
             readStringUntilEOF(body, file);
+            have_body = true;
         }
         catch (...)  // NOLINT(bugprone-empty-catch)
         {
@@ -88,10 +90,10 @@ void serveStaticPage(FiberSocket & client, const StaticPageConfig & page)
         }
     }
 
-    if (body.empty())
-        sendResponse(client, 404, "Not Found", "text/plain; charset=UTF-8", "Not found\n");
-    else
+    if (have_body)
         sendResponse(client, 200, "OK", page.content_type, body);
+    else
+        sendResponse(client, 404, "Not Found", "text/plain; charset=UTF-8", "Not found\n");
 }
 
 }
