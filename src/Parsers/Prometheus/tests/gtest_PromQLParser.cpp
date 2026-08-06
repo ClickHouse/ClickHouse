@@ -3,6 +3,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <fmt/format.h>
+#include <tuple>
 
 using namespace DB;
 
@@ -1622,7 +1623,7 @@ TEST(PromQLParser, PreservePositiveDurationRangesAtSecondPrecision)
         EXPECT_EQ(query_tree.toString(), expected) << query;
     }
 
-    for (const auto query : {"up[0ms]", "up[5m:0ms]"})
+    for (const auto *const query : {"up[0ms]", "up[5m:0ms]"})
     {
         PrometheusQueryTree query_tree;
         String error_message;
@@ -1633,12 +1634,31 @@ TEST(PromQLParser, PreservePositiveDurationRangesAtSecondPrecision)
 }
 
 
+TEST(PromQLParser, PreservePositiveDecimalRangesAtTimestampPrecision)
+{
+    for (const auto & [query, timestamp_scale, expected] : std::initializer_list<std::tuple<std::string_view, UInt32, std::string_view>>{
+             {"up[1.0001]", 0, "up[2]"},
+             {"up[1.2301]", 2, "up[1.24]"},
+             {"up[1.2300]", 2, "up[1.23]"},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_TRUE(query_tree.tryParse(query, timestamp_scale, &error_message, &error_pos)) << query << ": " << error_message;
+        EXPECT_EQ(query_tree.toString(), expected) << query;
+    }
+}
+
+
 TEST(PromQLParser, RejectUnrepresentableSubqueryStepsAtSecondPrecision)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
              {"up[5m:1ms]", 6},
              {"up[5m:1001ms]", 6},
              {"up[5m:1.001]", 6},
+             {"up[5m:1.0001]", 6},
          })
     {
         PrometheusQueryTree query_tree;
@@ -1653,6 +1673,9 @@ TEST(PromQLParser, RejectUnrepresentableSubqueryStepsAtSecondPrecision)
     String error_message;
     size_t error_pos = String::npos;
     EXPECT_TRUE(query_tree.tryParse("up[5m:1s]", 0, &error_message, &error_pos)) << error_message;
+
+    EXPECT_TRUE(query_tree.tryParse("up[5m:1.2300]", 2, &error_message, &error_pos)) << error_message;
+    EXPECT_FALSE(query_tree.tryParse("up[5m:1.2301]", 2, &error_message, &error_pos));
 }
 
 

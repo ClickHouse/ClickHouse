@@ -485,6 +485,71 @@ namespace
         return found_time_unit;
     }
 
+    /// Checks whether a decimal number has only zero digits beyond the requested scale.
+    /// The decimal parser intentionally truncates those digits, so this has to inspect the original input.
+    bool isDecimalNumberExactAtScale(std::string_view input, UInt32 scale)
+    {
+        size_t pos = 0;
+        if (input.starts_with('+') || input.starts_with('-'))
+            ++pos;
+
+        while (pos != input.length() && std::isspace(input[pos]))
+            ++pos;
+
+        size_t end_pos = input.length();
+        while (end_pos != pos && std::isspace(input[end_pos - 1]))
+            --end_pos;
+
+        String normalized = removeUnderscoresBetweenDigits</* is_hex = */ false>(input.substr(pos, end_pos - pos));
+        std::string_view unsigned_input = normalized;
+
+        size_t exponent_pos = unsigned_input.find_first_of("eE");
+        std::string_view mantissa = unsigned_input.substr(0, exponent_pos);
+
+        Int32 exponent = 0;
+        if (exponent_pos != String::npos)
+            tryParse(exponent, unsigned_input.substr(exponent_pos + 1));
+
+        Int64 fractional_digits = 0;
+        Int64 mantissa_digits = 0;
+        bool after_decimal_point = false;
+        for (char c : mantissa)
+        {
+            if (c == '.')
+            {
+                after_decimal_point = true;
+            }
+            else if (std::isdigit(c))
+            {
+                ++mantissa_digits;
+                if (after_decimal_point)
+                    ++fractional_digits;
+            }
+        }
+
+        const Int64 discarded_digits = fractional_digits - exponent - static_cast<Int64>(scale);
+        if (discarded_digits <= 0)
+            return true;
+
+        Int64 digits_to_check = discarded_digits;
+        if (digits_to_check > mantissa_digits)
+            digits_to_check = mantissa_digits;
+
+        Int64 checked_digits = 0;
+        for (auto it = mantissa.rbegin(); it != mantissa.rend() && checked_digits < digits_to_check; ++it)
+        {
+            if (!std::isdigit(*it))
+                continue;
+
+            if (*it != '0')
+                return false;
+
+            ++checked_digits;
+        }
+
+        return true;
+    }
+
     /// Tries to parse an unsigned scalar in duration format, for example "1y2w5d13h15m30s1ms".
     /// If it succeeds the function returns true and sets `result`.
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
@@ -748,16 +813,27 @@ namespace
         size_t * error_pos)
     {
         bool result = tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, &info.is_positive);
-        if (!result || !info.is_positive || timestamp_scale >= 3)
+        if (!result || !info.is_positive)
             return result;
 
-        /// Parse at millisecond precision to detect a positive fraction discarded at the timestamp scale.
-        DurationType millisecond_duration;
-        bool millisecond_is_positive = false;
-        if (tryParseNumber(input, 3, millisecond_duration, nullptr, nullptr, &millisecond_is_positive) && millisecond_is_positive)
+        if (isDurationFormat(input))
         {
-            const auto divisor = DecimalUtils::scaleMultiplier<DurationType>(3 - timestamp_scale);
-            info.is_exact = millisecond_duration.value % divisor == 0;
+            if (timestamp_scale < 3)
+            {
+                /// Parse at millisecond precision to detect a positive fraction discarded at the timestamp scale.
+                DurationType millisecond_duration;
+                bool millisecond_is_positive = false;
+                if (tryParseNumber(input, 3, millisecond_duration, nullptr, nullptr, &millisecond_is_positive) && millisecond_is_positive)
+                {
+                    const auto divisor = DecimalUtils::scaleMultiplier<DurationType>(3 - timestamp_scale);
+                    info.is_exact = millisecond_duration.value % divisor == 0;
+                }
+            }
+        }
+        else
+        {
+            /// Bare numeric durations can contain more fractional digits than the millisecond probe can observe.
+            info.is_exact = isDecimalNumberExactAtScale(input, timestamp_scale);
         }
 
         return result;
