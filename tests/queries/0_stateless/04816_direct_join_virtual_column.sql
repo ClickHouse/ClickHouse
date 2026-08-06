@@ -1,3 +1,4 @@
+-- Tags: use-rocksdb
 -- Direct join published a storage data column under a right-side virtual column's name.
 
 DROP TABLE IF EXISTS t_04816_rocks;
