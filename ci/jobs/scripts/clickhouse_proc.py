@@ -60,12 +60,14 @@ class ClickHouseProc:
         is_db_replicated=False,
         is_shared_catalog=False,
         is_per_test_coverage=False,
+        is_llvm_coverage=False,
         ch_config_dir="/etc/clickhouse-server",
         ch_var_lib_dir="/var/lib/clickhouse",
     ):
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
         self.is_per_test_coverage = is_per_test_coverage
+        self.is_llvm_coverage = is_llvm_coverage
         self.ch_config_dir = ch_config_dir
         self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
@@ -902,8 +904,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: Coordination logs not found")
             return []
 
-    @classmethod
-    def _get_jemalloc_profiles(cls):
+    def _get_jemalloc_profiles(self):
         profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
         if not profiles:
             return []
@@ -931,16 +932,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
-        chbinary = Shell.get_output("readlink -f $(which clickhouse)")
-        for pid, profile in latest_profiles.items():
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
-                verbose=True,
+        if self.is_llvm_coverage:
+            # Rendering is skipped, not the archiving below, so the raw .heap
+            # profiles still ship and can be rendered offline.
+            print(
+                f"NOTE: skipping jeprof rendering of {len(latest_profiles)} jemalloc profile(s) on an LLVM-coverage build"
             )
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
-                verbose=True,
-            )
+        else:
+            chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+            for pid, profile in latest_profiles.items():
+                Shell.check(
+                    f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+                    verbose=True,
+                )
+                Shell.check(
+                    f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                    verbose=True,
+                )
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
