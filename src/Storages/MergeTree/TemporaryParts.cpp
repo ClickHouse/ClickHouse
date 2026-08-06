@@ -36,23 +36,25 @@ void TemporaryParts::remove(const std::string & basename)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary part {} does not exist", basename);
 }
 
-bool TemporaryParts::tryClaimForCleanup(const std::string & basename)
-{
-    std::lock_guard lock(mutex);
-    if (parts.contains(basename))
-        return false;
-    return being_cleaned.emplace(basename).second;
-}
-
-void TemporaryParts::releaseCleanupClaim(const std::string & basename)
+scope_guard TemporaryParts::tryHoldForCleanup(const std::string & basename)
 {
     {
         std::lock_guard lock(mutex);
-        bool removed = being_cleaned.erase(basename);
-        if (!removed)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary part {} is not being cleaned", basename);
+        if (parts.contains(basename))
+            return {};
+        if (!being_cleaned.emplace(basename).second)
+            return {};
     }
-    cleanup_finished.notify_all();
+
+    /// Runs from the guard's destructor, so it must not throw.
+    return [this, basename]
+    {
+        {
+            std::lock_guard lock(mutex);
+            being_cleaned.erase(basename);
+        }
+        cleanup_finished.notify_all();
+    };
 }
 
 }

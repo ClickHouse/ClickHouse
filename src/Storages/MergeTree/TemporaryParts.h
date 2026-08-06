@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/scope_guard.h>
 #include <boost/noncopyable.hpp>
 #include <condition_variable>
 #include <mutex>
@@ -10,8 +11,8 @@ namespace DB
 {
 
 /// Arbitrates temporary part directory names between active operations (merge/mutation/INSERT, via
-/// `add`) and the background cleaner (via `tryClaimForCleanup`/`releaseCleanupClaim`). A name is owned
-/// by at most one side: the cleaner skips claimed names, and `add` waits out a cleanup in progress.
+/// `add`) and the background cleaner (via `tryHoldForCleanup`). A name is owned by at most one side:
+/// the cleaner skips claimed names, and `add` waits out a cleanup in progress.
 class TemporaryParts : private boost::noncopyable
 {
 private:
@@ -30,10 +31,10 @@ private:
     void add(const std::string & basename);
     void remove(const std::string & basename);
 
-    /// Takes a transient cleanup hold on the name. Returns false if an operation owns it or another
-    /// cleanup hold is already in place.
-    bool tryClaimForCleanup(const std::string & basename);
-    void releaseCleanupClaim(const std::string & basename);
+    /// Takes a transient cleanup hold on the name. Returns an empty guard if an operation owns the name
+    /// or another hold is already in place; otherwise the returned guard releases the hold, on every
+    /// path including a failed removal, so a name whose removal threw stays retryable.
+    scope_guard tryHoldForCleanup(const std::string & basename);
 
     friend class MergeTreeData;
     friend class TemporaryPartsTestAccessor;

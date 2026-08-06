@@ -23,14 +23,14 @@ public:
         temporary_parts.remove(basename);
     }
 
-    static bool tryClaimForCleanup(TemporaryParts & temporary_parts, const std::string & basename)
+    static scope_guard tryHoldForCleanup(TemporaryParts & temporary_parts, const std::string & basename)
     {
-        return temporary_parts.tryClaimForCleanup(basename);
+        return temporary_parts.tryHoldForCleanup(basename);
     }
 
-    static void releaseCleanupClaim(TemporaryParts & temporary_parts, const std::string & basename)
+    static bool canHoldForCleanup(TemporaryParts & temporary_parts, const std::string & basename)
     {
-        temporary_parts.releaseCleanupClaim(basename);
+        return static_cast<bool>(temporary_parts.tryHoldForCleanup(basename));
     }
 };
 
@@ -38,47 +38,46 @@ public:
 
 using DB::TemporaryPartsTestAccessor;
 
-TEST(TemporaryParts, CleanupCannotClaimOwnedName)
+TEST(TemporaryParts, CleanupCannotHoldOwnedName)
 {
     DB::TemporaryParts temporary_parts;
 
     TemporaryPartsTestAccessor::add(temporary_parts, "tmp_a");
     EXPECT_TRUE(temporary_parts.contains("tmp_a"));
 
-    /// The cleaner must not claim a name owned by an active operation.
-    EXPECT_FALSE(TemporaryPartsTestAccessor::tryClaimForCleanup(temporary_parts, "tmp_a"));
+    /// The cleaner must not hold a name owned by an active operation.
+    EXPECT_FALSE(TemporaryPartsTestAccessor::canHoldForCleanup(temporary_parts, "tmp_a"));
 
-    /// An unrelated name is claimable.
-    EXPECT_TRUE(TemporaryPartsTestAccessor::tryClaimForCleanup(temporary_parts, "tmp_b"));
-    TemporaryPartsTestAccessor::releaseCleanupClaim(temporary_parts, "tmp_b");
+    /// An unrelated name can be held.
+    EXPECT_TRUE(TemporaryPartsTestAccessor::canHoldForCleanup(temporary_parts, "tmp_b"));
 
-    /// Once the operation releases the name, the cleaner can claim it.
+    /// Once the operation releases the name, the cleaner can hold it.
     TemporaryPartsTestAccessor::remove(temporary_parts, "tmp_a");
-    EXPECT_TRUE(TemporaryPartsTestAccessor::tryClaimForCleanup(temporary_parts, "tmp_a"));
-    TemporaryPartsTestAccessor::releaseCleanupClaim(temporary_parts, "tmp_a");
+    EXPECT_TRUE(TemporaryPartsTestAccessor::canHoldForCleanup(temporary_parts, "tmp_a"));
 }
 
 TEST(TemporaryParts, CleanupHoldIsExclusive)
 {
     DB::TemporaryParts temporary_parts;
 
-    EXPECT_TRUE(TemporaryPartsTestAccessor::tryClaimForCleanup(temporary_parts, "tmp_c"));
+    auto hold = TemporaryPartsTestAccessor::tryHoldForCleanup(temporary_parts, "tmp_c");
+    EXPECT_TRUE(static_cast<bool>(hold));
 
-    /// A second cleanup claim on the same name must fail while the first hold is in place.
-    EXPECT_FALSE(TemporaryPartsTestAccessor::tryClaimForCleanup(temporary_parts, "tmp_c"));
+    /// A second hold on the same name must fail while the first one is in place.
+    EXPECT_FALSE(TemporaryPartsTestAccessor::canHoldForCleanup(temporary_parts, "tmp_c"));
 
-    TemporaryPartsTestAccessor::releaseCleanupClaim(temporary_parts, "tmp_c");
+    hold.reset();
 
-    /// After the hold is released, the name is claimable again.
-    EXPECT_TRUE(TemporaryPartsTestAccessor::tryClaimForCleanup(temporary_parts, "tmp_c"));
-    TemporaryPartsTestAccessor::releaseCleanupClaim(temporary_parts, "tmp_c");
+    /// The guard released the name, so it can be held again.
+    EXPECT_TRUE(TemporaryPartsTestAccessor::canHoldForCleanup(temporary_parts, "tmp_c"));
 }
 
 TEST(TemporaryParts, OperationClaimWaitsForCleanup)
 {
     DB::TemporaryParts temporary_parts;
 
-    ASSERT_TRUE(TemporaryPartsTestAccessor::tryClaimForCleanup(temporary_parts, "tmp_e"));
+    auto hold = TemporaryPartsTestAccessor::tryHoldForCleanup(temporary_parts, "tmp_e");
+    ASSERT_TRUE(static_cast<bool>(hold));
 
     std::atomic<bool> started{false};
     std::atomic<bool> finished{false};
@@ -104,7 +103,7 @@ TEST(TemporaryParts, OperationClaimWaitsForCleanup)
         returned_while_held = finished;
     }
 
-    TemporaryPartsTestAccessor::releaseCleanupClaim(temporary_parts, "tmp_e");
+    hold.reset();
     operation.join();
 
     EXPECT_FALSE(returned_while_held) << "add() returned while the name was held by the cleaner";
