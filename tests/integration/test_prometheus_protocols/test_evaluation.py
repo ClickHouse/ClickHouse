@@ -1201,6 +1201,55 @@ def test_unary_operators():
         ],
     )
 
+    send_data(
+        [
+            ({"__name__": "unary_requests", "job": "unary"}, {0: 2}),
+            ({"__name__": "unary_errors", "job": "unary"}, {1200: 4}),
+        ]
+    )
+
+    # Removing __name__ must merge series that have no samples at the same timestamp.
+    do_query_test(
+        '-{job="unary"}',
+        0,
+        '{"resultType": "vector", "result": [{"metric": {"job": "unary"}, "value": [0, "-2"]}]}',
+        [["[('job','unary')]", "1970-01-01 00:00:00.000", -2]],
+    )
+
+    do_query_test(
+        '-{job="unary"}',
+        1200,
+        '{"resultType": "vector", "result": [{"metric": {"job": "unary"}, "value": [1200, "-4"]}]}',
+        [["[('job','unary')]", "1970-01-01 00:20:00.000", -4]],
+    )
+
+    do_range_query_test(
+        '-{job="unary"}',
+        0,
+        1200,
+        1200,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "unary"}, "values": [[0, "-2"], [1200, "-4"]]}]}',
+        [[
+            "[('job','unary')]",
+            "[('1970-01-01 00:00:00.000',-2),('1970-01-01 00:20:00.000',-4)]",
+        ]],
+    )
+
+    send_data(
+        [
+            ({"__name__": "unary_requests", "job": "unary_overlap"}, {2400: 1}),
+            ({"__name__": "unary_errors", "job": "unary_overlap"}, {2400: 2}),
+        ]
+    )
+
+    # The same labelset at the same timestamp is still an error.
+    do_query_test_expect_error(
+        '-{job="unary_overlap"}',
+        2400,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags {'job': 'unary_overlap'}",
+    )
+
 
 def test_conversion_functions():
     do_query_test(
