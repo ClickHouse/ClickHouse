@@ -591,11 +591,22 @@ CREATE TABLE table_with_asterisk (name String, value UInt32)
     ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
 ```
 
+## Resolving relative URLs {#resolving-relative-urls}
+
+The [s3_base](/reference/settings/session-settings/s3#s3_base) setting allows using a relative URL in the `S3` engine. When `s3_base` is set and the path has no scheme, it is resolved against the base URL per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [s3 table function docs](/reference/functions/table-functions/s3#resolving-relative-urls). The resolved URL is materialized into the stored table definition, so the table does not depend on the value of `s3_base` after creation.
+
+```sql
+SET s3_base = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/';
+CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Close Float32, Volume Float32, OpenInt Int32)
+    ENGINE = S3('aapl_stock.csv', NOSIGN, 'CSVWithNames');
+```
+
 ## Storage settings {#storage-settings}
 
 - [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
+- [s3_base](/reference/settings/session-settings/s3#s3_base) - base URL for resolving relative URLs passed to the engine. Empty (disabled) by default.
 
 ## S3-related settings {#settings}
 
@@ -1132,14 +1143,10 @@ void registerStorageIceberg(StorageFactory & factory)
         Documentation{
             .description = R"DOCS_MD(
 :::warning
-We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
+We recommend using the [Iceberg table function](/sql-reference/table-functions/iceberg.md) for ad hoc queries against a storage path. The Iceberg table engine is available but may have limitations — ClickHouse was not originally designed for tables whose schema changes externally, so some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
-The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
-
-For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
+If your tables are managed by a data catalog such as Glue, see [Using a data catalog](#using-a-data-catalog).
 :::
-
-This engine provides a read-only *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
 ## Create table {#create-table}
 
@@ -1158,6 +1165,25 @@ CREATE TABLE iceberg_table_hdfs
 CREATE TABLE iceberg_table_local
     ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
 ```
+
+**Create a new Iceberg table** by specifying the schema explicitly. Requires [allow_insert_into_iceberg](/operations/settings/settings#allow_insert_into_iceberg). See [Writes into iceberg table](/sql-reference/table-functions/iceberg.md#writes-into-iceberg-table).
+
+```sql
+SET allow_insert_into_iceberg = 1;
+
+CREATE TABLE iceberg_writes_example
+(
+    x Nullable(String),
+    y Nullable(Int32)
+)
+ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/example/', 'key', 'secret')
+```
+
+## Using a data catalog {#using-a-data-catalog}
+
+If your Iceberg tables are managed by a catalog (Glue, REST, Unity, and others), use the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine instead of attaching tables with `IcebergS3` directly. This gives you access to catalog tables in one go instead of per table. Catalog settings such as `catalog_type` are database settings and are not valid on `IcebergS3`. From 26.4, table-level `storage_catalog_*` settings are also rejected.
+
+See [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) and the [catalog guides](/use-cases/data-lake/reference).
 
 ## Engine arguments {#engine-arguments}
 
@@ -1190,7 +1216,6 @@ Using named collections:
 
 ```sql
 CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table')
-
 ```
 
 ## Aliases {#aliases}
@@ -1499,7 +1524,9 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 ## See also {#see-also}
 
-- [iceberg table function](/sql-reference/table-functions/iceberg.md)
+- [iceberg table function](/sql-reference/table-functions/iceberg.md) — writes, time travel, and maintenance commands
+- [DataLakeCatalog](/engines/database-engines/datalakecatalog) — for catalog-managed tables
+- [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs)
 )DOCS_MD",
             .syntax = "ENGINE = Iceberg(url [, access_key_id, secret_access_key])",
             .related = {"IcebergS3", "IcebergAzure", "IcebergHDFS", "IcebergLocal", "DeltaLake", "Hudi"}});

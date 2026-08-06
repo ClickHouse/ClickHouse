@@ -1,3 +1,4 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
@@ -124,8 +125,75 @@ std::string_view ColumnReplicated::getDataAt(size_t n) const
     return nested_column->getDataAt(indexes.getIndexAt(n));
 }
 
+namespace
+{
+
+/// Used on ColumnReplicated::convertToFullColumnIfReplicated to check whether the fast path is worth
+/// Break-even is around 8 elements per row
+constexpr uint8_t ELEMENTS_PER_ROW_THRESHOLD = 8;
+
+/// Materializes Replicated(Array) into a full ColumnArray: Each array row is appended as one contiguous element range
+/// via a single insertRangeFrom, instead of gathering the nested data element by element as the generic path
+template <typename T>
+ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
+{
+    const auto & src_offsets = src.getOffsets();
+    const IColumn & src_data = src.getData();
+    size_t num_rows = row_indexes.size();
+
+    auto res_offsets_column = ColumnArray::ColumnOffsets::create(num_rows);
+    auto & res_offsets = res_offsets_column->getData();
+
+     size_t total_elements = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        ssize_t row = row_indexes[i];
+        /// src_offsets[row] == ColumnArray::sizeAt(row) and src_offsets[row -1] == ColumnArray::OffsetAt(row)
+        total_elements += src_offsets[row] - src_offsets[row - 1];
+        res_offsets[i] = total_elements;
+    }
+    auto res_data = src_data.cloneEmpty();
+    res_data->reserve(total_elements);
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        ssize_t row = row_indexes[i];
+        res_data->insertRangeFrom(src_data, src_offsets[row - 1], src_offsets[row] - src_offsets[row - 1]);
+    }
+
+    return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+}
+
+
+ColumnPtr convertToFullColumnArray(const ColumnArray & src, const IColumn & row_indexes)
+{
+    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&row_indexes))
+        return convertToFullColumnArrayImpl(src, indexes_uint8->getData());
+    if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&row_indexes))
+        return convertToFullColumnArrayImpl(src, indexes_uint16->getData());
+    if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&row_indexes))
+        return convertToFullColumnArrayImpl(src, indexes_uint32->getData());
+    if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&row_indexes))
+        return convertToFullColumnArrayImpl(src, indexes_uint64->getData());
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", row_indexes.getName());
+}
+
+}
+
+/// The generic index path (nested_column->index()) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
+/// For ColumnArray, the convertToFullColumnArray is called instead, so each array is copied once per row instead of per-element
+/// Range copying pays one virtual call to insertRangeFrom per row; the generic path pays 8 bytes of scratch memory and one write element
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
+    if (const auto * src_array = typeid_cast<const ColumnArray *>(nested_column.get()))
+    {
+        /// Per-array materialization
+        size_t src_rows_count = src_array->size();
+        size_t src_elements = src_array->getOffsets().back();
+        if (src_rows_count != 0 && src_elements >= src_rows_count * ELEMENTS_PER_ROW_THRESHOLD)
+            return convertToFullColumnArray(*src_array, *indexes.getIndexes());
+    }
+    /// Per-element materialization
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 
