@@ -31,6 +31,9 @@ SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in
 SET query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000;
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET read_in_order_use_virtual_row = 1, query_plan_optimize_join_order_limit = 1;
+-- `query_plan_join_swap_table = 0` is a pre-existing requirement of the `topKThroughJoin`
+-- deferral, not just plan stability: under the default `auto` a later optimization may swap
+-- the join sides, so the deferral never commits and the pushed-down plan is kept.
 SET query_plan_join_swap_table = 0, join_algorithm = 'hash';
 SET max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 4000000;
 SET grace_hash_join_initial_buckets = 1, grace_hash_join_max_buckets = 1024;
