@@ -27,6 +27,7 @@ echo "pre-create: no _delta_log"
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 
 DROP TABLE IF EXISTS t_dl_schema_types;
 CREATE TABLE t_dl_schema_types (
@@ -59,6 +60,7 @@ echo "post-create: initial commit exists"
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 
 SELECT count() FROM t_dl_schema_types;
 SELECT name, type FROM system.columns
@@ -94,6 +96,7 @@ for spec in "UInt64" "Decimal(50, 2)" "LowCardinality(String)" "DateTime('UTC')"
     if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 CREATE TABLE t_dl_reject (c ${spec}) ENGINE = DeltaLakeLocal('${reject_path}', Parquet);
 " 2>&1 | grep -q "Code: 48"; then
         echo "${spec}: rejected"
@@ -113,6 +116,7 @@ rm -rf "$reserved_path"
 if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 CREATE TABLE t_dl_reserved (_path String, id Int32) ENGINE = DeltaLakeLocal('${reserved_path}', Parquet);
 " 2>&1 | grep -q "Code: 44"; then
     echo "_path: rejected"
@@ -135,6 +139,7 @@ rm -rf "$special_path"
 if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 CREATE TABLE t_dl_special (id Int32, m Int32 MATERIALIZED 1) ENGINE = DeltaLakeLocal('${special_path}', Parquet);
 " 2>&1 | grep -q "Code: 36"; then
     echo "MATERIALIZED: rejected"

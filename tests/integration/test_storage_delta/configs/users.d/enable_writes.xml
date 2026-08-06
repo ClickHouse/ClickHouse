@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
+            <allow_experimental_delta_lake_create_table>1</allow_experimental_delta_lake_create_table>
         </default>
     </profiles>
 </clickhouse>

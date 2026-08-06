@@ -1095,11 +1095,12 @@ def test_create_delta_table_writes_initial_log(started_cluster):
         f"_delta_log unexpectedly present in s3://{bucket}/{table_key}/ before CREATE TABLE"
     )
 
-    # `allow_experimental_delta_lake_writes` is the gate the kernel
-    # create-table path checks in `DeltaLakeMetadataDeltaKernel::createTable`.
+    # `allow_experimental_delta_lake_create_table` gates the CREATE query; `allow_experimental_delta_lake_writes`
+    # is additionally required to write commit 0 (checked in `DeltaLakeMetadataDeltaKernel::createTable`).
     write_settings = {
         "allow_experimental_delta_kernel_rs": 1,
         "allow_experimental_delta_lake_writes": 1,
+        "allow_experimental_delta_lake_create_table": 1,
     }
     try:
         node1.query(
@@ -1219,6 +1220,7 @@ def test_create_delta_table_in_unity_catalog(started_cluster):
         "allow_experimental_database_unity_catalog": 1,
         "allow_experimental_delta_kernel_rs": 1,
         "allow_experimental_delta_lake_writes": 1,
+        "allow_experimental_delta_lake_create_table": 1,
     }
     try:
         node1.query(
@@ -1305,11 +1307,14 @@ def test_register_existing_delta_table_in_unity_catalog(started_cluster):
     write_settings = {
         "allow_experimental_delta_kernel_rs": 1,
         "allow_experimental_delta_lake_writes": 1,
+        "allow_experimental_delta_lake_create_table": 1,
     }
-    # Attach must not need writes: the `_delta_log` already exists, so no commit is written.
+    # Attach must not need writes: the `_delta_log` already exists, so no commit is written. Registering it
+    # in the catalog is still the create-table path, so it needs `allow_experimental_delta_lake_create_table`.
     attach_settings = {
         "allow_experimental_delta_kernel_rs": 1,
         "allow_experimental_delta_lake_writes": 0,
+        "allow_experimental_delta_lake_create_table": 1,
     }
 
     def make_unregistered_delta_table(creator, location):
@@ -1401,6 +1406,7 @@ def test_register_existing_delta_table_preserves_raw_schema(started_cluster):
     write_settings = {
         "allow_experimental_delta_kernel_rs": 1,
         "allow_experimental_delta_lake_writes": 1,
+        "allow_experimental_delta_lake_create_table": 1,
         # A historical snapshot version must be ignored by registration (it always reads the latest schema).
         "delta_lake_snapshot_version": 0,
     }
@@ -1465,6 +1471,7 @@ def test_register_existing_delta_table_requires_kernel(started_cluster):
             settings={
                 "allow_experimental_delta_kernel_rs": 1,
                 "allow_experimental_delta_lake_writes": 1,
+                "allow_experimental_delta_lake_create_table": 1,
             },
         )
 

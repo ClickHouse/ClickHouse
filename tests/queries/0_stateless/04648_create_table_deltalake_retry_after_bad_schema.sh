@@ -20,6 +20,7 @@ rm -rf "$TABLE_PATH"
 if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 CREATE TABLE t_dl_retry (c UInt64) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 " 2>&1 | grep -q "Code: 48"; then
     echo "bad-schema: rejected"
@@ -38,6 +39,7 @@ fi
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 CREATE TABLE t_dl_retry (c Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 "
 
@@ -50,6 +52,7 @@ fi
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 SELECT count() FROM t_dl_retry;
 DROP TABLE t_dl_retry;
 "

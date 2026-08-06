@@ -20,6 +20,7 @@ rm -rf "$TABLE_PATH"
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 CREATE TABLE t_dl_norm (n UInt8, s FixedString(3)) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_dl_norm' ORDER BY name;
 INSERT INTO t_dl_norm VALUES (200, 'abc');
@@ -32,6 +33,7 @@ SELECT n, s FROM t_dl_norm;
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 CREATE TABLE t_dl_norm_reattach ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_dl_norm_reattach' ORDER BY name;
 SELECT n, s FROM t_dl_norm_reattach;

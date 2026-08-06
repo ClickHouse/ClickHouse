@@ -17,6 +17,7 @@ rm -rf "$TABLE_PATH_UNPART" "$TABLE_PATH_PART" "$TABLE_PATH_NOKERNEL" "$TABLE_PA
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 
 DROP TABLE IF EXISTS t_dl_unpart;
 CREATE TABLE t_dl_unpart (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH_UNPART}', Parquet);
@@ -40,6 +41,7 @@ DROP TABLE t_dl_unpart;
 if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
+SET allow_experimental_delta_lake_create_table = 1;
 CREATE TABLE t_dl_part (id Int32, name String, country String)
     ENGINE = DeltaLakeLocal('${TABLE_PATH_PART}', Parquet)
     PARTITION BY country;
@@ -58,6 +60,7 @@ CREATE TABLE t_dl_nokernel (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH_NOKE
 if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 0;
+SET allow_experimental_delta_lake_create_table = 1;
 CREATE TABLE t_dl_nowrites (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH_NOWRITES}', Parquet);
 " 2>&1 | grep -q "requires allow_experimental_delta_lake_writes"; then echo "fresh create with writes off rejected"; else echo "fresh create with writes off NOT rejected"; fi
 
