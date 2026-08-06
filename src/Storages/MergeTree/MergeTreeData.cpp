@@ -8817,7 +8817,10 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
 }
 
 std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
-    const ASTPtr & predicate, ContextPtr query_context, bool command_runs_in_background) const
+    const ASTPtr & predicate,
+    ContextPtr query_context,
+    bool command_runs_in_background,
+    std::unordered_set<String> * analyzed_partition_ids) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     if (!metadata_snapshot->hasPartitionKey())
@@ -8973,6 +8976,9 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         if (part->info.getPartitionId().starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
             continue;
 
+        if (analyzed_partition_ids)
+            analyzed_partition_ids->insert(part->info.getPartitionId());
+
         if (!partition_pruner.canBePruned(*part))
             affected_partition_ids.insert(part->info.getPartitionId());
     }
@@ -8984,10 +8990,18 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 }
 
 std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands(
-    const MutationCommands & commands, ContextPtr query_context, bool commands_run_in_background) const
+    const MutationCommands & commands,
+    ContextPtr query_context,
+    bool commands_run_in_background,
+    std::unordered_set<String> * analyzed_partition_ids) const
 {
     std::set<String> affected_partition_ids;
     bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning];
+
+    /// Each pruned command analyzes its own snapshot of the local parts, taken at a slightly
+    /// different time. A partition counts as analyzed only if every pruned command has seen it,
+    /// so the per-command sets are intersected.
+    bool has_analyzed_partition_ids = false;
 
     for (const auto & command : commands)
     {
@@ -9009,13 +9023,34 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands
         }
         else if (optimize_with_pruning && alter && alter->predicate)
         {
-            auto pruned = getPartitionIdsPrunedByPredicate(ASTPtr(alter->predicate), query_context, commands_run_in_background);
+            std::unordered_set<String> command_analyzed_partition_ids;
+            auto pruned = getPartitionIdsPrunedByPredicate(
+                ASTPtr(alter->predicate),
+                query_context,
+                commands_run_in_background,
+                analyzed_partition_ids ? &command_analyzed_partition_ids : nullptr);
             if (!pruned.has_value())
             {
                 /// Pruning was not possible, fall back to all partitions
                 return std::nullopt;
             }
             affected_partition_ids.insert(pruned->begin(), pruned->end());
+
+            if (analyzed_partition_ids)
+            {
+                if (!has_analyzed_partition_ids)
+                {
+                    *analyzed_partition_ids = std::move(command_analyzed_partition_ids);
+                    has_analyzed_partition_ids = true;
+                }
+                else
+                {
+                    std::erase_if(*analyzed_partition_ids, [&](const String & partition_id)
+                    {
+                        return !command_analyzed_partition_ids.contains(partition_id);
+                    });
+                }
+            }
         }
         else
         {

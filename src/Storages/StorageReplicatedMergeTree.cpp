@@ -266,6 +266,7 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char rmt_mutation_prune_pause_before_analysis[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
     extern const char check_table_inject_retryable_zk_error[];
@@ -6772,23 +6773,27 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
     const bool commands_run_in_background = (op == CommittingBlock::Op::Mutation);
 
     /// The pruned set must be recomputed on every retry: a `ZBADVERSION` means the partition
-    /// list changed concurrently, and the new partition may have been created by an insert
-    /// on this very replica. In that case widening with ZK-only partitions below does not
-    /// catch it (the partition is local), only re-running the pruning does.
+    /// list changed concurrently, and only re-running the pruning lets the new partition be
+    /// analyzed properly (the widening below would include it wholesale, even when the
+    /// predicate does not match it).
     while (true)
     {
-        /// The local partition set must be read before the pruning analysis, which takes its
-        /// own (later) snapshot of the local parts. A partition the pruner could not have
-        /// analyzed is then either absent from this earlier local set (and the ZK widening
-        /// below adds it back), or its `block_numbers` znode appears only after `getChildren`
-        /// (and the version check catches it). Reading the local set after pruning would leave
-        /// a hole: a partition created by a same-replica insert in between would be already
-        /// local (so not widened) and already visible to `getChildren` (so no version bump).
-        std::unordered_set<String> local_partition_ids;
-        if (has_pruned_commands)
-            local_partition_ids = getAllPartitionIds();
+        /// Test-only pause before the pruning analysis, to let a test create a new partition
+        /// that the analysis must then observe.
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_mutation_prune_pause_before_analysis);
 
-        const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context, commands_run_in_background);
+        /// The set of partitions the pruning analysis has actually seen, from the very parts
+        /// snapshot it iterated. The ZK widening below must compare against this set and not
+        /// against a separately read local partition list: any other snapshot is taken at a
+        /// different time, and a partition created by a same-replica insert in between would
+        /// either be re-added after the pruner already analyzed and ruled it out (snapshot too
+        /// old), or be skipped although the pruner never saw it (snapshot too new; such a
+        /// partition is already local and already visible to `getChildren`, so neither the
+        /// widening nor the version check would catch it).
+        std::unordered_set<String> analyzed_partition_ids;
+
+        const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(
+            commands, query_context, commands_run_in_background, has_pruned_commands ? &analyzed_partition_ids : nullptr);
         if (!mutation_affected_partition_ids.has_value())
             break;
 
@@ -6809,7 +6814,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
                 if (zk_partition.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
                     continue;
 
-                if (!local_partition_ids.contains(zk_partition))
+                if (!analyzed_partition_ids.contains(zk_partition))
                     affected.insert(zk_partition);
             }
         }
