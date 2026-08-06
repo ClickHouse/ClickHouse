@@ -2446,6 +2446,11 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
     /// the post-ALTER name keeps them correct regardless of that restriction and of the order of
     /// the commands. A dropped column is deliberately not mapped: an ALTER may drop a column and
     /// rename another one into the freed name, and that renamed column is not the dropped one.
+    /// Only a `MODIFY COLUMN` that states a *different* `MATERIALIZED` expression counts as an
+    /// explicit change of the expression - that is the form the metadata-only semantics are about.
+    /// A `MODIFY COLUMN` that only changes the type or the position of the column keeps the stored
+    /// expression (`AlterCommands::prepare` copies it into the command), so it must not suppress
+    /// the rematerialization that a change of the effective expression requires.
     NameSet modified_or_dropped_new_names;
     for (const auto & command : *this)
     {
@@ -2458,6 +2463,17 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
+            if (!command.default_expression)
+                continue;
+
+            if (old_metadata.columns.has(command.column_name))
+            {
+                const auto & old_default = old_metadata.columns.get(command.column_name).default_desc;
+                if (old_default.kind == command.default_kind && old_default.expression
+                    && old_default.expression->formatWithSecretsOneLine() == command.default_expression->formatWithSecretsOneLine())
+                    continue;
+            }
+
             String name = command.column_name;
             for (const auto & [from, to] : renames)
             {
