@@ -2053,7 +2053,7 @@ Maximum time between runs of merge coordinator thread
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
 Time changing factor for delay of coordinator thread
 )", 0) \
-    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::WATER_FILLING, R"(
+    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::SAINTE_LAGUE, R"(
 The algorithm used by the merge coordinator thread to distribute merges between replicas.
 
 Possible values:
