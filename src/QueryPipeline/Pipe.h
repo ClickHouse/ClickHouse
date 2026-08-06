@@ -19,6 +19,7 @@ using Pipes = std::vector<Pipe>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 class ReadProgressCallback;
 
 using OutputPortRawPtrs = std::vector<OutputPort *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using InputPortRawPtrs = std::vector<InputPort *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Pipe is a set of processors which represents the part of pipeline.
 /// Pipe contains a list of output ports, with specified port for totals and specified port for extremes.
@@ -62,7 +63,7 @@ public:
     /// seal. Each gated read contributes exactly one (it fans the seal out to its streams
     /// with its own copy transform), but a probe subtree may unite several gated reads and
     /// unmarked joins carry the inputs of both of their children upward.
-    const std::vector<InputPort *> & getPendingSealInputs() const { return pending_seal_inputs; }
+    const InputPortRawPtrs & getPendingSealInputs() const { return pending_seal_inputs; }
 
     /// Add processor to list, add it output ports to output_ports.
     /// Processor shouldn't have input ports, output ports shouldn't be connected.
@@ -135,7 +136,7 @@ private:
     OutputPort * extremes_port = nullptr;
 
     /// See getPendingSealInputs.
-    std::vector<InputPort *> pending_seal_inputs;
+    InputPortRawPtrs pending_seal_inputs;
 
     /// It is the max number of processors which can be executed in parallel for each step.
     /// Usually, it's the same as the number of output ports.

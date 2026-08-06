@@ -30,6 +30,7 @@ struct ExpressionActionsSettings;
 
 class IJoin;
 class FillingRightJoinSideTransform;
+using FillingRightJoinSideTransformRawPtrs = std::vector<FillingRightJoinSideTransform *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using JoinPtr = std::shared_ptr<IJoin>;
 class TableJoin;
 
@@ -91,7 +92,7 @@ public:
     static void wireSealGatedReading(
         QueryPipelineBuilder & probe,
         QueryPipelineBuilder & build,
-        const std::vector<FillingRightJoinSideTransform *> & filling_transforms,
+        const FillingRightJoinSideTransformRawPtrs & filling_transforms,
         const String & runtime_filter_key,
         Processors * collected_processors);
 

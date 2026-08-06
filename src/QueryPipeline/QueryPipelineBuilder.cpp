@@ -475,7 +475,7 @@ void QueryPipelineBuilder::terminatePendingSealInputs(QueryPipelineBuilder & bui
 void QueryPipelineBuilder::wireSealGatedReading(
     QueryPipelineBuilder & probe,
     QueryPipelineBuilder & build,
-    const std::vector<FillingRightJoinSideTransform *> & filling_transforms,
+    const FillingRightJoinSideTransformRawPtrs & filling_transforms,
     const String & runtime_filter_key,
     Processors * collected_processors)
 {
@@ -502,7 +502,7 @@ void QueryPipelineBuilder::wireSealGatedReading(
 
     /// Exactly one of the concurrent filling transforms emits the seal (the one which
     /// completes the build), the others just finish their seal ports.
-    std::vector<OutputPort *> seal_ports;
+    OutputPortRawPtrs seal_ports;
     seal_ports.reserve(filling_transforms.size());
     for (auto * filling : filling_transforms)
         seal_ports.push_back(filling->addSealPort(payload_getter));
@@ -573,7 +573,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     terminatePendingSealInputs(*right, collected_processors);
 
     /// A join not marked as gating carries the probe-side pending seal inputs upward.
-    std::vector<FillingRightJoinSideTransform *> filling_transforms_for_seal;
+    FillingRightJoinSideTransformRawPtrs filling_transforms_for_seal;
     const bool wire_seal_gates = seal_gate.has_value() && !left->pipe.pending_seal_inputs.empty();
 
     /// Collect the NEW processors for the right pipeline.

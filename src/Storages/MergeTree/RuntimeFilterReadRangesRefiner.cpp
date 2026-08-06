@@ -52,7 +52,7 @@ MarkRanges RuntimeFilterReadRangesRefiner::refine(const MergeTreeReadTaskInfo & 
     if (!condition)
         return ranges;
 
-    RangesInDataPart part(info.data_part, info.parent_part, info.part_index_in_query, info.part_starting_offset_in_query);
+    RangesInDataPart part(info.data_part_info->getDataPart(), info.parent_part, info.part_index_in_query, info.part_starting_offset_in_query);
     part.ranges = std::move(ranges);
 
     return MergeTreeDataSelectExecutor::markRangesFromPKRange(
