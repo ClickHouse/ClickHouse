@@ -5601,13 +5601,17 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
               * The result of an INNER JOIN contains only the values that both of the keys have in common,
               * and the type of these values is enough. See `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
               * For the other kinds of JOIN the result also contains the unmatched values, which may be out of this range.
+              * SEMI JOIN is fine as well: only the matched rows of the preserved side survive, and the result of USING
+              * takes the key of the preserved side. ANTI JOIN, on the contrary, keeps exactly the unmatched rows.
               * For ASOF JOIN the last column in the USING list is compared by the order of the values, not by equality,
               * so the fallback does not apply to it; the preceding columns are ordinary equality keys.
               */
             bool is_asof_inequality_key = join_node_typed.getStrictness() == JoinStrictness::Asof
                 && join_using_node == join_using_list.getNodes().back();
+            bool is_inner_or_semi = join_node_typed.getKind() == JoinKind::Inner
+                || join_node_typed.getStrictness() == JoinStrictness::Semi;
             if (!common_type
-                && join_node_typed.getKind() == JoinKind::Inner
+                && is_inner_or_semi
                 && !is_asof_inequality_key)
             {
                 if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(expression_types[0], expression_types[1]))

@@ -72,6 +72,14 @@ INNER JOIN (SELECT CAST(-1, 'Int64') AS x) AS b USING (x);
 SELECT x, toTypeName(x) FROM (SELECT CAST(9223372036854775807, 'Nullable(UInt64)') AS x) AS a
 INNER JOIN (SELECT CAST(9223372036854775807, 'Int64') AS x) AS b USING (x);
 
+SELECT 'SEMI JOIN keeps only the matched rows of the preserved side, so USING is supported for it as well';
+SELECT x, toTypeName(x) FROM t_unsigned LEFT SEMI JOIN (SELECT y AS x FROM t_signed) AS t USING (x) ORDER BY ALL;
+SELECT x, toTypeName(x) FROM t_unsigned RIGHT SEMI JOIN (SELECT y AS x FROM t_signed) AS t USING (x) ORDER BY ALL;
+
+SELECT 'ANTI JOIN keeps exactly the unmatched rows, which may be out of the common range';
+SELECT x FROM t_unsigned LEFT ANTI JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
+SELECT x FROM t_unsigned RIGHT ANTI JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
+
 SELECT 'For the other kinds of JOIN the result also contains the values that are out of the common range';
 SELECT x FROM t_unsigned LEFT JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
 SELECT x FROM t_unsigned RIGHT JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
