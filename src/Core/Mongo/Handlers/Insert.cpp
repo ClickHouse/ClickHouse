@@ -239,7 +239,9 @@ void flattenDocument(
             continue;
         }
 
-        if (!getSimpleTypeField(it->value).has_value())
+        /// An explicit `null` is a real Mongo value, not an omitted field, so it is kept and
+        /// becomes a `Dynamic` column, which holds `NULL` natively.
+        if (!it->value.IsNull() && !getSimpleTypeField(it->value).has_value())
             continue;
 
         rapidjson::Value key(full_name.c_str(), static_cast<rapidjson::SizeType>(full_name.size()), allocator);
@@ -265,6 +267,15 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
         if (auto simple_type = getSimpleTypeField(it->value))
         {
             fields.push_back(InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = std::move(*simple_type)});
+            continue;
+        }
+
+        /// A field whose first value is `null` tells nothing about the values to come, so the
+        /// column is `Dynamic`: it accepts whatever they turn out to be, and holds the `null`
+        /// itself, which a typed column would silently turn into its default.
+        if (it->value.IsNull())
+        {
+            fields.push_back(InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = "Dynamic"});
             continue;
         }
 
@@ -391,7 +402,18 @@ void InsertHandler::createTable(
             query << ", ";
         query << backQuoteIfNeed(fields[i].full_name) << " " << fields[i].type;
     }
-    query << ") ENGINE = MergeTree ORDER BY " << backQuoteIfNeed(fields[0].full_name);
+    /// A `Dynamic` or `JSON` column cannot be a sorting key, so the key is the first column of
+    /// any other type, and a document with none of those gets no sorting key at all.
+    const DocumentField * key_field = nullptr;
+    for (const auto & field : fields)
+    {
+        if (!field.type.contains("Dynamic") && !field.type.contains("JSON"))
+        {
+            key_field = &field;
+            break;
+        }
+    }
+    query << ") ENGINE = MergeTree ORDER BY " << (key_field ? backQuoteIfNeed(key_field->full_name) : "tuple()");
 
     executor->execute(query.str());
 }
