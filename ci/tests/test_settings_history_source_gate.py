@@ -196,3 +196,50 @@ def test_editing_a_block_header_is_not_an_escape_hatch(monkeypatch):
 
     # The same header edit without any other source change is a historical correction: allowed.
     assert _run(monkeypatch, _kv([HISTORY], changed)) == ""
+
+
+def _rename_patch(old_name, new_name, block_version="26.8"):
+    """A pure rename of one record inside one block: only the setting name differs."""
+    reason = "New setting."
+    added = f'            {{"{new_name}", false, false, "{reason}"}},'
+    removed = f'            {{"{old_name}", false, false, "{reason}"}},'
+    file_lines = [
+        f'        addSettingsChanges(settings_changes_history, "{block_version}",',
+        "        {",
+        added,
+        "        });",
+    ]
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        f' addSettingsChanges(settings_changes_history, "{block_version}",\n'
+        " {\n"
+        f"-{removed}\n"
+        f"+{added}\n"
+        " });\n"
+    )
+    return patch, file_lines
+
+
+def test_renaming_a_record_in_place_is_allowed(monkeypatch):
+    # End-to-end with the diff parser: renaming a setting renames its record. The old name must
+    # not be demanded under the current version block, because no history file could satisfy
+    # that and 03999_stateless_settings_history at the same time - that test rejects a documented
+    # name which is no longer a setting ("DOES NOT EXIST (typo/rename?)"), and for a MergeTree
+    # setting not even an alias makes the old name reappear (system.merge_tree_settings has no
+    # alias rows). `s3_base` is a real record of the current version block, so the check is
+    # satisfied by the new name alone.
+    patch, file_lines = _rename_patch("legacy_s3_base_name", "s3_base")
+    changed = parse_settings_history_changes(patch, file_lines)
+    assert changed == [{"namespace": "Session", "name": "s3_base"}]
+    assert _run(monkeypatch, _kv([HISTORY, "src/Core/Settings.cpp"], changed)) == ""
+
+
+def test_renaming_a_record_still_requires_the_new_name_under_the_current_block(monkeypatch):
+    # The rename is not a free pass: the NEW name goes through the current-block rule as any
+    # added record does, so renaming into a record that is not recorded under the current
+    # version still fails.
+    patch, file_lines = _rename_patch("some_old_name", "no_such_setting_at_all")
+    changed = parse_settings_history_changes(patch, file_lines)
+    assert changed == [{"namespace": "Session", "name": "no_such_setting_at_all"}]
+    error = _run(monkeypatch, _kv([HISTORY, "src/Core/Settings.cpp"], changed))
+    assert "no_such_setting_at_all" in error
