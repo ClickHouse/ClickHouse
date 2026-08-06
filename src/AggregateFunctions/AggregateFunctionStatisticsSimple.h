@@ -136,35 +136,16 @@ public:
     {
         if constexpr (is_decimal<T1>)
         {
-            /// A `Decimal` column holds unscaled integers. The scale lives in the data type, not in
-            /// the column, so an element only becomes a number as `value / 10^scale`. `addMany` is a
-            /// member of `VarMoments` and knows nothing about scale - and handing it the column would
-            /// not even fail to compile, because `Decimal` converts implicitly to its native integer
-            /// (`Decimal::operator T`), so it would quietly accumulate the unscaled integers. Hence
-            /// the conversion has to happen before the kernel sees the values.
+            /// A `Decimal` column holds unscaled integers, so a value is only recovered as
+            /// `value / 10^scale`, and the kernel knows nothing about scale. Where that division
+            /// goes depends on whether the target converts packed: `x86-64-v3` has no packed
+            /// `int64 -> double`, so it converts into a buffer first and the accumulation reads
+            /// that; AArch64 divides inside the accumulation loop instead. `Decimal128` and wider
+            /// have no packed conversion anywhere and always use the buffer. Both shapes fold the
+            /// moments at the same points, so they are bit-identical - verified on both targets.
             ///
-            /// Where that conversion belongs depends on whether the target can convert packed. If it
-            /// can, the division rides along inside the accumulation loop and nothing is copied. If
-            /// it cannot, the scalar converts would hold the accumulation back, so the values go
-            /// into a buffer first and the accumulation reads that instead - a tile at a time, since
-            /// converting the whole range would push it out to memory and read it back.
-            ///
-            /// `x86-64-v3` has no packed `int64 -> double` at all (`vcvtqq2pd` arrived with
-            /// AVX-512) and measures faster through the buffer for `Decimal32` as well. AArch64
-            /// converts and divides packed with `scvtf` and `fdiv`, but only up to 64-bit lanes, so
-            /// `Decimal128` and wider go through the buffer there too.
-            ///
-            /// This choice does not change the result. Both shapes accumulate into the same number
-            /// of lanes and walk the input in `TILE`-sized chunks, so the moments are folded at the
-            /// same points and the two produce bit-identical output; only where the division happens
-            /// differs. That was checked by running both against each other on x86-64 and AArch64.
-            ///
-            /// Only levels 1 and 2 - `varPop`, `varSamp`, `stddevPop`, `stddevSamp` - take this
-            /// path. `skewPop` and `kurtPop` carry two more moments per lane, and on AArch64 no lane
-            /// count recovers the cost: measured against the per-row path there, the best of 2, 4, 8
-            /// and 16 lanes still comes out at +6.9% for level 3, while on x86-64 the whole gain for
-            /// those two functions measured only -7.2% in CI. Not worth a regression on one target
-            /// for that, so the higher moments stay on the per-row path everywhere.
+            /// `skewPop` and `kurtPop` stay on the per-row path: on AArch64 no lane count pays for
+            /// the two extra moments, the best being +6.9% at level 3.
             if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2)
             {
                 if (if_argument_pos < 0)

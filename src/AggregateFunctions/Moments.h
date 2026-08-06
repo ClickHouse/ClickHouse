@@ -110,11 +110,9 @@ struct VarMoments
         addManyImpl(ptr, row_begin, row_end);
     }
 
-    /// `addManyImpl` for source elements that carry a scale, so that a value is only recovered as
-    /// `raw / 10^scale`: the division happens inside the accumulation loop. This is worth doing only
-    /// where the target converts and divides packed - AArch64 does, through `scvtf` and `fdiv`.
-    /// Where it cannot, the caller should convert into a buffer first and use `addMany` instead, so
-    /// the scalar converts do not hold the accumulation back.
+    /// `addManyImpl` for elements that carry a scale: the division happens inside the accumulation
+    /// loop. Worth it only where the target converts and divides packed (AArch64 `scvtf`/`fdiv`);
+    /// elsewhere the caller should convert into a buffer and use `addMany`.
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value>
