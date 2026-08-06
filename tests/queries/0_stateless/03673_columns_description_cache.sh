@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-random-detach
-# no-random-detach: test uses DETACH/ATTACH itself
+# Tags: no-shared-merge-tree, memory-engine
 
 # The per-table cache of shared part column descriptions: entries appear as parts with a new
 # schema are added and disappear once the last part holding a column list is gone.
