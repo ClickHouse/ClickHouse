@@ -1789,6 +1789,60 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     }
 }
 
+namespace
+{
+
+/// Rewrites `x = ''` / `x != ''` to `empty(x)` / `notEmpty(x)`, like `optimize_empty_string_comparisons` does in queries.
+void normalizeColumnExpression(ASTPtr & ast)
+{
+    for (auto & child : ast->children)
+        normalizeColumnExpression(child);
+
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || (function->name != "equals" && function->name != "notEquals")
+        || !function->arguments || function->arguments->children.size() != 2)
+        return;
+
+    auto is_empty_string_literal = [](const ASTPtr & node)
+    {
+        const auto * literal = node->as<ASTLiteral>();
+        return literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty();
+    };
+
+    const auto & arguments = function->arguments->children;
+    ASTPtr expression;
+
+    if (is_empty_string_literal(arguments[1]))
+        expression = arguments[0];
+    else if (is_empty_string_literal(arguments[0]))
+        expression = arguments[1];
+    else
+        return;
+
+    ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
+}
+
+/// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
+/// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
+/// expression after the same rewrite, or `std::nullopt` if it does not change.
+std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index)
+{
+    /// A text index is always defined on a single expression.
+    if (!index.expression_list_ast || index.expression_list_ast->children.size() != 1)
+        return {};
+
+    ASTPtr normalized = index.expression_list_ast->children.front()->clone();
+    normalizeColumnExpression(normalized);
+
+    String name = normalized->getColumnName();
+    if (index.sample_block.has(name))
+        return {};
+
+    return name;
+}
+
+}
+
 MergeTreeIndexText::MergeTreeIndexText(
     StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
@@ -1801,6 +1855,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     , posting_list_codec(std::move(posting_list_codec_))
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
+    , normalized_index_column_name(getNormalizedIndexColumnName(index_))
 {
 }
 
@@ -1857,7 +1912,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, tokenizer.get(), preprocessor, postprocessor, params.positions);
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
