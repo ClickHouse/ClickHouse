@@ -40,7 +40,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 74
+    version: int = 75
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -224,13 +224,37 @@ class Runner:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
 
-        # macOS runners run continuously without lifetime limits
+        # macOS runners run continuously without lifetime limits, so they must
+        # reboot to pick up a newer init script instead of ageing out like Linux.
         if config.init_environment == Environment.MACOS:
+            self._reboot_if_init_script_upgraded()
             return
 
         runner_age = int(time.time()) - self.runner_start_time
         if config.max_life < runner_age:
             raise Exception(f"Runner lifetime exceeded: {runner_age}")
+
+    def _reboot_if_init_script_upgraded(self) -> None:
+        """Reboot when a newer runner-init script has been published to S3.
+
+        Called between jobs, so the runner is idle here. On reboot the instance
+        re-downloads and re-runs the init script, provisioning the new version.
+        A failure to read the remote version is a safe skip, not a reboot.
+        """
+        try:
+            remote_version = EC2.get_remote_init_version()
+        except Exception as e:
+            log(f"Cannot get remote init version: {e}, skipping upgrade check")
+            return
+        if remote_version <= config.version:
+            return
+        log(
+            f"Remote init version {remote_version} > running {config.version}, "
+            "rebooting to upgrade"
+        )
+        subprocess.run(["sudo", "reboot"], check=False)
+        # Block so the loop does not start another job while the OS tears down.
+        time.sleep(config.max_chill)
 
     def _cleanup_workspace(self) -> None:
         """Remove _work directory to clean up workspace."""
@@ -612,6 +636,10 @@ brew install \
     bash \
     coreutils \
     llvm
+
+# Keg-only `llvm` does not link `lldb` system-wide, so expose it on the Homebrew
+# PATH as plain `lldb` for `clickhouse-test`'s `print_c_stacktraces`.
+ln -sf "$(brew --prefix llvm)/bin/lldb" "$(brew --prefix)/bin/lldb"
 
 # Python packages used by jobs. `boto3` is bootstrapped in `user_data_macos.txt`
 # because runner-init itself imports it; the rest are version-gated here.
