@@ -337,8 +337,9 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
     {
         UInt64 num_records = 0;
         readBinaryBigEndian(num_records, in);
-        header.num_records_is_streaming = num_records == std::numeric_limits<UInt64>::max()
-            || num_records == std::numeric_limits<UInt32>::max();
+        /// The marker is all ones of the width of the field, so the 64-bit field of CDF-5 makes
+        /// the 32-bit marker of the older versions a legal number of records.
+        header.num_records_is_streaming = num_records == std::numeric_limits<UInt64>::max();
         header.num_records = header.num_records_is_streaming ? 0 : num_records;
 
         if (!header.num_records_is_streaming && num_records > static_cast<UInt64>(std::numeric_limits<Int64>::max()))

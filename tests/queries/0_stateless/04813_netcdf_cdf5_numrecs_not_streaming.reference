@@ -1,0 +1,5 @@
+--- 4294967295 records in the header of a CDF-5 file is a concrete count, not the streaming marker
+4294967295
+--- and the streaming marker of CDF-5 is the 64-bit all-ones value
+3
+3
