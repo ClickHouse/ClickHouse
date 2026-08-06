@@ -14,6 +14,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
@@ -220,7 +221,14 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    join = std::move(new_data);
+    {
+        /// The data being replaced was settled into the server total when the query that inserted it ended, so
+        /// releasing it must not be credited to this mutation. What it builds instead stays charged to it while
+        /// it runs, and is settled when it ends, as on insert.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::move(new_data);
+    }
+    setCurrentQueryMemoryDriftExpected();
     increment = 1;
 
     if (persistent)
