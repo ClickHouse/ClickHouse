@@ -455,7 +455,7 @@ The wait time in milliseconds for a connection when the connection pool is full.
 Possible values:
 
 - Positive integer.
-- 0 — Infinite timeout: wait until a connection is returned to the pool.
+- 0 — Infinite timeout.
 )", 0) \
     DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
 The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
@@ -2798,8 +2798,7 @@ HTTP send timeout (in seconds).
 
 Possible values:
 
-- Any positive integer.
-- 0 - Disabled (infinite timeout).
+- Any positive integer (seconds). `0` is **not** an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
 
 :::note
 It's applicable only to the default profile. A server reboot is required for the changes to take effect.
@@ -2810,8 +2809,7 @@ HTTP receive timeout (in seconds).
 
 Possible values:
 
-- Any positive integer.
-- 0 - Disabled (infinite timeout).
+- Any positive integer (seconds). `0` is **not** an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
 )", 0) \
     DECLARE(UInt64, http_max_uri_size, 1048576, R"(
 Sets the maximum URI length of an HTTP request.
@@ -6618,7 +6616,7 @@ Maximum number of bytes in the set for lazy FINAL optimization. If exceeded, fal
 Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. If less than this fraction of marks is filtered, falls back to normal FINAL. Value 0 disables this check.
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
-Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
+Enables lazy columns replication in `JOIN`, `ARRAY JOIN` and lambda captures of higher-order functions (e.g. `arrayMap`), it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
     DECLARE(UInt64, query_plan_max_set_size_for_projection_match, 10000, R"(
 Maximum number of rows in an `IN`-clause set for which the projection matcher computes and compares content hashes when deciding whether two sets are equal. Sets larger than this are treated as non-matching and skip the projection. Zero disables content-hash comparison entirely: a projection match never succeeds for nodes containing `IN`-clause sets.
@@ -7935,6 +7933,20 @@ Possible values:
 - 0 - `FINAL` applies only to the table it is specified on.
 - 1 - `FINAL` on the left-most table of a JOIN is applied to all joined tables.
 )", 0) \
+    DECLARE(Bool, analyzer_compatibility_multiple_joins_qualify_column_names, false, R"(
+When enabled and the `FROM` clause of a query contains two or more `JOIN`s (comma-separated tables count; `ARRAY JOIN` does not), the analyzer names result columns the way the old analyzer's multiple-joins rewrite did:
+- columns produced by expanding `*`, `<table>.*` or `COLUMNS('<regexp>')` get names of the form `<alias-or-table>.<column>` (the qualifier is the table expression's alias if it has one, otherwise the table name without the database, otherwise the CTE name; columns of a joined subquery without an alias are left unqualified). Two kinds of column keep their bare name because they belong to the join rather than to a single table expression: a column produced by `ARRAY JOIN`, and a key merged by `JOIN ... USING`. Outer references such as `SELECT ll.arr` or `SELECT ll.k` therefore do not resolve in those two shapes;
+- the identifier-list form `COLUMNS(col1, col2)` is not a matcher expansion: each column keeps the name exactly as its identifier was written, so `COLUMNS(x)` produces `x` and `COLUMNS(a.x)` produces `a.x`;
+- an unaliased column reference in the `SELECT` list keeps its name exactly as written (e.g. `SELECT a.x` produces a column named `a.x` even when `x` is unambiguous).
+
+This makes outer queries that reference such columns by their qualified names work, for example:
+
+```sql
+SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
+```
+
+Takes effect only when the analyzer is enabled (`enable_analyzer = 1`).
+)", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
 )", 0) \
@@ -8443,10 +8455,11 @@ Using the text index header cache can significantly reduce latency and increase 
 Whether to cache deserialized text index deserialized posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::MATERIALIZE, R"(
+    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::LAZY, R"(
 Controls how posting lists are applied during text index queries.
-'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
-'lazy' uses cursor-based on-demand decoding (requires an index format with a serialized codec).
+'materialize' eagerly decodes posting lists into Roaring Bitmaps.
+'lazy' (default) uses cursor-based on-demand decoding (requires an index format with a serialized codec).
+'lazy' is applied only where it is supported: queries with patterns (such as `LIKE`) and parts with an index written by an older version fall back to 'materialize'.
 )", 0) \
     DECLARE_WITH_ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, R"(
 Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
@@ -8536,9 +8549,9 @@ Specifies the name of the column referred to by the `_msg` field (the default fi
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
-Allow experimental delta-kernel-rs implementation.
-)", BETA) \
+    DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
+Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
+)", BETA, allow_experimental_delta_kernel_rs) \
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \

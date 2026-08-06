@@ -881,7 +881,15 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     if (is_onelake)
     {
         parsed_arguments.initializeForOneLake(engine_args, context, onelake_use_blob_endpoint);
-        if (!onelake_access_token.empty())
+        if (onelake_access_token_provider)
+        {
+            /// Refresh-token mode (`onelake_refresh_token`): the catalog client renews access
+            /// tokens with the refresh token, and every storage request asks it for a valid one.
+            parsed_arguments.connection_params.auth_method = std::make_shared<AzureBlobStorage::TokenProviderCredential>(
+                onelake_access_token_provider
+            );
+        }
+        else if (!onelake_access_token.empty())
         {
             /// Pre-obtained bearer token from `onelake_bearer_token`.
             /// Use epoch as the expiry time. There is no refresh -- the database must be
