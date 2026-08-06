@@ -201,15 +201,16 @@ void WindowDescription::checkValid() const
 {
     frame.checkValid();
 
-    // RANGE OFFSET requires exactly one ORDER BY column.
-    if ((frame.type == WindowFrame::FrameType::SESSION || (frame.type == WindowFrame::FrameType::RANGE
+    // Both frames compare each row against a key value, so they need a single ORDER BY column.
+    const bool is_session = frame.type == WindowFrame::FrameType::SESSION;
+    if ((is_session || (frame.type == WindowFrame::FrameType::RANGE
         && (frame.begin_type == WindowFrame::BoundaryType::Offset
             || frame.end_type == WindowFrame::BoundaryType::Offset)))
         && order_by.size() != 1)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The RANGE OFFSET window frame requires exactly one ORDER BY column, {} given",
-           order_by.size());
+            "The {} window frame requires exactly one ORDER BY column, {} given",
+           is_session ? "SESSION" : "RANGE OFFSET", order_by.size());
     }
 }
 
