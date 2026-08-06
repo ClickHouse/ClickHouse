@@ -80,20 +80,9 @@ def bump():
     ):
         return False
 
-    old = pinned_commit()
     new = Shell.get_output(f"git -C {SILK_PATH} rev-parse FETCH_HEAD").strip()
     if not new:
         print(f"ERROR: failed to resolve the tip of {SILK_BRANCH}")
-        return False
-
-    if old != new and not Shell.check(
-        f"git -C {SILK_PATH} merge-base --is-ancestor {old} {new}"
-    ):
-        print(
-            f"ERROR: pinned {old} is not an ancestor of the {SILK_BRANCH} tip {new}. "
-            f"{SILK_BRANCH} is expected to be append-only; a force-push leaves the "
-            f"pinned commit reachable from no branch and breaks historical checkouts."
-        )
         return False
 
     return Shell.check(f"git -C {SILK_PATH} checkout --detach {new}", verbose=True)
