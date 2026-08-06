@@ -274,6 +274,26 @@ done
 [ -s /real/config.xml ]
 [ "$(stat -c %a /real/config.xml)" = "$mode" ]
 [ "$(stat -c %U:%G /real/config.xml)" = "root:root" ]""",
+        f"Install tgz over a dangling symlink with a backslash in the target in {image}": r"""#!/bin/bash -ex
+# The installer runs under `/bin/sh`, which is `dash` on Debian, and `dash`'s `echo` expands
+# backslash escapes: `\t` in a resolved link target would come back as a tab. The resolved
+# path has to be returned byte-for-byte, so a target with a backslash lands at the literal
+# path instead of failing or landing at a mangled one.
+mkdir -p /etc/clickhouse-client '/shared/a\tb'
+ln -s '/shared/a\tb/config.xml' /etc/clickhouse-client/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    mode=$(stat -c %a "/$package/etc/clickhouse-client/config.xml")
+    umask 077
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = '/shared/a\tb/config.xml' ]
+[ -s '/shared/a\tb/config.xml' ]
+[ "$(stat -c %a '/shared/a\tb/config.xml')" = "$mode" ]
+[ "$(stat -c %U:%G '/shared/a\tb/config.xml')" = "root:root" ]""",
         f"Install tgz over a symlink into a missing directory in {image}": r"""#!/bin/bash -ex
 # A destination pointing into a directory that does not exist is an error the administrator
 # has to see: creating that directory would give it the `umask` of the installation and no

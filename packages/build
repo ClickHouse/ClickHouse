@@ -118,11 +118,11 @@ keep_destination_inode () {
     listing=$(ls -ld -- "$1")
     # Another hard link to the destination would keep pointing at the pre-upgrade contents
     # after a rename, while writing through updates every link.
-    if [ "$(echo "$listing" | awk '{print $2}')" -gt 1 ]; then
+    if [ "$(printf '%s\n' "$listing" | awk '{print $2}')" -gt 1 ]; then
         return 0
     fi
     # An ACL is reported by `ls` as a `+` after the permissions.
-    case "$(echo "$listing" | awk '{print $1}')" in
+    case "$(printf '%s\n' "$listing" | awk '{print $1}')" in
         *+) return 0 ;;
     esac
     if [ -z "$GETFATTR" ]; then
@@ -151,7 +151,7 @@ resolve_symlink_chain () {
     while [ -L "$path" ]; do
         hops=$((hops + 1))
         if [ "$hops" -gt 40 ]; then
-            echo "Too many levels of symbolic links at $1" >&2
+            printf '%s\n' "Too many levels of symbolic links at $1" >&2
             return 1
         fi
         target=$(readlink -- "$path")
@@ -160,7 +160,7 @@ resolve_symlink_chain () {
             *) path="$(dirname -- "$path")/$target" ;;
         esac
     done
-    echo "$path"
+    printf '%s\n' "$path"
 }
 
 for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
@@ -184,7 +184,7 @@ for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install
             # success. Writing through the link failed loudly when that directory was
             # missing, and pointing a destination at a directory that does not exist stays
             # an error the administrator has to see and fix.
-            echo "Cannot install $destpath: it points at $linktarget, but the directory $linkparent does not exist" >&2
+            printf '%s\n' "Cannot install $destpath: it points at $linktarget, but the directory $linkparent does not exist" >&2
             exit 1
         fi
         mv -f "$filepath" "$linktarget"
