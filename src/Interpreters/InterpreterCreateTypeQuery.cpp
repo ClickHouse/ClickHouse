@@ -21,6 +21,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <optional>
 #include <unordered_set>
 #include <Interpreters/DatabaseCatalog.h>
 
@@ -228,9 +229,9 @@ BlockIO InterpreterCreateTypeQuery::execute()
 
     ASTPtr type_parameters_ast = create.type_parameters;
 
-    String input_expression_str;
-    String output_expression_str;
-    String default_expression_str;
+    std::optional<String> input_expression_str;
+    std::optional<String> output_expression_str;
+    std::optional<String> default_expression_str;
 
     if (create.input_expression)
     {

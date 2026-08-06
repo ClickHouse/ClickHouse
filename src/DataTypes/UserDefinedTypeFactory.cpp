@@ -64,9 +64,9 @@ void UserDefinedTypeFactory::registerType(
     const String & name,
     const ASTPtr & base_type_ast,
     ASTPtr type_parameters,
-    const String & input_expression,
-    const String & output_expression,
-    const String & default_expression,
+    const std::optional<String> & input_expression,
+    const std::optional<String> & output_expression,
+    const std::optional<String> & default_expression,
     const String & create_query_string)
 {
     TypeInfo info;
@@ -398,10 +398,10 @@ void UserDefinedTypeFactory::processUDTBlock(
             String type_name = String(name_col->getDataAt(i));
             String base_ast_str = String(base_ast_col->getDataAt(i));
 
-            String params_ast_str = getNullableString(params_ast_col, i);
-            String input_expr_str = getNullableString(input_expr_col, i);
-            String output_expr_str = getNullableString(output_expr_col, i);
-            String default_expr_str = getNullableString(default_expr_col, i);
+            String params_ast_str = getNullableString(params_ast_col, i).value_or("");
+            std::optional<String> input_expr_str = getNullableString(input_expr_col, i);
+            std::optional<String> output_expr_str = getNullableString(output_expr_col, i);
+            std::optional<String> default_expr_str = getNullableString(default_expr_col, i);
             String create_query_str = String(create_query_col->getDataAt(i));
 
             ASTPtr base_type_ast = stringToAst(base_ast_str, data_type_parser);
@@ -437,14 +437,14 @@ void UserDefinedTypeFactory::processUDTBlock(
     }
 }
 
-String UserDefinedTypeFactory::getNullableString(const ColumnPtr & column, size_t index) const
+std::optional<String> UserDefinedTypeFactory::getNullableString(const ColumnPtr & column, size_t index) const
 {
     if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
     {
         if (!col_nullable->isNullAt(index))
             return String(col_nullable->getNestedColumn().getDataAt(index));
     }
-    return "";
+    return std::nullopt;
 }
 
 void UserDefinedTypeFactory::storeTypeInSystemTable(ContextPtr context, const String & name, const TypeInfo & info)
@@ -464,9 +464,9 @@ void UserDefinedTypeFactory::storeTypeInSystemTable(ContextPtr context, const St
             quoteString(name),
             quoteString(astToString(info.base_type_ast)),
             (info.type_parameters ? quoteString(astToString(info.type_parameters)) : "NULL"),
-            (!info.input_expression.empty() ? quoteString(info.input_expression) : "NULL"),
-            (!info.output_expression.empty() ? quoteString(info.output_expression) : "NULL"),
-            (!info.default_expression.empty() ? quoteString(info.default_expression) : "NULL"),
+            (info.input_expression ? quoteString(*info.input_expression) : "NULL"),
+            (info.output_expression ? quoteString(*info.output_expression) : "NULL"),
+            (info.default_expression ? quoteString(*info.default_expression) : "NULL"),
             quoteString(info.create_query_string)
         );
 

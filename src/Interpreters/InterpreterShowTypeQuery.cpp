@@ -56,18 +56,18 @@ BlockIO InterpreterShowTypeQuery::execute()
     else
         result_columns[2]->insertDefault();
 
-    if (!type_info.input_expression.empty())
-        result_columns[3]->insert(type_info.input_expression);
+    if (type_info.input_expression)
+        result_columns[3]->insert(*type_info.input_expression);
     else
         result_columns[3]->insertDefault();
 
-    if (!type_info.output_expression.empty())
-        result_columns[4]->insert(type_info.output_expression);
+    if (type_info.output_expression)
+        result_columns[4]->insert(*type_info.output_expression);
     else
         result_columns[4]->insertDefault();
 
-    if (!type_info.default_expression.empty())
-        result_columns[5]->insert(type_info.default_expression);
+    if (type_info.default_expression)
+        result_columns[5]->insert(*type_info.default_expression);
     else
         result_columns[5]->insertDefault();
 

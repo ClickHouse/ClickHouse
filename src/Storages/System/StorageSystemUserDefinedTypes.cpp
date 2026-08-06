@@ -40,18 +40,18 @@ void StorageSystemUserDefinedTypes::fillData(MutableColumns & res_columns, Conte
         else
             res_columns[2]->insertDefault();
 
-        if (!type_info.input_expression.empty())
-            res_columns[3]->insert(type_info.input_expression);
+        if (type_info.input_expression)
+            res_columns[3]->insert(*type_info.input_expression);
         else
             res_columns[3]->insertDefault();
 
-        if (!type_info.output_expression.empty())
-            res_columns[4]->insert(type_info.output_expression);
+        if (type_info.output_expression)
+            res_columns[4]->insert(*type_info.output_expression);
         else
             res_columns[4]->insertDefault();
 
-        if (!type_info.default_expression.empty())
-            res_columns[5]->insert(type_info.default_expression);
+        if (type_info.default_expression)
+            res_columns[5]->insert(*type_info.default_expression);
         else
             res_columns[5]->insertDefault();
 

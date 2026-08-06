@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <optional>
 #include <unordered_map>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
@@ -46,9 +47,12 @@ public:
         /// The `INPUT` / `OUTPUT` / `DEFAULT` clauses, if specified. Currently they are
         /// only recorded here (and exposed in `system.user_defined_types`); they do not
         /// yet affect parsing, formatting, or the column default.
-        String input_expression;
-        String output_expression;
-        String default_expression;
+        /// `std::nullopt` means the clause was absent; an engaged empty string means the
+        /// clause was specified with an empty literal (e.g. `INPUT ''`), so the two
+        /// round-trip differently through persistence and `SHOW TYPE`.
+        std::optional<String> input_expression;
+        std::optional<String> output_expression;
+        std::optional<String> default_expression;
         /// The original `CREATE TYPE` query text, as shown by `SHOW TYPE`.
         String create_query_string;
     };
@@ -60,9 +64,9 @@ public:
         const String & name,
         const ASTPtr & base_type_ast,
         ASTPtr type_parameters,
-        const String & input_expression,
-        const String & output_expression,
-        const String & default_expression = "",
+        const std::optional<String> & input_expression,
+        const std::optional<String> & output_expression,
+        const std::optional<String> & default_expression = std::nullopt,
         const String & create_query_string = "");
 
     void removeType(ContextPtr context, const String & name, bool if_exists = false);
@@ -97,7 +101,7 @@ private:
     void storeTypeInSystemTable(ContextPtr context, const String & name, const TypeInfo & info);
     void removeTypeFromSystemTable(ContextPtr context, const String & name);
 
-    String getNullableString(const ColumnPtr & column, size_t index) const;
+    std::optional<String> getNullableString(const ColumnPtr & column, size_t index) const;
 
     /// `ensureTypesLoaded` reads this flag before taking `mutex` (double-checked locking), so it has to
     /// be atomic: `DataTypeFactory` consults this factory for every named data type, from any thread.
