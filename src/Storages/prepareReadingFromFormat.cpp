@@ -1,4 +1,6 @@
 #include <Storages/prepareReadingFromFormat.h>
+#include <Common/quoteString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
@@ -21,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 namespace Setting
@@ -102,7 +105,35 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
 
-        info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
+        /// Build the description for the format header. Object (JSON) subcolumns forwarded by
+        /// filterTupleColumnsToRead cannot be resolved as subcolumn descriptions (the snapshot
+        /// only knows whole Object columns), so take their entries from requested_columns
+        /// (which filterTupleColumnsToRead rewrote with the physical names and requested types).
+        const auto & storage_columns = storage_snapshot->metadata->getColumns();
+        for (const auto & name : columns_to_read)
+        {
+            if (auto column = storage_columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name))
+            {
+                info.columns_description.add(*column, "", false, false);
+                continue;
+            }
+            if (auto virtual_column = storage_snapshot->metadata->virtuals.tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::All))
+            {
+                info.columns_description.add({name, virtual_column->type});
+                continue;
+            }
+            auto it = std::find_if(
+                info.requested_columns.begin(), info.requested_columns.end(),
+                [&](const auto & req) { return req.getNameInStorage() == name || req.name == name; });
+            if (it != info.requested_columns.end())
+            {
+                info.columns_description.add({name, it->type});
+                continue;
+            }
+            throw Exception(
+                ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Column {} not found in table {}", backQuote(name), storage_snapshot->storage.getStorageID().getNameForLogs());
+        }
     }
     else
     {
@@ -204,7 +235,7 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 
             ISerialization::EnumerateStreamsSettings settings;
             settings.position_independent_encoding = false;
-            settings.enumerate_dynamic_streams = false;
+            settings.enumerate_dynamic_streams = true;
             data.serialization->enumerateStreams(settings, callback_with_data, data);
 
             if (!column_info.path.empty())
@@ -222,6 +253,7 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
     }
 
     std::vector<String> new_columns_to_read;
+    std::unordered_set<String> forwarded_names;
     idx = 0;
     for (auto & column_to_read : requested_columns)
     {
@@ -251,6 +283,30 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         }
         if (ancestor_requested)
             continue;
+
+        /// Object (JSON) subcolumns (e.g. `json.path` or `json.path.:Type`): forward them to the
+        /// reader (this path is only used with ParquetV3BlockInputFormat, which can satisfy them
+        /// from shredded Variant leaves or by extracting from the whole column). The reader
+        /// produces a physical column named `<column>.<subcolumn_name>`, so rewrite the requested
+        /// storage name accordingly (see ExtractColumnsTransform's lookup by getNameInStorage).
+        /// If the whole column is requested anyway, don't forward: subcolumns are extracted
+        /// from it later.
+        if (column_to_read.isSubcolumn()
+            && column_to_read.getTypeInStorage()
+            && removeNullable(column_to_read.getTypeInStorage())->getTypeId() == TypeIndex::Object
+            && std::none_of(
+                requested_columns.begin(), requested_columns.end(),
+                [&](const auto & other)
+                {
+                    return !other.isSubcolumn() && other.getNameInStorage() == column_to_read.getNameInStorage();
+                }))
+        {
+            String physical_name = column_to_read.getNameInStorage() + "." + column_to_read.getSubcolumnName();
+            column_to_read.setDelimiterAndTypeInStorage(physical_name, column_to_read.type);
+            if (forwarded_names.insert(physical_name).second)
+                new_columns_to_read.push_back(physical_name);
+            continue;
+        }
 
         column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
         if (!column_info.is_duplicate)

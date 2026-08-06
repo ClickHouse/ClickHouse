@@ -236,6 +236,34 @@ struct Reader
         bool is_missing_column = false;
         bool needs_cast = false; // if output_type is different from input_type
 
+        /// Parquet VARIANT column: the `metadata`, `value` and optional `typed_value` sub-columns
+        /// (indices in output_columns) are assembled and decoded into JSON text
+        /// (see VariantDecoding.h). input_type is (Nullable) String; the usual needs_cast then
+        /// converts the JSON text to the output type (e.g. JSON).
+        bool variant = false;
+        std::optional<size_t> variant_metadata_column;
+        std::optional<size_t> variant_value_column;
+        std::optional<size_t> variant_typed_value_column;
+
+        /// Selective Variant subcolumn read (requested Object subcolumns of a Variant column
+        /// whose paths don't all map to fully-shredded leaves): instead of assembling the whole
+        /// Variant value, extract only the value at this path (object field names within the
+        /// Variant; empty vector = the value at the root of the addressed subtree). The
+        /// variant_*_column refs address the subtree at which path navigation starts: the
+        /// shredded field group covering the path, or the Variant root. Only the leaves on the
+        /// requested paths are read from the file. input_type is Dynamic; needs_cast converts
+        /// to the requested subcolumn type.
+        std::optional<std::vector<String>> variant_select_path;
+
+        /// Object (JSON) subcolumn synthesized from a whole JSON-typed column (a Variant assembly
+        /// or a plain JSON-annotated leaf): json_subcolumn_source is the output_columns index of
+        /// that whole column (which has idx_in_output_block pointing at an extended_sample_block
+        /// entry), json_subcolumn_path is the subcolumn name inside the object (e.g.
+        /// `event_type` or `event_type.:`String``).
+        bool json_subcolumn = false;
+        std::optional<size_t> json_subcolumn_source;
+        String json_subcolumn_path;
+
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
         /// null map reconstructed from the leaves' definition levels. Used to read a physically
         /// nullable parquet struct (OPTIONAL group) as Nullable(Tuple(...)). Only set when the group
@@ -449,6 +477,12 @@ struct Reader
 
         std::vector<OutputColumnState> output; // parallel to extended_sample_block
 
+        /// Formed Variant piece columns (metadata/value/typed_value subtrees), keyed by
+        /// output_columns index. Selective Variant subcolumn outputs (OutputColumnInfo::
+        /// variant_select_path) share these pieces, so they are formed once and cached here
+        /// instead of being moved out of their subchunks per consumer.
+        std::unordered_map<size_t, ColumnPtr> variant_piece_cache;
+
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
@@ -613,6 +647,8 @@ struct Reader
     /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
+    /// Assemble a Parquet VARIANT column from its sub-columns and decode it into JSON text.
+    MutableColumnPtr formVariantColumn(RowSubgroup & row_subgroup, const OutputColumnInfo & output_info, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);

@@ -55,6 +55,19 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `MultiLineString` (GeoParquet) | [MultiLineString](/reference/data-types/geo#multilinestring) |
 | `MultiPolygon` (GeoParquet) | [MultiPolygon](/reference/data-types/geo#multipolygon) |
 | mixed/unknown geometry (GeoParquet) | [Geometry](/reference/data-types/geo#geometry) |
+| `VARIANT` | [Dynamic](/reference/data-types/dynamic) |
+
+## Parquet VARIANT columns {#parquet-variant-columns}
+
+Groups annotated with the [`VARIANT` logical type](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md) are decoded into [Dynamic](/reference/data-types/dynamic), including columns that are [shredded](https://github.com/apache/parquet-format/blob/master/VariantShredding.md): the variant-encoded `value` binaries and the shredded `typed_value` columns are reconstructed per the shredding specification. Each row's value is preserved with its type (objects become `Tuple`s, arrays become `Array(Dynamic)`, scalars keep their primitive type). A Variant that is missing or explicitly null is read as a `Dynamic` null value.
+
+Requesting a `Tuple` type for the column explicitly falls back to reading the raw group structure (for example `Tuple(metadata String, value String)`), and requesting `String` produces the JSON text of each value instead. Requesting [JSON](/reference/data-types/newjson) also works, but only if all values are JSON objects at the top level, because the `JSON` type cannot hold top-level scalars or arrays. Setting `input_format_parquet_enable_json_parsing` to `0` restores the legacy behavior of reading `VARIANT` groups as plain tuples during schema inference.
+
+DuckDB writes `VARIANT` columns with a top-level `typed_value (String)` that holds the JSON document of the whole value (rather than a spec-compliant shredding); such values are embedded as-is when the string is a complete JSON document.
+
+When the requested schema declares the column as [JSON](/reference/data-types/newjson) and only subcolumns of it are read (for example `payload.event_type` or `` payload.event_type.:`String` ``), the reader pushes the path down to the leaf level: if the path maps to a fully-shredded field, only that leaf is read; otherwise only the `metadata` leaf, the leaves of the shredded field group covering the path (or the root `value` leaf for unshredded fields), and the addressed value is extracted per row without assembling the whole value.
+
+On write, [Dynamic](/reference/data-types/dynamic) columns are encoded as unshredded Parquet `VARIANT` groups (`required binary metadata` + `required binary value`), with each row's value encoded in the Variant binary encoding (named tuples and maps as objects, arrays and unnamed tuples as arrays, scalars as the corresponding variant primitives; `Dynamic` nulls as Variant nulls). Reading such a file back yields a `Dynamic` column with the same per-row values and types.
 
 When writing Parquet file, data types that don't have a matching Parquet type are converted to the nearest available type:
 
@@ -71,6 +84,7 @@ When writing Parquet file, data types that don't have a matching Parquet type ar
 | [Polygon](/reference/data-types/geo#polygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
 | [MultiLineString](/reference/data-types/geo#multilinestring) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
 | [MultiPolygon](/reference/data-types/geo#multipolygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
+| [Dynamic](/reference/data-types/dynamic) | `VARIANT` (unshredded) |
 
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 

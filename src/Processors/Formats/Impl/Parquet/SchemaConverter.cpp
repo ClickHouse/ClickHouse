@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -38,7 +39,7 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
-    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
+    Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
     : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
@@ -91,7 +92,10 @@ void SchemaConverter::prepareForReading()
 
         for (size_t i = col.primitive_start; i < col.primitive_end; ++i)
         {
-            chassert(primitive_columns.at(i).idx_in_output_block == UINT64_MAX);
+            /// A json_subcolumn output shares the primitives of its whole-column source
+            /// (see processSubcolumnFallback); keep the first claimant.
+            if (primitive_columns.at(i).idx_in_output_block != UINT64_MAX)
+                continue;
             primitive_columns.at(i).idx_in_output_block = idx;
         }
     }
@@ -185,6 +189,40 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     return it->second;
 }
 
+/// Positions in sample_block of Object subcolumn requests for the column `name` (entries
+/// starting with `name.`).
+static std::vector<size_t> collectSubcolumnPositions(const Block & sample_block, const String & name)
+{
+    std::vector<size_t> res;
+    const String prefix = name + ".";
+    for (size_t i = 0; i < sample_block.columns(); ++i)
+        if (sample_block.getByPosition(i).name.starts_with(prefix))
+            res.push_back(i);
+    return res;
+}
+
+/// The logical Variant path of a subcolumn request name: strips the `payload.` prefix and the
+/// typed-path suffix (`.:`TypeName``).
+static String logicalVariantPath(const String & name, const String & prefix)
+{
+    std::string_view path = std::string_view(name).substr(prefix.size());
+    size_t typed = path.find(".:`");
+    if (typed != std::string_view::npos)
+        path = path.substr(0, typed);
+    return String(path);
+}
+
+
+static bool isPrimitiveNode(const parq::SchemaElement & elem)
+{
+    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
+    /// If it's set but has value 0, logically it should be an empty tuple/struct.
+    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
+    /// for primitive columns. E.g.
+    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
+    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
+}
+
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
     /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
@@ -213,9 +251,13 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     size_t wrap_in_arrays = 0;
     DataTypePtr outer_type_hint = node.type_hint;
 
+
     if (node.schema_context == SchemaContext::None)
     {
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
+        node.appendNameComponent(
+            node.element->name,
+            node.name_override ? std::string_view(*node.name_override)
+                               : useColumnMapperIfNeeded(*node.element, node.name));
 
         if (sample_block)
         {
@@ -249,6 +291,38 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 chassert(wrap_in_arrays == levels.back().rep);
 
                 idx_in_output_block = pos;
+            }
+            else if (sample_block)
+            {
+                /// Not the whole column; maybe Object (JSON) subcolumns of it are requested
+                /// (forwarded by filterTupleColumnsToRead). Variant columns defer the
+                /// prune-vs-fallback decision to processSubtreeVariant; everything else falls
+                /// back to reading the whole column as JSON and extracting the subcolumns.
+                auto subs = collectSubcolumnPositions(*sample_block, node.name);
+                if (!subs.empty() && isPrimitiveNode(*node.element))
+                {
+                    /// Object subcolumn requests for a primitive (JSON-annotated) leaf.
+                    /// Tuple/array subcolumn requests are physical and handled by the
+                    /// tuple/array machinery; Variant groups defer to processSubtreeVariant.
+                    processSubcolumnFallback(node, subs);
+                    idx_in_output_block = fallback_whole_idx;
+                    outer_type_hint = node.type_hint;
+                }
+                else if (!subs.empty() && node.element->logicalType.__isset.VARIANT)
+                {
+                    /// Requests for the raw physical fields (metadata/value/typed_value)
+                    /// are handled by the normal physical processing, not by the
+                    /// prune/fallback logic (which deals with logical variant paths).
+                    std::vector<size_t> logical_subs;
+                    for (size_t sub_pos : subs)
+                    {
+                        String path = logicalVariantPath(sample_block->getByPosition(sub_pos).name, node.name + ".");
+                        if (path != "metadata" && path != "value" && path != "typed_value")
+                            logical_subs.push_back(sub_pos);
+                    }
+                    if (!logical_subs.empty())
+                        variant_subcolumn_positions = std::move(logical_subs);
+                }
             }
         }
     }
@@ -289,7 +363,8 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     if (!processSubtreePrimitive(node) &&
         !processSubtreeMap(node) &&
         !processSubtreeArrayOuter(node) &&
-        !processSubtreeArrayInner(node))
+        !processSubtreeArrayInner(node) &&
+        !processSubtreeVariant(node))
     {
         processSubtreeTuple(node);
     }
@@ -338,17 +413,11 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         output.output_type = outer_type_hint;
         output.needs_cast = !output.output_type->equals(*output.input_type);
     }
+
+    if (!fallback_subcolumn_positions.empty() && node.name == fallback_node_name)
+        synthesizeSubcolumnOutputs(node.output_idx.value(), node.name);
 }
 
-static bool isPrimitiveNode(const parq::SchemaElement & elem)
-{
-    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
-    /// If it's set but has value 0, logically it should be an empty tuple/struct.
-    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
-    /// for primitive columns. E.g.
-    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
-    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
-}
 
 bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
 {
@@ -658,6 +727,802 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
         if (elem.__isset.num_children && elem.num_children > 0)
             stack.push_back(size_t(elem.num_children));
     }
+    return true;
+}
+
+/// Number of schema elements in the subtree rooted at schema[idx] (including schema[idx]).
+static size_t schemaSubtreeSize(const std::vector<parq::SchemaElement> & schema, size_t idx)
+{
+    size_t total = 1;
+    size_t children = schema.at(idx).__isset.num_children ? size_t(schema.at(idx).num_children) : 0;
+    size_t next = idx + 1;
+    for (size_t i = 0; i < children; ++i)
+    {
+        size_t s = schemaSubtreeSize(schema, next);
+        total += s;
+        next += s;
+    }
+    return total;
+}
+
+/// Number of primitive (leaf) elements in the subtree rooted at schema[idx].
+static size_t countSchemaLeaves(const std::vector<parq::SchemaElement> & schema, size_t idx)
+{
+    if (isPrimitiveNode(schema.at(idx)))
+        return 1;
+    size_t total = 0;
+    size_t children = size_t(schema.at(idx).num_children);
+    size_t next = idx + 1;
+    for (size_t i = 0; i < children; ++i)
+    {
+        size_t s = schemaSubtreeSize(schema, next);
+        total += countSchemaLeaves(schema, next);
+        next += s;
+    }
+    return total;
+}
+
+/// Split an Object subcolumn path (e.g. `a.b` or `` `a.b`.c ``) into raw field names.
+static std::vector<String> splitVariantPath(const String & path)
+{
+    std::vector<String> res;
+    size_t i = 0;
+    String current;
+    while (i < path.size())
+    {
+        if (path[i] == '`')
+        {
+            ++i;
+            while (i < path.size())
+            {
+                if (path[i] == '\\' && i + 1 < path.size())
+                {
+                    current += path[i + 1];
+                    i += 2;
+                    continue;
+                }
+                if (path[i] == '`')
+                {
+                    ++i;
+                    break;
+                }
+                current += path[i];
+                ++i;
+            }
+        }
+        else if (path[i] == '.')
+        {
+            res.push_back(std::move(current));
+            current.clear();
+            ++i;
+        }
+        else
+        {
+            current += path[i];
+            ++i;
+        }
+    }
+    res.push_back(std::move(current));
+    return res;
+}
+
+
+
+/// Append a whole column to extended_sample_block (it becomes an output of the reader) and
+/// return its index in the block.
+static size_t appendSampleColumn(Block & sample_block, const String & name, const DataTypePtr & type)
+{
+    size_t idx = sample_block.columns();
+    sample_block.insert(ColumnWithTypeAndName(type, name));
+    return idx;
+}
+
+void SchemaConverter::processSubcolumnFallback(TraversalNode & node, const std::vector<size_t> & subcolumn_positions)
+{
+    /// Request the whole column as JSON and synthesize its Object subcolumns as extractions
+    /// from it. The whole column is appended to extended_sample_block.
+    DataTypePtr json_type = makeNullable(std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON));
+    size_t whole_idx = appendSampleColumn(*sample_block, node.name, json_type);
+    node.requested = true;
+    node.type_hint = json_type;
+    fallback_subcolumn_positions = subcolumn_positions;
+    fallback_whole_idx = whole_idx;
+    fallback_node_name = node.name;
+}
+
+/// Create the json_subcolumn outputs extracting from the whole-column output at `source_idx`
+/// (after processSubtree produced it).
+void SchemaConverter::synthesizeSubcolumnOutputs(size_t source_idx, const String & column_name)
+{
+    for (size_t pos : fallback_subcolumn_positions)
+    {
+        const auto & entry = sample_block->getByPosition(pos);
+        OutputColumnInfo & sub = output_columns.emplace_back();
+        sub.name = entry.name;
+        sub.idx_in_output_block = pos;
+        sub.json_subcolumn = true;
+        sub.json_subcolumn_source = source_idx;
+        sub.json_subcolumn_path = entry.name.substr(column_name.size() + 1);
+        sub.input_type = entry.type;
+        sub.output_type = entry.type;
+        /// Shares the primitives of its whole-column source (the reader waits for them before
+        /// synthesizing this output).
+        const auto & source = output_columns.at(source_idx);
+        sub.primitive_start = source.primitive_start;
+        sub.primitive_end = source.primitive_end;
+    }
+    fallback_subcolumn_positions.clear();
+}
+
+void SchemaConverter::consumeVariantSubtreeUnrequested(TraversalNode & node)
+{
+    /// Nothing related to this variant is requested; consume the subtree, exposing
+    /// fully-shredded field groups under their logical variant path for possible
+    /// subcolumn requests deeper in the tree (explicit `payload.field` schema entries).
+    for (size_t i = 0; i < size_t(node.element->num_children); ++i)
+    {
+        const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
+        if (child.name == "typed_value" && !isPrimitiveNode(child))
+        {
+            /// Consume the typed_value group element and process its field groups,
+            /// mirroring processSubtree's level handling for the group.
+            ++schema_idx;
+            size_t prev_levels_size = levels.size();
+            if (child.repetition_type != parq::FieldRepetitionType::REQUIRED)
+            {
+                LevelInfo prev = levels.back();
+                if (prev.def == UINT8_MAX)
+                    throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Parquet column {} has extremely deeply nested (>255 levels) arrays or nullables", node.getNameForLogging());
+                auto level = LevelInfo {.def = UInt8(prev.def + 1), .rep = prev.rep};
+                if (child.repetition_type == parq::FieldRepetitionType::REPEATED)
+                {
+                    level.rep += 1;
+                    level.is_array = true;
+                }
+                levels.push_back(level);
+            }
+            processSubtreeVariantShreddedAliases(node, size_t(child.num_children));
+            levels.resize(prev_levels_size);
+            continue;
+        }
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        processSubtree(subnode);
+    }
+}
+
+void SchemaConverter::processSubtreeVariantShreddedAliases(TraversalNode & node, size_t num_field_groups)
+{
+    /// Field groups of the typed_value subtree of a Variant. A field group without a `value`
+    /// child is fully shredded: expose its typed_value leaf under the requested subcolumn name
+    /// (e.g. `payload.event_type` or `payload.event_type.:`String``), so subcolumn requests
+    /// match it and only that leaf is read. Groups with a `value` child, group/list
+    /// typed_values, and unrequested fields keep physical names / stay unread.
+    for (size_t i = 0; i < num_field_groups; ++i)
+    {
+        const parq::SchemaElement & field_group = file_metadata.schema.at(schema_idx);
+        size_t num_children = field_group.__isset.num_children ? size_t(field_group.num_children) : 0;
+
+        bool has_value = false;
+        if (num_children >= 1 && file_metadata.schema.at(schema_idx + 1).name == "value")
+            has_value = true;
+        else if (num_children == 2
+                 && file_metadata.schema.at(schema_idx + 1 + schemaSubtreeSize(file_metadata.schema, schema_idx + 1)).name == "value")
+            has_value = true;
+
+        const parq::SchemaElement * typed_child = nullptr;
+        if (!has_value && num_children == 1)
+        {
+            typed_child = &file_metadata.schema.at(schema_idx + 1);
+        }
+        else if (!has_value && num_children == 2)
+        {
+            const parq::SchemaElement & first = file_metadata.schema.at(schema_idx + 1);
+            typed_child = first.name == "typed_value"
+                ? &first
+                : &file_metadata.schema.at(schema_idx + 1 + schemaSubtreeSize(file_metadata.schema, schema_idx + 1));
+        }
+
+        if (typed_child && isPrimitiveNode(*typed_child))
+        {
+            /// Find the subcolumn request for this field, if any.
+            std::optional<String> remainder;
+            for (size_t pos : variant_subcolumn_positions)
+            {
+                const auto & entry = sample_block->getByPosition(pos);
+                if (logicalVariantPath(entry.name, node.name + ".") == field_group.name)
+                {
+                    remainder = entry.name.substr(node.name.size() + 1);
+                    break;
+                }
+            }
+
+            /// Consume the field group element.
+            ++schema_idx;
+            if (remainder.has_value())
+            {
+                /// Alias the shredded leaf to the requested subcolumn name.
+                TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+                subnode.name_override = std::move(*remainder);
+                processSubtree(subnode);
+            }
+            else
+            {
+                TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+                processSubtree(subnode);
+            }
+            continue;
+        }
+
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        processSubtree(subnode);
+    }
+}
+
+/// Peek at the typed_value subtree of a Variant group for fully-shredded scalar fields.
+std::unordered_set<String> SchemaConverter::collectValueLessShreddedPaths(const TraversalNode & node) const
+{
+    std::unordered_set<String> res;
+    size_t idx = schema_idx;
+    for (size_t i = 0; i < size_t(node.element->num_children); ++i)
+    {
+        const parq::SchemaElement & child = file_metadata.schema.at(idx);
+        size_t child_size = schemaSubtreeSize(file_metadata.schema, idx);
+        if (child.name == "typed_value" && !isPrimitiveNode(child))
+        {
+            size_t fg_idx = idx + 1;
+            for (size_t j = 0; j < size_t(child.num_children); ++j)
+            {
+                const parq::SchemaElement & field_group = file_metadata.schema.at(fg_idx);
+                size_t fg_size = schemaSubtreeSize(file_metadata.schema, fg_idx);
+                size_t nch = field_group.__isset.num_children ? size_t(field_group.num_children) : 0;
+
+                bool has_value = false;
+                if (nch >= 1 && file_metadata.schema.at(fg_idx + 1).name == "value")
+                    has_value = true;
+                else if (nch == 2
+                         && file_metadata.schema.at(fg_idx + 1 + schemaSubtreeSize(file_metadata.schema, fg_idx + 1)).name == "value")
+                    has_value = true;
+
+                const parq::SchemaElement * typed_child = nullptr;
+                if (!has_value && nch == 1)
+                    typed_child = &file_metadata.schema.at(fg_idx + 1);
+                else if (!has_value && nch == 2)
+                {
+                    const parq::SchemaElement & first = file_metadata.schema.at(fg_idx + 1);
+                    typed_child = first.name == "typed_value"
+                        ? &first
+                        : &file_metadata.schema.at(fg_idx + 1 + schemaSubtreeSize(file_metadata.schema, fg_idx + 1));
+                }
+                if (typed_child && isPrimitiveNode(*typed_child))
+                    res.insert(field_group.name);
+                fg_idx += fg_size;
+            }
+        }
+        idx += child_size;
+    }
+    return res;
+}
+
+void SchemaConverter::pushVariantGroupLevel(const TraversalNode & node, const parq::SchemaElement & group)
+{
+    /// Mirror the level handling of processSubtree for a group element consumed manually
+    /// (see consumeVariantSubtreeUnrequested).
+    if (group.repetition_type == parq::FieldRepetitionType::REQUIRED)
+        return;
+    LevelInfo prev = levels.back();
+    if (prev.def == UINT8_MAX)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Parquet column {} has extremely deeply nested (>255 levels) arrays or nullables", node.getNameForLogging());
+    auto level = LevelInfo {.def = UInt8(prev.def + 1), .rep = prev.rep};
+    if (group.repetition_type == parq::FieldRepetitionType::REPEATED)
+    {
+        level.rep += 1;
+        level.is_array = true;
+    }
+    levels.push_back(level);
+}
+
+void SchemaConverter::skipSelectiveSubtree()
+{
+    /// Count the leaves to keep the physical parquet column index aligned; produce no outputs.
+    primitive_column_idx += countSchemaLeaves(file_metadata.schema, schema_idx);
+    schema_idx += schemaSubtreeSize(file_metadata.schema, schema_idx);
+}
+
+std::optional<size_t> SchemaConverter::processSelectiveChild(TraversalNode & node, bool materialize)
+{
+    if (!materialize)
+    {
+        skipSelectiveSubtree();
+        return std::nullopt;
+    }
+    TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+    subnode.requested = true;
+    processSubtree(subnode);
+    return subnode.output_idx;
+}
+
+SchemaConverter::VariantSelectiveTarget SchemaConverter::navigateVariantSelectivePath(
+    const parq::SchemaElement * typed_group, size_t typed_group_idx, const std::vector<String> & segments) const
+{
+    VariantSelectiveTarget target;
+    const parq::SchemaElement * current_group = typed_group;
+    size_t current_group_idx = typed_group_idx;
+    /// Deepest field group entered (whose value binary holds fields not shredded below it).
+    size_t enclosing_idx = UINT64_MAX;
+
+    for (size_t i = 0; i < segments.size(); ++i)
+    {
+        if (!current_group)
+        {
+            /// Only reachable at the root: `typed_value` is absent or primitive (e.g. DuckDB's
+            /// JSON-document String). The walker navigates the value binary / JSON document.
+            chassert(enclosing_idx == UINT64_MAX);
+            target.need_root_value = true;
+            target.need_root_typed = true;
+            target.remainder_start = i;
+            return target;
+        }
+
+        /// Find the field group named segments[i] among the current group's children.
+        std::optional<size_t> found_idx;
+        size_t fg_idx = current_group_idx + 1;
+        for (size_t j = 0; j < size_t(current_group->num_children); ++j)
+        {
+            const parq::SchemaElement & fg = file_metadata.schema.at(fg_idx);
+            if (fg.name == segments[i])
+            {
+                found_idx = fg_idx;
+                break;
+            }
+            fg_idx += schemaSubtreeSize(file_metadata.schema, fg_idx);
+        }
+
+        if (!found_idx.has_value())
+        {
+            /// Not shredded at this level: the value lives in this level's value binary.
+            if (enclosing_idx == UINT64_MAX)
+                target.need_root_value = true;
+            else
+            {
+                target.group_schema_idx = enclosing_idx;
+                target.need_group_value = true;
+            }
+            target.remainder_start = i;
+            return target;
+        }
+
+        const parq::SchemaElement & fg = file_metadata.schema.at(*found_idx);
+        if (i + 1 == segments.size())
+        {
+            /// The path ends at this field group: read its value and typed_value children.
+            target.group_schema_idx = *found_idx;
+            target.need_group_value = true;
+            target.need_group_typed = true;
+            target.remainder_start = segments.size();
+            return target;
+        }
+
+        /// The path continues below: descend if this field group's typed_value is itself a
+        /// group of variant nodes; otherwise the walker takes the remainder from here.
+        const parq::SchemaElement * fg_typed = nullptr;
+        size_t fg_typed_idx = 0;
+        size_t child_idx = *found_idx + 1;
+        for (size_t j = 0; j < size_t(fg.num_children); ++j)
+        {
+            const parq::SchemaElement & c = file_metadata.schema.at(child_idx);
+            if (c.name == "typed_value")
+            {
+                fg_typed = &c;
+                fg_typed_idx = child_idx;
+                break;
+            }
+            child_idx += schemaSubtreeSize(file_metadata.schema, child_idx);
+        }
+        if (fg_typed && !isPrimitiveNode(*fg_typed))
+        {
+            target.ancestors.emplace_back(*found_idx, i);
+            enclosing_idx = *found_idx;
+            current_group = fg_typed;
+            current_group_idx = fg_typed_idx;
+            continue;
+        }
+        target.group_schema_idx = *found_idx;
+        target.need_group_value = true;
+        target.need_group_typed = true;
+        target.remainder_start = i + 1;
+        return target;
+    }
+    chassert(false);
+    return target;
+}
+
+struct SchemaConverter::VariantSelectiveRequest
+{
+    size_t pos;
+    std::vector<String> segments;
+    VariantSelectiveTarget target;
+};
+
+void SchemaConverter::processSelectiveTypedGroup(
+    TraversalNode & node,
+    const parq::SchemaElement & group,
+    const std::vector<VariantSelectiveRequest> & requests,
+    const std::unordered_map<size_t, std::vector<size_t>> & direct_requests,
+    std::unordered_map<size_t, std::pair<std::optional<size_t>, std::optional<size_t>>> & group_pieces)
+{
+    /// schema_idx points at `group` (a group of variant field groups); consume it and process
+    /// field groups in schema order.
+    ++schema_idx;
+    size_t levels_before = levels.size();
+    pushVariantGroupLevel(node, group);
+    for (size_t j = 0; j < size_t(group.num_children); ++j)
+    {
+        size_t fg_idx = schema_idx;
+        const parq::SchemaElement & fg = file_metadata.schema.at(fg_idx);
+
+        auto it = direct_requests.find(fg_idx);
+        if (it != direct_requests.end())
+        {
+            /// Requests address this field group exactly: materialize the children they need
+            /// (this reads the whole typed subtree below it).
+            bool need_value = false;
+            bool need_typed = false;
+            for (size_t req_idx : it->second)
+            {
+                need_value |= requests[req_idx].target.need_group_value;
+                need_typed |= requests[req_idx].target.need_group_typed;
+            }
+            ++schema_idx;
+            size_t levels_before_fg = levels.size();
+            pushVariantGroupLevel(node, fg);
+            auto & pieces = group_pieces[fg_idx];
+            for (size_t k = 0; k < size_t(fg.num_children); ++k)
+            {
+                const parq::SchemaElement & gc = file_metadata.schema.at(schema_idx);
+                if (gc.name == "value" && isPrimitiveNode(gc))
+                    pieces.first = processSelectiveChild(node, need_value);
+                else if (gc.name == "typed_value")
+                    pieces.second = processSelectiveChild(node, need_typed);
+                else
+                    /// Unknown field group child; tolerate future spec extensions.
+                    skipSelectiveSubtree();
+            }
+            levels.resize(levels_before_fg);
+            continue;
+        }
+
+        /// Requests address field groups strictly below this one?
+        bool has_descendants = false;
+        for (const auto & req : requests)
+        {
+            for (const auto & [anc_idx, anc_seg] : req.target.ancestors)
+            {
+                if (anc_idx == fg_idx)
+                {
+                    has_descendants = true;
+                    break;
+                }
+            }
+            if (has_descendants)
+                break;
+        }
+        if (!has_descendants)
+        {
+            skipSelectiveSubtree();
+            continue;
+        }
+
+        /// Descend without materializing this group's own value: the descendants' fields are
+        /// shredded below this group, so this level's value binary does not contain them.
+        ++schema_idx;
+        size_t levels_before_fg = levels.size();
+        pushVariantGroupLevel(node, fg);
+        for (size_t k = 0; k < size_t(fg.num_children); ++k)
+        {
+            const parq::SchemaElement & gc = file_metadata.schema.at(schema_idx);
+            if (gc.name == "typed_value" && !isPrimitiveNode(gc))
+                processSelectiveTypedGroup(node, gc, requests, direct_requests, group_pieces);
+            else
+                skipSelectiveSubtree();
+        }
+        levels.resize(levels_before_fg);
+    }
+    levels.resize(levels_before);
+}
+
+void SchemaConverter::processSubtreeVariantSelective(TraversalNode & node)
+{
+    /// Requested Object subcolumn paths of this Variant column, resolved to leaf-level reads:
+    /// only the metadata leaf, the leaves of the addressed field groups, and (when needed) the
+    /// root `value` leaf are read; everything else in the Variant subtree is skipped.
+    std::vector<VariantSelectiveRequest> requests;
+    requests.reserve(variant_subcolumn_positions.size());
+    for (size_t pos : variant_subcolumn_positions)
+    {
+        const auto & entry = sample_block->getByPosition(pos);
+        String logical = logicalVariantPath(entry.name, node.name + ".");
+        requests.push_back({pos, splitVariantPath(logical), {}});
+    }
+
+    /// Peek the children layout and resolve each request's target.
+    const parq::SchemaElement * typed_group = nullptr;
+    size_t typed_group_idx = 0;
+    {
+        size_t idx = schema_idx;
+        for (size_t i = 0; i < size_t(node.element->num_children); ++i)
+        {
+            const parq::SchemaElement & child = file_metadata.schema.at(idx);
+            if (child.name == "typed_value" && !isPrimitiveNode(child) && !typed_group)
+            {
+                typed_group = &child;
+                typed_group_idx = idx;
+            }
+            idx += schemaSubtreeSize(file_metadata.schema, idx);
+        }
+    }
+    for (auto & req : requests)
+        req.target = navigateVariantSelectivePath(typed_group, typed_group_idx, req.segments);
+
+    /// Conflict resolution: a field group whose whole typed subtree is materialized (it has a
+    /// direct request) covers everything below it, so retarget requests addressing deeper field
+    /// groups to the shallowest such ancestor, navigating the assembled tuple for the rest of
+    /// their path.
+    std::unordered_set<size_t> whole_groups;
+    for (const auto & req : requests)
+        if (req.target.group_schema_idx != UINT64_MAX && req.target.need_group_typed)
+            whole_groups.insert(req.target.group_schema_idx);
+    for (auto & req : requests)
+    {
+        if (req.target.group_schema_idx == UINT64_MAX)
+            continue;
+        for (const auto & [anc_idx, anc_seg] : req.target.ancestors)
+        {
+            if (!whole_groups.contains(anc_idx))
+                continue;
+            req.target.group_schema_idx = anc_idx;
+            req.target.need_group_value = true;
+            req.target.need_group_typed = true;
+            req.target.remainder_start = anc_seg + 1;
+            break;
+        }
+    }
+
+    size_t primitive_span_start = primitive_columns.size();
+    std::optional<size_t> metadata_piece, root_value_piece, root_typed_piece;
+    /// Field-group pieces: schema idx of field group -> (value piece, typed piece).
+    std::unordered_map<size_t, std::pair<std::optional<size_t>, std::optional<size_t>>> group_pieces;
+    std::unordered_map<size_t, std::vector<size_t>> requests_by_group;
+    bool any_root_value = false;
+    bool any_root_typed = false;
+    for (size_t i = 0; i < requests.size(); ++i)
+    {
+        any_root_value |= requests[i].target.need_root_value;
+        any_root_typed |= requests[i].target.need_root_typed;
+        if (requests[i].target.group_schema_idx != UINT64_MAX)
+            requests_by_group[requests[i].target.group_schema_idx].push_back(i);
+    }
+
+    /// Process children in schema order, materializing only what the targets need. The
+    /// metadata leaf is always read: it is tiny and required to decode any value binary.
+    for (size_t i = 0; i < size_t(node.element->num_children); ++i)
+    {
+        const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
+        if (child.name == "metadata" && isPrimitiveNode(child))
+        {
+            metadata_piece = processSelectiveChild(node, /*materialize=*/ true);
+            continue;
+        }
+        if (child.name == "value" && isPrimitiveNode(child))
+        {
+            root_value_piece = processSelectiveChild(node, any_root_value);
+            continue;
+        }
+        if (child.name == "typed_value")
+        {
+            if (isPrimitiveNode(child))
+            {
+                root_typed_piece = processSelectiveChild(node, any_root_typed);
+                continue;
+            }
+            processSelectiveTypedGroup(node, child, requests, requests_by_group, group_pieces);
+            continue;
+        }
+        /// Unknown Variant child; tolerate future spec extensions.
+        skipSelectiveSubtree();
+    }
+
+    if (!metadata_piece.has_value())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Variant column {} has no 'metadata' field", node.getNameForLogging());
+
+    size_t primitive_span_end = primitive_columns.size();
+
+    /// Create one selective output per requested subcolumn. All outputs span the whole set of
+    /// leaves read for this Variant column; the first of them (in output_columns order) claims
+    /// the leaves and is formed eagerly, the rest are formed on demand, sharing the formed
+    /// piece columns (Reader::RowSubgroup::variant_piece_cache).
+    for (const auto & req : requests)
+    {
+        const auto & entry = sample_block->getByPosition(req.pos);
+        OutputColumnInfo & out = output_columns.emplace_back();
+        out.name = entry.name;
+        out.idx_in_output_block = req.pos;
+        out.variant = true;
+        out.variant_metadata_column = metadata_piece;
+        if (req.target.group_schema_idx != UINT64_MAX)
+        {
+            const auto & pieces = group_pieces.at(req.target.group_schema_idx);
+            out.variant_value_column = pieces.first;
+            out.variant_typed_value_column = pieces.second;
+        }
+        else
+        {
+            out.variant_value_column = root_value_piece;
+            out.variant_typed_value_column = root_typed_piece;
+        }
+        out.variant_select_path = std::vector<String>(
+            req.segments.begin() + ssize_t(req.target.remainder_start), req.segments.end());
+        out.nested_columns = {metadata_piece.value()};
+        if (out.variant_value_column.has_value())
+            out.nested_columns.push_back(*out.variant_value_column);
+        if (out.variant_typed_value_column.has_value())
+            out.nested_columns.push_back(*out.variant_typed_value_column);
+        out.primitive_start = primitive_span_start;
+        out.primitive_end = primitive_span_end;
+        out.input_type = std::make_shared<DataTypeDynamic>();
+        out.output_type = entry.type;
+        out.needs_cast = !out.output_type->equals(*out.input_type);
+    }
+}
+
+bool SchemaConverter::processSubtreeVariant(TraversalNode & node)
+{
+    /// Parquet VARIANT logical type (https://github.com/apache/parquet-format VariantEncoding.md):
+    /// a group with a required binary `metadata` field, an optional binary `value` field, and an
+    /// optional `typed_value` field holding shredded values (VariantShredding.md).
+    /// Values are reconstructed into JSON text (see VariantDecoding.h) and then either deserialized
+    /// into ColumnDynamic (the default and for explicitly requested Dynamic) or, for a requested
+    /// String/JSON type, kept as JSON text that castColumn converts to the requested type.
+    /// If a Tuple type is requested explicitly, fall back to reading the raw group as a plain tuple.
+    if (!node.element->logicalType.__isset.VARIANT)
+        return false;
+
+    if (isPrimitiveNode(*node.element))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "VARIANT logical type on primitive column {}", node.getNameForLogging());
+
+    DataTypePtr unwrapped_hint = node.type_hint ? removeNullable(node.type_hint) : nullptr;
+
+    /// Explicitly requested Tuple means the user wants the raw group fields.
+    if (typeid_cast<const DataTypeTuple *>(unwrapped_hint.get()))
+        return false;
+
+    if (unwrapped_hint
+        && !typeid_cast<const DataTypeObject *>(unwrapped_hint.get())
+        && !typeid_cast<const DataTypeDynamic *>(unwrapped_hint.get())
+        && !typeid_cast<const DataTypeString *>(unwrapped_hint.get()))
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Variant, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+
+    /// With JSON parsing disabled and no explicit type hint, keep the legacy raw-tuple reading.
+    if (!node.type_hint && !options.format.parquet.enable_json_parsing)
+        return false;
+
+    if (!node.requested && variant_subcolumn_positions.empty())
+    {
+        /// Nothing related to this variant is requested; consume the subtree, exposing
+        /// fully-shredded field groups under their logical variant path for possible
+        /// subcolumn requests deeper in the tree (explicit `payload.field` schema entries).
+        consumeVariantSubtreeUnrequested(node);
+        return true;
+    }
+
+    if (!node.requested)
+    {
+        /// Subcolumns are requested but the whole column is not. If every requested subcolumn
+        /// maps to a fully-shredded leaf (a shredded field group without a `value` child),
+        /// read only those leaves (processSubtreeVariantShreddedAliases). Otherwise read only
+        /// the leaves on the requested paths and extract just those values
+        /// (processSubtreeVariantSelective).
+        auto prunable = collectValueLessShreddedPaths(node);
+        std::unordered_set<String> seen_paths;
+        bool all_prunable = true;
+        for (size_t pos : variant_subcolumn_positions)
+        {
+            const auto & entry = sample_block->getByPosition(pos);
+            String path = logicalVariantPath(entry.name, node.name + ".");
+            if (entry.type->getTypeId() == TypeIndex::Dynamic
+                || !prunable.contains(path)
+                || !seen_paths.insert(path).second)
+            {
+                all_prunable = false;
+                break;
+            }
+        }
+        if (all_prunable)
+        {
+            consumeVariantSubtreeUnrequested(node);
+            variant_subcolumn_positions.clear();
+            return true;
+        }
+
+        processSubtreeVariantSelective(node);
+        variant_subcolumn_positions.clear();
+        return true;
+    }
+
+    /// Access the fields by name, not by position, per the shredding spec.
+    std::optional<size_t> metadata_idx, value_idx, typed_value_idx;
+    size_t primitive_start = primitive_columns.size();
+    for (size_t i = 0; i < size_t(node.element->num_children); ++i)
+    {
+        const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
+        if ((child.name == "metadata" || child.name == "value") && child.__isset.type && child.type != parq::Type::BYTE_ARRAY)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Variant field '{}' of column {} must be binary", child.name, node.getNameForLogging());
+
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        processSubtree(subnode);
+        if (!subnode.output_idx.has_value())
+            continue;
+        /// Unknown fields are skipped, tolerating future spec extensions.
+        if (child.name == "metadata")
+            metadata_idx = subnode.output_idx;
+        else if (child.name == "value")
+            value_idx = subnode.output_idx;
+        else if (child.name == "typed_value")
+            typed_value_idx = subnode.output_idx;
+    }
+
+    if (!metadata_idx.has_value())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Variant column {} has no 'metadata' field", node.getNameForLogging());
+    if (!value_idx.has_value() && !typed_value_idx.has_value())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Variant column {} has neither 'value' nor 'typed_value' field", node.getNameForLogging());
+
+    bool group_nullable = node.element->repetition_type == parq::FieldRepetitionType::OPTIONAL;
+
+    node.output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = node.name;
+    output.primitive_start = primitive_start;
+    output.primitive_end = primitive_columns.size();
+    output.variant = true;
+    output.variant_metadata_column = metadata_idx;
+    output.variant_value_column = value_idx;
+    output.variant_typed_value_column = typed_value_idx;
+    output.nested_columns = {metadata_idx.value()};
+    if (value_idx.has_value())
+        output.nested_columns.push_back(value_idx.value());
+    if (typed_value_idx.has_value())
+        output.nested_columns.push_back(typed_value_idx.value());
+
+    /// The assembly produces either a Dynamic column directly (the default; the JSON text of each
+    /// value is deserialized into ColumnDynamic, which supports arbitrary top-level values), or a
+    /// String column of JSON text that castColumn converts to the requested type (e.g. JSON).
+    /// The outer logic in processSubtree overrides output_type with the requested type hint and
+    /// sets needs_cast.
+    if (!node.type_hint || typeid_cast<const DataTypeDynamic *>(unwrapped_hint.get()))
+    {
+        /// Dynamic can't be inside Nullable; null Variant groups become Dynamic null values.
+        output.input_type = std::make_shared<DataTypeDynamic>();
+        output.output_type = output.input_type;
+    }
+    else
+    {
+        /// Null Variant groups produce SQL NULL only if a Nullable type was requested; otherwise
+        /// they produce the JSON text 'null' (a non-nullable hint has nowhere to put nulls).
+        bool want_nullable = group_nullable && node.type_hint->isNullable();
+        DataTypePtr string_type = std::make_shared<DataTypeString>();
+        output.input_type = want_nullable ? makeNullable(string_type) : string_type;
+        output.output_type = output.input_type;
+    }
+
+    /// Fallback mode (processSubcolumnFallback): the whole column lives at the appended
+    /// extended_sample_block position, with the fallback type hint.
+    if (fallback_whole_idx.has_value())
+    {
+        output.idx_in_output_block = fallback_whole_idx;
+        fallback_whole_idx.reset();
+        output.output_type = node.type_hint;
+        output.needs_cast = !output.output_type->equals(*output.input_type);
+    }
+
     return true;
 }
 

@@ -24,8 +24,11 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -836,6 +839,111 @@ void validateIcebergFieldIds(
     }
 }
 
+/// Write a Dynamic column as a Parquet VARIANT group
+/// (https://github.com/apache/parquet-format VariantEncoding.md):
+///   required group `name` (VARIANT) {
+///     required binary metadata;
+///     required binary value;
+///   }
+/// Dynamic nulls are encoded as Variant nulls, so the group and both leaves are required.
+void prepareColumnVariant(
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id)
+{
+    /// Serialize each row into the Variant binary encoding (metadata + value).
+    /// The metadata dictionary is cached per Dynamic variant type: for variant types whose
+    /// shape is fully determined by the type (no Maps with value-dependent keys and no nested
+    /// Dynamic values), one dictionary per type is computed once and reused for all rows of
+    /// that type (the spec allows unused dictionary entries). Other shapes fall back to
+    /// per-row dictionaries.
+    auto metadata_column = ColumnString::create();
+    auto value_column = ColumnString::create();
+    metadata_column->reserve(column->size());
+    value_column->reserve(column->size());
+
+    struct MetadataEntry
+    {
+        std::vector<String> dict;
+        std::string metadata;
+    };
+    std::unordered_map<size_t, MetadataEntry> metadata_cache;
+
+    for (size_t i = 0; i < column->size(); ++i)
+    {
+        auto resolved = resolveVariantRow(*column, type, i);
+        if (!resolved)
+        {
+            /// Dynamic null: Variant null with empty metadata.
+            value_column->insertData("\0", 1);
+            metadata_column->insertData("\x11\0\0", 3);
+            continue;
+        }
+
+        const MetadataEntry * entry = nullptr;
+        std::unordered_map<size_t, MetadataEntry>::iterator it;
+        if (const auto * dynamic = typeid_cast<const ColumnDynamic *>(column.get()))
+        {
+            size_t discr = dynamic->getVariantColumn().globalDiscriminatorAt(i);
+            it = metadata_cache.find(discr);
+            if (it == metadata_cache.end())
+            {
+                /// Compute the type-determined field names once per variant type. Map-containing
+                /// types are handled per row below (keys are value-dependent).
+                if (!variantTypeContainsMap(*resolved->type))
+                {
+                    std::vector<String> dict;
+                    collectVariantFieldNames(*resolved->column, resolved->type, resolved->row, dict);
+                    it = metadata_cache.emplace(discr, MetadataEntry{dict, encodeVariantMetadata(dict)}).first;
+                }
+            }
+            if (it != metadata_cache.end())
+                entry = &it->second;
+        }
+
+        std::vector<String> dict;
+        std::string value;
+        if (entry)
+        {
+            metadata_column->insertData(entry->metadata.data(), entry->metadata.size());
+            encodeVariantValueWithDict(*resolved, entry->dict, value);
+        }
+        else
+        {
+            collectVariantFieldNames(*resolved->column, resolved->type, resolved->row, dict);
+            std::string metadata = encodeVariantMetadata(dict);
+            metadata_column->insertData(metadata.data(), metadata.size());
+            encodeVariantValueWithDict(*resolved, dict, value);
+        }
+        value_column->insertData(value.data(), value.size());
+    }
+
+    auto & group_schema = schemas.emplace_back();
+    group_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    group_schema.__set_name(name);
+    group_schema.__set_num_children(2);
+    group_schema.__isset.logicalType = true;
+    parq::VariantType variant_type;
+    variant_type.__set_specification_version(1);
+    group_schema.logicalType.__set_VARIANT(variant_type);
+    if (field_id)
+        group_schema.__set_field_id(static_cast<Int32>(*field_id));
+
+    /// metadata/value must be plain BYTE_ARRAY (no STRING logical annotation).
+    WriteOptions binary_options = options;
+    binary_options.output_string_as_string = false;
+
+    size_t child_states_begin = states.size();
+    auto string_type = std::make_shared<DataTypeString>();
+    preparePrimitiveColumn(std::move(metadata_column), string_type, "metadata", binary_options, states, schemas, std::nullopt);
+    preparePrimitiveColumn(std::move(value_column), string_type, "value", binary_options, states, schemas, std::nullopt);
+
+    for (size_t i = child_states_begin; i < states.size(); ++i)
+    {
+        Strings & path = states[i].column_chunk.meta_data.path_in_schema;
+        path.insert(path.begin(), name);
+    }
+}
+
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
@@ -851,6 +959,9 @@ void prepareColumnRecursive(
         case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
         case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
         case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
+        case TypeIndex::Dynamic:
+            prepareColumnVariant(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+            break;
         case TypeIndex::LowCardinality:
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
