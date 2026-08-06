@@ -49,6 +49,7 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <TableFunctions/TableFunctionURL.h>
@@ -75,6 +76,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char url_failover_before_returning_last_option_pause[];
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
@@ -655,6 +661,10 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             continue;
         }
     }
+
+    /// Reached only from the handler, so a cancellation seen since its check lands here.
+    FailPointInjection::pauseFailPoint(FailPoints::url_failover_before_returning_last_option_pause);
+    CurrentThread::checkIfNotCancelled();
 
     /// If all options are unreachable except empty ones that we skipped,
     /// return last empty result. It will be skipped later.

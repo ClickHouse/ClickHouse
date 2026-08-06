@@ -1,0 +1,10 @@
+--- cancelled inside the post-loop window, empty fallback kept ---
+code QUERY_WAS_CANCELLED, options attempted: 2
+--- cancelled inside the post-loop window, no empty fallback ---
+code QUERY_WAS_CANCELLED, options attempted: 2
+--- cancelled inside the post-loop window, read path ---
+code QUERY_WAS_CANCELLED, options attempted: 2
+--- not cancelled, empty fallback kept ---
+code CANNOT_EXTRACT_TABLE_STRUCTURE, options attempted: 2
+--- not cancelled, no empty fallback ---
+code NETWORK_ERROR, options attempted: 2
