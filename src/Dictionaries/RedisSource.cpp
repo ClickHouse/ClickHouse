@@ -98,6 +98,15 @@ namespace DB
                     ReadBufferFromString in(string_value);
                     time_t time = 0;
                     readDateTimeText(time, in);
+                    /// Tolerate a fractional-seconds tail (a plain DateTime has no use for it), but
+                    /// reject any other trailing characters instead of silently dropping them.
+                    if (!in.eof() && *in.position() == '.')
+                    {
+                        ++in.position();
+                        while (!in.eof() && isNumericASCII(*in.position()))
+                            ++in.position();
+                    }
+                    assertEOF(in);
                     time = std::max<time_t>(time, 0);
                     assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                     break;
