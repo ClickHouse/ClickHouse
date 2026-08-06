@@ -1549,18 +1549,22 @@ The directory with top level domains.
 <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
 ```
 )", 0) \
-    DECLARE(Bool, interserver_tables_status_require_auth, true, R"(
-Require interserver `TablesStatusRequest` to be authenticated with the cluster
-`<secret>`. Clients new enough to send a secret hash (protocol revision
-`DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS`) are always validated; this
-setting additionally rejects older clients that send no hash, which is what closes the
-unauthenticated table-status disclosure by default.
+    DECLARE(Bool, interserver_tables_status_require_auth, false, R"(
+Reject an interserver `TablesStatusRequest` that is not authenticated with the cluster
+`<secret>`, instead of answering it with a placeholder response.
 
-Defaults to `true` (secure by default). During a rolling upgrade a not-yet-upgraded
-node speaks the old protocol and sends no hash, so a `Distributed` query initiated on
-such a node against an already-upgraded node would have its `TablesStatusRequest`
-rejected. If you must run a mixed-version cluster, set this to `false` on the upgraded
-nodes until every node is upgraded, then remove the override.
+A client new enough to sign the request (protocol revision
+`DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS`) is always validated, and its
+request is rejected when the hash does not match, regardless of this setting. An older
+client sends no hash; by default it gets a response that reports every requested table as
+present, not replicated and writable, independently of the actual state of the tables. No
+table status is disclosed, and a `Distributed` query initiated on a not-yet-upgraded node
+keeps working during a rolling upgrade - it just does not take replica staleness or
+readonly state into account, so `max_replica_delay_for_distributed_queries` has no effect
+for such a query.
+
+Enable this to reject those requests outright, either once every node in the cluster is
+upgraded, or if a hard error is preferable to that degradation.
 )", 0) \
     DECLARE(String, interserver_http_host, "", R"(
 The hostname that can be used by other servers to access this server.

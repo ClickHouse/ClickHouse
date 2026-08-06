@@ -35,12 +35,20 @@ struct TableStatus
     void read(ReadBuffer & in, UInt64 server_protocol_revision);
 };
 
+/// A `TablesStatusRequest` from an interserver peer asks about the single table behind the
+/// `Distributed` table being read, so this is generous. It bounds how much of the request an
+/// interserver peer can make the server deserialize before the peer has proven knowledge of the
+/// cluster secret (the hash covers the request body, so the body is read before it is validated).
+static constexpr size_t MAX_TABLES_IN_INTERSERVER_STATUS_REQUEST = 1024;
+
 struct TablesStatusRequest
 {
     std::unordered_set<QualifiedTableName> tables;
 
     void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
-    void read(ReadBuffer & in, UInt64 client_protocol_revision);
+    /// `max_tables` bounds how much the peer can make us deserialize; see
+    /// `MAX_TABLES_IN_INTERSERVER_STATUS_REQUEST` for the interserver limit.
+    void read(ReadBuffer & in, UInt64 client_protocol_revision, size_t max_tables);
 
     /// Deterministic, order-independent digest of `tables` for the interserver auth hash.
     std::string getAuthDigest() const;

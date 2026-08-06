@@ -84,7 +84,7 @@ std::string TablesStatusRequest::getAuthDigest() const
     return data;
 }
 
-void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
+void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision, size_t max_tables)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "method TablesStatusRequest::read is called for unsupported client revision");
@@ -92,8 +92,8 @@ void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
     size_t size = 0;
     readVarUInt(size, in);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
+    if (size > max_tables)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size (maximum: {}).", max_tables);
 
     for (size_t i = 0; i < size; ++i)
     {
