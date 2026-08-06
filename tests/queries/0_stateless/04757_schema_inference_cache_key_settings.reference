@@ -57,6 +57,12 @@ LineString
 1
 -- Parquet skip_columns_with_unsupported_types, the permissive entry exists and is keyed
 1	skip_columns_with_unsupported_types=true
+-- Parquet make_json_columns_nullable, nullable=1 first
+Nullable(JSON)
+JSON
+-- Parquet make_json_columns_nullable, nullable=0 first
+JSON
+Nullable(JSON)
 -- Template exponent, exp=1 first
 Nullable(Float64)
 Nullable(String)
@@ -70,7 +76,7 @@ input_format_try_infer_exponent_floats=true	max_parser_depth=1000
 input_format_try_infer_exponent_floats=true
 -- Form key is no longer empty
 1
--- Parquet key carries max_parser_depth and all three new Parquet fields
-max_parser_depth=1000	local_time_as_utc=true	allow_geoparquet_parser=true	skip_columns_with_unsupported_types=false
+-- Parquet key carries max_parser_depth and all four new Parquet fields
+max_parser_depth=1000	local_time_as_utc=true	allow_geoparquet_parser=true	skip_columns_with_unsupported_types=false	schema_inference_make_json_columns_nullable=false
 -- Template key follows the row format's rule, not format_regexp_escaping_rule
 1	0

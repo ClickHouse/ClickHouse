@@ -154,6 +154,22 @@ $CLICKHOUSE_LOCAL -m -q "
     SELECT count(), extract(additional_format_info, 'skip_columns_with_unsupported_types=\w+')
     FROM system.schema_inference_cache WHERE format = 'Parquet' GROUP BY 2 ORDER BY 2;"
 
+# --- schema_inference_make_json_columns_nullable -------------------------------------------
+# Decides whether a required JSON column stays JSON or becomes Nullable(JSON), so each pair must
+# report the type its own query asked for. The column must be required: an optional one is nullable
+# at both values.
+for suffix in a b; do cp "$CUR_DIR"/data_parquet/parquet_required_json_column.parquet "${T}_json_${suffix}.parquet"; done
+touch -d "$AGE" "${T}"_json_*.parquet
+JSON_OPTS="schema_inference_make_columns_nullable = 1, input_format_parquet_enable_json_parsing = 1"
+echo "-- Parquet make_json_columns_nullable, nullable=1 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_json_a.parquet', 'Parquet') SETTINGS $JSON_OPTS, schema_inference_make_json_columns_nullable = 1;
+    DESC file('${T}_json_a.parquet', 'Parquet') SETTINGS $JSON_OPTS, schema_inference_make_json_columns_nullable = 0;" | awk -F'\t' '$1 == "j" {print $2}'
+echo "-- Parquet make_json_columns_nullable, nullable=0 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_json_b.parquet', 'Parquet') SETTINGS $JSON_OPTS, schema_inference_make_json_columns_nullable = 0;
+    DESC file('${T}_json_b.parquet', 'Parquet') SETTINGS $JSON_OPTS, schema_inference_make_json_columns_nullable = 1;" | awk -F'\t' '$1 == "j" {print $2}'
+
 # --- Template ----------------------------------------------------------------------------
 # The row format's own field rule (CSV here) must key the entry, not format_regexp_escaping_rule.
 # The field must be rule-specific: an Escaped field infers String at both exponent values.
@@ -185,10 +201,10 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_exp_a.form', 'Form') FORMAT Null;
     SELECT additional_format_info != '' FROM system.schema_inference_cache;"
 
-echo "-- Parquet key carries max_parser_depth and all three new Parquet fields"
+echo "-- Parquet key carries max_parser_depth and all four new Parquet fields"
 $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_deep_a.parquet', 'Parquet') SETTINGS max_parser_depth = 1000 FORMAT Null;
-    SELECT extract(additional_format_info, 'max_parser_depth=\d+'), extract(additional_format_info, 'local_time_as_utc=\w+'), extract(additional_format_info, 'allow_geoparquet_parser=\w+'), extract(additional_format_info, 'skip_columns_with_unsupported_types=\w+')
+    SELECT extract(additional_format_info, 'max_parser_depth=\d+'), extract(additional_format_info, 'local_time_as_utc=\w+'), extract(additional_format_info, 'allow_geoparquet_parser=\w+'), extract(additional_format_info, 'skip_columns_with_unsupported_types=\w+'), extract(additional_format_info, 'schema_inference_make_json_columns_nullable=\w+')
     FROM system.schema_inference_cache;"
 
 echo "-- Template key follows the row format's rule, not format_regexp_escaping_rule"
