@@ -19,6 +19,7 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/threadPoolCallbackRunner.h>
 
+#include <mutex>
 #include <optional>
 #include <base/defines.h>
 
