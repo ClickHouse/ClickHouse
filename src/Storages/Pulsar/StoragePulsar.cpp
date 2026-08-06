@@ -106,13 +106,31 @@ private:
         if (!DatabaseCatalog::instance().getDependentViews(pulsar_storage.getStorageID()).empty())
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StoragePulsar with attached materialized views");
 
-        /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
+        /// The consumer pool may be incomplete: after ATTACH with the broker unreachable, or after
+        /// a poisoned consumer was dropped, `init_task` is still recreating the missing consumers.
+        /// Reading from an empty pool would return an empty result set, making a broker outage
+        /// indistinguishable from an empty topic, so reject the read instead. Fan out only over
+        /// the live consumers: a source for a missing slot would just wait `pulsar_max_wait_ms`
+        /// for a consumer that cannot appear.
+        size_t live_consumers = 0;
+        {
+            std::lock_guard lock{pulsar_storage.consumers_mutex};
+            live_consumers = pulsar_storage.created_consumers;
+        }
+        if (live_consumers == 0)
+            throw Exception(
+                ErrorCodes::CANNOT_CONNECT_PULSAR,
+                "Pulsar consumers setup is not finished (0 out of {} consumers created), retrying in the background. "
+                "Connection to the broker might not be established yet",
+                pulsar_storage.num_consumers);
+
+        /// Use all live consumers at once, otherwise SELECT may not read messages from all partitions.
         Pipes pipes;
-        pipes.reserve(pulsar_storage.num_consumers);
+        pipes.reserve(live_consumers);
         auto modified_context = pulsar_storage.addSettings(getContext());
 
-        // Claim as many consumers as requested, but don't block
-        for (size_t i = 0; i < pulsar_storage.num_consumers; ++i)
+        // Claim as many consumers as available, but don't block
+        for (size_t i = 0; i < live_consumers; ++i)
             pipes.emplace_back(std::make_shared<PulsarSource>(
                 pulsar_storage,
                 storage_snapshot,

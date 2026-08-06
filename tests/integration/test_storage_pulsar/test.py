@@ -257,6 +257,35 @@ def test_attach_while_broker_down_recovers(pulsar_cluster):
     wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
 
 
+def test_direct_select_rejected_while_consumers_not_ready(pulsar_cluster):
+    # A table attached while Pulsar is unreachable has no consumers until the
+    # background initialization task recreates them. A direct SELECT in that
+    # window must fail with CANNOT_CONNECT_PULSAR instead of returning an empty
+    # result set, which would make a broker outage indistinguishable from an
+    # empty topic.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "select_outage_topic", "select_outage_group"))
+
+    instance.query("DETACH TABLE test.pulsar_reader")
+    stop_pulsar(pulsar_cluster)
+    try:
+        instance.query("ATTACH TABLE test.pulsar_reader")
+        error = instance.query_and_get_error("SELECT * FROM test.pulsar_reader")
+        assert "CANNOT_CONNECT_PULSAR" in error
+    finally:
+        start_pulsar(pulsar_cluster)
+
+    # Once the broker is back and the consumers are recreated, direct SELECT
+    # works again.
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        result = instance.query_and_get_answer_with_error("SELECT * FROM test.pulsar_reader")
+        if "CANNOT_CONNECT_PULSAR" not in result[1]:
+            break
+        time.sleep(1)
+    instance.query("SELECT * FROM test.pulsar_reader")
+
+
 def test_streaming_resumes_after_broker_restart(pulsar_cluster):
     # A broker outage in the middle of streaming must not leave the table
     # permanently stalled: consumption must resume once the broker is back.
