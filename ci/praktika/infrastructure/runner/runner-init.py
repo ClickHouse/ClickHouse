@@ -224,22 +224,23 @@ class Runner:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
 
-        # macOS runners run continuously without lifetime limits, so they must
-        # reboot to pick up a newer init script instead of ageing out like Linux.
+        # macOS runners run continuously without lifetime limits, so they exit
+        # to pick up a newer init script instead of ageing out like Linux.
         if config.init_environment == Environment.MACOS:
-            self._reboot_if_init_script_upgraded()
+            self._exit_if_init_script_upgraded()
             return
 
         runner_age = int(time.time()) - self.runner_start_time
         if config.max_life < runner_age:
             raise Exception(f"Runner lifetime exceeded: {runner_age}")
 
-    def _reboot_if_init_script_upgraded(self) -> None:
-        """Reboot when a newer runner-init script has been published to S3.
+    def _exit_if_init_script_upgraded(self) -> None:
+        """Exit when a newer runner-init script has been published to S3.
 
-        Called between jobs, so the runner is idle here. On reboot the instance
-        re-downloads and re-runs the init script, provisioning the new version.
-        A failure to read the remote version is a safe skip, not a reboot.
+        Called between jobs, so the runner is idle here. Raising unwinds through
+        `run`, which drops the provisioning marker; `user_data` then reboots and
+        re-provisions from the new script. A failure to read the remote version
+        is a safe skip, not an exit.
         """
         try:
             remote_version = EC2.get_remote_init_version()
@@ -248,13 +249,10 @@ class Runner:
             return
         if remote_version <= config.version:
             return
-        log(
+        raise Exception(
             f"Remote init version {remote_version} > running {config.version}, "
-            "rebooting to upgrade"
+            "exiting to re-provision"
         )
-        subprocess.run(["sudo", "reboot"], check=False)
-        # Block so the loop does not start another job while the OS tears down.
-        time.sleep(config.max_chill)
 
     def _cleanup_workspace(self) -> None:
         """Remove _work directory to clean up workspace."""
