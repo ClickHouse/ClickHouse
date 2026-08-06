@@ -683,13 +683,8 @@ Pipe ReadFromMergeTree::readFromPool(
       */
     bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
 
-    /// The refiner turning the runtime filter delivered by the seal into primary key pruning
-    /// of every task cut (the gating edge guarantees it is set before the first cut).
-    /// TODO: combine with the projection index refiner when both apply.
-    std::shared_ptr<RuntimeFilterReadRangesRefiner> seal_refiner;
-    if (seal_gated_key_column)
-        seal_refiner = std::make_shared<RuntimeFilterReadRangesRefiner>(storage_snapshot->metadata, context, *seal_gated_key_column);
-
+    /// The gating edge guarantees the seal_gate_refiner receives its filter before the first
+    /// task cut. TODO: combine with the projection index refiner when both apply.
     if (use_prefetched_read_pool)
     {
         auto prefetched_pool = std::make_shared<MergeTreePrefetchedReadPool>(
@@ -708,8 +703,8 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        if (seal_refiner)
-            prefetched_pool->setReadRangesRefiner(seal_refiner);
+        if (seal_gate_refiner)
+            prefetched_pool->setReadRangesRefiner(seal_gate_refiner);
         else
             prefetched_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(prefetched_pool);
@@ -732,21 +727,21 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        if (seal_refiner)
-            read_pool->setReadRangesRefiner(seal_refiner);
+        if (seal_gate_refiner)
+            read_pool->setReadRangesRefiner(seal_gate_refiner);
         else
             read_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(read_pool);
     }
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams{}", total_rows, pool_settings.threads,
-        seal_refiner ? " (gated by a runtime filter seal)" : "");
+        seal_gate_refiner ? " (gated by a runtime filter seal)" : "");
 
     /// Seal-gated reading: the sources are replaced by transforms whose input is the seal,
     /// so nothing is read until the build side of the JOIN completes its runtime filter.
     /// One seal is copied to every stream; the copy input is registered on the pipe as
     /// pending and is connected by the join pipeline wiring.
-    if (seal_refiner)
+    if (seal_gate_refiner)
     {
         auto seal_header = std::make_shared<const Block>(Block{});
         auto copy_seal = std::make_shared<CopyTransform>(seal_header, pool_settings.threads);
@@ -770,7 +765,7 @@ Pipe ReadFromMergeTree::readFromPool(
                 &storage_snapshot->metadata->getColumns());
 
             auto header = std::make_shared<const Block>(processor->getHeader());
-            auto transform = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_refiner, data.getLogName());
+            auto transform = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_gate_refiner, data.getLogName());
 
             if (i == 0)
                 transform->addTotalRowsApprox(total_rows);
@@ -930,8 +925,11 @@ Pipe ReadFromMergeTree::readInOrder(
             context,
             dataflow_cache_updater);
 
-        in_order_pool->setReadRangesRefiner(
-            createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+        if (seal_gate_refiner)
+            in_order_pool->setReadRangesRefiner(seal_gate_refiner);
+        else
+            in_order_pool->setReadRangesRefiner(
+                createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
         pool = std::move(in_order_pool);
     }
 
@@ -1008,11 +1006,31 @@ Pipe ReadFromMergeTree::readInOrder(
                 processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
         }
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
-        if (set_total_rows_approx)
-            source->addTotalRowsApprox(total_rows);
+        Pipe pipe;
+        if (seal_gate_refiner)
+        {
+            /// Seal-gated reading: the source is replaced by a transform whose input is the
+            /// seal, so nothing is read until the build side of the JOIN completes its runtime
+            /// filter. Every part contributes its own pending seal input; the join pipeline
+            /// wiring fans one seal out to all of them.
+            auto header = std::make_shared<const Block>(processor->getHeader());
+            auto gated_source = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_gate_refiner, data.getLogName());
+            if (set_total_rows_approx)
+                gated_source->addTotalRowsApprox(total_rows);
 
-        Pipe pipe(source);
+            InputPort * pending_seal_input = &gated_source->getSealInput();
+            auto gated_processors = std::make_shared<Processors>();
+            gated_processors->emplace_back(std::move(gated_source));
+            pipe = Pipe(std::move(gated_processors), pending_seal_input);
+        }
+        else
+        {
+            auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+            if (set_total_rows_approx)
+                source->addTotalRowsApprox(total_rows);
+
+            pipe = Pipe(std::move(source));
+        }
 
         if (use_virtual_row)
         {
@@ -4375,13 +4393,39 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
 
+    /// Decide whether this read is gated on the build-side seal of a join (see
+    /// enableSealGatedReading). The plan-level mark may be invalidated by decisions taken
+    /// after it (parallel replicas enabled, reading split into layers for a sharded join):
+    /// then the read stays ungated and the join wiring falls back gracefully. The refiner is
+    /// installed on the read pools by readFromPool/readInOrder, and the seal is delivered to
+    /// it by the SealGatedReadTransforms they build.
+    if (seal_gated_reading
+        && !isParallelReadingFromReplicas()
+        && !query_info.isFinal()
+        && !query_info.isStream()
+        && result.split_parts.layers.empty())
+    {
+        seal_gate_refiner = std::make_shared<RuntimeFilterReadRangesRefiner>(
+            storage_snapshot->metadata, context, seal_gated_reading->key_column_name);
+    }
+
+    /// The runtime filters to apply during reading. A read gated on a filter's seal already
+    /// prunes by that filter at task-cut time, granule-exact through the primary key, so its
+    /// read-time index analysis would be pure overhead: it is dropped here (filters of other
+    /// joins are kept).
+    auto runtime_filters_for_data_read = join_runtime_filters_for_index_analysis;
+    if (seal_gate_refiner)
+        std::erase_if(
+            runtime_filters_for_data_read,
+            [&](const auto & descr) { return descr.filter_id == seal_gated_reading->filter_id; });
+
     /// Now check if we have to use primary-key or skip indexes for join pruning
     bool runtime_prune_primary_key = false;
     const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts();
     MergeTreeIndices runtime_skip_indexes;
     if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
         && !query_info.isFinal()
-        && !join_runtime_filters_for_index_analysis.empty()
+        && !runtime_filters_for_data_read.empty()
         && !pending_mutations
         /// Not supported under parallel replicas: the descriptor is not carried to remote replica
         /// reads, so pruning would only cover the local replica's share. Skip it entirely there.
@@ -4402,7 +4446,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         const auto & metadata = *storage_snapshot->metadata;
         const auto & pk_columns = metadata.getPrimaryKey().column_names;
         std::unordered_set<String> seen_index_names;
-        for (const auto & descr : join_runtime_filters_for_index_analysis)
+        for (const auto & descr : runtime_filters_for_data_read)
         {
             if (std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
             {
@@ -4428,10 +4472,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
     MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
     MergeTreeSkipIndexReader::DynamicSkipIndexFilter dynamic_skip_index_filter;
-    if (!join_runtime_filters_for_index_analysis.empty())
+    if (!runtime_filters_for_data_read.empty())
     {
         dynamic_predicate_builder =
-            [lookup = context->getRuntimeFilterLookup(), descriptors = join_runtime_filters_for_index_analysis, ctx = context]
+            [lookup = context->getRuntimeFilterLookup(), descriptors = runtime_filters_for_data_read, ctx = context]
             (ActionsDAG & dag) -> const ActionsDAG::Node *
             {
                 return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
@@ -4439,7 +4483,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
-            [lookup = context->getRuntimeFilterLookup(), descriptors = join_runtime_filters_for_index_analysis, bloom_filter_in_cap]
+            [lookup = context->getRuntimeFilterLookup(), descriptors = runtime_filters_for_data_read, bloom_filter_in_cap]
             (const IMergeTreeIndex & index) -> bool
             {
                 if (index.index.type != "bloom_filter")

@@ -131,7 +131,7 @@ void tryMarkJoin(QueryPlan::Node & node)
     /// unless enable_join_runtime_filters_index_analysis already turned it on.
     build_step->enableKeyRangeTracking();
 
-    reading->enableSealGatedReading(match->key_column_name);
+    reading->enableSealGatedReading(match->key_column_name, match->filter_id);
     join_step->enableSealGatedProbeReading(match->filter_id);
 }
 

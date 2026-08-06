@@ -41,6 +41,23 @@ SELECT count() > 0 AS has_gated_reads FROM (
 -- The seal carries an empty key set when the build side is empty: everything is pruned.
 SELECT /* seal_empty_build */ count() FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k WHERE b.k > 100500000;
 
+-- Single-stream reading is gated too.
+SELECT /* seal_gated_single_stream */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k
+    SETTINGS max_threads = 1;
+SELECT count() > 0 AS has_gated_reads_single_stream FROM (
+    EXPLAIN PIPELINE SELECT count() FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k SETTINGS max_threads = 1
+) WHERE explain LIKE '%SealGatedRead%';
+
+-- Reading in the order of the primary key is gated too.
+SELECT /* seal_gated_in_order */ p.k FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k ORDER BY p.k LIMIT 3
+    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+
+-- A gated read skips the redundant read-time index analysis by the same runtime filter:
+-- the marks are dropped by the refiner at task-cut time and no granules reach the
+-- read-time pruning.
+SELECT /* seal_gated_suppresses_read_time */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k
+    SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1;
+
 -- Joins whose probe side cannot be gated fall back to ungated reading (fail-open).
 SELECT count(), sum(p.k) FROM t_seal_probe AS p LEFT JOIN t_seal_build AS b ON p.k = b.k WHERE b.k = 0;
 SELECT count() FROM t_seal_probe AS p RIGHT JOIN t_seal_build AS b ON p.k = b.k;
@@ -78,6 +95,37 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query LIKE '%seal_empty_build%'
+    AND query NOT LIKE '%query_log%';
+
+-- The single-stream read prunes just like the multi-threaded one.
+SELECT
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 7000 AS dropped_marks,
+    read_rows < 100000 AS read_few_rows
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query LIKE '%seal_gated_single_stream%'
+    AND query NOT LIKE '%query_log%';
+
+-- Reading in order terminates early because of the LIMIT, so only assert that the marks
+-- before the matching ones were cut and dropped.
+SELECT
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 0 AS dropped_marks
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query LIKE '%seal_gated_in_order%'
+    AND query NOT LIKE '%query_log%';
+
+-- The gated read pruned at task-cut time and the read-time pruning by the same filter was
+-- skipped as redundant: no granules were even considered by it.
+SELECT
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 7000 AS dropped_marks,
+    ProfileEvents['RuntimeFilterGranulesConsidered'] AS read_time_granules_considered
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query LIKE '%seal_gated_suppresses_read_time%'
     AND query NOT LIKE '%query_log%';
 
 DROP TABLE t_seal_probe;
