@@ -1,0 +1,53 @@
+-- expression depths: sizeN with N = depth - 1 is the array-sizes subcolumn
+Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))	Array(Array(JSON(max_dynamic_types=8, max_dynamic_paths=64)))
+-- WITNESS depth 2, at level
+[0]
+-- WITNESS depth 2, below level: aborted too; the value is a default because the name resolves as an ordinary JSON path
+[[]]
+-- CONTROL depth 2, above level: a non-existent path, returns a default
+[[]]	[[]]
+-- CONTROL a non-reserved name is unaffected
+[[]]
+-- CONTROL depth 1: the two levels already agreed, must be untouched
+1	[NULL]
+-- WITNESS depth 2 through an expression that also produces a constant column
+1	[0]
+-- WITNESS depth 3, at level
+[[0]]
+-- WITNESS depth 3, below level: size0 disagreed, size1 happened to agree
+[[[]]]	[[[]]]
+-- CONTROL depth 3, above level
+[[[]]]
+-- fixture check: the requested type must sit in the shared variant
+[false]
+[false]
+[false]
+[true]
+-- WITNESS shared variant, at level: the extracted size is non-zero
+[0]
+[0]
+[0]
+[2]
+-- CONTROL shared variant, above level
+[[]]
+[[]]
+[[]]
+[[NULL,NULL]]
+-- CONTROL plain nested arrays: sizeN is root-relative and was never broken
+UInt64	Array(UInt64)	Array(Array(UInt64))
+2	[2,1]	[[2,1],[1]]
+-- fixture check: the path must be in shared data and the parent must be non-empty
+['a','yy']	1
+-- WITNESS shared data, at level
+[1]
+-- WITNESS shared data, below level
+[[NULL]]
+-- CONTROL shared data, above level
+[[NULL]]
+-- WITNESS a Map between the array wrappers and the dynamic path
+Array(Array(Array(Array(JSON(max_dynamic_types=16, max_dynamic_paths=256)))))
+[[[0]]]	[[[[]]]]
+-- CONTROL Map, above level
+[[[[]]]]
+-- WITNESS advanced shared data: the whole path plus the subcolumn
+[['{"b":[42,43]}']]	[1]
