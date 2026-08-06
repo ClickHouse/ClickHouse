@@ -107,7 +107,10 @@ uint8_t adaptiveWinnerByte(const String & type_name, const std::vector<char> & b
 
     const uint8_t method = ICompressionCodec::readMethod(encoded.data());
     auto decoder = CompressionCodecFactory::instance().get(method);
-    PODArray<char> decoded(size);
+
+    /// Fast decompressors read and write in wide blocks past the logical end of both buffers.
+    encoded.resize(encoded_size + decoder->getAdditionalSizeAtTheEndOfBuffer());
+    PODArray<char> decoded(size + decoder->getAdditionalSizeAtTheEndOfBuffer());
     EXPECT_EQ(decoder->decompress(encoded.data(), encoded_size, decoded.data()), size);
     EXPECT_EQ(0, memcmp(decoded.data(), bytes.data(), size));
     return method;
