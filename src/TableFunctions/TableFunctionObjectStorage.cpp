@@ -317,8 +317,8 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionObjectStorage<S3Definition, StorageS3Configuration>>(
         {.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Provides a table-like interface to select/insert files in [Amazon S3](https://aws.amazon.com/s3/) and [Google Cloud Storage](https://cloud.google.com/storage/). This table function is similar to the [hdfs function](/reference/functions/table-functions/hdfs), but provides S3-specific features.
 
@@ -381,7 +381,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `no_sign_request`             | disabled by default.                                                                                                                                                              |
 | `expiration_window_seconds`   | default value is 120.                                                                                                                                                             |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -750,6 +750,7 @@ SELECT
     data
 FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
+```
 
 ## Related {#related}
 
@@ -816,7 +817,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `no_sign_request`             | Disabled by default.                                                                                                                                                                                                              |
 | `expiration_window_seconds`   | Default value is 120.                                                                                                                                                                                                             |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -999,8 +1000,8 @@ As a result, the data is written into three files in different buckets: `my_buck
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>>(
         {.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Provides a table-like interface to select/insert files in [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). This table function is similar to the [s3 function](/reference/functions/table-functions/s3).
 
@@ -1099,7 +1100,7 @@ FROM azureBlobStorage(azure_my_data, blob_path = 'other_data/*.csv', format = 'C
 LIMIT 5;
 ```
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -1272,8 +1273,8 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 #if USE_HDFS
     factory.registerFunction<TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>>(
         {.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Creates a table from files in HDFS. This table function is similar to the [url](/reference/functions/table-functions/url) and [file](/reference/functions/table-functions/file) table functions.
 
@@ -1291,7 +1292,7 @@ hdfs(URI, format, structure)
 | `format`  | The [format](/reference/formats/index) of the file.                                                                                                                          |
 | `structure`| Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                           |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -1312,7 +1313,7 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-## Globs in path {#globs_in_path}
+## Globs in path {#globs-in-path}
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
@@ -2218,7 +2219,7 @@ void registerTableFunctionPaimon(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimon>(
          {.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
@@ -2387,7 +2388,7 @@ The `format` argument stands for the format of data files in the Delta lake tabl
 
 An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 Returns a table with the specified structure for reading or writing data from/to the specified Delta Lake table.
 
@@ -2517,7 +2518,7 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.                                                                                                                                                                                                                    |
 | `extra_credentials`                          | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.                                                                                                                                                                                                                    |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading data in the specified Hudi table in S3.
 
