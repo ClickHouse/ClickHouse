@@ -97,7 +97,27 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
         else if (name == "$max")
             assignments.push_back(makeAssignment(column, makeASTFunction("greatest", field(), parseMongoAggregateExpression(it->value))));
         else if (name == "$currentDate")
+        {
+            /// The legal forms are `true` and `{"$type": "date"}`. `{"$type": "timestamp"}` asks
+            /// for the BSON timestamp - an internal type with no counterpart here - so it is
+            /// rejected as unsupported rather than silently written as a date, and everything
+            /// else, such as `false`, is an error in Mongo as well.
+            bool is_date = (it->value.IsBool() && it->value.GetBool())
+                || (it->value.IsObject() && it->value.MemberCount() == 1
+                    && stringView(it->value.MemberBegin()->name) == "$type"
+                    && it->value.MemberBegin()->value.IsString()
+                    && stringView(it->value.MemberBegin()->value) == "date");
+            if (!is_date)
+            {
+                if (it->value.IsObject() && it->value.MemberCount() == 1
+                    && stringView(it->value.MemberBegin()->name) == "$type"
+                    && it->value.MemberBegin()->value.IsString()
+                    && stringView(it->value.MemberBegin()->value) == "timestamp")
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'timestamp' type of '$currentDate' is not supported, only 'date' is");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$currentDate' must be true or {{\"$type\": \"date\"}}");
+            }
             assignments.push_back(makeAssignment(column, makeASTFunction("now64", make_intrusive<ASTLiteral>(Field(UInt64(3))))));
+        }
         else if (name == "$rename")
         {
             /// A column cannot be renamed for one row only, so the value moves to the column of the
