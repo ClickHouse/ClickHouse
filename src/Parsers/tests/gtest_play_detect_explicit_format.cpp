@@ -2,11 +2,13 @@
 
 #include <Parsers/Lexer.h>
 
+#include <Common/re2.h>
+
 #include <algorithm>
 #include <cctype>
 #include <optional>
-#include <regex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 /** Regression coverage for the `detectExplicitFormat` / `detectExplicitFormatClause` logic in
@@ -197,19 +199,22 @@ std::string stripExplicitFormat(const std::string & query)
 
 /// Mirror of the no-WebAssembly fallback of `detectExplicitFormatClause` in play.html: without the
 /// lexer the page falls back to a best-effort text match anchored to a real trailing clause (only `;`
-/// or `SETTINGS` may follow the name). `std::regex` uses the ECMAScript grammar by default, so the
-/// pattern below is the browser's regular expression verbatim. Like the lexer branch, the name is
-/// reported unquoted while the span keeps the quotes, so the download strips the whole clause.
+/// or `SETTINGS` may follow the name). The browser anchors the tail with a lookahead, which re2 does
+/// not support, so this port consumes the tail inside the match instead and takes the clause span
+/// from a capture group wrapped around the keyword and the name - the acceptance is the same, and
+/// for a single search so is the reported span. Like the lexer branch, the name is reported unquoted
+/// while the span keeps the quotes, so the download strips the whole clause.
 std::optional<FormatClause> detectExplicitFormatClauseNoLexer(const std::string & query)
 {
     /// A custom raw-string delimiter: the pattern itself contains `)"`.
-    static const std::regex re(R"RE(\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+))(?=\s*(?:;|\bSETTINGS\b|$)))RE", std::regex::icase);
-    std::smatch m;
-    if (!std::regex_search(query, m, re))
+    static const re2::RE2 re(R"RE((?i)(\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+)))\s*(?:;|\bSETTINGS\b|$))RE");
+    /// [0] = whole match (including the consumed tail), [1] = the clause span, [2]-[4] = the name.
+    std::string_view groups[5];
+    if (!re.Match({query.data(), query.size()}, 0, query.size(), re2::RE2::UNANCHORED, groups, 5))
         return std::nullopt;
-    std::string name = m[1].matched ? m[1].str() : (m[2].matched ? m[2].str() : m[3].str());
-    const size_t start = static_cast<size_t>(m.position(0));
-    return FormatClause{name, start, start + static_cast<size_t>(m.length(0))};
+    const std::string_view name = !groups[2].empty() ? groups[2] : (!groups[3].empty() ? groups[3] : groups[4]);
+    const size_t start = static_cast<size_t>(groups[1].data() - query.data());
+    return FormatClause{std::string(name), start, start + groups[1].size()};
 }
 
 void expectFormat(const std::string & query, const std::optional<std::string> & expected)
