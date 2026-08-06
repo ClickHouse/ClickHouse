@@ -9,12 +9,17 @@
 #include <Common/Logger.h>
 #include <boost/noncopyable.hpp>
 
+#include <memory>
+#include <vector>
+
 /** Methods to work with PostgreSQL connection object.
  * Should only be used in case there has to be a single connection object, which
  * is long-lived and there are no concurrent connection queries.
  */
 
 namespace Poco { class Logger; }
+
+namespace DB { class TemporarySecretFile; }
 
 namespace pqxx
 {
@@ -28,6 +33,11 @@ struct ConnectionInfo
 {
     String connection_string;
     String host_port; /// For logs.
+
+    /// Temporary files holding TLS credentials that were given as literal contents rather than
+    /// paths. `connection_string` embeds their paths and libpq re-reads the files on every
+    /// (re)connect, so they must live exactly as long as the connection info they belong to.
+    std::vector<std::shared_ptr<DB::TemporarySecretFile>> tls_secret_files;
 };
 
 class Connection : private boost::noncopyable

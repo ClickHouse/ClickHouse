@@ -528,66 +528,66 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.context);
 
-        /// An internal metadata replay (server startup / restore, the same distinction
-        /// `DatabaseDataLake` uses) must keep loading whatever definition was already persisted:
-        /// startup rebuilds every database from persisted metadata with an ATTACH query and
-        /// `loadMetadata` aborts on the first exception, so a validation added or a server path
-        /// changed after the database was created must not turn its stored definition into a
-        /// server that cannot boot. A user-issued `ATTACH DATABASE` is not a replay and stays
-        /// fail-closed, otherwise it would be a direct bypass of the checks below.
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
-
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(
-                *named_collection, &postgresql_settings, args.context, /*require_table=*/ false,
-                is_internal_metadata_replay ? StoragePostgreSQL::SSLCertificatePathValidation::ReplayExemptPersisted
-                                            : StoragePostgreSQL::SSLCertificatePathValidation::Enforce);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
         {
-            if (engine_args.size() < 4 || engine_args.size() > 6)
+            /// The TLS/SSL parameters are trailing `key = value` arguments; the copy keeps them in
+            /// the stored `CREATE DATABASE` query, where they are masked when it is formatted.
+            ASTs positional_arguments = engine_args;
+            configuration.ssl = StoragePostgreSQL::extractSSLParamsFromArguments(positional_arguments, args.context);
+
+            if (positional_arguments.size() < 4 || positional_arguments.size() > 6)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "PostgreSQL Database require `host:port`, `database_name`, `username`, `password`"
-                                "[, `schema` = "", `use_table_cache` = 0");
+                                "[, `schema` = "", `use_table_cache` = 0] "
+                                "(optionally followed by sslmode = '...', sslrootcert_pem = '...', "
+                                "sslcert_pem = '...', sslkey_pem = '...')");
 
-            for (auto & engine_arg : engine_args)
-                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
+            for (auto & positional_argument : positional_arguments)
+                positional_argument = evaluateConstantExpressionOrIdentifierAsLiteral(positional_argument, args.context);
 
-            const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+            const auto & host_port = safeGetLiteralValue<String>(positional_arguments[0], engine_name);
             size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
             configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+            configuration.database = safeGetLiteralValue<String>(positional_arguments[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(positional_arguments[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);
 
             bool is_deprecated_syntax = false;
-            if (engine_args.size() >= 5)
+            if (positional_arguments.size() >= 5)
             {
-                auto arg_value = engine_args[4]->as<ASTLiteral>()->value;
+                auto arg_value = positional_arguments[4]->as<ASTLiteral>()->value;
                 if (arg_value.getType() == Field::Types::Which::String)
                 {
-                    configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+                    configuration.schema = safeGetLiteralValue<String>(positional_arguments[4], engine_name);
                 }
                 else
                 {
-                    use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
+                    use_table_cache = safeGetLiteralValue<UInt8>(positional_arguments[4], engine_name);
                     LOG_WARNING(getLogger("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
                     is_deprecated_syntax = true;
                 }
             }
 
-            if (!is_deprecated_syntax && engine_args.size() >= 6)
-                use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+            if (!is_deprecated_syntax && positional_arguments.size() >= 6)
+                use_table_cache = safeGetLiteralValue<UInt8>(positional_arguments[5], engine_name);
         }
 
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
         /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skipped only for an internal metadata replay, so that a database created before the
-        /// whitelist was tightened does not turn into a server that cannot boot.
+        /// Skip it only for an internal metadata replay (server startup / restore, the same
+        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
+        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
+        /// enforcing the policy there would turn one database created before the whitelist was
+        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
+        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
         if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)
@@ -643,7 +643,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `schema` — PostgreSQL schema.
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
-TLS/SSL parameters can be supplied through a [named collection](/operations/named-collections.md) and are forwarded to `libpq`: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), `sslrootcert` (CA certificate path, or `system`), `sslcert` (client certificate path) and `sslkey` (client key path). When unset, `libpq` defaults apply (`sslmode=prefer`). The certificate and key files must be located inside the directory configured by the server's `user_files_path` setting; relative paths are resolved against it.
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections.md) or as trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL (for example, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`), and are masked in logs and `SHOW` queries like a password. When unset, `libpq` defaults apply (`sslmode=prefer`).
 
 <a id="data_types-support"></a>
 ## Data types support {#data-types-support}

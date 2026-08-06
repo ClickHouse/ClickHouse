@@ -5,7 +5,6 @@
 
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
@@ -36,8 +35,8 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/getInsertQuery.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -53,7 +52,6 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
 
-#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <base/range.h>
@@ -84,7 +82,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 namespace
@@ -603,52 +600,150 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_or_query.getTableName(), remote_table_schema, on_conflict);
 }
 
-void StoragePostgreSQL::validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context, bool enforce_user_files_boundary)
+postgres::ConnectionSSLParams StoragePostgreSQL::getSSLParams(const NamedCollection & named_collection)
 {
-    validateSSLCertificatePaths(configuration, context, [enforce_user_files_boundary](std::string_view) { return enforce_user_files_boundary; });
-}
+    /// A path to a certificate or a key is only accepted from the server configuration file: the
+    /// server opens the file with its own privileges, so taking a path from SQL would let anyone
+    /// who can define a PostgreSQL source probe the local filesystem, and authenticate with a
+    /// client certificate they are not allowed to read themselves.
+    const bool from_config = named_collection.getSourceId() == NamedCollection::SourceId::CONFIG;
 
-void StoragePostgreSQL::validateSSLCertificatePaths(
-    Configuration & configuration, const ContextPtr & context, const std::function<bool(std::string_view)> & enforce_user_files_boundary_for)
-{
-    /// clickhouse-local runs with the privileges of the user who started it, there is no file boundary to enforce.
-    if (context->getApplicationType() == Context::ApplicationType::LOCAL)
-        return;
-
-    namespace fs = std::filesystem;
-    const String user_files_path = context->getUserFilesPath();
-
-    auto validate_path = [&](String & path, std::string_view option_name)
+    auto get_path = [&](const std::string & key, const std::string & contents_key)
     {
-        if (path.empty())
-            return;
+        auto value = named_collection.getOrDefault<String>(key, "");
 
-        /// libpq would resolve a relative path against the working directory of the server process,
-        /// which the user cannot rely on; resolve it against `user_files_path` instead. This is done
-        /// unconditionally, also when the boundary check below is skipped for a metadata replay: the
-        /// metadata keeps the original relative literal, so a persisted definition must resolve it
-        /// the same way after a restart as it did at CREATE time.
-        if (fs::path(path).is_relative())
-            path = (fs::path(user_files_path) / path).lexically_normal().string();
+        /// Checked before the empty fast path: overriding a configured path with the empty string
+        /// would silently drop the credential the operator configured, e.g. disable the verification
+        /// of the server certificate against `sslrootcert`.
+        if (named_collection.isQueryOverridden(key))
+        {
+            /// Outside the server configuration file the path key is not accepted at all, overridden
+            /// or not, so the override rejection would name the wrong remedy.
+            if (!from_config)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` can only be specified in a named collection defined in the server configuration file. "
+                    "Pass the contents of the file in `{}` instead",
+                    key, contents_key);
 
-        if (!enforce_user_files_boundary_for(option_name))
-            return;
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden in a query. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+        }
 
-        if (!fileOrSymlinkPathStartsWith(path, user_files_path))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                "The `{}` path {} is not inside the `user_files` directory {}. TLS/SSL certificate and key files "
-                "used for PostgreSQL connections defined through SQL must reside there",
-                option_name, path, user_files_path);
+        if (value.empty())
+            return value;
+
+        if (!from_config)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` can only be specified in a named collection defined in the server configuration file. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+
+        /// The contents are the SQL-safe form of the same credential, so a query passing them replaces
+        /// the path inherited from the collection - that is the only way to override the credential
+        /// from SQL at all. Both forms coming from the collection definition itself remain ambiguous.
+        if (named_collection.isQueryOverridden(contents_key))
+        {
+            /// A credential the operator explicitly locked (`<sslrootcert overridable="false">`) cannot
+            /// be replaced through the contents form either.
+            if (!named_collection.isOverridable(key, /* default_value= */ true))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+
+            /// Empty contents would not replace the configured path with another credential but
+            /// silently drop it, which is the same as overriding the path itself with ''.
+            if (named_collection.getOrDefault<String>(contents_key, "").empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` cannot be overridden with an empty `{}`", key, contents_key);
+
+            return String{};
+        }
+
+        if (!named_collection.getOrDefault<String>(contents_key, "").empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`{}` and `{}` cannot be specified at the same time", key, contents_key);
+
+        return value;
     };
 
-    /// The special value `system` instructs libpq to verify against the system certificate store, it is not a path.
-    if (configuration.ssl_root_cert != "system")
-        validate_path(configuration.ssl_root_cert, "sslrootcert");
-    validate_path(configuration.ssl_cert, "sslcert");
-    validate_path(configuration.ssl_key, "sslkey");
+    postgres::ConnectionSSLParams ssl_params;
+    ssl_params.ssl_mode = named_collection.getOrDefault<String>("sslmode", "");
+    ssl_params.ssl_root_cert = get_path("sslrootcert", "sslrootcert_pem");
+    ssl_params.ssl_cert = get_path("sslcert", "sslcert_pem");
+    ssl_params.ssl_key = get_path("sslkey", "sslkey_pem");
+    ssl_params.ssl_root_cert_pem = named_collection.getOrDefault<String>("sslrootcert_pem", "");
+    ssl_params.ssl_cert_pem = named_collection.getOrDefault<String>("sslcert_pem", "");
+    ssl_params.ssl_key_pem = named_collection.getOrDefault<String>("sslkey_pem", "");
+    return ssl_params;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table, SSLCertificatePathValidation ssl_path_validation)
+postgres::ConnectionSSLParams StoragePostgreSQL::extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_)
+{
+    /// The TLS/SSL parameters may follow the positional arguments as `key = value` pairs. Only
+    /// `sslmode` and the contents forms are accepted there: a certificate or key path is taken from
+    /// the server configuration file alone, for the reason described at `getSSLParams`.
+    static const std::initializer_list<std::pair<std::string_view, std::string_view>> tls_path_keys
+        = {{"sslrootcert", "sslrootcert_pem"}, {"sslcert", "sslcert_pem"}, {"sslkey", "sslkey_pem"}};
+
+    std::map<String, String> values;
+
+    size_t num_positional_arguments = arguments.size();
+    while (num_positional_arguments > 0)
+    {
+        const auto * function = arguments[num_positional_arguments - 1]->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+            break;
+
+        const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
+        if (!identifier)
+            break;
+
+        const String key = identifier->name();
+        bool is_accepted_key = (key == "sslmode");
+        for (const auto & [path_key, contents_key] : tls_path_keys)
+        {
+            if (key == path_key)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` can only be specified in a named collection defined in the server configuration file. "
+                    "Pass the contents of the file in `{}` instead",
+                    path_key, contents_key);
+            if (key == contents_key)
+                is_accepted_key = true;
+        }
+
+        /// Anything else is left in place, so that it is reported as an unexpected argument.
+        if (!is_accepted_key)
+            break;
+
+        auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[1], context_);
+        if (!values.emplace(key, checkAndGetLiteralArgument<String>(value, key)).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument `{}` is specified more than once", key);
+
+        --num_positional_arguments;
+    }
+
+    arguments.resize(num_positional_arguments);
+
+    auto get = [&](const String & key)
+    {
+        auto it = values.find(key);
+        return it == values.end() ? String{} : it->second;
+    };
+
+    postgres::ConnectionSSLParams ssl_params;
+    ssl_params.ssl_mode = get("sslmode");
+    ssl_params.ssl_root_cert_pem = get("sslrootcert_pem");
+    ssl_params.ssl_cert_pem = get("sslcert_pem");
+    ssl_params.ssl_key_pem = get("sslkey_pem");
+    return ssl_params;
+}
+
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
@@ -663,7 +758,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
         = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache",
-           "sslmode", "sslrootcert", "sslcert", "sslkey"};
+           "sslmode", "sslrootcert", "sslcert", "sslkey", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
     if (storage_settings)
         for (const auto & name : storage_settings->getAllRegisteredNames())
             optional_arguments.insert(name);
@@ -697,30 +792,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
     configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
 
-    configuration.ssl_mode = named_collection.getOrDefault<String>("sslmode", "");
-    configuration.ssl_root_cert = named_collection.getOrDefault<String>("sslrootcert", "");
-    configuration.ssl_cert = named_collection.getOrDefault<String>("sslcert", "");
-    configuration.ssl_key = named_collection.getOrDefault<String>("sslkey", "");
-
-    /// A metadata replay is exempted from the `user_files` boundary check only for values that are
-    /// part of the persisted definition, which cannot change behind the back of the object. A value
-    /// stored in the named collection itself is not such a value: it is read from the collection anew
-    /// on every replay, and `ALTER NAMED COLLECTION` updates a collection even while PostgreSQL
-    /// objects depend on it. Without this, an object created against a valid collection could be
-    /// rebound to a certificate or key outside `user_files` and pick it up on the next restart or
-    /// short `ATTACH`. Only a value written into the query itself (an override of the collection)
-    /// keeps the exemption. Callers that merge further settings over this configuration validate
-    /// the merged result themselves instead (`SSLCertificatePathValidation::DeferToCaller`).
-    if (ssl_path_validation != SSLCertificatePathValidation::DeferToCaller)
-    {
-        auto enforce_boundary_for = [&](std::string_view option_name)
-        {
-            if (ssl_path_validation == SSLCertificatePathValidation::Enforce)
-                return true;
-            return !named_collection.isQueryOverridden(String(option_name));
-        };
-        validateSSLCertificatePaths(configuration, context_, enforce_boundary_for);
-    }
+    configuration.ssl = getSSLParams(named_collection);
 
     if (storage_settings)
         storage_settings->loadFromNamedCollection(named_collection);
@@ -728,22 +800,28 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, SSLCertificatePathValidation ssl_path_validation)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true, ssl_path_validation);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
     else
     {
+        /// `engine_args` is a copy of the stored argument list, so removing the extracted trailing
+        /// `key = value` arguments here keeps them in the stored query, where they are masked when
+        /// it is formatted.
+        configuration.ssl = extractSSLParamsFromArguments(engine_args, context);
+
         if (engine_args.size() < 5 || engine_args.size() > 7)
         {
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Storage PostgreSQL requires from 5 to 7 parameters: "
                 "PostgreSQL('host:port', 'database', 'table' (or query), 'username', 'password' "
-                "[, 'schema', 'ON CONFLICT ...']. Got: {}",
+                "[, 'schema', 'ON CONFLICT ...'] [, sslmode = '...', sslrootcert_pem = '...', "
+                "sslcert_pem = '...', sslkey_pem = '...']. Got: {}",
                 engine_args.size());
         }
 
@@ -797,19 +875,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
-        /// Skip the `user_files` boundary check when replaying previously persisted metadata
-        /// (server startup, and DETACH / ATTACH with the short syntax, which re-reads the stored
-        /// definition): a definition that was valid at CREATE time must keep loading even if
-        /// `user_files_path` changed since it was created. Relative paths are still resolved
-        /// against `user_files_path`, so the stored definition keeps its original meaning. A user
-        /// ATTACH with a full table definition is a fresh definition, not a replay, and stays
-        /// fail-closed. This mirrors the `MaterializedPostgreSQL` engine registration below in
-        /// this repository.
-        const bool is_replay = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
-        auto configuration = StoragePostgreSQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id,
-            is_replay ? StoragePostgreSQL::SSLCertificatePathValidation::ReplayExemptPersisted
-                      : StoragePostgreSQL::SSLCertificatePathValidation::Enforce);
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);
@@ -911,7 +977,12 @@ SELECT * FROM postgresql(postgres_creds, table='table1');
 
 ### TLS/SSL {#tls-ssl}
 
-TLS/SSL parameters are forwarded to `libpq` and can be set as named collection keys (or key-value arguments): `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), `sslrootcert` (CA certificate path, or `system`), `sslcert` (client certificate path) and `sslkey` (client key path). When unset, `libpq` defaults apply (`sslmode=prefer`). The certificate and key files must be located inside the directory configured by the server's `user_files_path` setting; relative paths are resolved against it. For example, to require an encrypted connection and verify the server certificate:
+TLS/SSL parameters are forwarded to `libpq` and can be set as named collection keys or trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), and the certificates and the key, in one of two forms. When unset, `libpq` defaults apply (`sslmode=prefer`).
+
+- `sslrootcert` (CA certificate, or the special value `system`), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files. They can only be specified in a named collection defined in the server configuration file and cannot be overridden in a query: the server opens the files with its own privileges.
+- `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead of a path. They can be specified anywhere — in a query, in a named collection created with SQL, or as an override of a named collection — and are masked in logs and `SHOW` queries like a password.
+
+For example, to require an encrypted connection and verify the server certificate:
 
 ```xml
 <named_collections>
@@ -921,9 +992,19 @@ TLS/SSL parameters are forwarded to `libpq` and can be set as named collection k
         <user>postgres</user>
         <password>****</password>
         <sslmode>verify-full</sslmode>
-        <sslrootcert>/var/lib/clickhouse/user_files/postgresql-ca.crt</sslrootcert>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
     </postgres_creds>
 </named_collections>
+```
+
+The same without a configuration file, passing the certificate contents in the query:
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
 ```
 
 ## Settings {#settings}

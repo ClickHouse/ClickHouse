@@ -3,12 +3,11 @@
 #include "config.h"
 
 #if USE_LIBPQXX
+#include <Core/PostgreSQL/ConnectionSSLParams.h>
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/TableNameOrQuery.h>
-
-#include <functional>
-#include <string_view>
 
 namespace Poco
 {
@@ -71,62 +70,32 @@ public:
         String on_conflict;
 
         /// TLS/SSL parameters forwarded to libpq. Empty values keep libpq's defaults.
-        String ssl_mode;       /// libpq `sslmode`: disable, allow, prefer, require, verify-ca or verify-full.
-        String ssl_root_cert;  /// libpq `sslrootcert`: path to the CA certificate (or the special value `system`).
-        String ssl_cert;       /// libpq `sslcert`: path to the client certificate.
-        String ssl_key;        /// libpq `sslkey`: path to the client private key.
+        postgres::ConnectionSSLParams ssl;
 
         std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
         String addresses_expr;
     };
 
-    /// How `getConfiguration` / `processNamedCollectionResult` treat TLS/SSL certificate and key
-    /// paths found in the arguments (see `validateSSLCertificatePaths`); only the caller can tell
-    /// a metadata replay from fresh DDL.
-    enum class SSLCertificatePathValidation
-    {
-        /// Fresh DDL: every SQL-provided path must reside inside `user_files`.
-        Enforce,
-        /// A replay of previously persisted metadata: values that are part of the persisted
-        /// definition (query overrides of a named collection) are exempt from the boundary check,
-        /// so a stored definition keeps loading even if `user_files_path` changed since it was
-        /// created. The exemption never covers values taken from the named collection store:
-        /// those are re-read on every replay and `ALTER NAMED COLLECTION` can change them after
-        /// the object was created.
-        ReplayExemptPersisted,
-        /// The caller merges further settings over the returned configuration (the
-        /// `MaterializedPostgreSQL` engines apply the `materialized_postgresql_ssl_*` settings on
-        /// top of a named collection) and must validate the merged result itself: validating the
-        /// raw named-collection values here would reject a definition whose unsafe collection
-        /// value is overridden by a safe persisted setting.
-        DeferToCaller,
-    };
-
     /// `storage_settings` may be nullptr for callers that do not honor the `PostgreSQLSettings`
     /// (e.g. the `MaterializedPostgreSQL` engines): the setting names are then rejected in named
     /// collections instead of being accepted and silently ignored.
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr, SSLCertificatePathValidation ssl_path_validation = SSLCertificatePathValidation::Enforce);
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true, SSLCertificatePathValidation ssl_path_validation = SSLCertificatePathValidation::Enforce);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true);
 
-    /// TLS/SSL certificate and key paths accepted from SQL (table functions, engines, DDL-created
-    /// dictionaries) must reside inside `user_files_path`: the files are opened by the server process
-    /// with its own privileges, so an unrestricted path would let any user who can define a PostgreSQL
-    /// source make the server open arbitrary local certificate and key files. Resolves relative paths
-    /// against `user_files_path` (in place) and throws `PATH_ACCESS_DENIED` for paths outside of it.
-    /// `enforce_user_files_boundary` disables only the latter, for callers replaying persisted
-    /// metadata: relative paths are still resolved against `user_files_path`, so a stored definition
-    /// keeps the meaning it had at CREATE time. Not applied to dictionaries defined in server
-    /// configuration files, which are trusted, and in clickhouse-local, which runs with the
-    /// privileges of the user who started it.
-    static void validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context, bool enforce_user_files_boundary = true);
+    /// Reads the TLS/SSL parameters from a named collection: `sslmode`, the certificate and key
+    /// paths (`sslrootcert` / `sslcert` / `sslkey`) and their contents forms (`sslrootcert_pem` /
+    /// `sslcert_pem` / `sslkey_pem`). A path is only accepted from a named collection defined in
+    /// the server configuration file and cannot be overridden in a query; the contents forms are
+    /// accepted from anywhere and are masked like passwords. Throws `BAD_ARGUMENTS` otherwise.
+    static postgres::ConnectionSSLParams getSSLParams(const NamedCollection & named_collection);
 
-    /// Same, but the boundary is decided per option (`sslrootcert`, `sslcert`, `sslkey`). A metadata
-    /// replay can only be exempted from the boundary check for values that are part of the persisted
-    /// definition; a value read from a named collection is re-read on every replay and
-    /// `ALTER NAMED COLLECTION` can change it in the meantime, so it must be checked again.
-    static void validateSSLCertificatePaths(
-        Configuration & configuration, const ContextPtr & context, const std::function<bool(std::string_view)> & enforce_user_files_boundary_for);
+    /// Extracts trailing `key = value` TLS/SSL arguments (`sslmode` and the contents forms) from a
+    /// positional argument list, e.g. `postgresql('host:port', 'db', 'table', 'user', 'password',
+    /// sslmode = 'verify-full', sslrootcert_pem = '...')`. A certificate or key path there is
+    /// rejected: it is only accepted from the server configuration file. The extracted arguments
+    /// are removed from `arguments`.
+    static postgres::ConnectionSSLParams extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,

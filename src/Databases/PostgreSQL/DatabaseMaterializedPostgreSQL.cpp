@@ -48,10 +48,6 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
-    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_mode;
-    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_root_cert;
-    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_cert;
-    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_key;
 }
 
 namespace FailPoints
@@ -243,13 +239,6 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
                             "Setting `{}` only controls the column types chosen when the nested tables are created "
                             "by type inference, and cannot be changed for an existing database: the already created "
                             "nested tables keep their fixed column types. Recreate the database to change it.", change.name);
-        }
-        else if (change.name.starts_with("materialized_postgresql_ssl_"))
-        {
-            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
-                            "Setting `{}` is part of the PostgreSQL connection parameters, which are fixed when the "
-                            "database is created, and cannot be changed for an existing database: the replication "
-                            "connection keeps using the original parameters. Recreate the database to change it.", change.name);
         }
         else if ((change.name != "materialized_postgresql_allow_automatic_update") && (change.name != "materialized_postgresql_max_block_size"))
         {
@@ -756,36 +745,37 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context);
-        if (named_collection)
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
             /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
             /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
-            /// The certificate paths are not validated here: the `materialized_postgresql_ssl_*`
-            /// settings are merged in below, and the merged result is validated once — validating
-            /// the raw collection values here would reject a definition whose unsafe collection
-            /// value is overridden by a safe persisted setting.
             configuration = StoragePostgreSQL::processNamedCollectionResult(
-                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false,
-                StoragePostgreSQL::SSLCertificatePathValidation::DeferToCaller);
+                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false);
         }
         else
         {
-            if (engine_args.size() != 4)
+            /// The TLS/SSL parameters are trailing `key = value` arguments; the copy keeps them in
+            /// the stored `CREATE DATABASE` query, where they are masked when it is formatted.
+            ASTs positional_arguments = engine_args;
+            configuration.ssl = StoragePostgreSQL::extractSSLParamsFromArguments(positional_arguments, args.context);
+
+            if (positional_arguments.size() != 4)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password`.");
+                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password` "
+                                "(optionally followed by sslmode = '...', sslrootcert_pem = '...', "
+                                "sslcert_pem = '...', sslkey_pem = '...').");
 
-            for (auto & engine_arg : engine_args)
-                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
+            for (auto & positional_argument : positional_arguments)
+                positional_argument = evaluateConstantExpressionOrIdentifierAsLiteral(positional_argument, args.context);
 
-            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(engine_args[0], engine_name), 5432);
+            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(positional_arguments[0], engine_name), 5432);
 
             configuration.host = parsed_host_port.first;
             configuration.port = parsed_host_port.second;
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+            configuration.database = safeGetLiteralValue<String>(positional_arguments[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(positional_arguments[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);
         }
 
         /// An internal metadata replay (server startup / restore, the same distinction
@@ -835,45 +825,6 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         if (engine_define->settings)
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
-        /// TLS/SSL parameters can be provided either through a named collection
-        /// (`sslmode`/`sslrootcert`/... keys) or through the engine SETTINGS clause
-        /// (`materialized_postgresql_ssl_*`). An explicitly specified SETTINGS value takes
-        /// precedence, including an explicit empty string which resets it to libpq's default
-        /// (`isChanged`, not non-empty, so an empty override can clear a collection value).
-        const auto & ssl_settings = *postgresql_replica_settings;
-        if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_mode].isChanged())
-            configuration.ssl_mode = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_mode];
-        if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert].isChanged())
-            configuration.ssl_root_cert = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert];
-        if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert].isChanged())
-            configuration.ssl_cert = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert];
-        if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].isChanged())
-            configuration.ssl_key = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key];
-
-        /// The SETTINGS clause could have introduced certificate paths on top of the named
-        /// collection, so validate the merged result. On an internal metadata replay the
-        /// `user_files` boundary check is skipped for values fixed in the persisted definition
-        /// (the SETTINGS clause and query overrides of the named collection), for the same reason
-        /// as the host filter above: a stored definition must keep loading even if
-        /// `user_files_path` changed since it was created. A value read from the named collection
-        /// store gets no such exemption: it is re-read on every replay and
-        /// `ALTER NAMED COLLECTION` can change it after the database was created. Relative paths
-        /// are resolved against `user_files_path` in all cases, so the stored definition keeps
-        /// the meaning it had at CREATE time.
-        auto enforce_ssl_boundary_for = [&](std::string_view option_name)
-        {
-            if (!is_internal_metadata_replay)
-                return true;
-            if (option_name == "sslrootcert" && ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert].isChanged())
-                return false;
-            if (option_name == "sslcert" && ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert].isChanged())
-                return false;
-            if (option_name == "sslkey" && ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].isChanged())
-                return false;
-            return named_collection && !named_collection->isQueryOverridden(String(option_name));
-        };
-        StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.context, enforce_ssl_boundary_for);
-
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
@@ -881,10 +832,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.username,
             configuration.password,
             args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
-            {configuration.ssl_mode,
-             configuration.ssl_root_cert,
-             configuration.ssl_cert,
-             configuration.ssl_key});
+            configuration.ssl);
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
             args.context, args.metadata_path, args.uuid, args.create_query.attach,
@@ -1119,39 +1067,21 @@ If set to `0`, the narrower `Date` and `DateTime` types are used instead (values
 
 This setting only controls the column types chosen by type inference when the nested tables are created, so it must be specified at `CREATE DATABASE` time. It cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (the already created nested tables keep their fixed column types, and such a change is rejected); recreate the database to change it. It is not applicable to the `MaterializedPostgreSQL` table engine, where the column types are declared explicitly.
 
-### `materialized_postgresql_ssl_mode` {#materialized-postgresql-ssl-mode}
+## TLS/SSL {#tls-ssl}
 
-TLS/SSL mode for the PostgreSQL connection, forwarded to `libpq` as `sslmode`. One of `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`. Default: empty, which keeps the `libpq` default of `prefer` (SSL is used if the server offers it, otherwise a plaintext connection is made).
-
-Use `require` to fail unless the connection is encrypted, and `verify-ca`/`verify-full` to additionally verify the server certificate against a CA (see `materialized_postgresql_ssl_root_cert`). `verify-full` also checks that the server host name matches the certificate.
-
-### `materialized_postgresql_ssl_root_cert` {#materialized-postgresql-ssl-root-cert}
-
-Path to the CA certificate file (`libpq` `sslrootcert`) used to verify the PostgreSQL server certificate. Required for `verify-ca` and `verify-full`, unless the special value `system` is used to verify against the system's trusted CA store. Default: empty.
-
-### `materialized_postgresql_ssl_cert` {#materialized-postgresql-ssl-cert}
-
-Path to the client certificate file (`libpq` `sslcert`) presented to PostgreSQL for certificate authentication. Default: empty.
-
-### `materialized_postgresql_ssl_key` {#materialized-postgresql-ssl-key}
-
-Path to the client private key file (`libpq` `sslkey`) matching `materialized_postgresql_ssl_cert`. Default: empty.
-
-The certificate and key files must be located inside the directory configured by the server's `user_files_path` setting; relative paths are resolved against it.
-
-The TLS/SSL settings are part of the PostgreSQL connection parameters, which are fixed when the database is created: they must be specified at `CREATE DATABASE` time and cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (such a change is rejected, because the replication connection keeps using the original parameters); recreate the database to change them.
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections) or as trailing key-value arguments of the engine: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL, and are masked in logs and `SHOW` queries like a password.
 
 Example of connecting to a PostgreSQL server that enforces TLS, verifying the server certificate:
 
 ```sql
 CREATE DATABASE postgres_db
-ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-SETTINGS
-    materialized_postgresql_ssl_mode = 'verify-full',
-    materialized_postgresql_ssl_root_cert = '/var/lib/clickhouse/user_files/postgresql-ca.crt';
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
 ```
 
-The same parameters can be supplied through a [named collection](/operations/named-collections) instead, using the `libpq` key names `sslmode`, `sslrootcert`, `sslcert` and `sslkey`.
+The TLS/SSL parameters are part of the PostgreSQL connection parameters, which are fixed when the database is created; recreate the database to change them.
 
 ## Notes {#notes}
 
