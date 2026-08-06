@@ -96,12 +96,18 @@ void writeAttribute(WriteBuffer & out, std::string_view name, NetCDFType type, U
 /// A name that the format cannot store would produce a file that no reader can open. The rules are
 /// the ones of the classic format: a name is UTF-8 text; the first character is a letter, a digit,
 /// an underscore or a character outside of ASCII; the rest are printable characters other than a
-/// slash; and there are no trailing spaces.
+/// slash; and there are no trailing spaces. The length bound is the one the reader enforces.
 /// See https://docs.unidata.ucar.edu/nug/current/file_format_specifications.html
 void checkName(const String & name)
 {
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The NetCDF format cannot store a column with an empty name");
+
+    /// The bound of the reader: a longer name would be written successfully and then fail to read back.
+    if (name.size() > NETCDF_MAX_NAME_LENGTH)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The NetCDF format cannot store a name of {} bytes because a reader accepts at most {}",
+            name.size(), NETCDF_MAX_NAME_LENGTH);
 
     /// The names of the classic format are UTF-8 text, and an identifier of ClickHouse is an
     /// arbitrary sequence of bytes: a name that is not valid UTF-8 would be written into the header
@@ -403,6 +409,9 @@ NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
             String dimension_name = column.name + String(STRING_DIMENSION_SUFFIX);
             for (size_t attempt = 1; !used_dimension_names.insert(dimension_name).second; ++attempt)
                 dimension_name = column.name + String(STRING_DIMENSION_SUFFIX) + "_" + toString(attempt);
+
+            /// The suffix may push the name of a valid column over the length bound of the reader.
+            checkName(dimension_name);
 
             variable.string_dimension_id = dimension_names.size();
             dimension_names.push_back(dimension_name);

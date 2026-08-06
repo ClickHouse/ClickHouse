@@ -33,7 +33,6 @@ constexpr UInt64 ALIGNMENT = 4;
 
 /// The values below are far above anything that can be found in a real file. They exist only to
 /// stop a corrupted or hostile file from making us allocate an unreasonable amount of memory.
-constexpr UInt64 MAX_NAME_LENGTH = 1 << 16;
 constexpr UInt64 MAX_LIST_SIZE = 1 << 24;
 constexpr UInt64 MAX_VARIABLE_RANK = 1 << 16;
 constexpr UInt64 MAX_ATTRIBUTE_DATA_SIZE = 256_MiB;
@@ -135,7 +134,7 @@ UInt64 readOffset(ReadBuffer & in, UInt8 version)
 String readName(ReadBuffer & in, UInt8 version)
 {
     UInt64 length = readSize(in, version, "name length");
-    if (length > MAX_NAME_LENGTH)
+    if (length > NETCDF_MAX_NAME_LENGTH)
         throw Exception(ErrorCodes::INCORRECT_DATA, "The name in the NetCDF header is {} bytes long", length);
 
     String name;

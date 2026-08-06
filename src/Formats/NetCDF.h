@@ -47,6 +47,10 @@ bool netCDFTypeRequiresCDF5(NetCDFType type);
 /// Throws if the value is not one of the types above, or if it is a CDF-5 type in an older version.
 NetCDFType checkNetCDFType(Int32 type, UInt8 version);
 
+/// The longest name the reader accepts: anything above is taken as a sign of a corrupted or
+/// hostile file. The writer enforces the same bound, or the file it produces could not be read back.
+constexpr UInt64 NETCDF_MAX_NAME_LENGTH = 1 << 16;
+
 struct NetCDFDimension
 {
     String name;

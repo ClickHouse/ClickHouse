@@ -1,0 +1,10 @@
+--- a name of exactly 65536 bytes is written and read back
+65536 UInt8
+1
+--- a name of 65537 bytes cannot be written
+1
+--- a String column whose generated length dimension crosses the bound cannot either
+1
+--- and a String column whose length dimension is exactly at the bound is written
+65529 String
+s
