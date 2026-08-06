@@ -2055,28 +2055,11 @@ FROM
     FROM system.databases
 ) AS databases
 INNER JOIN pg_namespace_oids_data AS oids ON databases.identity = oids.identity)");
-    /// One row per exposed relation, shared by `pg_class` and `pg_attribute` so their `oid` /
-    /// `attrelid` values always agree. Every relation appears exactly once, under the namespace of the
-    /// database that owns it: PostgreSQL clients treat `pg_class.oid` as the unique relation identifier
-    /// (e.g. `JOIN pg_attribute ON attrelid = pg_class.oid`), and, more importantly, a name must denote
-    /// the same relation in the catalog and in the data path. There is deliberately no synthetic `public`
-    /// schema aliasing the connected database: the data statements this handler executes (`SELECT ... FROM
-    /// t`, `INSERT INTO t`) resolve an unqualified name in the connected database and a qualified
-    /// `public.t` in a ClickHouse database named `public`, so an alias would let schema discovery and the
-    /// `COPY` that follows it target two different tables. A client that does not qualify a table with a
-    /// schema resolves it through `current_schema()` instead, which this server reports as the connected
-    /// database - exactly what its unqualified data statements use.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_entries AS
-SELECT
-    oids.database AS database,
-    oids.name AS name,
-    oids.oid AS oid,
-    ns.oid AS relnamespace
-FROM pg_class_oids AS oids
-INNER JOIN pg_namespace_oids AS ns ON oids.database = ns.name)");
     /// Every ClickHouse database is exposed as a schema under its own name, including one named `public`.
     /// The fixed names below are PostgreSQL-reserved (`pg_*`) or system-owned (`information_schema`), so
-    /// they cannot shadow user data.
+    /// they cannot shadow user data; when a ClickHouse database carries one of these names (the built-in
+    /// `information_schema` always does), the fixed row takes precedence over a generated one, so a
+    /// schema name always denotes a single OID.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace AS
 SELECT oid, nspname FROM VALUES(
     'oid UInt32, nspname String',
@@ -2090,6 +2073,30 @@ UNION ALL
 SELECT oid, name AS nspname
 FROM pg_namespace_oids
 WHERE name NOT IN ('pg_catalog', 'information_schema', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1'))");
+    /// One row per exposed relation, shared by `pg_class` and `pg_attribute` so their `oid` /
+    /// `attrelid` values always agree. Every relation appears exactly once, under the namespace of the
+    /// database that owns it: PostgreSQL clients treat `pg_class.oid` as the unique relation identifier
+    /// (e.g. `JOIN pg_attribute ON attrelid = pg_class.oid`), and, more importantly, a name must denote
+    /// the same relation in the catalog and in the data path. There is deliberately no synthetic `public`
+    /// schema aliasing the connected database: the data statements this handler executes (`SELECT ... FROM
+    /// t`, `INSERT INTO t`) resolve an unqualified name in the connected database and a qualified
+    /// `public.t` in a ClickHouse database named `public`, so an alias would let schema discovery and the
+    /// `COPY` that follows it target two different tables. A client that does not qualify a table with a
+    /// schema resolves it through `current_schema()` instead, which this server reports as the connected
+    /// database - exactly what its unqualified data statements use.
+    ///
+    /// `relnamespace` is taken from `pg_namespace` itself, not from the raw `pg_namespace_oids`: for a
+    /// database whose name is covered by a fixed `pg_namespace` row - notably the built-in
+    /// `information_schema` - the generated OID is hidden from clients, so relations must reference the
+    /// fixed OID or a `pg_namespace.oid -> pg_class.relnamespace` resolution would come up empty.
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_entries AS
+SELECT
+    oids.database AS database,
+    oids.name AS name,
+    oids.oid AS oid,
+    ns.oid AS relnamespace
+FROM pg_class_oids AS oids
+INNER JOIN pg_namespace AS ns ON oids.database = ns.nspname)");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class AS
 SELECT oid, relname, relnamespace, relkind FROM VALUES(
