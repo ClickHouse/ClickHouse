@@ -141,7 +141,9 @@ A collection created explicitly with `createCollection` has no document to infer
 
 - An `update` is translated into `ALTER TABLE ... UPDATE`, which is asynchronous: the new value does not have to be visible to the next `find`.
 - The number of documents affected by `update` and `delete` is always reported as `0`.
-- Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch.
+- Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch. A result larger than the advertised `maxBsonObjectSize` (16 MiB) is an error rather than an oversized reply: ask for less at a time, with a filter, a projection, `limit` and `skip`.
+- An explicitly inserted `null` becomes a `Dynamic` column when it is the first value of its field, and the default of the column type otherwise: a typed column always has a value.
+- `$currentDate` supports `true` and `{"$type": "date"}`; the BSON `timestamp` type does not exist here, so `{"$type": "timestamp"}` is rejected.
 - A projection lists exactly the fields it names: `_id` is not added to it implicitly, because a ClickHouse table has no implicit `_id` column. An exclusion of `_id` inside an inclusion projection, as in `{"name": 1, "_id": 0}`, is accepted and has nothing left to do; an exclusion of any other field there is an error, as it is in MongoDB.
 - An `update` supports `$set`, `$unset`, `$inc`, `$mul`, `$min`, `$max`, `$rename`, `$currentDate`, `$push`, `$addToSet`, `$pop`, `$pull` and `$pullAll`. A row always has a value for every column, so `$unset` - and the field a `$rename` leaves behind - writes the default of the column type, which is the value an insert that leaves the field out writes.
 - `$lookup`, `$facet`, `$out`, `$merge` and the other pipeline stages not listed above are not supported, and neither are transactions, change streams and the `OP_COMPRESSED` message.
