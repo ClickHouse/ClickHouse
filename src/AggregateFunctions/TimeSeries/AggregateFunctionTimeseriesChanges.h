@@ -8,6 +8,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/NaNUtils.h>
 
 #include <optional>
 
@@ -46,13 +47,13 @@ struct AggregateFunctionTimeseriesChangesTraits
         UInt64 count = 0;
         UInt64 changes = 0;
 
-        /// Whether the transition prev -> curr is counted: a decrease for resets, any change otherwise.
+        /// Whether the transition prev -> curr is counted: a decrease for resets, or a value change for changes (except NaN -> NaN).
         static bool isCounted(ValueType prev, ValueType curr)
         {
             if constexpr (is_resets)
                 return curr < prev;
             else
-                return curr != prev;
+                return curr != prev && !(isNaN(prev) && isNaN(curr));
         }
 
         void merge(const Summary & added)
