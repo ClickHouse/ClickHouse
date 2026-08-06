@@ -178,6 +178,15 @@ size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
     return length;
 }
 
+size_t consumeEqualRange(FullMergeJoinCursor & cursor, const JoinKeyRow & matched_range, size_t & matched_rows)
+{
+    const bool matched = matched_range.equals(cursor);
+    const size_t length = nextDistinct(cursor);
+    if (matched)
+        matched_rows += length;
+    return length;
+}
+
 ColumnPtr replicateRow(const IColumn & column, size_t num)
 {
     MutableColumnPtr res = column.cloneEmpty();
@@ -539,8 +548,7 @@ struct AllJoinImpl
                      PaddedPODArray<UInt64> & right_map,
                      std::unique_ptr<AllJoinState> & state,
                      int null_direction_hint,
-                     size_t & matched_left,
-                     size_t & matched_right)
+                     MatchedRows & matched_rows)
     {
         right_map.clear();
         right_map.reserve(max_block_size);
@@ -562,8 +570,8 @@ struct AllJoinImpl
             {
                 size_t lnum = nextDistinct(left_cursor);
                 size_t rnum = nextDistinct(right_cursor);
-                matched_left += lnum;
-                matched_right += rnum;
+                matched_rows.left += lnum;
+                matched_rows.right += rnum;
                 bool all_fit_in_block = !max_block_size || std::max(left_map.size(), right_map.size()) + lnum * rnum <= max_block_size;
                 bool have_all_ranges = left_cursor.isValid() && right_cursor.isValid();
                 if (all_fit_in_block && have_all_ranges)
@@ -683,10 +691,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
             {
                 size_t pos = cursors[i].getRow();
                 size_t num = nextDistinct(cursors[i]);
-                if (i == 0)
-                    stat.matched_left += num;
-                else
-                    stat.matched_right += num;
+                stat.matched_rows.side(i) += num;
                 all_join_state->addRange(i, cursors[i].getCurrent().clone(), pos, num);
             }
         }
@@ -783,7 +788,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
 {
     PaddedPODArray<UInt64> idx_map[2];
 
-    dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint, stat.matched_left, stat.matched_right);
+    dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint, stat.matched_rows);
     chassert(idx_map[0].size() == idx_map[1].size());
 
     Chunk result;
@@ -847,9 +852,8 @@ struct AnyJoinImpl
                      PaddedPODArray<UInt64> & right_map,
                      AnyJoinState & any_join_state,
                      int null_direction_hint,
-                     size_t & matched_left,
-                     size_t & matched_right,
-                     bool collect_exact_matches)
+                     MatchedRows & matched_rows,
+                     bool count_matches)
     {
         chassert(enabled);
 
@@ -875,43 +879,41 @@ struct AnyJoinImpl
             cmp = compareCursors(left_cursor, right_cursor, null_direction_hint);
             if (cmp == 0)
             {
+                if (count_matches)
+                {
+                    any_join_state.matched.left = JoinKeyRow(left_cursor, lpos);
+                    any_join_state.matched.right = JoinKeyRow(right_cursor, rpos);
+                }
+
                 if constexpr (isLeftOrFull(kind))
                 {
-                    size_t lnum = nextDistinct(left_cursor);
+                    size_t lnum = consumeEqualRange(left_cursor, any_join_state.matched.left, matched_rows.left);
                     right_map.resize_fill(right_map.size() + lnum, rpos);
-                    matched_left += lnum;
-                    if (collect_exact_matches)
-                        matched_right += equalRangeLength(right_cursor);
                 }
 
                 if constexpr (isRightOrFull(kind))
                 {
-                    size_t rnum = nextDistinct(right_cursor);
+                    size_t rnum = consumeEqualRange(right_cursor, any_join_state.matched.right, matched_rows.right);
                     left_map.resize_fill(left_map.size() + rnum, lpos);
-                    matched_right += rnum;
-                    if (collect_exact_matches)
-                        matched_left += equalRangeLength(left_cursor);
                 }
 
                 if constexpr (isInner(kind))
                 {
-                    size_t lnum = nextDistinct(left_cursor);
-                    size_t rnum = nextDistinct(right_cursor);
+                    consumeEqualRange(left_cursor, any_join_state.matched.left, matched_rows.left);
+                    consumeEqualRange(right_cursor, any_join_state.matched.right, matched_rows.right);
                     left_map.emplace_back(lpos);
                     right_map.emplace_back(rpos);
-                    matched_left += lnum;
-                    matched_right += rnum;
                 }
             }
             else if (cmp < 0)
             {
-                size_t num = nextDistinct(left_cursor);
+                size_t num = consumeEqualRange(left_cursor, any_join_state.matched.left, matched_rows.left);
                 if constexpr (isLeftOrFull(kind))
                     right_map.resize_fill(right_map.size() + num, right_cursor.rows);
             }
             else
             {
-                size_t num = nextDistinct(right_cursor);
+                size_t num = consumeEqualRange(right_cursor, any_join_state.matched.right, matched_rows.right);
                 if constexpr (isRightOrFull(kind))
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
             }
@@ -949,15 +951,12 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
         if (any_join_state.keys[source_num].equals(current))
         {
             size_t start_pos = current.getRow();
-            size_t length = nextDistinct(current);
+            size_t length = consumeEqualRange(current, any_join_state.matched.side(source_num), stat.matched_rows.side(source_num));
 
             if (length && isLeft(kind) && source_num == 0)
             {
                 if (any_join_state.value)
-                {
-                    stat.matched_left += length;
                     result = copyChunkResized(current.getCurrent(), any_join_state.value, start_pos, length);
-                }
                 else
                     result = createBlockWithDefaults(source_num, start_pos, length);
             }
@@ -965,10 +964,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
             if (length && isRight(kind) && source_num == 1)
             {
                 if (any_join_state.value)
-                {
-                    stat.matched_right += length;
                     result = copyChunkResized(any_join_state.value, current.getCurrent(), start_pos, length);
-                }
                 else
                     result = createBlockWithDefaults(source_num, start_pos, length);
             }
@@ -1004,7 +1000,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     PaddedPODArray<UInt64> idx_map[2];
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_left, stat.matched_right, collectsExactMatches(analyze_mode));
+    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_rows, collectsAnalyzeStats(analyze_mode));
 
     chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
@@ -1039,35 +1035,18 @@ JoinAnalysisCounters MergeJoinAlgorithm::getJoinAnalysisCounters() const
     JoinAnalysisCounters counters;
     counters.left_rows = stat.num_rows[0];
     counters.right_rows = stat.num_rows[1];
-    counters.matched_left = stat.matched_left;
-    counters.matched_right = stat.matched_right;
-
-    /// `AnyJoinImpl` walks only the preserved side past its equal range; the other side's length is
-    /// scanned separately and only under `Exact`. Without it the counter stays at its initial 0,
-    /// which means "never counted" rather than "nothing matched", so report it as unavailable.
-    if (strictness == JoinStrictness::Any && !collectsExactMatches(analyze_mode))
-    {
-        if (isLeft(kind))
-        {
-            chassert(stat.matched_right == 0, "matched_right was counted, but is reported as unavailable");
-            counters.matched_right = std::nullopt;
-        }
-        else if (isRight(kind))
-        {
-            chassert(stat.matched_left == 0, "matched_left was counted, but is reported as unavailable");
-            counters.matched_left = std::nullopt;
-        }
-    }
+    counters.matched_left = stat.matched_rows.left;
+    counters.matched_right = stat.matched_rows.right;
 
     return counters;
 }
 
 void MergeJoinAlgorithm::countAsofMatch(AsofRightRowRef right_ref)
 {
-    ++stat.matched_left;
+    ++stat.matched_rows.left;
     if (last_asof_matched_right != right_ref)
     {
-        ++stat.matched_right;
+        ++stat.matched_rows.right;
         last_asof_matched_right = right_ref;
     }
 }
@@ -1304,6 +1283,10 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         if (!cursors[1].fullyCompleted() && isRightOrFull(kind))
             return Status(createBlockWithDefaults(1));
 
+        if (cursors[0].isValid())
+            consumeEqualRange(cursors[0], any_join_state.matched.left, stat.matched_rows.left);
+        if (cursors[1].isValid())
+            consumeEqualRange(cursors[1], any_join_state.matched.right, stat.matched_rows.right);
         return Status({}, true);
     }
 
@@ -1314,6 +1297,7 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         {
             if (isLeftOrFull(kind))
                 return Status(createBlockWithDefaults(0));
+            consumeEqualRange(cursors[0], any_join_state.matched.left, stat.matched_rows.left);
             cursors[0].setChunk(Chunk());
             return Status(0);
         }
@@ -1322,6 +1306,7 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         {
             if (isRightOrFull(kind))
                 return Status(createBlockWithDefaults(1));
+            consumeEqualRange(cursors[1], any_join_state.matched.right, stat.matched_rows.right);
             cursors[1].setChunk(Chunk());
             return Status(1);
         }

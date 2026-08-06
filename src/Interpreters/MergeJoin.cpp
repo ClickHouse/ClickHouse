@@ -695,7 +695,7 @@ void MergeJoin::setTotals(const Block & totals_block)
     IJoin::setTotals(totals_block);
     mergeRightBlocks();
 
-    if (is_right || is_full || table_join->collectExactMatches())
+    if (is_right || is_full || (is_all_join && table_join->collectExactMatches()))
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
 }
 
@@ -1053,8 +1053,6 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
     auto r_columns_to_add = extractColumnsByNames(right_block, right_columns_to_add);
 
-    const bool collect_matched_right = table_join->collectExactMatches();
-
     /// Set right cursor position in first continuation right block
     if constexpr (is_all)
     {
@@ -1095,8 +1093,6 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
         }
         else
         {
-            if (collect_matched_right)
-                right_block_info.setUsed(range.right_start, range.right_length);
             joinEqualsAnyLeft(r_columns_to_add, right_columns, range);
         }
 
@@ -1177,8 +1173,6 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
 
     auto r_columns_to_add = extractColumnsByNames(right_block, right_columns_to_add);
 
-    const bool collect_matched_right = table_join->collectExactMatches();
-
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
         MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
@@ -1186,8 +1180,6 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
             break;
 
         matched_rows += range.left_length;
-        if (collect_matched_right)
-            right_block_info.setUsed(range.right_start, range.right_length);
         joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
 
         right_cursor.nextN(range.right_length);

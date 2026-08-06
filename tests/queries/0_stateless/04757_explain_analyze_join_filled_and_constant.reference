@@ -11,5 +11,7 @@ Join engine ALL INNER, no matches
 439	not collected
 Join engine ANY LEFT
 not collected	not collected
-Direct
-1	0	0	439
+Direct ALL INNER
+1	0	1	439	43.90	1.00
+Direct ALL LEFT
+1	0	1	439	43.90	1.00

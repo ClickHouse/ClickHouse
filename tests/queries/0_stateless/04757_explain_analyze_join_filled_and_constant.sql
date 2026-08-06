@@ -8,8 +8,8 @@
 -- rather than `JoinStep`.
 --
 -- The data is the one of 04603 (439 matching left rows, 521 matching right ones), so the numbers are
--- comparable across tests. `match rate` and `fanout` are derived from both sides at once, so a report
--- that carries only one side cannot have them: this test pins the groups, not only their values.
+-- comparable across tests. A one-sided report still has `match rate` and `fanout` when the absent side
+-- is not a preserved one: this test pins the groups, not only their values.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -91,16 +91,31 @@ SELECT
 FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM left_side ANY LEFT JOIN right_join_engine_any ON left_side.k = right_join_engine_any.k);
 
 -- A dictionary is looked up per left row, so the left side is exact, but the right side is a
--- key-value store that is never materialized into rows and therefore has no group of its own.
-SELECT 'Direct';
+-- key-value store that is never materialized into rows and therefore has no group of its own. The
+-- `Left:` line still carries the whole shape, since `direct` accepts only `INNER` and `LEFT` kinds.
+SELECT 'Direct ALL INNER';
 CREATE DICTIONARY right_dictionary (k UInt64, v UInt64) PRIMARY KEY k
 SOURCE(CLICKHOUSE(TABLE 'right_side')) LAYOUT(HASHED()) LIFETIME(0);
 SELECT
     countIf(explain LIKE '%Left: rows%') AS left_group,
     countIf(explain LIKE '%Right: rows%') AS right_group,
     countIf(explain LIKE '%match rate%') AS match_rate_group,
-    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
+    maxIf(extract(explain, 'match rate ([0-9.]+)%'), explain LIKE '%Left: rows%') AS match_rate_left,
+    maxIf(extract(explain, 'fanout ([0-9.]+)'), explain LIKE '%Left: rows%') AS fanout_left
 FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM left_side ALL INNER JOIN right_dictionary ON left_side.k = right_dictionary.k SETTINGS join_algorithm = 'direct');
+
+-- `ALL LEFT` keeps the 561 left rows that found no dictionary entry, so here the matched output rows
+-- are the ones left after subtracting them - the other branch of the same derivation.
+SELECT 'Direct ALL LEFT';
+SELECT
+    countIf(explain LIKE '%Left: rows%') AS left_group,
+    countIf(explain LIKE '%Right: rows%') AS right_group,
+    countIf(explain LIKE '%match rate%') AS match_rate_group,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
+    maxIf(extract(explain, 'match rate ([0-9.]+)%'), explain LIKE '%Left: rows%') AS match_rate_left,
+    maxIf(extract(explain, 'fanout ([0-9.]+)'), explain LIKE '%Left: rows%') AS fanout_left
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM left_side ALL LEFT JOIN right_dictionary ON left_side.k = right_dictionary.k SETTINGS join_algorithm = 'direct');
 
 DROP DICTIONARY right_dictionary;
 DROP TABLE right_join_engine_any;

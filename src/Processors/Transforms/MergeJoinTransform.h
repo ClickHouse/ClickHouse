@@ -47,6 +47,22 @@ struct JoinKeyRow
     Columns row;
 };
 
+struct MatchedRows
+{
+    size_t left = 0;
+    size_t right = 0;
+
+    size_t & side(size_t source_num) { return source_num == 0 ? left : right; }
+};
+
+struct MatchedRanges
+{
+    JoinKeyRow left;
+    JoinKeyRow right;
+
+    JoinKeyRow & side(size_t source_num) { return source_num == 0 ? left : right; }
+};
+
 /// Remembers previous key if it was joined in previous block
 class AnyJoinState : boost::noncopyable
 {
@@ -63,6 +79,9 @@ public:
 
     /// for LEFT/RIGHT join use previously joined row from other table.
     Chunk value;
+
+    /// key of the last equal range of each side that found a partner on the other side
+    MatchedRanges matched;
 };
 
 /// Accumulate blocks with same key and cross-join them
@@ -306,9 +325,8 @@ private:
         size_t num_rows[2] = {0, 0};
         size_t num_bytes[2] = {0, 0};
 
-        /// Distinct rows of each side that ended up in the output with a partner.
-        size_t matched_left = 0;
-        size_t matched_right = 0;
+        /// Rows of each side that found a partner on the other side.
+        MatchedRows matched_rows;
 
         size_t max_blocks_loaded = 0;
     };
