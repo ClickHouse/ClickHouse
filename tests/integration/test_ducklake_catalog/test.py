@@ -106,7 +106,7 @@ def copy_dir_to_container(instance, src_dir, dest_dir):
 def started_cluster():
     cluster.start()
     try:
-        for data_dir in ("ducklake_data", "ducklake_fail_data", "ducklake_data2", "ducklake_data3"):
+        for data_dir in ("ducklake_data", "ducklake_data2", "ducklake_data3"):
             copy_dir_to_container(
                 node,
                 os.path.join(FIXTURES_DIR, data_dir),
