@@ -41,6 +41,34 @@ SELECT chained FROM dist_using_alias JOIN other_using_alias USING (chained) ORDE
 SELECT 'the key exists on both tables as a real column';
 SELECT x FROM dist_using_alias JOIN (SELECT number AS x FROM numbers(5)) AS n USING (x) ORDER BY ALL;
 
+-- An alias whose body is an expression rather than a bare column cannot travel in the `USING` clause at
+-- all: that clause takes identifiers, so `USING (x + 1 AS a)` is not something a query can even say, and
+-- the shard receives `USING (a)` and cannot resolve it. This is a limitation of the clause rather than of
+-- shipping, and it is the same on a plain `MergeTree` table. `analyzer_compatibility_join_using_top_level_identifier`
+-- is the way through: the shard then resolves the key from the alias in the `SELECT` list, which is the
+-- same expression the initiator meant, so the result is correct.
+DROP TABLE IF EXISTS shard_expr_key;
+DROP TABLE IF EXISTS dist_expr_key;
+DROP TABLE IF EXISTS other_expr_key;
+
+CREATE TABLE shard_expr_key (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO shard_expr_key SELECT number FROM numbers(5);
+CREATE TABLE dist_expr_key (x UInt32, a UInt32 ALIAS x + 1)
+    ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), shard_expr_key, rand());
+CREATE TABLE other_expr_key (a UInt32) ENGINE = MergeTree ORDER BY a;
+INSERT INTO other_expr_key SELECT number FROM numbers(6);
+
+SELECT 'the key is an ALIAS column whose body is an expression';
+SELECT a FROM dist_expr_key JOIN other_expr_key USING (a) ORDER BY ALL; -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT 'the same, resolved through the SELECT list';
+SELECT a FROM dist_expr_key JOIN other_expr_key USING (a) ORDER BY ALL
+SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1;
+
+DROP TABLE other_expr_key;
+DROP TABLE dist_expr_key;
+DROP TABLE shard_expr_key;
+
 DROP TABLE other_using_alias;
 DROP TABLE dist_using_alias;
 DROP TABLE shard_using_alias;

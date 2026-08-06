@@ -64,3 +64,15 @@ the key exists on both tables as a real column
 3
 4
 4
+the key is an ALIAS column whose body is an expression
+the same, resolved through the SELECT list
+1
+1
+2
+2
+3
+3
+4
+4
+5
+5
