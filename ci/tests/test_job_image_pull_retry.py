@@ -16,9 +16,10 @@ progress is never retried (arm 4), and the production error itself is one attemp
 on stdout (arm 4b) where on stderr it is retried (arm 2). And the pulled command
 contains no job command, so nothing the job prints reaches this matcher.
 
-Arms 2, 3, 4, 4b and 8 drive the **real** `Shell.run` loop with fake shell
-commands; arms 1, 5, 6 and 7 drive `Runner._run`'s docker branch with stubbed
-collaborators. Neither docker nor `jq` is needed.
+Some arms drive the **real** `Shell.run` retry loop with fake shell commands, so
+they exercise the actual matching semantics rather than a model of them; the rest
+drive `Runner._run`'s docker branch with stubbed collaborators. Neither docker nor
+`jq` is needed.
 """
 
 import os
@@ -267,6 +268,29 @@ def test_permanent_error_is_not_retried(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# 3b. The other two permanent errors the allowlist comment names.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        # Verbatim from ci/praktika/docker.py's own build retry list.
+        "Error response from daemon: manifest unknown: manifest unknown",
+        # The phrase prefetch-integration-test-images greps for.
+        "no matching manifest for linux/arm64/v8 in the manifest list entries",
+    ],
+)
+def test_named_permanent_errors_are_not_retried(tmp_path, phrase):
+    """`_IMAGE_PULL_RETRY_ERRORS`' comment and the PR body both promise these fail
+    on the first attempt, but only `pull access denied` was tested (arm 3)."""
+    cmd, counter = _counting_command(tmp_path, [], [phrase], exit_code=1)
+    rc = Shell.run(
+        cmd, retries=_IMAGE_PULL_RETRIES, retry_errors=_IMAGE_PULL_RETRY_ERRORS
+    )
+    assert rc != 0
+    assert _attempts(counter) == 1
+
+
+# --------------------------------------------------------------------------- #
 # 4. Pull PROGRESS is not an error: it can never trigger a retry.
 # --------------------------------------------------------------------------- #
 def test_pull_progress_on_stdout_does_not_trigger_a_retry(tmp_path):
@@ -299,6 +323,30 @@ def test_allowlisted_phrase_on_stdout_does_not_trigger_a_retry(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# 4c. Every remaining transport entry is load-bearing.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "connection refused",
+        "TLS handshake timeout",
+        "i/o timeout",
+        "unexpected EOF",
+    ],
+)
+def test_each_transport_phrase_is_retried(tmp_path, phrase):
+    """Arms 2 and 4b already pin `connection reset by peer` and arm 8 pins
+    `sending signal TERM to command`; without these, dropping any of the other
+    four entries from the production list would leave the suite green."""
+    cmd, counter = _counting_command(tmp_path, [], [f"docker: {phrase}"], exit_code=1)
+    rc = Shell.run(
+        cmd, retries=_IMAGE_PULL_RETRIES, retry_errors=_IMAGE_PULL_RETRY_ERRORS
+    )
+    assert rc != 0
+    assert _attempts(counter) == _IMAGE_PULL_RETRIES
+
+
+# --------------------------------------------------------------------------- #
 # 5. Fail-open: a failed pull must not stop the job.
 # --------------------------------------------------------------------------- #
 def test_failed_pull_still_runs_the_container(monkeypatch, tmp_path):
@@ -317,12 +365,21 @@ def test_failed_pull_still_runs_the_container(monkeypatch, tmp_path):
 # 6. Ordering: the pull precedes `docker run`, on the fully resolved name:tag.
 # --------------------------------------------------------------------------- #
 def test_pull_precedes_docker_run_and_uses_the_resolved_tag(monkeypatch, tmp_path):
+    """Also pins the isolation property the narrow allowlist depends on: the pull
+    command ends at the image, so it carries no job command and nothing a job
+    prints can reach the matcher or make a retry re-run the job."""
     calls = _drive_run(monkeypatch, tmp_path, image_present=False)
     pull_index = next(
         i for i, c in enumerate(calls) if c[0] == "run" and "docker pull" in c[1]
     )
     assert pull_index < _teepopen_index(calls)
     assert f"docker pull {DOCKER_IMAGE}" in calls[pull_index][1]
+
+    pull_cmd = calls[pull_index][1]
+    job = _FakeJob()
+    assert job.command not in pull_cmd
+    # Forbids ANY suffix after the image, not just this fixture's command.
+    assert pull_cmd.endswith(DOCKER_IMAGE)
 
 
 # --------------------------------------------------------------------------- #
