@@ -37,3 +37,7 @@ c1	Nullable(IPv4)
 ip	Nullable(String)					
 15. Mixed IPv4 and IPv6 collapses to String
 ip	Nullable(String)					
+16. Values format IPv4 inference
+c1	Nullable(IPv4)					
+17. Values format mixed IPv4 and String collapses to String
+c1	Nullable(String)					

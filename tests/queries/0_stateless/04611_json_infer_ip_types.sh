@@ -122,3 +122,11 @@ $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "DESCRIBE format(JSONEachR
 echo '15. Mixed IPv4 and IPv6 collapses to String'
 $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 --input_format_try_infer_ipv6=1 -q "DESCRIBE format(JSONEachRow, '{\"ip\":\"192.168.1.1\"}
 {\"ip\":\"2001:db8::1\"}')"
+
+# 16. Values format quoted-string IPv4 inference
+echo '16. Values format IPv4 inference'
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "desc format(Values, '(\'192.168.1.1\')')"
+
+# 17. Values format mixed IPv4 string and non-IP string collapses to String
+echo '17. Values format mixed IPv4 and String collapses to String'
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "desc format(Values, '(\'192.168.1.1\')\n(\'not-an-ip\')')"
