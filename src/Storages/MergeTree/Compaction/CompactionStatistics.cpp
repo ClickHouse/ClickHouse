@@ -1416,7 +1416,13 @@ UInt64 estimateNeededMemoryForMerge(
     /// (countRowsMissingColumn): the rows of the parts that do store the column are read, and their written
     /// bytes are already inside sum_input_bytes_uncompressed. Outside the ADD COLUMN ... DEFAULT upgrade
     /// window the extra term is zero.
-    NamesAndTypesList default_filled_output_columns;
+    /// The eager write buffers of the default-filled streams themselves are NOT added here: the
+    /// default-filled columns stay in output_columns, so every bound this term is added to already prices
+    /// them exactly once - the horizontal base term through output_stream_counts, the vertical bound
+    /// through its merging / gathering / delayed terms. Charging them again would double the eager side
+    /// for the ADD COLUMN ... DEFAULT path - on a wide JSON / Dynamic default enough to saturate
+    /// merges_mutations_memory_usage_soft_limit and reject background merges that fit, the same
+    /// over-reservation/starvation pattern the rest of this estimate unwinds.
     UInt64 default_filled_value_bytes = 0;
     UInt64 sum_rows = 0;
     for (const auto & part : future_part.parts)
@@ -1425,23 +1431,12 @@ UInt64 estimateNeededMemoryForMerge(
     {
         if (!default_filled_columns.contains(column.name))
             continue;
-        default_filled_output_columns.push_back(column);
         if (column.type->haveMaximumSizeOfValue())
             default_filled_value_bytes
                 += countRowsMissingColumn(future_part.parts, column.name) * column.type->getMaximumSizeOfValueInMemory();
     }
 
-    WriterStreamCounts default_filled_stream_counts;
-    if (!default_filled_output_columns.empty())
-        default_filled_stream_counts = future_part.part_format.part_type == MergeTreeDataPartType::Wide
-            ? countOutputStreams(default_filled_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
-            : WriterStreamCounts{.total = 1, .non_adaptive = 1};
-
-    /// The default-filled columns are written by the same horizontal writer as the rest of the output, so
-    /// the count-based adaptive rule sees the full output column list.
-    const UInt64 default_filled_term
-        = eager_write_buffers(default_filled_stream_counts, output_columns.size(), local_write_buffer_size)
-        + 3 * default_filled_value_bytes;
+    const UInt64 default_filled_term = 3 * default_filled_value_bytes;
 
     const UInt64 output_data_bound = eager_write_buffers(output_stream_counts, output_columns.size(), local_write_buffer_size)
         + 3 * sum_input_bytes_uncompressed
