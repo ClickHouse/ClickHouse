@@ -11,8 +11,6 @@ void BlockIO::resetPipeline(bool cancel)
 {
     if (cancel)
         pipeline.cancel();
-    /// May use storage that is protected by pipeline, so should be destroyed first
-    query_metadata_cache.reset();
     pipeline.reset();
 }
 
@@ -47,7 +45,6 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) /// NOLINT(hicpp-noexcept-move,per
     reset();
 
     process_list_entries    = std::move(rhs.process_list_entries);
-    query_metadata_cache    = std::move(rhs.query_metadata_cache);
     pipeline                = std::move(rhs.pipeline);
 
     finalize_query_pipeline = std::move(rhs.finalize_query_pipeline);

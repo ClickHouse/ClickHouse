@@ -109,6 +109,24 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoint returning an error whose message/type contain control characters, used to assert
+        # they are sanitized before landing in the logged exception.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_error_control_chars AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/error_control_chars', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        # Endpoint returning a non-JSON error body with control characters, exercising the
+        # raw-body fallback of the error formatter.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_error_nonjson AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/error_nonjson', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # `api_key` is optional (some providers, e.g. a local Ollama, need no auth).
         # This collection omits it so we can assert no `Authorization` header is sent.
         instance.query(
@@ -240,6 +258,31 @@ def test_generate_content_error_throw(started_cluster):
         settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_generate_content_error_sanitizes_control_chars(started_cluster):
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_error_control_chars'))",
+        settings=AI_SETTINGS,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+    # Control characters in the provider's error message/type are replaced with spaces, so the whole
+    # message stays on one line (no forged log lines) while the text is still readable.
+    assert "[err type]: start mid end BEL done" in error
+    # The raw control sequences must not survive.
+    assert "start\nmid" not in error
+    assert "mid\tend" not in error
+
+
+def test_generate_content_error_nonjson_sanitized(started_cluster):
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_error_nonjson'))",
+        settings=AI_SETTINGS,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+    # A non-JSON body falls back to the truncated raw body, sanitized to a single readable line.
+    assert "Internal Error: stack trace here" in error
+    assert "Error:\nstack" not in error
 
 
 def test_generate_content_error_graceful(started_cluster):
@@ -930,6 +973,28 @@ def test_generate_retry_respects_api_call_quota(started_cluster):
     assert int(events["api_calls"]) == 1
     assert int(events["rows_processed"]) == 0
     assert int(events["rows_skipped"]) == 1
+
+
+def test_function_name_header(started_cluster):
+    """The OpenAI provider tags every request with an `X-ClickHouse-AI-Function` header carrying the
+    SQL name of the calling function, so the upstream endpoint can tell which function made the call.
+    Covers the chat path (aiGenerate/aiClassify/aiExtract/aiTranslate) and the embedding path (aiEmbed)."""
+    cases = [
+        ("aiGenerate", "SELECT aiGenerate('hi', map('credentials', 'ai_mock'))"),
+        (
+            "aiClassify",
+            "SELECT aiClassify('hi', ['a', 'b'], map('credentials', 'ai_mock'))",
+        ),
+        ("aiExtract", "SELECT aiExtract('hi', 'the price', map('credentials', 'ai_mock'))"),
+        ("aiTranslate", "SELECT aiTranslate('hi', 'French', map('credentials', 'ai_mock'))"),
+        (
+            "aiEmbed",
+            "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+        ),
+    ]
+    for name, query in cases:
+        instance.query(query, settings=AI_SETTINGS)
+        assert last_request()["headers"].get("x-clickhouse-ai-function") == name
 
 
 def test_embed_retry_respects_api_call_quota(started_cluster):

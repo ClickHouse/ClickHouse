@@ -80,10 +80,89 @@ function deb2tgz {
 set -e
 
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
+
+# Moving a file replaces the destination inode with the one from the unpack tree, so the
+# installed file inherits the SELinux label of the temporary directory instead of the one
+# the final path should have. Restore the labels from the policy where SELinux is active.
+RESTORECON=""
+if command -v selinuxenabled > /dev/null 2>&1 && selinuxenabled > /dev/null 2>&1 && command -v restorecon > /dev/null 2>&1; then
+    RESTORECON="restorecon"
+fi
+
+# Extended attributes live on the inode as well, and unlike the SELinux label they cannot be
+# recreated from a policy, so a destination carrying them is written through instead of being
+# renamed over. `getfattr` reports them where it is available.
+GETFATTR=""
+if command -v getfattr > /dev/null 2>&1; then
+    GETFATTR="getfattr"
+fi
+
+# Whether the file already at the destination has to survive the installation as the same
+# inode. Everything else - and that is the common case, including every fresh installation -
+# is replaced by a rename, which needs no additional disk space.
+keep_destination_inode () {
+    # An existing symlink at the destination is written through, the way copying did, so that
+    # an installation keeping its configs or binaries elsewhere and linking to them keeps the
+    # indirection after an upgrade. The symlink test comes before the existence test, because
+    # `-e` follows the link: a dangling symlink looks nonexistent to it, while the link still
+    # has to survive rather than be replaced by a plain file.
+    if [ -L "$1" ]; then
+        return 0
+    fi
+    if [ ! -e "$1" ]; then
+        return 1
+    fi
+    # Only a regular file can be written through.
+    if [ ! -f "$1" ]; then
+        return 1
+    fi
+    listing=$(ls -ld -- "$1")
+    # Another hard link to the destination would keep pointing at the pre-upgrade contents
+    # after a rename, while writing through updates every link.
+    if [ "$(echo "$listing" | awk '{print $2}')" -gt 1 ]; then
+        return 0
+    fi
+    # An ACL is reported by `ls` as a `+` after the permissions.
+    case "$(echo "$listing" | awk '{print $1}')" in
+        *+) return 0 ;;
+    esac
+    if [ -z "$GETFATTR" ]; then
+        # Without `getfattr` there is no portable way to tell whether the destination carries
+        # extended attributes, so an existing regular file conservatively keeps its inode.
+        # The disk-space saving is unaffected: it comes from the fresh installation, where no
+        # destination exists and the rename path is taken above.
+        return 0
+    fi
+    # The SELinux label is skipped: it is not carried over by a rename either, but it is
+    # recreated from the policy by `restorecon` below, and on an SELinux system every
+    # single file has one, which would make the rename path unreachable.
+    attributes=$($GETFATTR --absolute-names --match=- --dump -- "$1" 2> /dev/null | grep -v -e '^#' -e '^$' -e '^security\.selinux=' || true)
+    if [ -n "$attributes" ]; then
+        return 0
+    fi
+    return 1
+}
+
 for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
     destpath=${filepath##$SCRIPTPATH/..}
     mkdir -p $(dirname "$destpath")
-    cp -r "$filepath" "$destpath"
+    if [ ! -L "$filepath" ] && keep_destination_inode "$destpath"; then
+        # The destination keeps its inode, so its ownership, permissions, attributes and every
+        # other hard link to it stay valid after the upgrade, as they did when copying.
+        cat "$filepath" > "$destpath"
+        rm -f "$filepath"
+    else
+        # Move instead of copy: copying requires twice the disk space, which is several
+        # gigabytes for the packages with debug symbols. Moving also succeeds when the
+        # destination is a running executable, while copying over it fails with ETXTBSY.
+        mv -f "$filepath" "$destpath"
+        # The tarball carries the ownership of the user who built it, while the installed
+        # files have to belong to root, as they do in the deb and rpm packages.
+        chown -h root:root "$destpath"
+        if [ -n "$RESTORECON" ]; then
+            $RESTORECON "$destpath"
+        fi
+    fi
 done
 EOF
     chmod +x "$PKG_PATH/install/doinst.sh"

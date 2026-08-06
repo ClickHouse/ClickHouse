@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -902,6 +903,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     FunctionOverloadResolverPtr prepared_merge_intervals_function;
     FunctionOverloadResolverPtr prepared_tuple_function;
     FunctionOverloadResolverPtr prepared_tuple_and_number_function;
+    FunctionOverloadResolverPtr prepared_exponential_time_decaying_add_function;
 
     /// Same-typed sibling built for the array element types. executeArraysImpl/executeArrayWithNumericImpl
     /// evaluate the operation on the array element types, which differ from this function's (array)
@@ -2121,6 +2123,12 @@ public:
             prepared_interval_function = getFunctionForIntervalArithmetic(type0, type1, context_);
             prepared_date_tuple_of_intervals_function = getFunctionForDateTupleOfIntervalsArithmetic(type0, type1, context_);
             prepared_merge_intervals_function = getFunctionForMergeIntervalsArithmetic(type0, type1, context_);
+            if constexpr (is_plus)
+            {
+                if (context_ && isExponentialTimeDecayingFloat64(type0) && isExponentialTimeDecayingFloat64(type1))
+                    prepared_exponential_time_decaying_add_function
+                        = FunctionFactory::instance().get("exponentialTimeDecayingAdd", context_);
+            }
             prepared_tuple_function = getFunctionForTupleArithmetic(type0, type1, context_);
             prepared_tuple_and_number_function = getFunctionForTupleAndNumberArithmetic(type0, type1, context_);
 
@@ -2176,6 +2184,12 @@ public:
 
     static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
     {
+        if constexpr (is_plus)
+        {
+            if (isExponentialTimeDecayingFloat64(arguments[0]) && isExponentialTimeDecayingFloat64(arguments[1]))
+                return arguments[0];
+        }
+
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
         {
@@ -3165,6 +3179,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeIntervalTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, prepared_merge_intervals_function);
         }
 
+        if (prepared_exponential_time_decaying_add_function)
+        {
+            return prepared_exponential_time_decaying_add_function->build(arguments)->execute(
+                arguments, result_type, input_rows_count, /* dry_run = */ false);
+        }
+
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
         if (prepared_tuple_function)
         {
@@ -3503,12 +3523,19 @@ public:
         return (name_view == "minus" || name_view == "plus" || name_view == "multiply" || name_view == "divide" || name_view == "intDiv");
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left_point, const Field & right_point) const override
     {
         const std::string_view name_view = Name::name;
 
         // NaN breaks monotonicity for floating-point types.
         if (isNaNField(left_point) || isNaNField(right_point))
+            return {false, true, false, false};
+
+        // For compound types (Tuple, Array, etc.) monotonicity analysis is not applicable: the
+        // arithmetic is element-wise, while the comparison of a compound value is lexicographic,
+        // so an element-wise verdict says nothing about the order of the whole value. `type` is the
+        // varying argument's type; the result may be compound even when that argument is not.
+        if (isCompoundForMonotonicity(type) || (return_type && isCompoundForMonotonicity(*return_type)))
             return {false, true, false, false};
 
         // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
@@ -3823,6 +3850,20 @@ public:
             }
         }
         return {false, true, false};
+    }
+
+    /// True for `Array`/`Tuple`/`Map`, looking through `Nullable` and `LowCardinality`
+    /// (`Nullable(Tuple)` is a reachable key type). Takes a reference rather than a `DataTypePtr`
+    /// because `getMonotonicityForRange` receives one, and `IDataType::getPtr()` throws for a type
+    /// that is not owned by a `shared_ptr`.
+    static bool isCompoundForMonotonicity(const IDataType & type)
+    {
+        const IDataType * unwrapped = &type;
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(unwrapped))
+            unwrapped = low_cardinality->getDictionaryType().get();
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(unwrapped))
+            unwrapped = nullable->getNestedType().get();
+        return isArray(*unwrapped) || isTuple(*unwrapped) || isMap(*unwrapped);
     }
 
     /// `intDiv` casts the dividend to a signed type when the divisor is signed (see `DivideIntegralImpl`),
