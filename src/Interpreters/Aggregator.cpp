@@ -278,9 +278,12 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
             NullWriteBuffer null_buf;
             CompressedWriteBuffer compressed_buf(null_buf);
 
-            /// In single-level case (bucket == -1) we need to choose smaller sampling periods, because we have only one hash table.
-            /// In two-level case we sample across 256 buckets, so we can use a larger period.
-            const auto period = bucket == -1 ? std::min<size_t>(std::max<size_t>(table.size() / 100, 1), 100) : 100;
+            /// A hundred samples should be enough to get a good estimate, but they have to span the whole
+            /// table: iteration over the fixed-key hash tables goes in key order, so sampling only a prefix
+            /// would be biased whenever the state size correlates with the key. In single-level case
+            /// (bucket == -1) we have only one hash table, so we aim at ~100 samples from it. In two-level
+            /// case we sample across 256 buckets, so we take at most one sample per 100 states.
+            const auto period = std::max<size_t>((table.size() + 99) / 100, bucket == -1 ? 1 : 100);
 
             size_t it = 0;
             table.forEachMapped(
@@ -293,8 +296,6 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
                             ? writeVarUInt(getInlineCountState(place), compressed_buf)
                             : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], compressed_buf, state_versions[j]);
                     }
-                    /// A hundred samples should be enough to get a good estimate.
-                    return it < 100 * period;
                 });
 
             compressed_buf.finalize();

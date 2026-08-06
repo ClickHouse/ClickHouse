@@ -156,6 +156,70 @@ TEST(AggregatorStateSizeEstimate, MergePathUsesExplicitStateVersion)
     EXPECT_EQ(estimate.bytes, expected_v0_bytes);
 }
 
+TEST(AggregatorStateSizeEstimate, SampleSpansTheWholeHashTable)
+{
+    tryRegisterAggregateFunctions();
+
+    /// `FixedHashTable` iteration goes in key order, so with a `UInt8` key the states are visited from key 0
+    /// upward. Give the low keys tiny `groupArray` states and the high keys large ones: a sample truncated to
+    /// a prefix of the table would see only tiny states and extrapolate an estimate that misses almost all of
+    /// the data, while a periodic sample of the whole table lands within a small factor of the real size.
+    constexpr size_t keys = 256;
+    constexpr size_t small_keys = 200;
+    constexpr size_t large_state_values = 1000;
+
+    DataTypes argument_types = {std::make_shared<DataTypeUInt64>()};
+    AggregateFunctionProperties properties;
+    AggregateFunctionPtr function
+        = AggregateFunctionFactory::instance().get("groupArray", NullsAction::EMPTY, argument_types, {}, properties);
+    auto state_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{});
+
+    auto values = ColumnUInt64::create();
+    for (size_t i = 0; i < large_state_values; ++i)
+        values->insert(UInt64(i));
+    const IColumn * arguments[1] = {values.get()};
+
+    auto states = state_type->createColumn();
+    auto & state_column = assert_cast<ColumnAggregateFunction &>(*states);
+    for (size_t key = 0; key < keys; ++key)
+    {
+        state_column.insertDefault();
+        const size_t state_values = key < small_keys ? 1 : large_state_values;
+        for (size_t i = 0; i < state_values; ++i)
+            function->add(state_column.getData()[key], arguments, i, &state_column.createOrGetArena());
+    }
+
+    size_t total_serialized_bytes = 0;
+    for (size_t key = 0; key < keys; ++key)
+        total_serialized_bytes += serializedStateSize(*function, state_column.getData()[key], std::nullopt);
+
+    AggregateDescription description;
+    description.function = function;
+    description.column_name = "st";
+
+    Block header;
+    header.insert({std::make_shared<DataTypeUInt8>()->createColumn(), std::make_shared<DataTypeUInt8>(), "k"});
+    header.insert({state_type->createColumn(), state_type, "st"});
+
+    Aggregator aggregator(header, makeMergeParams({"k"}, {description}));
+
+    auto key_column = ColumnUInt8::create();
+    for (size_t key = 0; key < keys; ++key)
+        key_column->insert(UInt64(key));
+
+    auto variants = std::make_shared<AggregatedDataVariants>();
+    bool no_more_keys = false;
+    std::atomic<bool> is_cancelled{false};
+    Columns columns = {std::move(key_column), states->getPtr()};
+    aggregator.mergeOnBlock(columns, keys, /*is_overflows=*/false, *variants, no_more_keys, is_cancelled);
+
+    const auto estimate = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
+    /// A periodic sample of the whole table sees the large states in their real proportion; the sampling
+    /// error of ~86 samples is far below the >100x underestimation of a prefix-only sample.
+    EXPECT_GE(estimate.bytes * 2, total_serialized_bytes);
+    EXPECT_LE(estimate.bytes, total_serialized_bytes * 2);
+}
+
 TEST(AggregatorStateSizeEstimate, WithoutKeyUsesExplicitStateVersion)
 {
     tryRegisterAggregateFunctions();
