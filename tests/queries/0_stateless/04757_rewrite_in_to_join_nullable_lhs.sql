@@ -62,6 +62,10 @@ SELECT x, x IN (SELECT n FROM rn_04757) AS r FROM t_04757 ORDER BY x SETTINGS tr
 SELECT 'control 10: non-Nullable LHS is untouched';
 SELECT number, number IN (SELECT n FROM rn_04757) AS r FROM numbers(3) ORDER BY number SETTINGS rewrite_in_to_join = 0;
 SELECT number, number IN (SELECT n FROM rn_04757) AS r FROM numbers(3) ORDER BY number SETTINGS rewrite_in_to_join = 1;
+-- Values alone cannot detect an over-broad guard: isNull of a non-Nullable argument folds to a constant
+-- 0, so wrapping such an LHS keeps every value and only widens the type.
+SELECT DISTINCT toTypeName(number IN (SELECT n FROM rn_04757)) FROM numbers(3) SETTINGS rewrite_in_to_join = 0;
+SELECT DISTINCT toTypeName(number IN (SELECT n FROM rn_04757)) FROM numbers(3) SETTINGS rewrite_in_to_join = 1;
 
 SELECT 'control 11: Tuple with Nullable elements is not a carrier';
 SELECT x, (x, x) IN (SELECT n, n FROM rn_04757) AS r FROM t_04757 ORDER BY x SETTINGS rewrite_in_to_join = 0;
@@ -85,6 +89,23 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT x IN (SELECT number FROM numbers(
 
 SELECT 'control 15: transform_null_in = 1 keeps the lowered form unwrapped';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT x IN (SELECT n FROM rn_04757) FROM t_04757 SETTINGS transform_null_in = 1, rewrite_in_to_join = 1) WHERE explain LIKE '%isNull%';
+
+-- arm 16: make_distributed_plan auto-enables the rewrite, so the NULL must survive there too. It has no
+-- rewrite_in_to_join = 0 twin because the auto-switch forces the rewrite on; its reference is arm 7,
+-- which asserts the same expression non-distributed. The EXPLAIN probes must not aggregate (04653:28).
+SELECT 'arm 16: the NULL survives under make_distributed_plan';
+SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    distributed_plan_default_shuffle_join_bucket_count = 3, max_rows_to_group_by = 0,
+    enable_join_runtime_filters = 0, allow_experimental_correlated_subqueries = 1,
+    explain_query_plan_default = 'legacy';
+SELECT x, x IN (SELECT n FROM rn_04757) AS r FROM t_04757 ORDER BY x;
+SELECT x FROM t_04757 WHERE x NOT IN (SELECT n FROM rn_04757) ORDER BY x;
+-- Must print nothing: the rewrite keeps the plan distributable instead of building the set locally.
+SELECT 'still builds sets' FROM (EXPLAIN SELECT x, x IN (SELECT n FROM rn_04757) FROM t_04757) WHERE explain ILIKE '%CreatingSet%' LIMIT 1;
+-- Positive control, so the empty result above cannot be an empty plan or a broken grep.
+SELECT 'plan produced' FROM (EXPLAIN SELECT x, x IN (SELECT n FROM rn_04757) FROM t_04757) WHERE explain != '' LIMIT 1;
+SET make_distributed_plan = 0;
 
 DROP TABLE t_04757;
 DROP TABLE lc_04757;
