@@ -484,7 +484,8 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     MergeCoordinatorDistributionAlgorithm,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"water_filling", MergeCoordinatorDistributionAlgorithm::WATER_FILLING}})
+    {{"water_filling", MergeCoordinatorDistributionAlgorithm::WATER_FILLING},
+     {"sainte_lague", MergeCoordinatorDistributionAlgorithm::SAINTE_LAGUE}})
 
 IMPLEMENT_SETTING_ENUM(
     DecorrelationJoinKind,
