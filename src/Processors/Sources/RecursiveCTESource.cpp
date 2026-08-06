@@ -1,4 +1,5 @@
 #include <Processors/Sources/RecursiveCTESource.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Storages/IStorage.h>
 
@@ -38,11 +39,11 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::string & temporary_table_name, IQueryTreeNode * root)
+VectorWithMemoryTracking<TableNode *> collectTableNodesWithTemporaryTableName(const std::string & temporary_table_name, IQueryTreeNode * root)
 {
-    std::vector<TableNode *> result;
+    VectorWithMemoryTracking<TableNode *> result;
 
-    std::vector<IQueryTreeNode *> nodes_to_process;
+    VectorWithMemoryTracking<IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push_back(root);
 
     while (!nodes_to_process.empty())
@@ -236,7 +237,7 @@ private:
 
     SharedHeader header;
     QueryTreeNodePtr recursive_cte_union_node;
-    std::vector<TableNode *> recursive_table_nodes;
+    VectorWithMemoryTracking<TableNode *> recursive_table_nodes;
 
     QueryTreeNodePtr non_recursive_query;
     QueryTreeNodePtr recursive_query;

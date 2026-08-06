@@ -140,7 +140,7 @@ Chunk PostgreSQLSource<T>::generate()
 
     while (!isCancelled() && !is_completed.load())
     {
-        const std::vector<pqxx::zview> * row{stream->read_row()};
+        const std::vector<pqxx::zview> * row{stream->read_row()}; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         /// row is nullptr if pqxx::stream_from is finished
         if (!row)

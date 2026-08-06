@@ -69,7 +69,7 @@ ArrowFlightSource::ArrowFlightSource(
 
 ArrowFlightSource::ArrowFlightSource(
     std::shared_ptr<ArrowFlightConnection> connection_,
-    std::vector<arrow::flight::FlightEndpoint> endpoints_,
+    std::vector<arrow::flight::FlightEndpoint> endpoints_, // STYLE_CHECK_ALLOW_STD_CONTAINERS
     const Block & sample_block_,
     ContextPtr context_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))

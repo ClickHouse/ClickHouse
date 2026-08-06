@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_JEMALLOC
 
@@ -79,8 +80,8 @@ private:
     /// For Collapsed mode: aggregated stacks streamed directly from the map
     struct CollapsedState
     {
-        std::unordered_map<std::string, UInt64> stack_to_metric;
-        std::unordered_map<std::string, UInt64>::const_iterator iter;
+        UnorderedMapWithMemoryTracking<std::string, UInt64> stack_to_metric;
+        UnorderedMapWithMemoryTracking<std::string, UInt64>::const_iterator iter;
 
         CollapsedState() = default;
         CollapsedState(const CollapsedState &) = delete;

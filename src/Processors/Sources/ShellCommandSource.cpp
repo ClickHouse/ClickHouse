@@ -479,7 +479,7 @@ namespace
             bool check_exit_code_,
             SharedHeader sample_block_,
             std::unique_ptr<ShellCommand> && command_,
-            std::vector<SendDataTask> && send_data_tasks = {},
+            VectorWithMemoryTracking<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
@@ -765,7 +765,7 @@ namespace
         QueryPipeline pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
 
-        std::vector<ThreadFromGlobalPool> send_data_threads;
+        VectorWithMemoryTracking<ThreadFromGlobalPool> send_data_threads;
 
         std::mutex send_data_lock;
         std::exception_ptr exception_during_send_data;
@@ -808,7 +808,7 @@ ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
     const VectorWithMemoryTracking<std::string> & arguments,
-    std::vector<Pipe> && input_pipes,
+    Pipes && input_pipes,
     Block sample_block,
     ContextPtr context,
     const ShellCommandSourceConfiguration & source_configuration)
@@ -900,7 +900,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             source_configuration.sampler->recordExecutablePid(process->getPid());
     }
 
-    std::vector<ShellCommandSource::SendDataTask> tasks;
+    VectorWithMemoryTracking<ShellCommandSource::SendDataTask> tasks;
     tasks.reserve(input_pipes.size());
 
     for (size_t i = 0; i < input_pipes.size(); ++i)
