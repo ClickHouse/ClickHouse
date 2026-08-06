@@ -122,10 +122,11 @@ private:
     void initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config);
     void initializeDisks(const Poco::Util::AbstractConfiguration & config);
 
-    /// Throws if `write_snapshot_version` is out of the supported range or too old for the
-    /// enabled feature flags. Used both on startup and on hot reload, so that an invalid
-    /// value is rejected right away instead of breaking the next snapshot creation.
-    void validateCoordinationSettings(const CoordinationSettings & settings) const;
+    /// Check that write_snapshot_version is supported and not lower than the enabled
+    /// feature flags require. Throws BAD_ARGUMENTS otherwise. Used both on startup
+    /// and on hot reload, so that SYSTEM RELOAD CONFIG cannot put Keeper into a
+    /// configuration that would be rejected on startup.
+    void validateWriteSnapshotVersion(const CoordinationSettings & settings) const;
 
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
