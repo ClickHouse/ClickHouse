@@ -436,48 +436,50 @@ def test_partition_by(started_cluster):
     dir = f"partition_{id}"
     fs.mkdirs(f"/{dir}/", permission=777)
 
-    file_name = "test_{_partition_id}"
-    partition_by = "column3"
-    values = "(1, 2, 3), (3, 2, 1), (1, 3, 2)"
-    table_function = (
-        f"hdfs('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV', '{table_format}')"
-    )
+    try:
+        file_name = "test_{_partition_id}"
+        partition_by = "column3"
+        values = "(1, 2, 3), (3, 2, 1), (1, 3, 2)"
+        table_function = (
+            f"hdfs('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV', '{table_format}')"
+        )
 
-    node1.query(
-        f"insert into table function {table_function} PARTITION BY {partition_by} values {values}"
-    )
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_1', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "3\t2\t1"
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_2', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "1\t3\t2"
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_3', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "1\t2\t3"
+        node1.query(
+            f"insert into table function {table_function} PARTITION BY {partition_by} values {values}"
+        )
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_1', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "3\t2\t1"
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_2', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "1\t3\t2"
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_3', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "1\t2\t3"
 
-    file_name = "test2_{_partition_id}"
-    node1.query(
-        f"create table p(column1 UInt32, column2 UInt32, column3 UInt32) engine = HDFS('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV') partition by column3"
-    )
-    node1.query(f"insert into p values {values}")
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_1', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "3\t2\t1"
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_2', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "1\t3\t2"
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_3', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "1\t2\t3"
-    node1.query("drop table p")
-    fs.delete("/{dir}", recursive=True)
+        file_name = "test2_{_partition_id}"
+        node1.query(
+            f"create table p(column1 UInt32, column2 UInt32, column3 UInt32) engine = HDFS('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV') partition by column3"
+        )
+        node1.query(f"insert into p values {values}")
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_1', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "3\t2\t1"
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_2', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "1\t3\t2"
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_3', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "1\t2\t3"
+    finally:
+        node1.query("drop table if exists p")
+        fs.delete(f"/{dir}", recursive=True)
 
 
 def test_seekable_formats(started_cluster):
