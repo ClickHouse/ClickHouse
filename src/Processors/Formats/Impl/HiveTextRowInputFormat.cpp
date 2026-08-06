@@ -21,6 +21,9 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings, cons
     updated.defaults_for_omitted_fields = true;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
     updated.csv.allow_variable_number_of_columns = settings.hive_text.allow_variable_number_of_columns;
+    /// Hive's `LazySimpleSerDe` always writes `NULL` as `\N` (and the `HiveText` output format
+    /// always emits `\N`), so accept it independent of `format_csv_null_representation`.
+    updated.csv.null_representation = "\\N";
     if (settings.hive_text.input_field_names.empty())
         updated.hive_text.input_field_names = header.getNames();
     return updated;
