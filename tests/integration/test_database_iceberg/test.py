@@ -8,10 +8,13 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+import avro.schema as avro_schema
 import pyarrow as pa
 import pytest
 import requests
 import pytz
+from avro.datafile import DataFileReader, DataFileWriter
+from avro.io import DatumReader, DatumWriter
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -979,6 +982,108 @@ def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fie
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
 
 
+def _get_s3_object_bytes(minio_client, bucket, key):
+    response = minio_client.get_object(bucket, key)
+    data = b""
+    for chunk in response.stream():
+        data += chunk
+    return data
+
+
+def _put_s3_object_bytes(minio_client, bucket, key, data):
+    minio_client.put_object(bucket, key, io.BytesIO(data), len(data))
+
+
+def _rewrite_avro_without_fields(raw_avro, fields_to_drop, nested_fields_to_drop=None):
+    nested_fields_to_drop = nested_fields_to_drop or {}
+    reader = DataFileReader(io.BytesIO(raw_avro), DatumReader())
+    schema = json.loads(reader.meta["avro.schema"].decode())
+    codec = reader.meta.get("avro.codec", b"null").decode()
+    user_meta = {k: v for k, v in reader.meta.items() if not k.startswith("avro.")}
+    records = list(reader)
+    reader.close()
+
+    assert user_meta["format-version"] == b"2"
+    assert set(fields_to_drop).issubset({f["name"] for f in schema["fields"]})
+
+    schema["fields"] = [f for f in schema["fields"] if f["name"] not in fields_to_drop]
+    for field in schema["fields"]:
+        if field["name"] in nested_fields_to_drop:
+            dropped = nested_fields_to_drop[field["name"]]
+            assert set(dropped).issubset({f["name"] for f in field["type"]["fields"]})
+            field["type"]["fields"] = [f for f in field["type"]["fields"] if f["name"] not in dropped]
+
+    for record in records:
+        for name in fields_to_drop:
+            del record[name]
+        for name, dropped in nested_fields_to_drop.items():
+            for nested_name in dropped:
+                del record[name][nested_name]
+
+    out = io.BytesIO()
+    writer = DataFileWriter(out, DatumWriter(), avro_schema.parse(json.dumps(schema)), codec=codec)
+    for key, value in user_meta.items():
+        writer.set_meta(key, value)
+    for record in records:
+        writer.append(record)
+    writer.flush()
+    return out.getvalue()
+
+
+def _rewrite_s3_avro_without_fields(minio_client, path, fields_to_drop, nested_fields_to_drop=None):
+    assert path.startswith("s3://")
+    bucket, key = path[len("s3://") :].split("/", 1)
+    raw_avro = _get_s3_object_bytes(minio_client, bucket, key)
+    rewritten = _rewrite_avro_without_fields(raw_avro, fields_to_drop, nested_fields_to_drop)
+    _put_s3_object_bytes(minio_client, bucket, key, rewritten)
+
+
+@pytest.mark.parametrize("rewrite_manifest_list", [False, True])
+def test_select_manifest_without_sequence_number(started_cluster, rewrite_manifest_list):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_manifest_without_sequence_number_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name)
+
+    num_rows = 10
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(num_rows)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    assert num_rows == int(node.query(f"SELECT count() FROM (SELECT * FROM {table_ref})"))
+
+    snapshot = catalog.load_table(f"{root_namespace}.{table_name}").current_snapshot()
+    manifests = snapshot.manifests(table.io)
+    assert len(manifests) > 0
+
+    for manifest in manifests:
+        _rewrite_s3_avro_without_fields(
+            started_cluster.minio_client,
+            manifest.manifest_path,
+            ["sequence_number", "file_sequence_number"],
+            {"data_file": ["content"]},
+        )
+
+    if rewrite_manifest_list:
+        _rewrite_s3_avro_without_fields(
+            started_cluster.minio_client,
+            snapshot.manifest_list,
+            ["sequence_number", "min_sequence_number", "content"],
+        )
+
+    node.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
+    assert num_rows == int(node.query(f"SELECT count() FROM (SELECT * FROM {table_ref})"))
+    assert num_rows == int(node.query(f"SELECT count() FROM {table_ref} WHERE symbol = 'kek'"))
+
+
 def test_create(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1943,3 +2048,135 @@ def test_alter_database_settings_onelake_persistence(started_cluster):
     assert old_token not in engine_full_with_secrets
 
     node.query(f"DROP DATABASE {db_name}")
+
+
+def test_alter_database_settings_onelake_refresh_token(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"onelake_refresh_token_{uuid.uuid4().hex}"
+    old_token = f"refresh_token_{uuid.uuid4().hex}"
+    new_token = f"refresh_token_{uuid.uuid4().hex}"
+
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_refresh_token = '{old_token}'
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', oauth_server_use_request_body = 0
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "oauth_server_use_request_body" in error
+
+    # In refresh-token mode the catalog access token is reused for Azure storage,
+    # so a non-storage auth_scope is rejected at CREATE time.
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', auth_scope = 'api://my-catalog/.default'
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "auth_scope" in error
+
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}'
+        """
+    )
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_refresh_token = '{new_token}'"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = 'token'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert new_token not in show_result
+    assert "[HIDDEN]" in show_result
+
+    node.restart_clickhouse()
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert new_token in engine_full_with_secrets
+    assert old_token not in engine_full_with_secrets
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
+    )
+    assert new_token not in engine_full
+
+    node.query(f"DROP DATABASE {db_name}")
+
+
+def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
+    """
+    Regression test: an error from the catalog while listing tables (e.g. expired
+    catalog credentials) must not be silently turned into an empty listing when the
+    user explicitly opted into showing datalake catalogs in system tables with
+    show_data_lake_catalogs_in_system_tables=1. Without the opt-in the old tolerant
+    behaviour is kept (system tables must not fail because of one broken catalog).
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_listing_error"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, "table_x")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_get_tables_throw")
+    try:
+        assert (
+            node.query(
+                f"SELECT count() FROM system.iceberg_files WHERE database = '{CATALOG_NAME}'"
+            ).strip()
+            == "0"
+        )
+
+        error = node.query_and_get_error(
+            f"SELECT count() FROM system.iceberg_files WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+
+        error = node.query_and_get_error(
+            f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_get_tables_throw")
+
+    result = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+    )
+    assert "table_x" in result
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
