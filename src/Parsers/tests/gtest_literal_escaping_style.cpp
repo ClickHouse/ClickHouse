@@ -64,14 +64,27 @@ std::optional<std::string> formatSQLite(const Field & value)
 
 TEST(LiteralEscapingStyle, TopLevelString)
 {
-    /// A backslash and a single quote: ClickHouse escapes both with a backslash, PostgreSQL uses
-    /// doubling for the quote and keeps the backslash literal (the `E''` form is not used),
-    /// SQLite only doubles the quote.
+    /// A backslash and a single quote: ClickHouse escapes both with a backslash, PostgreSQL
+    /// switches to the escape string constant form `E'...'` (a plain '...' literal would read a
+    /// doubled backslash back as two characters under `standard_conforming_strings = on`, and as
+    /// one under `off`), SQLite only doubles the quote and embeds the backslash literally.
     Field value = std::string("a\\b'c");
 
     EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "'a\\\\b\\'c'");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "'a\\b''c'");
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "E'a\\\\b''c'");
     EXPECT_SQLITE_EQ(value, "'a\\b''c'");
+}
+
+TEST(LiteralEscapingStyle, ControlCharactersRoundTripForPostgreSQL)
+{
+    /// A real tab and newline: PostgreSQL must read back exactly the original bytes. A plain
+    /// '...' literal with `\t` / `\n` inside is read back as two characters each, so the
+    /// `E'...'` form (whose escapes are interpreted on every PostgreSQL configuration) is used.
+    Field value = std::string("a\tb\nc");
+
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "E'a\\tb\\nc'");
+    /// A string without quotes, backslashes and control characters keeps the regular form.
+    EXPECT_EQ(format(Field(std::string("plain")), LiteralEscapingStyle::PostgreSQL), "'plain'");
 }
 
 TEST(LiteralEscapingStyle, StringInsideTuple)
@@ -81,10 +94,11 @@ TEST(LiteralEscapingStyle, StringInsideTuple)
     tuple.push_back(std::string("a\tb"));
     Field value = tuple;
 
-    /// PostgreSQL doubles the quote and keeps the ClickHouse escape for the tab; SQLite embeds the
-    /// tab literally. What matters here is that neither of them falls back to `\'` for the quote.
+    /// PostgreSQL doubles the quote, and the element with a real tab uses the `E'...'` form so
+    /// the tab round-trips; SQLite embeds the tab literally. What matters here is that neither of
+    /// them falls back to `\'` for the quote.
     EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "('it\\'s', 'a\\tb')");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "('it''s', 'a\\tb')");
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "('it''s', E'a\\tb')");
     EXPECT_SQLITE_EQ(value, "('it''s', 'a\tb')");
 }
 
@@ -135,4 +149,16 @@ TEST(LiteralEscapingStyle, NulByteInsideContainerIsRejectedForSQLite)
     /// emitted as the two characters `\` and `0` either. Without the fix `formatSQLite` returns
     /// an empty optional instead of throwing, so this expectation also fails on the merge-base.
     EXPECT_ANY_THROW(formatSQLite(value));
+}
+
+TEST(LiteralEscapingStyle, NulByteInsideContainerIsRejectedForPostgreSQL)
+{
+    Tuple tuple;
+    tuple.push_back(std::string("a\0b", 3));
+    Field value = tuple;
+
+    /// A NUL byte cannot appear in a PostgreSQL string value (E'\0' is rejected by the server),
+    /// and it must not be silently emitted as the two characters `\` and `0` either. Such
+    /// predicates are not pushed down; formatting one must fail explicitly.
+    EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::PostgreSQL));
 }

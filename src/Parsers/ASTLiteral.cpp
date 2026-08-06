@@ -221,7 +221,8 @@ private:
     }
 };
 
-/// Use different rules for escaping backslashes and quotes
+/// Like `FieldVisitorToString`, but strings are escaped so that PostgreSQL reads back exactly the
+/// original bytes (`writeQuotedStringPostgreSQLLossless`).
 class FieldVisitorToStringPostgreSQL : public FieldVisitorToStringForDialect<FieldVisitorToStringPostgreSQL>
 {
 public:
@@ -229,8 +230,17 @@ public:
 
     String operator() (const String & x) const
     {
+        /// A NUL byte cannot appear in a PostgreSQL string value (see `writeQuotedStringPostgreSQLLossless`).
+        /// Predicates with such literals are normally not pushed down (`isCompatible` rejects them), so
+        /// reaching here means we are about to emit a literal that cannot match: fail explicitly rather
+        /// than silently produce wrong results.
+        if (x.find('\0') != String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot push down a predicate to PostgreSQL: a string literal contains a NUL byte, "
+                "which cannot be represented in a PostgreSQL string value");
+
         WriteBufferFromOwnString wb;
-        writeQuotedStringPostgreSQL(x, wb);
+        writeQuotedStringPostgreSQLLossless(x, wb);
         return wb.str();
     }
 };

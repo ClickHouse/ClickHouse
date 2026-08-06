@@ -147,8 +147,10 @@ void dropAliases(ASTPtr & node)
 
 
 /// SQLite has no way to represent a NUL byte inside a string literal (see writeQuotedStringSQLite),
-/// so a predicate whose string literal (possibly nested in an IN tuple / array / map) contains NUL
-/// must not be pushed down; it is evaluated by ClickHouse instead.
+/// and a PostgreSQL string value cannot contain a NUL byte at all (see
+/// writeQuotedStringPostgreSQLLossless), so a predicate whose string literal (possibly nested in
+/// an IN tuple / array / map) contains NUL must not be pushed down to those databases; it is
+/// evaluated by ClickHouse instead.
 bool fieldHasStringWithNulByte(const Field & field)
 {
     checkStackSize();
@@ -333,8 +335,9 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
 
     if (const auto * literal = node->as<ASTLiteral>())
     {
-        /// SQLite cannot represent NUL bytes in string literals, so do not push such predicates down.
-        if (literal_escaping_style == LiteralEscapingStyle::SQLite && fieldHasStringWithNulByte(literal->value))
+        /// SQLite cannot represent NUL bytes in string literals, and PostgreSQL cannot store NUL
+        /// bytes in string values, so do not push such predicates down.
+        if (literal_escaping_style != LiteralEscapingStyle::Regular && fieldHasStringWithNulByte(literal->value))
             return false;
 
         /// Foreign databases often have no support for Array / Map, and ClickHouse would serialize
