@@ -1173,6 +1173,25 @@ def test_similarity_error_throw(started_cluster):
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
 
+def test_similarity_null_operand_skips_embedding(started_cluster):
+    """A NULL operand forces the row to NULL locally, so the other operand is never embedded. Even with
+    the default `ai_function_throw_on_error = 1` against a failing provider the query must not abort,
+    because the would-be-failing embedding request is never issued for that row."""
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query("INSERT INTO test_input_nullable VALUES (NULL)")
+    qid = unique_query_id("sim_null_skip")
+    result = instance.query(
+        "SELECT aiSimilarity(x, 'server error', 'test-embed-model', map('credentials', 'ai_embed_error')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert parse_nullable_float(result) is None
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 0
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 0
+
+
 def test_similarity_empty_input_table(started_cluster):
     """Zero-row input makes no API calls."""
     instance.query("TRUNCATE TABLE test_input")

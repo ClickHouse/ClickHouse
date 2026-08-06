@@ -204,8 +204,8 @@ public:
             return !out.empty();
         };
 
-        /// Collect the operands that need an embedding (non-null, non-empty). `left`/`right` map each row's
-        /// operands to an index into `inputs`, or `no_input` when the operand does not embed.
+        /// Collect the operands that need an embedding. `left`/`right` map each row's operands to an index
+        /// into `inputs`, or `no_input` when the operand is not embedded.
         VectorWithMemoryTracking<std::string_view> inputs;
         inputs.reserve(2 * input_rows_count);
         constexpr size_t no_input = std::numeric_limits<size_t>::max();
@@ -214,16 +214,17 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view text;
-            if (get_value(op1, i, text))
+            /// Only embed a row's operands when both are non-null and non-empty. If either side is
+            /// missing, the row scores NULL regardless, so embedding the other side would waste an API
+            /// call and quota.
+            std::string_view text1;
+            std::string_view text2;
+            if (get_value(op1, i, text1) && get_value(op2, i, text2))
             {
                 left[i] = inputs.size();
-                inputs.push_back(text);
-            }
-            if (get_value(op2, i, text))
-            {
+                inputs.push_back(text1);
                 right[i] = inputs.size();
-                inputs.push_back(text);
+                inputs.push_back(text2);
             }
         }
 
