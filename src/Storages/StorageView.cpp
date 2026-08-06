@@ -1348,6 +1348,53 @@ SinkToStoragePtr StorageView::write(
         async_insert);
 }
 
+StoragePtr StorageView::tryGetInsertTargetTable(ContextPtr context) const
+{
+    if (is_parameterized_view)
+        return nullptr;
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+
+    /// Mirror the structural part of `getSingleSelectQuery` / `getViewTargetTable` without
+    /// throwing: any shape `write` would reject maps to nullptr here, and the probes fail closed.
+    /// Note: `hasSelectQuery` cannot be used as a guard — `StorageView` fills only `inner_query`
+    /// of its `SelectQueryDescription`, not `select_query`.
+    const auto & inner_query = metadata_snapshot->getSelectQuery().inner_query;
+    const auto * select_union = inner_query ? inner_query->as<ASTSelectWithUnionQuery>() : nullptr;
+    if (!select_union || select_union->list_of_selects->children.size() != 1)
+        return nullptr;
+    const auto * select = select_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    if (!select)
+        return nullptr;
+
+    const auto & tables = select->tables();
+    if (!tables || tables->children.size() != 1)
+        return nullptr;
+    const auto * element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
+    if (!element || !element->table_expression)
+        return nullptr;
+    const auto * table_expr = element->table_expression->as<ASTTableExpression>();
+    if (!table_expr || !table_expr->database_and_table_name)
+        return nullptr;
+    const auto * table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+    if (!table_id)
+        return nullptr;
+
+    /// The stored view query is database-qualified at CREATE time (`InterpreterCreateQuery` runs
+    /// `AddDefaultDatabaseVisitor` over every view select), so the view's own database is only a
+    /// fallback for metadata predating that qualification.
+    auto storage_id = table_id->getTableId();
+    if (storage_id.database_name.empty())
+        storage_id.database_name = getStorageID().database_name;
+    return DatabaseCatalog::instance().tryGetTable(storage_id, context);
+}
+
+bool StorageView::supportsParallelInsert() const
+{
+    auto target = tryGetInsertTargetTable(Context::getGlobalContextInstance());
+    return target && target->supportsParallelInsert();
+}
+
 void StorageView::drop()
 {
     auto table_id = getStorageID();
