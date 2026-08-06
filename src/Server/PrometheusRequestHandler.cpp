@@ -454,8 +454,12 @@ public:
 
         /// Additionally reserve the Prometheus HTTP API parameters consumed by these endpoints.
         /// Prometheus defines `limit` on all of them, so it must not fall through to ClickHouse's
-        /// generic `limit` setting.
-        static const NameSet reserved_param_names{"query", "time", "start", "end", "step", "match[]", "limit"};
+        /// generic `limit` setting. The standard parameters that are not implemented yet (`timeout`,
+        /// `lookback_delta`, `stats`) are reserved as well, so that a valid Prometheus request such as
+        /// `/api/v1/query?query=up&timeout=5s` is rejected explicitly by `handlingRequestWithContext`
+        /// instead of failing as an unknown ClickHouse setting in `makeContext`.
+        static const NameSet reserved_param_names{
+            "query", "time", "start", "end", "step", "match[]", "limit", "timeout", "lookback_delta", "stats"};
         return !reserved_param_names.contains(name);
     }
 
@@ -498,6 +502,20 @@ public:
 
         try
         {
+            /// The standard Prometheus HTTP API also defines the optional `timeout` and `stats`
+            /// parameters on the query endpoints (and `lookback_delta` as a per-query override of the
+            /// lookback period). They are reserved by `isSettingLikeParameter`, so they cannot be
+            /// misapplied as ClickHouse settings before this handler runs, but they are not
+            /// implemented yet - reject them explicitly instead of silently ignoring them.
+            for (const auto * unsupported_param : {"timeout", "lookback_delta", "stats"})
+            {
+                if (params->has(unsupported_param))
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "The '{}' parameter of the Prometheus HTTP API is not supported",
+                        unsupported_param);
+            }
+
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
@@ -520,10 +538,6 @@ public:
                 String step = params->get("step", "");
                 UInt64 limit = getLimitParam();
 
-                /// TODO: Support the following **optional** query parameters:
-                /// - timeout=<duration>: Evaluation timeout
-                /// - lookback_delta=<number>: Override for the lookback period for this query.
-
                 PrometheusHTTPProtocolAPI::Params params
                 {
                     .type = PrometheusHTTPProtocolAPI::Type::Range,
@@ -542,8 +556,6 @@ public:
                 String query = params->get("query", "");
                 String time = params->get("time", "");
                 UInt64 limit = getLimitParam();
-
-                /// TODO: Support optional parameters same as for the range query.
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
