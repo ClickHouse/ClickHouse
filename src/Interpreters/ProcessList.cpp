@@ -296,13 +296,33 @@ ProcessList::EntryPtr ProcessList::insert(
         }
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
+        /// A user without queries starts a new period here rather than when its previous query left, so that
+        /// whatever that query settled on the way out is already accounted for.
+        if (user_process_list.queries.empty())
+            user_process_list.resetTrackers();
+
         /// Actualize thread group info
         CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
-            thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+
+            /// Until here the group had no user to account to, so whatever the query allocated since its scope
+            /// was created sits on the group and on the global tracker only. Hand it to the user now, or
+            /// `settleDriftOnQueryEnd` would give back more than the user was ever charged. A negative transfer
+            /// takes the bytes back from the global tracker, which keeps accounting them either way.
+            /// A group that accounts its memory in the server total keeps doing so: the query below it is only
+            /// how that work is carried out, not something its user asked for.
+            if (thread_group->charge_memory_to_query_user)
+            {
+                thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+                if (Int64 accounted_before_the_user_was_known = thread_group->memory_tracker.get();
+                    accounted_before_the_user_was_known > 0)
+                {
+                    user_process_list.user_memory_tracker.transferToGlobal(-accounted_before_the_user_was_known);
+                }
+            }
             if (user_process_list.user_temp_data_on_disk)
             {
                 TemporaryDataOnDiskSettings temporary_data_on_disk_settings
@@ -488,11 +508,9 @@ ProcessListEntry::~ProcessListEntry()
 
     parent.have_space.notify_all();
 
-    /// If there are no more queries for the user, then we will reset memory tracker.
     /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
-    /// reads entries lock-free via raw pointers and relies on them never being erased.
-    if (user_process_list.queries.empty())
-        user_process_list.resetTrackers();
+    /// reads entries lock-free via raw pointers and relies on them never being erased. Its trackers are reset
+    /// when the user's next query arrives, see `ProcessList::insert`.
 }
 
 

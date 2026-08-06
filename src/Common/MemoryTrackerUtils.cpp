@@ -64,6 +64,18 @@ Int64 getCurrentQueryMemoryUsage()
 }
 
 
+void setCurrentQueryMemoryDriftExpected()
+{
+    /// Every task tracker up to the user, since work nested in a query - a merge started by `OPTIMIZE`, a view -
+    /// leaves the memory behind on its own tracker and on the query's.
+    for (auto * tracker = DB::CurrentThread::getMemoryTracker(); tracker; tracker = tracker->getParent())
+    {
+        if (tracker->level == VariableContext::Process)
+            tracker->setDriftExpected();
+    }
+}
+
+
 std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery()
 {
     auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker();

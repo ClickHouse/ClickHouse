@@ -87,6 +87,16 @@ public:
 
     const FatalErrorCallback fatal_error_callback;
 
+    /// False for a group whose work is deliberately accounted in the server total rather than on the query's
+    /// user, see `createForWorkNotChargedToTheQuery`. Such a group keeps that policy even when the work it does
+    /// runs a query of its own, which would otherwise reparent its tracker to that query's user.
+    const bool charge_memory_to_query_user = true;
+
+    /// A group built on top of another one points into it: its counters and memory tracker chain to the
+    /// parent's and its shared data holds the parent's callbacks. Keep the parent alive for at least as long.
+    /// Declared before those members so that it outlives them.
+    const ThreadGroupPtr parent_group;
+
     const Int32 os_threads_nice_value;
 
     MemorySpillScheduler::Ptr memory_spill_scheduler;
@@ -127,8 +137,7 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
-    /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
-    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
+    /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);

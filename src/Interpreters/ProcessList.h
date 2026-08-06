@@ -345,13 +345,15 @@ struct ProcessListForUser
 
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
-    /// Clears MemoryTracker for the user.
-    /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
-    ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
+    /// Starts a new measurement period for a user that has no queries left: the limits are dropped so that the
+    /// next query installs its own, and the peak starts over.
+    /// The amount is deliberately left alone: each query settles what it leaves behind when its tracker goes
+    /// away, see `MemoryTracker::settleDriftOnQueryEnd`, so a user without queries is already at zero. Zeroing
+    /// it here would instead erase what a query whose thread group is still alive is charged for.
     void resetTrackers()
     {
         /// TODO: should we drop user_temp_data_on_disk here?
-        user_memory_tracker.reset();
+        user_memory_tracker.resetLimitsAndPeak();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
     }

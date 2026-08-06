@@ -137,6 +137,12 @@ private:
 
     bool isSizeOkForSampling(UInt64 size) const;
 
+    /// Credit the global tracker for bytes a query freed but never held, skipping the user, which does not hold
+    /// them either.
+    void freeBytesOwnedByTheServer(Int64 size);
+
+    std::atomic_bool drift_expected = false;
+
     /// helper fields for analyzing MemoryTracker
     /// amount which is not corrected by external source like RSS
     int64_t uncorrected_amount = 0;
@@ -172,18 +178,27 @@ public:
         return rss.load(std::memory_order_relaxed);
     }
 
-    // Merges and mutations may pass memory ownership to other threads thus in the end of execution
-    // MemoryTracker for background task may have a non-zero counter.
-    // This method is intended to fix the counter inside of background_memory_tracker.
-    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
-    // of total_memory_tracker.
-    void adjustOnBackgroundTaskEnd(const MemoryTracker * child);
+    /// Tells that the query deliberately leaves memory to a structure that outlives it, such as the data of an
+    /// in-memory table, so that what is settled at the end is not reported as a bug. Applies to the task
+    /// trackers above as well, since they are charged for the same bytes.
+    void setDriftExpected()
+    {
+        for (auto * tracker = this; tracker; tracker = tracker->parent.load(std::memory_order_relaxed))
+        {
+            if (tracker->level == VariableContext::Process)
+                tracker->drift_expected.store(true, std::memory_order_relaxed);
+        }
+    }
+
+    /// Settle whatever is left on a query's tracker when the query ends, so that the per-user tracker ends at
+    /// zero for that query. Warns in debug builds when the amount is large enough to be a real bug.
+    void settleDriftOnQueryEnd();
 
     /// Hand `size` bytes over from the query to the server: the memory stays allocated and the global tracker
     /// keeps accounting it, while this tracker and its parents below the global one stop counting it. For data
     /// a query allocates and leaves in a table, which must be checked against the limits while the query runs
     /// but must not stay charged to the user, since nothing would ever uncharge it there.
-    /// NOTE: as in `adjustOnBackgroundTaskEnd`, alloc/free cannot be used, they would change the total too.
+    /// NOTE: alloc/free cannot be used for this, they would change the total as well.
     void transferToGlobal(Int64 size);
 
     Int64 getPeak() const
@@ -329,6 +344,18 @@ public:
 
     /// Reset the accumulated data.
     void reset();
+
+    /// Everything `resetCounters` clears except the outstanding amount, which belongs to whatever is still
+    /// charged here rather than to the period being ended.
+    void resetLimitsAndPeak()
+    {
+        /// Whatever is still charged here was not part of the period being ended, but the peak cannot read below
+        /// what is currently held.
+        peak.store(std::max<Int64>(amount.load(std::memory_order_relaxed), 0), std::memory_order_relaxed);
+        soft_limit.store(0, std::memory_order_relaxed);
+        hard_limit.store(0, std::memory_order_relaxed);
+        profiler_limit.store(0, std::memory_order_relaxed);
+    }
 
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
