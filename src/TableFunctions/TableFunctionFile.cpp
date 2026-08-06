@@ -201,8 +201,8 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFile>({.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/reference/functions/table-functions/s3) table function. Use `file` when working with local files, and `s3` when working with buckets in object storage such as S3, GCS, or MinIO.
 
@@ -224,7 +224,7 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 
 | Parameter         | Description                                                                                                                                                                                                                                                                                                   |
 |-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `path`            | The relative path to the file from [user_files_path](/reference/settings/server-settings/settings#user_files_path), or an `Array(String)` of paths in `SELECT` queries. Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers). |
+| `path`            | The relative path to the file from [user_files_path](/reference/settings/server-settings/settings/user#user_files_path), or an `Array(String)` of paths in `SELECT` queries. Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers). |
 | `path_to_archive` | The relative path to a zip/tar/7z archive. Supports the same globs as `path`.                                                                                                                                                                                                                                 |
 | `format`          | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                |
 | `structure`       | Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                |
@@ -248,7 +248,7 @@ DESC format(LineAsString, 'Hello\nWorld')
 ```
 </Tip>
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table for reading or writing data in a file.
 
@@ -447,16 +447,16 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 
 | Setting                                                                                                            | Description                                                                                                                                                                 |
 |--------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [engine_file_empty_if_not_exists](/reference/settings/session-settings#engine_file_empty_if_not_exists)                   | allows to select empty data from a file that doesn't exist. Disabled by default.                                                                                            |
-| [engine_file_truncate_on_insert](/reference/settings/session-settings#engine_file_truncate_on_insert)                     | allows to truncate file before insert into it. Disabled by default.                                                                                                         |
-| [engine_file_allow_create_multiple_files](/reference/settings/session-settings#engine_file_allow_create_multiple_files) | allows to create a new file on each insert if format has suffix. Disabled by default.                                                                                       |
-| [engine_file_skip_empty_files](/reference/settings/session-settings#engine_file_skip_empty_files)                       | allows to skip empty files while reading. Disabled by default.                                                                                                              |
-| [storage_file_read_method](/reference/settings/session-settings#engine_file_empty_if_not_exists)                          | method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local. |
+| [engine_file_empty_if_not_exists](/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists)                   | allows to select empty data from a file that doesn't exist. Disabled by default.                                                                                            |
+| [engine_file_truncate_on_insert](/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert)                     | allows to truncate file before insert into it. Disabled by default.                                                                                                         |
+| [engine_file_allow_create_multiple_files](/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files) | allows to create a new file on each insert if format has suffix. Disabled by default.                                                                                       |
+| [engine_file_skip_empty_files](/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                       | allows to skip empty files while reading. Disabled by default.                                                                                                              |
+| [storage_file_read_method](/reference/settings/session-settings/storage#storage_file_read_method)                                      | method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local. |
 
 ## Related {#related}
 
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
-- [Rename files after processing](/reference/settings/session-settings#rename_files_after_processing)
+- [Rename files after processing](/reference/settings/session-settings/other#rename_files_after_processing)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 

@@ -96,6 +96,22 @@ public:
 
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
+    /// The read is delegated to the nested `ReplacingMergeTree` (see `read`), which receives the very same
+    /// `SelectQueryInfo`, so the wrapper must advertise the capabilities and the statistics of the nested
+    /// table instead of the `IStorage` defaults. Otherwise a query over the wrapper - directly or through
+    /// `Merge` - silently loses `PREWHERE`, the optimization to subcolumns and the size estimates.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
+    bool supportsSubcolumns() const override;
+    bool supportsOptimizationToSubcolumns() const override;
+
+    ColumnSizeByName getColumnSizes() const override;
+    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -145,6 +161,11 @@ public:
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
     bool supportsFinal() const override { return true; }
+
+    /// NOTE: `supportsTrivialCountOptimization` is deliberately not forwarded to the nested table. The nested
+    /// `ReplacingMergeTree` still holds the deleted rows (`_sign = 0`) and the superseded versions of the
+    /// updated rows, and `read` filters them out with `FINAL` and a `_sign = 1` filter, so counting the parts
+    /// of the nested table would report more rows than a read returns.
 
 private:
     static boost::intrusive_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
