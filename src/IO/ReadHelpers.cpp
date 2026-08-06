@@ -1587,6 +1587,8 @@ ReturnType readDateTimeTextFallback(
       * If exactly 4 digits were read and the next character is not a number, the value can be
       * a date or a date and time in YYYY-MM-DD or YYYY-MM-DD hh:mm:ss format; check the
       * broken-down layout character by character, because the value can be split between buffers.
+      * For plain DateTime, only a unix timestamp of at least 5 digits is accepted; short values,
+      * possibly with a fraction, are meaningful only for DateTime64.
       */
 
     int negative_multiplier = 1;
@@ -1683,6 +1685,18 @@ ReturnType readDateTimeTextFallback(
 
         if (!is_date)
         {
+            if constexpr (!dt64_mode)
+            {
+                /// For plain DateTime, only a unix timestamp of at least 5 digits is accepted; a short
+                /// bare number like '2018' stays invalid (it is neither a plausible timestamp nor a date).
+                /// Short values are meaningful only for DateTime64, where a small decimal timestamp
+                /// like 1234.5 is valid; this rule matches the optimistic path.
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, pos));
+                else
+                    return false;
+            }
+
             datetime = 0;
             for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
                 datetime = datetime * 10 + *digit_pos - '0';
@@ -1845,6 +1859,19 @@ ReturnType readDateTimeTextFallback(
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             else
                 return false;
+        }
+
+        if constexpr (!dt64_mode)
+        {
+            /// For plain DateTime, only a unix timestamp of at least 5 digits is accepted,
+            /// the same as in the branches above.
+            if (s_pos - s <= 4)
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                else
+                    return false;
+            }
         }
 
         /// A unix timestamp. Not very efficient.
