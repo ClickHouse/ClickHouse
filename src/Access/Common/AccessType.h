@@ -41,6 +41,7 @@ enum class Source : uint8_t
     M(KAFKA, "Kafka") \
     M(NATS, "") \
     M(RABBITMQ, "RabbitMQ") \
+    M(PULSAR, "Pulsar") \
     M(YTSAURUS, "YTsaurus") \
     M(ARROW_FLIGHT, "ArrowFlight") \
 
@@ -433,6 +434,7 @@ enum class AccessType : uint8_t
     M(KAFKA, "", GLOBAL, ALL) \
     M(NATS, "", GLOBAL, ALL) \
     M(RABBITMQ, "", GLOBAL, ALL) \
+    M(PULSAR, "", GLOBAL, ALL) \
     M(YTSAURUS, "", GLOBAL, ALL) \
     M(ARROW_FLIGHT, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \

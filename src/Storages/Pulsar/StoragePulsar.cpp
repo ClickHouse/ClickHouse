@@ -660,6 +660,7 @@ void registerStoragePulsar(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .source_access_type = AccessTypeObjects::Source::PULSAR,
             .has_builtin_setting_fn = PulsarSettings::hasBuiltin,
         },
         Documentation{
@@ -668,7 +669,7 @@ This engine allows integrating ClickHouse with [Apache Pulsar](https://pulsar.ap
 
 `Pulsar` lets you:
 
-- Subscribe to and publish to Pulsar topics.
+- Subscribe to one or more Pulsar topics and publish to a single Pulsar topic (`INSERT` is supported only for tables with exactly one topic).
 - Process new messages as they become available.
 
 The engine is experimental. To create a table with it, the setting `allow_experimental_pulsar_storage_engine` must be enabled.
@@ -706,7 +707,7 @@ Required parameters:
 
 Optional parameters:
 
-- `pulsar_topic_list` – A comma-separated list of Pulsar topics to consume from and produce to.
+- `pulsar_topic_list` – A comma-separated list of Pulsar topics to consume from. Writing via `INSERT` is supported only when the list contains exactly one topic; an `INSERT` into a table with multiple topics throws `NOT_IMPLEMENTED`.
 - `pulsar_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `pulsar_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 - `pulsar_max_block_size` – The maximum batch size (in messages) for a poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
