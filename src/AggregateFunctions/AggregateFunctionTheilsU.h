@@ -171,7 +171,16 @@ struct TheilsUWindowData : CrossTabCountsState
         /// H(A) = log(N) - (Σ n_a log n_a) / N
         const Float64 h_a = std::log(count_f) - sum_a_nlogn / count_f;
 
-        if (h_a <= 0.0)
+        /// The cached Σ n·log n sums accumulate rounding error from the incremental
+        /// updates, so the derived entropies are only accurate to about
+        /// N · ε · log N in absolute terms. When the true H(A) is zero (the first
+        /// argument is constant within the frame), the computed `h_a` is pure
+        /// rounding noise, and `1 - H(A|B) / H(A)` amplifies that noise without
+        /// bound. Compare against an error bound instead of exact zero, and widen
+        /// the sanity-check tolerance by the same relative amount.
+        const Float64 entropy_error = 8 * std::numeric_limits<Float64>::epsilon() * count_f * std::log(count_f);
+
+        if (h_a <= entropy_error)
             return 0.0;
 
         /// H(A|B) = (Σ n_b log n_b - Σ n_ab log n_ab) / N
@@ -181,14 +190,15 @@ struct TheilsUWindowData : CrossTabCountsState
         Float64 res = 1.0 - h_a_given_b / h_a;
 
         /// Clamp due to numerical error
+        const Float64 tolerance = 1e-4 + entropy_error / h_a;
         if (res < 0.0)
         {
-            chassert(res > -1e-4);
+            chassert(res > -tolerance);
             res = 0.0;
         }
         else if (res > 1.0)
         {
-            chassert(res < 1.0 + 1e-4);
+            chassert(res < 1.0 + tolerance);
             res = 1.0;
         }
 
