@@ -9,6 +9,9 @@
 namespace DB
 {
 
+/// See `Version` (`base/base/Version.h`) for the semantic model this type serializes and compares:
+/// a 4-component numeric `major.minor.patch.build` version, not semver (no pre-release/build
+/// metadata suffixes), with `1.2` equal to `1.2.0.0`.
 class DataTypeVersion final : public IDataType
 {
 public:
