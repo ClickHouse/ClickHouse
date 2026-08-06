@@ -20,6 +20,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -328,10 +329,13 @@ namespace
     {
         ASTs conditions;
 
-        /// id IN (SELECT id FROM (select_id_query))
-        /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
-        auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
-        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
+        /// Emit the timestamp range BEFORE the `id IN <set>` condition: on the default schema
+        /// (ORDER BY (id, timestamp)) primary-key pruning already returns mostly granules of matched
+        /// series, so the `id IN <set>` check passes almost all read rows, while the timestamp range
+        /// is the selective condition (e.g. a few rows per 32768-row granule for a short lookback).
+        /// The PREWHERE optimizer keeps this order whenever its selectivity estimation is inconclusive,
+        /// and running the cheap timestamp comparison before the hash-set probe of `in` significantly
+        /// reduces the scan CPU of short-window selectors.
 
         /// timestamp >= min_time
         conditions.push_back(makeASTFunction(
@@ -345,10 +349,16 @@ namespace
             make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
             timeSeriesTimestampToAST(max_time, timestamp_data_type)));
 
+        /// id IN (SELECT id FROM (select_id_query))
+        /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
+        auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
+        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
+
         return makeASTForLogicalAnd(std::move(conditions));
     }
 
     ASTPtr makeSelectQueryFromDataTable(const StorageID & data_table_id,
+                                        const ColumnsDescription & data_table_columns,
                                         ASTPtr select_query_from_tags_table,
                                         DateTime64 min_time,
                                         DateTime64 max_time,
@@ -363,16 +373,47 @@ namespace
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            select_list.push_back(makeASTFunction(
-                "CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(id_data_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+            /// Don't wrap a column in a cast when the data table's physical type is already exactly
+            /// the requested type (always true for inner tables created by the TimeSeries engine).
+            /// Such no-op casts are not free: aliased in the SELECT list, they shadow the raw columns,
+            /// so the WHERE conditions below resolve to the wrapped expressions. Then
+            /// (1) KeyCondition treats the wrapper as a monotonic function chain and evaluates it over
+            ///     the whole in-memory primary index of each part on every index analysis;
+            /// (2) the PREWHERE selectivity estimator can't produce a primary-key-based row estimate
+            ///     for the wrapped timestamp range, which used to misorder the PREWHERE read steps and
+            ///     run the expensive `in(id, set)` hash probe on every read row;
+            /// (3) the cast itself is re-executed per row at scan time.
+            /// Strict comparison by name: e.g. DataTypeDateTime64::equals() ignores the timezone,
+            /// but replacing `toDateTime64(timestamp, 3)` with a bare column of a different display
+            /// timezone would change the type name in the result header.
+            auto add_column = [&](const String & column_name, const DataTypePtr & requested_type, auto && make_cast)
+            {
+                auto physical_column = data_table_columns.tryGetPhysical(column_name);
+                if (physical_column && physical_column->type->getName() == requested_type->getName())
+                {
+                    select_list.push_back(make_intrusive<ASTIdentifier>(column_name));
+                }
+                else
+                {
+                    select_list.push_back(make_cast(make_intrusive<ASTIdentifier>(column_name)));
+                    select_list.back()->setAlias(column_name);
+                }
+            };
 
-            select_list.push_back(
-                timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), timestamp_data_type));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+            add_column(TimeSeriesColumnNames::ID, id_data_type, [&](ASTPtr && ast)
+            {
+                return makeASTFunction("CAST", std::move(ast), make_intrusive<ASTLiteral>(id_data_type->getName()));
+            });
 
-            select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+            add_column(TimeSeriesColumnNames::Timestamp, timestamp_data_type, [&](ASTPtr && ast)
+            {
+                return timeSeriesTimestampASTCast(std::move(ast), timestamp_data_type);
+            });
+
+            add_column(TimeSeriesColumnNames::Value, scalar_data_type, [&](ASTPtr && ast)
+            {
+                return timeSeriesScalarASTCast(std::move(ast), scalar_data_type);
+            });
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -392,7 +433,7 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// WHERE (id IN <select_query_from_tags_table>) AND (timestamp >= min_time) AND (timestamp <= max_time)
+        /// WHERE (timestamp >= min_time) AND (timestamp <= max_time) AND (id IN <select_query_from_tags_table>)
         ///
         /// where <select_query_from_tags_table> is roughly:
         ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
@@ -461,8 +502,11 @@ void StorageTimeSeriesSelector::readImpl(
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
+    auto samples_table_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, context)->getInMemoryMetadataPtr(context, false);
+
     ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
         samples_table_id,
+        samples_table_metadata->getColumns(),
         select_query_from_tags_table,
         config.min_time,
         config.max_time,
