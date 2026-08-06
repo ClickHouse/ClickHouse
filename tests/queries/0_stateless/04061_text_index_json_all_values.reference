@@ -125,7 +125,7 @@ Condition: (mode: All; tokens: ["deep", "one", "value"])
 Parts: 1/3
 Granules: 1/3
 -- Extra MinMax index stat in the plan
-10
+1	1
 SELECT id FROM tab WHERE data.key1 = 'the quick brown fox' ORDER BY id
 0
 Description: text GRANULARITY 100000000

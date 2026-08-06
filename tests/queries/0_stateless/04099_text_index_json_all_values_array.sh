@@ -21,13 +21,14 @@ function run_query()
     $MY_CLICKHOUSE_CLIENT --query "
         WITH
             assumeNotNull((SELECT explain FROM (EXPLAIN indexes = 1, json = 1 $query))) AS plan_json,
-            assumeNotNull(extract(plan_json, '(\{[^{}]*\"Name\": \"json_idx\".*?\n *\})')) AS idx
+            extract(plan_json, '(\{[^{}]*\"Name\": \"json_idx\".*?\n *\})') AS idx
         SELECT arrayJoin([
             'Description: ' || JSONExtractString(idx, 'Description'),
             'Condition: '   || JSONExtractString(idx, 'Condition'),
             'Parts: '       || toString(JSONExtractUInt(idx, 'Selected Parts'))    || '/' || toString(JSONExtractUInt(idx, 'Initial Parts')),
             'Granules: '    || toString(JSONExtractUInt(idx, 'Selected Granules')) || '/' || toString(JSONExtractUInt(idx, 'Initial Granules'))
-        ]);
+        ])
+        WHERE throwIf(idx = '', 'text index json_idx not found in the plan') = 0;
     "
 }
 

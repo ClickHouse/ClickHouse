@@ -23,13 +23,14 @@ function run_query()
     $MY_CLICKHOUSE_CLIENT --query "
         WITH
             assumeNotNull((SELECT explain FROM (EXPLAIN indexes = 1, json = 1 $query))) AS plan_json,
-            assumeNotNull(extract(plan_json, '(\{[^{}]*\"Name\": \"json_idx\".*?\n *\})')) AS idx
+            extract(plan_json, '(\{[^{}]*\"Name\": \"json_idx\".*?\n *\})') AS idx
         SELECT arrayJoin([
             'Description: ' || JSONExtractString(idx, 'Description'),
             'Condition: '   || JSONExtractString(idx, 'Condition'),
             'Parts: '       || toString(JSONExtractUInt(idx, 'Selected Parts'))    || '/' || toString(JSONExtractUInt(idx, 'Initial Parts')),
             'Granules: '    || toString(JSONExtractUInt(idx, 'Selected Granules')) || '/' || toString(JSONExtractUInt(idx, 'Initial Granules'))
-        ]);
+        ])
+        WHERE throwIf(idx = '', 'text index json_idx not found in the plan') = 0;
     "
 }
 
@@ -142,10 +143,10 @@ $MY_CLICKHOUSE_CLIENT --query "
     INSERT INTO tab VALUES (3, '{\"key1\": \"nothing special\", \"num\": 100}');
 "
 
-# Two stats precede the text index here, three lines each, so a positional slice reads
-# the wrong window.
+# The extra stat must be present for the rows below to mean anything. Count the two stats
+# by their own names, not the plan's lines, which any newly emitted field would also change.
 $MY_CLICKHOUSE_CLIENT --query "
-    SELECT countIf(explain LIKE '%Condition:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%')
+    SELECT countIf(trimLeft(explain) = 'Min-Max'), countIf(trimLeft(explain) = 'Name: json_idx')
     FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE data.key1 = 'the quick brown fox' ORDER BY id);
 "
 
