@@ -2,6 +2,9 @@
 
 #include <Common/thread_local_rng.h>
 
+#include <algorithm>
+#include <limits>
+
 namespace DB
 {
 
@@ -70,7 +73,17 @@ std::chrono::sys_seconds RefreshSchedule::advance(std::chrono::sys_seconds last_
 
 std::chrono::system_clock::time_point RefreshSchedule::addRandomSpread(std::chrono::system_clock::time_point when, Int64 randomness) const
 {
-    return when + std::chrono::milliseconds(Int64(static_cast<double>(spread.minSeconds()) * 1e3 / 2 * static_cast<double>(randomness) / 1e9));
+    /// `spread.minSeconds()` and `randomness` are both unbounded, so every intermediate must be
+    /// wide enough for their product. Dividing by 2000000 before scaling back up by 1000 keeps the
+    /// product inside Int128; scaling by 1000 first would not.
+    const Int128 spread_ms = Int128(spread.minSeconds()) * randomness / 2000000;
+    const Int128 res = Int128(when.time_since_epoch().count()) + spread_ms * 1000;
+
+    /// Saturate strictly inside the range: `time_point::max()` means "no refresh scheduled".
+    constexpr Int128 hi = Int128(std::numeric_limits<Int64>::max()) - 1;
+    constexpr Int128 lo = Int128(std::numeric_limits<Int64>::min()) + 1;
+    return std::chrono::system_clock::time_point(
+        std::chrono::system_clock::duration(Int64(std::clamp(res, lo, hi))));
 }
 
 }
