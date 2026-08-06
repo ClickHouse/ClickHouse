@@ -28,11 +28,13 @@ def query_log_has_finish_for_query_id_sql(query_id):
     )
 
 
-def query_log_has_finish_with_written_rows_sql(query_id):
+def query_log_has_finish_with_written_rows_sql(query_id, initial_query_id):
     return (
         f"SELECT count() > 0 FROM system.query_log "
         f"WHERE type = 'QueryFinish' AND query_id = '{query_id}' "
-        f"AND written_rows > 0 AND written_bytes > 0"
+        f"AND written_rows > 0 AND written_bytes > 0 "
+        f"AND is_internal = 1 AND is_initial_query = 0 "
+        f"AND initial_query_id = '{initial_query_id}'"
     )
 
 
@@ -49,13 +51,13 @@ def assert_query_log_has_finish_for_query_id(query_id, retry_count=30, sleep_tim
 
 
 def assert_query_log_has_finish_with_written_rows(
-    query_id, retry_count=30, sleep_time=1
+    query_id, initial_query_id, retry_count=30, sleep_time=1
 ):
     """Assert the remote write produced a correlated QueryFinish row with written rows/bytes."""
     node.query("SYSTEM FLUSH LOGS query_log")
     assert_eq_with_retry(
         node,
-        query_log_has_finish_with_written_rows_sql(query_id),
+        query_log_has_finish_with_written_rows_sql(query_id, initial_query_id),
         "1\n",
         retry_count=retry_count,
         sleep_time=sleep_time,
@@ -137,8 +139,8 @@ def test_remote_write_appears_in_query_log_with_written_rows():
         headers={"X-ClickHouse-Query-Id": query_id},
     )
 
-    assert_query_log_has_finish_with_written_rows(f"{query_id}:Tags")
-    assert_query_log_has_finish_with_written_rows(f"{query_id}:Samples")
+    assert_query_log_has_finish_with_written_rows(f"{query_id}:Tags", query_id)
+    assert_query_log_has_finish_with_written_rows(f"{query_id}:Samples", query_id)
 
 
 def test_remote_write_metadata_appears_in_query_log_with_written_rows():
@@ -167,7 +169,7 @@ def test_remote_write_metadata_appears_in_query_log_with_written_rows():
         headers={"X-ClickHouse-Query-Id": query_id},
     )
 
-    assert_query_log_has_finish_with_written_rows(f"{query_id}:Metrics")
+    assert_query_log_has_finish_with_written_rows(f"{query_id}:Metrics", query_id)
 
 
 def test_query_range_api_appears_in_query_log_with_read_rows():

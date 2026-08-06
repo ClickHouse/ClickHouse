@@ -38,6 +38,8 @@
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <base/EnumReflection.h>
 
 #include <algorithm>
@@ -58,6 +60,7 @@ namespace TimeSeriesSetting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -597,11 +600,19 @@ namespace
                 insert_query->columns = columns_ast;
 
                 ContextMutablePtr insert_context = Context::createCopy(context);
+                insert_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
                 insert_context->setCurrentQueryId(fmt::format("{}:{}", context->getCurrentQueryId(), table_kind));
 
                 LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), insert_query->formatForLogging());
 
-                auto [ast, io] = executeQuery(insert_query->formatWithSecretsOneLine(), insert_context, {}, QueryProcessingStage::Complete);
+                auto outer_thread_group = getCurrentThreadGroup();
+                if (!outer_thread_group)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert to target tables: current thread is not attached to a thread group");
+
+                auto insert_thread_group = std::make_shared<ThreadGroup>(insert_context, outer_thread_group);
+                ThreadGroupSwitcher thread_group_switcher(insert_thread_group, ThreadName::PROMETHEUS_HANDLER, /*allow_existing_group=*/true);
+
+                auto [ast, io] = executeQuery(insert_query->formatWithSecretsOneLine(), insert_context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete);
 
                 try
                 {
