@@ -26,10 +26,11 @@ DROP ROW POLICY IF EXISTS p04741_lc ON t04741_lc_buf;
 DROP ROW POLICY IF EXISTS p04741_bare ON t04741_bare_buf;
 DROP ROW POLICY IF EXISTS p04741_nul ON t04741_nul_buf;
 
--- Every arm whose two filters meet the same converted column holds a row both filters accept, a row
--- only its row policy rejects and a row only its PREWHERE rejects, so neither filter can go missing
--- unnoticed. Arms J and I are the deliberate exceptions, each showing a filter on another column is
--- unaffected: J has no policy-only-rejected row and I has no PREWHERE-only-rejected row.
+-- Arms A, F, W, W2, Z, Y and D each hold a row both filters accept, a row only its row policy
+-- rejects and a row only its PREWHERE rejects, so neither filter can go missing unnoticed. J and I
+-- are the deliberate exceptions, each showing a filter on another column is unaffected: J has no
+-- policy-only-rejected row and I has no PREWHERE-only-rejected row. N pairs the PREWHERE with an
+-- additional_table_filters entry instead of a row policy, and B, G and C are single-filter controls.
 CREATE TABLE t04741_map_dst (k UInt8, m Array(Tuple(String, UInt64))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t04741_map_dst VALUES (1, [('a', 1), ('b', 2)]), (2, [('b', 2)]), (3, [('a', 1)]);
 CREATE TABLE t04741_map_buf (k UInt8, m Map(String, UInt64))
