@@ -66,7 +66,6 @@
             "resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
             "resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
             "resources/support-center/knowledge-base/configuration-settings/configure-a-user-setting",
-            "resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
             "resources/support-center/knowledge-base/configuration-settings/ignoring-incorrect-settings",
             "resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases"
           ]
@@ -157,6 +156,7 @@
             "resources/support-center/knowledge-base/security/common-rbac-queries",
             "resources/support-center/knowledge-base/security/remove-default-user",
             "resources/support-center/knowledge-base/security/row-column-policy",
+            "resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
             "resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles"
           ]
         },

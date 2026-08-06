@@ -75,6 +75,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
+extern const int UNSUPPORTED_METHOD;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -119,13 +120,13 @@ using namespace DB;
 /// reporting metrics, not deletion safety.
 FileCategory inspectFileCategory(const String & relative_path)
 {
-    if (relative_path.find("/metadata/") != String::npos || relative_path.starts_with("metadata/"))
+    if (relative_path.contains("/metadata/") || relative_path.starts_with("metadata/"))
     {
-        if (relative_path.find(".metadata.json") != String::npos)
+        if (relative_path.contains(".metadata.json"))
             return FileCategory::METADATA_JSON;
         if (relative_path.ends_with(".avro"))
         {
-            if (relative_path.find("snap-") != String::npos)
+            if (relative_path.contains("snap-"))
                 return FileCategory::MANIFEST_LIST;
             return FileCategory::MANIFEST_FILE;
         }
@@ -133,10 +134,10 @@ FileCategory inspectFileCategory(const String & relative_path)
             return FileCategory::STATISTICS_FILE;
     }
 
-    if (relative_path.find("eq-del") != String::npos)
+    if (relative_path.contains("eq-del"))
         return FileCategory::EQUALITY_DELETE_FILE;
 
-    if (relative_path.find("-deletes.parquet") != String::npos || relative_path.find("-delete-") != String::npos)
+    if (relative_path.contains("-deletes.parquet") || relative_path.contains("-delete-"))
         return FileCategory::POSITION_DELETE_FILE;
 
     return FileCategory::DATA_FILE;
@@ -346,6 +347,16 @@ bool writeMetadataFileAndVersionHint(
             /* write-if-none-match */ "*",
             "",
             metadata_file_info.compression_method);
+    }
+    catch (const Exception & e)
+    {
+        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
+        /// reporting a lost race would make the caller retry an operation that can never succeed.
+        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
+        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+            throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
     }
     catch (...)
     {
@@ -587,7 +598,9 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
                 field->set(Iceberg::f_id, ++iter_fields);
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
-                auto child_type = getIcebergType(element->getNormalizedType(), iter);
+                /// Recurse on the element itself: `getNormalizedType` would rename a nested
+                /// tuple's elements to "1", "2", ... (`DataTypeTuple::getNormalizedType`).
+                auto child_type = getIcebergType(element, iter);
                 field->set(Iceberg::f_required, child_type.second);
                 field->set(Iceberg::f_type, child_type.first);
                 fields->add(field);
@@ -1269,7 +1282,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-        if (explicit_metadata_path.find('\0') != String::npos)
+        if (explicit_metadata_path.contains('\0'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata file path contains a null byte");
         LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
         std::filesystem::path p(explicit_metadata_path);
