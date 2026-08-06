@@ -132,11 +132,36 @@ SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 2;
 
 -- The name of a recursive common table expression in the predicate is not the name of a table, so it
 -- does not hide a table of the same name in the assignments, which is resolved in the updated database.
+-- The offset makes the correct value differ from the value the row already has, so the read-back
+-- also fails if the statement does not update the row at all.
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu
-    SET v = (SELECT max(id) FROM t_lwu_src)
+    SET v = (SELECT max(id) FROM t_lwu_src) + 20
     WHERE id IN (WITH RECURSIVE t_lwu_src AS (SELECT 3 AS id UNION ALL SELECT id + 1 FROM t_lwu_src WHERE id < 3) SELECT id FROM t_lwu_src)
     SETTINGS enable_analyzer = 1;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 3;
+
+-- The body of a SQL user-defined function is inlined before the database is filled in, so an
+-- unqualified table in the body is resolved in the database of the updated table as well.
+DROP FUNCTION IF EXISTS 04693_udf_lwu_src;
+DROP FUNCTION IF EXISTS 04693_udf_lwu_in_src;
+CREATE FUNCTION 04693_udf_lwu_src AS () -> (SELECT max(id) FROM t_lwu_src);
+CREATE FUNCTION 04693_udf_lwu_in_src AS (x) -> (x IN (SELECT id FROM t_lwu_src));
+
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu
+    SET v = 7 WHERE id IN (SELECT id FROM t_lwu_src WHERE id = 04693_udf_lwu_src());
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 7;
+
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu
+    SET v = 04693_udf_lwu_src() + 10 WHERE id = 1;
+SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 1;
+
+-- The function call is the whole predicate here, so it is the expression that the inlining replaces.
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu
+    SET v = 8 WHERE 04693_udf_lwu_in_src(id);
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 8;
+
+DROP FUNCTION 04693_udf_lwu_src;
+DROP FUNCTION 04693_udf_lwu_in_src;
 
 DROP TABLE t_lwu_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

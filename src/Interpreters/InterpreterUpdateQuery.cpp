@@ -3,6 +3,8 @@
 
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
@@ -83,6 +85,13 @@ BlockIO InterpreterUpdateQuery::execute()
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them");
 
     FunctionNameNormalizer::visit(query_ptr.get());
+
+    /// Inline the bodies of SQL user-defined functions before the database is filled in, otherwise an
+    /// unqualified table inside a body is resolved later, in a context whose current database is not
+    /// the database of the updated table.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
     /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
