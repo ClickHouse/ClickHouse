@@ -143,13 +143,13 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
             if (!node_dag || !argument_dag)
                 return std::nullopt;
 
-            JSONAllValuesMatchKind match_kind;
-            if (node_dag->result_type->equals(*argument_dag->result_type))
-                match_kind = JSONAllValuesMatchKind::IdentityCast;
-            else if (node_dag->result_type->getTypeId() == TypeIndex::String)
-                match_kind = JSONAllValuesMatchKind::StringCast;
-            else
+            const bool is_identity_cast = node_dag->result_type->equals(*argument_dag->result_type);
+            if (!is_identity_cast && node_dag->result_type->getTypeId() != TypeIndex::String)
                 return std::nullopt;
+
+            const auto match_kind = is_identity_cast
+                ? JSONAllValuesMatchKind::IdentityCast
+                : JSONAllValuesMatchKind::StringCast;
 
             if (!isJSONAllValuesMatchSafe(node, match_kind))
                 return std::nullopt;
