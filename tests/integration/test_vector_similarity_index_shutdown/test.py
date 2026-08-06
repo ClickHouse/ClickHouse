@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import time
+import uuid
 
 import pytest
 
@@ -101,12 +102,45 @@ def start_background_merge_and_wait_until_running(table):
     )
 
 
+def assert_slow_index_build_is_still_in_flight(table):
+    # Everything below re-asserts, immediately before the shutdown, that the state this arm
+    # needs actually holds. Without it the arm passes for the wrong reason whenever the
+    # failpoint is ineffective - e.g. a build without USE_LIBFIU, where FailPoint.h expands
+    # fiu_do_on to nothing and the whole injection machinery is compiled out - or whenever
+    # the merge happened to finish early: the shutdown is then fast and the assertion holds
+    # having never reached the interruption point under test.
+    assert (
+        node.query(
+            "SELECT count() FROM system.fail_points "
+            "WHERE name = 'vector_similarity_index_slow_add' AND enabled"
+        ).strip()
+        == "1"
+    ), (
+        "failpoint vector_similarity_index_slow_add is not enabled: either the failpoint "
+        "was never registered (a build without USE_LIBFIU) or SYSTEM ENABLE FAILPOINT did "
+        "not take effect, so this arm cannot exercise the interruption point"
+    )
+    assert (
+        node.query(
+            f"SELECT count() FROM system.merges WHERE table = '{table}'"
+        ).strip()
+        != "0"
+    ), "the background merge is no longer running: nothing is left to interrupt"
+    assert (
+        node.query(
+            f"SELECT count() FROM system.parts WHERE table = '{table}' AND active"
+        ).strip()
+        == "2"
+    ), "the merge already completed: the failpoint did not slow the index build"
+
+
 def test_shutdown_interrupts_vector_index_build(start_cluster):
     try:
         create_table_and_parts("vec_shutdown")
         node.query("SYSTEM ENABLE FAILPOINT vector_similarity_index_slow_add")
         start_background_merge_and_wait_until_running("vec_shutdown")
         time.sleep(3)
+        assert_slow_index_build_is_still_in_flight("vec_shutdown")
 
         started_at = time.time()
         assert node.stop_clickhouse(stop_wait_sec=SHUTDOWN_BOUND_SEC), (
@@ -154,8 +188,13 @@ def test_uncancelled_merge_still_builds_a_usable_index(start_cluster):
         "SELECT arraySort(groupArray(id)) FROM (SELECT id FROM vec_healthy "
         "ORDER BY L2Distance(vec, [500.3, 501.3, 502.3, 503.3]) LIMIT 3)"
     )
+    # Fresh ids per run: pytest --count re-runs this function against the same server, so a
+    # fixed id would read the previous iteration's row out of system.query_log.
+    indexed_query_id = f"vec_healthy_indexed_{uuid.uuid4().hex}"
+    brute_force_query_id = f"vec_healthy_brute_{uuid.uuid4().hex}"
     with_index = node.query(
         query,
+        query_id=indexed_query_id,
         settings={
             "allow_experimental_vector_similarity_index": 1,
             "use_skip_indexes": 1,
@@ -163,10 +202,91 @@ def test_uncancelled_merge_still_builds_a_usable_index(start_cluster):
     )
     brute_force = node.query(
         query,
+        query_id=brute_force_query_id,
         settings={
             "allow_experimental_vector_similarity_index": 1,
             "use_skip_indexes": 0,
         },
     )
     assert with_index == brute_force
+    # Equality alone does not show the index was used: a vector index only prunes granules,
+    # so a query that never consulted it returns exactly the same rows. USearchSearchCount is
+    # incremented once per real index search (MergeTreeIndexVectorSimilarity.cpp), and the
+    # PAIR is the discriminator - > 0 alone cannot separate a used index from a counter leaked
+    # by another query, and == 0 alone cannot separate a pruned scan from a broken query.
+    # Precedent: 02354_vector_search_distributed_index_analysis,
+    # 02354_vector_search_concurrent_readers.
+    node.query("SYSTEM FLUSH LOGS")
+    searches = node.query(
+        "SELECT query_id, ProfileEvents['USearchSearchCount'] FROM system.query_log "
+        f"WHERE query_id IN ('{indexed_query_id}', '{brute_force_query_id}') "
+        "AND type = 'QueryFinish' ORDER BY query_id"
+    )
+    counts = dict(line.split("\t") for line in searches.strip().split("\n"))
+    assert int(counts[brute_force_query_id]) == 0, (
+        f"the brute-force control searched the vector index {counts[brute_force_query_id]} "
+        "times, so it is not a control"
+    )
+    assert int(counts[indexed_query_id]) > 0, (
+        "the indexed query performed no vector index search, so the equality above says "
+        "nothing about the merged index"
+    )
     node.query("DROP TABLE vec_healthy SYNC")
+
+
+def test_shutdown_still_flushes_buffer_table_into_indexed_destination(start_cluster):
+    # The interruption point must not fire on the writes that shutdown itself performs.
+    # ContextSharedPart::shutdown sets the shutdown flag as its FIRST statement and only
+    # afterwards flushes Buffer tables (via DatabaseCatalog::shutdown ->
+    # StorageBuffer::flushAndPrepareForShutdown -> optimize -> writeBlockToDestination),
+    # which inserts into the destination MergeTree and therefore builds its vector
+    # similarity index. That flush is the last chance to persist the buffered rows -
+    # flushBuffer returns the block to the in-memory buffer and rethrows on the premise
+    # that a later write will retry, flushAndPrepareForShutdown swallows the exception,
+    # and StorageBuffer has no shutdown() override - so an abort here loses the rows
+    # silently. No failpoint: the point is that an ordinary flush must not be aborted.
+    assert (
+        node.query(
+            "SELECT count() FROM system.fail_points "
+            "WHERE name = 'vector_similarity_index_slow_add' AND enabled"
+        ).strip()
+        == "0"
+    ), "the failpoint must be disabled here: this arm measures an ordinary, fast flush"
+    node.query("DROP TABLE IF EXISTS vec_buf SYNC")
+    node.query("DROP TABLE IF EXISTS vec_buf_dst SYNC")
+    node.query(
+        f"""
+        CREATE TABLE vec_buf_dst (id UInt64, vec Array(Float32),
+                                  INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', {DIMENSIONS}))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0
+        """,
+        settings={"allow_experimental_vector_similarity_index": 1},
+    )
+    # Every threshold is far above what this arm writes, so nothing flushes before the
+    # shutdown does. max_rows/max_bytes must also exceed the inserted block, otherwise
+    # BufferSink::consume skips the buffer and writes straight through.
+    node.query(
+        "CREATE TABLE vec_buf AS vec_buf_dst "
+        "ENGINE = Buffer(currentDatabase(), vec_buf_dst, 1, 3600, 3600, "
+        "1000000, 1000000, 100000000, 1000000000)"
+    )
+    node.query(
+        f"INSERT INTO vec_buf SELECT number AS id, "
+        f"arrayMap(x -> toFloat32(id + x), range({DIMENSIONS})) FROM numbers({ROWS})"
+    )
+    assert node.query("SELECT count() FROM vec_buf_dst").strip() == "0", (
+        "the rows reached the destination before the shutdown, so this arm would pass "
+        "whether or not the flush is aborted"
+    )
+    assert node.query("SELECT count() FROM vec_buf").strip() == str(ROWS)
+
+    node.restart_clickhouse()
+
+    # The oracle: with an over-broad interruption point this reads 0.
+    assert node.query("SELECT count() FROM vec_buf_dst").strip() == str(ROWS), (
+        "the shutdown flush of the Buffer table was aborted, so the buffered rows were "
+        "lost instead of being persisted into the indexed destination table"
+    )
+    node.query("DROP TABLE vec_buf SYNC")
+    node.query("DROP TABLE vec_buf_dst SYNC")

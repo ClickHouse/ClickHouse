@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
+#include <base/sleep.h>
 
 #include <cmath>
 #include <ranges>
@@ -369,6 +370,13 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// Hoisted out of the per-row lambda below: resolving the global context per row would be measurable on this hot loop.
     ContextPtr global_context = Context::getGlobalContextInstance();
 
+    /// Resolved once, on the calling thread: the build pool workers inherit this thread's group.
+    const bool is_background_operation = []
+    {
+        auto query_context = CurrentThread::tryGetQueryContext();
+        return query_context && query_context->isBackgroundContext();
+    }();
+
     /// Reserving space is mandatory
     size_t max_thread_pool_size = global_context->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
     if (max_thread_pool_size == 0)
@@ -391,10 +399,10 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             if (auto query_status = query_context->getProcessListElementSafe())
                 query_status->throwIfKilled();
 
-
-        /// The check above only covers queries. A background merge or mutation has no process list element,
-        /// so it needs the global shutdown flag to reach an interruption point.
-        if (global_context->isShutdownCalled())
+        /// A background merge or mutation has no process list element, so the check above cannot reach it.
+        /// Background only: shutdown flushes the async insert queue and Buffer tables after setting the
+        /// flag, and those writes must still be allowed to finish.
+        if (is_background_operation && global_context->isShutdownCalled())
             throw Exception(ErrorCodes::ABORTED, "Cancelled building vector similarity index because the server is shutting down");
 
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
