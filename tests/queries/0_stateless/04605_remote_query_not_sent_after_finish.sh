@@ -40,13 +40,15 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 # The local source alone satisfies the LIMIT, so no remote read should ever have been started.
 # A non-zero count means a query was sent for an executor that had already been marked finished.
-# `remote()` also issues a `DESC TABLE` to infer the structure; that one is unconditional and is
-# not a read, hence the filter on `SELECT`.
+# Scoping is by `initial_query_id`, which is unique to this run; `databases` additionally keeps the
+# lookup within this test's own database. `current_database` is not usable here - a remote query
+# runs with `default` as its current database - and `databases` is empty for the `DESC TABLE` that
+# `remote()` issues to infer the structure, so that one does not count either.
 $CLICKHOUSE_CLIENT -q "
     SELECT count() FROM system.query_log
     WHERE initial_query_id = '$query_id' AND query_id != initial_query_id
       AND type = 'QueryStart' AND event_date >= yesterday()
-      AND query LIKE 'SELECT%'
+      AND has(databases, currentDatabase())
 "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_04605 SYNC"
