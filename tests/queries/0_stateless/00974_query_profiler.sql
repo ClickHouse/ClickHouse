@@ -11,7 +11,12 @@ SET query_profiler_cpu_time_period_ns = 0;
 -- samples can all be lost, leaving 0 rows in `system.trace_log`. 10ms gives ~50 chances.
 SET query_profiler_real_time_period_ns = 1e7;
 SET log_queries = 1;
-SELECT sleep(0.5), ignore('test real time query profiler');
+-- Sleep in 16 threads at once (one single-row block per thread), not in one. Samples are sent to the
+-- trace pipe with `WriteBufferFromFileDescriptorDiscardOnFailure`: when a concurrent sample-heavy query
+-- (e.g. another instance of this test in the flaky check) keeps the pipe full, samples are silently
+-- dropped, and a single sleeping thread produces so few of them that all can be lost. 16 threads give
+-- an order of magnitude more chances, and also survive one thread failing to create its profiler timer.
+SELECT sum(sleep(0.5)), ignore('test real time query profiler') FROM numbers_mt(16) SETTINGS max_block_size = 1, max_threads = 16;
 SET log_queries = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
