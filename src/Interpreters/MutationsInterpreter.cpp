@@ -1308,16 +1308,20 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
-                        /// The projection may sort by a subcolumn of the altered column (e.g.
-                        /// `ORDER BY t.a` while `ALTER ... MODIFY COLUMN t ...`). Resolve the primary
-                        /// key's required columns to their top-level columns, otherwise the projection
-                        /// (including its own primary index, which stores the sort key as raw bytes)
-                        /// is left stale (hardlinked unchanged) on wide parts and mis-prunes granules.
+                        /// Rebuild when the altered column feeds the projection's key or WHERE clause
+                        /// (which decide the stored rows/groups); a type change can then invalidate the
+                        /// stored data and the raw-byte primary index, left stale (hardlinked) on wide
+                        /// parts. SELECT outputs are excluded: they are read back with an on-the-fly cast.
                         const auto & primary_key = projection.metadata->getPrimaryKey();
-                        auto pk_columns = primary_key.expression_list_ast
+                        auto affecting_columns = primary_key.expression_list_ast
                             ? getRequiredColumnsWithSubcolumnsReplaced(primary_key.expression_list_ast, all_columns, context)
                             : projection.metadata->getPrimaryKeyColumns();
-                        if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                        if (projection.where_clause_ast)
+                        {
+                            auto where_columns = getRequiredColumnsWithSubcolumnsReplaced(projection.where_clause_ast, all_columns, context);
+                            affecting_columns.insert(affecting_columns.end(), where_columns.begin(), where_columns.end());
+                        }
+                        if (std::ranges::find(affecting_columns, command.column_name) != affecting_columns.end())
                         {
                             for (const auto & col : projection.required_columns)
                                 dependencies.emplace(col, ColumnDependency::PROJECTION);

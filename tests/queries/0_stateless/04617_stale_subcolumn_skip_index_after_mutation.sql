@@ -96,3 +96,22 @@ ALTER TABLE t_stale_ttl_update UPDATE t = (now() - INTERVAL 1 YEAR, t.b) WHERE 1
 SELECT count() FROM t_stale_ttl_update;
 
 DROP TABLE t_stale_ttl_update;
+
+-- Case 7: an aggregate projection with a WHERE on a column must be rebuilt when ALTER MODIFY COLUMN
+-- changes that column's type in a way that flips the filter. The projection stores a subset/aggregate
+-- decided at build time; without a rebuild the stale aggregate is served (wrong result).
+DROP TABLE IF EXISTS t_stale_projection_where;
+CREATE TABLE t_stale_projection_where (id UInt64, x Int64, PROJECTION p (SELECT sum(id) WHERE x < 0))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+-- All x are > Int32 max and positive, so WHERE x < 0 matches nothing at build time (stored sum = 0).
+INSERT INTO t_stale_projection_where SELECT number, toInt64(3000000000) + number FROM numbers(100);
+
+-- Int64 -> Int32 wraps every value negative, so WHERE x < 0 now matches all rows.
+ALTER TABLE t_stale_projection_where MODIFY COLUMN x Int32 SETTINGS mutations_sync = 2;
+
+SELECT sum(id) FROM t_stale_projection_where WHERE x < 0 SETTINGS optimize_use_projections = 1;
+SELECT sum(id) FROM t_stale_projection_where WHERE x < 0 SETTINGS optimize_use_projections = 0;
+
+DROP TABLE t_stale_projection_where;
