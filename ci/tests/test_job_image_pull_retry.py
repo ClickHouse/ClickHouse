@@ -147,7 +147,8 @@ def _drive_run(monkeypatch, tmp_path, *, image_present, pull_rc=0, retried_on=""
         calls.append(("run", command, kwargs))
         if command.startswith("timeout") and "docker pull" in command:
             if retried_on and kwargs.get("on_retry"):
-                kwargs["on_retry"](retried_on, 1, kwargs.get("retries", 1))
+                # Same arguments the real loop passes on its first retry.
+                kwargs["on_retry"](retried_on, 1, kwargs.get("retries", 1) - 1)
             # Honour the real Shell.run contract: a failed command raises when
             # strict=True and merely returns non-zero otherwise. Without this the
             # fail-open arm would stub out the very mechanism it exists to pin.
@@ -517,6 +518,25 @@ def test_on_retry_fires_once_per_retry_and_only_on_matched_errors(tmp_path):
     assert _attempts(counter) == 3
     # Two retries were issued to reach the third attempt.
     assert seen == ["connection reset by peer"] * 2
+
+    # And when every attempt fails, the last one matches the allowlist too but nothing
+    # is retried after it, so the count must stay at the retries actually issued --
+    # otherwise the warning would claim a retry that never happened.
+    terminal = []
+    terminal_dir = tmp_path / "terminal"
+    terminal_dir.mkdir()
+    cmd3, counter3 = _counting_command(
+        terminal_dir, [], [PRODUCTION_RESET], exit_code=1
+    )
+    Shell.run(
+        cmd3,
+        retries=_IMAGE_PULL_RETRIES,
+        retry_errors=_IMAGE_PULL_RETRY_ERRORS,
+        on_retry=lambda matched, attempt, attempts: terminal.append(attempt),
+        verbose=False,
+    )
+    assert _attempts(counter3) == _IMAGE_PULL_RETRIES
+    assert terminal == list(range(1, _IMAGE_PULL_RETRIES))
 
     permanent = []
     permanent_dir = tmp_path / "permanent"

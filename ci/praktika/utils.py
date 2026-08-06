@@ -433,12 +433,12 @@ class Shell:
                     print(
                         f"Retryable error [{matched}] found, retry {retry+1}/{retries}"
                     )
-                if on_retry:
-                    # Reached only where a retry is actually about to be issued, so a
-                    # caller can surface it. Never lets a reporting failure fail the
-                    # command the retry is rescuing.
+                if on_retry and retry < retries - 1:
+                    # Only where another attempt actually follows: the last iteration
+                    # matches too, but nothing is retried after it. Never lets a
+                    # reporting failure fail the command the retry is rescuing.
                     try:
-                        on_retry(matched, retry + 1, retries)
+                        on_retry(matched, retry + 1, retries - 1)
                     except Exception as e:  # noqa: BLE001
                         print(f"WARNING: on_retry callback failed, ex [{e}]")
             except Exception as e:
