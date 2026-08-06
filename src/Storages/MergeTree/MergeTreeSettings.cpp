@@ -1322,6 +1322,15 @@ they are still applied locally when parts are merged. Enable
 `always_fetch_merged_part` as well to also offload merges (including the
 application of patch parts) to other replicas.
 
+Because this replica does not execute mutations, and mutation failure
+status is local to each replica, a synchronous mutation
+(`mutations_sync` = 1 or 2) issued on this replica cannot observe
+mutation failures that happen on the replicas executing it: the wait
+continues until the mutated parts are fetched, the query is cancelled or
+times out, or the mutation is killed with `KILL MUTATION`. To get
+failure reporting, issue synchronous mutations on a replica that
+executes them.
+
 Possible values:
 - true, false
 )", 0) \

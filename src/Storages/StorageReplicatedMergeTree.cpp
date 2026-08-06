@@ -207,6 +207,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsBool always_fetch_mutated_part;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool table_readonly;
@@ -740,6 +741,21 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 {
     if (replicas.empty())
         return;
+
+    /// Error detection below relies on the local replica executing the mutation: if a mutation fails,
+    /// it fails on every replica that executes it, so the local in-memory failure status is enough.
+    /// A replica with `always_fetch_mutated_part` enabled does not execute mutations, and per-replica
+    /// failure status is not replicated, so failures on other replicas cannot be observed here:
+    /// the wait continues until the mutated parts are fetched, the query is cancelled or times out,
+    /// or the mutation is killed with `KILL MUTATION`.
+    if ((*getSettings())[MergeTreeSetting::always_fetch_mutated_part])
+        LOG_WARNING(
+            log,
+            "The 'always_fetch_mutated_part' setting is enabled on this replica, so mutations are not executed locally, "
+            "and failures of mutation {} on other replicas cannot be observed here. If the mutation cannot succeed, "
+            "the wait will not detect that: cancel the query and use KILL MUTATION, or issue synchronous mutations "
+            "on a replica that executes them.",
+            mutation_id);
 
     /// Current replica must always be present in the list as the first element because we use local mutation status
     /// to check for mutation errors. So if it is not there, just add it.
