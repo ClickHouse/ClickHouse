@@ -112,10 +112,14 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     const std::filesystem::path & keeper_path_,
     const String & replica_name_,
     size_t idx_,
-    const LoggerPtr & log_)
+    const LoggerPtr & log_,
+    UInt64 partition_shard_num_,
+    UInt64 shard_count_)
     : keeper_path(keeper_path_)
     , replica_name(replica_name_)
     , idx(idx_)
+    , partition_shard_num(partition_shard_num_)
+    , shard_count(shard_count_)
     , kafka_consumer(kafka_consumer_)
     , keeper(keeper_)
     , log(log_)
@@ -176,6 +180,24 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     {
         LOG_TRACE(log, "Couldn't get list of all topic partitions");
         return CannotPollReason::NoMetadata;
+    }
+
+    /// Filter partitions by affinity: partition_id % shard_count == partition_shard_num - 1.
+    if (shard_count > 0)
+    {
+        const auto total_before = all_topic_partitions.size();
+        std::erase_if(all_topic_partitions, [&](const auto & tp)
+        {
+            return static_cast<UInt64>(tp.partition_id) % shard_count != partition_shard_num - 1;
+        });
+        LOG_TRACE(log, "Partition affinity filter: {} -> {} partitions (partition_shard_num={}, shard_count={})",
+            total_before, all_topic_partitions.size(), partition_shard_num, shard_count);
+
+        if (all_topic_partitions.empty())
+        {
+            LOG_TRACE(log, "No partitions match the affinity filter");
+            return CannotPollReason::NoPartitions;
+        }
     }
 
     const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(all_topic_partitions);
@@ -254,10 +276,45 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
         already_locked_partitions_str.push_back(fmt::format("[{}:{}]", already_locks.topic, already_locks.partition_id));
     LOG_INFO(log, "Already locked topic partitions are [{}]", boost::algorithm::join(already_locked_partitions_str, ", "));
 
-    const auto replicas_count = keeper->getChildren(keeper_path / "replicas").size();
-    LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total", replicas_with_lock.size(), replicas_count);
-    const auto has_replica_without_locks = replicas_with_lock.size() < replicas_count;
-    return {locked_partitions, ActiveReplicasInfo{replicas_count, has_replica_without_locks}};
+    return {locked_partitions, getActiveReplicasInfo(replicas_with_lock)};
+}
+
+KeeperHandlingConsumer::ActiveReplicasInfo
+KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> & replicas_with_lock)
+{
+    const auto replica_names = keeper->getChildren(keeper_path / "replicas");
+
+    /// Fast path: when partition affinity is disabled, all replicas share the same
+    /// layout, so we can count them without reading individual znode data.
+    if (shard_count == 0)
+    {
+        const auto replicas_count = replica_names.size();
+        LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total", replicas_with_lock.size(), replicas_count);
+        return ActiveReplicasInfo{replicas_count, replicas_with_lock.size() < replicas_count};
+    }
+
+    /// Only count replicas with the same shard num (stored as replica_path znode data).
+    const auto my_shard_num = toString(partition_shard_num);
+
+    size_t matching_replica_count = 0;
+    size_t matching_replicas_with_lock = 0;
+    for (const auto & name : replica_names)
+    {
+        String remote_replica_data;
+        if (!keeper->tryGet(keeper_path / "replicas" / name, remote_replica_data))
+            continue;
+
+        if (remote_replica_data != my_shard_num)
+            continue;
+
+        matching_replica_count++;
+        if (replicas_with_lock.contains(name))
+            matching_replicas_with_lock++;
+    }
+
+    LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total (shard_num={})",
+             matching_replicas_with_lock, matching_replica_count, my_shard_num);
+    return ActiveReplicasInfo{matching_replica_count, matching_replicas_with_lock < matching_replica_count};
 }
 
 std::pair<KeeperHandlingConsumer::TopicPartitions, KeeperHandlingConsumer::ActiveReplicasInfo>
