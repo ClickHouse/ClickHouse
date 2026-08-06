@@ -276,9 +276,9 @@ class EnumType : public SQLType
 public:
     const uint32_t size;
     const std::vector<EnumValue> values;
-    EnumType(const uint32_t s, const std::vector<EnumValue> v)
+    EnumType(const uint32_t s, std::vector<EnumValue> v)
         : size(s)
-        , values(v)
+        , values(std::move(v))
     {
     }
 
@@ -711,9 +711,10 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
 }
 
 String appendDecimal(RandomGenerator & rg, bool use_func, uint32_t left, uint32_t right);
-String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
-String strBuildJSONElement(RandomGenerator & rg);
-String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
+String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth, bool fuzz_floating_points);
+String strBuildJSONElement(RandomGenerator & rg, bool fuzz_floating_points);
+String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth, bool fuzz_floating_points);
 String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt);
+EnumType * getColumnEnumType(SQLType * tp);
 
 }

@@ -15,6 +15,11 @@
 -- The result of each variant is folded into one scalar, `cityHash64(count(), sum(cityHash64(...)))`,
 -- so both lost rows and changed rows are detected.
 
+-- `index_granularity` is kept small so partition-minmax pruning stays measurable in the directional
+-- `EXPLAIN ESTIMATE` checks below (a large value would fold each 1200-row partition into one granule and
+-- the `pruning fires` check would go vacuous); it is not 1 because 1-row granules make the many
+-- full-scan oracle subqueries do ~1200 tiny reads per query, which is disproportionately slow on remote storage.
+
 SET optimize_trivial_count_query = 0;
 SET optimize_use_implicit_projections = 0;
 SET use_query_condition_cache = 0;
@@ -23,7 +28,7 @@ SET use_query_condition_cache = 0;
 DROP TABLE IF EXISTS t_pmm_oracle_loaded;
 CREATE TABLE t_pmm_oracle_loaded (event_time UInt32, id UInt32)
 ENGINE = MergeTree PARTITION BY intDiv(event_time, 1000) ORDER BY (id, event_time)
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
+SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
 INSERT INTO t_pmm_oracle_loaded SELECT number % 1200, number % 10 FROM numbers(1200);
 
 DROP VIEW IF EXISTS matrix_loaded;
@@ -81,7 +86,7 @@ DROP TABLE t_pmm_oracle_loaded;
 DROP TABLE IF EXISTS t_pmm_oracle_dropped;
 CREATE TABLE t_pmm_oracle_dropped (event_time UInt32, id UInt32)
 ENGINE = MergeTree PARTITION BY intDiv(event_time, 1000) ORDER BY (id, event_time)
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.01;
+SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.01;
 INSERT INTO t_pmm_oracle_dropped SELECT number % 1200, number % 120 FROM numbers(1200);
 
 DROP VIEW IF EXISTS matrix_dropped;
@@ -139,7 +144,7 @@ DROP TABLE t_pmm_oracle_dropped;
 DROP TABLE IF EXISTS t_pmm_oracle_nullable;
 CREATE TABLE t_pmm_oracle_nullable (event_time UInt32, id Nullable(UInt32))
 ENGINE = MergeTree PARTITION BY intDiv(event_time, 1000) ORDER BY (id, event_time)
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, allow_nullable_key = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.01;
+SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0, allow_nullable_key = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.01;
 INSERT INTO t_pmm_oracle_nullable SELECT number % 1200, if(number % 7 = 0, NULL, number % 120) FROM numbers(1200);
 
 DROP VIEW IF EXISTS matrix_nullable;
@@ -188,7 +193,7 @@ DROP TABLE t_pmm_oracle_nullable;
 DROP TABLE IF EXISTS t_pmm_oracle_reverse;
 CREATE TABLE t_pmm_oracle_reverse (event_time UInt32, id UInt32)
 ENGINE = MergeTree PARTITION BY intDiv(event_time, 1000) ORDER BY (id, event_time DESC)
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, allow_experimental_reverse_key = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
+SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0, allow_experimental_reverse_key = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
 INSERT INTO t_pmm_oracle_reverse SELECT number % 1200, number % 10 FROM numbers(1200);
 
 DROP VIEW IF EXISTS matrix_reverse;

@@ -25,6 +25,8 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     size_t getGroupLength() const { return group_length; }
     size_t getGroupOffset() const { return group_offset; }
     const Names & getColumns() const { return columns; }
