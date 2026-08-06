@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -26,6 +27,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace Setting
+{
+    extern const SettingsBool enable_materialized_cte;
 }
 
 namespace
@@ -185,7 +191,19 @@ void StoragePrometheusQuery::readImpl(
 
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
-    InterpreterSelectQueryAnalyzer interpreter(select_query, context, options, column_names);
+
+    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
+    /// repeatedly (see materializeSharedSubqueries()), and that mark has effect only with the setting
+    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    auto query_context = context;
+    if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
+    {
+        auto context_copy = Context::createCopy(context);
+        context_copy->setSetting("enable_materialized_cte", true);
+        query_context = context_copy;
+    }
+
+    InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
 }
