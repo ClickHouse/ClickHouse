@@ -17,7 +17,7 @@ using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Pushing executor for Chain of processors. Always executed in single thread.
 /// Typical usage is:

@@ -1,5 +1,6 @@
 #pragma once
 #include <queue>
+#include <Common/QueueWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -69,7 +70,7 @@ public:
     bool empty() const { return num_tasks == 0; }
 
 private:
-    using Queue = std::queue<Task *>;
+    using Queue = QueueWithMemoryTracking<Task *>;
     VectorWithMemoryTracking<Queue> queues;
     size_t num_tasks = 0;
     size_t use_queues = 0; // For optimization, to avoid searching for empty queue every time
