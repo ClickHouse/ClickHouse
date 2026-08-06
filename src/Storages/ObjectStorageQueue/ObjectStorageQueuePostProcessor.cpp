@@ -247,11 +247,14 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
 
     std::atomic<size_t> moved_objects = 0;
 
+    successful_objects.resize(objects.size());
+
     try
     {
+        size_t objects_index = 0;
         for (const auto & object_from : objects)
         {
-            task_tracker.add([&]{
+            task_tracker.add([&, objects_index]{
                 try
                 {
                     doWithRetries([&]{
@@ -266,7 +269,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                         object_storage->removeObjectIfExists(object_from);
                     });
 
-                    successful_objects.emplace_back(object_from);
+                    successful_objects[objects_index] = object_from;
 
                     ++moved_objects;
                 }
@@ -280,8 +283,12 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                     );
                 }
             });
+
+            ++objects_index;
         }
         task_tracker.waitAll();
+
+        std::erase_if(successful_objects, [](const StoredObject& object) { object.remote_path.empty(); });
     }
     catch (...)
     {
@@ -293,6 +300,8 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
         );
 
         task_tracker.safeWaitAll();
+
+        std::erase_if(successful_objects, [](const StoredObject& object) { object.remote_path.empty(); });
 
         throw;
     }

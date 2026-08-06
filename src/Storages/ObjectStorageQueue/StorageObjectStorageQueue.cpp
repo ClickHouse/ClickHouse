@@ -1306,13 +1306,11 @@ void StorageObjectStorageQueue::commit(
         collectRemotePaths(successful_objects));
 }
 
-void StorageObjectStorageQueue::commitExclusive(
+std::vector<String> StorageObjectStorageQueue::getFailedPaths(
     const StoredObjects& successful_objects,
-    const StoredObjects& processed_objects,
-    std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-    time_t transaction_start_time) const
+    const StoredObjects& processed_objects)
 {
-    std::vector<String> failed_to_delete_paths;
+    std::vector<String> failed_paths;
 
     UnorderedSetWithMemoryTracking<std::string_view> processed_keys_set;
 
@@ -1322,8 +1320,19 @@ void StorageObjectStorageQueue::commitExclusive(
     for (const auto & object : successful_objects)
         if (!processed_keys_set.contains(object.remote_path))
         {
-            failed_to_delete_paths.push_back(object.remote_path);
+            failed_paths.push_back(object.remote_path);
         }
+
+    return failed_paths;
+}
+
+void StorageObjectStorageQueue::commitExclusive(
+    const StoredObjects& successful_objects,
+    const StoredObjects& processed_objects,
+    std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+    time_t transaction_start_time) const
+{
+    std::vector<String> failed_to_delete_paths = getFailedPaths(successful_objects, processed_objects);
 
     if (!failed_to_delete_paths.empty())
     {

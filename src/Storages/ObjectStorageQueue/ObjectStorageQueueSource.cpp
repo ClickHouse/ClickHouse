@@ -42,6 +42,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueExceptionsDuringRead;
     extern const Event ObjectStorageQueueExceptionsDuringInsert;
     extern const Event ObjectStorageQueueCancelledFiles;
+    extern const Event ObjectStorageQueueRemoveObjectFailures;
 }
 
 namespace DB
@@ -1780,11 +1781,15 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         error_code);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
-    if (requests.empty() && successful_objects.empty())
+    const auto table_mode = files_metadata->getTableMetadata().getMode();
+    const auto after_processing = files_metadata->getTableMetadata().after_processing;
+
+    if (table_mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
         return;
 
-    if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+    StoredObjects processed_objects;
+
+    if (!successful_objects.empty() && after_processing != ObjectStorageQueueAction::KEEP)
     {
         auto postProcessor = ObjectStorageQueuePostProcessor(
             getContext(),
@@ -1793,40 +1798,66 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
             getName(),
             files_metadata->getTableMetadata(),
             after_processing_settings);
-        StoredObjects processed_objects;
         postProcessor.process(successful_objects, processed_objects);
+
+        if (table_mode == ObjectStorageQueueMode::EXCLUSIVE)
+        {
+            std::vector<String> failed_to_delete_paths = 
+                StorageObjectStorageQueue::getFailedPaths(successful_objects, processed_objects);
+
+            if (!failed_to_delete_paths.empty())
+            {
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemoveObjectFailures, failed_to_delete_paths.size());
+                const auto commit_id = StorageObjectStorageQueue::generateCommitID();
+                const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                finalizeExclusiveCommitAfterDelete(
+                    failed_to_delete_paths,
+                    commit_id,
+                    commit_time,
+                    transaction_start_time,
+                    "Some objects still exist after delete");
+
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Some objects still exist after delete: {}",
+                    failed_to_delete_paths);
+            }
+        }
     }
 
-    auto zk_client = files_metadata->getZooKeeper();
-    Coordination::Responses responses;
-
-    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
-    const auto & settings = getContext()->getSettingsRef();
-    Coordination::Error code = {};
-    size_t try_num = 0;
-    zk_retry.retryLoop([&]
+    if (table_mode != ObjectStorageQueueMode::EXCLUSIVE)
     {
-        if (zk_retry.isRetry())
+        auto zk_client = files_metadata->getZooKeeper();
+        Coordination::Responses responses;
+
+        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+        const auto & settings = getContext()->getSettingsRef();
+        Coordination::Error code = {};
+        size_t try_num = 0;
+        zk_retry.retryLoop([&]
         {
-            LOG_TRACE(
-                log, "Failed to commit processed files at try {}/{}, will retry",
-                try_num, toString(settings[Setting::keeper_max_retries].value));
-        }
-        ++try_num;
-        code = zk_client->tryMulti(requests, responses);
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-            if (code == Coordination::Error::ZOK)
-                throw zkutil::KeeperException::fromMessage(
-                    Coordination::Error::ZCONNECTIONLOSS,
-                    "Simulated connection loss after successful commit");
+            if (zk_retry.isRetry())
+            {
+                LOG_TRACE(
+                    log, "Failed to commit processed files at try {}/{}, will retry",
+                    try_num, toString(settings[Setting::keeper_max_retries].value));
+            }
+            ++try_num;
+            code = zk_client->tryMulti(requests, responses);
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+                if (code == Coordination::Error::ZOK)
+                    throw zkutil::KeeperException::fromMessage(
+                        Coordination::Error::ZCONNECTIONLOSS,
+                        "Simulated connection loss after successful commit");
+            });
         });
-    });
 
-    if (code != Coordination::Error::ZOK)
-    {
-        if (try_num > 1)
-            setUncertainCommit();
-        throw zkutil::KeeperMultiException(code, requests, responses);
+        if (code != Coordination::Error::ZOK)
+        {
+            if (try_num > 1)
+                setUncertainCommit();
+            throw zkutil::KeeperMultiException(code, requests, responses);
+        }
     }
 
     const auto commit_id = StorageObjectStorageQueue::generateCommitID();

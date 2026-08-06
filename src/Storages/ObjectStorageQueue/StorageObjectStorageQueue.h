@@ -114,6 +114,10 @@ public:
     /// Used for system.s3(azure/etc)_queue_log.
     static UInt64 generateCommitID();
 
+    static std::vector<String> getFailedPaths(
+        const StoredObjects& successful_objects,
+        const StoredObjects& processed_objects);
+
     static String chooseZooKeeperPath(
         const ContextPtr & context_,
         const StorageID & table_id,
