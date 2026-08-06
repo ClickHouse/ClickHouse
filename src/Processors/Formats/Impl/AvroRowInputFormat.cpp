@@ -360,6 +360,30 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return true;
                 };
             }
+            if (target.isDate())
+            {
+                /// An Avro `date` day count can exceed the range of `Date`, so validate it
+                /// instead of silently wrapping in the `UInt16` representation,
+                /// the same way the ORC reader validates a `Date` type hint.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < 0) ? 0 : DATE_LUT_MAX_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the range of type Date, which is [0, {}]",
+                                days_num,
+                                DATE_LUT_MAX_DAY_NUM);
+                    }
+                    insertNumber(column, target, days_num);
+                    return true;
+                };
+            }
             if (target_type->isValueRepresentedByNumber())
             {
                 return [target](IColumn & column, avro::Decoder & decoder)
