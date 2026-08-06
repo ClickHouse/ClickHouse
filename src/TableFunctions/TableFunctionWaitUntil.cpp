@@ -130,6 +130,7 @@ public:
 
             UInt64 elapsed = 0;
             auto query_status = context->getProcessListElementSafe();
+            bool time_limit_reached = false;
             while (elapsed < wait_args.sleep_microseconds)
             {
                 UInt64 sleep_time = wait_args.sleep_microseconds - elapsed;
@@ -139,9 +140,18 @@ public:
                 sleepForMicroseconds(sleep_time);
                 elapsed += sleep_time;
 
+                /// In `timeout_overflow_mode = 'throw'` mode `checkTimeLimit` throws by itself. Returning
+                /// `false` means BREAK mode: stop polling entirely instead of starting another attempt,
+                /// so the query does not run past its execution-time budget.
                 if (query_status && !query_status->checkTimeLimit())
+                {
+                    time_limit_reached = true;
                     break;
+                }
             }
+
+            if (time_limit_reached)
+                break;
         }
 
         generated = true;
