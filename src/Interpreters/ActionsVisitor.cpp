@@ -234,6 +234,25 @@ bool hasIdentifiers(const ASTPtr & ast)
     return !identifiers.empty();
 }
 
+/// A literal, or an enumeration of values (the `tuple` and `array` functions) built from literals only,
+/// e.g. `(1, 2)`, `[[1], [2, 3]]` or `((1, 'a'), (2, 'b'))`. Such a right-hand side of `IN` is always
+/// constant, so it can keep the constant-`Set` path without building it in the actions DAG first.
+bool isLiteralEnumeration(const ASTPtr & ast)
+{
+    if (ast->as<ASTLiteral>())
+        return true;
+
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || (function->name != "tuple" && function->name != "array"))
+        return false;
+
+    for (const auto & child : function->arguments->children)
+        if (!isLiteralEnumeration(child))
+            return false;
+
+    return true;
+}
+
 bool isNegativeInFunctionName(const String & name)
 {
     return name == "notIn" || name == "globalNotIn" || name == "notNullIn" || name == "globalNotNullIn";
@@ -953,7 +972,27 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         const bool left_argument_is_tuple = isTupleType(left_argument_type) || isTupleFunction(node.arguments->children.at(0));
 
         const auto & right_argument = node.arguments->children.at(1);
-        if (!right_argument->as<ASTSubquery>() && !right_argument->as<ASTTableIdentifier>() && hasIdentifiers(right_argument))
+        bool rewrite_row_wise = false;
+        if (!right_argument->as<ASTSubquery>() && !right_argument->as<ASTTableIdentifier>())
+        {
+            if (hasIdentifiers(right_argument))
+            {
+                rewrite_row_wise = true;
+            }
+            else if (right_argument->as<ASTFunction>() && !isLiteralEnumeration(right_argument))
+            {
+                /// An identifier-free function right-hand side can still be non-constant, e.g. `materialize(1)`,
+                /// in which case building a constant `Set` from it would fail. Build it in the actions DAG and
+                /// check whether it folded into a constant; rewrite row-wise when it did not. Literal
+                /// enumerations are skipped above to keep the constant-`Set` path free of the extra folding.
+                visit(right_argument, data);
+                const auto * dag_node = data.actions_stack.getLastActionsIndex().tryGetNode(right_argument->getColumnName());
+                /// A missing node means the expression could not be computed in `only_consts` mode, i.e. it is not constant.
+                rewrite_row_wise = !dag_node || !dag_node->column || !isColumnConst(*dag_node->column);
+            }
+        }
+
+        if (rewrite_row_wise)
         {
             if (!data.only_consts)
             {
