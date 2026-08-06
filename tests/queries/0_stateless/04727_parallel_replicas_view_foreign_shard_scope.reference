@@ -10,10 +10,13 @@
 7450
 -- out-of-range foreign shard scope, old analyzer: the view aggregate is computed
 7450
--- parallel replicas used? out_of_range / in_range / matching / derived / old analyzer filter, aggregate
+-- local shard, no foreign scope shipped: read is correct
+9900
+-- parallel replicas used? out_of_range / in_range / matching / derived / old analyzer filter, aggregate / local shard
 0
 0
 1
 0
 0
 0
+1

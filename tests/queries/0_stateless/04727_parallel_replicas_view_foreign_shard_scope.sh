@@ -12,6 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Every arm pins the settings that select the code path under test:
 #   prefer_localhost_replica = 0     -- a local replica ships no `_shard_num` over the wire at all
+#                                       (the last arm below is the control for this)
 #   parallel_replicas_plan_based = 0 -- the plan-based path builds locally and never applies a shard scope
 #   enable_analyzer, parallel_replicas_only_with_analyzer -- parallel replicas are off entirely unless
 #       the two agree, so each arm pins the analyzer it measures instead of inheriting the profile
@@ -126,15 +127,26 @@ SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
          log_comment = '04727_old_analyzer_aggregate_${CLICKHOUSE_DATABASE}';
 "
 
+# Anti-vacuity control for the `prefer_localhost_replica = 0` pin every arm above carries: at 1 the shard
+# is served locally, so no scope is shipped and none can be applied -- yet parallel replicas still run.
+echo '-- local shard, no foreign scope shipped: read is correct'
+$CLICKHOUSE_CLIENT -q "
+SELECT sum(a) FROM cluster('test_cluster_two_shards_localhost', currentDatabase(), v_out_of_range_04727)
+SETTINGS prefer_localhost_replica = 1, parallel_replicas_plan_based = 0,
+         enable_analyzer = 1, parallel_replicas_only_with_analyzer = 0,
+         log_comment = '04727_local_shard_${CLICKHOUSE_DATABASE}';
+"
+
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-echo '-- parallel replicas used? out_of_range / in_range / matching / derived / old analyzer filter, aggregate'
+echo '-- parallel replicas used? out_of_range / in_range / matching / derived / old analyzer filter, aggregate / local shard'
 parallel_replicas_used "04727_out_of_range_${CLICKHOUSE_DATABASE}"
 parallel_replicas_used "04727_in_range_${CLICKHOUSE_DATABASE}"
 parallel_replicas_used "04727_matching_${CLICKHOUSE_DATABASE}"
 parallel_replicas_used "04727_derived_${CLICKHOUSE_DATABASE}"
 parallel_replicas_used "04727_old_analyzer_filter_${CLICKHOUSE_DATABASE}"
 parallel_replicas_used "04727_old_analyzer_aggregate_${CLICKHOUSE_DATABASE}"
+parallel_replicas_used "04727_local_shard_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -q "
 DROP VIEW v_aggregate_04727; DROP VIEW v_filter_04727;
