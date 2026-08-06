@@ -2178,7 +2178,7 @@ The [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSON
 `JSONAllValues` can be used with these index types:
 
 - [`bloom_filter`](/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter) for equality and `IN` predicates.
-- [`ngrambf_v1`](/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter), [`tokenbf_v1`](/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter), and [`sparse_grams`](/reference/engines/table-engines/mergetree-family/mergetree#sparse-grams-bloom-filter) for their supported text-search predicates. The `ngrambf_v1` and `tokenbf_v1` index types are deprecated for full-text search; prefer the `text` index for new applications.
+- [`ngrambf_v1`](/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter), [`tokenbf_v1`](/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter), and [`sparse_grams`](/reference/engines/table-engines/mergetree-family/mergetree#sparse-grams-bloom-filter) for equality, `IN`, and their supported text-search predicates. See the [function-support table](/reference/engines/table-engines/mergetree-family/mergetree#functions-support) for details. The `ngrambf_v1` and `tokenbf_v1` index types are deprecated for full-text search; prefer the `text` index for new applications.
 - [`text`](/reference/engines/table-engines/mergetree-family/textindexes) for full-text search.
 
 For example, the following index can skip granules that do not contain the serialized value compared with `data.user_id`:

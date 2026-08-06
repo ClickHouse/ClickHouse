@@ -1657,6 +1657,10 @@ For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Blo
 ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
+:::note JSON data type
+For the [`JSON`](/sql-reference/data-types/newjson) data type, an `ngrambf_v1` index can be created on the values returned by [`JSONAllValues`](/sql-reference/functions/json-functions#JSONAllValues). It supports equality, `IN`, and the applicable predicates in the [function-support table](#functions-support).
+:::
+
 | Parameter                       | Description |
 |---------------------------------|-------------|
 | `n`                             | ngram size  |
@@ -1727,6 +1731,10 @@ See page ["Full-text search with text indexes"](/engines/table-engines/mergetree
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
+:::note JSON data type
+For the [`JSON`](/sql-reference/data-types/newjson) data type, a `tokenbf_v1` index can be created on the values returned by [`JSONAllValues`](/sql-reference/functions/json-functions#JSONAllValues). It supports equality, `IN`, and the applicable predicates in the [function-support table](#functions-support).
+:::
+
 #### Sparse grams bloom filter {#sparse-grams-bloom-filter}
 
 The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams tokens](/sql-reference/functions/string-functions.md/#sparseGrams) instead of ngrams.
@@ -1734,6 +1742,10 @@ The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams 
 ```text title="Syntax"
 sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
+
+:::note JSON data type
+For the [`JSON`](/sql-reference/data-types/newjson) data type, a `sparse_grams` index can be created on the values returned by [`JSONAllValues`](/sql-reference/functions/json-functions#JSONAllValues). It supports equality, `IN`, and the applicable predicates in the [function-support table](#functions-support).
+:::
 
 ### Text index {#text}
 
