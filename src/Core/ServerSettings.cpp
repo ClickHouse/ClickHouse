@@ -1285,7 +1285,9 @@ When disabled, `max_server_memory_usage_to_ram_ratio` only caps the hard memory 
 Has no effect when `max_server_memory_usage_to_ram_ratio` is `0`.
 )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
-Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
+Disables `INSERT`, `ALTER`, and `DELETE` queries so read-only replicas do not create data parts, mutations, or merge work that affects read performance.
+
+Writes to external storage through engines such as `S3`, `DataLake`, `MySQL`, `PostgreSQL`, and `Kafka` remain allowed. Background streaming from `Kafka`, `RabbitMQ`, `NATS`, and `S3Queue` tables into attached materialized views is disabled because it produces `MergeTree` parts and merge work on this replica.
 )", 0) \
     DECLARE(UInt64, parts_kill_delay_period, 30, R"(
 Period to completely remove parts for SharedMergeTree. Only available in ClickHouse Cloud

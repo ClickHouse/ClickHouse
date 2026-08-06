@@ -6336,7 +6336,8 @@ void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
 bool Context::getMessageQueueDisableInsertion() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::message_queue_disable_insertion];
+    return shared->server_settings[ServerSetting::message_queue_disable_insertion]
+        || shared->server_settings[ServerSetting::disable_insertion_and_mutation];
 }
 
 void Context::setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const

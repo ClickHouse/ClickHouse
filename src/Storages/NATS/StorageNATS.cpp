@@ -633,6 +633,16 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
 
 void StorageNATS::threadFunc()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        LOG_TRACE(
+            log, "Streaming to views is disabled, rescheduling next check in {} ms", STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS);
+
+        if (!shutdown_called)
+            streaming_task->scheduleAfter(STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS);
+        return;
+    }
+
     auto table_id = getStorageID();
 
     bool consumers_queues_are_empty = false;

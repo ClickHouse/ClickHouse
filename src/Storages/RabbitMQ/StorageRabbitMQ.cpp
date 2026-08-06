@@ -1173,6 +1173,16 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
 
 void StorageRabbitMQ::threadFunc()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        LOG_TRACE(
+            log, "Streaming to views is disabled, rescheduling next check in {} ms", STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS);
+
+        if (!shutdown_called)
+            streaming_task->scheduleAfter(STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS);
+        return;
+    }
+
     try
     {
         if (initialized)

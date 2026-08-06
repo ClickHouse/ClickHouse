@@ -606,6 +606,17 @@ void StorageKafka::threadFunc(size_t idx)
 {
     chassert(idx < tasks.size());
     auto task = tasks[idx];
+
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        LOG_TRACE(
+            log, "Streaming to views is disabled, rescheduling next check in {} ms", STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS);
+
+        if (!task->stream_cancelled)
+            task->holder->scheduleAfter(STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS);
+        return;
+    }
+
     std::string exception_str;
 
     try

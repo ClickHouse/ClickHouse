@@ -25,6 +25,7 @@ instance = cluster.add_instance(
         "configs/nats.xml",
         "configs/macros.xml",
         "configs/named_collection.xml",
+        "configs/disable_insertion.xml",
     ],
     user_configs=["configs/users.xml"],
     with_nats=True,
@@ -217,6 +218,82 @@ def test_nats_select(nats_cluster):
     asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
+
+
+def test_disable_insertion_and_mutation_disables_streaming(nats_cluster):
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
+    try:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+        instance.query(
+            """
+            CREATE TABLE test.nats (key UInt64, value UInt64)
+                ENGINE = NATS
+                SETTINGS nats_url = 'nats1:4444',
+                         nats_stream = 'test_stream',
+                         nats_consumer_name = 'test_consumer',
+                         nats_subjects = 'test_subject',
+                         nats_format = 'JSONEachRow';
+            CREATE TABLE test.view (key UInt64, value UInt64)
+                ENGINE = MergeTree()
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+                SELECT * FROM test.nats;
+            """
+        )
+
+        error_patterns = [
+            "Insert queries are prohibited",
+            "Message queue insertion is disabled",
+            "Failed to process data",
+        ]
+        error_counts = {
+            pattern: int(instance.count_in_log(pattern)) for pattern in error_patterns
+        }
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
+        asyncio.run(
+            publish_messages(
+                nats_cluster, "test_stream", "test_subject", messages
+            )
+        )
+        instance.query(
+            "INSERT INTO test.nats FORMAT JSONEachRow"
+            ' {"key": 999, "value": 999}'
+        )
+
+        time.sleep(10)
+        assert 0 == int(instance.query("SELECT count() FROM test.view"))
+        for pattern, count in error_counts.items():
+            assert count == int(instance.count_in_log(pattern))
+
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
+            "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+        assert 11 == int(
+            instance.query_with_retry(
+                "SELECT count() FROM test.view",
+                check_callback=lambda result: int(result) == 11,
+                retry_count=100,
+            )
+        )
+    finally:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
+            "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
 
 
 def test_nats_json_without_delimiter(nats_cluster):
