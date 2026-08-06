@@ -176,6 +176,18 @@ ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError AL
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
+-- REJECT: filtered projection whose WHERE reads the whole JSON column. Int32->Bool flips the render
+-- ('{"a":0}' -> '{"a":false}'), so the WHERE result changes and the stored row set would go stale.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY id
+SETTINGS deduplicate_merge_projection_mode = 'drop';
+ALTER TABLE t_json_key_safety ADD PROJECTION p (SELECT id, j WHERE toString(j) != '{"a":0}' ORDER BY id);
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number % 2)) FROM numbers(4);
+SELECT 'filtered projection WHERE on json, type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Bool); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
 -- ALLOW: total type change on a plain (non-key) column reads back correctly
 -- ============================================================
 CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY id;

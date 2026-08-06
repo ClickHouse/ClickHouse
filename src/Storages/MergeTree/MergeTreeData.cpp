@@ -5618,7 +5618,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     old_index.name);
             }
 
-            /// Projection sort key: a projection can sort on a subcolumn when its parent is also selected.
+            /// A subcolumn can feed a projection's sort key (positionally persisted) or a filtered
+            /// projection's WHERE (which fixes the stored row set); both go stale on a lazy change.
             const auto & new_projections = new_metadata.getProjections();
             for (const auto & projection : old_metadata.getProjections())
             {
@@ -5631,6 +5632,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     if (const auto * select = projection.query_ast->as<ASTSelectQuery>())
                         uses_changed = ast_uses_changed_subcolumn(select->groupBy());
 
+                /// A filtered projection's WHERE fixes the stored row set; a change that flips it leaves stale rows.
+                if (!uses_changed)
+                    uses_changed = ast_uses_changed_subcolumn(projection.where_clause_ast);
+
                 if (!uses_changed)
                     continue;
 
@@ -5640,8 +5645,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "ALTER of column {} changes the on-disk type of a subcolumn used in the sort key of "
-                    "projection '{}'; a metadata-only ALTER cannot rebuild the projection's primary index. "
+                    "ALTER of column {} changes the on-disk type of a subcolumn used by projection '{}' "
+                    "(its sort key or WHERE filter); a metadata-only ALTER cannot rebuild the projection. "
                     "Drop the projection first to run this change",
                     backQuoteIfNeed(command.column_name),
                     projection.name);
