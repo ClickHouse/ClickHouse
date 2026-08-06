@@ -16,6 +16,10 @@ public:
 
     virtual StoragePtr getNested() const = 0;
 
+    /// The nested storage if it is already materialized, {} if resolving it would force a lazy load.
+    /// Callers that must not force one use this instead of getNested, which also startups and renames.
+    virtual StoragePtr tryGetNested() const { return {}; }
+
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }

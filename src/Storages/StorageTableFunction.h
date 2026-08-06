@@ -57,6 +57,12 @@ public:
         return nested_storage;
     }
 
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
     /// Table functions cannot have storage policy and cannot store data on disk.
     /// We may check if table is readonly or stores data on disk on DROP TABLE.
     /// Avoid loading nested table by returning nullptr/false for all table functions.

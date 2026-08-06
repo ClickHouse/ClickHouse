@@ -2285,6 +2285,8 @@ public:
     }
 
     StoragePtr getNested() const override { return nested; }
+    /// Constructed eagerly, so it is always materialized and answering forces nothing.
+    StoragePtr tryGetNested() const override { return nested; }
     /// The table was created with `ENGINE = URL(...)`; report it as such for consistency with
     /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
     String getName() const override { return "URL"; }
