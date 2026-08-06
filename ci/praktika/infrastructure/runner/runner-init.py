@@ -635,10 +635,6 @@ brew install \
     coreutils \
     llvm
 
-# Keg-only `llvm` does not link `lldb` system-wide, so expose it on the Homebrew
-# PATH as plain `lldb` for `clickhouse-test`'s `print_c_stacktraces`.
-ln -sf "$(brew --prefix llvm)/bin/lldb" "$(brew --prefix)/bin/lldb"
-
 # Python packages used by jobs. `boto3` is bootstrapped in `user_data_macos.txt`
 # because runner-init itself imports it; the rest are version-gated here.
 "$HOME/venv/bin/pip" install --upgrade pip
