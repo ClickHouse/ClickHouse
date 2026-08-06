@@ -1333,6 +1333,23 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
             if (replicas_used.insert(replica_num).second)
                 ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
+
+            /// This response may have handed out the last ranges there were. Reading completion is a
+            /// property of the coordinator's own state, not of the protocol, but it used to be
+            /// evaluated only when some replica asked for work and was told `finish`. If the
+            /// initiator stops pulling before that happens - a `LIMIT` satisfied by the local
+            /// replica, say - nobody asks again, so the replicas that got nothing are never told to
+            /// stop and are left waiting on a read task that will not come. Check here too, so they
+            /// are released as soon as there is provably nothing left to assign.
+            ///
+            /// `replicas_used` already contains `replica_num` (inserted just above), so the replica
+            /// this response is for is excluded from cancellation and still gets the `finish = true`
+            /// round-trip the protocol owes it.
+            if (isReadingCompleted())
+            {
+                reading_assignment_has_been_completed = !is_reading_completed.exchange(true);
+                replicas_to_exclude = replicas_used;
+            }
         }
         else
         {
