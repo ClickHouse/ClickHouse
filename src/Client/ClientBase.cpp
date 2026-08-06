@@ -166,6 +166,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int OK;
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int DEADLOCK_AVOIDED;
@@ -4749,7 +4750,21 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
+            /// This is a query exchange on the shared connection, so it follows the same
+            /// resynchronization discipline as the regular queries (see the comment in
+            /// `executeQueryForSingleString`): a failed query of this session may have left the
+            /// protocol desynchronized, and the flag has to stay armed for the time of the
+            /// exchange, because `load` swallows its failures - including a transport failure in
+            /// the middle of the exchange, which the next query of the session would otherwise
+            /// run into. `load` reports the completion of the exchange (`EndOfStream`) through
+            /// `getLastError`; after a failure the flag simply stays armed, and the next query
+            /// resynchronizes the connection with a round trip.
+            if (connection_needs_resynchronization)
+                resynchronizeConnectionAfterError();
+            connection_needs_resynchronization = true;
             suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo());
+            if (suggest->getLastError() == ErrorCodes::OK)
+                connection_needs_resynchronization = false;
         }
 
         try

@@ -40,12 +40,15 @@ echo '<clickhouse><sync_request_timeout>1</sync_request_timeout></clickhouse>' >
 # The address of the proxy replaces the address of the server, the rest of the options is kept.
 CLIENT_OPT=$(echo "${CLICKHOUSE_CLIENT_OPT}" | sed "s/--host=[^ ]*//g; s/--port=[^ ]*//g")
 
-# `async_insert` is disabled explicitly: the data has to be parsed by the client for the failure to
-# happen in the middle of the exchange.
+# `async_insert` is disabled and `send_table_structure_on_insert_with_inline_data` is enabled
+# explicitly (the test harness randomizes both): the data has to be parsed by the client for the
+# failure to happen in the middle of the exchange. With either the asynchronous insert or the
+# inline insert data mode the whole query including the data is parsed by the server, and the
+# failure is an ordinary server exception - a different code path.
 # The error of the second insert is expected; `UNKNOWN_TABLE` would mean that the client reconnected
 # after it and lost the temporary table.
 # shellcheck disable=SC2086
-${CLICKHOUSE_CLIENT_BINARY} ${CLIENT_OPT} --config-file "$CLIENT_CONFIG" --host 127.0.0.1 --port "$PROXY_PORT" --async_insert 0 --ignore-error --multiquery "
+${CLICKHOUSE_CLIENT_BINARY} ${CLIENT_OPT} --config-file "$CLIENT_CONFIG" --host 127.0.0.1 --port "$PROXY_PORT" --async_insert 0 --send_table_structure_on_insert_with_inline_data 1 --ignore-error --multiquery "
     CREATE TEMPORARY TABLE t_04811 (x UInt8);
     INSERT INTO t_04811 VALUES (1);
     INSERT INTO t_04811 VALUES (2), ('not a number');
