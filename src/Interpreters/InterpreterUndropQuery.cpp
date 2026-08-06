@@ -4,6 +4,8 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/quoteString.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Parsers/ASTUndropQuery.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -19,6 +21,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
@@ -58,6 +61,19 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr);
 
     auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+
+    /// A read-only `Overlay` facade owns no storage of its own, so `UNDROP TABLE ov.<name>` can never
+    /// succeed. Reject up front by the database name, before the `isTableExist` probe below: otherwise
+    /// an existing source table returns `TABLE_ALREADY_EXISTS` while a missing one only reaches the
+    /// facade's rejection in `checkMetadataFilenameAvailability`, turning a facade-scoped `UNDROP_TABLE`
+    /// grant into a source-table existence oracle (mirrors the upfront reject in `InterpreterDropQuery`).
+    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run UNDROP TABLE in the underlying database that owns the table",
+            backQuote(table_id.database_name));
+
     if (database->getEngineName() == "Replicated")
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Replicated database does not support UNDROP query");
     if (database->isTableExist(table_id.table_name, getContext()))
