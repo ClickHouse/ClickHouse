@@ -4,12 +4,15 @@
 #include <string_view>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
+#include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 #include <Common/memory.h>
 #include <DataTypes/DataTypeString.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/arithmeticOverflow.h>
@@ -23,6 +26,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 /** Aggregate function combinator -Sparkbar applies another aggregate function independently
@@ -63,38 +67,98 @@ private:
     size_t align_of_data;
     size_t size_of_data;
 
-    size_t updateFrame(ColumnString::Chars & frame, Float64 value) const
+    /// Compute the bar level of each bucket from the nested function results, keeping the
+    /// scaling arithmetic in the native domain of the result type. Integer and Decimal results
+    /// are scaled with exact integer arithmetic (the same way as the `sparkbar` aggregate
+    /// function does), because squeezing them through Float64 would merge distinct values
+    /// beyond the 53-bit exact range into the same bar. For Decimal the scale factor cancels
+    /// out in the value / maximum ratio, so the raw underlying integer values are used.
+    /// A bucket's level stays 0 (rendered blank) when its result is NULL, NaN, or not positive.
+    template <typename T>
+    void computeLevels(
+        const typename ColumnVectorOrDecimal<T>::Container & data,
+        const NullMap * null_map,
+        PaddedPODArray<UInt8> & levels) const
     {
-        static constexpr std::array<std::string_view, BAR_LEVELS + 1> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
-        const auto & bar = (std::isnan(value) || value < 1 || value > BAR_LEVELS) ? bars[0] : bars[static_cast<UInt8>(value)];
-        frame.insert(bar.begin(), bar.end());
-        return bar.size();
+        const auto value_of = [&](size_t i)
+        {
+            if constexpr (is_decimal<T>)
+                return data[i].value;
+            else
+                return data[i];
+        };
+        using V = decltype(value_of(0));
+
+        V y_max{};
+        for (size_t i = 0; i < width; ++i)
+        {
+            if (null_map && (*null_map)[i])
+                continue;
+            const V v = value_of(i);
+            if (isNaN(v) || v <= V{})
+                continue;
+            y_max = std::max(y_max, v);
+        }
+
+        if (y_max == V{})
+            return;
+
+        for (size_t i = 0; i < width; ++i)
+        {
+            if (null_map && (*null_map)[i])
+                continue;
+            const V v = value_of(i);
+            if (isNaN(v) || v <= V{})
+                continue;
+
+            if constexpr (is_floating_point<V>)
+            {
+                /// Widening to Float64 is exact for Float32 and BFloat16. v == y_max maps to
+                /// exactly BAR_LEVELS. An infinite maximum makes the ratio NaN (for the
+                /// infinite bucket) or 0 (for finite buckets), so the guard below keeps the
+                /// infinite bucket blank instead of casting NaN to an out-of-range index.
+                const Float64 scaled
+                    = static_cast<Float64>(v) / static_cast<Float64>(y_max) * static_cast<Float64>(BAR_LEVELS - 1) + 1;
+                if (!std::isnan(scaled) && scaled >= 1 && scaled <= BAR_LEVELS)
+                    levels[i] = static_cast<UInt8>(scaled);
+            }
+            else
+            {
+                const V levels_num = V{BAR_LEVELS - 1};
+                V level{};
+                V scaled{};
+                if (common::mulOverflow(v, levels_num, scaled))
+                    /// v * (BAR_LEVELS - 1) overflowed, which implies y_max >= v is at least
+                    /// max<V> / (BAR_LEVELS - 1), so y_max / levels_num is never zero here.
+                    level = v / (y_max / levels_num) + V{1};
+                else
+                    level = scaled / y_max + V{1};
+                levels[i] = level > V{BAR_LEVELS} ? UInt8{BAR_LEVELS} : static_cast<UInt8>(level);
+            }
+        }
     }
 
-    void render(ColumnString & to_column, const PaddedPODArray<Float64> & values) const
+    /// Render one Unicode bar per bucket from precomputed bar levels:
+    /// 0 renders as a blank, 1..BAR_LEVELS as increasing bar heights.
+    void render(ColumnString & to_column, const PaddedPODArray<UInt8> & levels) const
     {
+        static constexpr std::array<std::string_view, BAR_LEVELS + 1> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+
         auto & chars   = to_column.getChars();
         auto & offsets = to_column.getOffsets();
 
-        Float64 y_max = 0;
-        for (Float64 v : values)
-        {
-            if (!std::isnan(v) && v > 0)
-                y_max = std::max(y_max, v);
-        }
+        /// If no bucket has a positive value, the result is an empty string, not `width` blanks.
+        bool has_data = false;
+        for (UInt8 level : levels)
+            has_data |= level > 0;
 
-        if (y_max == 0)
+        if (has_data)
         {
-            offsets.push_back(chars.size());
-            return;
-        }
-
-        for (Float64 v : values)
-        {
-            Float64 scaled = 0;
-            if (!std::isnan(v) && v > 0)
-                scaled = v / y_max * static_cast<Float64>(BAR_LEVELS - 1) + 1;
-            updateFrame(chars, scaled);
+            for (UInt8 level : levels)
+            {
+                const auto & bar = bars[level];
+                chars.insert(bar.begin(), bar.end());
+            }
         }
 
         offsets.push_back(chars.size());
@@ -273,24 +337,42 @@ public:
         for (size_t i = 0; i < width; ++i)
             nested_function->insertResultInto(place + i * size_of_data, *result_col, arena);
 
-        /// Convert results to Float64 using Field to handle all numeric types (UInt64, Int64,
-        /// Float32, Float64, Decimal, …) without relying on getFloat64() which is not universally
-        /// implemented.
-        PaddedPODArray<Float64> values(width);
-        for (size_t i = 0; i < width; ++i)
+        const IColumn * data_col = result_col.get();
+        const NullMap * null_map = nullptr;
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_col))
         {
-            if (result_col->isNullAt(i))
-            {
-                values[i] = std::nan("");
-                continue;
-            }
-
-            Field field;
-            result_col->get(i, field);
-            values[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
+            null_map = &nullable->getNullMapData();
+            data_col = &nullable->getNestedColumn();
         }
 
-        render(assert_cast<ColumnString &>(to), values);
+        /// Bar level of each bucket: 0 renders as a blank, 1..BAR_LEVELS as increasing heights.
+        PaddedPODArray<UInt8> levels(width, 0);
+
+        /// Dispatch by the concrete result type: the combinator accepts every type for which
+        /// WhichDataType::isNumber holds, and each of them is stored either in a ColumnVector
+        /// or in a ColumnDecimal.
+        const auto dispatch = [&]<typename T>(T) -> bool
+        {
+            const auto * col = checkAndGetColumn<ColumnVectorOrDecimal<T>>(data_col);
+            if (!col)
+                return false;
+            computeLevels<T>(col->getData(), null_map, levels);
+            return true;
+        };
+
+        const bool dispatched = dispatch(UInt8{}) || dispatch(UInt16{}) || dispatch(UInt32{}) || dispatch(UInt64{})
+            || dispatch(UInt128{}) || dispatch(UInt256{})
+            || dispatch(Int8{}) || dispatch(Int16{}) || dispatch(Int32{}) || dispatch(Int64{})
+            || dispatch(Int128{}) || dispatch(Int256{})
+            || dispatch(BFloat16{}) || dispatch(Float32{}) || dispatch(Float64{})
+            || dispatch(Decimal32{}) || dispatch(Decimal64{}) || dispatch(Decimal128{}) || dispatch(Decimal256{});
+
+        if (!dispatched)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Aggregate function {} got unexpected result column {} from the nested function",
+                getName(), data_col->getName());
+
+        render(assert_cast<ColumnString &>(to), levels);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

@@ -76,8 +76,8 @@ public:
         const size_t n = params.size();
         const size_t width = params[n - 3].safeGet<UInt64>();
 
-        /// Validate that the nested function returns a numeric type that can be
-        /// converted to Float64 for sparkbar rendering. Non-numeric return types
+        /// Validate that the nested function returns a numeric type that sparkbar
+        /// rendering can scale into bar levels. Non-numeric return types
         /// (e.g. String, Array) cannot be visualised and must be rejected early.
         /// Nullable(<numeric>) is accepted: the Nullable wrapper is stripped before
         /// the numeric check, so compositions like avgOrNullSparkbar work correctly.
