@@ -141,6 +141,10 @@ private:
     /// them either.
     void freeBytesOwnedByTheServer(Int64 size);
 
+    /// Remove up to `size`, never going below zero however concurrent frees interleave, and tell how much was
+    /// actually removed.
+    Int64 subtractAtMostWhatIsThere(Int64 size);
+
     std::atomic_bool drift_expected = false;
 
     /// helper fields for analyzing MemoryTracker

@@ -577,13 +577,15 @@ void MemoryTracker::settleDriftOnQueryEnd()
     if (!user_tracker || user_tracker->level != VariableContext::User)
         return;
 
-    /// Take away no more than the user holds, so that settling never pushes it below zero: by the time a query
-    /// group is destroyed the user may already have been reset for having no queries left, or another query may
-    /// have released the same bytes.
+    /// Take away no more than the user holds, so that settling never pushes it below zero: another query of the
+    /// same user may have released the same bytes already, or be releasing them right now, which is why the
+    /// amount actually removed is what gets settled rather than what was read beforehand.
     if (drift > 0)
-        drift = std::min(drift, user_tracker->get());
-    if (drift == 0)
-        return;
+    {
+        drift = user_tracker->subtractAtMostWhatIsThere(drift);
+        if (drift == 0)
+            return;
+    }
 
     ProfileEvents::increment(ProfileEvents::QueryMemoryDriftSettled);
     ProfileEvents::increment(ProfileEvents::QueryMemoryDriftSettledBytes, drift < 0 ? -drift : drift);
@@ -609,7 +611,45 @@ void MemoryTracker::settleDriftOnQueryEnd()
     }
 #endif
 
-    transferToGlobal(drift);
+    if (drift > 0)
+    {
+        /// The user's share is already gone, so only this tracker is left to clear. It is being destroyed, but
+        /// its metric, such as `MergesMutationsMemoryTracking`, has to follow.
+        amount.fetch_sub(drift, std::memory_order_relaxed);
+
+        auto metric_loaded = metric.load(std::memory_order_relaxed);
+        if (metric_loaded != CurrentMetrics::end())
+            CurrentMetrics::sub(metric_loaded, drift);
+    }
+    else
+    {
+        /// Giving bytes back cannot push anything below zero.
+        transferToGlobal(drift);
+    }
+}
+
+
+Int64 MemoryTracker::subtractAtMostWhatIsThere(Int64 size)
+{
+    Int64 current = amount.load(std::memory_order_relaxed);
+    Int64 removed = 0;
+    do
+    {
+        removed = std::min(size, current);
+        if (removed <= 0)
+            return 0;
+    }
+    while (!amount.compare_exchange_weak(current, current - removed, std::memory_order_relaxed));
+
+    /// Room under the limit appeared, same as after a free, so let anything waiting for it continue.
+    if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
+        overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(removed);
+
+    auto metric_loaded = metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end())
+        CurrentMetrics::sub(metric_loaded, removed);
+
+    return removed;
 }
 
 
