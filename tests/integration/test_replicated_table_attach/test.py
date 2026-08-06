@@ -1,4 +1,5 @@
 import os
+import time
 import uuid
 
 import pytest
@@ -186,4 +187,82 @@ def test_restarting_task_rearmed_after_failed_attach_startup(started_cluster):
     finally:
         node.query("SYSTEM DISABLE FAILPOINT rmt_startup_fail_after_being_leader")
         node.query("SYSTEM DISABLE FAILPOINT rmt_restarting_thread_fail_startup")
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+# The other half of the same window: a replica that DOES activate through the attach path
+# must still end up with its periodic ZooKeeper session check armed. Only FP1 is enabled
+# here, so the retry's inline run() succeeds while the task is still deactivated - that
+# run's own scheduleAfter is therefore refused, and the periodic timer exists only if the
+# start() after it re-arms the task.
+def test_periodic_check_armed_after_successful_attach_startup_retry(started_cluster):
+    start_clean_clickhouse()
+    # Same reason as the previous test: any other ReplicatedMergeTree re-attached by a
+    # restart reaches the same startupImpl and would consume the one-shot FP1.
+    node.query("DROP TABLE IF EXISTS replicated_table SYNC")
+    node.query("DROP TABLE IF EXISTS replicated_table_partitioned SYNC")
+    assert node.query("SELECT count() FROM system.replicas").strip() == "0"
+
+    # A fresh name per run: the log-line waits below must not match an earlier run's lines.
+    table = f"replicated_table_rearm_ok_{uuid.uuid4().hex}"
+    # A short check period makes the periodic timer observable in seconds. The restarting
+    # thread reads it in its constructor, which runs at ATTACH, so a per-table value works.
+    check_period_s = 2
+    node.query(
+        f"CREATE TABLE {table} (k UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/{table}', 'r1') "
+        f"ORDER BY k SETTINGS zookeeper_session_expiration_check_period = {check_period_s}"
+    )
+    node.query(f"DETACH TABLE {table}")
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT rmt_startup_fail_after_being_leader")
+        node.query(f"ATTACH TABLE {table}")
+
+        # FP1 failed the first attempt and its cleanup deactivated the task; the retry then
+        # reached the attach branch and startupImpl returned, so its inline run() succeeded.
+        # All three must be observed, or this is not the shape being measured below.
+        node.wait_for_log_line(
+            f"{table} .ReplicatedMergeTreeAttachThread.: Initialization failed. Error: Code: 999",
+            timeout=60,
+        )
+        node.wait_for_log_line(
+            f"{table} .*: Trying to startup table from right now", timeout=60
+        )
+        node.wait_for_log_line(
+            f"{table} .ReplicatedMergeTreeAttachThread.: Table is initialized",
+            timeout=60,
+        )
+
+        # Positive control: the replica really did activate, so a green result below cannot
+        # come from it having stayed readonly.
+        assert (
+            node.query(
+                f"SELECT is_readonly FROM system.replicas WHERE table = '{table}'"
+            ).strip()
+            == "0"
+        )
+
+        state_query = f"""
+            SELECT countIf(scheduled OR delayed OR executing), countIf(delayed)
+            FROM system.background_schedule_pool
+            WHERE log_name LIKE '%{table} (ReplicatedMergeTreeRestartingThread)%'
+        """
+        # Sample across several check periods: an un-armed task is owned by no pool
+        # collection and so has no row here at all. `delayed` names the timer itself; it is
+        # only asserted to occur, because a sample can land while the task is executing.
+        owned = []
+        delayed = []
+        for _ in range(5):
+            row = node.query(state_query).strip().split("\t")
+            owned.append(row[0])
+            delayed.append(row[1])
+            time.sleep(check_period_s * 0.8)
+        assert (
+            owned == ["1"] * 5
+        ), f"restarting task is not owned by the pool: {owned}, delayed={delayed}"
+        assert (
+            "1" in delayed
+        ), f"restarting task has no periodic session check armed: {delayed}"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rmt_startup_fail_after_being_leader")
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
