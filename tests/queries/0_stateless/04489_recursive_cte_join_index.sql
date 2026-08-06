@@ -1004,6 +1004,44 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE edges_buffer_dist;
+
+-- A `Merge` table whose children are all local cannot engage parallel replicas (the
+-- storage-level `MergeTree` parallel-replica paths are old-analyzer-only, and the planner
+-- rejects `Merge` itself), so it must keep running under the forcing mode.
+DROP TABLE IF EXISTS edges_merge_local;
+CREATE TABLE edges_merge_local AS edges ENGINE = Merge(currentDatabase(), '^edges$');
+
+WITH RECURSIVE merge_local_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM merge_local_pr AS t INNER JOIN edges_merge_local AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM merge_local_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+DROP TABLE edges_merge_local;
+
+-- A `Merge` table plans each child with the same query context, so a `Distributed` child
+-- read still goes through `ClusterProxy` and can engage parallel replicas — the forcing
+-- mode must fail closed instead of silently downgrading to a plain read.
+DROP TABLE IF EXISTS edges_merge_dist;
+CREATE TABLE edges_merge_dist AS edges ENGINE = Merge(currentDatabase(), '^edges_dist_replicas$');
+
+WITH RECURSIVE merge_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM merge_pr_throw AS t INNER JOIN edges_merge_dist AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM merge_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE edges_merge_dist;
 DROP TABLE edges_dist_replicas;
 
 DROP TABLE edges;

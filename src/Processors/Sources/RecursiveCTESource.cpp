@@ -6,6 +6,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 
 #include <Processors/Sinks/SinkToStorage.h>
@@ -127,12 +128,15 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// `AS remote(...)` is a `StorageProxy` over `StorageDistributed`, a materialized view
 /// with a `Distributed` target reads that target directly (this is independent of
 /// `parallel_replicas_allow_materialized_views`, which gates only the planner's
-/// `MergeTree`-family rule), an `Alias` table reads its target, and a `Buffer` table
-/// forwards both `getQueryProcessingStage` and `read` to its destination. `Merge` tables
-/// over a remote child are not unwrapped — their children are not reachable through a
-/// public accessor here — so they do not count as eligible: the read stays correct
-/// (parallel replicas are still disabled below), only the forced-mode rejection does not
-/// fire for them.
+/// `MergeTree`-family rule), an `Alias` table reads its target, a `Buffer` table
+/// forwards both `getQueryProcessingStage` and `read` to its destination, and a `Merge`
+/// table plans each child with the same query context (`ReadFromMerge` calls the child's
+/// `read` directly, so a remote child's read still goes through `ClusterProxy` and
+/// consults the parallel-replica settings) — it counts as eligible when any of its
+/// children does. A `Merge` whose children are all local cannot engage parallel replicas
+/// under the analyzer — the storage-level `MergeTree` parallel-replica paths are
+/// old-analyzer-only, and the planner's rule rejects `Merge` itself — and such a table
+/// does not reach this function anyway (`StorageMerge::isRemote` is false).
 bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const ContextPtr & context)
 {
     /// `isRemote` on these wrappers already forced the nested/target storage, so unwrapping
@@ -159,6 +163,14 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
     {
         const auto destination = buffer->getDestinationTable();
         return destination && destination->isRemote() && mayEngageParallelReplicasForRemoteStorage(*destination, context);
+    }
+
+    if (const auto * merge = dynamic_cast<const StorageMerge *>(&storage))
+    {
+        return merge->hasChildTable([&context](const StoragePtr & child)
+        {
+            return child && child->isRemote() && mayEngageParallelReplicasForRemoteStorage(*child, context);
+        });
     }
 
     const auto * distributed = dynamic_cast<const StorageDistributed *>(&storage);
