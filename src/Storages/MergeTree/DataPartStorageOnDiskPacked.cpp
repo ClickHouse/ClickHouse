@@ -915,6 +915,25 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
         dst_disk->createDirectories(dest_storage->getRelativePath());
     }
 
+    /// FLAT siblings copy separately, before the main archive (commit-last); the owned set excludes
+    /// residue of an unrelated same-named part.
+    for (const auto & [projection_dir, projection] : getProjections())
+    {
+        if (projection.format != ProjectionStorageFormat::FLAT || projection.is_temp)
+            continue;
+
+        String proj_dst_dir = dir_path + "." + projection_dir;
+        removeStaleProjectionSiblingAtDestination(dst_disk, fs::path(to) / proj_dst_dir, params.external_transaction);
+
+        auto projection_storage = getProjectionStorage(projection_dir);
+        auto child_params = params.forProjection(
+            params.external_transaction, params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params));
+        child_params.fsync_part_directory = false;  /// the single top-level fsync below covers the whole subtree
+        projection_storage->freeze(
+            to, proj_dst_dir, dst_disk_, read_settings, write_settings,
+            /*save_metadata_callback=*/ {}, child_params);
+    }
+
     bool need_commit = false;
     if (!to_detached && (params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params)))
     {
@@ -1017,7 +1036,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     /// and temp dirs of an unrelated same-named part must not be carried into the copy.
     for (const auto & [projection_dir, projection] : getProjections())
     {
-        if (projection.is_temp)
+        if (projection.format == ProjectionStorageFormat::FLAT || projection.is_temp)
             continue;
 
         auto projection_storage = getProjectionStorage(projection_dir);

@@ -41,6 +41,7 @@ public:
     void removeProjectionResidue(const Projection & placement) override;
 
     void setZeroCopyReplicationEnabled(bool value) override { zero_copy_replication_enabled = value; }
+    void setFlatProjectionStorageInUse(bool value) override { flat_projection_storage_in_use = value; }
 
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
@@ -217,6 +218,11 @@ protected:
     /// transient and not copied), plus the zero-copy flag; entries are re-parented to dest_storage.
     void seedFrozenCopy(IDataPartStorage & dest_storage) const;
 
+    /// A dir at a freeze destination sibling placement is residue of a failed operation on a
+    /// same-named part; remote blobs are kept only when zero-copy replication may share them.
+    void removeStaleProjectionSiblingAtDestination(
+        const DiskPtr & dst_disk, const std::string & proj_dst, const DiskTransactionPtr & external_transaction) const;
+
     /// Repoint at a moved location; unlike setRelativePath, content is guaranteed unchanged, so caches stay.
     void setPathKeepingCaches(std::string new_root_path, std::string new_part_dir);
 
@@ -281,6 +287,10 @@ protected:
 
     /// Zero-copy replication policy; default true keeps residue blobs (fail-safe until seeded).
     bool zero_copy_replication_enabled = true;
+
+    /// Whether the table uses the FLAT projection layout; default true is fail-safe (an unset storage still scans for siblings). Gates the
+    /// flat-sibling parts-root scans so the default legacy_nested table pays no per-part listing. See setFlatProjectionStorageInUse.
+    bool flat_projection_storage_in_use = true;
 
     /// The owned projection set. ready=false: never seeded (reads throw); ready=true: authoritative (absent key = no projection). Paths are
     /// derived, so only setRelativePath drops it.

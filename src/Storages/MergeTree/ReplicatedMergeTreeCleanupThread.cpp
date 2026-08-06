@@ -52,6 +52,9 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
         cleaned_part_like += storage.clearOldTemporaryDirectories((*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
+        cleaned_part_like += storage.clearOrphanProjectionSiblings(
+            std::max<size_t>((*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds(),
+                             MergeTreeData::MIN_ORPHAN_GRACE_SECONDS));
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
