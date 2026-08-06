@@ -1,5 +1,6 @@
--- Tags: no-msan, long, no-azure-blob-storage
+-- Tags: no-msan, long, no-azure-blob-storage, no-parallel-replicas
 -- msan: too slow
+-- no-parallel-replicas: EXPLAIN ESTIMATE reports no rows when the plan has no ReadFromMergeTree
 
 SELECT '-- Single partition by function';
 
