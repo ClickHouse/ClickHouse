@@ -368,11 +368,12 @@ if __name__ == "__main__":
     # For the settings-history style check (check_style.py): when
     # src/Core/SettingsChangesHistory.cpp changed in a PR or merge-queue run, record the
     # names of the setting entries this change ADDS, VALUE-EDITS or REMOVES so the style check
-    # can verify each is recorded under the current version block. Only the setting names are
-    # stored (never the
+    # can verify each is recorded under the current version block. On success only the setting
+    # names are stored (never the
     # raw diff) to keep the pipeline `data` output small and free of user-authored free text
     # (see the note further below about the GH Actions runner dropping outputs that match a
-    # secret pattern). On failure the reason is stored instead, separately bounded.
+    # secret pattern). On failure the reason is stored instead, separately bounded; it can
+    # carry a capped slice of the API output.
     if (
         info.pr_number or info.is_merge_queue_event
     ) and SETTINGS_HISTORY_FILE in changed_files:
