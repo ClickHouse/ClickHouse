@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/CompareHelper.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
@@ -198,6 +199,10 @@ public:
 
             key = key_ref;
         }
+        else if constexpr (is_decimal<KeyType>)
+        {
+            key = assert_cast<const ColumnDecimal<KeyType> &>(key_column).getData()[position];
+        }
         else
         {
             key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[position];
@@ -369,7 +374,12 @@ public:
         // insert using sorted keys to result column
         for (auto & key : keys)
         {
-            key_column.insert(key);
+            /// A raw decimal value does not carry the scale, so it cannot be converted to a `Field`
+            /// and has to be inserted into the decimal column directly.
+            if constexpr (is_decimal<KeyType>)
+                assert_cast<ColumnDecimal<KeyType> &>(key_column).insertValue(key);
+            else
+                key_column.insert(key);
             if constexpr (merge)
                 nested_func->insertMergeResultInto(merged_maps[key], val_column, arena);
             else
@@ -495,6 +505,9 @@ public:
             if (auto * res = createWithNumericBasedType<AggregateFunctionMap, false>(*key_type, nested_function, arguments))
                 return AggregateFunctionPtr(res);
 
+            if (auto * res = createWithDecimalType<AggregateFunctionMap, false>(*key_type, nested_function, arguments))
+                return AggregateFunctionPtr(res);
+
             if (key_type->getTypeId() == TypeIndex::FixedString || key_type->getTypeId() == TypeIndex::String)
                 return std::make_shared<AggregateFunctionMap<String, false>>(nested_function, arguments);
 
@@ -507,6 +520,9 @@ public:
             const DataTypePtr & key_type = arguments.back();
 
             if (auto * res = createWithNumericBasedType<AggregateFunctionMap, true>(*key_type, nested_function, arguments))
+                return AggregateFunctionPtr(res);
+
+            if (auto * res = createWithDecimalType<AggregateFunctionMap, true>(*key_type, nested_function, arguments))
                 return AggregateFunctionPtr(res);
 
             if (key_type->getTypeId() == TypeIndex::FixedString || key_type->getTypeId() == TypeIndex::String)

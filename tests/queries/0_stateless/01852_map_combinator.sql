@@ -69,3 +69,11 @@ SELECT sumMap(statusMap) FROM sum_map_decimal;
 SELECT sumWithOverflowMap(statusMap) FROM sum_map_decimal;
 
 DROP TABLE sum_map_decimal;
+
+-- decimal keys are supported in both the map form and the plain key form
+SELECT sumMap(1, CAST(number % 3, 'Decimal(10, 2)')) FROM numbers(10);
+SELECT sumMap(map(CAST(number % 3, 'Decimal(10, 2)'), number)) FROM numbers(10);
+SELECT sumMapMerge(state) FROM (SELECT sumMapState(number, CAST(number % 3, 'Decimal(10, 2)')) AS state FROM numbers(10));
+SELECT toTypeName(sumMapState(1, CAST(1.01, 'Decimal(10, 2)')));
+SELECT countMap(CAST(number % 3, 'Decimal256(2)')) FROM numbers(10);
+SELECT maxMap(number, toDateTime64(number % 3, 3, 'UTC')) FROM numbers(10);
