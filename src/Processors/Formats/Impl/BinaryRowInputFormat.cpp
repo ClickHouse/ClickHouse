@@ -1387,6 +1387,13 @@ The RowBinaryWithNamesAndTypes header reports the type as `SimpleAggregateFuncti
 Aggregate states have **no length prefix** in RowBinary. A parser must understand the internal serialization format of each specific aggregate function to know how many bytes to consume. In practice, most clients treat aggregate states as opaque and use `*State` / `*Merge` combinators to let the server handle serialization.
 </Warning>
 
+The opaque-state encoding is used on input only under the default [`aggregate_function_input_format`](/reference/settings/session-settings/aggregate#aggregate_function_input_format) setting value `'state'`. When that setting is `'value'` or `'array'`, an `INSERT` in a RowBinary-family format expects a different wire representation for each `AggregateFunction(func, T)` cell:
+
+- `'value'` — a single value of the argument type `T`, encoded exactly as `T` is in RowBinary (when `func` takes several arguments, a `Tuple` of them);
+- `'array'` — an `Array` of such values (an LEB128 length prefix followed by the elements).
+
+The server deserializes the received values and aggregates them with `func` to build the state. The setting does not affect output: `SELECT` always writes the opaque state described below. In the `RowBinaryWithNamesAndTypes` header the column type is still reported as `AggregateFunction(...)` regardless of the setting.
+
 The internal format varies by function. Some simple examples:
 
 **`countState`** — stores the count as a VarUInt (LEB128):

@@ -5457,6 +5457,8 @@ INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
 ```
 
+The setting applies to text formats and to the `RowBinary` family of binary formats. In binary formats, `value` and `array` change the expected wire representation of an `AggregateFunction` cell: instead of the opaque serialized state, the format expects a value of the argument type (or a `Tuple` of the argument types), or an `Array` of such values, encoded as those types normally are in the format. See the [RowBinary format documentation](/reference/formats/RowBinary/RowBinary#aggregatefunction) for details.
+
 Note: The `value` and `array` formats are slower than the default `state` format as they require creating and aggregating values during insertion.
 )", 0) \
     DECLARE(Bool, optimize_syntax_fuse_functions, true, R"(
