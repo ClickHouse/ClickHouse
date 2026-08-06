@@ -206,7 +206,10 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     partial_merge_join_rows_in_right_blocks = settings[QueryPlanSerializationSetting::partial_merge_join_rows_in_right_blocks];
     join_on_disk_max_files_to_merge = settings[QueryPlanSerializationSetting::join_on_disk_max_files_to_merge];
 
-    grace_hash_join_initial_buckets = settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets];
+    grace_hash_join_initial_buckets
+        = settings.isChanged("grace_hash_join_initial_buckets")
+        ? settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets]
+        : 0;
     grace_hash_join_max_buckets = settings[QueryPlanSerializationSetting::grace_hash_join_max_buckets];
 
     max_bytes_before_external_join = settings[QueryPlanSerializationSetting::max_bytes_before_external_join];
@@ -261,7 +264,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::partial_merge_join_rows_in_right_blocks] = partial_merge_join_rows_in_right_blocks;
     settings[QueryPlanSerializationSetting::join_on_disk_max_files_to_merge] = join_on_disk_max_files_to_merge;
 
-    settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets] = grace_hash_join_initial_buckets;
+    if (grace_hash_join_initial_buckets > 0)
+        settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets] = grace_hash_join_initial_buckets;
     settings[QueryPlanSerializationSetting::grace_hash_join_max_buckets] = grace_hash_join_max_buckets;
 
     settings[QueryPlanSerializationSetting::max_bytes_before_external_join] = max_bytes_before_external_join;

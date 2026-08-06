@@ -49,7 +49,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     log_comment,
-    if(log_comment = '04665_runtime_auto',
+    if(log_comment IN ('04665_planner_auto', '04665_runtime_auto'),
         max(ProfileEvents['JoinGraceHashJoinInitialBuckets']) > 1,
         max(ProfileEvents['JoinGraceHashJoinInitialBuckets'])) AS initial_buckets
 FROM system.query_log

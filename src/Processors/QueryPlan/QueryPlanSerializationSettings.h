@@ -4,6 +4,8 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
+#include <string_view>
+
 namespace DB
 {
 
@@ -55,6 +57,8 @@ struct QueryPlanSerializationSettings
     void writeChangedBinary(WriteBuffer & out) const;
     /// Read settings updating only those present in the stream; missing ones keep defaults.
     void readBinary(ReadBuffer & in);
+    /// Return whether the setting was explicitly set or read from the serialized representation.
+    bool isChanged(std::string_view name) const;
 
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)

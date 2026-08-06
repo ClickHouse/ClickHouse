@@ -1272,19 +1272,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             std::optional<size_t> rhs_size_estimation;
             if (params.rhs_size_estimation)
                 rhs_size_estimation = static_cast<size_t>(*params.rhs_size_estimation);
-            const size_t initial_num_buckets = GraceHashJoin::getInitialNumBuckets(
-                params.grace_hash_join_initial_buckets,
-                params.grace_hash_join_max_buckets,
-                rhs_size_estimation,
-                table_join->sizeLimits().max_rows);
             return std::make_shared<GraceHashJoin>(
-                initial_num_buckets,
+                params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
                 table_join->getTempDataOnDisk(),
-                params.join_any_take_last_row);
+                params.join_any_take_last_row,
+                /*external_join_threshold_=*/0,
+                GraceHashJoin::InitialBucketsParams{.total_rows_estimation = rhs_size_estimation});
         }
     }
 

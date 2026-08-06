@@ -53,6 +53,13 @@ public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
 
+    struct InitialBucketsParams
+    {
+        std::optional<size_t> total_rows_estimation;
+        size_t current_rows = 0;
+        size_t current_bytes = 0;
+    };
+
     /// `external_join_threshold_` is the auto-spill memory cap supplied by `SpillingHashJoin`
     /// when this instance is wrapped. It triggers in-bucket rehashing whenever the in-memory
     /// hash table approaches half of the cap, so the configured spill ceiling is honored.
@@ -67,7 +74,8 @@ public:
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_ = false,
-        size_t external_join_threshold_ = 0);
+        size_t external_join_threshold_ = 0,
+        const InitialBucketsParams & initial_buckets_params_ = {});
 
     ~GraceHashJoin() override;
 
@@ -101,14 +109,15 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    /// Resolve the configured initial bucket count. Zero means automatic: when an estimate and
-    /// a per-bucket limit are available, create enough buckets that an evenly distributed bucket
-    /// stays below the limit. Otherwise, start with one bucket.
+    /// Resolve the configured initial bucket count. Zero means automatic: combine the planner's
+    /// row estimate with the rows and bytes already observed at runtime, then create enough
+    /// buckets that an evenly distributed bucket stays below every available limit.
     static size_t getInitialNumBuckets(
         size_t configured_num_buckets,
         size_t max_num_buckets,
-        std::optional<size_t> total_size_estimation = std::nullopt,
-        size_t max_bucket_size = 0);
+        const InitialBucketsParams & initial_buckets_params,
+        size_t max_rows,
+        size_t max_bytes_before_external_join);
 
     void forceSpill() { force_spill = true; }
 

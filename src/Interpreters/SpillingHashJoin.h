@@ -120,7 +120,6 @@ private:
 
     void switchToGraceHashJoin();
     void tryConvertSlots();
-    size_t getInitialNumBucketsForGraceJoin(size_t total_rows, size_t total_bytes) const;
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;

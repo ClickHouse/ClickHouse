@@ -16,6 +16,8 @@
 #include <Common/thread_local_rng.h>
 
 #include <fmt/format.h>
+#include <algorithm>
+#include <limits>
 #include <numeric>
 
 
@@ -259,13 +261,19 @@ GraceHashJoin::GraceHashJoin(
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     bool any_take_last_row_,
-    size_t external_join_threshold_)
+    size_t external_join_threshold_,
+    const InitialBucketsParams & initial_buckets_params_)
     : log{getLogger("GraceHashJoin")}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
     , right_sample_block{right_sample_block_}
     , any_take_last_row{any_take_last_row_}
-    , initial_num_buckets(initial_num_buckets_)
+    , initial_num_buckets(getInitialNumBuckets(
+          initial_num_buckets_,
+          max_num_buckets_,
+          initial_buckets_params_,
+          table_join->sizeLimits().max_rows,
+          external_join_threshold_))
     , max_num_buckets(max_num_buckets_)
     , external_join_threshold(external_join_threshold_)
     , left_key_names(table_join->getOnlyClause().key_names_left)
@@ -288,10 +296,8 @@ void GraceHashJoin::initBuckets()
     if (!buckets.empty())
         return;
 
-    size_t initial_rounded_num_buckets = getInitialNumBuckets(initial_num_buckets, max_num_buckets);
-
-    addBuckets(initial_rounded_num_buckets);
-    ProfileEvents::increment(ProfileEvents::JoinGraceHashJoinInitialBuckets, initial_rounded_num_buckets);
+    addBuckets(initial_num_buckets);
+    ProfileEvents::increment(ProfileEvents::JoinGraceHashJoinInitialBuckets, initial_num_buckets);
 
     if (buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No buckets created");
@@ -305,8 +311,9 @@ void GraceHashJoin::initBuckets()
 size_t GraceHashJoin::getInitialNumBuckets(
     size_t configured_num_buckets,
     size_t max_num_buckets,
-    std::optional<size_t> total_size_estimation,
-    size_t max_bucket_size)
+    const InitialBucketsParams & initial_buckets_params,
+    size_t max_rows,
+    size_t max_bytes_before_external_join)
 {
     chassert(max_num_buckets > 0);
 
@@ -314,13 +321,42 @@ size_t GraceHashJoin::getInitialNumBuckets(
     if (initial_num_buckets == 0)
     {
         initial_num_buckets = 1;
-        if (total_size_estimation && max_bucket_size > 0)
+
+        const auto get_num_buckets_for_size = [max_num_buckets](size_t total_size, size_t max_bucket_size)
         {
+            if (max_bucket_size == 0)
+                return 1uz;
+
             /// `SizeLimits::softCheck` treats equality as an overflow. Add one bucket after
             /// integer division so the estimated size of every evenly distributed bucket is
             /// strictly below the limit. Saturate before adding to avoid overflow.
-            const size_t full_buckets = *total_size_estimation / max_bucket_size;
-            initial_num_buckets = full_buckets >= max_num_buckets ? max_num_buckets : full_buckets + 1;
+            const size_t full_buckets = total_size / max_bucket_size;
+            return full_buckets >= max_num_buckets ? max_num_buckets : full_buckets + 1;
+        };
+
+        const size_t estimated_total_rows
+            = std::max(initial_buckets_params.current_rows, initial_buckets_params.total_rows_estimation.value_or(0));
+        initial_num_buckets = get_num_buckets_for_size(estimated_total_rows, max_rows);
+
+        if (max_bytes_before_external_join > 0)
+        {
+            size_t estimated_total_bytes = initial_buckets_params.current_bytes;
+            if (initial_buckets_params.current_rows > 0 && estimated_total_rows > initial_buckets_params.current_rows)
+            {
+                const UInt128 numerator = static_cast<UInt128>(initial_buckets_params.current_bytes) * estimated_total_rows;
+                const UInt128 estimate
+                    = numerator / initial_buckets_params.current_rows + (numerator % initial_buckets_params.current_rows != 0);
+                estimated_total_bytes = static_cast<size_t>(
+                    std::min<UInt128>(estimate, std::numeric_limits<size_t>::max()));
+            }
+
+            /// `GraceHashJoin` spills when twice the in-memory bucket size reaches the external
+            /// join threshold. Express the same boundary without multiplication to avoid overflow.
+            const size_t max_bucket_bytes
+                = max_bytes_before_external_join / 2 + max_bytes_before_external_join % 2;
+            initial_num_buckets = std::max(
+                initial_num_buckets,
+                get_num_buckets_for_size(estimated_total_bytes, max_bucket_bytes));
         }
     }
 
