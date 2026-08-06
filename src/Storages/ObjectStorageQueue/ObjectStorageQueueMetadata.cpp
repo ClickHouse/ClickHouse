@@ -116,7 +116,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(table_metadata.hasTrackedFilesLimit())
+    , cleanup_failed_files(table_metadata.tracked_files_limit || table_metadata.failed_files_ttl_sec)
     , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
@@ -1244,13 +1244,13 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
         cleanupPersistentProcessingNodes();
 
-    if (table_metadata.hasTrackedFilesLimit())
+    if (table_metadata.hasTrackedFilesLimit() || cleanup_failed_files)
     {
         if (cleanup_processed_files)
-            cleanupTrackedNodes(zookeeper_path / "processed", "processed");
+            cleanupTrackedNodes(zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec);
 
         if (cleanup_failed_files)
-            cleanupTrackedNodes(zookeeper_path / "failed", "failed");
+            cleanupTrackedNodes(zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec);
     }
 
     LOG_TRACE(log, "Node limits check finished");
@@ -1258,7 +1258,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
 void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     const std::string & nodes_path,
-    std::string_view description)
+    std::string_view description,
+    UInt64 ttl_seconds)
 {
     LOG_TEST(log, "Checking {} nodes for tracking limits", description);
 
@@ -1286,7 +1287,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     }
 
     const bool check_nodes_limit = table_metadata.tracked_files_limit > 0;
-    const bool check_nodes_ttl = table_metadata.tracked_files_ttl_sec > 0;
+    const bool check_nodes_ttl = ttl_seconds > 0;
     chassert(check_nodes_limit || check_nodes_ttl);
 
     const bool nodes_limit_exceeded = nodes.size() > table_metadata.tracked_files_limit;
@@ -1361,7 +1362,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     LOG_TEST(
         log, "Checking node limits (max size: {}, max age: {}) for {}",
         table_metadata.tracked_files_limit.load(),
-        table_metadata.tracked_files_ttl_sec.load(),
+        ttl_seconds,
         get_nodes_str());
 
     static constexpr size_t keeper_multi_batch_size = 100;
@@ -1440,7 +1441,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         else if (check_nodes_ttl)
         {
             UInt64 node_age = getCurrentTime() - node.metadata.last_processed_timestamp;
-            if (node_age >= table_metadata.tracked_files_ttl_sec)
+            if (node_age >= ttl_seconds)
             {
                 LOG_TRACE(log, "Removing node at path {} ({}) because file ttl is reached",
                         node.metadata.file_path, node.zk_path);
