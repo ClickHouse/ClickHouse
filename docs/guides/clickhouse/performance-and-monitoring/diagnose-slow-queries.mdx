@@ -9,7 +9,7 @@ keywords: ['query optimization', 'query log', 'slow queries', 'EXPLAIN', 'perfor
 
 import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
 
-Use query history to find recurring slow-query patterns, choose a representative run, and form an initial hypothesis before changing the query or schema.
+Diagnosing a slow query starts with evidence from its query history. This guide shows you how to use `system.query_log` to find recurring slow-query patterns, choose a representative run, and review its resource usage. You will then use `EXPLAIN` to inspect the query plan and form a hypothesis about the bottleneck before changing the query or schema.
 
 ## Before you begin {#before-you-begin}
 
@@ -21,42 +21,430 @@ The examples in this guide use the `nyc_taxi.trips_small_inferred` table. To run
 
 ## How it works {#how-it-works}
 
-Understand what `system.query_log` records, where query history is stored, and how query logs and `EXPLAIN` provide different evidence about a slow query.
+By default, ClickHouse records information about completed queries in the [`system.query_log`](/reference/system-tables/query_log) table. Each record can include the query duration, the number of rows read, CPU and memory usage, and filesystem cache activity.
+
+These measurements help you identify slow query patterns and understand how they use resources. After choosing a representative run, you can inspect its query plan to investigate where the query might be spending time.
+
+On a cluster, query-log data remains local to each node. The examples in this guide use [`clusterAllReplicas`](/reference/functions/table-functions/cluster) to query every replica and [`merge`](/reference/functions/table-functions/merge) to include the current `system.query_log` table and any versioned `query_log_N` tables retained after system-table schema changes.
+
+Each query-log example includes tabs for clustered and single-node deployments. ClickHouse Cloud provides the `default` cluster used in the cluster examples. In a self-managed deployment, replace `default` with a cluster listed in [`system.clusters`](/reference/system-tables/clusters).
+
+<Note>
+The examples set [`skip_unavailable_shards`](/reference/settings/session-settings#skip_unavailable_shards) so that a temporarily unavailable replica does not cause the diagnostic query to fail. This is particularly useful during autoscaling. Records from a skipped replica are not included, so the results may be incomplete.
+</Note>
 
 ## Diagnose a slow query {#diagnose-a-slow-query}
 
-### Find recurring slow-query patterns {#identify-candidate-queries}
+<Steps titleSize="h3">
 
-Query local or cluster-wide history to find patterns with high duration or resource usage.
+<Step title="Identify candidate queries" id="identify-candidate-queries">
 
-### Choose a representative run {#choose-a-representative-query-run}
+Start by grouping completed initial queries by `normalized_query_hash`. This separates query patterns that recur from individual slow executions. The following query ranks patterns by their median duration and includes an example query for each pattern:
 
-Compare several runs of the same normalized query pattern and select one that represents its typical behavior.
+<Tabs>
+<Tab title="Cluster">
 
-### Review duration and resource usage {#review-duration-and-resource-usage}
+```sql
+SELECT
+    normalized_query_hash,
+    count() AS executions,
+    quantile(0.5)(query_duration_ms) AS median_duration_ms,
+    max(query_duration_ms) AS max_duration_ms,
+    formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+    formatReadableSize(max(memory_usage)) AS max_memory,
+    any(query) AS example_query
+FROM clusterAllReplicas('default', merge('system', '^query_log'))
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+  AND event_time >= now() - INTERVAL 1 HOUR
+  AND has(databases, 'nyc_taxi')
+GROUP BY normalized_query_hash
+HAVING executions >= 2
+ORDER BY median_duration_ms DESC
+LIMIT 10
+SETTINGS skip_unavailable_shards = 1
+```
 
-Compare duration, rows and bytes read, and memory usage across runs of the same query pattern.
+</Tab>
+<Tab title="Single node">
 
-### Compare rows read with table size {#compare-rows-read-with-table-size}
+```sql
+SELECT
+    normalized_query_hash,
+    count() AS executions,
+    quantile(0.5)(query_duration_ms) AS median_duration_ms,
+    max(query_duration_ms) AS max_duration_ms,
+    formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+    formatReadableSize(max(memory_usage)) AS max_memory,
+    any(query) AS example_query
+FROM merge('system', '^query_log')
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+  AND event_time >= now() - INTERVAL 1 HOUR
+  AND has(databases, 'nyc_taxi')
+GROUP BY normalized_query_hash
+HAVING executions >= 2
+ORDER BY median_duration_ms DESC
+LIMIT 10
+```
 
-Use rows read as an initial indication of whether the query scans more data than expected.
+</Tab>
+</Tabs>
 
-### Inspect the query plan {#explain-statement}
+Use `executions` to distinguish recurring workload from isolated queries. A pattern with a high median duration, frequent executions, or high resource usage is a stronger candidate for investigation than a single slow run.
 
-Use `EXPLAIN` to validate the initial hypothesis before changing the query or schema.
+After selecting a pattern, inspect its individual executions. For example, the following query lists the five longest-running queries on the NYC Taxi dataset:
+
+<Tabs>
+<Tab title="Cluster">
+
+```sql
+-- Find top 5 long running queries from nyc_taxi database in the last 1 hour
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas('default', merge('system', '^query_log'))
+WHERE has(databases, 'nyc_taxi')
+  AND event_time >= now() - INTERVAL 1 HOUR
+  AND type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_duration_ms DESC
+LIMIT 5
+SETTINGS skip_unavailable_shards = 1
+FORMAT VERTICAL
+```
+
+</Tab>
+<Tab title="Single node">
+
+```sql
+-- Find top 5 long running queries from nyc_taxi database in the last 1 hour
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM merge('system', '^query_log')
+WHERE has(databases, 'nyc_taxi')
+  AND event_time >= now() - INTERVAL 1 HOUR
+  AND type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+</Tab>
+</Tabs>
+
+```response
+Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:36
+query_duration_ms: 2967
+query:             WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:11:33
+query_duration_ms: 2026
+query:             SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:17
+query_duration_ms: 1860
+query:             SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:31
+query_duration_ms: 690
+query:             SELECT avg(total_amount) FROM nyc_taxi.trips_small_inferred WHERE trip_distance > 5
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 5:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:44
+query_duration_ms: 634
+query:             SELECT
+vendor_id,
+avg(total_amount),
+avg(trip_distance)
+FROM
+nyc_taxi.trips_small_inferred
+GROUP BY vendor_id
+ORDER BY 1 DESC
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+```
+
+The `query_duration_ms` field contains the query duration in milliseconds. In these results, the longest-running query took 2,967 ms.
+
+To find queries that place high demand on the system, inspect their memory and CPU usage:
+
+<Tabs>
+<Tab title="Cluster">
+
+```sql
+-- Top queries by memory usage
+SELECT
+    type,
+    event_time,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+    (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+    normalized_query_hash
+FROM clusterAllReplicas('default', merge('system', '^query_log'))
+WHERE has(databases, 'nyc_taxi')
+  AND type = 'QueryFinish'
+  AND is_initial_query = 1
+  AND event_time >= now() - INTERVAL 2 DAY
+  AND user NOT ILIKE '%internal%'
+ORDER BY memory_usage DESC
+LIMIT 30
+SETTINGS skip_unavailable_shards = 1
+```
+
+</Tab>
+<Tab title="Single node">
+
+```sql
+-- Top queries by memory usage
+SELECT
+    type,
+    event_time,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+    (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+    normalized_query_hash
+FROM merge('system', '^query_log')
+WHERE has(databases, 'nyc_taxi')
+  AND type = 'QueryFinish'
+  AND is_initial_query = 1
+  AND event_time >= now() - INTERVAL 2 DAY
+  AND user NOT ILIKE '%internal%'
+ORDER BY memory_usage DESC
+LIMIT 30
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+
+<Step title="Choose a representative query run" id="choose-a-representative-query-run">
+
+A single slow run might be an outlier caused by an ad hoc query or temporary system load. Before inspecting the query plan, review several completed runs with the same [`normalized_query_hash`](/reference/system-tables/query_log#columns), which is identical for queries that differ only by literal values. Choose a run that represents the pattern's typical duration and resource usage.
+
+Replace the value assigned to `selected_hash` with the `normalized_query_hash` of the pattern you want to investigate:
+
+<Tabs>
+<Tab title="Cluster">
+
+```sql
+WITH toUInt64(123456789) AS selected_hash
+SELECT
+    event_time,
+    query_id,
+    query_duration_ms,
+    read_rows,
+    read_bytes,
+    memory_usage,
+    query
+FROM clusterAllReplicas('default', merge('system', '^query_log'))
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+  AND normalized_query_hash = selected_hash
+  AND event_time >= now() - INTERVAL 1 HOUR
+ORDER BY event_time DESC
+LIMIT 10
+SETTINGS skip_unavailable_shards = 1;
+```
+
+</Tab>
+<Tab title="Single node">
+
+```sql
+WITH toUInt64(123456789) AS selected_hash
+SELECT
+    event_time,
+    query_id,
+    query_duration_ms,
+    read_rows,
+    read_bytes,
+    memory_usage,
+    query
+FROM merge('system', '^query_log')
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+  AND normalized_query_hash = selected_hash
+  AND event_time >= now() - INTERVAL 1 HOUR
+ORDER BY event_time DESC
+LIMIT 10;
+```
+
+</Tab>
+</Tabs>
+
+Use the results to:
+
+- Compare `query_duration_ms`, `read_rows`, `read_bytes`, and `memory_usage` across runs.
+- Note the range when the measurements vary significantly.
+- Select a `query_id` with measurements near the typical values, rather than choosing the fastest or slowest run.
+
+This step chooses a historically representative execution for an initial diagnosis. It does not establish a controlled performance baseline. If the query log does not contain enough completed runs, run the same query a few times while the dataset and available compute resources remain similar. Continue with [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) to create controlled comparison runs with consistent cache settings, warm-up handling, and stage-by-stage measurements.
+
+The example query-log results show that each candidate read approximately 329.04 million rows. For context, confirm the number of rows in the example table:
+
+```sql
+SELECT count()
+FROM nyc_taxi.trips_small_inferred
+```
+
+```response
+Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+   ┌───count()─┐
+1. │ 329044175 │ -- 329.04 million
+   └───────────┘
+```
+
+The table contains 329.04 million rows, approximately the same number reported in `read_rows` for each candidate. This suggests that the queries scanned most or all of the table, but it does not identify why those rows were read or whether that amount is appropriate for the query. Inspect the query plan next to see how ClickHouse selected and processed the data.
+
+</Step>
+
+<Step title="Inspect the execution plan" id="explain-statement">
+
+After choosing a representative run, use [`EXPLAIN`](/reference/statements/explain) to inspect how ClickHouse plans the query without running it. The output shows the operations ClickHouse expects to perform and how data moves between them, providing more context for the measurements in the query log.
+
+For a detailed introduction to the available output formats, see [Understanding query execution with the analyzer](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer). This section focuses on index use and the query pipeline.
 
 #### Inspect index use {#inspect-index-use}
 
-Review the parts and granules selected by the query.
+Start with `EXPLAIN indexes = 1` to inspect the query plan and index use. It returns a tree of operations that shows how ClickHouse expects to read, filter, and process the data. Read the plan from the bottom up.
 
-#### Inspect the query pipeline {#inspect-query-pipeline}
+Use the first long-running query from the query-log results:
 
-Review the pipeline shape and parallelism used to execute the query.
+```sql
+EXPLAIN indexes = 1
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
 
-## Interpret the evidence {#interpret-the-evidence}
+```response
+Query id: f35c412a-edda-4089-914b-fa1622d69868
 
-Combine query-log measurements with the query plan to decide which part of the query warrants a controlled comparison.
+   ┌─explain─────────────────────────────────────────────┐
+1. │ Expression ((Projection + Before ORDER BY))         │
+2. │   Aggregating                                       │
+3. │     Expression (Before GROUP BY)                    │
+4. │       Filter (WHERE)                                │
+5. │         ReadFromMergeTree (nyc_taxi.trips_small_inferred) │
+   └─────────────────────────────────────────────────────┘
+```
+
+The plan reads data from `nyc_taxi.trips_small_inferred`, evaluates the computed values used by the `WHERE` clause, filters the rows, calculates the quantiles, and projects the result.
+
+The example table does not define a primary key, so ClickHouse reads the table without primary-key pruning.
+
+#### Inspect the query pipeline {#inspect-the-query-pipeline}
+
+`EXPLAIN PIPELINE` expands the query plan into the processors ClickHouse expects to use. It also shows the planned concurrency between those processors.
+
+```sql
+EXPLAIN PIPELINE
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: c7e11e7b-d970-4e35-936c-ecfc24e3b879
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                        │
+ 2. │ ExpressionTransform × 59                                                            │
+ 3. │   (Aggregating)                                                                     │
+ 4. │   Resize 59 → 59                                                                    │
+ 5. │     AggregatingTransform × 59                                                       │
+ 6. │       StrictResize 59 → 59                                                          │
+ 7. │         (Expression)                                                                │
+ 8. │         ExpressionTransform × 59                                                    │
+ 9. │           (Filter)                                                                  │
+10. │           FilterTransform × 59                                                      │
+11. │             (ReadFromMergeTree)                                                     │
+12. │             MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+```
+
+The `× 59` markers indicate that the pipeline contains 59 parallel instances of those processors. Actual concurrency and resource usage depend on the query settings and the resources available when the query runs.
+
+</Step>
+
+</Steps>
 
 ## Next steps {#next-steps}
 
-Continue with [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) to test the initial hypothesis with progressively simpler forms of the query.
+After choosing a representative run and inspecting its plan, continue with [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) to compare progressively simpler forms of the query and validate which stage to investigate.

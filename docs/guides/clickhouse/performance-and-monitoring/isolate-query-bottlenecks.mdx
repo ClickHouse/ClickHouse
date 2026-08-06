@@ -16,7 +16,7 @@ Query optimization is easier when you change one part of a query at a time and c
 
 ## Before you begin {#before-you-begin}
 
-Begin by [identifying a recurring slow query](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) that you can run against a consistent dataset. Production deployments can execute many queries at once, so narrow `system.query_log` by its `user`, `databases`, or `tables` fields, then group by `normalized_query_hash` to find expensive patterns that run regularly. Treat isolated slow runs with caution: an ad hoc query or temporary system stress might not represent a recurring performance problem.
+Begin with a recurring slow-query pattern and a representative historical execution identified using [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries). You should have the complete query, a bounded dataset and time range, and its initial duration and resource measurements. This guide turns that historical diagnosis into controlled comparison runs.
 
 You can apply this method to your own query. To run the examples in this guide as written, create and load the `nyc_taxi.trips_small_inferred` table if you have not already done so:
 
