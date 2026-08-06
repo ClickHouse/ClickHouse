@@ -86,7 +86,13 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     /// be `db`.
     auto mongo_dialect_query = fmt::format("db.{}.find({})", collection.collection, serialized_filter);
     if (!serialized_limit.empty())
-        mongo_dialect_query += fmt::format(".limit({})", std::stoi(serialized_limit));
+    {
+        /// Mongo reads `limit: 0` as no limit at all and a negative limit as its absolute
+        /// value, the same way `count` does.
+        int limit = std::stoi(serialized_limit);
+        if (limit != 0)
+            mongo_dialect_query += fmt::format(".limit({})", limit < 0 ? -limit : limit);
+    }
     if (!serialized_skip.empty())
         mongo_dialect_query += fmt::format(".skip({})", std::stoi(serialized_skip));
     if (!sorting.empty())

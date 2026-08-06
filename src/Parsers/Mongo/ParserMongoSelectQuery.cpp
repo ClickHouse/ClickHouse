@@ -71,7 +71,9 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
 
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
-    if (metadata->getLimit())
+    /// `limit(0)` means no limit in Mongo, so it must not become `LIMIT 0`, which would return
+    /// an empty cursor instead of every matching row.
+    if (metadata->getLimit() && *metadata->getLimit() != 0)
     {
         size_t limit_value = *metadata->getLimit();
         auto literal = make_intrusive<ASTLiteral>(Field(limit_value));
