@@ -164,7 +164,6 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
@@ -615,7 +614,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Top-level merges are covered by the claim above. A projection merge writes into a directory this
     /// same operation just created, so finding one means a logic bug.
     if (global_ctx->parent_part && data_part_storage->exists())
-        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection merge directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
 
