@@ -1975,23 +1975,24 @@ def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
 
 
-# The three messages ever observed for this failure (InstrProfilingFile.c:469, :522, :623);
-# the runtime's other diagnostics are left alone. The trailing field is strerror(errno), so
-# the span is bounded by the strerror table: an over-long match would delete real output.
+# The three messages ever observed for this failure (InstrProfilingFile.c:469, :522, :623).
+# Nothing delimits the trailing strerror(errno) from the test's own output, so only
+# prefix-free values match: one that another is a prefix of would also eat real output.
+_STRERROR = {os.strerror(e) for e in range(256)}
 _LLVM_PROFILE_ERROR = (
     rb"LLVM Profile Error: (?:Invalid profile data to merge"
     rb"|(?:Profile Merging of file [^\n]*? failed"
     rb'|Failed to write file "[^"\n]*"): (?:'
     + rb"|".join(
-        re.escape(s)
-        for s in sorted(
-            {os.strerror(e).encode() for e in range(256)}, key=len, reverse=True
-        )
+        re.escape(s.encode())
+        for s in sorted(_STRERROR)
+        if not any(s != other and s.startswith(other) for other in _STRERROR)
     )
     + rb"))"
 )
 # A line holding nothing else goes away with its newline, but a message glued
-# onto real output (which happens) must lose only the message.
+# onto real output (which happens) must lose only the message. An unmatched
+# message is left whole, so a miss shows up in the diff instead of hiding output.
 _LLVM_PROFILE_ERROR_LINE_RE = re.compile(
     rb"(?m)^(?:" + _LLVM_PROFILE_ERROR + rb")+(?:\n|\Z)"
 )

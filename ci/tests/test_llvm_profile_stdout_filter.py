@@ -3,6 +3,7 @@ arrive glued onto real output, so the transform strips the message SPAN, not the
 and must run after the other in-place stdout rewrites."""
 
 import ast
+import os
 import runpy
 from pathlib import Path
 
@@ -15,6 +16,12 @@ _MERGE = b"LLVM Profile Error: Profile Merging of file cl-0_0.profraw failed: Su
 _WRITE = b'LLVM Profile Error: Failed to write file "cl-0_0.profraw": Invalid argument'
 _BAD_ERRNO = b'LLVM Profile Error: Failed to write file "x": Not an errno\n'
 _WARNING = b"LLVM Profile Warning: merging\n200\n"
+_STRERROR = {os.strerror(e) for e in range(256)}
+# Pairs where one strerror value is a prefix of another, e.g. `No such device` and
+# `No such device or address`. Derived from libc, never from the pattern under test.
+_PREFIX_PAIRS = sorted(
+    (s, l) for s in _STRERROR for l in _STRERROR if s != l and l.startswith(s)
+)
 
 
 @pytest.mark.parametrize(
@@ -38,6 +45,25 @@ def test_span_stripped_and_real_output_preserved(tmp_path, stdout, expected):
     path.write_bytes(stdout)
     _strip(str(path))
     assert path.read_bytes() == expected
+
+
+@pytest.mark.parametrize("short,long_", _PREFIX_PAIRS)
+def test_prefix_pair_does_not_eat_real_output(tmp_path, short, long_):
+    # The runtime printed the shorter errno and the test's own output happens to begin
+    # with the rest of the longer one, so the bytes are identical to the noise case.
+    # Matching the longer value here would silently delete `200` and pass the test.
+    real = long_[len(short) :].encode() + b"\n200\n"
+    path = tmp_path / "stdout"
+    path.write_bytes(
+        b'LLVM Profile Error: Failed to write file "x": ' + short.encode() + real
+    )
+    _strip(str(path))
+    assert path.read_bytes() == real
+
+
+def test_libc_still_reports_prefix_pairs(tmp_path):
+    # Without a pair the arm above matches nothing and proves nothing.
+    assert _PREFIX_PAIRS, "libc reports no prefix pairs; the arm above is vacuous"
 
 
 def test_called_after_the_other_stdout_rewrites():
