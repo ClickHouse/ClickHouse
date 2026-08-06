@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups and pages based on spatial predicates and bounding box statistics"},
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
+            {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -1349,6 +1350,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
             {"compute_exact_num_defaults_for_sparse_columns", false, true, "Promote to BETA and enable by default: compute the exact per-column `num_defaults` counter during inserts and merges (instead of the sampling estimate), so `optimize_trivial_count_with_sparsity_filter` and sparsity-based pruning can rely on it."},
             {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
         });
