@@ -50,6 +50,10 @@ EXCLUDE=(
     04045_delta_sample_93093.parquet
     # Hand-crafted file for testing dictionary memory estimation with sparse nullables.
     04099_dict_nullable_string_memory.parquet
+    # Schema fixtures for the 04757 schema-inference cache key test. The VARIANT one carries a
+    # logical type this reader rejects, so loading it here would print an exception.
+    parquet_variant_logical_type.parquet
+    parquet_required_json_column.parquet
     # Schema fixtures for 04065 Nullable(Tuple) wrapper test (LIST/MAP optional wrappers).
     04065_optional_list_wrapper_required_element.parquet
     04065_optional_map_wrapper_required_value.parquet
