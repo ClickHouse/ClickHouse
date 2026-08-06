@@ -818,10 +818,15 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     /// in this plan is claimed. `resolveMaterializingCTEs` then only
     /// materializes the CTEs that were not already materialized inplace.
     /// Reject sets that cannot cross a distributed-plan fragment boundary while the delayed set
-    /// steps still reference them; `addStepsToBuildSets` consumes those references below, and the
-    /// fragment cut would otherwise fail later with a generic non-serializable-step error.
+    /// steps still reference them, and defer set/CTE expansion: a distributed plan ships the
+    /// values of the sets built during planning with the worker tasks, so the non-serializable
+    /// `CreatingSetsStep` expansion must not reach the fragment cut. A plan that collapses to a
+    /// single local stage expands them in `convertToDistributed` instead.
     if (optimization_settings.make_distributed_plan)
+    {
         QueryPlanOptimizations::validateSetsForDistributedPlan(*root);
+        return;
+    }
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
     if (optimization_settings.materialize_ctes)
@@ -864,6 +869,13 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         QueryPlanOptimizationSettings local_settings = optimization_settings;
         local_settings.make_distributed_plan = false;
         QueryPlanOptimizations::optimizeTreeSecondPass(local_settings, *root, nodes, *this);
+        /// The distributed `optimize` deferred set/CTE expansion; a collapsed plan executes
+        /// locally and expands them the ordinary way (sets already built during planning are
+        /// simply reused).
+        if (local_settings.build_sets)
+            QueryPlanOptimizations::addStepsToBuildSets(local_settings, *this, *root, nodes);
+        if (local_settings.materialize_ctes)
+            QueryPlanOptimizations::resolveMaterializingCTEs(local_settings, *this, *root, nodes);
     }
     else
     {

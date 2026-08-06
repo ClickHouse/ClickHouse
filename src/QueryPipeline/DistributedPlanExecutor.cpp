@@ -80,6 +80,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ErrorCodes
@@ -650,10 +653,14 @@ ExchangeLookupPtr createExchangeLookup(
 }
 
 
-static String serializeQueryPlan(const QueryPlan & query_plan)
+static String serializeQueryPlan(const QueryPlan & query_plan, const ContextPtr & context)
 {
+    const auto & settings = context->getSettingsRef();
+    SizeLimits sets_transfer_limits(
+        settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+
     WriteBufferFromOwnString out;
-    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    query_plan.serializeForDistributedTask(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, sets_transfer_limits);
     return out.str();
 }
 
@@ -901,7 +908,7 @@ protected:
         started_tasks.reserve(stage.tasks.size());
         started_threads.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
         for (const auto & task : stage.tasks)
@@ -1538,7 +1545,7 @@ protected:
     {
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = context->getCurrentQueryId();
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
 
