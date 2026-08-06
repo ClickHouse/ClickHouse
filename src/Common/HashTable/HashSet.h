@@ -70,23 +70,23 @@ public:
     }
 
     /// Call func(const Key &, char *& mapped) for each set element, like HashMapTable::forEachValue. A set
-    /// cell has no mapped value, so `func` gets the dummy (see `voidMappedDummy`) - it is only there so that
-    /// the Aggregator's key-emitting code stays one generic body over map and set tables.
+    /// cell has no mapped value, so `func` gets a throwaway one - it is only there so that the Aggregator's
+    /// key-emitting code stays one generic body over map and set tables.
     template <typename Func>
     void forEachValue(Func && func)
     {
         for (auto & cell : *this)
-            func(cell.getKey(), voidMappedDummy());
+        {
+            /// `func` may write to the mapped value it is handed; a set has none, so hand it a throwaway.
+            char * no_mapped_value = nullptr;
+            func(cell.getKey(), no_mapped_value);
+        }
     }
 
-    /** The mapped-value interface of `HashMapTable`, for a table whose cells hold no mapped value. A set has
-      * none, so every operation that visits mapped values visits nothing and `func` is never called:
-      * `forEachMapped` iterates nothing, and `mergeToViaFind` - which in the map version only combines the
-      * mapped values of keys present on both sides - has nothing to combine. `mergeToViaEmplace` still
-      * unions the keys, because that part of it is the merge; only the combining callback is dropped.
-      *
-      * Defined so that the Aggregator's state-maintaining code stays one generic body over map and set
-      * tables instead of being split in two by `if constexpr`.
+    /** The mapped-value interface of `HashMapTable` for a table whose cells have no mapped value: every
+      * operation that visits mapped values visits nothing, so `func` is never called. `mergeToViaEmplace`
+      * still unions the keys - that part of it is the merge - and only drops the combining callback.
+      * Defined so the Aggregator's merges stay one generic body over map and set tables.
       */
     template <typename Func>
     void forEachMapped(Func &&)

@@ -4,7 +4,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-#include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/KeysNullMap.h>
 #include <Common/HashTable/Prefetching.h>
@@ -124,15 +123,8 @@ public:
     }
 };
 
-/** A set method (`GROUP BY` without aggregate functions) has no mapped value: its cells store keys only.
-  * `setMapped` therefore stores nothing, and `getMapped` hands out a per-thread dummy.
-  *
-  * These exist so that the state-maintaining code of `Aggregator` stays one generic body instead of being
-  * split in two by `if constexpr`. That code is never *executed* for a set method - every path into it is
-  * behind `params.aggregates_size == 0`, `is_simple_count`, or an explicit set-method branch, none of which
-  * a set method can pass - but it is still instantiated, so it has to compile. The dummy is what makes it
-  * compile; it is deliberately per-thread so that a mistake here cannot become a data race.
-  */
+/// A set method (`GROUP BY` without aggregate functions) stores keys only. The state-maintaining code of
+/// `Aggregator` is still instantiated for one - it just never runs - so it has to compile.
 template <>
 class EmplaceResultImpl<void>
 {
@@ -142,12 +134,19 @@ public:
     explicit EmplaceResultImpl(bool inserted_) : inserted(inserted_) {}
     bool isInserted() const { return inserted; }
 
+    /// Reached: `executeImplBatch` marks a cell occupied by setting a dummy pointer, for set methods too.
+    /// There is no slot to store it in.
     template <typename T>
     void setMapped(const T &) const
     {
     }
 
-    static char *& getMapped() { return voidMappedDummy(); }
+    /// Not reached: every caller is behind `params.aggregates_size == 0`, `is_simple_count`, or an explicit
+    /// set branch. Throws rather than `UNREACHABLE()`, so a wrong assumption here stays diagnosable.
+    [[noreturn]] static char *& getMapped()
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A set-mode aggregation method has no mapped value to read");
+    }
 };
 
 /// FindResult optionally may contain pointer to value and offset in hashtable buffer.
@@ -202,8 +201,11 @@ class FindResultImpl<void, need_offset> : public FindResultImplBase, public Find
 public:
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 
-    /// See `EmplaceResultImpl<void>`: a set has no mapped value, and this is never reached for a set method.
-    static char *& getMapped() { return EmplaceResultImpl<void>::getMapped(); }
+    /// See `EmplaceResultImpl<void>::getMapped` - not reached, present only so generic code compiles.
+    [[noreturn]] static char *& getMapped()
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A set-mode aggregation method has no mapped value to read");
+    }
 };
 
 template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false, bool nullable = false>
