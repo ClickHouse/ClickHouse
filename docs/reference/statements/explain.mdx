@@ -792,7 +792,7 @@ matched output rows = <output_rows> - <NULL-padded rows of both sides>
 fanout              = <matched output rows> / <matched_rows of that side>
 ```
 
-An outer join emits one `NULL`-padded output row for every row of a preserved side that found no partner. Those rows are subtracted so that they do not dilute the ratio:
+An outer join emits one `NULL`-padded output row for every row of a preserved side that found no partner. Those rows are subtracted so that they do not dilute the ratio. Only a preserved side has them — the right side for `RIGHT` and `FULL`, the left one for `LEFT` and `FULL`:
 
 - `fanout = 0` — the matched rows produced no output row at all, which is what an `ANTI` join does: it emits only the rows that found no partner.
 - `fanout = 1` — a clean 1:1 join; every matched row produced exactly one output row.
@@ -808,8 +808,9 @@ Most of these numbers fall out of data the join builds anyway and are reported b
   which left rows matched — either to materialize the right columns or to evaluate the residual
   condition — and the count is exact without the option.
 
-The merge algorithms need the option more often, since marking the rows of an equal range is work
-they otherwise skip.
+`partial_merge` needs it for the **right** side of the four `ALL` kinds, for the same reason.
+`full_sorting_merge` and `parallel_full_sorting_merge` need it for nothing: they walk the two sorted
+inputs and see every row of an equal range as they consume it.
 
 <Note>
 The option is off by default because the extra bookkeeping is not free, and what it costs is measurement fidelity. The work is done inside the probe loop and grows with the number of output rows. Use `matches = 1` when you need to know the exact matches that left and right rows found on the other side.
@@ -836,7 +837,9 @@ Enabling [`any_join_distinct_right_table_keys`](/reference/settings/session-sett
 
 The [`Join`](/reference/engines/table-engines/special/join) table engine follows the same table, using the kind and strictness declared in the engine: `Join(ALL, INNER, …)` reports both sides, `Join(ANY, LEFT, …)` neither.
 
-**Merge algorithms.** With `matches = 1`, `partial_merge` and `full_sorting_merge` report **both** sides for every combination they accept — they walk the two sorted inputs and see every row of an equal range, so nothing has to be reconstructed afterwards. `partial_merge` accepts `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` and `SEMI LEFT`; `full_sorting_merge` accepts the four `ALL` kinds, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` and `ASOF LEFT`.
+**Merge algorithms.** `full_sorting_merge` and `parallel_full_sorting_merge` report **both** sides for every combination they accept, and without `matches = 1` — they walk the two sorted inputs and see every row of an equal range as they consume it, so nothing has to be reconstructed afterwards. They accept the four `ALL` kinds, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` and `ASOF LEFT`.
+
+`partial_merge` accepts `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` and `SEMI LEFT`. It reports both sides for the four `ALL` kinds, the right one with `matches = 1`; for `ANY INNER`, `ANY LEFT` and `SEMI LEFT` the right side is `not collected`.
 
 **`direct`.** The left side only. The right side is a key-value store that is never materialized into rows, so it has no `Right:` line at all.
 
