@@ -1974,12 +1974,12 @@ void Counters::increment(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
-        if (auto * trace_arr = current->should_trace_array.load(std::memory_order_relaxed))
+        /// Small optimization for quite a hot path.
+        /// Load with relaxed as it almost always returns null.
+        /// If non-null, add an acquire fence.
+        if (current->should_trace_array.load(std::memory_order_relaxed))
         {
-            /// Small optimization for quite a hot path.
-            /// Load with relaxed as it almost always returns null.
-            /// If non-null, add an acquire fence.
-            std::atomic_thread_fence(std::memory_order_acquire);
+            auto * trace_arr = current->should_trace_array.load(std::memory_order_acquire);
             send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
         }
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
