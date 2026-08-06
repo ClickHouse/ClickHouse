@@ -41,6 +41,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char finish_clean_quorum_failed_parts[];
+    extern const char rmt_restarting_thread_fail_startup[];
 };
 
 /// Used to check whether it's us who set node `is_active`, or not.
@@ -192,6 +193,11 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     LOG_DEBUG(log, "Trying to start replica up");
     try
     {
+        fiu_do_on(FailPoints::rmt_restarting_thread_fail_startup,
+        {
+            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Injected failure by the rmt_restarting_thread_fail_startup failpoint");
+        });
+
         removeFailedQuorumParts();
         activateReplica();
 
