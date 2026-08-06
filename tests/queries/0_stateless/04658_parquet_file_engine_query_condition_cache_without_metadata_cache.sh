@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # Tag no-fasttest: needs Parquet
+# Tag no-parallel: the query condition cache is server-wide and size-bounded, so a
+# concurrent test can evict our entry between the two reads and turn the expected
+# hit into a miss (same reason as `04637_parquet_file_engine_bucketed_query_condition_cache`)
 
 # The query condition cache and the Parquet metadata cache are independent caches with
 # independent settings. Regression test for the local-file read path (`StorageFile`):
