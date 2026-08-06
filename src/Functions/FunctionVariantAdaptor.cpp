@@ -13,6 +13,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -29,6 +30,25 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TYPE_MISMATCH;
 extern const int CANNOT_CONVERT_TYPE;
 extern const int NO_COMMON_TYPE;
+extern const int TIMEOUT_EXCEEDED;
+}
+
+/// `checkTimeLimit` throws for `KILL QUERY` and the 'throw' overflow mode and returns false under
+/// 'break'; a partially resolved alternative list is a wrong result type rather than a smaller one, so
+/// the false return becomes a throw too.
+static void checkQueryTimeLimit(const QueryStatusPtr & process_list_element, const String & function_name)
+{
+    if (process_list_element && !process_list_element->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", function_name);
+}
+
+/// Resolved from the executing thread rather than captured: an adaptor instance can be reused by a
+/// later query.
+static QueryStatusPtr tryGetProcessListElement()
+{
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        return query_context->getProcessListElementSafe();
+    return {};
 }
 
 ExecutableFunctionVariantAdaptor::ExecutableFunctionVariantAdaptor(
@@ -483,11 +503,16 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// Index num_variants is allocated for rows with NULL values, it doesn't have any result,
     /// we will insert NULL values in these rows.
 
+    const auto process_list_element = tryGetProcessListElement();
+    const auto function_name = getName();
+
     for (size_t i = 0; i < num_variants; ++i)
     {
         /// Skip variants that don't exist in the data.
         if (!variants[i].column)
             continue;
+
+        checkQueryTimeLimit(process_list_element, function_name);
 
         auto func_base = try_build(variants_arguments[i]);
         if (!func_base)
@@ -761,8 +786,13 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     DataTypes result_types;
     result_types.reserve(variant_alternatives.size());
 
+    const auto process_list_element = tryGetProcessListElement();
+    const auto function_name = function_overload_resolver->getName();
+
     for (const auto & alternative : variant_alternatives)
     {
+        checkQueryTimeLimit(process_list_element, function_name);
+
         /// Create arguments with this alternative instead of the Variant.
         /// Preserve original columns (especially ColumnConst) for non-Variant arguments.
         ColumnsWithTypeAndName alt_columns_with_type = arguments_with_type_;
