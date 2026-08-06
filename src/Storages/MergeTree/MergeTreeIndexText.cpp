@@ -44,6 +44,8 @@
 #include <base/types.h>
 #include <fmt/ranges.h>
 
+#include <limits>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -1220,6 +1222,9 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         readVarUInt(info.position_offset, istr);
         UInt64 position_cardinality = 0;
         readVarUInt(position_cardinality, istr);
+        if (position_cardinality > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions: {} documents for a single token", position_cardinality);
         info.position_cardinality = static_cast<UInt32>(position_cardinality);
         readVarUInt(info.position_bytes, istr);
     }
@@ -1444,7 +1449,11 @@ DictionarySparseIndex serializeTokensAndPostings(
 
                 token_info.header |= PostingsSerialization::Flags::HasPositions;
                 token_info.position_offset = positions_stream->plain_hashing.count();
-                token_info.position_cardinality = static_cast<UInt32>(TextIndexBlockedPositionsCodec::countDocuments(position_entries));
+                const UInt64 num_position_docs = TextIndexBlockedPositionsCodec::countDocuments(position_entries);
+                if (num_position_docs > std::numeric_limits<UInt32>::max())
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Text index positions: more than {} documents for a single token", std::numeric_limits<UInt32>::max());
+                token_info.position_cardinality = static_cast<UInt32>(num_position_docs);
 
                 TextIndexBlockedPositionsCodec::encode(position_entries, positions_stream->plain_hashing);
                 token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;

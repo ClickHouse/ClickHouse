@@ -466,7 +466,11 @@ void MergeTextIndexesTask::flushPostingList()
 
         token_info.header |= PostingsSerialization::Flags::HasPositions;
         token_info.position_offset = positions_stream->plain_hashing.count();
-        token_info.position_cardinality = static_cast<UInt32>(TextIndexBlockedPositionsCodec::countDocuments(output_positions));
+        const UInt64 num_position_docs = TextIndexBlockedPositionsCodec::countDocuments(output_positions);
+        if (num_position_docs > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Text index positions: more than {} documents for a single token", std::numeric_limits<UInt32>::max());
+        token_info.position_cardinality = static_cast<UInt32>(num_position_docs);
 
         TextIndexBlockedPositionsCodec::encode(output_positions, positions_stream->plain_hashing);
         token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
