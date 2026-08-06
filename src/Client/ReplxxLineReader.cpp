@@ -3,6 +3,7 @@
 #include <Client/ReplxxLineReader.h>
 #include <Parsers/Lexer.h>
 #include <base/errnoToString.h>
+#include <base/pathToString.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -286,9 +287,13 @@ std::string replxx_now_ms_str()
 /// will take lots of time (getline() + tons of reallocations).
 ///
 /// NOTE: this code uses std::ifstream/std::ofstream like original replxx code.
+///
+/// The streams are opened by `std::filesystem::path` rather than by the string: the path is
+/// UTF-8, and on Windows a narrow string given to a stream constructor is interpreted through
+/// the active code page, so a profile directory outside it would silently lose its history.
 void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 {
-    std::ifstream in(path);
+    std::ifstream in(pathFromString(path));
     if (!in)
     {
         rx.print("Cannot open %s reading (for conversion): %s\n",
@@ -325,7 +330,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
     rx.print("The history file (%s) is in old format. %zu lines, %zu unique lines.\n",
         path.c_str(), lines_size, lines.size());
 
-    std::ofstream out(path);
+    std::ofstream out(pathFromString(path));
     if (!out)
     {
         rx.print("Cannot open %s for writing (for conversion): %s\n",
@@ -375,7 +380,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     if (!history_file_path.empty())
     {
-        history_file_fd = open(history_file_path.c_str(), O_RDWR);
+        history_file_fd = DB::platformOpenReadWrite(history_file_path);
         if (history_file_fd < 0)
         {
             rx.print("Open of history file failed: %s\n", errnoToString().c_str());
@@ -390,10 +395,22 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             }
             else
             {
+#if defined(OS_WINDOWS)
+                /// replxx's `history_load(std::string)` opens the file by the narrow path, which
+                /// the CRT interprets through the active code page; the path is UTF-8. Open the
+                /// stream by `std::filesystem::path` - wide on Windows - and hand replxx the
+                /// stream instead.
+                std::ifstream history_in(pathFromString(history_file_path));
+                if (history_in)
+                    rx.history_load(history_in);
+                else
+                    rx.print("Loading history failed: %s\n", errnoToString().c_str());
+#else
                 if (!rx.history_load(history_file_path))
                 {
                     rx.print("Loading history failed: %s\n", errnoToString().c_str());
                 }
+#endif
 
                 if (DB::platformUnlockFile(history_file_fd))
                 {
@@ -790,6 +807,21 @@ void ReplxxLineReader::addToHistory(const String & line)
     else
         locked = true;
 
+#if defined(OS_WINDOWS)
+    /// replxx's `history_save(std::string)` opens the file by the narrow path, which the CRT
+    /// interprets through the active code page; the path is UTF-8. Reproduce what that overload
+    /// does - merge the file's current contents (another client may have appended; every entry
+    /// of this session is already there from the previous save), then write everything back -
+    /// with streams opened by `std::filesystem::path`, which is wide on Windows. We hold the
+    /// exclusive lock across both halves.
+    if (history_file_fd >= 0)
+    {
+        std::ifstream history_in(pathFromString(history_file_path));
+        if (history_in)
+            rx.history_load(history_in);
+    }
+#endif
+
     rx.history_add(line);
 
     /// Remember identifiers from the committed query so they are prioritized in later
@@ -797,8 +829,22 @@ void ReplxxLineReader::addToHistory(const String & line)
     suggest.addUsedWords(extractIdentifiers(line.c_str()));
 
     // flush changes to the disk
+#if defined(OS_WINDOWS)
+    if (history_file_fd >= 0)
+    {
+        std::ofstream history_out(pathFromString(history_file_path));
+        if (history_out)
+        {
+            rx.history_save(history_out);
+            history_out.flush();
+        }
+        if (!history_out)
+            rx.print("Saving history failed: %s\n", errnoToString().c_str());
+    }
+#else
     if (history_file_fd >= 0 && !rx.history_save(history_file_path))
         rx.print("Saving history failed: %s\n", errnoToString().c_str());
+#endif
 
     if (history_file_fd >= 0 && locked && 0 != DB::platformUnlockFile(history_file_fd))
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());

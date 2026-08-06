@@ -178,6 +178,11 @@ int platformTruncate(const std::string & path, UInt64 size)
     return 0;
 }
 
+int platformOpenReadWrite(const std::string & path)
+{
+    return ::_wopen(pathFromString(path).c_str(), _O_RDWR | _O_BINARY);
+}
+
 int platformOpenDirectory(const std::string & path)
 {
     /// The only consumer of this descriptor is `platformFDataSync`, i.e. `_commit`, i.e.
@@ -253,6 +258,11 @@ int platformUnlockFile(int fd)
 int platformTruncate(const std::string & path, UInt64 size)
 {
     return ::truncate(path.c_str(), static_cast<off_t>(size));
+}
+
+int platformOpenReadWrite(const std::string & path)
+{
+    return ::open(path.c_str(), O_RDWR);
 }
 
 int platformOpenDirectory(const std::string & path)

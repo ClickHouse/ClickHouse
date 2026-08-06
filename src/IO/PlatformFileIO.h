@@ -53,6 +53,11 @@ int platformUnlockFile(int fd);
 /// with `errno` set.
 int platformTruncate(const std::string & path, UInt64 size);
 
+/// `open(O_RDWR)` by a UTF-8 path. The Windows CRT's `_open` interprets a narrow path through
+/// the active code page, mangling any path with a character outside it, so this goes through
+/// `_wopen` with the path converted from UTF-8. Reports failure as `-1` with `errno` set.
+int platformOpenReadWrite(const std::string & path);
+
 /// Opens a directory, for no purpose other than passing the descriptor to `platformFDataSync` -
 /// which is how MergeTree makes a rename durable. `open(O_DIRECTORY)` on POSIX; on Windows the
 /// CRT's `_open` refuses a directory outright, so this goes through `CreateFileW` with
