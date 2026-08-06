@@ -56,7 +56,6 @@ hostname:                clickhouse.eu-central1.internal
 event_date:              2020-09-10
 event_time:              2020-09-10 11:23:07
 event_time_microseconds: 2020-09-10 11:23:07.871397
-microseconds:            871397
 thread_name:             clickhouse-serv
 thread_id:               564917
 level:                   Information

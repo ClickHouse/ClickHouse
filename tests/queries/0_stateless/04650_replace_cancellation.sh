@@ -270,8 +270,8 @@ run "stored expression" \
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_replace_stored SYNC"
 
 #     The leak side: a retained QueryStatus keeps the `CurrentMetrics::QueryNonInternal` increment it owns,
-#     so the count never returns to where it was. The assertion is a zero delta rather than a tolerance,
-#     which a drop in either direction would mask: the metric excludes internal queries, so background work
+#     so the count never returns to where it was. Only a rise is a retention: `~QueryStatus` releases the
+#     increment, so the count can fall. Still no tolerance: the metric excludes internal queries, so background work
 #     cannot move it, and the test is no-parallel, so every non-internal query in the window is one of this
 #     test's own and cancels in the difference.
 sample_queries() {
@@ -295,7 +295,7 @@ for i in 1 2 3 4 5 6; do
         ALTER TABLE t_replace_stored_$i ADD INDEX ix replaceRegexpAll(v, '[0-9]', 'x') TYPE set(10) GRANULARITY 1"
 done
 queries_after=$(sample_queries)
-if [ "$((queries_after - queries_before))" = 0 ]; then
+if [ "$((queries_after - queries_before))" -le 0 ]; then
     echo "stored expression leak: no query state retained"
 else
     echo "stored expression leak: RETAINED $((queries_after - queries_before)) query states"
