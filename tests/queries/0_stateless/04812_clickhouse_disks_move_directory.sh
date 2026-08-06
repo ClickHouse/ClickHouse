@@ -8,6 +8,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 config="$CUR_DIR/04812_clickhouse_disks_move_directory.xml"
 
 base_dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+# The disk-level `remove -r` cannot empty a directory holding a virtual child on
+# `plain_rewritable`, so residue survives it. Own the backing directory outright to keep the
+# test repeatable (`clickhouse-test --database=X` shares one CLICKHOUSE_TMP across runs).
+rm -rf "$base_dir"
+trap 'rm -rf "$base_dir"' EXIT
 mkdir -p \
     "$base_dir/local/data" "$base_dir/local/metadata" \
     "$base_dir/plain_rewritable"
