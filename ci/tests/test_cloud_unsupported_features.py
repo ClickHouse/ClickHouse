@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -96,7 +97,19 @@ def test_all_badge_components_link_to_cloud_compatibility():
             f'href="{locale_prefix}/products/cloud/guides/cloud-compatibility'
             '#clickhouse-cloud-architecture"'
         )
-        assert href in component.read_text(encoding="utf-8")
+        content = component.read_text(encoding="utf-8")
+        badge = re.search(
+            rf'<a\s+{re.escape(href)}\s+className="cloudNotSupportedBadge">'
+            r"(?P<contents>.*?)</a>",
+            content,
+            re.DOTALL,
+        )
+        assert badge
+        badge_contents = badge.group("contents")
+        assert (
+            "cloudNotSupportedIcon" in badge_contents
+            or "<Icon />" in badge_contents
+        )
 
 
 def test_weekly_workflow_is_standalone_github_actions():

@@ -1909,7 +1909,6 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
 .cloudNotSupportedBadge {
     background-color: #F6E5FF;
     color: #660099;
-    text-decoration: none;
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -1919,12 +1918,14 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
     font-size: 0.875rem;
 }
 
-.cloudNotSupportedBadge:hover {
-    text-decoration: underline;
-}
-
 .cloudNotSupportedIcon {
     margin-right: 8px;
+}
+
+html:not(.dark) .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+a.cloudNotSupportedBadge {
+    color: #660099 !important;
+    text-decoration: none !important;
 }
 
 .cloudNotSupportedIcon svg path {
@@ -1934,6 +1935,12 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
 .dark .cloudNotSupportedBadge {
     background-color: #33004D;
     color: #EECCFF;
+}
+
+html.dark .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+.dark a.cloudNotSupportedBadge {
+    color: #EECCFF !important;
+    text-decoration: none !important;
 }
 
 .dark .cloudNotSupportedIcon svg path {
