@@ -116,4 +116,39 @@ $MY_CLICKHOUSE_CLIENT --query "
 
 run_query "SELECT id FROM tab WHERE data.a.b = 'deep value one' ORDER BY id"
 
+echo "-- Extra MinMax index stat in the plan"
+
+# Same data and query as the first section, on a table that emits a second index stat
+# ahead of the text index. The expected rows below are therefore identical to that
+# section's, which is what shows the assertion no longer depends on the stat's position.
+$MY_CLICKHOUSE_CLIENT --query "
+    DROP TABLE tab;
+
+    CREATE TABLE tab
+    (
+        id UInt32,
+        data JSON,
+        INDEX json_idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha)
+    )
+    ENGINE = MergeTree
+    ORDER BY (id) SETTINGS index_granularity = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        part_minmax_index_columns = 'with_block_number_offset';
+
+    INSERT INTO tab VALUES (0, '{\"key1\": \"the quick brown fox\", \"key2\": \"hello world\"}');
+    INSERT INTO tab VALUES (1, '{\"key1\": \"lazy dog jumps\", \"key2\": \"goodbye world\"}');
+    INSERT INTO tab VALUES (2, '{\"key1\": \"quick silver\", \"num\": 42}');
+    INSERT INTO tab VALUES (3, '{\"key1\": \"nothing special\", \"num\": 100}');
+"
+
+# Two stats precede the text index here, three lines each, so a positional slice reads
+# the wrong window.
+$MY_CLICKHOUSE_CLIENT --query "
+    SELECT countIf(explain LIKE '%Condition:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%')
+    FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE data.key1 = 'the quick brown fox' ORDER BY id);
+"
+
+run_query "SELECT id FROM tab WHERE data.key1 = 'the quick brown fox' ORDER BY id"
+
 $MY_CLICKHOUSE_CLIENT --query "DROP TABLE tab;"
