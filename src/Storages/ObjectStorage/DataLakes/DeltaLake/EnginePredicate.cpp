@@ -362,14 +362,35 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 if (isFunctionNode(node->children[0]))
                 {
-                    EngineIteratorData current_iterator_data(
-                            iterator_data.state,
-                            node->children,
-                            iterator_data.predicate);
+                    const auto * inner_node = node->children[0];
+                    const auto inner_name = inner_node->function_base->getName();
 
-                    EngineIterator current_engine_iterator(current_iterator_data);
-                    auto column = ffi::visit_predicate_and(iterator_data.state, &current_engine_iterator);
-                    return ffi::visit_predicate_not(iterator_data.state, column);
+                    /// Only use visit_predicate_and + visit_predicate_not for comparison
+                    /// functions that the kernel can translate.  For unsupported inner
+                    /// functions (IS NULL, LIKE, OR, ...) the AND visitor would return
+                    /// a single Unknown child, which the kernel treats as an empty
+                    /// conjunction (TRUE), making NOT(TRUE) = FALSE and pruning every
+                    /// file — a silent wrong-result bug.  Returning Unknown for the
+                    /// whole NOT expression is always correct because the kernel's
+                    /// three-valued logic never skips a file on Unknown.
+                    if (inner_name == DB::NameEquals::name
+                        || inner_name == DB::NameNotEquals::name
+                        || inner_name == DB::NameGreater::name
+                        || inner_name == DB::NameGreaterOrEquals::name
+                        || inner_name == DB::NameLess::name
+                        || inner_name == DB::NameLessOrEquals::name)
+                    {
+                        EngineIteratorData current_iterator_data(
+                                iterator_data.state,
+                                node->children,
+                                iterator_data.predicate);
+
+                        EngineIterator current_engine_iterator(current_iterator_data);
+                        auto column = ffi::visit_predicate_and(iterator_data.state, &current_engine_iterator);
+                        return ffi::visit_predicate_not(iterator_data.state, column);
+                    }
+
+                    return VISITOR_FAILED_OR_UNSUPPORTED;
                 }
             }
             else if (func_name == DB::NameEquals::name
