@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
@@ -68,4 +69,26 @@ TEST(SerializationIPBinaryBulk, IPv4BulkRoundTrip)
     const auto & restored_data = assert_cast<const ColumnVector<IPv4> &>(*restored).getData();
     ASSERT_EQ(restored_data[0], IPv4(0x01020304));
     ASSERT_EQ(restored_data[1], IPv4(0xC0A80001));
+}
+
+TEST(SerializationIPBinaryBulk, IPv4FieldMatchesIColumn)
+{
+    /// The `Field`-based overload is what `MergeTree` minmax-index files (`minmax_<column>.idx`)
+    /// are actually serialized through. This proves it agrees byte-for-byte with the `IColumn`
+    /// overload, which is exactly the guarantee a little-endian-only wire format relies on.
+    auto type = DataTypeFactory::instance().get("IPv4");
+    auto serialization = type->getDefaultSerialization();
+
+    Field field(IPv4(0x01020304));
+    WriteBufferFromOwnString field_wise;
+    serialization->serializeBinary(field, field_wise, FormatSettings{});
+
+    auto col = type->createColumn();
+    auto & data = assert_cast<ColumnVector<IPv4> &>(*col).getData();
+    data.push_back(IPv4(0x01020304));
+
+    WriteBufferFromOwnString row_wise;
+    serialization->serializeBinary(*col, 0, row_wise, FormatSettings{});
+
+    ASSERT_EQ(field_wise.str(), row_wise.str());
 }

@@ -149,6 +149,16 @@ void SerializationIP<IPv>::deserializeBinary(DB::Field & field, DB::ReadBuffer &
     field = NearestFieldType<IPv>(x);
 }
 
+/// The `IPv4` binary wire format is documented as unconditionally little-endian, independent of
+/// host endianness (see `docs/reference/formats/RowBinary/RowBinary.mdx` and
+/// `docs/reference/interfaces/specs/NativeFormat.mdx`). The `Field`-based overloads above already
+/// use `writeBinaryLittleEndian`/`readBinaryLittleEndian` for `IPv4` since commit `319ae440b6b`
+/// ("Implement Variant data type", 2023-12-19) - that's also the format of `MergeTree`
+/// `minmax_<column>.idx` files (see `IMergeTreeDataPart::MinMaxIndex::store`). The `IColumn`-based
+/// and bulk overloads below just make that pre-existing contract consistent across all paths; on
+/// little-endian hosts (which is everything `ClickHouse` ships to production) the `if constexpr`
+/// branches below are no-ops. This mirrors the same unconditional, unversioned pattern already used
+/// by `SerializationNumber<T>` and `SerializationUUID`.
 template <typename IPv>
 void SerializationIP<IPv>::serializeBinary(const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings &) const
 {
