@@ -101,8 +101,12 @@ echo "-- or breaks ties within an unsorted side using a content hash of each row
 #      is the actual property being protected (a real, deterministic tiebreak, not one that
 #      happens to look stable under one fixed set of settings).
 query='sort_desc(up{instance="host1"}) or (up{instance="host2"} or up{instance="host3"})'
-promql_client -q "$query" | sort
-diff <(promql_client -q "$query") <(promql_client -q "$query" --max_threads 1 --query_plan_join_swap_table false) && echo "OK: same row order regardless of max_threads/query_plan_join_swap_table"
+# Run the query once with default settings and reuse its output for both checks below
+# (the row-set check and the default-settings side of the determinism diff), instead of
+# running the same query/settings combination twice.
+default_output=$(promql_client -q "$query")
+echo "$default_output" | sort
+diff <(echo "$default_output") <(promql_client -q "$query" --max_threads 1 --query_plan_join_swap_table false) && echo "OK: same row order regardless of max_threads/query_plan_join_swap_table"
 
 echo "-- sort_desc ordering does not survive a subquery and range function"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "
@@ -113,7 +117,9 @@ SELECT
 SETTINGS max_threads = 1
 "
 
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_metrics"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
+DROP TABLE ts;
+DROP TABLE ts_data;
+DROP TABLE ts_tags;
+DROP TABLE ts_metrics;
+"
