@@ -40,6 +40,7 @@ which reverts merges that landed with red CI -- a different signal, the same
 remedy -- so that the two automations never revert one pull request twice.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -48,7 +49,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -71,6 +72,39 @@ from ci.praktika.utils import Shell
 # the fan-out of the checks rather than by the failure repeating.
 FAILURE_WINDOW_HOURS = 24
 MIN_FAILURES = 2
+
+# Rows the harness writes about the whole script or job under a test-like name.
+# They carry a failing `test_status`, so the status alone does not tell them
+# from a test case, and the name is all there is: "why did the script exit with
+# 1" names no single change to revert, and with only a few investigations per
+# run one such row costs a slot a real repeated regression needed. The names
+# come from the job code (`ci/jobs/*.py`) and from what the live `checks` table
+# records; a rejected name is simply never investigated, so the list failing to
+# keep up with a new synthetic name costs a wasted investigation, never a wrong
+# revert.
+SYNTHETIC_TEST_NAMES = frozenset(
+    {
+        "Test script failed",
+        "Test script exit code",
+        "Check failed",
+        "Check errors",
+        "Server died",
+        "Unknown error",
+        "Unknown job error",
+        "Parse failure error",
+        "Job error",
+        "Timeout",
+    }
+)
+
+# How many distinct failing rows per test the selection query returns as
+# occurrence-level evidence. This is a backstop against an unbounded result
+# set, not a sampling decision: the threshold that separates one repeated
+# failure from two unrelated ones is computed over these rows, and a sample
+# could hide the variant that would have split the group. When the cap is hit,
+# the evidence is incomplete and the failure is skipped rather than judged on
+# a truncated record.
+OCCURRENCE_LIMIT = 100
 
 # A failure stays inside the observation window for many hourly runs. Without a
 # cooldown the same failure would be investigated every hour, which costs agent
@@ -228,6 +262,74 @@ class RevertConflict(Exception):
     """The revert does not apply cleanly on the current base branch."""
 
 
+@dataclass(frozen=True)
+class Occurrence:
+    """One failing row of `checks`: this test failing in this check on this
+    commit, with the output the check recorded for it."""
+
+    commit_sha: str
+    check_name: str
+    check_start_time: str
+    report_url: str
+    context: str
+
+
+# What varies between two occurrences of the same failure without the cause
+# being different: the stack trace below the error message, whose libc frames
+# are symbolized differently in every build (`__pthread_kill`,
+# `__GI___pthread_kill`, `__pthread_kill_implementation` are one frame in
+# three builds of the same commit); which log files a check attaches;
+# addresses, UUIDs, hashes, the randomized per-run database names the test
+# harness generates, and every other number -- timestamps, ports, row counts,
+# durations. Replaced before hashing so that the signature is a fingerprint of
+# the cause. Also the query a fuzzer found the error with and the randomized
+# settings a stateless test ran under -- the trigger of the cause, different
+# in every run -- and quoted identifiers, the names of the CTE, the table or
+# the type an error message quotes: the message around them is the cause, the
+# name inside is the instance. A recorded output that
+# is a truncated log tail (`(truncated; ...`, the hung-check thread dump)
+# fingerprints nothing and is cut away entirely: for those the name is all
+# the signature there is. The order matters: the database-name rule needs the
+# digits still in place.
+_VOLATILE_CONTEXT_PATTERNS = (
+    (re.compile(r"Stack trace:.*", re.DOTALL), ""),
+    (re.compile(r"Failed query:.*", re.DOTALL), ""),
+    (re.compile(r"Settings used in the test:.*", re.DOTALL), ""),
+    (re.compile(r"\(truncated;.*", re.DOTALL), ""),
+    (re.compile(r"^\s*Log files:.*$", re.MULTILINE), ""),
+    (re.compile(r"'[^'\s]*'"), "'#'"),
+    (re.compile(r"0x[0-9a-fA-F]+"), "#"),
+    (
+        re.compile(
+            r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"
+        ),
+        "#",
+    ),
+    (re.compile(r"\b[0-9a-f]{7,64}\b"), "#"),
+    (re.compile(r"\btest_(?=[0-9a-z]*[0-9])[0-9a-z]+\b"), "test_#"),
+    (re.compile(r"\d+"), "#"),
+    (re.compile(r"\s+"), " "),
+)
+
+
+def context_signature(context: str) -> str:
+    """A fingerprint of what failed, stable across the volatile parts of the
+    recorded output.
+
+    Two occurrences with the same signature are treated as the same failure
+    mode; different signatures keep them apart even under one test name. The
+    normalization is best effort, and the two ways it can be wrong pull in
+    opposite directions: a signature too coarse merges different causes -- the
+    conflation this exists to prevent -- while one too fine splits one cause
+    below the pick-up threshold and the job stands down. So the volatile
+    patterns above err toward splitting: an unrecognized volatile token costs
+    an investigation, never a revert built on mixed evidence."""
+    text = context
+    for pattern, replacement in _VOLATILE_CONTEXT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return hashlib.sha256(text.strip().encode()).hexdigest()[:16]
+
+
 @dataclass
 class Failure:
     """A group of CI failures on master that repeated within the window.
@@ -238,7 +340,13 @@ class Failure:
     that cause rather than a reason to investigate it twice: a change that
     breaks a test usually breaks it in several builds at once, and splitting
     those occurrences apart hides exactly the failures that are worth
-    reverting."""
+    reverting.
+
+    One test name is still not one cause, so the failing rows come along in
+    `occurrences`, and before a failure is investigated its evidence -- the
+    commits, checks, times and recorded output above -- is narrowed by
+    `narrow_to_dominant_signature` to the occurrences of the one failure mode
+    that repeated."""
 
     test_name: str
     check_names: List[str]
@@ -249,6 +357,7 @@ class Failure:
     commit_shas: List[str]
     report_url: str
     context: str = ""
+    occurrences: List[Occurrence] = field(default_factory=list)
 
     @property
     def key(self) -> str:
@@ -277,7 +386,69 @@ class Failure:
             commit_shas=list(row.get("commit_shas") or []),
             report_url=row.get("report_url", ""),
             context=row.get("context", ""),
+            occurrences=[Occurrence(*occ) for occ in (row.get("occurrences") or [])],
         )
+
+
+def narrow_to_dominant_signature(failure: Failure, min_failures=MIN_FAILURES) -> str:
+    """Why this failure's evidence does not support one repeated failure, or ""
+    after narrowing the evidence to the failure mode that does.
+
+    The group key is the test name, and one name can carry more than one cause:
+    a real regression plus an unrelated flake of the same test, on different
+    commits, together satisfy the repeat threshold that neither meets alone. So
+    the occurrences are split by `context_signature`, and the threshold is
+    re-applied where it means what it claims -- to the distinct commits of one
+    failure mode. When no mode reaches it on its own, the group was a
+    coincidence of the name and the job stands down.
+
+    When one mode does reach it, every piece of evidence handed on -- the
+    commits, the checks, the times, the recorded output -- is narrowed to that
+    mode's occurrences, so neither the agent nor the guards downstream reason
+    from the occurrences of another cause. Of two modes that both reach the
+    threshold, the one on more commits is investigated now (newest occurrence,
+    then signature, as deterministic tie-breaks); once it is dealt with, the
+    other one's commits are commits no investigation has seen, which is exactly
+    what lets a failure back past the cooldown.
+
+    An empty or truncated occurrence list means the split cannot be trusted,
+    and both fail closed: evidence that cannot be attributed to one failure
+    mode is not evidence of a repeated failure."""
+    if not failure.occurrences:
+        return "the failure carries no occurrence-level evidence to attribute"
+    if len(failure.occurrences) >= OCCURRENCE_LIMIT:
+        return (
+            f"the occurrence evidence was truncated at {OCCURRENCE_LIMIT} rows, "
+            f"so the failure modes cannot be told apart"
+        )
+    modes: Dict[str, List[Occurrence]] = {}
+    for occurrence in failure.occurrences:
+        modes.setdefault(context_signature(occurrence.context), []).append(occurrence)
+    dominant = max(
+        modes,
+        key=lambda signature: (
+            len({o.commit_sha for o in modes[signature]}),
+            max(o.check_start_time for o in modes[signature]),
+            signature,
+        ),
+    )
+    occurrences = sorted(modes[dominant], key=lambda o: o.check_start_time)
+    commit_shas = sorted({o.commit_sha for o in occurrences})
+    if len(commit_shas) < min_failures:
+        return (
+            f"{failure.commit_count} failing commits split over {len(modes)} "
+            f"distinct failure signatures, and no single failure mode repeated "
+            f"on {min_failures} commits"
+        )
+    failure.commit_shas = commit_shas
+    failure.commit_count = len(commit_shas)
+    failure.failure_count = len(occurrences)
+    failure.check_names = sorted({o.check_name for o in occurrences})
+    failure.first_failure_time = occurrences[0].check_start_time
+    failure.last_failure_time = occurrences[-1].check_start_time
+    failure.report_url = occurrences[-1].report_url
+    failure.context = occurrences[-1].context
+    return ""
 
 
 @dataclass
@@ -338,7 +509,10 @@ class Investigation:
 
 
 def failures_query(
-    hours=FAILURE_WINDOW_HOURS, min_failures=MIN_FAILURES, context_limit=CONTEXT_LIMIT
+    hours=FAILURE_WINDOW_HOURS,
+    min_failures=MIN_FAILURES,
+    context_limit=CONTEXT_LIMIT,
+    occurrence_limit=OCCURRENCE_LIMIT,
 ) -> str:
     """Failures on master that repeated within the window, grouped by test name.
 
@@ -354,6 +528,16 @@ def failures_query(
     builds at once. Grouping by the check as well would split that evidence and
     put the pieces under the threshold.
 
+    One test name is not always one cause, though: the same test can fail on
+    one commit because of a regression and on another because of an unrelated
+    flake, and grouped by name alone the two together would read as a repeated
+    failure. So the query carries the failing rows themselves in `occurrences`
+    -- commit, check, time, report and recorded output per row --
+    and `narrow_to_dominant_signature` re-applies the threshold per failure
+    mode before anything reaches the agent. The `HAVING` here stays as a cheap
+    prefilter: a group whose commits do not reach the threshold even mixed
+    cannot contain a mode that does.
+
     The threshold is applied to `commit_count`, the number of distinct `master`
     commits the failure was seen on, not to the number of failing rows. Those
     rows fan out over the checks: a single bad commit tested in three builds
@@ -367,7 +551,10 @@ def failures_query(
     start, or a job that ran out of time is a failure of the infrastructure or
     of a whole job, not of one test, and asking "why does this check fail"
     instead of "why does this test fail" is a question with no single answer to
-    revert on.
+    revert on. Some of those rows do carry a failing test status under a
+    test-like name -- `Test script failed`, `Server died` -- and the status
+    cannot tell them from a test case; they are rejected by name in
+    `select_failures`, see `SYNTHETIC_TEST_NAMES`.
 
     `toUInt32` keeps the counters out of JSON 64-bit integer quoting, and the
     format is fixed in the query so the caller does not depend on server-side
@@ -382,8 +569,9 @@ SELECT
     toString(min(check_start_time)) AS first_failure_time,
     toString(max(check_start_time)) AS last_failure_time,
     arraySort(groupUniqArray(50)(commit_sha)) AS commit_shas,
-    argMax(report_url, check_start_time) AS report_url,
-    substring(argMax(test_context_raw, check_start_time), 1, {int(context_limit)}) AS context
+    arraySort(groupUniqArray({int(occurrence_limit)})(
+        (commit_sha, check_name, toString(check_start_time), report_url,
+         substring(test_context_raw, 1, {int(context_limit)})))) AS occurrences
 FROM {Settings.CI_DB_TABLE_NAME}
 WHERE check_start_time >= now() - INTERVAL {int(hours)} HOUR
     AND head_ref = '{BASE_BRANCH}'
@@ -1700,11 +1888,32 @@ def table_exists(cidb: CIDB, table: str) -> bool:
 
 
 def select_failures(cidb: CIDB, now: datetime, dry_run=False) -> List[Failure]:
-    """The failures to investigate in this run, most frequent first."""
-    failures = [
-        Failure.from_row(row)
-        for row in parse_json_each_row(cidb.query(failures_query()))
-    ]
+    """The failures to investigate in this run, most frequent first.
+
+    Two vetting steps run before the cooldown logic, and their order matters
+    only for the log: a row the harness wrote about the whole script is not a
+    test case however often it repeats, and a group whose occurrences do not
+    contain one failure mode over the threshold is not a repeated failure.
+    Both are rejected here, so what reaches the agent -- and what spends the
+    per-run investigation budget -- is repeated test-case failures with the
+    evidence narrowed to the one failure mode being investigated."""
+    failures = []
+    for row in parse_json_each_row(cidb.query(failures_query())):
+        failure = Failure.from_row(row)
+        if failure.test_name in SYNTHETIC_TEST_NAMES:
+            print(
+                f"  skipping {failure.title!r}: the harness wrote this row about "
+                f"the whole script, not about a test case"
+            )
+            continue
+        reason = narrow_to_dominant_signature(failure)
+        if reason:
+            print(f"  skipping {failure.title!r}: {reason}")
+            continue
+        failures.append(failure)
+    # The query orders by the mixed counters; the narrowed ones decide who gets
+    # an investigation slot.
+    failures.sort(key=lambda f: (-f.commit_count, -f.failure_count, f.test_name))
     print(
         f"{len(failures)} failures seen on at least {MIN_FAILURES} {BASE_BRANCH} "
         f"commits in the last {FAILURE_WINDOW_HOURS} hours"

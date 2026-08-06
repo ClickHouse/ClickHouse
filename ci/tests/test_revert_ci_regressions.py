@@ -124,6 +124,258 @@ def test_failures_query_avoids_json_quoting_of_counters():
     assert "toUInt32(uniqExact(commit_sha)) AS commit_count" in job.failures_query()
 
 
+def test_failures_query_returns_the_failing_rows_as_occurrences():
+    """The threshold has to be re-applied per failure mode, and the modes can
+    only be told apart on the rows themselves: a group-level `argMax` keeps the
+    newest output and loses every other cause the name carried."""
+    query = job.failures_query()
+    assert f"groupUniqArray({job.OCCURRENCE_LIMIT})" in query
+    assert "AS occurrences" in query
+    assert f"substring(test_context_raw, 1, {job.CONTEXT_LIMIT})" in query
+    assert "argMax" not in query
+
+
+# --- one test name is not always one cause -------------------------------------
+
+
+def _occurrence(
+    sha="a" * 40,
+    check="Stateless tests (amd_debug, parallel)",
+    time="2026-07-31 13:28:40",
+    url="https://example.invalid/r1",
+    context="boom",
+):
+    """One element of the `occurrences` array the way JSONEachRow renders the
+    tuple: an array of its parts."""
+    return [sha, check, time, url, context]
+
+
+def test_the_signature_survives_the_volatile_parts_of_the_output():
+    """The same logical error on two commits: different replica, different
+    randomized database name, different UUID, different address, and one check
+    attached a different set of log files. One cause, one signature."""
+    first = (
+        "Log files: clickhouse-server.err.log, stderr.log\n"
+        "Error:\nLogical error: 'Got read request from replica 1 for unknown "
+        "stream test_g3v0s6c8i4g7.`.inner_id."
+        "3cccce45-3e4e-4471-8776-0123456789ab`' at 0xdeadbeef."
+    )
+    second = (
+        "Error:\nLogical error: 'Got read request from replica 2 for unknown "
+        "stream test_oow5au8e.`.inner_id."
+        "67f7f3a7-9408-4a71-b776-cafebabe0123`' at 0x1234."
+    )
+    assert job.context_signature(first) == job.context_signature(second)
+
+
+def test_the_signature_ignores_the_stack_below_the_error():
+    """The same abort carries a different stack rendering in every build --
+    glibc symbolizes the kill frame three different ways -- and the fan-out
+    over builds is exactly what the grouping has to keep together. The cause
+    is the error text; what differs only below `Stack trace:` is one mode."""
+    first = (
+        "Error:\nLogical error: 'Bad cast'.\n---\n\nStack trace:\n\n"
+        "__GI___pthread_kill @ 0x0e9f\n__GI_raise @ 0x1000\n"
+        "___interceptor_abort @ 0x2000\n"
+    )
+    second = (
+        "Error:\nLogical error: 'Bad cast'.\n---\n\nStack trace:\n\n"
+        "__pthread_kill_implementation @ 0x0f11\ngsignal @ 0x3000\nabort @ 0x4000\n"
+    )
+    assert job.context_signature(first) == job.context_signature(second)
+    different_error = "Error:\nLogical error: 'Bad get'.\n---\n\nStack trace:\n\n"
+    assert job.context_signature(first) != job.context_signature(different_error)
+
+
+def test_the_signature_ignores_the_trigger_and_the_quoted_instance():
+    """A fuzzer finds the same logical error with a different query every run,
+    and the error message quotes the identifier it tripped over. The query is
+    the trigger and the identifier is the instance; the message around them is
+    the cause."""
+    first = (
+        "Error: Logical error: 'Reading from materialized CTE 'ct' before its "
+        "materialization completed'. --- Failed query: WITH ct AS MATERIALIZED "
+        "(SELECT c FROM merge('.*[0-9].*'))"
+    )
+    second = (
+        "Error: Logical error: 'Reading from materialized CTE 'a' before its "
+        "materialization completed'. --- Failed query: SELECT count() FROM "
+        "(WITH a AS MATERIALIZED (SELECT number AS id FROM numbers(10)))"
+    )
+    assert job.context_signature(first) == job.context_signature(second)
+
+
+def test_the_signature_ignores_the_randomized_settings_dump():
+    """A stateless test failing the same way on two commits still ran under
+    two different randomized settings sets, and the harness appends the whole
+    set to the output. What identifies the failure -- the reason and the diff
+    against the reference -- comes before it."""
+    first = (
+        "Reason: result differs with reference:\n@@ -1,6 +1,6 @@\n-1\t1\n+0\t0\n"
+        "Settings used in the test: --max_insert_threads 1 "
+        "--use_lightweight_primary_key_index_analysis False"
+    )
+    second = (
+        "Reason: result differs with reference:\n@@ -1,6 +1,6 @@\n-1\t1\n+0\t0\n"
+        "Settings used in the test: --max_insert_threads 4 "
+        "--use_lightweight_primary_key_index_analysis True --max_threads 3"
+    )
+    assert job.context_signature(first) == job.context_signature(second)
+    different = "Reason: return code: 1\nSettings used in the test: --max_threads 3"
+    assert job.context_signature(first) != job.context_signature(different)
+
+
+def test_a_truncated_log_tail_fingerprints_nothing():
+    """The hung-check output is the last 32 KiB of a thread dump: a sample of
+    a log, not an error, and no two samples match. For those the signature
+    falls back to what the test name says, instead of splitting every
+    occurrence into its own failure mode."""
+    first = (
+        "(truncated; see hung_check.log artifact for the full output; showing "
+        "last 32 KiB)\n...\nThread 12 (Thread 0x7f3c): __lll_lock_wait"
+    )
+    second = (
+        "(truncated; see hung_check.log artifact for the full output; showing "
+        "last 32 KiB)\n...\nThread 7 (Thread 0x5a11): epoll_wait"
+    )
+    assert job.context_signature(first) == job.context_signature(second)
+
+
+def test_the_signature_tells_different_causes_apart():
+    """`NoREC` failing because the server is gone and `NoREC` failing on a
+    SQLancer assertion are two different failures that share a name."""
+    down = "Server is not responding"
+    assertion = (
+        "exit=255; NoREC.err:java.lang.AssertionError: Failed to create any table"
+    )
+    assert job.context_signature(down) != job.context_signature(assertion)
+
+
+def test_two_mixed_causes_are_not_a_repeated_failure():
+    """One regression plus one unrelated flake of the same test satisfies the
+    commit threshold that neither meets alone. Split by signature, neither mode
+    repeats, and the failure is stood down instead of investigated on mixed
+    evidence."""
+    failure = make_failure(
+        occurrences=[
+            _occurrence(sha="a" * 40, context="Server is not responding"),
+            _occurrence(
+                sha="b" * 40,
+                time="2026-07-31 21:12:40",
+                context="java.lang.AssertionError: Failed to create any table",
+            ),
+        ]
+    )
+    reason = job.narrow_to_dominant_signature(failure)
+    assert "distinct failure signatures" in reason
+
+
+def test_the_evidence_is_narrowed_to_the_dominant_failure_mode():
+    """When one mode does repeat, everything handed to the agent and to the
+    guards -- commits, checks, times, report, output -- comes from that mode's
+    occurrences only, so an unrelated flake of the same test cannot steer the
+    investigation or the already-fixed check."""
+    boom_first = _occurrence(
+        sha="a" * 40, time="2026-07-31 13:28:40", context="boom at 0xbeef"
+    )
+    boom_last = _occurrence(
+        sha="b" * 40,
+        check="Stateless tests (amd_tsan, parallel)",
+        time="2026-07-31 20:00:00",
+        url="https://example.invalid/r2",
+        context="boom at 0xcafe",
+    )
+    flake = _occurrence(
+        sha="c" * 40,
+        check="Integration tests (amd_asan)",
+        time="2026-07-31 21:12:40",
+        url="https://example.invalid/r3",
+        context="Server is not responding",
+    )
+    failure = make_failure(occurrences=[boom_first, boom_last, flake])
+    assert job.narrow_to_dominant_signature(failure) == ""
+    assert failure.commit_shas == ["a" * 40, "b" * 40]
+    assert failure.commit_count == 2
+    assert failure.failure_count == 2
+    assert failure.check_names == [
+        "Stateless tests (amd_debug, parallel)",
+        "Stateless tests (amd_tsan, parallel)",
+    ]
+    assert failure.first_failure_time == "2026-07-31 13:28:40"
+    assert failure.last_failure_time == "2026-07-31 20:00:00"
+    assert failure.report_url == "https://example.invalid/r2"
+    assert failure.context == "boom at 0xcafe"
+
+
+def test_a_failure_without_occurrence_evidence_is_not_investigated():
+    """No rows means the modes cannot be told apart, and that fails closed."""
+    failure = make_failure(occurrences=[])
+    assert "no occurrence-level evidence" in job.narrow_to_dominant_signature(failure)
+
+
+def test_truncated_occurrence_evidence_stands_the_failure_down():
+    """A capped result may have lost exactly the variant that would have split
+    the group, so a full result is treated as a truncated one."""
+    failure = make_failure(
+        occurrences=[_occurrence(sha=f"{i:040x}") for i in range(job.OCCURRENCE_LIMIT)]
+    )
+    assert "truncated" in job.narrow_to_dominant_signature(failure)
+
+
+def test_a_harness_row_about_the_whole_script_is_not_investigated():
+    """`Test script failed` carries a failing `test_status` and repeats across
+    commits, but it is the harness reporting the whole script: there is no test
+    case behind the name and nothing for the agent to attribute, and with a few
+    investigations per run it would spend a slot a real regression needed."""
+    assert "Test script failed" in job.SYNTHETIC_TEST_NAMES
+    assert "Server died" in job.SYNTHETIC_TEST_NAMES
+    cidb = FakeDryRunCIDB(
+        failures=[_failure_row("Test script failed"), _failure_row("a_real_test")]
+    )
+    selected = job.select_failures(cidb, NOW, dry_run=True)
+    assert [f.test_name for f in selected] == ["a_real_test"]
+
+
+def test_selection_skips_a_group_of_mixed_causes():
+    row = _failure_row("mixed_test")
+    row["occurrences"][0][4] = "Server is not responding"
+    cidb = FakeDryRunCIDB(failures=[row, _failure_row("a_real_test")])
+    selected = job.select_failures(cidb, NOW, dry_run=True)
+    assert [f.test_name for f in selected] == ["a_real_test"]
+
+
+def test_the_investigation_slots_go_by_the_narrowed_counters():
+    """The query orders by the mixed counters, so a group inflated by an
+    unrelated flake would otherwise outrank a clean repeated failure for one
+    of the few investigation slots per run."""
+    inflated = _failure_row("inflated_test")
+    inflated["commit_count"] = 3
+    inflated["occurrences"].append(
+        [
+            "c" * 40,
+            "Integration tests (amd_asan)",
+            "2026-07-31 22:00:00",
+            "https://example.invalid/r3",
+            "Server is not responding",
+        ]
+    )
+    clean = _failure_row("clean_test")
+    clean["occurrences"].append(
+        [
+            "d" * 40,
+            "Stateless tests (amd_debug, parallel)",
+            "2026-07-31 22:00:00",
+            "https://example.invalid/report",
+            "boom",
+        ]
+    )
+    clean["commit_count"] = 3
+    cidb = FakeDryRunCIDB(failures=[inflated, clean])
+    selected = job.select_failures(cidb, NOW, dry_run=True)
+    assert [f.test_name for f in selected] == ["clean_test", "inflated_test"]
+    assert [f.commit_count for f in selected] == [3, 2]
+
+
 def test_the_prior_investigations_carry_when_the_revert_happened():
     """Not whether a revert exists, but when: a failure that came back after it
     is a new one, and the times are what tells them apart."""
@@ -1583,9 +1835,25 @@ def _failure_row(test_name):
         "commit_count": 4,
         "first_failure_time": "2026-07-31 13:28:40",
         "last_failure_time": "2026-07-31 21:12:40",
-        "commit_shas": ["a" * 40],
+        "commit_shas": ["a" * 40, "b" * 40],
         "report_url": "https://example.invalid/report",
         "context": "boom",
+        "occurrences": [
+            [
+                "a" * 40,
+                "Stateless tests (amd_debug, parallel)",
+                "2026-07-31 13:28:40",
+                "https://example.invalid/report",
+                "boom",
+            ],
+            [
+                "b" * 40,
+                "Stateless tests (amd_debug, parallel)",
+                "2026-07-31 21:12:40",
+                "https://example.invalid/report",
+                "boom",
+            ],
+        ],
     }
 
 

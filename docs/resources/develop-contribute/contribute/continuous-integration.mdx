@@ -265,9 +265,11 @@ This is not a check on your pull request: it runs on `master` every hour, and it
 The job takes the failing tests the CI database recorded for `master` over the last 24 hours and groups them by test name, across every check the test failed in.
 The same test failing in the debug and in the tsan build is one failure with one cause to look for, and the checks it appeared in go to the investigation as evidence: a change that breaks a test usually breaks it in several builds at once.
 Failures that are not attributed to any test, such as a build failure or a job that ran out of time, are left out: "why does this check fail" has no single answer to revert on.
+Rows the test harness writes about the whole script under a test-like name, such as `Test script failed` or `Server died`, are rejected the same way.
 A test that failed on more than one `master` commit is handed to an AI agent, which is given the repository with the full history of `master` and read-only access to the CI database, and answers a single question: was this failure introduced by a recently merged pull request, and which one.
 The agent holds no GitHub credential and works in a disposable clone of the repository rather than in the job's own checkout, so nothing it concludes -- and nothing it could leave behind -- can reach GitHub except through the checks below.
 The threshold counts commits rather than failing rows, so one bad commit that fails in three builds is still a single occurrence and is not acted on.
+It also counts them per failure mode: the recorded outputs are fingerprinted with the volatile parts (addresses, timestamps, random database names) normalized away, and a test whose name spans two different causes -- a regression on one commit and an unrelated flake on another -- is not a repeated failure, so nothing is investigated until one cause repeats on its own.
 
 Only an unambiguous answer leads to an action.
 When the agent reports a regression with high confidence, and the named pull request passes the safety checks (merged into `master` within the last three days, not a revert itself, not already reverted, and the revert applies cleanly), the job reverts it, merges the revert immediately without waiting for checks, and opens a draft pull request titled `Reapply "..."` that reintroduces the change.
