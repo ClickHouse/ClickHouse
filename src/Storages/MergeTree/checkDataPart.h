@@ -17,8 +17,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 bool isNotEnoughMemoryErrorCode(int code);
 bool isRetryableException(std::exception_ptr exception_ptr);
 
-/// A cancelled or timed-out query says nothing about the part's health, so such an exception must
-/// not reach reportBroken.
+/// True for a cancelled or timed-out query, which says nothing about the part's health.
 bool isQueryCancellation(std::exception_ptr exception_ptr);
 
 }
