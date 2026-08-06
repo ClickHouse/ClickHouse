@@ -14,6 +14,8 @@
 #include <Common/setThreadName.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/String.h>
+#include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <shared_mutex>
@@ -27,8 +29,40 @@ namespace ErrorCodes
     extern const int REQUIRED_PASSWORD;
 }
 
+namespace
+{
+
+/// Read the `endpoint` query parameter from the URI without consuming the request body.
+String getEndpointNameFromURI(const HTTPServerRequest & request)
+{
+    const Poco::URI uri(request.getURI());
+    for (const auto & [key, value] : uri.getQueryParameters())
+        if (key == "endpoint")
+            return value;
+    return {};
+}
+
+}
+
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
+    /// Defer a `Bearer` credential to the target endpoint only if it opts in via `acceptsBearerAuth`.
+    /// Otherwise fall through to the shared check and reject it before the endpoint is resolved, so
+    /// an unauthenticated caller cannot probe endpoint existence through the response.
+    if (request.hasCredentials())
+    {
+        String scheme;
+        String info;
+        request.getCredentials(scheme, info);
+        if (Poco::icompare(scheme, "Bearer") == 0)
+        {
+            const String endpoint_name = getEndpointNameFromURI(request);
+            const auto endpoint = server.context()->getInterserverIOHandler().tryGetEndpoint(endpoint_name);
+            if (endpoint && endpoint->acceptsBearerAuth())
+                return {"", true};
+        }
+    }
+
     auto server_credentials = server.context()->getInterserverCredentials();
     if (server_credentials)
     {
@@ -67,6 +101,11 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     std::shared_lock lock(endpoint->rwlock);
     if (endpoint->blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
+
+    /// Per-endpoint authentication on top of the interserver credentials checked in
+    /// `checkAuthentication`. The default rejects a deferred `Bearer` credential; an endpoint
+    /// that carries its own per-request bearer credential overrides `authenticate` to accept it.
+    endpoint->authenticate(request);
 
     if (compress)
     {

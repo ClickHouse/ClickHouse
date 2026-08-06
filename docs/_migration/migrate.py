@@ -910,6 +910,13 @@ def transform_imports(text: str, lk: Lookups, issues: list[str], source_docu_pat
             return ""
         return f"import {spec} from '{target_url}';"
 
+    def _named_badge_spec(spec: str, exported_name: str) -> str:
+        if not re.fullmatch(r"\w+", spec):
+            return spec
+        if spec == exported_name:
+            return f"{{ {exported_name} }}"
+        return f"{{ {exported_name} as {spec} }}"
+
     def replace(m: re.Match) -> str:
         spec = m.group("spec").strip()
         src = m.group("src")
@@ -1021,17 +1028,25 @@ def transform_imports(text: str, lk: Lookups, issues: list[str], source_docu_pat
                 folder = THIS_REPO / "snippets" / "components" / n / f"{n}.jsx"
                 flat = THIS_REPO / "snippets" / "components" / f"{n}.jsx"
                 mintlify_spec = spec
-                if "/badges/" in src and re.fullmatch(r"\w+", spec):
+                if "/badges/" in src:
                     # Mintlify's MDX compiler requires page badges to use their
                     # named exports. A default import can render the badge and
                     # silently omit every sibling that follows it.
-                    mintlify_spec = f"{{ {n} }}" if spec == n else f"{{ {n} as {spec} }}"
+                    mintlify_spec = _named_badge_spec(spec, n)
                 if folder.exists():
                     return f'import {mintlify_spec} from "/snippets/components/{n}/{n}.jsx";'
                 if flat.exists():
                     return f'import {mintlify_spec} from "/snippets/components/{n}.jsx";'
             issues.append(f"unmapped @theme import: {src}")
             return f"{{/* MIGRATE: unmapped import {src!r} */}}"
+
+        # Structured documentation already uses the migrated snippet path, so
+        # it bypasses the @theme rewrite above. Normalize those badge imports
+        # too, otherwise each docs regeneration changes them back to default
+        # imports and silently hides the content following the badge.
+        if src.startswith("/snippets/components/") and src.endswith("Badge.jsx"):
+            exported_name = Path(src).stem
+            return f'import {_named_badge_spec(spec, exported_name)} from "{src}";'
 
         # @site/src/components/<...>/<Name>  -> /snippets/components/<Name>/<Name>.jsx
         # @site/src/theme/<...>/<Name>       -> same lookup pattern (mirrors @theme/<Name>)
