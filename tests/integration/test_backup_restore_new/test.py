@@ -2452,8 +2452,9 @@ def test_structure_only_restores_access_entities_and_udfs():
 
 def test_restore_granular_settings_reject_out_of_range_values():
     """These flags control whether table data / access entities / UDFs are restored, so parsing
-    must fail closed: only 0/1/true/false are accepted. An out-of-range value such as 2 or -1 (or
-    an unparseable string) must raise rather than silently being coerced to true."""
+    must fail closed: only 0/1/true/false are accepted. An out-of-range value such as 2 or -1, a
+    fractional value such as 0.5, or an unparseable string must raise rather than silently being
+    coerced to true."""
     instance.query("CREATE DATABASE test")
     instance.query(
         "CREATE TABLE test.table(x UInt32) ENGINE=MergeTree ORDER BY x"
@@ -2462,7 +2463,7 @@ def test_restore_granular_settings_reject_out_of_range_values():
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
     instance.query("DROP DATABASE test")
 
-    for bad_value in ["2", "-1", "'yes'"]:
+    for bad_value in ["2", "-1", "0.5", "'yes'"]:
         for setting in ["restore_table_data", "restore_access_entities", "restore_functions"]:
             assert "Exception" in instance.query_and_get_error(
                 f"RESTORE DATABASE test FROM {backup_name} SETTINGS {setting}={bad_value}"

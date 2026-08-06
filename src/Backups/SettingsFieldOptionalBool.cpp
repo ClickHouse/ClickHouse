@@ -32,6 +32,16 @@ SettingFieldOptionalBool::SettingFieldOptionalBool(const Field & field)
         return;
     }
 
+    /// `SettingFieldBool` accepts any finite `Float64` in the `[0, 1]` range and truncates it to
+    /// `bool`, so a fractional literal such as `0.5` would silently enable the category. These
+    /// flags must fail closed, so only the exact values `0.0` and `1.0` are allowed here.
+    if (field.getType() == Field::Types::Float64)
+    {
+        Float64 x = field.safeGet<Float64>();
+        if (x != 0.0 && x != 1.0)
+            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot get bool from {}", field);
+    }
+
     /// Delegate parsing to `SettingFieldBool` so that non-null values behave exactly like regular
     /// boolean settings: only `0`/`1`/`true`/`false` (as numbers or strings) are accepted, and
     /// out-of-range numerics such as `2` or `-1` are rejected (fail-closed) instead of silently
