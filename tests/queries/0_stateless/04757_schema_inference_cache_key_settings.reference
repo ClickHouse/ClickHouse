@@ -71,6 +71,8 @@ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))
 -- JSONEachRow array_of_dynamic, dynamic=0 first
 Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))
 Array(Dynamic)
+-- JSONEachRow array_of_dynamic, a repeated query hits the cache
+1
 -- Template exponent, exp=1 first
 Nullable(Float64)
 Nullable(String)

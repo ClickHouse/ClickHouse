@@ -191,6 +191,13 @@ echo "-- JSONEachRow array_of_dynamic, dynamic=0 first"
 $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_dyn_b.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;
     DESC file('${T}_dyn_b.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 1;" | awk -F'\t' '{print $2}'
+# The two orders above re-infer either way, so they alone do not prove the JSON getter's entries are
+# read back. Repeating one query at unchanged settings must hit.
+echo "-- JSONEachRow array_of_dynamic, a repeated query hits the cache"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_dyn_a.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 1 FORMAT Null;
+    DESC file('${T}_dyn_a.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 1 FORMAT Null;
+    SELECT value > 0 FROM system.events WHERE event = 'SchemaInferenceCacheSchemaHits';"
 
 # --- Template ----------------------------------------------------------------------------
 # The row format's own field rule (CSV here) must key the entry, not format_regexp_escaping_rule.
