@@ -1,6 +1,6 @@
 -- { echo }
--- Every arm below runs at rewrite_in_to_join = 0 and = 1, and the two outputs must be IDENTICAL:
--- the rewrite must not change the three-valued result of IN. Issue #102630.
+-- Most arms below run at rewrite_in_to_join = 0 and = 1 and the two outputs must be IDENTICAL: the
+-- rewrite must not change the three-valued result of IN. Unpaired arms say why inline. Issue #102630.
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 
@@ -101,6 +101,8 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     explain_query_plan_default = 'legacy';
 SELECT x, x IN (SELECT n FROM rn_04757) AS r FROM t_04757 ORDER BY x;
 SELECT x FROM t_04757 WHERE x NOT IN (SELECT n FROM rn_04757) ORDER BY x;
+-- The IN must be lowered to a JOIN, not merely avoid building a set locally.
+SELECT 'rewritten to join' FROM (EXPLAIN SELECT x FROM t_04757 WHERE x NOT IN (SELECT n FROM rn_04757)) WHERE explain ILIKE '%Join%' LIMIT 1;
 -- Must print nothing: the rewrite keeps the plan distributable instead of building the set locally.
 SELECT 'still builds sets' FROM (EXPLAIN SELECT x, x IN (SELECT n FROM rn_04757) FROM t_04757) WHERE explain ILIKE '%CreatingSet%' LIMIT 1;
 -- Positive control, so the empty result above cannot be an empty plan or a broken grep.
