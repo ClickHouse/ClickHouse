@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
+# Random settings limits: optimize_count_from_files=(1, None); optimize_trivial_count_query=(1, None)
 
 # Concurrent readers of the same DeltaLake table while its metadata is republished.
 # A data race is not visible in query output, so a regression shows up as a sanitizer
 # report rather than as a diff against the reference.
+#
+# Either count optimization drawn 0 makes every `SELECT count()` below read all Parquet
+# files instead of their metadata, which multiplies the run time by more than an order of
+# magnitude. Both are pinned to their default so the concurrency, not the read volume,
+# decides how long the test takes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
