@@ -590,6 +590,32 @@ def do_clickhouse_only_range_query_test(
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
+def do_clickhouse_only_range_query_test_expect_error(
+    query,
+    start_time,
+    end_time,
+    step,
+    expected_cherror,
+):
+    quoted_query = "'" + query.replace("'", "''") + "'"
+    sql_query = (
+        f"SELECT * FROM prometheusQueryRange(prometheus, {quoted_query}, {start_time}, {end_time}, {step})"
+    )
+    assert expected_cherror in node.query_and_get_error(sql_query)
+
+    actual_result_from_http_api = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        start_time,
+        end_time,
+        step,
+        expect_error=True,
+    )
+    assert expected_cherror in actual_result_from_http_api
+
+
 def test_up():
     do_query_test(
         "up",
@@ -2593,6 +2619,23 @@ def test_multiple_series_in_same_resultset():
         200,
         "vector cannot contain metrics with the same labelset",
         "Multiple series have the same tags {'http_code': '404'}",
+    )
+
+    send_data(
+        [
+            ({"__name__": "rate_requests", "job": "rate_scope"}, {10: 1, 60: 2}),
+            ({"__name__": "rate_errors", "job": "rate_scope"}, {1210: 3, 1260: 5}),
+        ]
+    )
+
+    # Range functions keep the strict duplicate-labelset behavior. The two rate
+    # series do not overlap in the grid, but they still collapse to one labelset.
+    do_clickhouse_only_range_query_test_expect_error(
+        'rate({job="rate_scope"}[60s])',
+        0,
+        1260,
+        60,
+        "Multiple series have the same tags {'job': 'rate_scope'}",
     )
 
     # FIXME: Function count_over_time() is not implemented yet.

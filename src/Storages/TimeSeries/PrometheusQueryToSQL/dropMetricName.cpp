@@ -21,7 +21,8 @@ namespace
 constexpr auto MergedValues = "merged_values";
 }
 
-SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & context)
+SQLQueryPiece dropMetricName(
+    SQLQueryPiece && query_piece, ConverterContext & context, DuplicateSeriesHandling duplicate_series_handling)
 {
     if (query_piece.metric_name_dropped)
         return std::move(query_piece);
@@ -42,8 +43,9 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
         case StoreMethod::VECTOR_GRID:
         {
             /// When we remove the metric name `__name__` it's possible that we get the same set of tags (i.e. the same `group`)
-            /// on time series which were different before we removed the metric name. PromQL merges such series when
-            /// their samples don't overlap, but rejects them when they have samples at the same timestamp.
+            /// on time series which were different before we removed the metric name. By default such duplicate series
+            /// are rejected. Callers that need PromQL's unary-negation behavior can request merging when their samples
+            /// don't overlap, while still rejecting samples at the same timestamp.
             ///
             /// Example:
             ///             tags                           timestamp1        timestamp2
@@ -55,49 +57,70 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             /// {tag1='value1', tag2='value2'}              value_a           value_b
             /// {tag1='value1', tag2='value2'}              value_c           value_d
             ///
-            /// That's why we merge values element-wise and use timeSeriesThrowDuplicateSeriesIf() to detect overlapping samples.
+            /// In merge mode, values are merged element-wise and timeSeriesThrowDuplicateSeriesIf() detects overlapping samples.
 
             /// Step 1:
-            /// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group,
-            ///        anyForEach(values) AS merged_values
+            /// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group, ...
             /// FROM <vector_grid>
             /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(
-            ///     arrayExists(x -> x > 1, countForEach(values)), new_group) = 0
+            /// HAVING ...
             ASTPtr metric_name_removing_query;
             {
                 SelectQueryBuilder builder;
+
+                const bool merge_non_overlapping = duplicate_series_handling == DuplicateSeriesHandling::MERGE_NON_OVERLAPPING;
 
                 builder.select_list.push_back(makeASTFunction(
                     "timeSeriesRemoveTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(kMetricName)));
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-                builder.select_list.push_back(makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-                builder.select_list.back()->setAlias(MergedValues);
+                if (merge_non_overlapping)
+                {
+                    builder.select_list.push_back(makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                    builder.select_list.back()->setAlias(MergedValues);
+                }
+                else
+                {
+                    builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                    builder.select_list.back()->setAlias(ColumnNames::Values);
+                }
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
 
                 builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-                builder.having = makeASTFunction(
-                    "equals",
-                    makeASTFunction(
-                        "timeSeriesThrowDuplicateSeriesIf",
+                if (merge_non_overlapping)
+                {
+                    builder.having = makeASTFunction(
+                        "equals",
                         makeASTFunction(
-                            "arrayExists",
-                            makeASTLambda(
-                                {"x"},
-                                makeASTFunction("greater", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1u))),
-                            makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))),
-                        make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)),
-                    make_intrusive<ASTLiteral>(0u));
+                            "timeSeriesThrowDuplicateSeriesIf",
+                            makeASTFunction(
+                                "arrayExists",
+                                makeASTLambda(
+                                    {"x"},
+                                    makeASTFunction("greater", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1u))),
+                                makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))),
+                            make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)),
+                        make_intrusive<ASTLiteral>(0u));
+                }
+                else
+                {
+                    builder.having = makeASTFunction(
+                        "equals",
+                        makeASTFunction(
+                            "timeSeriesThrowDuplicateSeriesIf",
+                            makeASTFunction("greater", makeASTFunction("count"), make_intrusive<ASTLiteral>(1u)),
+                            make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)),
+                        make_intrusive<ASTLiteral>(0u));
+                }
 
                 metric_name_removing_query = builder.getSelectQuery();
             }
 
             /// Step 2:
-            /// SELECT new_group AS group, merged_values AS values
+            /// SELECT new_group AS group, <values> AS values
             /// FROM step1
             ASTPtr column_renaming_query;
             {
@@ -106,8 +129,15 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
                 builder.select_list.back()->setAlias(ColumnNames::Group);
 
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(MergedValues));
-                builder.select_list.back()->setAlias(ColumnNames::Values);
+                if (duplicate_series_handling == DuplicateSeriesHandling::MERGE_NON_OVERLAPPING)
+                {
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(MergedValues));
+                    builder.select_list.back()->setAlias(ColumnNames::Values);
+                }
+                else
+                {
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+                }
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(metric_name_removing_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
