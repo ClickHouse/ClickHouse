@@ -23,10 +23,10 @@ struct MutationContext;
 namespace MutationHelpers
 {
 
-/// True iff mutating `part` with `commands` must rewrite the whole part instead of hardlinking the
-/// files it does not touch. Shared by splitAndModifyMutationCommands, by MutateTask's task fork
-/// (which adds its own interpreter-dependent condition) and by isHardlinkOnlyMutation below, so the
-/// shape conditions cannot drift apart between them.
+/// True iff the shape of `part` alone forces mutating it with `commands` to rewrite the whole part
+/// instead of hardlinking the files it does not touch. Shared by splitAndModifyMutationCommands, by
+/// rewritesAllPartColumns (which adds the interpreter-dependent condition) and by
+/// isHardlinkOnlyMutation below, so the shape conditions cannot drift apart between them.
 bool mutationRequiresFullPartRewrite(const MergeTreeData::DataPartPtr & part, const MutationCommands & commands);
 
 /// True iff mutating `part` with `commands` is guaranteed to take the partial route (hardlink every
