@@ -596,7 +596,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
 /// query is pushed *into* the child plan, above the child read, where `PrefetchingConcatProcessor`
 /// would collapse the streams and serialize it. The outer pass cannot see those steps - it only sees
 /// `ReadFromMerge` - so the check has to happen here.
-static void preferMultipleStreamsForResidualCpuWork(QueryPlan::Node * node, bool passed_residual_cpu_step)
+static void preferMultipleStreamsForResidualCPUWork(QueryPlan::Node * node, bool passed_residual_cpu_step)
 {
     if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
     {
@@ -610,7 +610,7 @@ static void preferMultipleStreamsForResidualCpuWork(QueryPlan::Node * node, bool
         || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;
 
     for (auto * child : node->children)
-        preferMultipleStreamsForResidualCpuWork(child, passed_residual_cpu_step);
+        preferMultipleStreamsForResidualCPUWork(child, passed_residual_cpu_step);
 }
 
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -630,7 +630,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     if (order_info)
         for (const auto & child_plan : *child_plans)
             if (child_plan.plan.isInitialized())
-                preferMultipleStreamsForResidualCpuWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ false);
+                preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ false);
 
     QueryPlanResourceHolder resources;
     VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
