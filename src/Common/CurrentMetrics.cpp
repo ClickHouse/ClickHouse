@@ -159,6 +159,9 @@
     M(DestroyAggregatesThreads, "Number of threads in the thread pool for destroy aggregate states.") \
     M(DestroyAggregatesThreadsActive, "Number of threads in the thread pool for destroy aggregate states running a task.") \
     M(DestroyAggregatesThreadsScheduled, "Number of queued or active jobs in the thread pool for destroy aggregate states.") \
+    M(HashJoinDestroyThreads, "Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas.") \
+    M(HashJoinDestroyThreadsActive, "Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas running a task.") \
+    M(HashJoinDestroyThreadsScheduled, "Number of queued or active jobs in the thread pool for destroying a large HashJoin's stored blocks and arenas.") \
     M(HashedDictionaryThreads, "Number of threads in the HashedDictionary thread pool.") \
     M(HashedDictionaryThreadsActive, "Number of threads in the HashedDictionary thread pool running a task.") \
     M(HashedDictionaryThreadsScheduled, "Number of queued or active jobs in the HashedDictionary thread pool.") \
