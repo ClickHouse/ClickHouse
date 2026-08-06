@@ -1,15 +1,15 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: EXPLAIN ANALYZE rejects distributed plans (NOT_IMPLEMENTED).
+
 -- Covers the three join implementations that `04603_explain_analyze_join_matched_rows` cannot reach,
 -- because none of them is selectable through `join_algorithm` over two plain MergeTree tables:
 -- `ConstantJoin` (a `CROSS` join or a constant `ON` condition), the `Join` table engine and
 -- `DirectKeyValueJoin` (a dictionary looked up directly). The last two run under `FilledJoinStep`
 -- rather than `JoinStep`.
 --
--- The left table has 1000 rows of which 439 have a partner in the right one, and the right table has
--- 1000 rows of which 521 have a partner, same as in 04603, so the numbers are comparable across tests.
---
--- Each side reports `rows` and `matched`; `match rate` and `fanout` are derived from both sides at
--- once, so a report that carries only one side cannot have them. This test pins which groups each
--- implementation produces, not only their values.
+-- The data is the one of 04603 (439 matching left rows, 521 matching right ones), so the numbers are
+-- comparable across tests. `match rate` and `fanout` are derived from both sides at once, so a report
+-- that carries only one side cannot have them: this test pins the groups, not only their values.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;

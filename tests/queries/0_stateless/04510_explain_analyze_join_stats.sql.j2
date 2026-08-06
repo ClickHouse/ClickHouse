@@ -1,3 +1,9 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: EXPLAIN ANALYZE rejects distributed plans (NOT_IMPLEMENTED).
+
+-- Pins which groups `EXPLAIN ANALYZE` reports for the hash join family over every kind it accepts.
+-- The other algorithms are in `04758_explain_analyze_join_stats_merge_algorithms`.
+
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t1;
@@ -40,36 +46,6 @@ INSERT INTO t2 SELECT number % 500, number FROM numbers(1000);
             'ANTI RIGHT JOIN t2 ON t1.x = t2.x',
         ],
         "countIf(explain LIKE '%Left: rows%') = 1 AND countIf(explain LIKE '%Right: rows%') = 1 AND countIf(explain LIKE '%matched %') = 2 AND countIf(explain LIKE '%match rate%') = 2 AND countIf(explain LIKE '%unique keys%') = 1 AND countIf(explain LIKE '%· memory %') = 1"),
-
-    ('grace_hash', ', max_bytes_before_external_join = 1',
-        all_kinds + [
-            'ANY INNER JOIN t2 ON t1.x = t2.x',
-            'ANY LEFT JOIN t2 ON t1.x = t2.x',
-            'ANY RIGHT JOIN t2 ON t1.x = t2.x',
-            'SEMI LEFT JOIN t2 ON t1.x = t2.x',
-            'SEMI RIGHT JOIN t2 ON t1.x = t2.x',
-            'ANTI LEFT JOIN t2 ON t1.x = t2.x',
-            'ANTI RIGHT JOIN t2 ON t1.x = t2.x',
-        ],
-        "countIf(explain LIKE '%Left: rows%') = 1 AND countIf(explain LIKE '%Right: rows%') = 1 AND countIf(explain LIKE '%matched %') = 2 AND countIf(explain LIKE '%match rate%') = 2 AND countIf(explain LIKE '%unique keys%') = 1 AND countIf(explain LIKE '%· memory %') = 1 AND countIf(explain LIKE '%buckets%') = 1 AND countIf(explain LIKE '%rehashes%') = 1 AND countIf(explain LIKE '%Spill:%') = 1"),
-
-    ('partial_merge', '',
-        all_kinds + [
-            'ANY INNER JOIN t2 ON t1.x = t2.x',
-            'ANY LEFT JOIN t2 ON t1.x = t2.x',
-            'SEMI LEFT JOIN t2 ON t1.x = t2.x',
-        ],
-        "countIf(explain LIKE '%Left: rows%') = 1 AND countIf(explain LIKE '%Right: rows%') = 1 AND countIf(explain LIKE '%matched %') = 2 AND countIf(explain LIKE '%match rate%') = 2 AND countIf(explain LIKE '%· size %') = 1 AND countIf(explain LIKE '%· blocks %') = 1 AND countIf(explain LIKE '%storage%') = 1 AND countIf(explain LIKE '%sort time%') = 2"),
-
-    ('full_sorting_merge', '',
-        all_kinds + [
-            'ANY INNER JOIN t2 ON t1.x = t2.x',
-            'ANY LEFT JOIN t2 ON t1.x = t2.x',
-            'ANY RIGHT JOIN t2 ON t1.x = t2.x',
-            'ASOF JOIN t2 ON t1.x = t2.x AND t1.t >= t2.t',
-            'ASOF LEFT JOIN t2 ON t1.x = t2.x AND t1.t >= t2.t',
-        ],
-        "countIf(explain LIKE '%Left: rows%') = 1 AND countIf(explain LIKE '%Right: rows%') = 1 AND countIf(explain LIKE '%matched %') = 2 AND countIf(explain LIKE '%match rate%') = 2"),
 ] -%}
 
 {% for algo, extra, combos, checks in cases -%}
