@@ -1,0 +1,10 @@
+--- explicit tuple call is sent as a row value
+1	x
+--- single-element tuple call is rejected by ClickHouse
+rejected
+--- Array literal is rejected by ClickHouse
+rejected
+--- array function call is rejected by ClickHouse
+rejected
+--- map function call is rejected by ClickHouse
+rejected

@@ -49,11 +49,18 @@ String transformQueryForExternalDatabase(
   */
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context);
 
-/** Recursively normalize single-row multi-column `IN`/`NOT IN` sets in `node` (e.g. `(a, b) IN ((1, 'x'))`)
-  * so that they keep their outer parentheses when re-serialized for an external database, instead of
-  * collapsing to a flat scalar list (`IN (1, 'x')`). Used for user-provided `(SELECT ...)` subqueries that
-  * are formatted from the raw AST and therefore bypass the normalization done by `transformQueryForExternalDatabase`.
+/** Recursively normalize `node` so that it re-serializes into SQL the external database can parse. Used for
+  * user-provided `(SELECT ...)` subqueries that are formatted from the raw AST and therefore bypass the
+  * normalization done by `transformQueryForExternalDatabase`:
+  * - single-row multi-column `IN`/`NOT IN` sets (e.g. `(a, b) IN ((1, 'x'))`) keep their outer parentheses
+  *   instead of collapsing to a flat scalar list (`IN (1, 'x')`);
+  * - for non-`Regular` escaping styles, the `tuple` function with at least two arguments is marked to be
+  *   formatted in the parenthesized operator form `(a, b)` (a row value in PostgreSQL / SQLite) instead of
+  *   the ClickHouse-only call form `tuple(a, b)`;
+  * - for non-`Regular` escaping styles, expressions that only have a ClickHouse-specific text form (`tuple`
+  *   with fewer than two arguments, `array`, `map`) throw `BAD_ARGUMENTS` instead of being sent to the
+  *   external database as SQL it cannot parse.
   */
-void wrapSingleRowTupleSetsForIN(ASTPtr & node);
+void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle literal_escaping_style);
 
 }

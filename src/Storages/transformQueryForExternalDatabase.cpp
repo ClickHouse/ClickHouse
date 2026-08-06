@@ -31,6 +31,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int UNSUPPORTED_METHOD;
@@ -634,7 +635,7 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo
             "the passed query, or disable external_table_strict_query.");
 }
 
-void wrapSingleRowTupleSetsForIN(ASTPtr & node)
+void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle literal_escaping_style)
 {
     if (!node)
         return;
@@ -642,9 +643,38 @@ void wrapSingleRowTupleSetsForIN(ASTPtr & node)
     /// instead of exhausting the stack.
     checkStackSize();
     if (auto * function = node->as<ASTFunction>())
+    {
         wrapSingleRowTupleSetForINNode(*function);
+
+        if (literal_escaping_style != LiteralEscapingStyle::Regular)
+        {
+            /// `tuple` with at least two arguments has the plain parenthesized form `(a, b)` that
+            /// PostgreSQL / SQLite understand as a row value, but only when formatted as an
+            /// operator; the function-call form `tuple(a, b)` is ClickHouse syntax. With fewer
+            /// than two arguments (and for `array` / `map`) there is no such form at all, so the
+            /// re-serialized subquery would not be parseable by the external database - reject it
+            /// instead of sending broken SQL.
+            if (function->name == "tuple")
+            {
+                if (function->arguments && function->arguments->children.size() >= 2)
+                    function->setIsOperator(true);
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot format a tuple with fewer than two elements for the external database: "
+                        "it can only be written in ClickHouse-specific syntax. Rewrite the query passed "
+                        "to the external database without it");
+            }
+            else if (function->name == "array" || function->name == "map")
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot format {} for the external database: it has no syntax for such values. "
+                    "Rewrite the query passed to the external database without it",
+                    function->name == "array" ? "an array" : "a map");
+            }
+        }
+    }
     for (auto & child : node->children)
-        wrapSingleRowTupleSetsForIN(child);
+        normalizeSubqueryForExternalDatabase(child, literal_escaping_style);
 }
 
 }

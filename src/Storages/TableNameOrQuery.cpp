@@ -72,9 +72,11 @@ std::optional<String> tryGetExternalDatabaseQuery(
             /*literal_escaping_style=*/literal_escaping_style);
         /// Clone before normalizing so the user's parsed AST is left untouched. A single-row
         /// multi-column `IN` set (`(a, b) IN ((1, 'x'))`) would otherwise re-serialize as
-        /// `IN (1, 'x')` and change the query's meaning for the external database.
+        /// `IN (1, 'x')` and change the query's meaning for the external database, and an explicit
+        /// `tuple(a, b)` call would be emitted in ClickHouse-only syntax the external database
+        /// cannot parse.
         ASTPtr query_ast = subquery->children.at(0)->clone();
-        wrapSingleRowTupleSetsForIN(query_ast);
+        normalizeSubqueryForExternalDatabase(query_ast, literal_escaping_style);
         query_ast->format(out, settings);
         return out.str();
     }

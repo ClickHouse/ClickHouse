@@ -102,17 +102,22 @@ TEST(LiteralEscapingStyle, StringInsideTuple)
     EXPECT_SQLITE_EQ(value, "('it''s', 'a\tb')");
 }
 
-TEST(LiteralEscapingStyle, StringInsideSingleElementTuple)
+TEST(LiteralEscapingStyle, SingleElementTupleIsRejectedForDialects)
 {
     Tuple tuple;
     tuple.push_back(std::string("it's"));
     Field value = tuple;
 
-    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "tuple('it''s')");
-    EXPECT_SQLITE_EQ(value, "tuple('it''s')");
+    /// A single-element tuple can only be written back as `tuple(...)`, which is ClickHouse
+    /// syntax: PostgreSQL / SQLite would fail to parse it. Without the fix it was emitted
+    /// verbatim (e.g. into a user-provided `(SELECT ...)` table argument), so on the merge-base
+    /// these expectations fail because formatting succeeds.
+    EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "tuple('it\\'s')");
+    EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::PostgreSQL));
+    EXPECT_ANY_THROW(formatSQLite(value));
 }
 
-TEST(LiteralEscapingStyle, StringInsideNestedContainers)
+TEST(LiteralEscapingStyle, ArrayIsRejectedForDialects)
 {
     Tuple inner;
     inner.push_back(std::string("it's"));
@@ -123,9 +128,27 @@ TEST(LiteralEscapingStyle, StringInsideNestedContainers)
     array.push_back(std::string("c'd"));
     Field value = array;
 
+    /// An `Array` literal has only the ClickHouse `[...]` text form, which PostgreSQL / SQLite
+    /// cannot parse. Without the fix it was emitted verbatim, so on the merge-base these
+    /// expectations fail because formatting succeeds.
     EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "[('it\\'s', 'b'), 'c\\'d']");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "[('it''s', 'b'), 'c''d']");
-    EXPECT_SQLITE_EQ(value, "[('it''s', 'b'), 'c''d']");
+    EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::PostgreSQL));
+    EXPECT_ANY_THROW(formatSQLite(value));
+}
+
+TEST(LiteralEscapingStyle, MapIsRejectedForDialects)
+{
+    Tuple entry;
+    entry.push_back(std::string("k"));
+    entry.push_back(std::string("v"));
+
+    Map map;
+    map.push_back(entry);
+    Field value = map;
+
+    /// Same as for `Array`: a `Map` literal has no PostgreSQL / SQLite text form.
+    EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::PostgreSQL));
+    EXPECT_ANY_THROW(formatSQLite(value));
 }
 
 TEST(LiteralEscapingStyle, NonStringElementsAreUnchanged)

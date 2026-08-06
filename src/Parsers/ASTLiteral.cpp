@@ -169,10 +169,17 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
 /// Base for the visitors that print a `Field` as a literal of a particular external dialect.
 ///
 /// Everything except strings and containers is printed exactly like `FieldVisitorToString` does.
-/// Container literals (`Array` / `Tuple` / `Map` / `Object`) are handled here so that the visitor
-/// recurses into itself instead of falling back to `FieldVisitorToString`: once a target dialect is
-/// selected, nested strings (e.g. the elements of an `IN` tuple) have to stay in that dialect all
-/// the way down. `Derived` only has to provide `operator()` for `String`.
+/// Container literals (`Tuple` / `Object`) are handled here so that the visitor recurses into
+/// itself instead of falling back to `FieldVisitorToString`: once a target dialect is selected,
+/// nested strings (e.g. the elements of an `IN` tuple) have to stay in that dialect all the way
+/// down. Literals that only have a ClickHouse-specific text form (`Array` / `Map`, and tuples with
+/// fewer than two elements, which can only be written as `tuple(...)`) are rejected: the external
+/// database would fail to parse them, or worse, parse them into something else. Normally such
+/// literals never reach the formatting stage (`isCompatible` keeps the predicates that carry them
+/// out of the pushed-down query), so throwing here fails a query that would otherwise be sent to
+/// the external database as broken SQL - e.g. a user-provided `(SELECT ...)` table argument, which
+/// is formatted from the raw AST. `Derived` only has to provide `operator()` for `String` and
+/// a `dialect_name` constant.
 template <typename Derived>
 class FieldVisitorToStringForDialect : public StaticVisitor<String>
 {
@@ -180,14 +187,31 @@ public:
     template <typename T>
     String operator() (const T & x) const { return visitor(x); }
 
-    String operator() (const Array & x) const { return formatContainer(x, "[", "]"); }
-    String operator() (const Map & x) const { return formatContainer(x, "[", "]"); }
+    [[noreturn]] String operator() (const Array &) const
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot format an Array literal for {}: it has no syntax for such literals; "
+            "the predicate can only be evaluated by ClickHouse", Derived::dialect_name);
+    }
+
+    [[noreturn]] String operator() (const Map &) const
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot format a Map literal for {}: it has no syntax for such literals; "
+            "the predicate can only be evaluated by ClickHouse", Derived::dialect_name);
+    }
 
     String operator() (const Tuple & x) const
     {
-        /// For single-element tuples we must use the explicit `tuple` function,
-        /// or they will be parsed back as plain literals.
-        return formatContainer(x, x.size() > 1 ? "(" : "tuple(", ")");
+        /// A tuple with fewer than two elements has no plain parenthesized form: it could only be
+        /// written back with the explicit `tuple` function, which is ClickHouse syntax that the
+        /// external database does not understand.
+        if (x.size() < 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot format a tuple with fewer than two elements for {}: it can only be written "
+                "in ClickHouse-specific syntax; the predicate can only be evaluated by ClickHouse",
+                Derived::dialect_name);
+        return formatContainer(x, "(", ")");
     }
 
     String operator() (const Object & x) const
@@ -226,6 +250,8 @@ private:
 class FieldVisitorToStringPostgreSQL : public FieldVisitorToStringForDialect<FieldVisitorToStringPostgreSQL>
 {
 public:
+    static constexpr const char * dialect_name = "PostgreSQL";
+
     using FieldVisitorToStringForDialect<FieldVisitorToStringPostgreSQL>::operator();
 
     String operator() (const String & x) const
@@ -249,6 +275,8 @@ public:
 class FieldVisitorToStringSQLite : public FieldVisitorToStringForDialect<FieldVisitorToStringSQLite>
 {
 public:
+    static constexpr const char * dialect_name = "SQLite";
+
     using FieldVisitorToStringForDialect<FieldVisitorToStringSQLite>::operator();
 
     String operator() (const String & x) const
