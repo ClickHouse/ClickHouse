@@ -320,6 +320,12 @@ def test_iceberg_history_repeated_snapshot_id_uses_last_log_entry(
     newer_ms = newer["timestamp-ms"]
     first_ms = newer_ms - 2000  # when `older` originally became current
     again_ms = newer_ms + 1000  # when the rollback made `older` current AGAIN - must win
+    # A snapshot cannot become current before it is committed, and the real INSERTs land only a few
+    # hundred milliseconds apart, so move the commit time back with the log entry (as the sibling
+    # test above does). getHistory does not read it for a repeated id, but the fixture must stay a
+    # metadata file a real writer could have produced.
+    older["timestamp-ms"] = first_ms
+    assert first_ms >= older["timestamp-ms"], "became-current must not precede the commit time"
     assert len({first_ms, newer_ms, again_ms}) == 3, "the three timestamps must be distinguishable"
 
     meta["snapshot-log"] = [
