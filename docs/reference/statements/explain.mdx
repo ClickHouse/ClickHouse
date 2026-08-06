@@ -800,13 +800,16 @@ An outer join emits one `NULL`-padded output row for every row of a preserved si
 
 #### When the numbers require `matches = 1` {#explain-analyze-matches}
 
-Most of these numbers fall out of data the join builds anyway and are reported by a plain `EXPLAIN ANALYZE`. Two cases need bookkeeping the join would otherwise not do, so they are only reported with `EXPLAIN ANALYZE matches = 1`:
+Most of these numbers fall out of data the join builds anyway and are reported by a plain `EXPLAIN ANALYZE`. The rest need bookkeeping the join would otherwise not do, so they are only reported with `EXPLAIN ANALYZE matches = 1`. Which ones those are depends on the algorithm; in the hash family they are two cases:
 
 - the **right** side of `ALL INNER` and `ALL LEFT`, which requires marking every matched right row;
 - the **left** side of `ALL LEFT` and `ALL FULL`, but only when the query selects nothing from the
   right table and the `ON` section is a plain key equality. Otherwise the probe already records
   which left rows matched — either to materialize the right columns or to evaluate the residual
   condition — and the count is exact without the option.
+
+The merge algorithms need the option more often, since marking the rows of an equal range is work
+they otherwise skip.
 
 <Note>
 The option is off by default because the extra bookkeeping is not free, and what it costs is measurement fidelity. The work is done inside the probe loop and grows with the number of output rows. Use `matches = 1` when you need to know the exact matches that left and right rows found on the other side.
@@ -833,7 +836,7 @@ Enabling [`any_join_distinct_right_table_keys`](/reference/settings/session-sett
 
 The [`Join`](/reference/engines/table-engines/special/join) table engine follows the same table, using the kind and strictness declared in the engine: `Join(ALL, INNER, …)` reports both sides, `Join(ANY, LEFT, …)` neither.
 
-**Merge algorithms.** `partial_merge` and `full_sorting_merge` report **both** sides for every combination they accept — they walk the two sorted inputs and see every row of an equal range, so nothing has to be reconstructed afterwards. `partial_merge` accepts `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` and `SEMI LEFT`; `full_sorting_merge` accepts the four `ALL` kinds, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` and `ASOF LEFT`.
+**Merge algorithms.** With `matches = 1`, `partial_merge` and `full_sorting_merge` report **both** sides for every combination they accept — they walk the two sorted inputs and see every row of an equal range, so nothing has to be reconstructed afterwards. `partial_merge` accepts `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` and `SEMI LEFT`; `full_sorting_merge` accepts the four `ALL` kinds, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` and `ASOF LEFT`.
 
 **`direct`.** The left side only. The right side is a key-value store that is never materialized into rows, so it has no `Right:` line at all.
 
