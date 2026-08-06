@@ -343,3 +343,109 @@ SELECT count(), countDistinct(_part) FROM t_nested_mixed_parts;
 SELECT id, `n.a` FROM t_nested_mixed_parts ORDER BY id;
 
 DROP TABLE t_nested_mixed_parts;
+
+-- Mixed source parts for the Nested subcolumn *itself*: one part stores `` `n.b` `` (inserted
+-- explicitly after the ALTERs), the other still relies on its DEFAULT, whose dependency `m` is
+-- absent from that older part. `` `n.b` `` cannot be expired - that would drop the stored values -
+-- and its DEFAULT cannot be evaluated faithfully for the older part's rows (the absent `m`
+-- degrades to an empty literal), so the evaluated value would have array sizes inconsistent with
+-- the shared Nested offsets. The merge must reconcile the evaluated default with the offsets the
+-- part already stores: the rows of the older part degrade to type-default values shaped by the
+-- sibling's offsets, and the stored values of the newer part survive as-is.
+DROP TABLE IF EXISTS t_nested_mixed_stored;
+
+CREATE TABLE t_nested_mixed_stored (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_mixed_stored VALUES (1, [10,20]);
+
+ALTER TABLE t_nested_mixed_stored ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_mixed_stored ADD COLUMN `n.b` Array(String) DEFAULT arrayMap(v -> toString(v), m);
+
+INSERT INTO t_nested_mixed_stored (id, `n.a`, `n.b`) VALUES (2, [30,40], ['x','y']);
+
+-- Exactly one of the two active parts stores `n.b` (the mixed state this case is about).
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_stored' AND active AND column = 'n.b';
+
+OPTIMIZE TABLE t_nested_mixed_stored FINAL;
+
+-- `n.b` stays materialized (it cannot be expired without losing the stored values).
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_stored' AND active AND column = 'n.b';
+SELECT count() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_stored' AND active;
+
+-- The stored values survive, the recomputed rows agree with the shared offsets.
+SELECT id, `n.a`, `n.b` FROM t_nested_mixed_stored ORDER BY id;
+
+DROP TABLE t_nested_mixed_stored;
+
+-- The same mixed state merged with the horizontal algorithm: reading all columns together does not
+-- make the DEFAULT evaluable either (`m` is still absent from the older part), so the evaluated
+-- value must be reconciled with the shared offsets all the same.
+DROP TABLE IF EXISTS t_nested_mixed_stored_horizontal;
+
+CREATE TABLE t_nested_mixed_stored_horizontal (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    enable_vertical_merge_algorithm = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_mixed_stored_horizontal VALUES (1, [10,20]);
+
+ALTER TABLE t_nested_mixed_stored_horizontal ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_mixed_stored_horizontal ADD COLUMN `n.b` Array(String) DEFAULT arrayMap(v -> toString(v), m);
+
+INSERT INTO t_nested_mixed_stored_horizontal (id, `n.a`, `n.b`) VALUES (2, [30,40], ['x','y']);
+
+OPTIMIZE TABLE t_nested_mixed_stored_horizontal FINAL;
+
+SELECT count() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_stored_horizontal' AND active;
+SELECT id, `n.a`, `n.b` FROM t_nested_mixed_stored_horizontal ORDER BY id;
+
+DROP TABLE t_nested_mixed_stored_horizontal;
+
+-- A DEFAULT with no dependencies at all whose value has array sizes different from the shared
+-- Nested offsets (a plain constant). The reconciliation is per row: a row whose evaluated sizes
+-- happen to agree with the sibling's offsets keeps the evaluated value, a row whose sizes disagree
+-- degrades to the type-default value shaped by the offsets.
+DROP TABLE IF EXISTS t_nested_const_default;
+
+CREATE TABLE t_nested_const_default (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_const_default;
+
+INSERT INTO t_nested_const_default VALUES (1, [10]);
+INSERT INTO t_nested_const_default VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_const_default ADD COLUMN `n.b` Array(String) DEFAULT ['x'];
+
+SYSTEM START MERGES t_nested_const_default;
+OPTIMIZE TABLE t_nested_const_default FINAL;
+
+SELECT count() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_nested_const_default' AND active;
+SELECT id, `n.a`, `n.b` FROM t_nested_const_default ORDER BY id;
+
+DROP TABLE t_nested_const_default;
