@@ -116,3 +116,205 @@ def test_parse_failure_logical_error_name_drops_dangling_stack_trace_marker(tmp_
     assert "(STID:" in result_name
     # The frames are still preserved in the separate stack-trace section of the info.
     assert "abortOnFailedAssertion" in info
+
+
+def test_parse_failure_logical_error_finds_format_string_despite_interleaving(
+    tmp_path,
+):
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    # A message from another thread (with its multi-line stack trace) lands between
+    # the `Logical error:` and `Format string:` fatal lines, pushing the format
+    # string out of the 10-line window around the match. The failure name must
+    # still be built from the format string (without the raw line's quotes).
+    interleaved_message = (
+        "2026.08.01 18:35:11.673118 [ 4327 ] {} <Error> TCPHandler: Code: 210. "
+        "DB::NetException: Connection reset by peer, while writing to socket. "
+        "(NETWORK_ERROR), Stack trace (when copying this message, always include "
+        "the lines below):\n"
+        "\n"
+        + "".join(
+            f"{i}. src/Server/TCPHandler.cpp:{i}: DB::someFunction() @ 0x{i:016x}\n"
+            for i in range(14)
+        )
+        + "\n"
+    )
+    server_log.write_text(
+        "2026.08.01 18:35:11.672071 [ 4353 ] {} <Fatal> : Logical error: "
+        "'Query context must be created after authentication'.\n"
+        + interleaved_message
+        + "2026.08.01 18:35:11.675219 [ 4353 ] {} <Fatal> : Format string: "
+        "'Query context must be created after authentication'.\n"
+        "2026.08.01 18:35:11.694220 [ 4353 ] {} <Fatal> : Stack trace (when "
+        "copying this message, always include the lines below):\n"
+        "\n"
+        "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+        "@ 0x00000000139d383c\n"
+        "1. ./src/Interpreters/Session.cpp:690:15: "
+        "DB::Session::makeQueryContextImpl() @ 0x0000000018143638\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, info, files = parser.parse_failure()
+
+    assert result_name.startswith(
+        "Logical error: Query context must be created after authentication (STID:"
+    )
+    assert "'" not in result_name
+
+
+def test_parse_failure_logical_error_without_own_format_string(tmp_path):
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    # `abortOnFailedAssertion(description)` logs no `Format string:` line when the
+    # format string is empty. The search for it must stay inside the matched failure
+    # (the next fatal message of the same thread), so that a later unrelated logical
+    # error does not rename the first one with its own format string.
+    server_log.write_text(
+        "2026.08.01 18:35:11.672071 [ 4353 ] {} <Fatal> : Logical error: "
+        "'first error without format'.\n"
+        "2026.08.01 18:35:11.694220 [ 4353 ] {} <Fatal> : Stack trace (when "
+        "copying this message, always include the lines below):\n"
+        "\n"
+        "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+        "@ 0x00000000139d383c\n"
+        "2026.08.01 18:36:00.000000 [ 4400 ] {} <Fatal> : Logical error: "
+        "'second error normalized A'.\n"
+        "2026.08.01 18:36:00.000001 [ 4400 ] {} <Fatal> : Format string: "
+        "'second error normalized {}'.\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith("Logical error: 'first error without format' (STID:")
+    assert "second error normalized" not in result_name
+
+
+def test_parse_failure_logical_error_stack_trace_str_without_thread_ids():
+    # Same scenario as above, but with the `stack_trace_str` input, whose lines have
+    # no server-log `[ thread_id ] {}` prefixes. The search for the `Format string:`
+    # line cannot be bounded by the thread there, so it must be bounded by the
+    # failure block instead: a `Format string:` that appears after the next failure
+    # line belongs to that failure, not to the matched one.
+    parser = FuzzerLogParser(
+        server_log="",
+        stack_trace_str=(
+            "Logical error: 'first error without format'.\n"
+            "Stack trace (when copying this message, always include the lines "
+            "below):\n"
+            "\n"
+            "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+            "@ 0x00000000139d383c\n"
+            "Logical error: 'second error normalized A'.\n"
+            "Format string: 'second error normalized {}'.\n"
+        ),
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith("Logical error: first error without format (STID:")
+    assert "second error normalized" not in result_name
+
+
+def test_parse_failure_logical_error_stack_trace_str_next_failure_other_pattern():
+    # Same as above, but the later failure is carried by a different pattern variant
+    # (an assertion instead of another `Logical error:`). The thread-less search must
+    # stop at the next failure line of any kind, so the assertion's `Format string:`
+    # must not rename the first failure.
+    parser = FuzzerLogParser(
+        server_log="",
+        stack_trace_str=(
+            "Logical error: 'first error without format'.\n"
+            "Stack trace (when copying this message, always include the lines "
+            "below):\n"
+            "\n"
+            "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+            "@ 0x00000000139d383c\n"
+            "Assertion `count == 0` failed.\n"
+            "Format string: 'second assertion normalized {}'.\n"
+        ),
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith("Logical error: first error without format (STID:")
+    assert "second assertion normalized" not in result_name
+
+
+def test_parse_failure_logical_error_file_without_thread_ids(tmp_path):
+    # A plain file input whose lines carry no server-log `[ thread_id ] {}`
+    # prefixes - e.g. stderr.log standing in for an absent server log. The search
+    # for the `Format string:` line cannot be bounded by the thread, so it must be
+    # bounded by the failure block, exactly as for the `stack_trace_str` input: a
+    # `Format string:` that appears after the next failure line of any kind (here
+    # an assertion) belongs to that failure and must not rename the matched one.
+    server_log = tmp_path / "stderr.log"
+    server_log.write_text(
+        "Logical error: 'first error without format'.\n"
+        "Stack trace (when copying this message, always include the lines "
+        "below):\n"
+        "\n"
+        "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+        "@ 0x00000000139d383c\n"
+        "Assertion `count == 0` failed.\n"
+        "Format string: 'second assertion normalized {}'.\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith("Logical error: 'first error without format' (STID:")
+    assert "second assertion normalized" not in result_name
+
+
+def test_parse_failure_logical_error_file_without_thread_ids_own_format_string(
+    tmp_path,
+):
+    # The positive counterpart: on a thread-less file input, a `Format string:`
+    # line that belongs to the matched failure (before any other failure line)
+    # must still normalize the name.
+    server_log = tmp_path / "stderr.log"
+    server_log.write_text(
+        "Logical error: 'Cannot parse element A: expected B'.\n"
+        "Format string: 'Cannot parse element {}: expected {}'.\n"
+        "Stack trace (when copying this message, always include the lines "
+        "below):\n"
+        "\n"
+        "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+        "@ 0x00000000139d383c\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith(
+        "Logical error: Cannot parse element A: expected B (STID:"
+    )
+    assert "'" not in result_name.partition(" (STID:")[0].removeprefix(
+        "Logical error: "
+    )
