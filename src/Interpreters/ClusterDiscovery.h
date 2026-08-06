@@ -200,6 +200,9 @@ private:
     void ensureWorkerStarted();
     bool consumePendingConfigUpdate();
 
+    /// Assumes start_mutex is held. Starts the worker at most once.
+    void startImpl();
+
     void initialUpdate();
 
     void registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info);
@@ -251,6 +254,11 @@ private:
     std::unordered_map<String, ClusterPtr> cluster_impls;
 
     bool is_initialized = false;
+
+    /// Serializes start() / ensureWorkerStarted() so concurrent config reload and
+    /// startClusterDiscovery cannot double-assign main_thread (ThreadFromGlobalPool aborts).
+    /// Lock order: start_mutex before pending_config_mutex.
+    mutable std::mutex start_mutex;
     ThreadFromGlobalPool main_thread;
 
     LoggerPtr log;
@@ -259,6 +267,8 @@ private:
     std::unordered_map<String, MulticlusterDiscovery> multicluster_discovery_paths;
 
     /// Config reload posts parsed config here; worker applies it.
+    /// Never take this lock while a caller without start_mutex may later take start_mutex
+    /// while holding this one: lock order is start_mutex -> pending_config_mutex.
     mutable std::mutex pending_config_mutex;
     std::optional<ParsedDiscoveryConfig> pending_config_update;
 

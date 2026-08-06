@@ -161,9 +161,15 @@ public:
         cv.notify_one();
     }
 
+    bool isStopped() const
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        return stop_flag;
+    }
+
 private:
-    std::condition_variable cv;
-    std::mutex mu;
+    mutable std::condition_variable cv;
+    mutable std::mutex mu;
 
     /// flag indicates that update is required
     std::unordered_map<T, bool> flags;
@@ -565,20 +571,21 @@ bool ClusterDiscovery::consumePendingConfigUpdate()
 
 void ClusterDiscovery::ensureWorkerStarted()
 {
+    std::lock_guard lock(start_mutex);
     if (main_thread.joinable())
         return;
 
     if (clusters_info.empty() && multicluster_discovery_paths.empty())
     {
-        std::lock_guard lock(pending_config_mutex);
+        std::lock_guard pending_lock(pending_config_mutex);
         if (!pending_config_update)
             return;
         /// Pending update may add the first discovery path; apply it before start().
     }
 
-    /// If worker is not running yet, apply pending config inline so start() sees new clusters.
+    /// If worker is not running yet, apply pending config inline so startImpl() sees new clusters.
     consumePendingConfigUpdate();
-    start();
+    startImpl();
 }
 
 /// List node in zookeper for cluster
@@ -831,6 +838,9 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
 
     if (info.current_node_is_observer)
     {
+        /// Drop leftover ephemeral registration when transitioning from participant to observer
+        /// (or if a stale node remained). tryRemove is a no-op when the node is absent.
+        zk->tryRemove(node_path);
         LOG_DEBUG(log, "Current node {} is observer of cluster {}", current_node_name, info.name);
         return;
     }
@@ -843,9 +853,6 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
 
 void ClusterDiscovery::unregisterFromZk(const ClusterInfo & info)
 {
-    if (info.current_node_is_observer)
-        return;
-
     try
     {
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
@@ -988,6 +995,12 @@ void ClusterDiscovery::findDynamicClusters(
 
 void ClusterDiscovery::start()
 {
+    std::lock_guard lock(start_mutex);
+    startImpl();
+}
+
+void ClusterDiscovery::startImpl()
+{
     if (main_thread.joinable())
         return;
 
@@ -1029,8 +1042,22 @@ void ClusterDiscovery::start()
                  * should not stop discovery forever
                  */
                 tryLogCurrentException(log, "Caught exception in cluster discovery runMainThread");
+                if (clusters_to_update->isStopped())
+                    break;
             }
-            std::this_thread::sleep_for(backoff_timeout);
+            if (finish || clusters_to_update->isStopped())
+                break;
+
+            /// Interruptible backoff so shutdown does not wait for a long sleep after errors.
+            for (auto remaining = backoff_timeout; remaining.count() > 0 && !clusters_to_update->isStopped();)
+            {
+                constexpr auto slice = std::chrono::milliseconds(50);
+                auto step = remaining < slice ? remaining : slice;
+                std::this_thread::sleep_for(step);
+                remaining -= step;
+            }
+            if (clusters_to_update->isStopped())
+                break;
             backoff_timeout = std::min(backoff_timeout * 2, std::chrono::milliseconds(3min));
         }
     });
@@ -1181,6 +1208,8 @@ void ClusterDiscovery::shutdown()
     if (clusters_to_update)
         clusters_to_update->stop();
 
+    /// Wait for any in-flight startImpl() before joining so we do not race ThreadFromGlobalPool assign.
+    std::lock_guard lock(start_mutex);
     if (main_thread.joinable())
         main_thread.join();
 }

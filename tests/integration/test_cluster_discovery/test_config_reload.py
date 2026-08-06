@@ -110,6 +110,33 @@ CONFIG_NO_MULTICLUSTER_ROOT = """
 </clickhouse>
 """
 
+CONFIG_PARTICIPANT = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_observer_transition>
+            <discovery>
+                <path>/clickhouse/discovery/test_observer_transition</path>
+            </discovery>
+        </test_observer_transition>
+    </remote_servers>
+</clickhouse>
+"""
+
+CONFIG_OBSERVER = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_observer_transition>
+            <discovery>
+                <path>/clickhouse/discovery/test_observer_transition</path>
+                <observer/>
+            </discovery>
+        </test_observer_transition>
+    </remote_servers>
+</clickhouse>
+"""
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -151,6 +178,11 @@ def reload_config_on_all(config_body):
     for node in nodes.values():
         node.replace_config(CONFIG_PATH, config_body)
         node.query("SYSTEM RELOAD CONFIG", password="passwordAbc")
+
+
+def reload_config_on_node(node, config_body):
+    node.replace_config(CONFIG_PATH, config_body)
+    node.query("SYSTEM RELOAD CONFIG", password="passwordAbc")
 
 
 def test_reload_discovery_credentials(start_cluster):
@@ -264,6 +296,55 @@ def test_reload_add_remove_multicluster_root(start_cluster):
         cluster_name="test_reload_cluster",
         what="count()",
         msg="Static cluster missing after restoring multicluster root",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+
+def test_reload_participant_to_observer_unregisters(start_cluster):
+    """Participant -> observer reload must remove this node's ephemeral ZK registration."""
+    reload_config_on_all(CONFIG_PARTICIPANT)
+
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_observer_transition",
+        what="count()",
+        msg="Both participants should be visible before observer transition",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+    reload_config_on_node(nodes["node0"], CONFIG_OBSERVER)
+
+    # node0 must disappear from node1's view without waiting for ZK session expiry.
+    for retry in range(15):
+        hosts = (
+            nodes["node1"]
+            .query(
+                "SELECT host_name FROM system.clusters "
+                "WHERE cluster = 'test_observer_transition' ORDER BY host_name",
+                password="passwordAbc",
+            )
+            .strip()
+            .split("\n")
+        )
+        hosts = [h for h in hosts if h]
+        if hosts == ["node1"]:
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError(
+            f"node0 still advertised after observer reload; hosts on node1: {hosts}"
+        )
+
+    # Observer still sees the remaining participant.
+    check_on_cluster(
+        [nodes["node0"]],
+        1,
+        cluster_name="test_observer_transition",
+        what="count()",
+        msg="Observer should still see the remaining participant",
         query_params={"password": "passwordAbc"},
         retries=6,
     )
