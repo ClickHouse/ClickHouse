@@ -43,17 +43,36 @@ enum class TextIndexDirectReadMode : uint8_t
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_ = {});
+    TextSearchQuery(
+        String function_name_,
+        TextSearchMode search_mode_,
+        TextIndexDirectReadMode direct_read_mode_,
+        VectorWithMemoryTracking<String> tokens_,
+        std::vector<OptimizedRegularExpression> patterns_ = {},
+        VectorWithMemoryTracking<String> phrase_tokens_ = {});
 
+    const String & getFunctionName() const { return function_name; }
+    TextSearchMode getSearchMode() const { return search_mode; }
+    TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
+    const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
+    const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
+    const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
+    UInt128 getHash() const { return hash; }
+
+private:
+    void initializeHash();
+
+    /// Fields are immutable after construction, otherwise the precomputed hash becomes stale.
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
+    /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
-    /// not sorted, not deduplicated
+    /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
-
-    SipHash getHash() const;
+    /// Precomputed in the constructor because getHash is called on hot paths.
+    UInt128 hash{};
 };
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
@@ -74,6 +93,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
         const Block & index_sample_block,
+        const std::optional<String> & normalized_index_column_name_,
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
@@ -169,12 +189,18 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
+    bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
+
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
     /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    std::optional<String> normalized_index_column_name;
+    /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
+    /// share mutable parsing state; null otherwise.
+    std::shared_ptr<const ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;

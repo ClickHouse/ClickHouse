@@ -16,15 +16,15 @@ S3 ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관리할 
   ## 지원되는 데이터 소스
 </div>
 
-| 이름                                             | Logo                                                                                        | 세부 정보                                                                                                                                         |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Amazon S3**                                  | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 로고" width="32" />   | 지속적인 수집은 기본적으로 [사전식 순서](#continuous-ingestion-lexicographical-order)가 필요하지만, [파일을 임의 순서로 수집](#continuous-ingestion-any-order)하도록 구성할 수도 있습니다. |
-| **Cloudflare R2** <br /> *S3-compatible*       | <img src="/images/integrations/logos/cloudflare.svg" alt="Cloudflare R2 로고" width="32" />   | 지속적인 수집에는 [사전식 순서](#continuous-ingestion-lexicographical-order)가 필요합니다. 비순차 모드는 지원되지 않습니다.                                                    |
-| **DigitalOcean Spaces** <br /> *S3-compatible* | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean 로고" width="32" /> | 지속적인 수집에는 [사전식 순서](#continuous-ingestion-lexicographical-order)가 필요합니다. 비순차 모드는 지원되지 않습니다.                                                    |
-| **OVH Object Storage** <br /> *S3-compatible*  | <img src="/images/integrations/logos/ovh.webp" alt="Cloud Storage 로고" width="32" />          | 지속적인 수집에는 [사전식 순서](#continuous-ingestion-lexicographical-order)가 필요합니다. 비순차 모드는 지원되지 않습니다.                                                    |
+| 이름                                             | Logo                                                                                        | 세부 정보                                                                                                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Amazon S3**                                  | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 로고" width="32" />   | 지속적인 수집은 기본적으로 [사전식 순서](#continuous-ingestion-lexicographical-order)가 필요하지만, [파일을 임의의 순서로 수집](#continuous-ingestion-any-order)하도록 구성할 수도 있습니다. |
+| **Cloudflare R2** <br /> *S3 호환*       | <img src="/images/integrations/logos/cloudflare.svg" alt="Cloudflare R2 로고" width="32" />   | 지속적인 수집에는 [사전식 순서](#continuous-ingestion-lexicographical-order)가 필요합니다. unordered mode는 지원되지 않습니다.                                             |
+| **DigitalOcean Spaces** <br /> *S3 호환* | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean 로고" width="32" /> | 지속적인 수집에는 [사전식 순서](#continuous-ingestion-lexicographical-order)가 필요합니다. unordered mode는 지원되지 않습니다.                                             |
+| **OVH Object Storage** <br /> *S3 호환*  | <img src="/images/integrations/logos/ovh.webp" alt="Cloud Storage 로고" width="32" />         | 지속적인 수집에는 [사전식 순서](#continuous-ingestion-lexicographical-order)가 필요합니다. unordered mode는 지원되지 않습니다.                                             |
 
 <Tip>
-  객체 스토리지 서비스 공급자마다 URL 포맷과 API 구현이 다르므로, 모든 S3 호환 서비스가 별도 설정 없이 바로 지원되는 것은 아닙니다. 위 목록에 없는 서비스를 사용하는 중 문제가 발생하면 [팀에 문의하십시오](https://clickhouse.com/company/contact?loc=clickpipes).
+  객체 스토리지 서비스 제공업체마다 URL 포맷과 API 구현이 다르므로 모든 S3 호환 services가 별도 설정 없이 바로 지원되지는 않습니다. 위 목록에 없는 서비스를 사용 중 문제가 발생하면 [팀에 문의하십시오](https://clickhouse.com/company/contact?loc=clickpipes).
 </Tip>
 
 <div id="supported-formats">
@@ -227,18 +227,18 @@ S3 ClickPipes는 메타데이터 검색과 데이터 수집에 각각 ClickPipes
 
 ClickPipes는 대부분의 사용 사례 요구 사항을 충족하는 적절한 기본값을 제공합니다. 추가로 미세 조정이 필요한 경우 다음 설정을 조정할 수 있습니다.
 
-| Setting                              | Default value | Description                                                                                                          |
-| ------------------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB          | 단일 삽입 배치에서 처리할 바이트 수입니다.                                                                                             |
-| `Max file count`                     | 100           | 단일 삽입 배치에서 처리할 최대 파일 수입니다.                                                                                           |
+| Setting                              | Default value | Description                                                                                                             |
+| ------------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | 단일 삽입 배치에서 처리할 바이트 수입니다.                                                                                                |
+| `Max file count`                     | 100           | 단일 삽입 배치에서 처리할 최대 파일 수입니다.                                                                                              |
 | `Max threads`                        | auto(3)       | 파일 처리를 위한 [최대 동시 스레드 수](/ko/reference/settings/session-settings#max_threads)입니다.                                        |
 | `Max insert threads`                 | 1             | 파일 처리를 위한 [최대 동시 삽입 스레드 수](/ko/reference/settings/session-settings#max_insert_threads)입니다.                              |
 | `Min insert block size bytes`        | 1GB           | 테이블에 삽입할 수 있는 [블록의 최소 바이트 크기](/ko/reference/settings/session-settings#min_insert_block_size_bytes)입니다.                  |
 | `Max download threads`               | 4             | [최대 동시 다운로드 스레드 수](/ko/reference/settings/session-settings#max_download_threads)입니다.                                    |
-| `Object storage polling interval`    | 30s           | ClickHouse 클러스터에 데이터를 삽입하기 전 대기하는 최대 시간을 설정합니다.                                                                      |
+| `Object storage polling interval`    | 30s           | ClickHouse 클러스터에 데이터를 삽입하기 전 대기하는 최대 시간을 설정합니다.                                                                         |
 | `Parallel distributed insert select` | 2             | [Parallel distributed insert select 설정](/ko/reference/settings/session-settings#parallel_distributed_insert_select)입니다. |
 | `Parallel view processing`           | false         | attached 상태인 뷰에 순차 처리 대신 [동시에 푸시](/ko/reference/settings/session-settings#parallel_view_processing)할지 여부입니다.            |
-| `Use cluster function`               | true          | 여러 노드에서 파일을 병렬로 처리할지 여부입니다.                                                                                          |
+| `Use cluster function`               | true          | 여러 노드에서 파일을 병렬로 처리할지 여부입니다.                                                                                             |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes의 고급 설정" size="lg" border />
 

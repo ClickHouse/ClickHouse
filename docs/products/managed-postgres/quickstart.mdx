@@ -1,14 +1,24 @@
 ---
 slug: /cloud/managed-postgres/quickstart
 sidebarTitle: 'Quickstart'
-title: 'Quickstart for Managed Postgres'
+title: 'Quickstart for ClickHouse Managed Postgres'
 description: 'Experience NVMe-powered Postgres performance and add real-time analytics with native ClickHouse integration'
-keywords: ['managed postgres', 'quickstart', 'getting started', 'create database', 'nvme', 'performance']
+keywords: ['managed postgres', 'quickstart', 'getting started', 'create database', 'nvme', 'performance', 'clickhousectl', 'CLI', 'automation', 'AI agents']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
+import QuickstartCLI from "/snippets/managed-postgres/_quickstart_cli.mdx";
+
+<Visibility for="agents">
+
+<QuickstartCLI />
+
+</Visibility>
+
+<Visibility for="humans">
+<View title="Cloud UI">
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
 
@@ -17,10 +27,10 @@ ClickHouse Managed Postgres is enterprise-grade Postgres backed by NVMe storage,
 - **Part 1:** Get started with NVMe Postgres and experience its performance
 - **Part 2:** Unlock real-time analytics by integrating with ClickHouse
 
-Managed Postgres is currently available on AWS in several regions and is free during private preview.
+ClickHouse Managed Postgres is currently available on AWS in several regions and is in public beta.
 
 **In this quickstart, you will:**
-- Create a Managed Postgres instance with NVMe-powered performance
+- Create a ClickHouse Managed Postgres instance with NVMe-powered performance
 - Load 1 million sample events and see NVMe speed in action
 - Run queries and experience low-latency performance
 - Replicate data to ClickHouse for real-time analytics
@@ -30,21 +40,21 @@ Managed Postgres is currently available on AWS in several regions and is free du
 
 ### Create a database {#create-postgres-database}
 
-To create a new Managed Postgres service, click on the **New service** button in the service list of the Cloud Console. You should then be able to select Postgres as the database type.
+To create a new ClickHouse Managed Postgres service, click on the **New service** button in the service list of the Cloud Console. You should then be able to select Postgres as the database type.
 
-<Image img="/images/managed-postgres/create-service.webp" alt="Create a managed Postgres service" size="md" border/>
+<Image img="/images/managed-postgres/create-service.webp" alt="Create a ClickHouse Managed Postgres service" size="md" border/>
 
 Enter a name for your database instance and click on **Create service**. You will be taken to the overview page.
 
-<Image img="/images/managed-postgres/overview.webp" alt="Managed Postgres overview" size="md" border/>
+<Image img="/images/managed-postgres/overview.webp" alt="ClickHouse Managed Postgres overview" size="md" border/>
 
-Your Managed Postgres instance will be provisioned and ready for use in 3-5 minutes.
+Your ClickHouse Managed Postgres instance will be provisioned and ready for use in 3-5 minutes.
 
 ### Connect to your database {#connect}
 
 In the sidebar on the left, you will see a [**Connect** button](/products/managed-postgres/connection). Click on it to view your connection details and connection strings in multiple formats.
 
-<Image img="/images/managed-postgres/connect-modal.webp" alt="Managed Postgres connect modal" size="md" border/>
+<Image img="/images/managed-postgres/connect-modal.webp" alt="ClickHouse Managed Postgres connect modal" size="md" border/>
 
 Copy the `psql` connection string and connect to your database. You can also use any Postgres-compatible client such as DBeaver, or any application library.
 
@@ -233,22 +243,22 @@ While Postgres excels at transactional workloads (OLTP), ClickHouse is purpose-b
 This section shows you how to replicate your Postgres data to ClickHouse and query it seamlessly.
 
 ### Setup ClickHouse integration {#setup-integrate-clickhouse}
-Now that we have tables and data in Postgres, let's replicate the tables to ClickHouse for analytics. We start by clicking on **ClickHouse integration** in the sidebar. Then you can click on **Replicate data in ClickHouse**.
-<Image img="/images/managed-postgres/integration-landing.webp" alt="Managed Postgres integration empty" size="md" border/>
+Now that we have tables and data in Postgres, let's replicate the tables to ClickHouse for analytics. We start by clicking on **Sync to ClickHouse** in the sidebar. Then you can click on **Replicate data in ClickHouse**.
+<Image img="/images/managed-postgres/integration-landing.webp" alt="ClickHouse Managed Postgres integration empty" size="md" border/>
 In the form that follows, you can enter a name for your integration and select an existing ClickHouse instance to replicate to. If you don't have a ClickHouse instance yet, you can create one directly from this form.
 <Info>
 **Important**
 
 Make sure the ClickHouse service you select is Running before proceeding.
 </Info>
-<Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Managed Postgres integration form" size="md" border/>
+<Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="ClickHouse Managed Postgres integration form" size="md" border/>
 
 Click on **Next**, to be taken to the table picker. Here all you need to do is:
 - Select a ClickHouse database to replicate to.
 - Expand the **public** schema and select the users and events table we created earlier.
 - Click on **Replicate data to ClickHouse**.
 
-<Image img="/images/managed-postgres/table-picker.webp" alt="Managed Postgres table picker" size="md" border/>
+<Image img="/images/managed-postgres/table-picker.webp" alt="ClickHouse Managed Postgres table picker" size="md" border/>
 
 The replication process will start, and you will be taken to the integration overview page. Being the first integration, it can take 2-3 minutes to setup the initial infrastructure. In the meantime let's check out the new **pg_clickhouse** extension.
 
@@ -272,6 +282,14 @@ CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
 Replace `<clickhouse_cloud_host>` with your ClickHouse hostname and `<database_name>` with the database you selected during replication setup. You can find the hostname in your ClickHouse service by clicking **Connect** in the sidebar.
 
 <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="Get ClickHouse host" size="md" border/>
+
+<Note>
+If you're using the ClickHouse Cloud console to run SQL, grant the console admin user access to the foreign server:
+
+```sql
+GRANT USAGE ON FOREIGN SERVER ch TO chpg_console_admin;
+```
+</Note>
 
 Now, we map the Postgres user to the ClickHouse service's credentials:
 ```sql
@@ -297,11 +315,11 @@ You can now see all the ClickHouse tables in your Postgres client:
 
 Let's check back on the integration page. You should see that the initial replication is complete. Click on the integration name to view details.
 
-<Image img="/images/managed-postgres/analytics-list.webp" alt="Managed Postgres analytics list" size="md" border/>
+<Image img="/images/managed-postgres/analytics-list.webp" alt="ClickHouse Managed Postgres analytics list" size="md" border/>
 
 Click on the service name to open the ClickHouse console and see your replicated tables.
 
-<Image img="/images/managed-postgres/replicated-tables.webp" alt="Managed Postgres replicated tables in ClickHouse" size="md" border/>
+<Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse Managed Postgres replicated tables in ClickHouse" size="md" border/>
 
 ### Compare Postgres vs ClickHouse performance {#performance-comparison}
 
@@ -393,4 +411,17 @@ Query times vary based on instance size, network latency between services, data 
 To delete the resources created in this quickstart:
 
 1. First, delete the ClickPipe integration from the ClickHouse service
-2. Then, delete the Managed Postgres instance from the Cloud Console
+2. Then, delete the ClickHouse Managed Postgres instance from the Cloud Console
+
+</View>
+
+<View title="CLI">
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
+
+You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
+
+<QuickstartCLI />
+
+</View>
+</Visibility>
