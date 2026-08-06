@@ -341,6 +341,18 @@ void TotalsHavingTransform::prepareTotals()
     totals = Chunk(std::move(current_totals), 1);
     finalizeChunk(totals, aggregates_mask);
 
+    if (isCancelled())
+    {
+        /// Cancellation could have arrived after the entry check, while the overflow aggregates were
+        /// being merged and the totals row finalized. The result is discarded anyway, so do not start
+        /// evaluating the `HAVING` expression for the totals row; replace the totals with an empty
+        /// chunk matching the totals port header (the finalized chunk still has the pre-expression
+        /// structure), and mark the totals as prepared.
+        totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+        total_prepared = true;
+        return;
+    }
+
     if (expression)
     {
         size_t num_rows = totals.getNumRows();
