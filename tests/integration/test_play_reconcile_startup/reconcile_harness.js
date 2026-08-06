@@ -1056,6 +1056,74 @@ async function main() {
             r.sandbox.history.state);
     }
 
+    /// Guard (a legacy Back/Forward entry clears an adopted policy): a history entry written
+    /// before `runnableUrl` was serialized carries no policy field; its own `run` marker is the
+    /// only evidence. Navigating from a modern `runnableUrl: true` entry to such a plain legacy
+    /// entry must CLEAR the tab's adopted policy, not merely fail to promote it: the restored tab
+    /// is clean and run-backed, so the next structural rewrite (`refreshCurrentHistoryEntry`)
+    /// would otherwise re-stamp the plain legacy entry as `?run=1`, and a later ordinary reload
+    /// would auto-execute a query the user never asked to re-run.
+    {
+        const origin = new URL(base).origin;
+        const report_hash = Buffer.from('SELECT 8', 'utf8').toString('base64');
+        const r = await runScenario(js, {
+            href: base + '?tab=Report',
+            historyState: null,
+            seedTabs: [
+                /// The result's connection must MATCH the live one, otherwise `run=1` would be
+                /// dropped by the connection-divergence check instead of by the policy under test.
+                { id: 't8', title: 'Report', query: 'SELECT 8', params: {},
+                  result: { ran: true, query: 'SELECT 8', params: {}, database: null,
+                            url: origin, user: '' },
+                  lastSavedQuery: 'SELECT 8' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        const entryState = (extra) => Object.assign({
+            tabId: 't8', tabName: 'Report', query: 'SELECT 8', params: {},
+            result: { ran: true, query: 'SELECT 8', params: {}, database: null,
+                      url: origin, user: '' },
+            connectionServer: origin, connectionUser: '',
+        }, extra);
+        /// Back to a MODERN entry carrying the policy: the tab adopts it. This is the "promote"
+        /// direction, asserted so the clearing below cannot pass by never adopting a policy at all.
+        const modern = entryState({ runnableUrl: true });
+        r.sandbox.location._apply(base + '?tab=Report#' + report_hash);
+        r.sandbox.history.state = modern;
+        vm.runInContext(`window.onpopstate({ isTrusted: true, state: ${JSON.stringify(modern)} })`, r.sandbox);
+        await sleep(50);
+        check('legacy-popstate-clears-policy', 'a Back to a modern `runnableUrl: true` entry adopts the policy',
+            vm.runInContext("!!tabs.find(t => t.id === 't8').runnableUrl", r.sandbox),
+            vm.runInContext("JSON.stringify(tabs.map(t => ({ t: t.title, runnableUrl: t.runnableUrl })))", r.sandbox));
+        /// Back again, to a LEGACY entry of the same tab: `history.state` predates `runnableUrl`
+        /// (no such field) and the popped URL carries no `run`. The adopted policy must be cleared.
+        const legacy = entryState({});
+        r.sandbox.location._apply(base + '?tab=Report#' + report_hash);
+        r.sandbox.history.state = legacy;
+        vm.runInContext(`window.onpopstate({ isTrusted: true, state: ${JSON.stringify(legacy)} })`, r.sandbox);
+        await sleep(50);
+        check('legacy-popstate-clears-policy', 'a Back to a plain legacy entry clears the adopted policy',
+            vm.runInContext("tabs.find(t => t.id === 't8').runnableUrl === false", r.sandbox),
+            vm.runInContext("JSON.stringify(tabs.map(t => ({ t: t.title, runnableUrl: t.runnableUrl })))", r.sandbox));
+        /// Sanity: the restored tab really is clean, run-backed and on the live connection — the
+        /// exact state whose structural rewrite would re-stamp `run=1` were the policy left in place.
+        check('legacy-popstate-clears-policy', 'the restored tab is clean, run-backed and on the live connection',
+            vm.runInContext("(() => { const t = tabs.find(x => x.id === 't8');" +
+                " return tabReflectsRun(t) && !liveDivergedFromRun(t.result); })()", r.sandbox),
+            vm.runInContext("JSON.stringify(tabs.map(t => ({ t: t.title, reflects: tabReflectsRun(t)," +
+                " diverged: liveDivergedFromRun(t.result) })))", r.sandbox));
+        /// The structural rewrite itself: with a stale `true` policy it would rewrite this plain
+        /// legacy entry as `?run=1&tab=Report#...`; with the policy cleared it stays plain.
+        vm.runInContext('refreshCurrentHistoryEntry(getActiveTab())', r.sandbox);
+        await sleep(50);
+        check('legacy-popstate-clears-policy', 'a structural rewrite of the legacy entry does not stamp run=1',
+            new URL(r.sandbox.location.href).searchParams.get('run') === null,
+            r.sandbox.location.href);
+        check('legacy-popstate-clears-policy', 'the rewritten entry does not carry the policy either',
+            !(r.sandbox.history.state && r.sandbox.history.state.runnableUrl),
+            r.sandbox.history.state);
+    }
+
     /// Guard (the marker is not lost either): the per-tab policy must still let a genuine run
     /// under a `?run=1` load write an auto-runnable URL — that is what makes a shared `run=1`
     /// link reproducible. On `master` the session-global was cleared for the whole page by a

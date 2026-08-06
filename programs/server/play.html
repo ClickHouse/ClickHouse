@@ -9391,11 +9391,14 @@ window.onpopstate = function(event) {
     /// Restore the `run=1` policy OF THE ENTRY navigated to (see `writeHistoryEntry`), so time
     /// travel carries it: a Back to an entry written under a plain load must not leave the tab
     /// able to re-stamp `?run=1` on the next structural rewrite. A legacy entry written before the
-    /// policy was serialized has none; there the entry's own marker is the only evidence, and it
-    /// can only promote — an entry without the marker proves nothing. The dirty/divergence checks
-    /// in `writeHistoryEntry` still gate every future stamp either way.
+    /// policy was serialized has none; there the entry's own marker is the only evidence, so
+    /// derive the policy from it in BOTH directions (fail closed): a marker promotes, and a plain
+    /// legacy entry CLEARS a previously adopted policy. Leaving a stale `true` in place would let
+    /// the next structural rewrite of that plain entry (a tab switch while the editor still
+    /// reflects the entry's run) re-stamp it `?run=1`, so a later ordinary reload would
+    /// auto-execute a query the user never asked to re-run.
     if (typeof event.state.runnableUrl === 'boolean') tab.runnableUrl = event.state.runnableUrl;
-    else if (popped_url.searchParams.get('run') !== null) tab.runnableUrl = true;
+    else tab.runnableUrl = popped_url.searchParams.get('run') !== null;
     /// Keep this history entry's identity in sync with the tab it actually resolves to, restamping
     /// BOTH the state's `tabId`/`tabName` and the URL's `tab=` key. Two cases need it:
     ///   - The entry named a now-closed tab and we recreated a fresh one (`tabId` changed): adopt
