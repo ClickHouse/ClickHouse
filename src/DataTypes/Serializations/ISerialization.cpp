@@ -702,9 +702,9 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
         || path[last_elem].type == Substream::SparseNullMap;
 }
 
-bool ISerialization::isPrefetchUnneededSubstream(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
+bool ISerialization::isPrefetchUnneededSubstream(const DB::ISerialization::SubstreamPath & path, size_t prefix_len, bool prefetch_json_shared_data_substreams)
 {
-    if (prefix_len == 0 || prefix_len > path.size())
+    if (prefetch_json_shared_data_substreams || prefix_len == 0 || prefix_len > path.size())
         return false;
 
     /// These JSON shared data substreams are read by seeking to a specific mark that is known only

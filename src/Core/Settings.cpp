@@ -1663,6 +1663,9 @@ Enables caching of columns metadata from the file prefixes during reading from r
 DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
+DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
+)", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Improve FINAL queries by avoiding merges across different partitions.
 

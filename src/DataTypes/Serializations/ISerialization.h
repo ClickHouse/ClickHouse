@@ -728,7 +728,7 @@ public:
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
     /// Returns true for substreams that don't need to be prefetched.
-    static bool isPrefetchUnneededSubstream(const SubstreamPath & path, size_t prefix_len);
+    static bool isPrefetchUnneededSubstream(const SubstreamPath & path, size_t prefix_len, bool prefetch_json_shared_data_substreams);
 
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isMetadataStream(const SubstreamPath & path);
