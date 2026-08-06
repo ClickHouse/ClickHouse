@@ -2255,14 +2255,20 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
                 path = metadata.getFileSegmentPath(key, entry.offset, FileSegmentKind::Regular, origin, size);
                 std::error_code ec;
                 auto actual_file_size = fs::file_size(path, ec);
-                if (ec)
+                if (!ec && actual_file_size == size)
                 {
-                    path = metadata.getFileSegmentPath(key, entry.offset, FileSegmentKind::Regular, origin);
-                    actual_file_size = fs::file_size(path, ec);
+                    size_in_filename = true;
                 }
                 else
                 {
-                    size_in_filename = true;
+                    /// The `<offset>_<size>` name may also be occupied by a stale artifact of a failed
+                    /// best-effort rename while the real segment lives under its legacy `<offset>` name
+                    /// (the directory-scan path in `loadMetadataForKey` prefers the legacy file for the
+                    /// same reason), so on any error or size mismatch retry the legacy name before
+                    /// declaring the row stale. The stale artifact is deliberately left on disk,
+                    /// consistent with the directory-scan recovery path.
+                    path = metadata.getFileSegmentPath(key, entry.offset, FileSegmentKind::Regular, origin);
+                    actual_file_size = fs::file_size(path, ec);
                 }
 
                 /// Validate that the file exists and has the expected size.

@@ -2975,6 +2975,43 @@ TEST_F(FileCacheTest, RocksDBIndex)
         ASSERT_EQ(cache.getUsedCacheSize(), 25);
     }
 
+    /// Phase 2c: a failed best-effort rename can leave a stale `<offset>_<size>` artifact next to
+    /// the real segment under its legacy `<offset>` name. The index load path checks the suffixed
+    /// name first, but on a size mismatch it must retry the legacy name (mirroring the duplicate
+    /// rule of the directory-scan path) instead of dropping the row and losing the segment.
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 10;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+        settings[FileCacheSetting::use_rocksdb_metadata_index] = true;
+
+        auto cache = DB::FileCache("rocksdb_test", settings);
+
+        const auto legacy_path = fs::path(cache.getFileSegmentPath(key1, 0, FileSegmentKind::Regular, user, /* size */std::nullopt));
+        const auto stale_path = fs::path(cache.getFileSegmentPath(key1, 0, FileSegmentKind::Regular, user, /* size */10));
+        ASSERT_TRUE(fs::is_regular_file(legacy_path));
+        {
+            WriteBufferFromFile wb(stale_path, DBMS_DEFAULT_BUFFER_SIZE);
+            wb.write("xxx", 3); /// The actual size differs from the size encoded in the name.
+            wb.finalize();
+        }
+
+        cache.initialize();
+
+        /// All segments survive: the one with the stale artifact is loaded from the legacy file.
+        ASSERT_EQ(cache.getFileSegmentsNum(), 3);
+        ASSERT_EQ(cache.getUsedCacheSize(), 25);
+        ASSERT_TRUE(fs::is_regular_file(legacy_path));
+
+        /// The stale artifact is deliberately left on disk (non-destructive recovery path).
+        ASSERT_TRUE(fs::is_regular_file(stale_path));
+        fs::remove(stale_path);
+    }
+
     /// Phase 3: Detach a segment, reload, verify it's gone.
     {
         DB::FileCacheSettings settings;
