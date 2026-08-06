@@ -207,6 +207,9 @@ enum class BackupsWorker::ThreadPoolId : uint8_t
     ASYNC_BACKGROUND_BACKUP,
     ASYNC_BACKGROUND_RESTORE,
 
+    /// Dedicated async-starter pool for lightweight snapshot creation, so a snapshot's top-level operation is not starved by a concurrent heavy BACKUP occupying ASYNC_BACKGROUND_BACKUP.
+    ASYNC_BACKGROUND_CREATE_SNAPSHOT,
+
     /// We need background threads for coordination workers (see BackgroundCoordinationStageSync).
     ON_CLUSTER_COORDINATION_BACKUP,
     ON_CLUSTER_COORDINATION_RESTORE,
@@ -256,6 +259,7 @@ public:
             case ThreadPoolId::BACKUP:
             case ThreadPoolId::CREATE_SNAPSHOT:
             case ThreadPoolId::ASYNC_BACKGROUND_BACKUP:
+            case ThreadPoolId::ASYNC_BACKGROUND_CREATE_SNAPSHOT:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP:
             case ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_BACKUP:
@@ -303,10 +307,12 @@ public:
             /// and everything else is after those ones.
             ThreadPoolId::ASYNC_BACKGROUND_BACKUP,
             ThreadPoolId::ASYNC_BACKGROUND_RESTORE,
+            ThreadPoolId::ASYNC_BACKGROUND_CREATE_SNAPSHOT,
             ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP,
             ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE,
             /// Others:
             ThreadPoolId::BACKUP,
+            ThreadPoolId::CREATE_SNAPSHOT,
             ThreadPoolId::RESTORE,
             ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP,
             ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_BACKUP,
@@ -581,8 +587,20 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
 
     try
     {
-        auto thread_pool_id = starter->is_internal_backup ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP: ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
-        ThreadName thread_name = starter->is_internal_backup ? ThreadName::BACKUP_ASYNC_INTERNAL : ThreadName::BACKUP_ASYNC;
+        ThreadPoolId thread_pool_id = ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
+        ThreadName thread_name = ThreadName::BACKUP_ASYNC;
+        if (starter->backup_settings.experimental_lightweight_snapshot)
+        {
+            /// Snapshot creation needs its own async-starter capacity: otherwise a concurrent heavy BACKUP can occupy all
+            /// ASYNC_BACKGROUND_BACKUP threads and the snapshot's doBackup would never start (and so never reach CREATE_SNAPSHOT).
+            thread_pool_id = ThreadPoolId::ASYNC_BACKGROUND_CREATE_SNAPSHOT;
+            thread_name = ThreadName::SNAPSHOT_ASYNC;
+        }
+        else if (starter->is_internal_backup)
+        {
+            thread_pool_id = ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP;
+            thread_name = ThreadName::BACKUP_ASYNC_INTERNAL;
+        }
         auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
         schedule([starter]
