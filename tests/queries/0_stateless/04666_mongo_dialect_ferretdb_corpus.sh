@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: long
+# long: the corpus is fixed-size and is already split between concurrent clients, but under a
+# sanitizer with randomized settings a run still takes a few minutes - the per-query overhead
+# dominates and cannot be sliced away.
 # Runs a corpus of Mongo dialect queries and checks only that the server survives it.
 #
 # The corpus is `data_mongo/ferretdb_query_corpus.txt`, derived from the integration test suite of
