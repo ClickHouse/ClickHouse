@@ -7791,6 +7791,9 @@ async function restoreEditor(state, token) {
         /// names/values cannot linger in the UI or leak through `getParamValues`.
         queryParamsContainer.innerHTML = '';
         currentQueryParams = [];
+        /// The cleared inputs describe no text in particular; force `captureActiveTab` to
+        /// re-derive (or keep the snapshot committed below) instead of trusting them.
+        params_synced_text = null;
         Object.assign(restored_params, state.params || {});
     }
     const active_tab_for_params = getActiveTab();
@@ -8356,7 +8359,31 @@ function captureActiveTab() {
     /// keeps the guard armed only until that restore's tail commits (its tail runs even when a
     /// same-tab run superseded the activation, so the guard is not latched indefinitely); a switch
     /// to another tab hands the guard to that tab's own restore.
-    if (params_restore_pending_token === null) tab.params = getParamValues();
+    if (params_restore_pending_token !== null) return;
+    if (params_synced_text === tab.query) {
+        tab.params = getParamValues();
+        return;
+    }
+    /// The `param_*` inputs describe an OLDER text: the keystroke-driven rebuild has not landed
+    /// yet (e.g. the first `WebAssembly.instantiate` of the lexer is still in flight) or could not
+    /// run at all. This capture is what history-writing actions (`addTab`, `closeTab`, a database
+    /// change) snapshot, so folding the stale inputs in as-is would pair the new draft with the
+    /// previous text's bindings in the entry/URL they are about to write — e.g. `param_x=42` under
+    /// a `SELECT 1` that no longer has `{x:Int32}`. Re-derive the placeholder set synchronously
+    /// from the captured text and bind only surviving names, mirroring what the pending rebuild
+    /// would eventually commit (`syncParamsAfterRebuild`): live input values first, the tab's own
+    /// saved snapshot as the fallback seed. When even that is impossible (no lexer yet), keep the
+    /// tab's last committed snapshot rather than adopt values known to describe different text.
+    const names = extractQueryParamNamesSync(tab.query);
+    if (names === null) return;
+    const dom = getParamValues();
+    const saved = tab.params || {};
+    const values = {};
+    for (const name of names) {
+        if (dom[name] !== undefined) values[name] = dom[name];
+        else if (saved[name] !== undefined) values[name] = saved[name];
+    }
+    tab.params = values;
 }
 
 /// Abort a tab's in-flight query (if any) and supersede its run generation so its late responses
@@ -10163,7 +10190,13 @@ async function loadLexer() {
 
 async function tokenize(query) {
     await loadLexer();
+    return tokenizeSync(query);
+}
 
+/// The synchronous core of `tokenize`: everything after the module is instantiated is plain WASM
+/// calls. Callers that cannot await (e.g. `captureActiveTab` re-deriving the parameter set for a
+/// history write) use this directly once `lexer_module` is loaded.
+function tokenizeSync(query) {
     let exports = lexer_module.instance.exports;
     let buffer = exports.memory.buffer;
     let memory_offset = 0;
@@ -11788,6 +11821,33 @@ let queryParamsContainer = document.getElementById('query-params');
 let currentQueryParams = [];
 let updateQueryParamsGeneration = 0;
 
+/// The editor text that `currentQueryParams` and the `param_*` inputs currently describe — i.e.
+/// the query whose rebuild last landed (`updateQueryParams` commits it below). While it differs
+/// from `query_area.value`, the inputs belong to an OLDER text: the keystroke-driven rebuild is
+/// asynchronous and may not have landed yet (most visibly while the first
+/// `WebAssembly.instantiate` of the lexer is still in flight, or after a text too large to
+/// tokenize). `captureActiveTab` consults this before trusting the DOM, so a history-writing
+/// action in that window cannot pair the new draft with the previous text's parameter bindings.
+/// `null` means "describes nothing" (startup, or a restore that could not rebuild the inputs).
+let params_synced_text = null;
+
+/// Synchronously re-derive the parameter placeholder NAMES of `text`, for callers that must not
+/// await (a `captureActiveTab` about to feed a history write). Returns `null` when it cannot be
+/// derived — no WASM lexer, the module still instantiating, or the text too large to tokenize —
+/// and the caller then falls back to the tab's own last committed snapshot.
+function extractQueryParamNamesSync(text)
+{
+    if (!wasmAvailable() || !lexer_module) return null;
+    try
+    {
+        return extractQueryParams(tokenizeSync(text)).map(p => p.name);
+    }
+    catch (e)
+    {
+        return null;
+    }
+}
+
 function extractQueryParams(tokens)
 {
     const params = [];
@@ -11962,6 +12022,7 @@ async function updateQueryParams()
         currentQueryParams = [];
         updateRunButtons(false);
         updateQueryBackdrop('', [], []);
+        params_synced_text = query;
         syncParamsAfterRebuild();
         return true;   /// the empty list correctly reflects a query with no parameters
     }
@@ -12001,6 +12062,7 @@ async function updateQueryParams()
 
     if (JSON.stringify(params) === JSON.stringify(currentQueryParams))
     {
+        params_synced_text = query;
         return true;   /// unchanged, but `currentQueryParams` already reflects this query
     }
 
@@ -12068,9 +12130,13 @@ async function updateQueryParams()
             if (params_restore_pending_token !== null) return;
             /// Parameters are tab-owned: persist edited values into the active tab, and keep
             /// the URL/history entry in sync (replaceState, since the query is unchanged) so a
-            /// reload's URL params are never stale relative to the saved tab.
+            /// reload's URL params are never stale relative to the saved tab. Snapshot through
+            /// `captureActiveTab` rather than raw `getParamValues`: while a query edit's rebuild
+            /// is still pending, the inputs describe the previous text, and the capture prunes
+            /// the snapshot to the placeholders the current text actually has before the
+            /// `syncHistory` below publishes it.
             const tab = getActiveTab();
-            if (tab) { tab.params = getParamValues(); syncHistory(); }
+            if (tab) { captureActiveTab(); syncHistory(); }
         });
         wrapper.appendChild(input);
 
@@ -12079,6 +12145,7 @@ async function updateQueryParams()
         /// Trigger resize after the element is in the DOM so scrollWidth is valid.
         input.dispatchEvent(new Event('input'));
     }
+    params_synced_text = query;
     syncParamsAfterRebuild();
     return true;   /// `currentQueryParams` now reflects the current query
 }
@@ -12705,6 +12772,7 @@ async function reconcileStartup() {
             /// the tab's own reconciled params in place rather than deriving bogus ones.
             queryParamsContainer.innerHTML = '';
             currentQueryParams = [];
+            params_synced_text = null;
         }
     }
 
@@ -12753,6 +12821,12 @@ if (query_area.value)
     resizeQueryAreaIfSlightlyOverflowing();
     updateQueryParams();
 }
+/// Kick off the lexer instantiation eagerly (it is otherwise lazy, on the first tokenization):
+/// `captureActiveTab` can re-derive a draft's parameter set synchronously only once
+/// `lexer_module` is loaded, so shrinking that window to the page-open instantiation keeps the
+/// very first history-writing action after an edit from having to fall back to the tab's stale
+/// snapshot.
+if (wasmAvailable()) loadLexer().catch(() => { /* the first tokenization retries and reports */ });
 /// No top-level auto-run: every startup `run=1` is deferred to `reconcileStartup` (see
 /// `defer_run_for_reconcile`). Running it here would fire before the workspace is reconciled —
 /// in the wrong (bootstrap) tab, and, for a bare `?tab=<blank>&run=1` reload, early enough to

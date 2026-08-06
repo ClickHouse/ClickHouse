@@ -1081,6 +1081,57 @@ async function main() {
             after_add.searchParams.get('param_x') === null, r.sandbox.location.href);
     }
 
+    /// Contract (a history write racing the parameter rebuild stays coherent): a structural change
+    /// can snapshot the tab BEFORE a keystroke's asynchronous parameter rebuild lands — most
+    /// visibly while the first `WebAssembly.instantiate` of the lexer is still in flight. The
+    /// capture must not pair the new draft with the previous text's `param_*` inputs: it
+    /// re-derives the placeholder set synchronously from the captured text, dropping bindings the
+    /// edit removed while keeping the ones that survive. Both closes below run in the same
+    /// synchronous turn as the edit, so the rebuild's microtasks have deliberately NOT run yet.
+    {
+        const param_query = 'SELECT {x:Int32}';
+        const seed = () => ({
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't7', title: 'Report', query: param_query, params: { x: '42' }, result: null,
+                  lastSavedQuery: param_query },
+                { id: 't8', title: 'Other', query: 'SELECT 8', params: {}, result: null, lastSavedQuery: 'SELECT 8' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+
+        /// The edit REMOVES the placeholder: the entry folded at close time must not carry it.
+        {
+            const r = await runScenario(js, seed());
+            const closed_entry = JSON.parse(vm.runInContext(
+                "query_area.value = 'SELECT 1';" +
+                "onQueryInput({ type: 'input', isTrusted: true });" +
+                "closeTab(activeTabId);" +
+                "JSON.stringify(history.state)",
+                r.sandbox));
+            check('capture-races-param-rebuild', 'the entry folded at close pairs the draft with no removed binding',
+                closed_entry && closed_entry.query === 'SELECT 1'
+                    && !(closed_entry.params && 'x' in closed_entry.params),
+                closed_entry);
+        }
+
+        /// The edit KEEPS the placeholder: the pruning must not drop its surviving value.
+        {
+            const r = await runScenario(js, seed());
+            const closed_entry = JSON.parse(vm.runInContext(
+                "query_area.value = 'SELECT {x:Int32} + 1';" +
+                "onQueryInput({ type: 'input', isTrusted: true });" +
+                "closeTab(activeTabId);" +
+                "JSON.stringify(history.state)",
+                r.sandbox));
+            check('capture-races-param-rebuild', 'a surviving placeholder keeps its value through the racing capture',
+                closed_entry && closed_entry.query === 'SELECT {x:Int32} + 1'
+                    && closed_entry.params && closed_entry.params.x === '42',
+                closed_entry);
+        }
+    }
+
     /// Contract (a run completing after the editor moved on records what it RAN): the entry a
     /// finished run writes must be a coherent query/params pair. When the draft has diverged from
     /// the launched text, the entry records the launch snapshot — the live draft's own parameter
