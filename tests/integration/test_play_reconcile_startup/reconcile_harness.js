@@ -1014,6 +1014,94 @@ async function main() {
             { url: r2.sandbox.location.href, state: r2.sandbox.history.state, persisted: r2.persisted.map(p => p.params) });
     }
 
+    /// Guard (the `run=1` marker is per-tab, not per-session): opening a `?run=1` link must not
+    /// make OTHER tabs' URLs auto-runnable. The directive belongs to the load's own target tab;
+    /// a clean, run-backed tab that an editor-only writer happens to sync next (here: a tab
+    /// switch) must keep writing plain URLs, or a later ordinary reload would auto-execute its
+    /// query — possibly a write or DDL statement — that the user never asked to re-run.
+    {
+        const scratch_hash = Buffer.from('SELECT 7', 'utf8').toString('base64');
+        const r = await runScenario(js, {
+            href: base + '?tab=Scratch&run=1#' + scratch_hash,
+            historyState: null,
+            seedTabs: [
+                { id: 't7', title: 'Scratch', query: 'SELECT 7', params: {}, result: null, lastSavedQuery: 'SELECT 7' },
+                /// The result's connection must MATCH the live one, otherwise `run=1` would be
+                /// dropped by the connection-divergence check instead of by the policy under test.
+                { id: 't8', title: 'Report', query: 'SELECT 8', params: {},
+                  result: { ran: true, query: 'SELECT 8', params: {}, database: null,
+                            url: new URL(base).origin, user: '' },
+                  lastSavedQuery: 'SELECT 8' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        /// Sanity: `Report` really is the clean, run-backed tab this contract is about — otherwise
+        /// the assertion below would pass for the trivial reason that no tab could carry `run=1`.
+        check('run-marker-per-tab', 'the Report tab is clean, run-backed and on the live connection',
+            vm.runInContext("(() => { const t = tabs.find(x => x.title === 'Report');" +
+                " return tabReflectsRun(t) && !liveDivergedFromRun(t.result); })()", r.sandbox),
+            vm.runInContext("JSON.stringify(tabs.map(t => ({ t: t.title, reflects: tabReflectsRun(t)," +
+                " diverged: liveDivergedFromRun(t.result) })))", r.sandbox));
+        /// Sanity: the load's directive is still live at the moment of the switch, so the
+        /// assertion below is about the per-tab policy and not about a spent global.
+        check('run-marker-per-tab', 'the load carries the `run=1` directive',
+            vm.runInContext('run_immediately', r.sandbox), null);
+        await vm.runInContext("switchToTab(tabs.find(t => t.title === 'Report').id)", r.sandbox);
+        await sleep(50);
+        check('run-marker-per-tab', "the switched-to tab's URL does not inherit the load's `run=1`",
+            new URL(r.sandbox.location.href).searchParams.get('run') === null,
+            r.sandbox.location.href);
+        check('run-marker-per-tab', "the switched-to tab's history entry does not inherit the policy",
+            !(r.sandbox.history.state && r.sandbox.history.state.runnableUrl),
+            r.sandbox.history.state);
+    }
+
+    /// Guard (the marker is not lost either): the per-tab policy must still let a genuine run
+    /// under a `?run=1` load write an auto-runnable URL — that is what makes a shared `run=1`
+    /// link reproducible. On `master` the session-global was cleared for the whole page by a
+    /// stale reload or a dirty startup, which silently disabled the feature for every later run.
+    {
+        const q = 'SELECT 5';
+        const r = await runScenario(js, {
+            href: base + '?run=1#' + Buffer.from(q, 'utf8').toString('base64'),
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+        });
+        vm.runInContext(
+            "(() => { const t = getActiveTab();" +
+            " saveHistory({ query: t.query, params: {}, database: selected_database," +
+            " url: url_elem.value, user: user_elem.value, ok: true, data: null, fullEditor: true }, undefined, t); })()",
+            r.sandbox);
+        await sleep(50);
+        check('run-marker-kept-for-own-run', 'a genuine run under a `run=1` load keeps `run=1` on its own URL',
+            new URL(r.sandbox.location.href).searchParams.get('run') === '1',
+            r.sandbox.location.href);
+    }
+
+    /// Guard (a plain load never produces an auto-runnable URL): the same genuine run under a
+    /// plain `/play` load must NOT stamp `run=1`, so an ordinary session never leaves behind a
+    /// URL that a later reload would execute.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't7', title: 'Report', query: 'SELECT 5', params: {}, result: null, lastSavedQuery: 'SELECT 5' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
+        });
+        vm.runInContext(
+            "(() => { const t = getActiveTab();" +
+            " saveHistory({ query: t.query, params: {}, database: selected_database," +
+            " url: url_elem.value, user: user_elem.value, ok: true, data: null, fullEditor: true }, undefined, t); })()",
+            r.sandbox);
+        await sleep(50);
+        check('run-marker-plain-load', 'a run under a plain load writes a plain URL',
+            new URL(r.sandbox.location.href).searchParams.get('run') === null,
+            r.sandbox.location.href);
+    }
+
     if (failures) {
         console.log(`${failures} check(s) FAILED`);
         process.exit(1);
