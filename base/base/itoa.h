@@ -3,6 +3,8 @@
 #include <base/defines.h>
 #include <base/extended_types.h>
 
+#include <type_traits>
+
 #define FOR_INTEGER_TYPES(M) \
     M(uint8_t) \
     M(UInt8) \
@@ -23,10 +25,20 @@
 FOR_INTEGER_TYPES(INSTANTIATION)
 
 /// `long` is not covered by the list above where it is a distinct type.
+/// Naming the type is the whole point here, so `google-runtime-int` has nothing to suggest.
+// NOLINTBEGIN(google-runtime-int)
 #if defined(LONG_IS_A_DISTINCT_TYPE)
+static_assert(
+    !std::is_same_v<long, Int32> && !std::is_same_v<long, Int64>,
+    "`long` is one of the fixed-width types here, so it must not be instantiated separately");
 INSTANTIATION(unsigned long)
 INSTANTIATION(long)
+#else
+static_assert(
+    std::is_same_v<long, Int32> || std::is_same_v<long, Int64>,
+    "`long` is a distinct type here and needs an instantiation of its own");
 #endif
+// NOLINTEND(google-runtime-int)
 
 #undef FOR_INTEGER_TYPES
 #undef INSTANTIATION

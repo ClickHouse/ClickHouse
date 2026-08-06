@@ -1,6 +1,5 @@
 {
-  "version": 6,
-  "settings": 295,
+  "settings": 296,
   "anchorRoutes": {
     "allow_special_bool_values_inside_variant": "/reference/settings/formats/other",
     "bool_false_representation": "/reference/settings/formats/bool",
@@ -150,6 +149,7 @@
     "input_format_parquet_prefer_block_bytes": "/reference/settings/formats/input-format",
     "input_format_parquet_preserve_order": "/reference/settings/formats/input-format",
     "input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference": "/reference/settings/formats/input-format",
+    "input_format_parquet_spatial_filter_push_down": "/reference/settings/formats/input-format",
     "input_format_parquet_use_offset_index": "/reference/settings/formats/input-format",
     "input_format_parquet_verify_checksums": "/reference/settings/formats/input-format",
     "input_format_protobuf_flatten_google_wrappers": "/reference/settings/formats/input-format",
@@ -298,12 +298,6 @@
     "type_json_use_partial_match_to_skip_paths_by_regexp": "/reference/settings/formats/type-json",
     "validate_experimental_and_suspicious_types_inside_nested_types": "/reference/settings/formats/other"
   },
-  "limits": {
-    "settingsPerPage": 150,
-    "charactersPerPage": 75000,
-    "minimumPrefixGroup": 2,
-    "maximumPageDepth": 1
-  },
   "routes": [
     {
       "prefix": "schema_inference",
@@ -409,109 +403,5 @@
     "/reference/settings/formats/schema-inference",
     "/reference/settings/formats/show-create",
     "/reference/settings/formats/type-json"
-  ],
-  "pageStats": [
-    {
-      "path": "/reference/settings/formats/bool",
-      "label": "bool_*",
-      "settings": 2,
-      "characters": 374
-    },
-    {
-      "path": "/reference/settings/formats/date-time",
-      "label": "date_time_*",
-      "settings": 4,
-      "characters": 3630
-    },
-    {
-      "path": "/reference/settings/formats/format",
-      "label": "format_*",
-      "settings": 5,
-      "characters": 3107
-    },
-    {
-      "path": "/reference/settings/formats/format-avro",
-      "label": "format_avro_*",
-      "settings": 6,
-      "characters": 3603
-    },
-    {
-      "path": "/reference/settings/formats/format-binary",
-      "label": "format_binary_*",
-      "settings": 3,
-      "characters": 1235
-    },
-    {
-      "path": "/reference/settings/formats/format-capn",
-      "label": "format_capn_*",
-      "settings": 3,
-      "characters": 879
-    },
-    {
-      "path": "/reference/settings/formats/format-csv",
-      "label": "format_csv_*",
-      "settings": 4,
-      "characters": 923
-    },
-    {
-      "path": "/reference/settings/formats/format-custom",
-      "label": "format_custom_*",
-      "settings": 7,
-      "characters": 1106
-    },
-    {
-      "path": "/reference/settings/formats/format-regexp",
-      "label": "format_regexp_*",
-      "settings": 3,
-      "characters": 629
-    },
-    {
-      "path": "/reference/settings/formats/format-schema",
-      "label": "format_schema_*",
-      "settings": 3,
-      "characters": 2260
-    },
-    {
-      "path": "/reference/settings/formats/format-template",
-      "label": "format_template_*",
-      "settings": 5,
-      "characters": 983
-    },
-    {
-      "path": "/reference/settings/formats/input-format",
-      "label": "input_format_*",
-      "settings": 126,
-      "characters": 58538
-    },
-    {
-      "path": "/reference/settings/formats/output-format",
-      "label": "output_format_*",
-      "settings": 103,
-      "characters": 48689
-    },
-    {
-      "path": "/reference/settings/formats/schema-inference",
-      "label": "schema_inference_*",
-      "settings": 4,
-      "characters": 1986
-    },
-    {
-      "path": "/reference/settings/formats/show-create",
-      "label": "show_create_*",
-      "settings": 2,
-      "characters": 463
-    },
-    {
-      "path": "/reference/settings/formats/type-json",
-      "label": "type_json_*",
-      "settings": 4,
-      "characters": 1696
-    },
-    {
-      "path": "/reference/settings/formats/other",
-      "label": "Other",
-      "settings": 11,
-      "characters": 4259
-    }
   ]
 }
