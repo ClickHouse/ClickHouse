@@ -23,6 +23,7 @@ inc_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_inc
 base_backup="Disk('backups', '$base_id')"
 inc_backup="Disk('backups', '$inc_id')"
 retry_comment=${CLICKHOUSE_TEST_UNIQUE_NAME}_retry
+retry_query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_retry_qid
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS t;
@@ -41,7 +42,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT backup_fail_before_writin
 
 # The retry writes a fresh lock file at the same path with the same length. Verifying it must observe
 # the file just written, not the mapping cached for the previous attempt.
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO $inc_backup SETTINGS id = '${inc_id}_retry', base_backup = $base_backup, $mmap_settings, log_comment = '$retry_comment'" | grep -o "BACKUP_CREATED"
+${CLICKHOUSE_CLIENT} --query_id "$retry_query_id" --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO $inc_backup SETTINGS id = '${inc_id}_retry', base_backup = $base_backup, $mmap_settings, log_comment = '$retry_comment'" | grep -o "BACKUP_CREATED"
 
 # The retry must have read the lock file at all: a zero here would mean the assertion above passes
 # for want of a lock check rather than because the fix works.
@@ -52,13 +53,13 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '$retry_comment' AND type >= 2
 ORDER BY event_time_microseconds DESC LIMIT 1"
 
-# The lock read is only mmap-eligible when the reader executor serves it, the sole local read path
-# that passes the file size down. A zero means the read was never armed for the mmap cache, so the
+# The LOCK read specifically must have gone through the reader executor, the sole local read path
+# that passes the file size down. A zero means that read was never armed for the mmap cache, so the
 # assertion above would hold for want of a mapping rather than because the fix works.
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 ${CLICKHOUSE_CLIENT} --query "
-SELECT ProfileEvents['ReaderExecutorSourceRequests'] > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '$retry_comment' AND type >= 2
-ORDER BY event_time_microseconds DESC LIMIT 1"
+SELECT count() > 0 FROM system.text_log
+WHERE query_id = '$retry_query_id' AND logger_name = 'LocalSourceReader'
+  AND message LIKE 'open: file=%/.lock, size=%'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t"
