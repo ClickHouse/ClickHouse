@@ -170,17 +170,17 @@ export const IntegrationGrid = () => {
 
   function getSectionDescription(type) {
     const descriptions = {
-      ClickPipes: "ClickPipes هو محرك تكامل يجعل استيعاب كميات ضخمة من البيانات من مصادر متنوعة بسيطاً كالنقر على بضعة أزرار.",
-      "Data ingestion": "بسّط خطوط أنابيب بياناتك مع ClickHouse! تضمن عمليات التكامل السلسة استيعاباً فعّالاً للبيانات، مما يُحسّن تحليلات الوقت الفعلي.",
-      "Data visualization": "أضِئ قصص بياناتك! تُعزّز تكاملات ClickHouse التصور، مما يجعل الرؤى أكثر وضوحاً وقابلية للتنفيذ.",
-      "SQL client": "تصفّح قواعد بيانات ClickHouse واستعلم عنها باستخدام أدوات وواجهات عميل SQL المألوفة.",
-      "Language client": "برمج في بيئتك المفضّلة! تجعل تكاملات مكتبة العملاء للغات البرمجة في ClickHouse الوصول إلى البيانات سلساً عبر لغات برمجة متعددة.",
-      "AI/ML": "استفد من ClickHouse في أعباء عمل التعلم الآلي والذكاء الاصطناعي باستخدام أدوات وأطر عمل ML المتكاملة.",
-      "Data management": "أدِر بيانات ClickHouse وراقبها وحسّنها باستخدام أدوات إدارة متخصصة.",
-      "Data integration": "ادمج ClickHouse مع البنية التحتية لبياناتك وسير عملك الحاليين.",
-      "Security governance": "طبّق أطر الأمان والحوكمة لبيئة ClickHouse الخاصة بك."
+      ClickPipes: "ClickPipes is an integration engine that makes ingesting massive volumes of data from a diverse set of sources as simple as clicking a few buttons.",
+      "Data ingestion": "Streamline your data pipelines with ClickHouse! Seamless integrations ensure efficient ingestion, optimizing real-time analytics.",
+      "Data visualization": "Illuminate your data stories! ClickHouse integrations enhance visualization, making insights more vivid & actionable.",
+      "SQL client": "Access and query ClickHouse databases using familiar SQL client tools and interfaces.",
+      "Language client": "Code in your comfort zone! ClickHouse's language client integrations make data access fluent across multiple programming languages.",
+      "AI/ML": "Leverage ClickHouse for machine learning and AI workloads with integrated ML tools and frameworks.",
+      "Data management": "Manage, monitor, and optimize your ClickHouse data with specialized management tools.",
+      "Data integration": "Integrate ClickHouse with your existing data infrastructure and workflows.",
+      "Security governance": "Implement security and governance frameworks for your ClickHouse environment."
     }
-    return descriptions[type] || "ادمج ClickHouse مع أدوات وخدمات متخصصة."
+    return descriptions[type] || "Integrate ClickHouse with specialized tools and services."
   }
 
   // Plain render function (not a component) so cards reconcile by key instead of
@@ -272,8 +272,8 @@ export const IntegrationGrid = () => {
       return {
         slug: item.slug.startsWith("/") ? item.slug : `/${item.slug}`,
         docsLink: item.docsLink,
-        integration_logo: item.logo?.url ? `https://staging-cms.clickhouse.com${item.logo.url}` : "",
-        integration_logo_dark: item.logo_dark?.url ? `https://staging-cms.clickhouse.com${item.logo_dark.url}` : undefined,
+        integration_logo: item.logo?.url ? `https://clickhouse.com${item.logo.url}` : "",
+        integration_logo_dark: item.logo_dark?.url ? `https://clickhouse.com${item.logo_dark.url}` : undefined,
         integration_type: integrationTypes,
         integration_title: item.name,
         integration_tier: integrationTier
@@ -295,27 +295,6 @@ export const IntegrationGrid = () => {
         if (typeof window !== "undefined") window.__chIntegrationsCache = data
       }
       const fetchIntegrations = async () => {
-        try {
-          const base = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
-          const fallbackResponse = await fetch(base + "https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/integrations-fallback.json", {
-            cache: "force-cache"
-          })
-
-          if (fallbackResponse.ok) {
-            const fallbackData = await fallbackResponse.json()
-            const transformedData = transformCMSData(fallbackData.data || [])
-            setIntegrations(transformedData)
-            cacheIntegrations(transformedData)
-            setError(null)
-            setLoading(false)
-            console.log("تم تحميل بيانات التكاملات الاحتياطية")
-          } else {
-            console.warn("الملف الاحتياطي غير متاح، سيتم المحاولة عبر CMS فقط")
-          }
-        } catch (fallbackErr) {
-          console.error("فشل تحميل بيانات التكاملات الاحتياطية:", fallbackErr)
-        }
-
         try {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => {
@@ -349,7 +328,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("تم إلغاء طلب CMS بسبب انتهاء المهلة، جارٍ استخدام البيانات الاحتياطية")
+              console.log("تم إلغاء طلب CMS بسبب انتهاء المهلة")
             } else {
               console.error("خطأ في تحميل التكاملات من CMS:", cmsErr.message)
             }

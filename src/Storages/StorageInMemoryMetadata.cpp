@@ -184,6 +184,11 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
     }
 
+    /// Transport wiring, not invoker identity: a cluster table function inside the view sends its
+    /// read-task request over this callback, and only the initiator can decide whether to serve it.
+    if (context->hasClusterFunctionReadTaskCallback())
+        new_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
         new_context->applySettingsChanges(context->getSettingsRef().changes());
@@ -512,6 +517,15 @@ Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(VirtualsKind kind, Vir
     for (const auto & column : virtuals.getSampleBlock(kind, place).getNamesAndTypesList())
         res.insert({column.type->createColumn(), column.type, column.name});
 
+    return res;
+}
+
+ColumnsDescription StorageInMemoryMetadata::getColumnsWithVirtuals() const
+{
+    ColumnsDescription res = columns;
+    for (const auto & virtual_column : virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All))
+        if (!res.has(virtual_column.name))
+            res.add(virtual_column);
     return res;
 }
 

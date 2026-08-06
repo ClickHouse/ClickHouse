@@ -1,6 +1,9 @@
 # local CI environment overrides (see ci/local.env.example)
 ci/local.env
 
+# scratch / temporary working files
+/tmp/
+
 # emacs files
 *~
 *\#
@@ -26,6 +29,7 @@ ci/local.env
 # logs
 *.log
 *.debuglog
+*.bashlog
 *.stderr
 *.stderr-fatal*
 *.stdout
@@ -41,7 +45,6 @@ xray-log.*
 /docs/tools/venv
 /docs/tools/translate/venv
 /docs/tools/translate/output.md
-/docs/en/single.md
 /docs/ru/single.md
 /docs/zh/single.md
 /docs/ja/single.md

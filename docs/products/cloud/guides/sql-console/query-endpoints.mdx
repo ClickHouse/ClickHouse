@@ -26,8 +26,7 @@ To query an API endpoint, the API key needs `Member` organization role with `Que
 </Info>
 
 <Steps>
-<Step>
-### Create a saved query {#creating-a-saved-query}
+<Step title="Create a saved query" id="creating-a-saved-query">
 
 If you have a saved query, you can skip this step.
 
@@ -75,8 +74,7 @@ Next, save the query:
 
 More documentation around saved queries can be found in section ["Saving a query"](/products/cloud/features/sql-console-features/sql-console#saving-a-query).
 </Step>
-<Step>
-### Configuring the query API endpoint {#configuring-the-query-api-endpoint}
+<Step title="Configuring the query API endpoint" id="configuring-the-query-api-endpoint">
 
 Query API endpoints can be configured directly from query view by clicking the **Share** button and selecting `API Endpoint`.
 You'll be prompted to specify which API keys should be able to access the endpoint:
@@ -99,13 +97,11 @@ The curl command displayed in the interface is given below for convenience:
 curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
 ```
 </Step>
-<Step>
-### Query API parameters {#query-api-parameters}
+<Step title="Query API parameters" id="query-api-parameters">
 
 Query parameters in a query can be specified with the syntax `{parameter_name: type}`. These parameters will be automatically detected and the example request payload will contain a `queryVariables` object through which you can pass these parameters.
 </Step>
-<Step>
-### Testing and monitoring {#testing-and-monitoring}
+<Step title="Testing and monitoring" id="testing-and-monitoring">
 
 Once a Query API endpoint is created, you can test that it works by using `curl` or any other HTTP client:
 

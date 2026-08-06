@@ -7,7 +7,7 @@ keywords: ['postgres', 'postgresql', 'logical replication', 'migration', 'clickp
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
@@ -34,7 +34,7 @@ ClickHouse Cloud now offers ClickPipes to migrate your external PostgreSQL datab
 - **DDL propagation**: continuous replication (CDC) captures DML operations and `ADD COLUMN`. Other DDL changes such as `DROP COLUMN` and `ALTER COLUMN` aren't propagated and must be applied manually on the target.
 
 <Note>
-If you run into issues during migration, check the [Managed Postgres Migrations FAQ](/products/managed-postgres/migrations/faq) for common errors and solutions.
+If you run into issues during migration, check the [Managed Postgres Migrations FAQ](/cloud/managed-postgres/migrations/faq) for common errors and solutions.
 </Note>
 
 ## Step 1: Connect to your source database {#step-1-connect}
@@ -65,7 +65,30 @@ Choose an ingestion method:
 
 Click **Next**.
 
-## Step 2: Export your database schema {#step-2-export-schema}
+## Automated schema migration {#automated-schema-migration}
+
+<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="Step 2: Automated schema migration with destination database selector" size="lg" border />
+
+When this option is opted for, the ClickPipe will automatically pull the schema of your source database and apply it to your Managed Postgres service, during the [Setup phase](/integrations/clickpipes/postgres/lifecycle#setup) of the ClickPipe after it is created.
+
+This feature assumes an **empty target database**, as it pulls every database object from the source database regardless of what tables you select later in the wizard. If you already have existing data in your target database, or are aiming for a more customized setup, you must opt for the [**Manual**](#manual-schema-migration) mode instead.
+
+Select the destination database from the dropdown, or click **Create a new database** to provision one.
+
+<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="Create a new Postgres database dialog" size="lg" border />
+
+### Monitoring {#monitoring}
+You can track the progress of the schema migration in the ClickPipes detail view. The **Logs** will indicate the status of the schema migration, and any errors encountered will be displayed there as well.
+
+This mode has the following limitations:
+- Pipes using SSH tunneling cannot use automated schema migration. The schema must be [exported and imported manually](#manual-schema-migration).
+
+## Manual schema migration {#manual-schema-migration}
+For cases where you already have existing data in your target database, or are aiming for a more customized setup versus the clean slate which the automated mode expects, you can opt for the **Manual** mode here.
+
+<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="Step 2: Manual schema migration with pg_dump export command" size="lg" border />
+
+### Export your database schema {#step-2-export-schema}
 
 The wizard displays a `pg_dump` command pre-filled with your source connection details. Run it in a terminal:
 
@@ -86,7 +109,7 @@ This creates `pg.sql` in your current directory.
 
 Click **Next**.
 
-## Step 3: Import the schema into your Managed Postgres service {#step-3-import-schema}
+### Import the schema into your Managed Postgres service {#step-3-import-schema}
 
 Select the destination database from the dropdown, or click **Create a new database** to provision one.
 
