@@ -204,15 +204,10 @@ struct AlterCommand
 
 class Context;
 
-/// True if the ALTER MODIFY COLUMN from `from` to `to` is a "lazy" metadata-only conversion:
-/// the on-disk serialization changes, but the change is applied lazily (old parts are read with
-/// their old type and CAST to the new type, and merges rewrite them over time) rather than by a
-/// data mutation.
-///
-/// Unlike a byte-identical metadata-only conversion, a lazy conversion is NOT safe for values that
-/// are persisted positionally and read back with the current type without per-part CAST
-/// reconciliation (primary index, partition key, secondary indexes). `MergeTreeData::checkAlterIsPossible`
-/// uses this to re-apply the key/index safety checks that the skipped mutation branch would have done.
+/// True if the ALTER MODIFY COLUMN from `from` to `to` is a "lazy" metadata-only conversion: the
+/// on-disk serialization changes but is applied lazily (old parts read with the old type and CAST,
+/// merges rewrite over time) rather than by a mutation. Unlike a byte-identical conversion it is
+/// unsafe for positionally-persisted values (keys, indexes), so `checkAlterIsPossible` re-checks those.
 bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context);
 
 /// Vector of AlterCommand with several additional functions

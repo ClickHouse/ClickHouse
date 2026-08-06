@@ -1182,11 +1182,9 @@ bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_
     return true;
 }
 
-/// Category 1: "true" metadata-only conversion. The on-disk byte representation is identical;
-/// only the logical type changes (e.g. `Date` <-> `UInt16`, enum widening). These are safe
-/// everywhere, including columns whose values are persisted positionally (primary index,
-/// partition key, secondary indexes), because those bytes decode to the same value under the
-/// new type. Works recursively for `Array` and `Nullable` of the same structure.
+/// True metadata-only conversion: identical on-disk bytes, only the logical type changes
+/// (e.g. `Date`<->`UInt16`, enum widening). Safe everywhere, including positionally-persisted
+/// values. Recurses through `Array`/`Nullable`.
 bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
     auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
@@ -1257,10 +1255,8 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
     }
 }
 
-/// If true, then in order to ALTER the type of the column from the type `from` to the type `to`
-/// we don't need to rewrite the data, we only need to update metadata and columns.txt in part
-/// directories. This is the union of two categories: a byte-identical (`isTrueMetadataOnlyConversion`)
-/// change and a lazy-cast (`isLazyMetadataConversion`) change.
+/// Metadata-only ALTER (no data rewrite): either byte-identical (`isTrueMetadataOnlyConversion`)
+/// or a lazy cast (`isLazyMetadataConversion`).
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
     return isTrueMetadataOnlyConversion(from, to) || isLazyMetadataConversion(from, to, context);
@@ -1277,8 +1273,7 @@ bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, cons
     if (from->equals(*to))
         return false;
 
-    /// Unwrap `Array`/`Nullable` wrappers (mirroring `isTrueMetadataOnlyConversion`) to reach a
-    /// JSON type at any depth, e.g. `Array(JSON(...))`.
+    /// Unwrap `Array`/`Nullable` to reach a JSON type at any depth.
     while (true)
     {
         if (isJSONTypeHintOnlyChange(from, to))

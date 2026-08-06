@@ -5493,22 +5493,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             && new_metadata.getColumns().hasPhysical(command.column_name)
             && isLazyMetadataConversion(old_types.at(command.column_name), command.data_type.get(), local_context))
         {
-            /// A "lazy" metadata-only conversion (e.g. a JSON type-hint change) changes the on-disk
-            /// serialization but skips the mutation branch above, so it never rebuilds `primary.idx`,
-            /// the partition-key files, or `skp_idx_*` files. For ordinary column reads this is fine
-            /// (old parts are read with their old type and CAST), but the primary/partition key and
-            /// secondary indexes persist the result of an expression, serialized positionally and
-            /// read back with the current type without per-part CAST reconciliation. Refuse the change
-            /// when it alters the on-disk type of a subcolumn that such a persisted expression reads;
-            /// otherwise the stale on-disk bytes become unreadable/misread with the new type.
-            ///
-            /// The check compares the types of the input subcolumns the expression reads, not the
-            /// expression's result type: a type-sensitive expression such as `reinterpretAsString(j.a)`
-            /// keeps the same result type (`String`) while a change of `j.a` from `Int32` to `Int64`
-            /// changes the bytes it writes into the persisted structure. Being conservative, we reject
-            /// whenever any subcolumn of this column that feeds the expression changes type, even for
-            /// value-preserving wrappers such as `toString(j.a)`, since losslessness cannot be proven
-            /// statically.
+            /// A lazy metadata-only conversion (JSON type-hint change) has no mutation to rebuild
+            /// `primary.idx`, partition-key files or `skp_idx_*`, which are read positionally without
+            /// per-part CAST. Reject it when it changes the on-disk type of a subcolumn used by a
+            /// key/index/projection.
             const auto & old_columns_desc = old_metadata.getColumns();
             const auto & new_columns_desc = new_metadata.getColumns();
 
@@ -5518,14 +5506,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     return false;
                 for (const auto & required : expr->getRequiredColumns())
                 {
-                    /// Keep only (sub)columns that belong to the column being altered.
+                    /// Only (sub)columns of the altered column.
                     auto old_column = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
                     if (!old_column || old_column->getNameInStorage() != command.column_name)
                         continue;
 
-                    /// The same (sub)column resolved against the post-ALTER schema. If it disappeared
-                    /// (e.g. a typed path removed) or its type changed, its persisted serialization is
-                    /// no longer the one on disk.
+                    /// Removed or retyped after the ALTER: its on-disk bytes no longer match.
                     auto new_column = new_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
                     if (!new_column || new_column->type->getName() != old_column->type->getName())
                         return true;
@@ -5533,8 +5519,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 return false;
             };
 
-            /// Primary/sorting key -> `primary.idx`. A full mutation cannot perform this either
-            /// (altering a key column / key subcolumn is forbidden), so no hint to disable the setting.
+            /// Primary/sorting key: forbidden (a full mutation cannot alter a key subcolumn either).
             if (old_metadata.hasSortingKey()
                 && expression_uses_changed_subcolumn(old_metadata.getSortingKey().expression))
             {
@@ -5545,7 +5530,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     backQuoteIfNeed(command.column_name));
             }
 
-            /// Partition key -> partition value / minmax files.
+            /// Partition key.
             if (old_metadata.hasPartitionKey()
                 && expression_uses_changed_subcolumn(old_metadata.getPartitionKey().expression))
             {
@@ -5556,16 +5541,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     backQuoteIfNeed(command.column_name));
             }
 
-            /// Explicit secondary (skip) indexes -> `skp_idx_*` files. Here a full mutation *can*
-            /// perform the change (it rebuilds the index according to `alter_column_secondary_index_mode`),
-            /// so point the user at disabling the lazy setting.
+            /// Skip index: a full mutation can rebuild it, so suggest disabling the lazy setting instead.
             const auto & new_indices = new_metadata.getSecondaryIndices();
             for (const auto & old_index : old_metadata.getSecondaryIndices())
             {
                 if (old_index.isImplicitlyCreated() || !expression_uses_changed_subcolumn(old_index.expression))
                     continue;
 
-                /// If the index is dropped in the same ALTER there is nothing left to corrupt.
+                /// Dropped in the same ALTER: nothing to corrupt.
                 auto new_index_it = std::find_if(
                     new_indices.begin(), new_indices.end(),
                     [&](const IndexDescription & index) { return index.name == old_index.name; });
@@ -5582,16 +5565,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     old_index.name);
             }
 
-            /// Projection sort key -> the projection's own `primary.idx`, serialized positionally like
-            /// the main sorting key. A projection can sort on a subcolumn when the whole parent column
-            /// is also selected (e.g. `SELECT id, j ORDER BY j.a`).
+            /// Projection sort key: a projection can sort on a subcolumn when its parent is also selected.
             const auto & new_projections = new_metadata.getProjections();
             for (const auto & projection : old_metadata.getProjections())
             {
                 if (!expression_uses_changed_subcolumn(projection.metadata->getSortingKey().expression))
                     continue;
 
-                /// Dropped in the same ALTER -> nothing left to corrupt.
+                /// Dropped in the same ALTER: nothing to corrupt.
                 if (!new_projections.has(projection.name))
                     continue;
 
