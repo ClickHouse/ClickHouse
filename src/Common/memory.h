@@ -9,7 +9,10 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 
-#if defined(OS_LINUX)
+/// Emscripten's libc++ defines `_GNU_SOURCE`, and its musl-derived libc does declare
+/// `malloc_usable_size` in `<malloc.h>` - it just does not get pulled in by anything else,
+/// so it has to be included explicitly for the unsized-delete accounting path below.
+#if defined(OS_LINUX) || defined(OS_WASM)
 #    include <malloc.h>
 #elif defined(OS_DARWIN)
 #    include <malloc/malloc.h>

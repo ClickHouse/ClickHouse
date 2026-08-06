@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-이 경우 users CTE는 posts에 데이터를 삽입할 때마다 다시 평가되며, 새 users가 삽입되어도 materialized view는 업데이트되지 않고 posts에 삽입될 때만 업데이트됩니다.
+이 경우 users CTE는 posts에 데이터를 삽입할 때마다 다시 평가되며, 새 users가 삽입되어도 materialized view는 업데이트되지 않고 posts에 삽입이 일어날 때만 업데이트됩니다.
 
-일반적으로 CTE는 materialized view가 attached 상태인 동일한 원본 테이블을 대상으로 하는 로직에 사용하거나, 참조하는 테이블이 작고 성능 병목을 일으킬 가능성이 낮아야 합니다. 또는 [materialized view에서 JOIN을 사용할 때와 동일한 최적화](/ko/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)를 고려하십시오.
+일반적으로 CTE는 materialized view가 연결된 동일한 원본 테이블에서 동작하는 로직에 사용하는 것이 좋습니다. 또는 참조하는 테이블이 작고 성능 병목을 일으킬 가능성이 낮아야 합니다. 대안으로, [materialized view의 JOIN에 적용되는 것과 동일한 최적화](/ko/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)를 고려하십시오.
