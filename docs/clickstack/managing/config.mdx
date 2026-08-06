@@ -123,6 +123,8 @@ The following settings are available for each source:
 | `Server Connection`           | Server connection name.                                                                                                | Yes      | No                          | `Default`                                             |
 | `Database`                    | ClickHouse database name.                                                                                              | Yes      | Yes                         | `default`                                             |
 | `Table`                       | Target table name. Set to `otel_logs` if default schema is used.                                                                                                     | Yes      | No                         |                                            |
+| `Query Settings`              | Query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                                                   |
+| `Enabled`                     | A disabled source is retained, but hidden from the source selectors and never chosen automatically. | No       | No                          | Enabled                                             |
 | `Timestamp Column`            | Datetime column or expression that's part of your primary key.                                                        | Yes       | Yes                         | `TimestampTime`                                       |
 | `Default Select`              | Columns shown in default search results.                                                                               | Yes       | Yes                         | `Timestamp`, `ServiceName`, `SeverityText`, `Body`         |
 | `Service Name Expression`     | Expression or column for the service name.                                                                             | Yes       | Yes                         | `ServiceName`                                         |
@@ -130,14 +132,19 @@ The following settings are available for each source:
 | `Body Expression`             | Expression or column for the log message.                                                                              | Yes       | Yes                         | `Body`                                                |
 | `Log Attributes Expression`   | Expression or column for custom log attributes.                                                                        | Yes       | Yes                         | `LogAttributes`                                       |
 | `Resource Attributes Expression` | Expression or column for resource-level attributes.                                                                  | Yes       | Yes                         | `ResourceAttributes`                                  |
-| `Displayed Timestamp Column`  | Timestamp column used in UI display.                                                                                   | Yes       | Yes                         | `ResourceAttributes`                                  |
+| `Displayed Timestamp Column`  | Optional, higher-precision timestamp column used in UI display.                                                                                   | Yes       | Yes                         | `Timestamp`                                           |
 | `Correlated Metric Source`    | Linked metric source (e.g. HyperDX metrics).                                                                           | No       | No                          | –                                                   |
 | `Correlated Trace Source`     | Linked trace source (e.g. HyperDX traces).                                                                             | No       | No                          | –                                                   |
 | `Trace Id Expression`         | Expression or column used to extract trace ID.                                                                         | Yes       | Yes                         | `TraceId`                                             |
 | `Span Id Expression`          | Expression or column used to extract span ID.                                                                          | Yes       | Yes                         | `SpanId`                                              |
 | `Implicit Column Expression`  | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.                      | Yes       | Yes                         | `Body`                                                |
+| `Known Columns List`          | For sources over a [`Distributed`](/engines/table-engines/special/distributed) table whose target tables have non-matching column sets. A comma-separated list of the columns available across all target tables, used instead of `SELECT *` when fetching full row data (for example, in the row side panel). Leave blank to select all columns. Column names only - no expressions or aliases. | No        | No                          |  –                                                  |
+| `Use Text Index`              | Whether Lucene-based searches emit `hasAllTokens` when searching the implicit column.                | No        | No                          | `Auto (detect from schema)`                          |
 | `Highlighted Attributes`      | Expressions or columns displayed when opening log details. Expressions returning URLs will be shown as links.          | No        | No                          |  –                                                  |
 | `Highlighted Trace Attributes` | Expressions or columns extracted from each log in a trace, displayed above the trace waterfall. Expressions returning URLs will be shown as links. | No  | No   |  –                                                  |
+| `Materialized Views`          | Pre-aggregated [materialized views](/clickstack/managing/materialized-views) registered against this source, used automatically to accelerate eligible queries. See [Materialized views](#materialized-views-settings). | No        | No                          |  –                                                  |
+| `Metadata Materialized Views` | Materialized views used to accelerate field discovery and value autocomplete. See [Metadata materialized views](#metadata-materialized-views-settings). | No        | Yes                         | `<table>_kv_rollup_15m`          |
+| `Default Order By`            | `ORDER BY` expression which overrides the default ordering of search results. Leave empty to use the auto-detected default. This can be customized per search later. | No        | No                          |  –                                                  |
 
 #### Traces {#traces}
 
@@ -148,8 +155,9 @@ The following settings are available for each source:
 | `Server Connection`              | Server connection name.                                                                                                | Yes      | No                          | `Default`              |
 | `Database`                       | ClickHouse database name.                                                                                              | Yes      | Yes                         | `default`                |
 | `Table`                          | Target table name. Set to `otel_traces` if using the default schema.                                                                                                    | Yes      | Yes                         |      -       |
+| `Query Settings`              | Query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                                                   |
+| `Enabled`                     | A disabled source is retained, but hidden from the source selectors and never chosen automatically. | No       | No                          | Enabled                                             |
 | `Timestamp Column`              | Datetime column or expression that's part of your primary key.                                                        | Yes      | Yes                         | `Timestamp`              |
-| `Timestamp`                      | Alias for `Timestamp Column`.                                                                                          | Yes      | Yes                         | `Timestamp`              |
 | `Default Select`                | Columns shown in default search results.                                                                               | Yes      | Yes                         | `Timestamp, ServiceName as service, StatusCode as level, round(Duration / 1e6) as duration, SpanName` |
 | `Duration Expression`           | Expression for calculating span duration.                                                                              | Yes      | Yes                         | `Duration`               |
 | `Duration Precision`            | Precision for the duration expression (e.g. nanoseconds, microseconds).                                                | Yes      | Yes                         | ns                     |
@@ -166,10 +174,18 @@ The following settings are available for each source:
 | `Service Name Expression`       | Expression or column for the service name.                                                                             | Yes      | Yes                         | `ServiceName`            |
 | `Resource Attributes Expression`| Expression or column for resource-level attributes.                                                                    | Yes      | Yes                         | `ResourceAttributes`     |
 | `Event Attributes Expression`   | Expression or column for event attributes.                                                                             | Yes      | Yes                         | `SpanAttributes`         |
+| `Sample Rate Expression`        | Column or expression holding the upstream sampling weight (`1/N`). When set, aggregations (`count`, `avg`, `sum`, `quantile`) are corrected for sampling. Percentiles then use `quantileTDigestWeighted`, which is an approximation, so exact values may differ slightly. Leave empty if spans aren't sampled. | No       | No                          |  –                       |
 | `Span Events Expression`        | Expression to extract span events. Typically a `Nested` type column. This allows rendering of exception stack traces with supported language SDKs.                                                   | Yes      | Yes                         | `Events`                 |
+| `Span Links Expression`         | Expression to extract span links, used to capture links from a span to spans in other traces. Expected to be of type `Nested(TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String))`. | No       | Yes                         | `Links`                  |
 | `Implicit Column Expression`   | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.  | Yes  | Yes  | `SpanName`|
+| `Known Columns List`            | For sources over a [`Distributed`](/engines/table-engines/special/distributed) table whose target tables have non-matching column sets. A comma-separated list of the columns available across all target tables, used instead of `SELECT *` when fetching full row data (for example, the row side panel). Leave blank to select all columns. Column names only - no expressions or aliases. | No       | No                          |  –                       |
+| `Use Text Index`                | Whether Lucene-based searches emit `hasAllTokens` when searching the implicit column.                | No       | No                          | `Auto (detect from schema)` |
+| `Displayed Timestamp Column`    | High-precision timestamp column used in UI display.                                                                                   | Yes      | Yes                         | `Timestamp`              |
 | `Highlighted Attributes`        | Expressions or columns displayed when opening span details. Expressions returning URLs will be shown as links.         | No       | No                          |  –                       |
 | `Highlighted Trace Attributes` | Expressions or columns extracted from each span in a trace, displayed above the trace waterfall. Expressions returning URLs will be shown as links. | No  | No   |  –                       |
+| `Materialized Views`            | Pre-aggregated [materialized views](/clickstack/managing/materialized-views) registered against this source, used automatically to accelerate eligible queries. See [Materialized views](#materialized-views-settings). | No        | No                          |  –                                                  |
+| `Metadata Materialized Views`   | Materialized views used to accelerate field discovery and value autocomplete. See [Metadata materialized views](#metadata-materialized-views-settings). | No        | Yes                         | `<table>_kv_rollup_15m`          |
+| `Default Order By`              | `ORDER BY` expression which overrides the default ordering of search results. Leave empty to use the auto-detected default. This can be customized per search later. | No        | No                          |  –                                                  |
 
 #### Metrics {#metrics}
 
@@ -179,9 +195,12 @@ The following settings are available for each source:
 | `Section`              | Optional label for grouping sources in the source selector. Sources that share a section appear together, and search matches the section name in addition to the source name. | No       | No                          | –                           |
 | `Server Connection`    | Server connection name.                                                                        | Yes      | No                          | `Default`                   |
 | `Database`             | ClickHouse database name.                                                                      | Yes      | Yes                         | `default`                   |
-| `Gauge Table`          | Table storing gauge-type metrics.                                                              | Yes      | No                         | `otel_metrics_gauge`        |
-| `Histogram Table`      | Table storing histogram-type metrics.                                                          | Yes      | No                         | `otel_metrics_histogram`    |
-| `Sum Table`            | Table storing sum-type (counter) metrics.                                                      | Yes      | No                         | `otel_metrics_sum`          |
+| `Query Settings`       | Up to ten query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                           |
+| `Enabled`              | Toggle at the top of the source form. A disabled source is retained, but hidden from the source selectors and never chosen automatically. Only shown when editing an existing source. | No       | No                          | Enabled                     |
+| `Gauge Table`          | Table storing gauge-type metrics.                                                              | No       | Yes                         | `otel_metrics_gauge`        |
+| `Histogram Table`      | Table storing histogram-type metrics.                                                          | No       | Yes                         | `otel_metrics_histogram`    |
+| `Sum Table`            | Table storing sum-type (counter) metrics.                                                      | No       | Yes                         | `otel_metrics_sum`          |
+| `Exponential Histogram Table` | Table storing exponential histogram-type metrics.                                       | No | Yes                     | `otel_metrics_exponential_histogram` |
 | `Correlated Log Source`| Optional. Linked log source (e.g. HyperDX logs).                                               | No       | No                          | –                           |
 
 #### Sessions {#settings}
@@ -193,12 +212,39 @@ The following settings are available for each source:
 | `Server Connection`           | Server connection name.                                                                             | Yes      | No                          | `Default`              |
 | `Database`                    | ClickHouse database name.                                                                           | Yes      | Yes                         | `default`              |
 | `Table`                       | Target table for session data. Target table name. Set to `hyperdx_sessions` if using the default schema.                                                                          | Yes      | Yes                         | -      |
+| `Query Settings`              | Up to ten query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                      |
+| `Enabled`                     | Toggle at the top of the source form. A disabled source is retained, but hidden from the source selectors and never chosen automatically. Only shown when editing an existing source. | No       | No                          | Enabled                |
+| `Correlated Trace Source`     | Linked trace source for session correlation.                                                        | Yes      | No                          | –                      |
 | `Timestamp Column`           | Datetime column or expression that's part of your primary key.                                    | Yes      | Yes                         | `TimestampTime`            |
-| `Log Attributes Expression`   | Expression for extracting log-level attributes from session data.                                  | Yes      | Yes                         | `LogAttributes`        |
-| `LogAttributes`               | Alias or field reference used to store log attributes.                                              | Yes      | Yes                         | `LogAttributes`        |
-| `Resource Attributes Expression` | Expression for extracting resource-level metadata.                                               | Yes      | Yes                         | `ResourceAttributes`   |
-| `Correlated Trace Source`     | Optional. Linked trace source for session correlation.                                              | No       | No                          | –                      |
-| `Implicit Column Expression`  | Column used for full-text search when no field is specified (e.g. Lucene-style query parsing).      | Yes      | Yes                         | `Body` |
+| `Resource Attributes Expression` | Expression for extracting resource-level metadata.                                               | No       | Yes                         | `ResourceAttributes`   |
+
+#### Materialized views {#materialized-views-settings}
+
+Materialized views can be registered against Log and Trace data sources so that eligible aggregation queries are answered from the pre-aggregated view instead of the source table. For guidance on creating and registering views, see ["Materialized views"](/clickstack/managing/materialized-views).
+
+Each registered view is configured with the following settings:
+
+| Setting                        | Description                                                                                         |
+|-------------------------------|-----------------------------------------------------------------------------------------------------|
+| `Database`                    | ClickHouse database containing the target table of the materialized view.                            |
+| `Table`                       | Target table of the materialized view - not the view itself.                                         |
+| `Timestamp Column`            | The timestamp column of the target table.                                                            |
+| `Granularity`                 | The time bucket of the target table's timestamp column, for example `1 minute`. A query can only use the view if its own time bucket is equal to or coarser than this. |
+| `Minimum Date`                | Optional. The earliest date and time for which the view contains data. If not provided, ClickStack assumes the view contains data for every date the source table does. |
+| `Dimension Columns`           | Comma-separated list of the columns which aren't pre-aggregated by the view, and can therefore be used for filtering and grouping. |
+| `Pre-aggregated Columns`      | The columns which are pre-aggregated by the view. Each entry maps an aggregate function (`avg`, `count`, `max`, `min`, `quantile`, `sum` or `histogram`) and a source table column to the corresponding column in the view. The source column isn't required for `count`. |
+
+Most of these settings are inferred from the view's schema when the target table is selected.
+
+#### Metadata materialized views {#metadata-materialized-views-settings}
+
+Metadata materialized views are materialized views which accelerate field discovery for filters and autocomplete. They can be configured on Log and Trace data sources.
+
+| Setting                        | Description                                                                                         |
+|-------------------------------|-----------------------------------------------------------------------------------------------------|
+| `Key Rollup Table`            | Optional and deprecated. Rollup table of the keys present in the source table.                       |
+| `KV Rollup Table`             | Rollup table of the key/value pairs present in the source table.                                     |
+| `Granularity`                 | The time bucket used by the rollup tables, for example `15 minute`.                                  |
 
 #### Highlighted Attributes {#highlighted-attributes}
 
@@ -208,6 +254,14 @@ Highlighted Attributes and Highlighted Trace Attributes can be configured on Log
 - Highlighted Trace Attributes are columns or expressions which are queried from each log or span in a trace, and displayed above the trace waterfall.
 
 These attributes are defined in the source configuration and can be arbitrary SQL expressions. If the SQL expression returns a value that is in the format of a URL, then the attribute will be displayed as a link. Empty values aren't displayed.
+
+Each attribute is configured with the following settings:
+
+| Setting                        | Description                                                                                         |
+|-------------------------------|-----------------------------------------------------------------------------------------------------|
+| `SQL Expression`              | The column or arbitrary SQL expression to query. Required.                                           |
+| `Alias`                       | Optional. The label displayed for the attribute in place of the SQL expression.                      |
+| `Lucene Expression`           | Optional. A Lucene version of the SQL expression, used when searching for this attribute value.      |
 
 For example, this trace source has been configured with a Highlighted Attribute and a Highlighted Trace Attribute:
 
