@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Core/ProtocolDefines.h>
 
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
@@ -336,9 +337,12 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 
-void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+/// `choose_version` returns the version to pin on a versioned aggregate function type, or nothing
+/// to leave the type untouched.
+static void setVersionToAggregateFunctionsImpl(
+    DataTypePtr & type, bool if_empty, const std::function<std::optional<size_t>(const AggregateFunctionPtr &)> & choose_version)
 {
-    auto callback = [revision, if_empty](DataTypePtr & column_type)
+    auto callback = [&choose_version, if_empty](DataTypePtr & column_type)
     {
         const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
         if (!aggregate_function_type || !aggregate_function_type->isVersioned())
@@ -348,7 +352,10 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
             return;
 
         const auto function = aggregate_function_type->getFunction();
-        const size_t new_version = revision ? function->getVersionFromRevision(*revision) : 0;
+        const std::optional<size_t> chosen_version = choose_version(function);
+        if (!chosen_version)
+            return;
+        const size_t new_version = *chosen_version;
 
         if (aggregate_function_type->hasExplicitVersion() && aggregate_function_type->getVersion() == new_version)
             return;
@@ -373,7 +380,7 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
             /// receiver would read one version too many out of it.
             DataTypes new_argument_types = simple->getArgumentsDataTypes();
             for (auto & argument_type : new_argument_types)
-                setVersionToAggregateFunctions(argument_type, if_empty, revision);
+                setVersionToAggregateFunctionsImpl(argument_type, if_empty, choose_version);
 
             new_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomSimpleAggregateFunction>(
                 simple->getFunction(), new_argument_types, simple->getParameters())));
@@ -383,6 +390,30 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
     };
 
     callOnNestedSimpleTypes(type, callback);
+}
+
+void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+{
+    setVersionToAggregateFunctionsImpl(type, if_empty, [revision](const AggregateFunctionPtr & function)
+    {
+        return std::optional<size_t>(revision ? function->getVersionFromRevision(*revision) : 0);
+    });
+}
+
+void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type)
+{
+    setVersionToAggregateFunctionsImpl(type, /* if_empty= */ true, [](const AggregateFunctionPtr & function) -> std::optional<size_t>
+    {
+        /// Pin only a version that is newer than the default the function would fall back to anyway:
+        /// a function whose default version already covers the current revision keeps persisting the
+        /// unpinned type it always had, and a combinator that does not map revisions to versions
+        /// (`getVersionFromRevision` returning 0 while the default is higher) must not have its
+        /// storage format downgraded by the pin.
+        const size_t current_version = function->getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION);
+        if (current_version > function->getDefaultVersion())
+            return current_version;
+        return std::nullopt;
+    });
 }
 
 

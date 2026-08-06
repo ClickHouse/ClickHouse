@@ -103,6 +103,12 @@ public:
 /// because a type object is typically shared - notably with the table metadata a block was read from.
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
 
+/// For a freshly declared column type (`CREATE TABLE`): pins the state version the current server
+/// revision maps to, but only where that version is newer than the default the function would fall
+/// back to anyway, and never over an explicitly spelled version. The pin makes the version part of
+/// the persisted type name, so the column keeps its layout when a newer server changes the default.
+void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type);
+
 /// Checks type of any nested type is DataTypeAggregateFunction.
 bool hasAggregateFunctionType(const DataTypePtr & type);
 

@@ -260,7 +260,17 @@ public:
 
     bool isVersioned() const override { return state_version > 0; }
 
-    size_t getDefaultVersion() const override { return state_version; }
+    /// The default version - the one used when the type carries no explicit version - must stay 0.
+    /// Contexts that cannot transport a version at all represent every type as unversioned: the
+    /// binary type encoding has no version field, and `Dynamic` announces its nested types through
+    /// it (or through self-managed type lists) on every medium, including inside the values of its
+    /// shared variant. In such contexts the writer and the reader can only agree on the version if
+    /// it never changes, so an unversioned type has to keep the byte layout that unversioned data
+    /// always had. The new version applies only where it is pinned explicitly: written in the type
+    /// name (`AggregateFunction(1, ...)`, as a fresh `CREATE TABLE` does), or derived from the
+    /// negotiated revision on the `Native` wire - which is where the states actually cross the
+    /// serialization boundary under parallel replicas, distributed queries and external aggregation.
+    size_t getDefaultVersion() const override { return 0; }
 
     size_t getVersionFromRevision(size_t revision) const override
     {

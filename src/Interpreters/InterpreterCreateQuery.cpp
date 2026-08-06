@@ -553,6 +553,12 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
         setVersionToAggregateFunctions(column_type, true);
+    else
+        /// Spell the state version the column is going to be written with out in the type, so that
+        /// it gets into the table metadata and the data stays readable when a newer server changes
+        /// the default: an unversioned name in stored metadata denotes the layout from before the
+        /// function became versioned (the ATTACH branch above pins it to 0).
+        pinCurrentStateVersionToAggregateFunctions(column_type);
 
     if (col_decl.null_modifier)
     {

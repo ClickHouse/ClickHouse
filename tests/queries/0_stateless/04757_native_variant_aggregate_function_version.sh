@@ -21,7 +21,9 @@ DROP TABLE IF EXISTS variant_qd;
 CREATE TABLE variant_qd (v Variant(AggregateFunction(quantileDeterministic, UInt64, UInt64), UInt8))
 ENGINE = MergeTree ORDER BY tuple();
 -- Enough rows for the reservoir to be thinned out, so that version 1 has a non-zero skip degree to write.
-INSERT INTO variant_qd SELECT quantileDeterministicState(number, number) FROM numbers(1000000);
+-- Inserting into a Variant needs the exact alternative type: a fresh CREATE pins the current state
+-- version explicitly, while a freshly built state is unversioned, so spell the version out.
+INSERT INTO variant_qd SELECT CAST(quantileDeterministicState(number, number), 'AggregateFunction(1, quantileDeterministic, UInt64, UInt64)') FROM numbers(1000000);
 INSERT INTO variant_qd VALUES (42);
 "
 
@@ -80,16 +82,14 @@ SELECT
     sum(v.UInt8)
 FROM legacy_variant_qd;
 
--- The round trip between two current peers re-versions the state to the negotiated revision, so on
--- the initiator the alternative is named with the explicit version 1. This holds for the classic
--- pipeline, where the column crosses the Native wire before the subcolumn is extracted; with a
--- serialized query plan the extraction is shipped to the shard and runs against the shard-local
--- type, where the alternative keeps its unversioned name, so pin the classic pipeline.
+-- The round trip between two current peers re-versions the state to the negotiated revision on the
+-- wire, but the default (unversioned) spelling of the type stays version 0, so the subcolumn keeps
+-- its unversioned name on the initiator and on the shard alike, whichever side extracts it.
 SELECT
-    medianDeterministicMerge(v.\`AggregateFunction(1, quantileDeterministic, UInt64, UInt64)\`),
+    medianDeterministicMerge(v.\`AggregateFunction(quantileDeterministic, UInt64, UInt64)\`),
     sum(v.UInt8)
 FROM (SELECT v FROM remote('127.0.0.2', currentDatabase(), legacy_variant_qd))
-SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0;
+SETTINGS prefer_localhost_replica = 0;
 
 DROP TABLE legacy_variant_qd;
 DROP TABLE variant_qd;
