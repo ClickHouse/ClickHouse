@@ -48,6 +48,19 @@ CRAFTED_DICT_TRUE="replaceAll(parseQueryToJSON(\$\$CREATE DICTIONARY test_04699_
 CRAFTED_DICT_TRUE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_DICT_TRUE FORMAT TSVRaw")
 $CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_DICT_TRUE_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 
+# Column-level `SETTINGS (...)` and `EXPLAIN` settings ride in an `ASTSetQuery`, but their
+# grammar disables the valueless form, so the flag is parser-impossible there even with the
+# mandatory `true` - and nothing in these paths consults it: `MergeTreeColumnSettings::validate`
+# only type-checks the value, so a surviving flag would be persisted in the table definition as
+# `SETTINGS (min_compress_block_size)` that the column grammar then fails to parse back.
+CRAFTED_COLUMN="replaceAll(parseQueryToJSON(\$\$CREATE TABLE test_04699_column (k UInt64, v UInt64 SETTINGS (min_compress_block_size = true)) ENGINE = MergeTree ORDER BY k\$\$), '{\"name\":\"min_compress_block_size\"', '{\"name\":\"min_compress_block_size\",\"shorthand\":true')"
+CRAFTED_COLUMN_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_COLUMN FORMAT TSVRaw")
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_COLUMN_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+
+CRAFTED_EXPLAIN_TRUE="replaceAll(parseQueryToJSON(\$\$EXPLAIN header = true SELECT 1\$\$), '{\"name\":\"header\"', '{\"name\":\"header\",\"shorthand\":true')"
+CRAFTED_EXPLAIN_TRUE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_EXPLAIN_TRUE FORMAT TSVRaw")
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_EXPLAIN_TRUE_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+
 # The genuine valueless form for a Bool engine setting is untouched: it round-trips through the
 # JSON dialect and still executes.
 GENUINE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON(\$\$CREATE TABLE test_04699 (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k) SETTINGS persistent\$\$) FORMAT TSVRaw")

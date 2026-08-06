@@ -32,6 +32,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -1200,6 +1201,14 @@ static void checkValuelessSettingChanges(const IAST & ast)
                     change.name, change.name);
     };
 
+    const auto check_no_shorthand_in_set_query = [&](const ASTPtr & settings_ast)
+    {
+        if (!settings_ast)
+            return;
+        if (const auto * set_query = settings_ast->as<ASTSetQuery>())
+            check_no_shorthand(set_query->changes);
+    };
+
     /// Most settings ride in an `ASTSetQuery`, but dictionary and WASM function settings
     /// store `SettingsChanges` directly in their own nodes, and their `readJSON` restores
     /// the `shorthand` flag just like `ASTSetQuery::readJSON` does.
@@ -1209,6 +1218,17 @@ static void checkValuelessSettingChanges(const IAST & ast)
         check_no_shorthand(dictionary_settings->changes);
     else if (const auto * create_wasm_function = ast.as<ASTCreateWasmFunctionQuery>())
         check_no_shorthand(create_wasm_function->getSettings());
+    /// Some settings do ride in an `ASTSetQuery`, but their grammar disables the valueless form
+    /// (`ParserSetQuery` with `shorthand_syntax = false`), so the flag is parser-impossible there
+    /// whatever the value, and the node cannot tell in which grammar it was parsed - the context
+    /// has to be judged from the parent. It cannot be let through even with the mandatory `true`:
+    /// nothing in these paths consults the flag, and `ASTSetQuery::formatImpl` elides `= true` for
+    /// the valueless form, so a surviving flag would be persisted (e.g. in the column declaration
+    /// of a table definition) as `SETTINGS name` that these grammars then fail to parse back.
+    else if (const auto * column_declaration = ast.as<ASTColumnDeclaration>())
+        check_no_shorthand_in_set_query(column_declaration->getSettings());
+    else if (const auto * explain_query = ast.as<ASTExplainQuery>())
+        check_no_shorthand_in_set_query(explain_query->getSettings());
 
     for (const auto & child : ast.children)
         checkValuelessSettingChanges(*child);
