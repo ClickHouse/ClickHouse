@@ -28,7 +28,7 @@ If false (default), AI functions refuse to use a named-collection `endpoint` tha
 
 <ExperimentalBadge/>
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "New setting"}]}]}/>
 
 Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. `aiEmbed` takes `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
 
@@ -46,9 +46,9 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
 
 <ExperimentalBadge/>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1000"},{"label": "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
 
@@ -110,7 +110,7 @@ Initial delay in milliseconds before the first retry of a failed AI function API
 
 <ExperimentalBadge/>
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "New setting"}]}]}/>
 
 Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 
