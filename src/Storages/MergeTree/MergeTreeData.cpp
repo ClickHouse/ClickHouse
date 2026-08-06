@@ -5636,6 +5636,116 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
     return false;
 }
 
+void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
+{
+    const auto & columns = metadata_snapshot->getColumns();
+
+    /// The column may have been dropped or turned into an ALIAS since the mutation was created;
+    /// the rewrite then follows the current metadata and there is no stored stream to guard.
+    const auto * column_desc = columns.tryGet(column_name);
+    if (!column_desc || !column_desc->codec || !codecResolvesToLossyCompression(column_desc->codec, column_desc->type))
+        return;
+
+    /// A dependency list may name a subcolumn (`val.x` of a `Tuple`, `arr.size0`, ...) instead of
+    /// the stored column that holds it, and reading a subcolumn reads the very stream that the
+    /// recompression rewrites. Map every required column back to its owning stored column before
+    /// comparing - the same normalization `MutateTask` applies to these lists.
+    const auto storage_columns = columns.getAllPhysical().getNameSet();
+    auto depends_on_recompressed_column = [&](const Names & required_columns)
+    {
+        return std::ranges::any_of(required_columns, [&](const String & required_column)
+        {
+            auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
+            return column_in_storage && *column_in_storage == column_name;
+        });
+    };
+
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (depends_on_recompressed_column(projection.getRequiredColumns()))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: projection `{}` reads this column, "
+                "and it is not rebuilt by the recompression, so it would keep describing the values as they "
+                "were before the recompression. Drop the projection first (a DROP PROJECTION "
+                "written before the RECOMPRESS COLUMN in the same ALTER works), or rebuild it "
+                "with ALTER TABLE ... MATERIALIZE PROJECTION after the recompression.",
+                column_name, column_desc->codec->formatForErrorMessage(), projection.name);
+    }
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (depends_on_recompressed_column(index.expression->getRequiredColumns()))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: index `{}` depends on this column, "
+                "and it is not rebuilt by the recompression, so it would keep describing the values as they "
+                "were before the recompression and could skip granules that do match. Drop the index "
+                "first (a DROP INDEX written before the RECOMPRESS COLUMN in the same ALTER works), "
+                "or rebuild it with ALTER TABLE ... MATERIALIZE INDEX after the recompression.",
+                column_name, column_desc->codec->formatForErrorMessage(), index.name);
+    }
+
+    /// The partition value and the part minmax index are computed from the column values and
+    /// are used by `MergeTreeDataSelectExecutor::selectPartsToRead` to prune whole parts before
+    /// any rows are read. The mutation carries the partition value over from the source part and
+    /// rebuilds the part minmax index from the pre-recompression values, so after a lossy
+    /// recompression a part could return rows outside its stored bounds, and parts whose
+    /// post-recompression rows do match a query could be pruned. The partition key cannot be
+    /// dropped, so only a lossless codec can recompress such a column.
+    if (depends_on_recompressed_column(metadata_snapshot->getColumnsRequiredForPartitionKey()))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the partition key uses this column, "
+            "and the partition value and the part minmax index are not recalculated by the recompression, "
+            "so they would keep describing the values as they were before the recompression and parts "
+            "could be pruned incorrectly. Only a lossless codec can recompress a partition key column.",
+            column_name, column_desc->codec->formatForErrorMessage());
+
+    /// Same for the sorting key: the primary index (`primary.idx`) describes the
+    /// pre-recompression values, and the physical order of the rows itself may no longer match
+    /// the post-recompression values, so index analysis could skip granules that do match.
+    /// The sorting key cannot be dropped either.
+    if (depends_on_recompressed_column(metadata_snapshot->getColumnsRequiredForSortingKey()))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the sorting key uses this column, "
+            "and the primary index and the physical order of the rows are not recalculated by the "
+            "recompression, so they would keep describing the values as they were before the "
+            "recompression and granules could be skipped incorrectly. Only a lossless codec can "
+            "recompress a sorting key column.",
+            column_name, column_desc->codec->formatForErrorMessage());
+
+    /// A stored `MATERIALIZED` column is kept in sync with its expression by mutations (an
+    /// `UPDATE` of a source column recalculates the dependent `MATERIALIZED` columns), but the
+    /// recompression copies the dependents from the source part unchanged, so `m MATERIALIZED
+    /// f(x)` would keep the values computed from `x` as it was before the recompression.
+    /// Resolve the expressions the same way `MutationsInterpreter` does when it collects the
+    /// affected `MATERIALIZED` columns: over the physical columns plus the `EPHEMERAL` ones
+    /// (a `MATERIALIZED` expression may reference an `EPHEMERAL` column, and the analysis must
+    /// still resolve it).
+    NamesAndTypesList all_columns_with_ephemeral = columns.getAllPhysical();
+    for (const auto & ephemeral_column : columns.getEphemeral())
+        all_columns_with_ephemeral.push_back(ephemeral_column);
+
+    for (const auto & dependent_column : columns)
+    {
+        if (dependent_column.default_desc.kind != ColumnDefaultKind::Materialized
+            || !dependent_column.default_desc.expression
+            || dependent_column.name == column_name)
+            continue;
+
+        auto expression_query = dependent_column.default_desc.expression->clone();
+        replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression_query, all_columns_with_ephemeral);
+        auto syntax_result = TreeRewriter(getContext()).analyze(expression_query, all_columns_with_ephemeral);
+        if (depends_on_recompressed_column(syntax_result->requiredSourceColumns()))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the stored MATERIALIZED column "
+                "`{}` is computed from this column, and it is not recalculated by the recompression, so "
+                "it would keep the values computed before the recompression. Remove the MATERIALIZED "
+                "property first (a MODIFY COLUMN ... REMOVE MATERIALIZED written before the RECOMPRESS "
+                "COLUMN in the same ALTER works); it can be re-added afterwards and the column rebuilt "
+                "with ALTER TABLE ... MATERIALIZE COLUMN.",
+                column_name, column_desc->codec->formatForErrorMessage(), dependent_column.name);
+    }
+}
+
 void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
 {
     for (const auto & disk : getDisks())
@@ -5688,108 +5798,12 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
             /// (`RECOMPRESS COLUMN c, DROP PROJECTION p`) really does recompress while the dependent is still
             /// live — the two segments become two mutations, and a query in between would see the stale
             /// projection — so it is rejected, and the message points at writing the drop first.
-            const auto & column_desc = columns.get(command.column_name);
-            if (column_desc.codec && codecResolvesToLossyCompression(column_desc.codec, column_desc.type))
-            {
-                /// A dependency list may name a subcolumn (`val.x` of a `Tuple`, `arr.size0`, ...) instead of
-                /// the stored column that holds it, and reading a subcolumn reads the very stream that the
-                /// recompression rewrites. Map every required column back to its owning stored column before
-                /// comparing - the same normalization `MutateTask` applies to these lists.
-                const auto storage_columns = columns.getAllPhysical().getNameSet();
-                auto depends_on_recompressed_column = [&](const Names & required_columns)
-                {
-                    return std::ranges::any_of(required_columns, [&](const String & required_column)
-                    {
-                        auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
-                        return column_in_storage && *column_in_storage == command.column_name;
-                    });
-                };
-
-                for (const auto & projection : columns_metadata->getProjections())
-                {
-                    if (depends_on_recompressed_column(projection.getRequiredColumns()))
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: projection `{}` reads this column, "
-                            "and it is not rebuilt by the recompression, so it would keep describing the values as they "
-                            "were before the recompression. Drop the projection first (a DROP PROJECTION "
-                            "written before the RECOMPRESS COLUMN in the same ALTER works), or rebuild it "
-                            "with ALTER TABLE ... MATERIALIZE PROJECTION after the recompression.",
-                            command.column_name, column_desc.codec->formatForErrorMessage(), projection.name);
-                }
-
-                for (const auto & index : columns_metadata->getSecondaryIndices())
-                {
-                    if (depends_on_recompressed_column(index.expression->getRequiredColumns()))
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: index `{}` depends on this column, "
-                            "and it is not rebuilt by the recompression, so it would keep describing the values as they "
-                            "were before the recompression and could skip granules that do match. Drop the index "
-                            "first (a DROP INDEX written before the RECOMPRESS COLUMN in the same ALTER works), "
-                            "or rebuild it with ALTER TABLE ... MATERIALIZE INDEX after the recompression.",
-                            command.column_name, column_desc.codec->formatForErrorMessage(), index.name);
-                }
-
-                /// The partition value and the part minmax index are computed from the column values and
-                /// are used by `MergeTreeDataSelectExecutor::selectPartsToRead` to prune whole parts before
-                /// any rows are read. The mutation carries the partition value over from the source part and
-                /// rebuilds the part minmax index from the pre-recompression values, so after a lossy
-                /// recompression a part could return rows outside its stored bounds, and parts whose
-                /// post-recompression rows do match a query could be pruned. The partition key cannot be
-                /// dropped, so only a lossless codec can recompress such a column.
-                if (depends_on_recompressed_column(columns_metadata->getColumnsRequiredForPartitionKey()))
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the partition key uses this column, "
-                        "and the partition value and the part minmax index are not recalculated by the recompression, "
-                        "so they would keep describing the values as they were before the recompression and parts "
-                        "could be pruned incorrectly. Only a lossless codec can recompress a partition key column.",
-                        command.column_name, column_desc.codec->formatForErrorMessage());
-
-                /// Same for the sorting key: the primary index (`primary.idx`) describes the
-                /// pre-recompression values, and the physical order of the rows itself may no longer match
-                /// the post-recompression values, so index analysis could skip granules that do match.
-                /// The sorting key cannot be dropped either.
-                if (depends_on_recompressed_column(columns_metadata->getColumnsRequiredForSortingKey()))
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the sorting key uses this column, "
-                        "and the primary index and the physical order of the rows are not recalculated by the "
-                        "recompression, so they would keep describing the values as they were before the "
-                        "recompression and granules could be skipped incorrectly. Only a lossless codec can "
-                        "recompress a sorting key column.",
-                        command.column_name, column_desc.codec->formatForErrorMessage());
-
-                /// A stored `MATERIALIZED` column is kept in sync with its expression by mutations (an
-                /// `UPDATE` of a source column recalculates the dependent `MATERIALIZED` columns), but the
-                /// recompression copies the dependents from the source part unchanged, so `m MATERIALIZED
-                /// f(x)` would keep the values computed from `x` as it was before the recompression.
-                /// Resolve the expressions the same way `MutationsInterpreter` does when it collects the
-                /// affected `MATERIALIZED` columns: over the physical columns plus the `EPHEMERAL` ones
-                /// (a `MATERIALIZED` expression may reference an `EPHEMERAL` column, and the analysis must
-                /// still resolve it).
-                NamesAndTypesList all_columns_with_ephemeral = columns.getAllPhysical();
-                for (const auto & ephemeral_column : columns.getEphemeral())
-                    all_columns_with_ephemeral.push_back(ephemeral_column);
-
-                for (const auto & dependent_column : columns)
-                {
-                    if (dependent_column.default_desc.kind != ColumnDefaultKind::Materialized
-                        || !dependent_column.default_desc.expression
-                        || dependent_column.name == command.column_name)
-                        continue;
-
-                    auto expression_query = dependent_column.default_desc.expression->clone();
-                    replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression_query, all_columns_with_ephemeral);
-                    auto syntax_result = TreeRewriter(getContext()).analyze(expression_query, all_columns_with_ephemeral);
-                    if (depends_on_recompressed_column(syntax_result->requiredSourceColumns()))
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the stored MATERIALIZED column "
-                            "`{}` is computed from this column, and it is not recalculated by the recompression, so "
-                            "it would keep the values computed before the recompression. Remove the MATERIALIZED "
-                            "property first (a MODIFY COLUMN ... REMOVE MATERIALIZED written before the RECOMPRESS "
-                            "COLUMN in the same ALTER works); it can be re-added afterwards and the column rebuilt "
-                            "with ALTER TABLE ... MATERIALIZE COLUMN.",
-                            command.column_name, column_desc.codec->formatForErrorMessage(), dependent_column.name);
-                }
-            }
+            ///
+            /// This check runs against the metadata as it is when the `ALTER` is accepted, but the
+            /// recompression reads the codec from the table metadata again when the mutation executes, and
+            /// a `MODIFY COLUMN ... CODEC(...)` / `ADD INDEX` / `ADD PROJECTION` in between can invalidate
+            /// the conclusion, so `MutateTask` re-runs the same check at execution time.
+            checkLossyRecompressionIsPossible(command.column_name, columns_metadata);
         }
     }
 

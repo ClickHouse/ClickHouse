@@ -376,6 +376,8 @@ It is also not supported for a column whose codec is lossy (such as `SZ3`) when 
 - the partition key or the sorting key uses the column: the partition value, the part minmax index, the primary index and the physical order of the rows are not recalculated by the recompression, so parts and granules could be pruned incorrectly. Only a lossless codec can recompress such a column.
 - a stored `MATERIALIZED` column is computed from the column: its stored values are not recalculated by the recompression. Remove the `MATERIALIZED` property first (a `MODIFY COLUMN ... REMOVE MATERIALIZED` written before the `RECOMPRESS COLUMN` in the same `ALTER` works); it can be re-added afterwards and the column rebuilt with `MATERIALIZE COLUMN`.
 
+Because the codec is resolved again when the mutation executes, this check runs both when the `ALTER` is accepted and again at execution time: if the codec was switched to a lossy one (or a dependent was added) while the mutation was queued, the mutation fails instead of rewriting the data -- the failure reason is visible in [`system.mutations`](/reference/system-tables/mutations), and the mutation proceeds once the conflicting metadata is reverted, or can be cancelled with `KILL MUTATION`.
+
 Syntax:
 
 ```sql

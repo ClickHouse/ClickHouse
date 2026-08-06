@@ -361,8 +361,9 @@ static void splitAndModifyMutationCommands(
             /// (carried-over uncompressed checksums and marks), and the raw-block path cannot perform
             /// the writer-side vector-dimension setup such codecs need. Re-serialize through the
             /// regular writer instead. Such a column cannot have dependent projections or skip indices
-            /// (`MergeTreeData::checkMutationIsPossible` rejects that combination), so the whole-part
-            /// rewrite hardlinking them unchanged is safe here.
+            /// (`MergeTreeData::checkLossyRecompressionIsPossible` rejects that combination, both when
+            /// the `ALTER` is accepted and again in `MutateTask::prepare` right before this runs), so
+            /// the whole-part rewrite hardlinking them unchanged is safe here.
             if (codecResolvesToLossyCompression(column_desc->codec, column_desc->type))
             {
                 recompress_needs_full_rewrite = true;
@@ -4033,6 +4034,18 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
     context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
+
+    /// The lossy-codec dependency guard ran in `MergeTreeData::checkMutationIsPossible` when the
+    /// `ALTER` was accepted, but the recompression resolves the codec from the table metadata again
+    /// here, at execution time, and a `MODIFY COLUMN ... CODEC(...)` / `ADD INDEX` / `ADD PROJECTION`
+    /// executed in between can have invalidated that validation (e.g. a queued `RECOMPRESS COLUMN x`
+    /// followed by `MODIFY COLUMN x CODEC(SZ3(...))` would otherwise rewrite `x` lossily while its
+    /// dependents keep describing the old values). Re-run the guard against the same metadata
+    /// snapshot the recompression uses. A failure leaves the mutation failed and retried (visible in
+    /// `system.mutations`); it proceeds once the metadata is fixed, or can be killed.
+    for (const auto & command : ctx->commands_for_part)
+        if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
+            ctx->data->checkLossyRecompressionIsPossible(command.column_name, ctx->metadata_snapshot);
 
     bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
     NameSet columns_to_recompress;
