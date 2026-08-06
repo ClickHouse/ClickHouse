@@ -20,7 +20,6 @@
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Functions/IFunction.h>
 #include <Common/CurrentThread.h>
 #include <Common/assert_cast.h>
@@ -49,7 +48,7 @@ namespace Setting
 namespace
 {
 
-using ConstantColumnAfterFilter = std::pair<size_t, Field>;
+using ConstantColumnPosition = size_t;
 
 const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
 {
@@ -133,7 +132,7 @@ bool containsDateOrTime(const DataTypePtr & type)
 }
 
 /// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
-/// have the same representation as the constant after conversion to the result type.
+/// have the same stored representation.
 /// For some comparisons in ClickHouse, different stored values can compare equal, e.g. `0.0 = -0.0`,
 /// `Decimal` vs `Float`, `String` vs `FixedString` / `Enum`, `Object` / `JSON`, mixed date/time-family types,
 /// or runtime-dispatched `Dynamic` / `Variant` comparisons.
@@ -169,7 +168,7 @@ bool canReplaceColumnWithConstantAfterFilter(
     return true;
 }
 
-std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
+std::optional<ConstantColumnPosition> tryGetConstantColumnPositionAfterFilter(
     const ActionsDAG::Node * column_node,
     const ActionsDAG::Node * constant_node,
     const ActionsDAG & dag,
@@ -179,8 +178,7 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     if (unwrapped_column_node->type != ActionsDAG::ActionType::INPUT)
         return {};
 
-    auto constant_field = tryGetConstantField(constant_node);
-    if (!constant_field)
+    if (!tryGetConstantField(constant_node))
         return {};
 
     std::optional<size_t> position;
@@ -201,19 +199,15 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     if (!canReplaceColumnWithConstantAfterFilter(result_column.type, constant_node->result_type))
         return {};
 
-    auto converted = tryConvertFieldToType(*constant_field, *result_column.type, constant_node->result_type.get());
-    if (converted.isNull() && (!constant_field->isNull() || !canContainNull(*result_column.type)))
-        return {};
-
-    return ConstantColumnAfterFilter{*position, std::move(converted)};
+    return *position;
 }
 
-std::vector<ConstantColumnAfterFilter> collectConstantColumnsAfterFilter(
+std::vector<ConstantColumnPosition> collectConstantColumnsAfterFilter(
     const ActionsDAG & dag,
     const String & filter_column_name,
     const Block & transformed_header)
 {
-    std::vector<ConstantColumnAfterFilter> result;
+    std::vector<ConstantColumnPosition> result;
     std::unordered_set<size_t> added_positions;
 
     const auto * filter = &dag.findInOutputs(filter_column_name);
@@ -239,14 +233,14 @@ std::vector<ConstantColumnAfterFilter> collectConstantColumnsAfterFilter(
         if (function_name != "equals" || node->children.size() != 2)
             continue;
 
-        std::optional<ConstantColumnAfterFilter> constant_column;
+        std::optional<ConstantColumnPosition> constant_column;
         if (tryGetConstantField(node->children[1]))
-            constant_column = tryMakeConstantColumnAfterFilter(node->children[0], node->children[1], dag, transformed_header);
+            constant_column = tryGetConstantColumnPositionAfterFilter(node->children[0], node->children[1], dag, transformed_header);
         if (!constant_column && tryGetConstantField(node->children[0]))
-            constant_column = tryMakeConstantColumnAfterFilter(node->children[1], node->children[0], dag, transformed_header);
+            constant_column = tryGetConstantColumnPositionAfterFilter(node->children[1], node->children[0], dag, transformed_header);
 
-        if (constant_column && added_positions.insert(constant_column->first).second)
-            result.push_back(std::move(*constant_column));
+        if (constant_column && added_positions.insert(*constant_column).second)
+            result.push_back(*constant_column);
     }
 
     return result;
@@ -387,7 +381,7 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
 
 void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t num_rows) const
 {
-    if (constant_columns_after_filter.empty())
+    if (constant_columns_after_filter.empty() || num_rows == 0)
         return;
 
     if (auto query_context = CurrentThread::tryGetQueryContext())
@@ -396,14 +390,16 @@ void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t 
             return;
     }
 
-    for (const auto & constant_column : constant_columns_after_filter)
+    for (const auto position : constant_columns_after_filter)
     {
-        if (constant_column.first == filter_column_position && remove_filter_column)
+        if (position == filter_column_position && remove_filter_column)
             continue;
 
-        const auto & type = transformed_header.getByPosition(constant_column.first).type;
-        auto column = type->createColumnConst(num_rows, constant_column.second);
-        columns[constant_column.first] = std::move(column);
+        /// Use the value that actually passed `equals` instead of parsing the comparison constant again.
+        /// String constants are parsed using query-specific settings that are already reflected in this column.
+        const auto & type = transformed_header.getByPosition(position).type;
+        auto column = type->createColumnConst(num_rows, (*columns[position])[0]);
+        columns[position] = std::move(column);
     }
 }
 

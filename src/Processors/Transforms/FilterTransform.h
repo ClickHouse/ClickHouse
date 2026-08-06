@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
-#include <Core/Field.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <utility>
 #include <vector>
@@ -66,7 +65,7 @@ private:
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
-    std::vector<std::pair<size_t, Field>> constant_columns_after_filter;
+    std::vector<size_t> constant_columns_after_filter;
 
     bool are_prepared_sets_initialized = false;
 
