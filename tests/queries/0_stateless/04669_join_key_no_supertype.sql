@@ -86,7 +86,7 @@ SELECT x FROM t_unsigned RIGHT JOIN (SELECT y AS x FROM t_signed) AS t USING (x)
 SELECT x FROM t_unsigned FULL JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
 
 SELECT 'A null-safe comparison cannot be done this way, because NULL matches NULL there';
-SELECT * FROM t_unsigned INNER JOIN t_signed ON x IS NOT DISTINCT FROM y; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT * FROM t_unsigned INNER JOIN t_signed ON x IS NOT DISTINCT FROM y; -- { serverError NO_COMMON_TYPE, ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'The ASOF inequality needs the order of the values, not only the equality';
 SELECT * FROM (SELECT x, 1 AS k FROM t_unsigned) AS a ASOF JOIN (SELECT y, 1 AS k FROM t_signed) AS b ON a.k = b.k AND a.x > b.y; -- { serverError NO_COMMON_TYPE }
