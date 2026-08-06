@@ -151,6 +151,10 @@ def _drive_run(monkeypatch, tmp_path, *, image_present, pull_rc=0):
             return pull_rc
         return 0
 
+    # Pin the arch so the resolved tag is deterministic: `_run` appends `_arm`/`_amd` from the
+    # host arch, and CI runs this suite on arm while dev boxes are amd.
+    monkeypatch.setattr(runner_module.Utils, "is_arm", staticmethod(lambda: False))
+    monkeypatch.setattr(runner_module.Utils, "is_amd", staticmethod(lambda: True))
     monkeypatch.setattr(runner_module.Shell, "check", staticmethod(fake_check))
     monkeypatch.setattr(runner_module.Shell, "run", staticmethod(fake_run))
     monkeypatch.setattr(
