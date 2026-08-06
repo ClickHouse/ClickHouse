@@ -2620,6 +2620,17 @@ def test_alignment_with_subquery_step():
         "vector(1)[19:20]", 9999, '{"resultType": "matrix", "result": []}', ""
     )
 
+    # The offset makes the effective subquery timestamp negative without using a negative query timestamp.
+    do_query_test(
+        "vector(time())[40s:20s] offset 31s",
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[-60, "-60"], [-40, "-40"]]}]}',
+        [[
+            "[]",
+            "[('1969-12-31 23:59:00.000',-60),('1969-12-31 23:59:20.000',-40)]",
+        ]],
+    )
+
 
 def test_math_binary_operators():
     do_query_test(
