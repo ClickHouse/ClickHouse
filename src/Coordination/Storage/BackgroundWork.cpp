@@ -229,9 +229,6 @@ void BackgroundWork::flushThread()
                 node_count_delta += file->node_count_delta;
             chassert(memtable->node_count_delta == node_count_delta);
             new_run->node_count_delta = node_count_delta;
-
-            for (const SortedFilePtr & file : new_run->files)
-                file->delete_when_destroyed = false;
         }
         catch (...)
         {
@@ -275,6 +272,13 @@ void BackgroundWork::flushThread()
                     chassert(seqno >= storage->immutable_memtables[0]->file_seqno);
                     if (seqno != storage->immutable_memtables[0]->file_seqno)
                         break; // previous memtable not flushed yet
+
+                    /// The run becomes visible to readers only now; until this point its files stay
+                    /// self-deleting, so a shutdown or snapshot install that destroys BackgroundWork
+                    /// while the run sits in the reorder buffer doesn't leak the files on disk.
+                    for (const SortedFilePtr & file : flushed_files.begin()->second->files)
+                        file->delete_when_destroyed = false;
+
                     storage->sorted_runs.push_back(flushed_files.begin()->second);
                     storage->immutable_memtables.erase(storage->immutable_memtables.begin());
                     flushed_files.erase(flushed_files.begin());
