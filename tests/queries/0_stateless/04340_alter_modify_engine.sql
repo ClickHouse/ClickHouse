@@ -350,6 +350,26 @@ OPTIMIZE TABLE t_graphite_rollup FINAL;
 SELECT 'graphite rollup', Path, toString(Time), Value, Version FROM t_graphite_rollup ORDER BY Time;
 DROP TABLE t_graphite_rollup;
 
+-- A constant expression names the configuration element, as it does in CREATE TABLE, which evaluates
+-- engine arguments before reading them. The stored CREATE query must hold the evaluated literal rather
+-- than the expression, so that the next load reads this value instead of resolving it again.
+CREATE TABLE t_graphite_expr (key UInt32, Path String, Time DateTime('UTC'), Value Float64, Version UInt32)
+    ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite_expr MODIFY ENGINE = GraphiteMergeTree(concat('graphite', '_rollup'));
+SELECT 'graphite config name evaluated', position(create_table_query, 'concat') = 0,
+    position(create_table_query, 'GraphiteMergeTree(\'graphite_rollup\')') > 0
+    FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite_expr';
+DETACH TABLE t_graphite_expr;
+ATTACH TABLE t_graphite_expr;
+SELECT 'graphite config name expression', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite_expr';
+DROP TABLE t_graphite_expr;
+
+-- An expression that is not constant is still rejected.
+CREATE TABLE t_graphite_expr (key UInt32, Path String, Time DateTime('UTC'), Value Float64, Version UInt32)
+    ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite_expr MODIFY ENGINE = GraphiteMergeTree(Path); -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_graphite_expr;
+
 -- (z) the Graphite time column must be a type the rollup can read: it uses `IColumn::getUInt`, which
 -- only the integer-backed columns implement, so `String`, `Float64`, `DateTime64` and `Decimal` are
 -- rejected up front instead of aborting the first merge with NOT_IMPLEMENTED or BAD_GET.

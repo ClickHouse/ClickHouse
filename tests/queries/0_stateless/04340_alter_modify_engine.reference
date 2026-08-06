@@ -27,6 +27,8 @@ replacing is_deleted	1	200	2	0
 summing explicit	1	30	7
 coalescing explicit	1	10	7
 graphite rollup	max_a	2020-01-01 00:00:00	5	2
+graphite config name evaluated	1	1
+graphite config name expression	GraphiteMergeTree
 graphite time Date	GraphiteMergeTree
 graphite time Date rollup	max_a	2019-04-14	5	2
 graphite time UInt32	GraphiteMergeTree

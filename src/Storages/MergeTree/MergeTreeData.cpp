@@ -5084,6 +5084,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "MODIFY ENGINE cannot change replication: table engine is {}, requested {}", getName(), engine_ast->name);
 
+        /// In place, so the validation below, the CREATE query written by alterTable and the next table
+        /// load all read one literal rather than re-evaluating the expression in another context.
+        if (engine_ast->name == "GraphiteMergeTree" && engine_ast->arguments && engine_ast->arguments->children.size() == 1)
+        {
+            auto & config_name = engine_ast->arguments->children[0];
+            if (config_name->as<ASTFunction>())
+                config_name = make_intrusive<ASTLiteral>(evaluateConstantExpression(config_name, local_context).first);
+        }
+
         engines_to_validate.push_back(command.engine);
     }
 
