@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
+#include <atomic>
 #include <barrier>
 #include <functional>
 #include <latch>
@@ -389,4 +390,86 @@ TEST(Executor, SlowTaskDestructionBlocksRemoveTasks)
         << elapsed_ms << " ms by slow task destruction holding the mutex";
 
     executor->wait();
+}
+
+
+/// Task that always asks for another step, so `routine` keeps re-pushing it to the pending queue.
+/// It records whether it was cancelled; a real merge task releases most of its resources in
+/// `cancel` and keeps its `TableLockHolder` alive for as long as the task object exists.
+class NeverFinishingTask : public IExecutableTask
+{
+public:
+    NeverFinishingTask(const String & name_, std::latch & step_executed_, std::atomic<bool> & cancelled_)
+        : name(name_)
+        , step_executed(step_executed_)
+        , cancelled(cancelled_)
+    {}
+
+    bool executeStep() override
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (!step_reported.exchange(true))
+            step_executed.count_down();
+        return true;
+    }
+
+    void cancel() noexcept override { cancelled = true; }
+    StorageID getStorageID() const override { return {"test", name}; }
+    void onCompleted() override {}
+    Priority getPriority() const override { return {}; }
+    String getQueryId() const override { return "test::never_finishing"; }
+
+private:
+    String name;
+    std::latch & step_executed;
+    std::atomic<bool> & cancelled;
+    std::atomic<bool> step_reported{false};
+};
+
+
+/// A multi-step task waiting in the pending queue must not survive `wait()`.
+///
+/// `threadFunction` breaks out of its loop before popping once `shutdown` is set, so a task that
+/// `routine` re-pushed for another step is neither resumed nor cancelled. A real merge task holds
+/// a `TableLockHolder` (a table share lock) for its whole lifetime, so such an abandoned task
+/// blocks every later exclusive lock on its table until the acquisition times out. That is how a
+/// `RENAME` rotating an obsolete `system.session_log` during shutdown ends in `DEADLOCK_AVOIDED`
+/// once that timeout expires.
+TEST(Executor, ShutdownReleasesPendingTasks)
+{
+    /// Declared before the executor so they outlive it (its destructor calls `wait`).
+    std::latch step_executed(1);
+    std::atomic<bool> cancelled{false};
+    std::weak_ptr<IExecutableTask> weak_task;
+
+    auto executor = std::make_shared<MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        10, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    {
+        auto task = std::make_shared<NeverFinishingTask>("pending_storage", step_executed, cancelled);
+        weak_task = task;
+        ASSERT_TRUE(executor->trySchedule(std::move(task)));
+    }
+
+    /// Wait until a step has run, so the task is known to be cycling through the pending queue
+    /// rather than never having been picked up.
+    step_executed.wait();
+
+    executor->wait();
+
+    EXPECT_TRUE(weak_task.expired())
+        << "a task left in the pending queue outlived executor shutdown, so the resources it owns "
+           "(for a merge task, a table share lock) were never released";
+    EXPECT_TRUE(cancelled.load())
+        << "a task left in the pending queue was not cancelled on executor shutdown";
 }

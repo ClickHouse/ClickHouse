@@ -350,6 +350,10 @@ private:
 
     void routine(TaskRuntimeDataPtr item);
 
+    /// Cancel and destroy every task still waiting in `pending`. Only complete once no worker can
+    /// push there any more, i.e. after `pool->wait()` in `wait()`.
+    void drainPendingTasks();
+
     /// libc++ does not provide TSA support for std::unique_lock -> TSA_NO_THREAD_SAFETY_ANALYSIS
     void threadFunction() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
