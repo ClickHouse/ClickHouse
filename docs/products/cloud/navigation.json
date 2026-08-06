@@ -207,8 +207,7 @@
               "expanded": false,
               "group": "Migration",
               "pages": [
-                "products/cloud/guides/migration/upload-a-csv-file",
-                "products/cloud/guides/migration/oss-to-cloud-backup-restore"
+                "products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
@@ -258,8 +257,7 @@
                   "group": "Deployment modes",
                   "pages": [
                     "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
-                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
-                    "products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
                   ]
                 }
               ]
@@ -276,6 +274,7 @@
                     "products/cloud/guides/security/cloud-access-management/manage-my-account",
                     "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
                     "products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                    "products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
                     "products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
                     "products/cloud/guides/security/cloud-access-management/manage-database-users",
                     "products/cloud/guides/security/cloud-access-management/saml-sso-setup",
@@ -338,6 +337,9 @@
     },
     {
       "$ref": "../bring-your-own-cloud/navigation.json"
+    },
+    {
+      "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
   "icon": "/images/icons/icon-clickhouse-cloud.svg",
