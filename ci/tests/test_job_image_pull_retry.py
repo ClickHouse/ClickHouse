@@ -124,12 +124,15 @@ class _FakeTeePopen:
         return ""
 
 
-def _drive_run(monkeypatch, tmp_path, *, image_present, pull_rc=0):
+def _drive_run(monkeypatch, tmp_path, *, image_present, pull_rc=0, retried_on=""):
     """Run `Runner._run`'s docker branch with collaborators stubbed.
 
     Returns the ordered list of recorded calls: ("check", cmd), ("run", cmd,
-    kwargs) and ("teepopen", cmd). `image_present` decides what
-    `docker image inspect` reports; `pull_rc` what the pull returns.
+    kwargs), ("teepopen", cmd) and ("env", env). `image_present` decides what
+    `docker image inspect` reports; `pull_rc` what the pull returns. When
+    `retried_on` is a phrase, the pull's `on_retry` callback is invoked with it
+    exactly as the real `Shell.run` loop would on a matched transport error, so
+    `_run`'s own callback body runs rather than a model of it.
     """
     calls = []
 
@@ -143,6 +146,8 @@ def _drive_run(monkeypatch, tmp_path, *, image_present, pull_rc=0):
     def fake_run(command, **kwargs):
         calls.append(("run", command, kwargs))
         if command.startswith("timeout") and "docker pull" in command:
+            if retried_on and kwargs.get("on_retry"):
+                kwargs["on_retry"](retried_on, 1, kwargs.get("retries", 1))
             # Honour the real Shell.run contract: a failed command raises when
             # strict=True and merely returns non-zero otherwise. Without this the
             # fail-open arm would stub out the very mechanism it exists to pin.
@@ -192,15 +197,23 @@ def _drive_run(monkeypatch, tmp_path, *, image_present, pull_rc=0):
     )
 
     class _FakeEnv:
+        """Records workflow warnings the way `_Environment` accumulates them."""
+
         JOB_NAME = ""
         WORKFLOW_CONFIG = None
+
+        def __init__(self):
+            self.warnings = []
 
         def dump(self):
             pass
 
-    monkeypatch.setattr(
-        runner_module._Environment, "get", staticmethod(lambda: _FakeEnv())
-    )
+        def add_workflow_warning(self, message, source=""):
+            self.warnings.append(message)
+
+    env = _FakeEnv()
+    calls.append(("env", env))
+    monkeypatch.setattr(runner_module._Environment, "get", staticmethod(lambda: env))
 
     class _FakeRunConfig:
         digest_dockers = {"clickhouse/test-base": "0abcdef123456"}
@@ -445,3 +458,123 @@ def test_stalled_attempt_is_retryable_only_with_verbose(tmp_path):
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+# --------------------------------------------------------------------------- #
+# 9. A retried pull is reported as a workflow warning.
+# --------------------------------------------------------------------------- #
+def test_retry_emits_a_workflow_warning(monkeypatch, tmp_path):
+    """The retry must not be silent: a pull that needed a second attempt shows up
+    on the job and workflow report pages."""
+    calls = _drive_run(
+        monkeypatch,
+        tmp_path,
+        image_present=False,
+        retried_on="connection reset by peer",
+    )
+    env = next(c[1] for c in calls if c[0] == "env")
+    assert len(env.warnings) == 1
+    assert "connection reset by peer" in env.warnings[0]
+    assert DOCKER_IMAGE in env.warnings[0]
+
+
+def test_a_clean_pull_emits_no_warning(monkeypatch, tmp_path):
+    """The negative control: without it the arm above would also pass against a
+    hook that warns unconditionally."""
+    calls = _drive_run(monkeypatch, tmp_path, image_present=False)
+    env = next(c[1] for c in calls if c[0] == "env")
+    assert env.warnings == []
+
+
+def test_a_skipped_pull_emits_no_warning(monkeypatch, tmp_path):
+    """An image already present is never pulled, so there is nothing to report."""
+    calls = _drive_run(
+        monkeypatch,
+        tmp_path,
+        image_present=True,
+        retried_on="connection reset by peer",
+    )
+    env = next(c[1] for c in calls if c[0] == "env")
+    assert env.warnings == []
+
+
+def test_on_retry_fires_once_per_retry_and_only_on_matched_errors(tmp_path):
+    """Drive the REAL `Shell.run` loop: the callback fires for each retry actually
+    issued, receives the matched phrase, and is never called for a permanent error
+    (which is the same code path that decides not to retry)."""
+    seen = []
+
+    cmd, counter = _counting_command(
+        tmp_path, [], [PRODUCTION_RESET], exit_code=1, succeed_on=3
+    )
+    rc = Shell.run(
+        cmd,
+        retries=_IMAGE_PULL_RETRIES,
+        retry_errors=_IMAGE_PULL_RETRY_ERRORS,
+        on_retry=lambda matched, attempt, attempts: seen.append(matched),
+    )
+    assert rc == 0
+    assert _attempts(counter) == 3
+    # Two retries were issued to reach the third attempt.
+    assert seen == ["connection reset by peer"] * 2
+
+    permanent = []
+    permanent_dir = tmp_path / "permanent"
+    permanent_dir.mkdir()
+    cmd2, counter2 = _counting_command(
+        permanent_dir, [], [PERMANENT_ERROR], exit_code=1
+    )
+    Shell.run(
+        cmd2,
+        retries=_IMAGE_PULL_RETRIES,
+        retry_errors=_IMAGE_PULL_RETRY_ERRORS,
+        on_retry=lambda matched, attempt, attempts: permanent.append(matched),
+    )
+    assert _attempts(counter2) == 1
+    assert permanent == []
+
+
+def test_a_failing_warning_hook_does_not_change_the_outcome(tmp_path):
+    """Reporting is best-effort. A rescued pull is the easy half; the discriminating
+    half is a pull that fails on every attempt, because `Shell.run`'s own
+    `except Exception` around the loop body reports an exception-terminated attempt as
+    exit code 1. So a hook that raises there would REPLACE the real exit code -- 124
+    for a stalled pull -- with 1, hiding the actual failure from the caller and from
+    the job report. Assert the code is preserved, not merely that the pull survived."""
+
+    def boom(matched, attempt, attempts):
+        raise RuntimeError("reporting is broken")
+
+    stalled = f"printf x >> {tmp_path / 'broken'}; timeout --verbose 1 sleep 30"
+    rc_broken = Shell.run(
+        stalled,
+        retries=_IMAGE_PULL_RETRIES,
+        retry_errors=_IMAGE_PULL_RETRY_ERRORS,
+        on_retry=boom,
+        verbose=False,
+    )
+    # Control: the same command with no hook at all, so the expected code is measured
+    # rather than assumed.
+    rc_plain = Shell.run(
+        f"printf x >> {tmp_path / 'plain2'}; timeout --verbose 1 sleep 30",
+        retries=_IMAGE_PULL_RETRIES,
+        retry_errors=_IMAGE_PULL_RETRY_ERRORS,
+        verbose=False,
+    )
+    assert rc_plain == 124
+    assert rc_broken == rc_plain
+
+    # And a hook that raises still lets a retry rescue the pull.
+    cmd, counter = _counting_command(
+        tmp_path, [], [PRODUCTION_RESET], exit_code=1, succeed_on=2
+    )
+    assert (
+        Shell.run(
+            cmd,
+            retries=_IMAGE_PULL_RETRIES,
+            retry_errors=_IMAGE_PULL_RETRY_ERRORS,
+            on_retry=boom,
+        )
+        == 0
+    )
+    assert _attempts(counter) == 2

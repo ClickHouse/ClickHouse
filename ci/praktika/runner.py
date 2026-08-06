@@ -487,11 +487,22 @@ class Runner:
             # Bounded per attempt: job.timeout only starts with TeePopen below. Guarded:
             # a present image needs no registry. Non-fatal: local-only images have no pull.
             if not Shell.check(f"docker image inspect {docker}", verbose=False):
+
+                def _warn_pull_retried(matched, attempt, attempts):
+                    # `env` is this frame's object and nothing dumps it after this
+                    # point, so the message survives. Info() would read a second
+                    # copy from disk, which a later stale dump can silently drop.
+                    env.add_workflow_warning(
+                        f"Job image pull failed with [{matched}] and was retried "
+                        f"({attempt}/{attempts}): {docker}"
+                    )
+
                 Shell.run(
                     f"timeout --verbose {_IMAGE_PULL_TIMEOUT_S} docker pull {docker}",
                     retries=_IMAGE_PULL_RETRIES,
                     retry_errors=_IMAGE_PULL_RETRY_ERRORS,
                     verbose=True,
+                    on_retry=_warn_pull_retried,
                 )
 
         # Sample whole-VM CPU/RAM usage in the background for the duration of the
