@@ -68,11 +68,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_named_columns_in_function_tuple", false, true, "Re-enable the setting since all known bugs are fixed"},
             {"allow_named_tuple_conversion_with_extra_source_fields", true, true, "New setting"},
             {"allow_named_tuple_conversion_with_extra_source_fields_on_insert", true, false, "New setting. Before this version there was no INSERT-level guard, so named tuple conversions dropping extra source fields were allowed during INSERT. The compatibility value 'true' restores the previous permissive INSERT behavior under compatibility set to a version before 26.8."},
+            {"allow_delta_kernel_rs", true, true, "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."},
             {"input_format_arrow_use_native_reader", true, true, "Obsolete setting, the native ClickHouse reader is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based reader has been removed)."},
             {"output_format_arrow_use_native_writer", true, true, "Obsolete setting, the native ClickHouse writer is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based writer has been removed)."},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
+            {"analyzer_compatibility_multiple_joins_qualify_column_names", false, false, "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."},
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups and pages based on spatial predicates and bounding box statistics"},
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
+            {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -690,6 +693,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"apply_patch_parts", true, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
             {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
+            {"allow_delta_kernel_rs", false, true, "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"vector_search_filter_strategy", "auto", "auto", "New setting"},
             {"vector_search_postfilter_multiplier", 1.0, 1.0, "New setting"},
@@ -1351,6 +1355,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
             {"compute_exact_num_defaults_for_sparse_columns", false, true, "Promote to BETA and enable by default: compute the exact per-column `num_defaults` counter during inserts and merges (instead of the sampling estimate), so `optimize_trivial_count_with_sparsity_filter` and sparsity-based pruning can rely on it."},
             {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
         });
