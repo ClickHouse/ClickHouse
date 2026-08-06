@@ -7,6 +7,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesChanges.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesOverTime.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesQuantile.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
@@ -1201,6 +1202,46 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
     registerOverTimeGridFunction<AggregateFunctionTimeseriesStddevToGrid>(factory, "timeSeriesStddevToGrid", "stddev_over_time");
     registerOverTimeGridFunction<AggregateFunctionTimeseriesStdvarToGrid>(factory, "timeSeriesStdvarToGrid", "stdvar_over_time");
     registerOverTimeGridFunction<AggregateFunctionTimeseriesPresentToGrid>(factory, "timeSeriesPresentToGrid", "present_over_time");
+
+    /// timeSeriesQuantileToGrid documentation
+    FunctionDocumentation::Description description_timeSeriesQuantileToGrid = R"(
+Aggregate function that takes time series data as pairs of timestamps and values and calculates a [PromQL-like quantile over time](https://prometheus.io/docs/prometheus/latest/querying/functions/#quantile_over_time) with the specified quantile level over the samples within the specified time window of each point of a regular time grid described by start timestamp, end timestamp and step. The quantile uses linear interpolation between the two nearest ranks of the window's sorted values, like Prometheus. The level is not clamped: NaN yields NaN, a negative level yields -Inf and a level above 1 yields +Inf (for non-empty windows).
+
+:::warning
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesQuantileToGrid = R"(
+timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness, level)(timestamp, value)
+    )";
+    FunctionDocumentation::Parameters parameters_timeSeriesQuantileToGrid = {
+        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
+        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
+        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}},
+        {"level", "The quantile level.", {"Float*"}}
+    };
+    FunctionDocumentation::Arguments arguments_timeSeriesQuantileToGrid = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileToGrid = {"Returns the quantile values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window of a particular grid point.", {"Array(Nullable(Float64))"}};
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantileToGrid = {26, 9};
+    FunctionDocumentation::Category category_timeSeriesQuantileToGrid = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_timeSeriesQuantileToGrid = {description_timeSeriesQuantileToGrid, syntax_timeSeriesQuantileToGrid, arguments_timeSeriesQuantileToGrid, parameters_timeSeriesQuantileToGrid, returned_value_timeSeriesQuantileToGrid, {}, introduced_in_timeSeriesQuantileToGrid, category_timeSeriesQuantileToGrid};
+
+    factory.registerFunction("timeSeriesQuantileToGrid",
+        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            assertParametersCount(name, parameters, 5, "start_timestamp, end_timestamp, step, window, level");
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            {
+                const Float64 level = extractFloatParameter(name, "level", parameters[4]);
+                return std::make_shared<AggregateFunctionTimeseriesQuantile<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale, level);
+            };
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+        },
+        documentation_timeSeriesQuantileToGrid});
 }
 
 }

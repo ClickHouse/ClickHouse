@@ -1,0 +1,29 @@
+standalone quantile
+1	[4.5]
+2	[10]
+3	[42]
+4	[270]
+5	[932.5]
+6	[1]
+instant predict_linear
+[('job','d')]	440
+[('job','e')]	890
+range predict_linear
+[('job','d')]	[(120000,300),(140000,340),(160000,380)]
+[('job','e')]	[(120000,925),(140000,915),(160000,905)]
+instant quantile 0.5
+[('job','a')]	4.5
+[('job','b')]	10
+[('job','c')]	42
+instant quantile 1
+[('job','a')]	8
+[('job','b')]	10
+[('job','c')]	42
+range quantile 0.5
+[('job','a')]	[(120000,2),(140000,4.5),(160000,6)]
+[('job','b')]	[(120000,10),(140000,10),(160000,10)]
+[('job','c')]	[(160000,42)]
+instant quantile 0.5 with NaN
+[('job','f')]	1
+instant quantile 0 with NaN
+[('job','f')]	nan

@@ -1,5 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 
+#include <optional>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -23,10 +25,22 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Checks if the types of the specified arguments are valid for the function.
-    void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    struct ImplInfo
     {
-        size_t expected_number_of_arguments = 1;
+        std::string_view ch_function_name;
+        bool drop_metric_name = true;
+
+        /// Some functions take one extra scalar argument besides the range vector: `predict_linear(v, t)` has
+        /// it at index 1, `quantile_over_time(phi, v)` at index 0. The scalar becomes an extra (5th) parameter
+        /// of the ClickHouse aggregate function after (start, end, step, window). Aggregate function parameters
+        /// are constants, so only a constant scalar is supported (which covers the common dashboard usage).
+        std::optional<size_t> scalar_argument_index;
+    };
+
+    /// Checks if the types of the specified arguments are valid for the function.
+    void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ImplInfo & impl_info, const ConverterContext & context)
+    {
+        const size_t expected_number_of_arguments = impl_info.scalar_argument_index ? 2 : 1;
 
         if (arguments.size() != expected_number_of_arguments)
         {
@@ -36,7 +50,9 @@ namespace
                                 arguments.size());
         }
 
-        const auto & argument = arguments[0];
+        const size_t range_argument_index = (impl_info.scalar_argument_index == 0) ? 1 : 0;
+
+        const auto & argument = arguments[range_argument_index];
         if (argument.type != ResultType::RANGE_VECTOR)
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
@@ -44,13 +60,19 @@ namespace
                             function_name, ResultType::RANGE_VECTOR,
                             getPromQLText(argument, context), argument.type);
         }
-    }
 
-    struct ImplInfo
-    {
-        std::string_view ch_function_name;
-        bool drop_metric_name = true;
-    };
+        if (impl_info.scalar_argument_index)
+        {
+            const auto & scalar_argument = arguments[*impl_info.scalar_argument_index];
+            if (scalar_argument.type != ResultType::SCALAR)
+            {
+                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                                "Function {} expects an argument of type {}, but expression {} has type {}",
+                                function_name, ResultType::SCALAR,
+                                getPromQLText(scalar_argument, context), scalar_argument.type);
+            }
+        }
+    }
 
     /// Returns information about how the specified prometheus function is implemented.
     /// Returns nullptr if not found.
@@ -61,107 +83,136 @@ namespace
              {
                  "timeSeriesRateToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"increase",
              {
                  "timeSeriesIncreaseToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"irate",
              {
                  "timeSeriesInstantRateToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"delta",
              {
                  "timeSeriesDeltaToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"idelta",
              {
                  "timeSeriesInstantDeltaToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"last_over_time",
              {
                  "timeSeriesLastToGrid",
                  /* drop_metric_name = */ false,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"deriv",
              {
                  "timeSeriesDerivToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"changes",
              {
                  "timeSeriesChangesToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"resets",
              {
                  "timeSeriesResetsToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"max_over_time",
              {
                  "timeSeriesMaxToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"min_over_time",
              {
                  "timeSeriesMinToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"avg_over_time",
              {
                  "timeSeriesAvgToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"sum_over_time",
              {
                  "timeSeriesSumToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"count_over_time",
              {
                  "timeSeriesCountToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"stddev_over_time",
              {
                  "timeSeriesStddevToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"stdvar_over_time",
              {
                  "timeSeriesStdvarToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
              }},
 
             {"present_over_time",
              {
                  "timeSeriesPresentToGrid",
                  /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ std::nullopt,
+             }},
+
+            {"predict_linear",
+             {
+                 "timeSeriesPredictLinearToGrid",
+                 /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ 1,
+             }},
+
+            {"quantile_over_time",
+             {
+                 "timeSeriesQuantileToGrid",
+                 /* drop_metric_name = */ true,
+                 /* scalar_argument_index = */ 0,
              }},
 
             /// TODO:
-            /// predict_linear
-            /// quantile_over_time
             /// absent_over_time
             /// mad_over_time
             /// ts_of_min_over_time
@@ -202,7 +253,7 @@ SQLQueryPiece applyFunctionOverRange(
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
 
-    checkArgumentTypes(function_name, arguments, context);
+    checkArgumentTypes(function_name, arguments, *impl_info, context);
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
@@ -213,7 +264,23 @@ SQLQueryPiece applyFunctionOverRange(
     auto step = node_range.step;
     auto window = node_range.window;
 
-    auto argument = std::move(arguments[0]);
+    /// The extra scalar argument (predict_linear's `t`, quantile_over_time's `phi`) becomes an aggregate
+    /// function parameter, so it must be a constant.
+    std::optional<Float64> scalar_parameter;
+    if (impl_info->scalar_argument_index)
+    {
+        const auto & scalar_argument = arguments[*impl_info->scalar_argument_index];
+        if (scalar_argument.store_method != StoreMethod::CONST_SCALAR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function {} supports only a constant scalar argument, but expression {} is not constant",
+                            function_name, getPromQLText(scalar_argument, context));
+        }
+        scalar_parameter = scalar_argument.scalar_value;
+    }
+
+    const size_t range_argument_index = (impl_info->scalar_argument_index == 0) ? 1 : 0;
+    auto argument = std::move(arguments[range_argument_index]);
 
     SQLQueryPiece res = argument;
     res.node = node;
@@ -327,14 +394,19 @@ SQLQueryPiece applyFunctionOverRange(
     if (has_group)
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-    /// <aggregate_function>(<timestamps>, <values>) AS values
-    builder.select_list.push_back(addParametersToAggregateFunction(
+    /// <aggregate_function>(<start>, <end>, <step>, <window>[, <scalar>])(<timestamps>, <values>) AS values
+    auto aggregate_function = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
         timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
         timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
         timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type)));
+        timeSeriesDurationToAST(window, context.timestamp_data_type));
 
+    if (scalar_parameter)
+        aggregate_function = addParametersToAggregateFunction(
+            std::move(aggregate_function), make_intrusive<ASTLiteral>(*scalar_parameter));
+
+    builder.select_list.push_back(std::move(aggregate_function));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (has_group)
