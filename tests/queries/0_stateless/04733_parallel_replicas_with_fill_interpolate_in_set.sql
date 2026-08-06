@@ -8,8 +8,8 @@
 -- replica producing a mergeable state the pipeline output header could not be sent over the wire:
 -- `Code: 48 ... Serialization is not implemented for data type Set`.
 --
--- parallel_replicas_local_plan = 0 forces the read remote, which makes the failure deterministic;
--- with the default 1 it reproduced in roughly 3 of 30 runs.
+-- parallel_replicas_local_plan = 0 forces the read remote, which makes the failure deterministic
+-- (30 of 30 trials); at its default of 1 it reproduced in 8 of 100 trials.
 
 DROP TABLE IF EXISTS t_04733;
 CREATE TABLE t_04733 (k UInt32, s String) ENGINE = MergeTree ORDER BY k;
@@ -21,6 +21,20 @@ CREATE TABLE t_04733_unprojected (n Float32, source String, inter UInt64, inter2
 ENGINE = MergeTree ORDER BY n;
 INSERT INTO t_04733_unprojected SELECT toFloat32(number % 10), 'original', number, number + 1
 FROM numbers(10) WHERE (number % 3) = 1;
+
+-- serialize_query_plan = 0 because WITH FILL is not supported in serialized sort descriptions
+-- (serializeSortDescription throws NOT_IMPLEMENTED) and the CI `distributed plan` shard turns
+-- serialize_query_plan on globally; this test exercises the placeholder pin, not plan serialization.
+SET serialize_query_plan = 0;
+
+-- The fix is in the analyzer planner, so under the old-analyzer job every arm below would pass on
+-- unpatched master and the test would be vacuous there.
+SET enable_analyzer = 1;
+
+-- automatic_parallel_replicas_mode is randomized to 2 by the test runner, and at a non-zero value
+-- buildContext clears enable_parallel_replicas (InterpreterSelectQueryAnalyzer.cpp:137-156). That
+-- happens after the per-query SETTINGS are applied, so the SETTINGS clauses below cannot win.
+SET automatic_parallel_replicas_mode = 0;
 
 -- Rows are asserted, not merely the absence of an exception: a test checking only that the query
 -- runs would still pass if INTERPOLATE silently stopped interpolating. The expected values below
