@@ -1185,8 +1185,11 @@ protected:
                         }
                         if (can_read)
                         {
-                            auto snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, context);
-                            modification_hash = table->getModificationHash(snapshot, context);
+                            /// Refresh lazily applied external metadata before hashing, so that the value
+                            /// shown here does not change after the table's first ordinary read merely
+                            /// because that read performed the update (see
+                            /// `getModificationHashWithRefreshedMetadata`).
+                            modification_hash = getModificationHashWithRefreshedMetadata(table, context);
                         }
                     }
                     catch (const Exception &)

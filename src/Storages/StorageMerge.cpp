@@ -1993,9 +1993,11 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
             if (!table)
                 return false;
 
-            auto metadata = table->getInMemoryMetadataPtr(query_context, false);
-            auto snapshot = table->getStorageSnapshotWithoutData(metadata, query_context);
-            auto table_hash = table->getModificationHash(snapshot, query_context);
+            /// Refresh lazily applied external metadata before hashing, so that the first read through
+            /// this `Merge` table does not report a change that is only the child's own first-use
+            /// metadata update (see `getModificationHashWithRefreshedMetadata`). It touches the same external
+            /// resource as the child's own hash below, which this path already probes.
+            auto table_hash = getModificationHashWithRefreshedMetadata(table, query_context);
             if (!table_hash)
                 return true; /// This source cannot tell whether it changed - assume the worst for the whole Merge.
 

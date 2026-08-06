@@ -1802,9 +1802,10 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
         /// on self-reference.
         if (storage.get() == owner)
             return {};
-        auto metadata = storage->getInMemoryMetadataPtr(context, false);
-        auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
-        auto table_hash = storage->getModificationHash(snapshot, context);
+        /// Refresh lazily applied external metadata before hashing, so that the first read through this
+        /// `Distributed` table does not report a change that is only the local child's own first-use
+        /// metadata update (see `getModificationHashWithRefreshedMetadata`).
+        auto table_hash = getModificationHashWithRefreshedMetadata(storage, context);
         if (!table_hash)
             return {};
         /// Fold the child table's UUID so that a dropped/recreated same-name child is distinguished even

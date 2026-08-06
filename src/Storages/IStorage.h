@@ -869,4 +869,19 @@ private:
     mutable RWLock drop_lock = RWLockImpl::create();
 };
 
+/// Takes the modification hash of `storage` on behalf of a caller that hashes a table directly instead
+/// of going through `computeTableModificationHashForConsistency` - the wrapper engines (`Merge`, the
+/// local shard of `Distributed`, the `URL` scheme dispatch) and the `system.tables.modification_hash`
+/// column.
+///
+/// Some engines apply metadata lazily on the first use of a table: object storage resolves the deferred
+/// Hive-partitioning sample path through `setInMemoryMetadata`, which advances the metadata version
+/// folded into the hash. Without refreshing that metadata first, the hash taken before the first read
+/// differs from the one taken after it only because of that update, so a consistency consumer would
+/// deterministically see "changed" on the first use of such a table through a wrapper, and
+/// `system.tables.modification_hash` would change after the first ordinary read of it.
+///
+/// Returns nullopt when the metadata update fails or the storage cannot tell whether it changed.
+std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr & storage, const ContextPtr & context);
+
 }

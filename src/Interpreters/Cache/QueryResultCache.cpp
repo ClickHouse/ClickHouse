@@ -362,26 +362,11 @@ std::optional<UInt128> computeTableModificationHashForConsistency(const StorageI
             return {};
     }
 
-    /// Some engines apply metadata lazily on the first use of the table (e.g. object storage resolves
-    /// the deferred Hive-partitioning sample path through `setInMemoryMetadata`, which advances the
-    /// metadata version folded into the hash). Trigger that update now - the same call the interpreter
-    /// makes before analysis - so the hash computed before the query reads the table agrees with the
-    /// one computed at finalization, after the read has performed the update. Runs after the access
-    /// check above because it may perform credentialed I/O (an object listing).
-    try
-    {
-        storage->updateExternalDynamicMetadataIfExists(context);
-    }
-    catch (...)
-    {
-        /// Ok to ignore: the metadata update failed, so we cannot verify consistency and
-        /// conservatively bail out.
-        return {};
-    }
-    metadata = storage->getInMemoryMetadataPtr(context, false);
-
-    auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
-    std::optional<UInt128> table_hash = storage->getModificationHash(snapshot, context);
+    /// Refreshes lazily applied external metadata first, so that the hash computed before the query
+    /// reads the table agrees with the one computed at finalization, after the read has performed that
+    /// update. Runs after the access check above because it may perform credentialed I/O (an object
+    /// listing).
+    std::optional<UInt128> table_hash = getModificationHashWithRefreshedMetadata(storage, context);
 
     if (!table_hash)
         return {}; /// The referenced table cannot tell whether it changed.

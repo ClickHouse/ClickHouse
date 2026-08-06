@@ -2411,10 +2411,13 @@ public:
     /// hash) track the table's current metadata, and the delegate was constructed with this table's
     /// `StorageID`, so the identity folded into the hash and the consumed-object-set lookup key (see
     /// `QueryConsumedObjectSets`) match the read path, which also goes through the delegate.
+    /// The delegate's metadata is refreshed first: a delegated object-storage backend resolves its
+    /// deferred Hive-partitioning sample path on first use, and `StorageProxy` does not forward
+    /// `updateExternalDynamicMetadataIfExists` either, so the hash taken before the first read would
+    /// otherwise differ from the one taken after it (see `getModificationHashWithRefreshedMetadata`).
     std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr context) const override
     {
-        auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
-        return nested->getModificationHash(nested->getStorageSnapshot(nested_metadata, context), context);
+        return getModificationHashWithRefreshedMetadata(nested, context);
     }
 
     /// Keep the persisted syntax as `URL(...)`, but materialize the `url_base`-resolved URL into the
