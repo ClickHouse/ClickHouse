@@ -47,6 +47,9 @@ UInt64 computeCountForPart(
             "Text index {} is not materialized in part {}. It must have been checked at plan time",
             index.index->index.name, data_part->name);
 
+    /// A single-token count is answered directly from the dictionary cardinality, so posting list is never read.
+    const bool single_token = resolved.query->getTokens().size() == 1;
+
     MergeTreeIndexDeserializationState state
     {
         .version = index_format.version,
@@ -54,6 +57,7 @@ UInt64 computeCountForPart(
         .part = *data_part,
         .index = *index.index,
         .readable_ranges = nullptr,
+        .skip_postings_deserialization = single_token,
     };
 
     const auto substreams = index.index->getSubstreams();
@@ -88,7 +92,7 @@ UInt64 computeCountForPart(
     const auto & tokens = resolved.query->getTokens();
 
     /// One granule per part (GRANULARITY ignored), so the dictionary cardinality is the exact part-wide count; no posting I/O.
-    if (tokens.size() == 1)
+    if (single_token)
     {
         const auto & token_infos = analyzer.getAllTokenInfos();
         auto it = token_infos.find(tokens.front());
