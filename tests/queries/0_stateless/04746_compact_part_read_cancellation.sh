@@ -173,37 +173,56 @@ WHERE explain ILIKE '%Name: idx_s%'"
 # reader's own check, so the token would report an interrupt with the text-index check reverted.
 # Cancelled by KILL rather than by a deadline, for the reason given above the compact timeout arm:
 # analysing this index costs more than a fixed limit on a loaded runner, so a deadline can expire
-# before the read starts. KILL is ordered after the handshake below, so it always arrives while the
-# read is running.
+# before the read starts.
+#
+# The handshake below cannot prove the read has begun: SelectedMarks is incremented once index
+# analysis is over but before the pipeline runs, and no counter advances while the reader walks
+# marks, so every available signal either precedes the read or appears only after it ends. A cancel
+# sent on the earlier one lands before the reader is entered whenever the gap between them
+# stretches, which is what a loaded runner does. So retry, keyed on the same interrupt-site
+# diagnostic the compact arms use, growing the pause before the cancel until it lands inside.
+# Every pause stays below how long the read lasts, because one that outlasted it would let the query
+# finish and leave the diagnostic absent for the opposite reason, which this retry cannot tell apart
+# and would answer by pausing longer still. Load only slows the walk, so that margin is smallest on
+# an idle machine.
 text_err="${CLICKHOUSE_TMP}/04746_text_err.txt"
-text_query_id="text_read_cancel_${CLICKHOUSE_DATABASE}_$$"
-${CLICKHOUSE_CLIENT} --query_id "$text_query_id" \
-    --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
-    --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 \
-    -q "$text_query" >/dev/null 2>"$text_err" &
-text_pid=$!
-
-# Wait until the query is inside the single block read: every mark has been selected, so analysis
-# is over, while no row has reached the pipeline yet (read_rows = 0), so the reader is still
-# walking marks. No counter advances during that walk, which is why the handshake tests entry
-# into the read rather than progress through it.
 text_reading=0
-for _ in $(seq 1 600); do
-    text_reading=$(${CLICKHOUSE_CLIENT} -q "
-        SELECT ProfileEvents['SelectedMarks'] > 0 AND read_rows = 0
-        FROM system.processes WHERE query_id = '$text_query_id'")
-    [ "$text_reading" = "1" ] && break
-    sleep 0.1
+for text_settle in 0 0.25 0.5 1 2 4; do
+    text_query_id="text_read_cancel_${CLICKHOUSE_DATABASE}_$$_${text_settle}"
+    ${CLICKHOUSE_CLIENT} --query_id "$text_query_id" \
+        --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
+        --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 \
+        -q "$text_query" >/dev/null 2>"$text_err" &
+    text_pid=$!
+
+    # Every mark has been selected, so analysis is over, while no row has reached the pipeline yet
+    # (read_rows = 0), so the query has not delivered a block.
+    text_reading=0
+    for _ in $(seq 1 600); do
+        text_reading=$(${CLICKHOUSE_CLIENT} -q "
+            SELECT ProfileEvents['SelectedMarks'] > 0 AND read_rows = 0
+            FROM system.processes WHERE query_id = '$text_query_id'")
+        [ "$text_reading" = "1" ] && break
+        sleep 0.1
+    done
+
+    if [ "$text_reading" != "1" ]; then
+        wait "$text_pid" 2>/dev/null
+        break
+    fi
+
+    [ "$text_settle" != "0" ] && sleep "$text_settle"
+    ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$text_query_id' SYNC FORMAT Null"
+    wait "$text_pid" 2>/dev/null
+    grep -qF 'While reading part' "$text_err" && break
 done
 
 echo -n 'text kill observed '
 if [ "$text_reading" != "1" ]; then
     echo 'did not observe the in-block read phase'
 else
-    ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$text_query_id' SYNC FORMAT Null"
     inside_part_read "$text_err"
 fi
-wait "$text_pid" 2>/dev/null
 rm -f "$text_err"
 
 # The line above proves the query stopped inside a block read, and 'text index used' proves the
