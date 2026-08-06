@@ -203,6 +203,15 @@ ContextPtr getShippedFragmentContext(const QueryTreeNodePtr & query_tree, Contex
 /// This mirrors the optimizer-side override in `optimizeTree` (`ReadFromLocalParallelReplicaStep`): if a new
 /// setting starts gating the in-order read path from the step context, it must be added here too.
 ///
+/// The stream-budget pair is on the list because the `ReadFromMergeTree` constructor re-derives the stream
+/// budget from the supplied context: it clamps (or, with the asynchronous-read pool, re-expands)
+/// `requested_num_streams` by `max_streams_for_merge_tree_reading` before `copyReadInOrderContractFrom` runs,
+/// and `output_streams_limit` is re-computed the same way. The rebuilt step is handed the shipped fragment's
+/// already-budgeted stream count, so re-clamping it by the *outer* value would make the initiator-local
+/// rebuild disagree with the remote replicas on how many read streams the fragment has - and for an in-order
+/// read the per-part split streams are a coordinator contract: only the snapshot replica may introduce
+/// stream ids, so streams the initiator did not build are dropped as unknown.
+///
 /// `fragment_context` is taken per reading step, not once for the whole fragment: with
 /// `parallel_replicas_allow_view_over_mergetree` a view can expand into a `UNION ALL` whose branches carry their
 /// own `SETTINGS`, and the analyzer gives each branch its own `QueryNode` context. Each branch is planned by its
@@ -216,6 +225,8 @@ static ContextPtr makeShippedFragmentReadingContext(const ContextPtr & context, 
         "read_in_order_use_virtual_row",
         "read_in_order_use_virtual_row_per_block",
         "read_in_order_two_level_merge_threshold",
+        "max_streams_for_merge_tree_reading",
+        "allow_asynchronous_read_from_io_pool_for_merge_tree",
     };
 
     if (!fragment_context || fragment_context.get() == context.get())
