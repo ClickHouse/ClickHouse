@@ -30,6 +30,18 @@ function children_planned()
     "
 }
 
+# How many parts a query selected. `ReadFromMergeTree::initializePipeline` increments this while
+# building a child's pipeline, so a non-zero value means the retained plans were really built.
+function parts_selected()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
+        SELECT sum(ProfileEvents['SelectedParts']) FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND query_id = '$1' AND type != 'QueryStart' AND current_database = currentDatabase()
+    "
+}
+
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT ${FP}" 2>/dev/null ||:
@@ -148,4 +160,14 @@ elif [ "$break_planned" -lt "$control_planned" ]; then
     echo "break mode planned fewer children than the control"
 else
     echo "FAIL: 'break' overflow mode planned all ${break_planned} children"
+fi
+
+# Stopping early must keep the children already planned, not discard them: over-truncating
+# `selected_tables` would leave the pipeline empty, which all the assertions above would still
+# accept. A lower bound, because the number of parts is not the property under test.
+break_parts=$(parts_selected "${BREAK_QID}")
+if [ "$break_parts" -ge 1 ]; then
+    echo "break mode built the pipeline of the children it planned"
+else
+    echo "FAIL: 'break' overflow mode selected ${break_parts} parts, so it dropped the planned children"
 fi
