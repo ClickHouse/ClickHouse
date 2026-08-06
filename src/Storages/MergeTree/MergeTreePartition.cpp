@@ -7,8 +7,10 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/FieldVisitors.h>
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
@@ -392,13 +394,12 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
     return res;
 }
 
-/// `load` sizes `value` before filling it, so a throw part way through leaves default-constructed
-/// Fields, which are Null, behind. A partition key column is not nullable and rejects them --
-/// LowCardinality throws "ColumnUnique can't contain null values" -- so serializing a partially
-/// loaded partition would abort the server from a path that only wants to log the part.
-static DataTypePtr nullableIfValueIsNull(const DataTypePtr & type, const Field & value)
+/// A partially loaded `value` keeps Nulls, which a partition key column rejects -- and serializing
+/// one must not throw, it only ever happens to log a part. Nullable(Nothing) renders identically
+/// and, unlike Nullable(<key type>), exists for every type, Array and Map included.
+static DataTypePtr typeForValue(const DataTypePtr & type, const Field & value)
 {
-    return value.isNull() ? makeNullableOrLowCardinalityNullable(type) : type;
+    return value.isNull() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : type;
 }
 
 void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const
@@ -414,7 +415,7 @@ void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, Wri
     else if (key_size == 1)
     {
         const DataTypePtr & type = partition_key_sample.getByPosition(0).type;
-        auto effective_type = nullableIfValueIsNull(type, value[0]);
+        auto effective_type = typeForValue(type, value[0]);
         auto column = effective_type->createColumn();
         column->insert(value[0]);
         effective_type->getDefaultSerialization()->serializeText(*column, 0, out, format_settings);
@@ -426,7 +427,7 @@ void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, Wri
         for (size_t i = 0; i < key_size; ++i)
         {
             const auto & type = partition_key_sample.getByPosition(i).type;
-            auto effective_type = nullableIfValueIsNull(type, value[i]);
+            auto effective_type = typeForValue(type, value[i]);
             types.push_back(effective_type);
             auto column = effective_type->createColumn();
             column->insert(value[i]);
@@ -461,8 +462,21 @@ void MergeTreePartition::load(const IMergeTreeDataPart & part)
     /// For compatibility we should read values of Bool data type as 0/1 int Field, not as bool true/false Field.
     settings.binary.read_bool_field_as_int = true;
     value.resize(partition_key_sample.columns());
-    for (size_t i = 0; i < partition_key_sample.columns(); ++i)
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, settings);
+    size_t i = 0;
+    try
+    {
+        for (; i < partition_key_sample.columns(); ++i)
+            partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, settings);
+    }
+    catch (Exception & e)
+    {
+        /// Otherwise the failure surfaces as a bare "Attempt to read after EOF" with no hint that
+        /// partition.dat of this part is the damaged file. The values not yet read stay Null.
+        e.addMessage(
+            "while reading partition value of column {} from partition.dat of part {}",
+            backQuote(partition_key_sample.getByPosition(i).name), part.name);
+        throw;
+    }
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(

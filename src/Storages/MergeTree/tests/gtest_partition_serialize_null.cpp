@@ -2,8 +2,11 @@
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -76,6 +79,31 @@ TEST(MergeTreePartitionSerializeNull, CompositeKeyPartiallyLoaded)
     String serialized;
     ASSERT_NO_THROW(serialized = partition.serializeToString(metadata));
     EXPECT_EQ(serialized, "('dc1',NULL)");
+}
+
+/// Array, Map and Tuple are all legal partition key types, and none of them can carry a null:
+/// Nullable(Array) and Nullable(Map) do not exist at all, and Nullable(Tuple) only builds a
+/// column when enable_nullable_tuple_type is set. Widening to Nullable(<key type>) would swap
+/// the abort for an exception, which is just as wrong on a path that only wants to log.
+TEST(MergeTreePartitionSerializeNull, TypesThatCannotCarryNull)
+{
+    auto array = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
+    auto map = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt8>());
+    auto tuple = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt8>()});
+
+    for (const auto & type : DataTypes{array, map, tuple})
+    {
+        MergeTreePartition single;
+        single.value = Row{Field()};
+        EXPECT_EQ(single.serializeToString(metadataWithPartitionKey({{"key", type}})), "ᴺᵁᴸᴸ")
+            << "partition key type " << type->getName();
+    }
+
+    MergeTreePartition composite;
+    composite.value = Row{Field(), Field()};
+    EXPECT_EQ(
+        composite.serializeToString(metadataWithPartitionKey({{"arr", array}, {"tup", tuple}})),
+        "(NULL,NULL)");
 }
 
 /// Non-null values must serialize exactly as before; the fix only widens the type for a Null.
