@@ -286,23 +286,31 @@ This can speed up the non-joined phase when using the `parallel_hash` join algor
 When disabled, non-joined rows are processed by a single thread.
 )", 0) \
     DECLARE(MaxThreads, max_insert_threads, 0, R"(
-The maximum number of threads to execute the `INSERT SELECT` query.
+The maximum number of threads to execute the `INSERT` query.
+
+This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent from
+`clickhouse-client` or over the HTTP interface. The writing side of the pipeline
+(squashing the blocks and writing them to the destination table) is parallelized
+across up to this many threads.
 
 Possible values:
 
 - 0 — Auto. Uses the number of CPU cores available to the server (the same auto value as [`max_threads`](#max_threads)), reduced under memory pressure by [`max_insert_threads_min_free_memory_per_thread`](#max_insert_threads_min_free_memory_per_thread).
-- 1 — `INSERT SELECT` is executed in a single thread (no parallel execution). Use this to preserve the insertion order of `INSERT ... SELECT`.
+- 1 — the `INSERT` is executed in a single thread (no parallel execution). Use this to preserve the insertion order of `INSERT ... SELECT`.
 - Positive integer bigger than 1 — Parallel execution with the specified number of threads.
 
-Before version 26.8 the default was `1` (no parallel execution). Since 26.8 the default (`0`) resolves to the number of CPU cores, so `INSERT SELECT` is parallelized by default. Set `max_insert_threads` to `1` (or use the `compatibility` setting) to restore the previous behavior.
-
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
-Higher values will lead to higher memory usage.
+Before version 26.8 the default was `1` (no parallel execution). Since 26.8 the default (`0`) resolves to the number of CPU cores, so `INSERT` is parallelized by default. Set `max_insert_threads` to `1` (or use the `compatibility` setting) to restore the previous behavior.
 
 Cloud default value:
 - `1` for nodes with 8 GiB memory
 - `2` for nodes with 16 GiB memory
 - `4` for larger nodes
+
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
+For a plain `INSERT`, the input data is read and parsed as a single stream, and the pipeline is then resized to this many streams for writing.
+The write-side parallelization applies only to synchronous plain `INSERT`s: asynchronous inserts ([`async_insert`](#async_insert) `= 1`) are stored in a queue and flushed in the background, so they are unaffected by this setting and always stay single-stream.
+The writing side is parallelized only when it is safe to do so; otherwise it stays single-stream and this setting has no effect on it. In particular, the write is kept single-stream when [`use_strict_insert_block_limits`](#use_strict_insert_block_limits) is enabled, a destination table (or a table it forwards to) deduplicates inserted blocks, and insert deduplication is enabled for the query (see [`deduplicate_insert`](#deduplicate_insert)), when the destination has dependent materialized views — including views of a table the destination forwards to, e.g. behind an `Alias` — (unless [`parallel_view_processing`](#parallel_view_processing) is enabled and the dependent view chains are free of deduplication hazards — deduplication in the views is disabled ([`deduplicate_blocks_in_dependent_materialized_views`](#deduplicate_blocks_in_dependent_materialized_views)) or no dependent view path can deduplicate), and always for `Buffer` and `Distributed` destinations. A `Buffer` flushes in its own context and a `Distributed` forwards the write to a remote shard (which may itself buffer the data), so this query's deduplication settings do not govern the final write and it is kept single-stream regardless of them. A non-parallel quorum insert ([`insert_quorum`](#insert_quorum) is `2` or greater, or `'auto'`, and [`insert_quorum_parallel`](#insert_quorum_parallel) is disabled) also stays single-stream, because it permits only one in-flight quorum part per table.
+Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
@@ -2790,8 +2798,7 @@ HTTP send timeout (in seconds).
 
 Possible values:
 
-- Any positive integer.
-- 0 - Disabled (infinite timeout).
+- Any positive integer (seconds). `0` is **not** an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
 
 :::note
 It's applicable only to the default profile. A server reboot is required for the changes to take effect.
@@ -2802,8 +2809,7 @@ HTTP receive timeout (in seconds).
 
 Possible values:
 
-- Any positive integer.
-- 0 - Disabled (infinite timeout).
+- Any positive integer (seconds). `0` is **not** an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
 )", 0) \
     DECLARE(UInt64, http_max_uri_size, 1048576, R"(
 Sets the maximum URI length of an HTTP request.
@@ -4067,7 +4073,7 @@ Execute a pipeline for reading dictionary source in several threads. It's suppor
 Controls loading of a dictionary when specified in the `SETTINGS` clause of `CREATE DICTIONARY`: `1` defers loading until first use, `0` loads the dictionary at creation, `'auto'` follows the server setting `dictionaries_lazy_load`. Has no effect when set on a session or query level.
 )", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
-Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
+Send server text logs with specified minimum level to client. Valid values: 'test', 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
     DECLARE(String, send_logs_source_regexp, "", R"(
 Send server text logs with specified regexp to match log source name. Empty means all sources.
@@ -4762,7 +4768,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
-    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, false, R"(
+    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, true, R"(
 Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
 queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
 exactly partitions rows into defaults and non-defaults of `col`. The count is then
@@ -4802,7 +4808,7 @@ Possible values:
 See also:
 
 - [optimize_trivial_count_query](#optimize_trivial_count_query)
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -5985,13 +5991,6 @@ WHERE (_part, _part_offset) IN (
 
 Without this setting, the outer and inner queries may operate on different data snapshots, leading to incorrect results.
 
-:::note
-Enabling this setting disables the optimization which removes unnecessary data parts from snapshots once the planning stage is complete.
-As a result, long-running queries may hold onto obsolete parts for their entire duration, delaying part cleanup and increasing storage pressure.
-
-This setting currently applies only to tables from the MergeTree family.
-:::
-
 Possible values:
 
 - 0 - Disabled
@@ -6190,11 +6189,21 @@ When set, relative URLs are resolved as follows:
 - Query-only reference (e.g. `?x=1`): appended to the base URL path (replacing any existing query/fragment).
 - Fragment-only reference (e.g. `#frag`): appended to the base URL, preserving any query string (replacing any existing fragment).
 - Empty reference: returns the base URL without fragment.
+- If the base URL is only a scheme (e.g. `file://`), a path-relative URL is appended to it directly: `file://` + `data.csv` = `file://data.csv`, which for the `file://` scheme means a path relative to the user_files directory (the current directory for clickhouse-local). Dot segments are kept as-is in this case, so the target engine resolves them against its own base directory.
 
 For example, if `url_base` is `https://example.com/def/`, then:
 - `data.csv` resolves to `https://example.com/def/data.csv`
 - `/test/data.csv` resolves to `https://example.com/test/data.csv`
 - `//other.com/test/data.csv` resolves to `https://other.com/test/data.csv`
+)", 0) \
+    DECLARE(String, s3_base, "", R"(
+The base URL used to resolve relative URLs in the [s3](../../sql-reference/table-functions/s3.md) table function and the [S3](../../engines/table-engines/integrations/s3.md) table engine, as well as in the table functions that share their configuration (`s3Cluster`, `gcs`, `oss`).
+
+When set, a URL without a scheme is resolved against `s3_base` per RFC 3986, using the same rules as [url_base](#url_base). URLs that already contain a scheme are used as-is.
+
+For example, if `s3_base` is `s3://clickhouse-public-datasets/`, then `s3('hits_compatible/hits.csv')` reads `s3://clickhouse-public-datasets/hits_compatible/hits.csv`.
+
+The base URL can use any form accepted by the `s3` table function, e.g. `s3://bucket/`, `https://bucket.s3.amazonaws.com/` or `https://endpoint/bucket/`.
 )", 0) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -6630,6 +6639,8 @@ Possible values:
 
 - `left` - Decorrelation process will produce LEFT JOINs and input table will appear on the left side.
 - `right` - Decorrelation process will produce RIGHT JOINs and input table will appear on the right side.
+
+When the subquery input is shared through an in-memory buffer (see `correlated_subqueries_use_in_memory_buffer`), `right` is used regardless of this setting, because only that layout evaluates the buffer writer before its reader. The join kind is an internal detail of the decorrelated plan and does not change the result.
 )", 0) \
     DECLARE(Bool, correlated_subqueries_use_in_memory_buffer, true, R"(
 Use in-memory buffer for correlated subquery input to avoid its repeated evaluation.
@@ -8101,6 +8112,9 @@ As each series represents a node in Keeper, it is recommended to have no more th
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
+    DECLARE(Bool, throw_on_hive_partitioning_resolution_failure, true, R"(
+Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
+)", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
 The former is used when we know that the right table size is below the threshold.
@@ -8415,6 +8429,10 @@ Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
+    DECLARE(Bool, use_text_index_negative_tokens_cache, true, R"(
+Whether to cache text index tokens that are absent from a data part.
+The negative tokens cache uses the text index tokens cache and avoids repeated dictionary lookups for absent tokens.
+)", 0) \
     DECLARE(Bool, use_text_index_header_cache, true, R"(
 Whether to cache deserialized text index headers in memory.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
@@ -8710,7 +8728,7 @@ Maximum total output (completion) tokens across all AI function API calls in a s
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to embedding functions (notably aiEmbed), which never produce output tokens.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
+    DECLARE(UInt64, ai_function_max_api_calls_per_query, 1000, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
 )", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
@@ -8724,6 +8742,9 @@ Name of the named collection used by the text AI functions (`aiGenerate`, `aiCla
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_embedding_default_credentials, "", R"(
 Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. `aiEmbed` takes `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, ai_function_allow_insecure_endpoint, false, R"(
+If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-HTTPS endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
