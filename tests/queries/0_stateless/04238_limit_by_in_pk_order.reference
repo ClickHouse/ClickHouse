@@ -240,7 +240,18 @@ DROP TABLE test_multi_and;
 -- after that many completed groups. Issue #113110.
 DROP TABLE IF EXISTS test_outer_limit;
 CREATE TABLE test_outer_limit (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
-INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(1e6) SETTINGS max_insert_block_size = 1000000;
+-- Eight parts, not one. With a single part `num_streams` collapses to 1, and one stream serves the
+-- outer LIMIT from the first granules whether or not a group bound was recorded, so the `read_rows`
+-- assertions below stop discriminating. Eight parts keep them meaningful at any stream count.
+SYSTEM STOP MERGES test_outer_limit;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(0, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(125000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(250000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(375000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(500000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(625000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(750000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(875000, 125000) SETTINGS max_insert_block_size = 1000000;
 -- Reverse read, LIMIT BY on the full key: the reported shape. Reads under a tenth of the table.
 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS log_comment = '04238_outer_limit_full';
 99999	89	4	99999
@@ -371,7 +382,15 @@ DROP TABLE test_outer_limit_parts;
 -- group bound is not recorded when one is present anywhere in the subtree.
 DROP TABLE IF EXISTS test_outer_limit_stateful;
 CREATE TABLE test_outer_limit_stateful (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
-INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(1e6) SETTINGS max_insert_block_size = 1000000;
+SYSTEM STOP MERGES test_outer_limit_stateful;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(0, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(125000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(250000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(375000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(500000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(625000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(750000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(875000, 125000) SETTINGS max_insert_block_size = 1000000;
 SELECT a, b, c, z, neighbor(z, 1) AS nb FROM test_outer_limit_stateful ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS allow_deprecated_error_prone_window_functions = 1, log_comment = '04238_outer_limit_stateful_expr';
 99999	89	4	99999	199999
 99999	82	2	199999	299999
