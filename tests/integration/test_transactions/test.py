@@ -1384,3 +1384,136 @@ def test_kill_transaction_dead_rename_mutation_does_not_block_alter(start_cluste
     )
 
     node.query("DROP TABLE IF EXISTS mt_kill_txn_dead_rename SYNC")
+
+
+def test_kill_transaction_mutation_task_selected_before_rollback(start_cluster):
+    """
+    Regression test for the mutate task that is selected while its transaction
+    is still live and only then cancelled by KILL TRANSACTION
+    (https://github.com/ClickHouse/ClickHouse/issues/83252).
+
+    StorageMergeTree::scheduleDataProcessingJob releases
+    currently_processing_in_background_mutex after selectPartsToMutate and only
+    then queues the task, while the rollback's killMutation sweep cancels only
+    tasks that are already in MergeList, and MutatePlainMergeTreeTask enters
+    MergeList in prepare.  A task selected just before KILL TRANSACTION
+    therefore misses the sweep; without the re-check in
+    MutatePlainMergeTreeTask it runs the whole mutate pass only to throw from
+    MergeTreeTransaction::checkIsNotCancelled at commit time.
+
+    The pause failpoint mt_mutate_task_pause_before_prepare holds the selected
+    task exactly between the selection and prepare, so the transaction can be
+    killed deterministically inside that window.  Merges stay enabled: the
+    mutation must be selected for the scenario to apply.
+    """
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_selected_task SYNC")
+    node.query(
+        "CREATE TABLE mt_kill_txn_selected_task (key UInt64, value UInt64)"
+        " ENGINE=MergeTree ORDER BY key"
+    )
+    node.query(
+        "INSERT INTO mt_kill_txn_selected_task SELECT number, 0 FROM numbers(100)"
+    )
+
+    session = 46
+    alter_thread = None
+    try:
+        # Enabled before the mutation exists, so the selected task cannot slip
+        # past the pause point.
+        node.query("SYSTEM ENABLE FAILPOINT mt_mutate_task_pause_before_prepare")
+
+        tx(session, "BEGIN TRANSACTION")
+        tid = tx(session, "SELECT transactionID()").strip()
+        assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
+
+        # A mutation inside a transaction always waits for itself, and its task
+        # is paused at the failpoint, so run it in a thread.  It is expected to
+        # fail: its transaction gets killed.
+        def run_alter():
+            try:
+                tx(
+                    session,
+                    "ALTER TABLE mt_kill_txn_selected_task UPDATE value = 1 WHERE 1"
+                    " SETTINGS max_execution_time = 60",
+                )
+            except Exception:
+                pass
+
+        alter_thread = threading.Thread(target=run_alter)
+        alter_thread.start()
+
+        # Wait until the mutation entry is registered, remember its version:
+        # the assertions below must not confuse it with the later healthy one.
+        assert_eq_with_retry(
+            node,
+            "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+            " AND table='mt_kill_txn_selected_task'",
+            "1",
+        )
+        dead_mutation_id = node.query(
+            "SELECT mutation_id FROM system.mutations WHERE database=currentDatabase()"
+            " AND table='mt_kill_txn_selected_task'"
+        ).strip()
+        dead_version = dead_mutation_id.removeprefix("mutation_").removesuffix(".txt")
+        assert dead_version.isdigit(), f"Unexpected mutation id: {dead_mutation_id}"
+
+        # The task for the mutation is selected (its transaction is still live)
+        # and is now paused between the selection and prepare.
+        node.query(
+            "SYSTEM WAIT FAILPOINT mt_mutate_task_pause_before_prepare PAUSE"
+        )
+
+        # The rollback sweep runs while the task is not in MergeList yet, so it
+        # cannot cancel the task; it removes the mutation entry.
+        node.query(f"KILL TRANSACTION WHERE tid = {tid}")
+        assert (
+            node.query(
+                f"SELECT count() FROM system.transactions WHERE tid = {tid}"
+            ).strip()
+            == "0"
+        ), "The killed transaction must be gone from the running list"
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+                " AND table='mt_kill_txn_selected_task'"
+            ).strip()
+            == "0"
+        ), "killMutation must have removed the cancelled mutation entry"
+    finally:
+        # Resume the task: with the re-check it skips the cancelled mutation,
+        # without it it mutates the part and fails at commit time.
+        node.query("SYSTEM DISABLE FAILPOINT mt_mutate_task_pause_before_prepare")
+
+        if alter_thread is not None:
+            alter_thread.join()
+
+        try:
+            tx(session, "ROLLBACK")
+        except Exception:
+            pass
+
+    # A later mutation is not blocked by the skipped task; it also serves as a
+    # barrier: it can only run after the skipped task releases its parts.
+    node.query(
+        "ALTER TABLE mt_kill_txn_selected_task UPDATE value = 2 WHERE 1",
+        settings={"mutations_sync": 1},
+    )
+    assert (
+        node.query("SELECT sum(value) FROM mt_kill_txn_selected_task").strip() == "200"
+    )
+
+    # The resumed task must not have started mutating the part to the cancelled
+    # mutation's version: no part_log activity for that version at all.
+    node.query("SYSTEM FLUSH LOGS part_log")
+    assert (
+        node.query(
+            "SELECT count() FROM system.part_log"
+            " WHERE database = currentDatabase()"
+            " AND table = 'mt_kill_txn_selected_task'"
+            " AND event_type IN ('MutatePartStart', 'MutatePart')"
+            f" AND part_name LIKE '%\\\\_{dead_version}'"
+        ).strip()
+        == "0"
+    ), "The task of a cancelled transactional mutation must not mutate the part"
+
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_selected_task SYNC")

@@ -5,8 +5,11 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/TransactionID.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Core/Settings.h>
@@ -21,6 +24,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char mt_mutate_task_pause_before_prepare[];
 }
 
 
@@ -103,6 +111,26 @@ bool MutatePlainMergeTreeTask::executeStep()
     {
         case State::NEED_PREPARE:
         {
+            FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_prepare);
+
+            /// The task is queued after `StorageMergeTree::scheduleDataProcessingJob` releases
+            /// `currently_processing_in_background_mutex`, so `KILL TRANSACTION` can cancel the
+            /// mutation's transaction between the selection and this point. The rollback's
+            /// `killMutation` sweep cannot cancel this task, because it only cancels tasks that
+            /// are already in `MergeList`, and this task enters `MergeList` in `prepare`.
+            /// Re-check the transaction here: otherwise the task would run the whole mutate pass
+            /// only to throw from `MergeTreeTransaction::checkIsNotCancelled` at commit time.
+            if (const auto & txn = merge_mutate_entry->txn; txn && txn->getCSN() == Tx::RolledBackCSN)
+            {
+                LOG_DEBUG(
+                    getLogger("MutatePlainMergeTreeTask"),
+                    "Skipping mutation of part {}: transaction {} was cancelled after the mutation was selected",
+                    merge_mutate_entry->future_part->name,
+                    txn->tid);
+                state = State::NEED_FINISH;
+                return true;
+            }
+
             prepare();
             state = State::NEED_EXECUTE;
             return true;
