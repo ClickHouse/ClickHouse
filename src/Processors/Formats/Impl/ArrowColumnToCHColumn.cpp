@@ -897,6 +897,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
                                                       const DataTypePtr & type_hint, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
     DataTypePtr internal_type;
+    bool check_date32_range = false;
     bool check_date_range = false;
 
     if (type_hint && isNumber(type_hint))
@@ -904,10 +905,18 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
         /// If requested type is a number, read as raw number without checking if it's a valid date.
         internal_type = std::make_shared<DataTypeInt32>();
     }
+    else if (type_hint && isDate(*type_hint))
+    {
+        /// Arrow date32 can represent days outside the Date range [0, 65535]. The later cast of the
+        /// intermediate column to Date narrows the day number to UInt16 without checks, so validate
+        /// the range here, honoring `date_time_overflow_behavior` the same way as the Date32 branch.
+        internal_type = std::make_shared<DataTypeInt32>();
+        check_date_range = true;
+    }
     else
     {
         internal_type = std::make_shared<DataTypeDate32>();
-        check_date_range = true;
+        check_date32_range = true;
     }
 
     auto internal_column = internal_type->createColumn();
@@ -919,25 +928,27 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
     {
         const auto & chunk = checkedCast<arrow::Date32Array>(*(arrow_column->chunk(chunk_i)), column_name);
 
-        if (check_date_range)
+        if (check_date32_range || check_date_range)
         {
+            const Int32 min_day = check_date_range ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM;
+            const Int32 max_day = check_date_range ? DATE_LUT_MAX_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
                 Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
-                if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM)
+                if (days_num > max_day || days_num < min_day)
                 {
                     switch (date_time_overflow_behavior)
                     {
                         case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                            days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                            days_num = (days_num < min_day) ? min_day : max_day;
                             break;
                         default:
                         /// Prior to introducing `date_time_overflow_behavior`, this function threw an error in case value was out of range.
                         /// In order to leave this behavior as default, we also throw when `date_time_overflow_mode == ignore`, as it is the setting's default value
                         /// (As we want to make this backwards compatible, not break any workflows.)
                             throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                                            "Input value {} of a column \"{}\" is out of allowed Date32 range, which is [{}, {}]",
-                                            days_num, column_name, DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                                            "Input value {} of a column \"{}\" is out of allowed {} range, which is [{}, {}]",
+                                            days_num, column_name, check_date_range ? "Date" : "Date32", min_day, max_day};
                     }
                 }
 

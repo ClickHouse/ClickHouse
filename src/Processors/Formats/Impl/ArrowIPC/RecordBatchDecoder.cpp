@@ -427,7 +427,13 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 /// (`readColumnWithDate32Data`): a day number outside ClickHouse's allowed Date32 range is
                 /// saturated or rejected according to `date_time_overflow_behavior` (its default `Ignore`,
                 /// like `Throw`, rejects — preserving the pre-`date_time_overflow_behavior` behavior)
-                /// instead of leaving an invalid Date32 in the result.
+                /// instead of leaving an invalid Date32 in the result. When the requested header type is
+                /// `Date`, enforce the narrower Date range [0, 65535] instead: `buildChunk` later casts the
+                /// intermediate Date32 column to `Date` without checks, narrowing the day number to UInt16,
+                /// so an unchecked extended Date32 value would wrap into an unrelated in-range `Date`.
+                const bool date32_as_date = effective_hint && isDate(stripHint(effective_hint));
+                const Int32 min_day = date32_as_date ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM;
+                const Int32 max_day = date32_as_date ? DATE_LUT_MAX_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int32)), "date32");
                 auto & data = assert_cast<ColumnInt32 &>(*column).getData();
                 data.resize(rows);
@@ -436,15 +442,15 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 for (size_t i = 0; i < rows; ++i)
                 {
                     Int32 days = src[i];
-                    if (days > DATE_LUT_MAX_EXTEND_DAY_NUM || days < DATE_LUT_MIN_EXTEND_DAY_NUM)
+                    if (days > max_day || days < min_day)
                     {
                         if (saturate)
-                            days = days < DATE_LUT_MIN_EXTEND_DAY_NUM ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                            days = days < min_day ? min_day : max_day;
                         else
                             throw Exception(
                                 ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                                "Arrow IPC date32 value {} is out of the allowed Date32 range [{}, {}]",
-                                days, DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM);
+                                "Arrow IPC date32 value {} is out of the allowed {} range [{}, {}]",
+                                days, date32_as_date ? "Date" : "Date32", min_day, max_day);
                     }
                     data[i] = days;
                 }

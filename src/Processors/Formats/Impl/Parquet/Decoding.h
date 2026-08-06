@@ -191,8 +191,13 @@ struct IntConverter : public FixedSizeConverter
     bool field_ipv4 = false; // IPv4
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
     bool field_signed = true; // Int64, otherwise UInt64
-    /// If not Ignore, it's a Date32 column and we should range-check it.
+    /// If not Ignore, it's a date column and we should range-check it.
     FormatSettings::DateTimeOverflowBehavior date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
+    /// Only used when date_overflow_behavior is not Ignore: the requested output type is Date rather
+    /// than Date32, so range-check against the narrower [0, DATE_LUT_MAX_DAY_NUM] window. The final
+    /// cast of the decoded Int32 column to Date narrows to UInt16 without checks, so an unchecked
+    /// extended Date32 value would wrap into an unrelated in-range Date.
+    bool date_target_is_date = false;
 
     bool isTrivial() const override
     {
