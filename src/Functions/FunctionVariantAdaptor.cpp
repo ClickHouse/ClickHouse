@@ -504,6 +504,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// we will insert NULL values in these rows.
 
     const auto process_list_element = tryGetProcessListElement();
+    const auto function_name = getName();
 
     for (size_t i = 0; i < num_variants; ++i)
     {
@@ -511,7 +512,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         if (!variants[i].column)
             continue;
 
-        checkQueryTimeLimit(process_list_element, getName());
+        checkQueryTimeLimit(process_list_element, function_name);
 
         auto func_base = try_build(variants_arguments[i]);
         if (!func_base)
@@ -786,10 +787,11 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     result_types.reserve(variant_alternatives.size());
 
     const auto process_list_element = tryGetProcessListElement();
+    const auto function_name = function_overload_resolver->getName();
 
     for (const auto & alternative : variant_alternatives)
     {
-        checkQueryTimeLimit(process_list_element, function_overload_resolver->getName());
+        checkQueryTimeLimit(process_list_element, function_name);
 
         /// Create arguments with this alternative instead of the Variant.
         /// Preserve original columns (especially ColumnConst) for non-Variant arguments.
