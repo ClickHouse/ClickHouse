@@ -191,11 +191,12 @@ SELECT count() FROM (EXPLAIN indexes = 1
 
 -- With `lazy_load_tables = 1` the object attached in the database is a `StorageTableProxy`, and it
 -- stays one for the process lifetime, so neither the MergeTree nor the common-virtual-columns test
--- recognises it. It is not classified prunable either: its read is a bare `getNested()->read`, so
--- which name its rows carry is a property of the nested storage, and resolving that here would
--- force-load a lazy table inside a planning decision. Arm C is why that matters -- a proxy over a
--- delegating storage carries its grandchildren's names. Arms A and B pay for it with a lost pruning
--- of a proxied MergeTree, which still answers correctly because the per-row filter applies above it.
+-- recognises it. It is classified by recursing into the nested storage through `tryGetNested`,
+-- which returns it only when it is already materialized and so never forces a lazy load. A nested
+-- MergeTree is not streaming, so the proxy is admitted. Arm C is why admitting is the right answer
+-- -- a proxy over a delegating storage carries its grandchildren's names. Arms A and B pay for it
+-- with a lost pruning of a proxied MergeTree, which still answers correctly because the per-row
+-- filter applies above it.
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 
@@ -248,6 +249,67 @@ SELECT _table, count() FROM merge(currentDatabase(), '^t04741_lzm_child$') GROUP
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
 
+-- The file-like engines (`File`, `URL`, the object storages) declare `_table` at `Reader` place and
+-- stamp it from their own id, so they may be pruned by a `_table` predicate. They do not declare
+-- `_database`, so their rows carry an empty one and a `_database` predicate must NOT prune them: arms
+-- F and G are the same child under the two predicates. `t04741_file_child` names a path that never
+-- exists, so opening it raises FILE_DOESNT_EXIST at the default `engine_file_empty_if_not_exists`,
+-- which makes the pruning observable: arm F succeeds only because the child is never opened.
+DROP TABLE IF EXISTS t04741_file_child;
+DROP TABLE IF EXISTS t04741_file_sibling;
+CREATE TABLE t04741_file_sibling (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t04741_file_sibling SELECT number FROM numbers(23);
+CREATE TABLE t04741_file_child (x UInt32) ENGINE = File(TSV, '04741_no_such_file.tsv');
+
+SELECT '-- arm F: a _table filter prunes the file-like child, so its missing file is never opened';
+SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_(child|sibling)$')
+    WHERE _table = 't04741_file_sibling' GROUP BY 1 ORDER BY 1;
+
+SELECT '-- arm F control: with no filter the same query opens the child and fails';
+SELECT count() FROM merge(currentDatabase(), '^t04741_file_(child|sibling)$'); -- { serverError FILE_DOESNT_EXIST }
+
+-- Arm G filters for the EMPTY `_database` the child's rows actually carry, which its own database
+-- name never matches, so the prefilter would exclude it. A `_database = currentDatabase()` arm would
+-- not discriminate: that name matches, so the child is kept whether or not the per-column rule holds.
+SELECT '-- arm G: a _database filter must not prune it, because its rows carry an empty _database';
+SELECT count() FROM merge(currentDatabase(), '^t04741_file_(child|sibling)$')
+    WHERE _database = ''; -- { serverError FILE_DOESNT_EXIST }
+
+SELECT '-- arm H: reading the file-like child by its own name still selects it';
+SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_sibling$')
+    WHERE _table = 't04741_file_sibling' GROUP BY 1 ORDER BY 1;
+
+-- `loop` re-reads its inner storage forever and declares no `_database`/`_table` of its own, so a
+-- query that names it cannot succeed either way and admitting an excluded one never terminates. Same
+-- for a `WindowView`, which forwards the read to an arbitrary `TO` target: both must stay prunable.
+DROP TABLE IF EXISTS t04741_loop_child;
+DROP TABLE IF EXISTS t04741_loop_inner;
+DROP TABLE IF EXISTS t04741_loop_sibling;
+CREATE TABLE t04741_loop_inner (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t04741_loop_inner SELECT number FROM numbers(29);
+CREATE TABLE t04741_loop_sibling (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t04741_loop_sibling SELECT number FROM numbers(31);
+CREATE TABLE t04741_loop_child AS loop(currentDatabase(), 't04741_loop_inner');
+
+SELECT '-- arm I: a _table filter prunes the loop child, so the query terminates';
+SELECT _table, count() FROM merge(currentDatabase(), '^t04741_loop_(child|sibling)$')
+    WHERE _table = 't04741_loop_sibling' GROUP BY 1 ORDER BY 1;
+
+SELECT '-- arm I control: the pruned plan really does not read it';
+SELECT count() FROM (EXPLAIN SELECT count() FROM merge(currentDatabase(), '^t04741_loop_(child|sibling)$')
+    WHERE _table = 't04741_loop_sibling')
+    WHERE explain ILIKE '%ReadFromLoop%';
+
+SELECT '-- arm I control: without the filter it is admitted, and it really is readable';
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM merge(currentDatabase(), '^t04741_loop_(child|sibling)$'))
+    WHERE explain ILIKE '%ReadFromLoop%';
+SELECT count() FROM (SELECT x FROM merge(currentDatabase(), '^t04741_loop_child$') LIMIT 5);
+
+DROP TABLE t04741_loop_child;
+DROP TABLE t04741_loop_sibling;
+DROP TABLE t04741_loop_inner;
+DROP TABLE t04741_file_child;
+DROP TABLE t04741_file_sibling;
 DROP TABLE t04741_dist_other_db;
 DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t04741_other_db_leaf;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
