@@ -9,6 +9,8 @@ import os
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.praktika.result import Result
@@ -330,104 +332,56 @@ def test_get_pr_state_by_branch_fails_closed(monkeypatch):
         assert "refusing to treat a failed lookup as 'no PR'" in str(e)
 
 
-def test_sync_team_review_requests_reconciles_managed_teams(monkeypatch):
-    changes = []
+def test_request_team_reviews_adds_only_missing_teams(monkeypatch):
+    requests = []
 
     def fake_get(command, verbose=False):
-        if "pulls/42/requested_reviewers" in command:
-            return '["clickpipes", "unmanaged-team"]'
-        if "viewer" in command:
-            return "clickhouse-gh[bot]"
-        if "issues/42/events" in command:
-            return (
-                '[{"id": 1, "event": "review_requested", '
-                '"requester": "clickhouse-gh[bot]", "team": "clickpipes"}]'
-            )
-        raise AssertionError(f"Unexpected command: {command}")
+        assert "pulls/42/requested_reviewers" in command
+        return '["clickpipes", "unmanaged-team"]'
 
-    def fake_change(method, team_slugs, pr, repo):
-        changes.append((method, team_slugs, pr, repo))
+    def fake_submit(team_slugs, pr, repo):
+        requests.append((team_slugs, pr, repo))
 
     monkeypatch.setattr(GH, "get_output_with_retries", staticmethod(fake_get))
-    monkeypatch.setattr(GH, "_change_team_review_requests", staticmethod(fake_change))
+    monkeypatch.setattr(GH, "_submit_team_review_requests", staticmethod(fake_submit))
 
-    assert GH.sync_team_review_requests(
-        desired_teams=["docs", "integrations-ecosystem"],
-        managed_teams=["docs", "clickpipes", "integrations-ecosystem"],
+    assert GH.request_team_reviews(
+        team_slugs=["docs", "clickpipes", "integrations-ecosystem"],
         pr=42,
         repo="ClickHouse/ClickHouse",
     )
-    assert changes == [
-        (
-            "POST",
-            ["docs", "integrations-ecosystem"],
-            42,
-            "ClickHouse/ClickHouse",
-        ),
-        ("DELETE", ["clickpipes"], 42, "ClickHouse/ClickHouse"),
+    assert requests == [
+        (["docs", "integrations-ecosystem"], 42, "ClickHouse/ClickHouse")
     ]
 
 
-def test_sync_team_review_requests_preserves_human_requests(monkeypatch):
-    changes = []
-
-    def fake_get(command, verbose=False):
-        if "pulls/42/requested_reviewers" in command:
-            return '["docs"]'
-        if "viewer" in command:
-            return "clickhouse-gh[bot]"
-        if "issues/42/events" in command:
-            return (
-                '[{"id": 1, "event": "review_requested", '
-                '"requester": "maintainer", "team": "docs"}]'
-            )
-        raise AssertionError(f"Unexpected command: {command}")
-
-    monkeypatch.setattr(GH, "get_output_with_retries", staticmethod(fake_get))
+def test_request_team_reviews_does_nothing_without_teams(monkeypatch):
     monkeypatch.setattr(
         GH,
-        "_change_team_review_requests",
-        staticmethod(lambda *args: changes.append(args)),
+        "get_output_with_retries",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected lookup")),
+    )
+    monkeypatch.setattr(
+        GH,
+        "_submit_team_review_requests",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected request")),
     )
 
-    assert GH.sync_team_review_requests(
-        desired_teams=[],
-        managed_teams=["docs", "clickpipes", "integrations-ecosystem"],
+    assert GH.request_team_reviews(
+        team_slugs=[],
         pr=42,
         repo="ClickHouse/ClickHouse",
     )
-    assert changes == []
 
 
-def test_get_team_review_request_owners_tracks_latest_request(monkeypatch):
-    events = "\n".join(
-        [
-            '[{"id": 1, "event": "review_requested", '
-            '"requester": "clickhouse-gh[bot]", "team": "docs"}]',
-            '[{"id": 2, "event": "review_request_removed", '
-            '"requester": "clickhouse-gh[bot]", "team": "docs"}, '
-            '{"id": 3, "event": "review_requested", '
-            '"requester": "maintainer", "team": "docs"}]',
-        ]
-    )
-    monkeypatch.setattr(
-        GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: events)
-    )
-
-    assert GH._get_team_review_request_owners(42, "ClickHouse/ClickHouse") == {
-        "docs": "maintainer"
-    }
-
-
-def test_sync_team_review_requests_fails_when_lookup_fails(monkeypatch):
+def test_request_team_reviews_fails_when_lookup_fails(monkeypatch):
     monkeypatch.setattr(
         GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: "")
     )
 
     try:
-        GH.sync_team_review_requests(
-            desired_teams=["docs"],
-            managed_teams=["docs"],
+        GH.request_team_reviews(
+            team_slugs=["docs"],
             pr=42,
             repo="ClickHouse/ClickHouse",
         )

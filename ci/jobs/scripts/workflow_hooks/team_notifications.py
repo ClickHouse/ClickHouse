@@ -15,7 +15,6 @@ INTEGRATIONS_DOCS_PREFIXES = (
 DOCS_TEAM = "docs"
 CLICKPIPES_TEAM = "clickpipes"
 INTEGRATIONS_ECOSYSTEM_TEAM = "integrations-ecosystem"
-MANAGED_DOCS_TEAMS = (DOCS_TEAM, CLICKPIPES_TEAM, INTEGRATIONS_ECOSYSTEM_TEAM)
 
 
 def normalize_path(file):
@@ -52,10 +51,7 @@ def check():
         "most likely failed to fetch the PR file list from the GitHub API. "
         "See the Config Workflow logs for the underlying error."
     )
-    GH.sync_team_review_requests(
-        desired_teams=get_docs_teams_to_request(changed_files),
-        managed_teams=MANAGED_DOCS_TEAMS,
-    )
+    GH.request_team_reviews(get_docs_teams_to_request(changed_files))
 
     if any(
         file.startswith(prefix)

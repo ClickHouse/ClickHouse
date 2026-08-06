@@ -50,25 +50,21 @@ def test_check_requests_docs_teams(monkeypatch):
                 "docs/integrations/language-clients/python/index.mdx",
             ]
 
-    synced = {}
+    requested = []
 
-    def fake_sync(desired_teams, managed_teams):
-        synced["desired"] = desired_teams
-        synced["managed"] = managed_teams
+    def fake_request(team_slugs):
+        requested.extend(team_slugs)
 
     monkeypatch.setattr(team_notifications, "Info", FakeInfo)
     monkeypatch.setattr(
-        team_notifications.GH, "sync_team_review_requests", staticmethod(fake_sync)
+        team_notifications.GH, "request_team_reviews", staticmethod(fake_request)
     )
 
     assert team_notifications.check()
-    assert synced == {
-        "desired": ["clickpipes", "integrations-ecosystem", "docs"],
-        "managed": ("docs", "clickpipes", "integrations-ecosystem"),
-    }
+    assert requested == ["clickpipes", "integrations-ecosystem", "docs"]
 
 
-def test_check_removes_review_requests_when_docs_only_pr_becomes_mixed(monkeypatch):
+def test_check_requests_no_teams_when_docs_pr_becomes_mixed(monkeypatch):
     changed_files = iter(
         [
             ["docs/integrations/clickpipes/home.mdx"],
@@ -81,27 +77,21 @@ def test_check_removes_review_requests_when_docs_only_pr_becomes_mixed(monkeypat
             assert key == "changed_files"
             return next(changed_files)
 
-    synced = []
+    requests = []
 
-    def fake_sync(desired_teams, managed_teams):
-        synced.append((desired_teams, managed_teams))
+    def fake_request(team_slugs):
+        requests.append(team_slugs)
 
     monkeypatch.setattr(team_notifications, "Info", FakeInfo)
     monkeypatch.setattr(
         team_notifications.GH,
-        "sync_team_review_requests",
-        staticmethod(fake_sync),
+        "request_team_reviews",
+        staticmethod(fake_request),
     )
 
     assert team_notifications.check()
     assert team_notifications.check()
-    assert synced == [
-        (
-            ["clickpipes", "docs"],
-            ("docs", "clickpipes", "integrations-ecosystem"),
-        ),
-        ([], ("docs", "clickpipes", "integrations-ecosystem")),
-    ]
+    assert requests == [["clickpipes", "docs"], []]
 
 
 def test_check_preserves_existing_type_id_notification(monkeypatch):
@@ -118,8 +108,8 @@ def test_check_preserves_existing_type_id_notification(monkeypatch):
     monkeypatch.setattr(team_notifications, "Info", FakeInfo)
     monkeypatch.setattr(
         team_notifications.GH,
-        "sync_team_review_requests",
-        staticmethod(lambda desired_teams, managed_teams: None),
+        "request_team_reviews",
+        staticmethod(lambda team_slugs: None),
     )
     monkeypatch.setattr(
         team_notifications.GH, "post_updateable_comment", staticmethod(fake_post)
