@@ -2000,6 +2000,46 @@ def test_math_binary_operators():
     )
 
     do_query_test(
+        "5 % +Inf",
+        100,
+        '{"resultType": "scalar", "result": [100, "5"]}',
+        [["1970-01-01 00:01:40.000", 5]],
+    )
+
+    do_query_test(
+        "vector(-5) % vector(-Inf)",
+        100,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [100, "-5"]}]}',
+        [["[]", "1970-01-01 00:01:40.000", -5]],
+    )
+
+    do_query_test(
+        "+Inf % 5",
+        100,
+        '{"resultType": "scalar", "result": [100, "NaN"]}',
+        [["1970-01-01 00:01:40.000", "nan"]],
+    )
+
+    do_query_test(
+        "5 % NaN",
+        100,
+        '{"resultType": "scalar", "result": [100, "NaN"]}',
+        [["1970-01-01 00:01:40.000", "nan"]],
+    )
+
+    do_query_test(
+        "(5 % (last_over_time(test[10s]) + +Inf))[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "5"], [135, "5"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:15.000',5),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    do_query_test(
         "25 ^ 0.5",
         100,
         '{"resultType": "scalar", "result": [100, "5"]}',
