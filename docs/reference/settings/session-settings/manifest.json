@@ -1,5 +1,5 @@
 {
-  "settings": 1276,
+  "settings": 1277,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -992,6 +992,7 @@
     "query_cache_system_table_handling": "/reference/settings/session-settings/query-cache",
     "query_cache_tag": "/reference/settings/session-settings/query-cache",
     "query_cache_ttl": "/reference/settings/session-settings/query-cache",
+    "query_cache_use_only_when_data_was_not_changed": "/reference/settings/session-settings/query-cache",
     "query_metric_log_interval": "/reference/settings/session-settings/other",
     "query_plan_aggregation_in_order": "/reference/settings/session-settings/query-plan",
     "query_plan_convert_any_join_to_semi_or_anti_join": "/reference/settings/session-settings/query-plan",
