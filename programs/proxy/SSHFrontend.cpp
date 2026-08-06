@@ -41,6 +41,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int SUPPORT_IS_DISABLED;
 }
 }
 
@@ -403,12 +405,33 @@ void handleSSH(int fd, const FrontendContext & ctx)
     }
 }
 
+void validateSSHKeys(const ProxyConfiguration & config)
+{
+    ssh_key key = nullptr;
+    if (ssh_pki_import_privkey_file(config.ssh.host_key_file.c_str(), nullptr, nullptr, nullptr, &key) != SSH_OK)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Cannot load the SSH host key from '{}' specified in <proxy><ssh><host_key_file>", config.ssh.host_key_file);
+    ssh_key_free(key);
+
+    key = nullptr;
+    if (ssh_pki_import_privkey_file(config.ssh.backend_key_file.c_str(), nullptr, nullptr, nullptr, &key) != SSH_OK)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Cannot load the SSH backend key from '{}' specified in <proxy><ssh><backend_key_file>", config.ssh.backend_key_file);
+    ssh_key_free(key);
+}
+
 #else
 
 void handleSSH(int fd, const FrontendContext & ctx)
 {
     LOG_ERROR(ctx.log, "SSH proxying requires a build with libssh (USE_SSH) on Linux");
     [[maybe_unused]] int err = ::close(fd);
+}
+
+void validateSSHKeys(const ProxyConfiguration &)
+{
+    /// Unreachable: the config loader rejects 'ssh' listeners on such builds.
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH proxying requires a build with libssh (USE_SSH) on Linux");
 }
 
 #endif

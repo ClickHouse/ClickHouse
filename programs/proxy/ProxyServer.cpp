@@ -236,6 +236,16 @@ void ProxyServer::start(const Poco::Util::AbstractConfiguration & abstract_confi
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "TLS features require a build with SSL support");
 #endif
 
+    /// A broken SSH credential must fail startup, not every accepted connection.
+    for (const auto & listener : config.listeners)
+    {
+        if (listener.protocol == ListenerProtocol::SSH)
+        {
+            validateSSHKeys(config);
+            break;
+        }
+    }
+
     /// Bind before starting the scheduler so a bind failure fails startup cleanly.
     bindAndListen();
 

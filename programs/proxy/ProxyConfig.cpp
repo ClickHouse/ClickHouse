@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <ProxyConfig.h>
 
 #include <Common/Exception.h>
@@ -14,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int SUPPORT_IS_DISABLED;
 }
 }
 
@@ -313,9 +316,20 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
 
     for (const auto & listener : res.listeners)
     {
-        if (listener.protocol == ListenerProtocol::SSH && res.ssh.host_key_file.empty())
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "An 'ssh' listener requires the proxy host key in <proxy><ssh><host_key_file>");
+        if (listener.protocol == ListenerProtocol::SSH)
+        {
+#if USE_SSH && defined(OS_LINUX)
+            if (res.ssh.host_key_file.empty())
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "An 'ssh' listener requires the proxy host key in <proxy><ssh><host_key_file>");
+            if (res.ssh.backend_key_file.empty())
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "An 'ssh' listener requires the proxy backend key in <proxy><ssh><backend_key_file>");
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "An 'ssh' listener requires a build with libssh (USE_SSH) on Linux");
+#endif
+        }
     }
 
     res.http.ping_path = config.getString("proxy.http.ping_path", "/ping");

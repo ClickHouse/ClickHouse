@@ -110,6 +110,10 @@ the options field, the comment, and `#` comment lines are ignored. A rule that s
 allowlist from which no key can be parsed is rejected at startup, so a malformed allowlist can never
 degrade into a rule that accepts every key.
 
+An `ssh` listener requires both `host_key_file` and `backend_key_file`, and both key files are
+loaded once at startup: a missing, unreadable, or unparseable key — or a build without SSH support —
+fails the start instead of silently dropping every connection at runtime.
+
 ## TLS {#tls}
 
 A listener can handle TLS in three ways:

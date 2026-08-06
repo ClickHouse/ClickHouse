@@ -63,6 +63,10 @@ void handlePassthrough(FiberSocket & client, const FrontendContext & ctx);
 /// re-originates a new SSH connection to the chosen backend (bastion). Takes ownership of @p fd.
 void handleSSH(int fd, const FrontendContext & ctx);
 
+/// Loads the configured SSH key files once, so that an unreadable or unparseable credential fails
+/// server startup instead of every accepted connection. Called only when an 'ssh' listener exists.
+void validateSSHKeys(const ProxyConfiguration & config);
+
 /// Classify a SQL query as "select", "insert" or "other" by its leading keyword.
 String classifyQuery(std::string_view query);
 
