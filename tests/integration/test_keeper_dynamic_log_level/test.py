@@ -41,7 +41,6 @@ def query_and_count_trace_messages():
     node.query(
         "SELECT * FROM system.zookeeper SETTINGS allow_unrestricted_reads_from_keeper = 'true'"
     )
-    node.exec_in_container(["bash", "-c", "sync"], privileged=True, user="root")
     return count_trace_messages()
 
 
