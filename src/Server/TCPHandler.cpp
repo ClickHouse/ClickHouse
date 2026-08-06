@@ -1637,7 +1637,7 @@ void TCPHandler::processTablesStatusRequest()
             /// Deserialize the body so its digest can bind the hash (same as `processQuery` reading
             /// the query before validating the per-query secret hash). Tables are resolved only after
             /// the hash validates below.
-            request.read(*in, client_tcp_protocol_version, MAX_TABLES_IN_INTERSERVER_STATUS_REQUEST);
+            request.read(*in, client_tcp_protocol_version, INTERSERVER_TABLES_STATUS_REQUEST_LIMITS);
 
             String cluster_secret;
             try
@@ -1674,23 +1674,27 @@ void TCPHandler::processTablesStatusRequest()
         }
         else
         {
-            /// An older peer sends no hash, so its request cannot be authenticated. Read it - the
-            /// Query packet of a not-yet-authenticated interserver peer is deserialized the same way -
-            /// but do not resolve the tables unless an earlier Query on this connection has already
-            /// authenticated with the cluster secret.
-            request.read(*in, client_tcp_protocol_version, MAX_TABLES_IN_INTERSERVER_STATUS_REQUEST);
+            /// An older peer sends no hash, so its request cannot be authenticated. A request that
+            /// will be rejected anyway is refused *before* its body is read, so strict mode does not
+            /// let an unauthenticated peer make the server deserialize anything.
+            if (!is_interserver_authenticated
+                && server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth])
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "TablesStatusRequest requires interserver authentication");
+
+            /// Otherwise read it - the Query packet of a not-yet-authenticated interserver peer is
+            /// deserialized the same way, under the same kind of bounds - but do not resolve the
+            /// tables unless an earlier Query on this connection has already authenticated with the
+            /// cluster secret.
+            request.read(*in, client_tcp_protocol_version, INTERSERVER_TABLES_STATUS_REQUEST_LIMITS);
 
             if (!is_interserver_authenticated)
             {
-                if (server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth])
-                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                        "TablesStatusRequest requires interserver authentication");
-
                 LOG_WARNING(LogFrequencyLimiter(log, 10),
                     "Answering an unauthenticated interserver TablesStatusRequest with a placeholder response, "
-                    "because the client is too old to sign it with the cluster secret. Replica staleness and "
-                    "readonly state are not taken into account for distributed queries initiated on such a "
-                    "client. Consider upgrading all nodes in cluster.");
+                    "because the client is too old to sign it with the cluster secret. Replica staleness, "
+                    "readonly state and table existence are not taken into account for distributed queries "
+                    "initiated on such a client. Consider upgrading all nodes in cluster.");
                 respond_with_placeholder = true;
             }
         }
@@ -1710,7 +1714,7 @@ void TCPHandler::processTablesStatusRequest()
     {
         chassert(session);
         context_to_resolve_table_names = session->sessionContext();
-        request.read(*in, client_tcp_protocol_version, DEFAULT_MAX_STRING_SIZE);
+        request.read(*in, client_tcp_protocol_version, {DEFAULT_MAX_STRING_SIZE, DEFAULT_MAX_STRING_SIZE});
     }
 
     TablesStatusResponse response;
@@ -1778,7 +1782,9 @@ void TCPHandler::processUnexpectedTablesStatusRequest()
 
     TablesStatusRequest skip_request;
     skip_request.read(*in, client_tcp_protocol_version,
-        is_interserver_mode ? MAX_TABLES_IN_INTERSERVER_STATUS_REQUEST : DEFAULT_MAX_STRING_SIZE);
+        is_interserver_mode
+            ? INTERSERVER_TABLES_STATUS_REQUEST_LIMITS
+            : TablesStatusRequestLimits{DEFAULT_MAX_STRING_SIZE, DEFAULT_MAX_STRING_SIZE});
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet TablesStatusRequest received from client");
 }

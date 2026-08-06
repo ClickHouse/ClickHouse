@@ -1559,12 +1559,26 @@ request is rejected when the hash does not match, regardless of this setting. An
 client sends no hash; by default it gets a response that reports every requested table as
 present, not replicated and writable, independently of the actual state of the tables. No
 table status is disclosed, and a `Distributed` query initiated on a not-yet-upgraded node
-keeps working during a rolling upgrade - it just does not take replica staleness or
-readonly state into account, so `max_replica_delay_for_distributed_queries` has no effect
-for such a query.
+keeps working during a rolling upgrade.
 
-Enable this to reject those requests outright, either once every node in the cluster is
-upgraded, or if a hard error is preferable to that degradation.
+The cost is that such a query gets no replica pre-check, for as long as its connection has
+not yet run a query that authenticated with the cluster secret. On that path:
+
+- `max_replica_delay_for_distributed_queries` has no effect, and no
+  `ALL_REPLICAS_ARE_STALE` is raised even with
+  `fallback_to_stale_replicas_for_distributed_queries = 0`, so the query may read a replica
+  that is arbitrarily stale even though it asked not to;
+- `distributed_insert_skip_read_only_replicas` has no effect, so an `INSERT` may be routed
+  to a read-only replica and fail there;
+- a replica that does not have the table is no longer skipped, so the query fails with
+  `UNKNOWN_TABLE` instead of moving on to another replica.
+
+Data access is unaffected either way: the query itself is still authenticated with the
+cluster secret.
+
+Enable this to reject unsigned requests outright - once every node in the cluster is
+upgraded (after which nothing sends them), or if a hard error is preferable to the
+degradation above.
 )", 0) \
     DECLARE(String, interserver_http_host, "", R"(
 The hostname that can be used by other servers to access this server.

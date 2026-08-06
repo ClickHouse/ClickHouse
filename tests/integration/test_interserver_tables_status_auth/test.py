@@ -317,6 +317,28 @@ def test_interserver_request_table_count_is_bounded(started_cluster):
         sock.close()
 
 
+def test_interserver_request_name_length_is_bounded(started_cluster):
+    """The table count alone does not bound the request: `readStringBinary` allocates the
+    declared size of a name before reading its bytes, so a single name declared as 1 GiB
+    would be an unauthenticated allocation. Names are capped as well, and the request is
+    refused before the declared bytes are allocated."""
+    sock = connect_as_old_interserver_peer(node_default)
+    try:
+        # A name whose declared length exceeds the cap. Only the length is sent - the point is
+        # that the server must not allocate it while waiting for bytes that never arrive.
+        oversized = varuint(5) + varuint(1) + varstring("default") + varuint(1 << 30)
+        sock.sendall(oversized)
+        try:
+            data = sock.recv(4096)
+        except ConnectionResetError:
+            data = b""
+        assert not data, (
+            "server answered an interserver TablesStatusRequest declaring an oversized table name"
+        )
+    finally:
+        sock.close()
+
+
 def test_ordinary_client_table_count_is_not_bounded_by_the_interserver_limit(
     started_cluster,
 ):
