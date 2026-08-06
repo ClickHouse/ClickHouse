@@ -34,3 +34,16 @@ TEST(SharedPartColumns, NonPoolableSerializationsAreNotShared)
     EXPECT_NE(first->tryGet("data"), second->tryGet("data"));
     EXPECT_EQ(first->tryGet("id"), second->tryGet("id"));
 }
+
+TEST(SharedPartColumns, TypedJSONSubcolumnsAreIncluded)
+{
+    const auto & context_holder = getContext();
+    ASSERT_TRUE(context_holder.context != nullptr);
+
+    NamesAndTypesList columns{{"data", DataTypeFactory::instance().get("JSON(typed UInt64)")}};
+    auto description = std::make_shared<const ColumnsDescription>(columns);
+    SharedPartColumns bundle(columns, description, description, false, SharedPartColumns::describeColumns(columns));
+
+    SerializationInfoByName infos{SerializationInfoSettings{}};
+    EXPECT_NE(bundle.getSerializations(infos)->tryGet("data.typed"), nullptr);
+}
