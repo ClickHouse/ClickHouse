@@ -72,5 +72,12 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu ON CLUSTER test_shard_localhost
     SET v = 4 WHERE id IN (SELECT id FROM merge(currentDatabase(), '^t_lwu_src$'));
 SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 4;
 
+-- The expressions of the assignments are substituted as well, not only the predicate. The row at
+-- `id = 2` holds 4 from the arm above, so the read-back also fails if the statement does not update
+-- the row at all.
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu ON CLUSTER test_shard_localhost
+    SET v = (SELECT max(id) FROM merge(currentDatabase(), '^t_lwu_src$')) + 30 WHERE id = 2;
+SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 2;
+
 DROP TABLE t_lwu_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
