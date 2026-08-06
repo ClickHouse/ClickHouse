@@ -7,8 +7,6 @@ keywords: ['ClickHouse Cloud', 'compatibilidade']
 doc_type: 'guide'
 ---
 
-import CloudUnsupportedFeatures from '/snippets/_cloud_unsupported_features.mdx';
-
 Este guia apresenta uma visão geral do que esperar, do ponto de vista funcional e operacional, no ClickHouse Cloud. Embora o ClickHouse Cloud seja baseado na distribuição open source do ClickHouse, pode haver algumas diferenças de arquitetura e implementação. Como material de apoio, talvez seja interessante ler este post no blog sobre [como criamos o ClickHouse Cloud](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year).
 
 <div id="clickhouse-cloud-architecture">
@@ -50,7 +48,7 @@ O ClickHouse Cloud é um serviço altamente disponível e replicado por padrão,
 
 Os motores `Replicated*` são convertidos para os mesmos equivalentes `Shared*`. A substituição fica visível em `SHOW CREATE TABLE`, que mostra o motor `Shared*` mesmo que sua instrução tenha especificado a variante simples.
 
-Os motores de tabela a seguir também têm suporte e são usados exatamente como escritos. O motor de tabela `MySQL` compatível é diferente do motor de banco de dados `MySQL`, que não é compatível:
+Os motores a seguir também têm suporte e são usados exatamente como escritos:
 
 * URL
 * View
@@ -174,10 +172,6 @@ O ClickHouse Cloud é otimizado para cargas de trabalho variáveis e, por esse m
 </div>
 
 Como parte da criação do serviço ClickHouse, criamos um banco de dados padrão e o usuário padrão `default`, que tem permissões amplas nesse banco de dados. Esse usuário inicial pode criar usuários adicionais e atribuir a eles permissões para esse banco de dados. Além disso, no momento não há suporte para habilitar, no banco de dados, os seguintes recursos de segurança por meio de autenticação Kerberos, LDAP ou por certificado SSL X.509.
-
-## Lista de funcionalidades não suportadas {#list-of-unsupported-features}
-
-<CloudUnsupportedFeatures />
 
 <div id="roadmap">
   ## Roadmap
