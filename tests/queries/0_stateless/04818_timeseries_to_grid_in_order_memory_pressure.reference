@@ -1,0 +1,5 @@
+in-order aggregation under the pre-fix crash cap matches plain hash aggregation:
+320	230080	46013.368
+320	230080	46013.368
+a cap below the packed floor fails with a clean error:
+MEMORY_LIMIT_EXCEEDED
