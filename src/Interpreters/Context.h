@@ -757,6 +757,15 @@ public:
     String getPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
+
+    /// Volume backing `user_files` when `user_files_policy` is configured (nullptr otherwise).
+    ///
+    /// Consumers that access `user_files` through local POSIX APIs instead of the `IDisk`
+    /// interface must fail closed on any disk of this volume that is not plain local
+    /// (see `isPlainLocalDisk`): testing only `IDisk::isRemote` is a fail-open bug, because
+    /// a local `DiskEncrypted` is not remote yet `getPath()` points at the encrypted backing
+    /// directory, so such callers would read or write ciphertext / backing files instead of
+    /// the logical disk contents.
     VolumePtr getUserFilesVolume() const;
     String getUserScriptsPath() const;
     String getDynamicUserDefinedExecutableFunctionsPath() const;
