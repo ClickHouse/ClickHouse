@@ -1620,9 +1620,6 @@ static BlockIO executeQueryImpl(
                         "run_query_in_background cannot be enabled in the SETTINGS clause of the query over HTTP. "
                         "Pass it as an HTTP URL parameter, or set it at the user or profile level");
 
-                if (http_continue_callback)
-                    http_continue_callback();
-
                 const auto * insert_query = out_ast->as<ASTInsertQuery>();
                 ASTPtr input_function;
                 if (insert_query)
