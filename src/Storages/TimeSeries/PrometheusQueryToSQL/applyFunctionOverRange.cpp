@@ -105,6 +105,12 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"deriv",
+             {
+                 "timeSeriesDerivToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             {"changes",
              {
                  "timeSeriesChangesToGrid",
@@ -119,7 +125,6 @@ namespace
 
             /// TODO:
             /// predict_linear
-            /// deriv
             /// avg_over_time
             /// sum_over_time
             /// count_over_time
