@@ -20,6 +20,10 @@ shipped side owns the alias
 291
 281
 271
+two aliases with the same body
+9	9
+8	8
+7	7
 alias only in a clause, not in the projection
 29
 28
@@ -29,56 +33,8 @@ alias only in a clause, not in the projection
 2	4
 870
 9
-same-named ALIAS column on both sides
-1	2
-2	3
-3	4
-58	58
-56	56
-54	54
-two aliases with the same body
-9	9
-8	8
-7	7
-shipped through ARRAY JOIN and USING
-38
-38
-36
-54
-54
-48
-28
-26
-24
-56
-52
-48
-56
-52
-48
 parallel replicas pushed into a subquery
 58
 56
 54
 870
-right-side join kinds with a local join declined
-56
-52
-48
-query shipped as SQL instead of a plan
-58
-56
-54
-1	2
-2	3
-3	4
-30	Int32
-29	Int32
-28	Int32
-same-named ALIAS column on both sides, shipped by remote()
-1	2
-2	3
-3	4
-2
-3
-4
