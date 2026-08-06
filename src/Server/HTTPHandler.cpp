@@ -480,7 +480,10 @@ void HTTPHandler::processQuery(
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
-    const auto & query = getQuery(request, params, context);
+    /// Hand the handler the same body object the query itself would read (see `getQuery` in the header):
+    /// whatever the handler layer consumes from it (form fields, `_request_body`) is then genuinely gone
+    /// from the stream, instead of resurfacing when the body is appended to the query text below.
+    const auto & query = getQuery(request, params, context, *in_post_maybe_compressed);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
@@ -913,7 +916,7 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     return false;
 }
 
-std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
@@ -927,8 +930,7 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    auto input_stream = request.getStream();
-    params.load(request, *input_stream, handler);
+    params.load(request, body, handler);
 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
@@ -1032,23 +1034,44 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     }
 }
 
-std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
     bool body_fields_loaded = false;
+
+    /// A handler may declare `_request_body` alongside form-bindable parameters. Form parsing consumes the
+    /// body, while `_request_body` is bound in `customizeContext`, which runs only after `getQuery` - so it
+    /// would find the body at EOF and bind an empty string. Preserve a copy of the raw body up front and
+    /// parse the form from the copy, so both contracts hold: `_request_body` receives the raw body and the
+    /// form fields bind their parameters. The copy is bounded by `http_max_request_param_data_size` - the same
+    /// limit `customizeContext` applies when it reads the body itself.
+    const auto & preserve_raw_body = [&]
+    {
+        WriteBufferFromOwnString value;
+        copyDataMaxBytes(body, value, context->getSettingsRef()[Setting::http_max_request_param_data_size]);
+        context->setQueryParameter("_request_body", value.str());
+        return std::make_unique<ReadBufferFromOwnString>(std::move(value.str()));
+    };
+    const bool wants_request_body
+        = receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body");
 
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
-        auto input_stream = request.getStream();
-        params.load(request, *input_stream, handler);
+        if (wants_request_body)
+        {
+            auto body_copy = preserve_raw_body();
+            params.load(request, *body_copy, handler);
+        }
+        else
+            params.load(request, body, handler);
         body_fields_loaded = true;
     }
     else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
     {
         /// A urlencoded body carries parameter values for the query, so parse it - but only for a handler that
-        /// declares parameters bindable this way, and only on a body-carrying method. `_request_body` is excluded:
-        /// it binds the raw body in `customizeContext`, and parsing the body as a form here would consume it first.
+        /// declares parameters bindable this way, and only on a body-carrying method. `_request_body` alone does
+        /// not count: a handler whose only body use is `_request_body` gets the raw body instead of form parsing.
         const bool wants_form_body_params = std::any_of(
             receive_params.begin(), receive_params.end(), [](const String & name) { return name != "_request_body"; });
         const auto & method = request.getMethod();
@@ -1056,8 +1079,13 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
             = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
         if (wants_form_body_params && body_carrying_method)
         {
-            auto input_stream = request.getStream();
-            params.read(*input_stream);
+            if (wants_request_body)
+            {
+                auto body_copy = preserve_raw_body();
+                params.read(*body_copy);
+            }
+            else
+                params.read(body);
             body_fields_loaded = true;
         }
     }
@@ -1099,9 +1127,9 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
     setConsumesRequestBody(handler.consumes_request_body);
 }
 
-std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
-    return PredefinedQueryHandler::getQuery(request, params, context) + "\n";
+    return PredefinedQueryHandler::getQuery(request, params, context, body) + "\n";
 }
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,

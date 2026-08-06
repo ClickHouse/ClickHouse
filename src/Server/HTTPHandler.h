@@ -59,7 +59,12 @@ public:
 
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
 
-    virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
+    /// `body` is the request body wrapped in the transport decompression chain - the same object the query
+    /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
+    /// directly: the wrapper snapshots the inner buffer state on construction, so bytes taken from the inner
+    /// stream behind its back would be delivered again when the wrapper is read later (e.g. appended to the
+    /// query text).
+    virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) = 0;
 
 protected:
     LoggerPtr log;
@@ -212,7 +217,7 @@ public:
         const std::string & param_name_ = "query",
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
 
-    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
 };
@@ -237,7 +242,7 @@ public:
 
     void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;
 
-    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
 };
@@ -255,7 +260,7 @@ public:
 
     /// Append a newline after the stored query so that, for INSERT handlers, the request body
     /// (concatenated after the query) is correctly separated and parsed as the inserted data.
-    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 };
 
 }
