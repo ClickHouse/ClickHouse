@@ -130,12 +130,29 @@ RUN curl -fsSL "https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMS
 ENV EMSDK=/opt/emsdk
 ENV PATH="$PATH:/opt/emsdk/upstream/emscripten"
 
+# Node.js for the wasm64 smoke test (see build_clickhouse.py). Emscripten 6 emits
+# Memory64 code, and its generated startup script refuses engines older than Node.js 24.
+ARG NODE_VERSION=24.19.0
+RUN case "${TARGETARCH}" in \
+      amd64) NODE_ARCH=x64 ;; \
+      arm64) NODE_ARCH=arm64 ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+  && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" | tar -xJf - -C /opt \
+  && ln -sf "/opt/node-v${NODE_VERSION}-linux-${NODE_ARCH}/bin/node" /usr/local/bin/node
+
 # Pre-generate the wasm64 variant of the Emscripten system libraries. `-sMEMORY64`,
-# `-fwasm-exceptions` and `-pthread` are ABI flags applied to every translation unit
-# (see cmake/target.cmake), and `emcc` compiles the matching sysroot variant lazily
-# at first use, so bake it into the image instead of every CI build.
+# `-fwasm-exceptions` and `-pthread` are ABI flags applied to every translation unit,
+# and the link settings select startup objects (`-sPROXY_TO_PTHREAD` links
+# `crt1_proxy_main.o` instead of `crt1.o`). `emcc` compiles whatever the link needs
+# lazily at first use into its cache, which is not writable for the CI build user,
+# so the link flags here have to mirror the `clickhouse` link exactly - keep them in
+# sync with the `add_link_options` in the `OS_WASM` branch of cmake/target.cmake.
 RUN echo 'int main() { return 0; }' > /tmp/em_prewarm.cpp \
-  && em++ -sMEMORY64=1 -fwasm-exceptions -pthread /tmp/em_prewarm.cpp -o /tmp/em_prewarm.js \
+  && em++ -sMEMORY64=1 -fwasm-exceptions -pthread \
+      -sSTACK_SIZE=8388608 -sINITIAL_MEMORY=268435456 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=17179869184 \
+      -sPROXY_TO_PTHREAD=1 -sEXIT_RUNTIME=1 \
+      /tmp/em_prewarm.cpp -o /tmp/em_prewarm.js \
   && rm -f /tmp/em_prewarm.*
 
 ARG CLANG_TIDY_SHA1=3880541496c7ce0d2e2830d2f525375078fe0b1f

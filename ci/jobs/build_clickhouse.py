@@ -513,6 +513,31 @@ def main():
                     info="BOLT post-processing failed (best-effort), using PGO-only binary",
                 )
 
+        # The point of `Build (wasm64)` is a `clickhouse local` that runs, not one that
+        # merely links: execute a query under Node.js. The module runs from a directory
+        # holding only the two files the CH_WASM64 artifact uploads, which also proves the
+        # artifact is complete (since Emscripten 3.1.58 the pthread worker code is embedded
+        # in the main JS file, so there is no `.worker.js` sidecar). Known upstream wart:
+        # after `exit(0)` one Web Worker survives the runtime teardown and keeps the
+        # Node.js process alive, so the query runs under `timeout` and success is judged
+        # by the produced output, not the exit status.
+        if res and build_type == BuildTypes.WASM64:
+            smoke_dir = f"{temp_dir}/wasm_smoke"
+            results.append(
+                Result.from_commands_run(
+                    name="Run clickhouse local under Node.js",
+                    command=[
+                        f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
+                        f"cp {build_dir}/programs/clickhouse.js {build_dir}/programs/clickhouse.wasm {smoke_dir}/",
+                        "node --version",
+                        f"cd {smoke_dir} && (timeout 300 node clickhouse.js local --query 'SELECT 111 + 222' > smoke.out 2> smoke.err || true)",
+                        f"cat {smoke_dir}/smoke.err",
+                        f"grep -x 333 {smoke_dir}/smoke.out",
+                    ],
+                )
+            )
+            res = results[-1].is_ok()
+
     if (
         res
         and JobStages.PACKAGE in stages
