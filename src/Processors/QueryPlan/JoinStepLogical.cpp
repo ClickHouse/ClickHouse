@@ -911,9 +911,9 @@ tryGetIEJoinKeyCondition(const JoinActionRef & condition)
 /// (the ON conditions of the other kinds affect matching: unmatched rows are emitted padded,
 /// not dropped).
 static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
-    std::vector<JoinActionRef> & join_expression,
+    VectorWithMemoryTracking<JoinActionRef> & join_expression,
     const JoinOperator & join_operator,
-    std::vector<JoinActionRef> & used_expressions,
+    VectorWithMemoryTracking<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context)
 {
@@ -925,8 +925,8 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
 
     /// Which two of the eligible conditions become the IEJoin conditions is a planner degree
     /// of freedom; fixed to the first two for now.
-    std::vector<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>> keys;
-    std::vector<JoinActionRef> residual_conditions;
+    VectorWithMemoryTracking<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>> keys;
+    VectorWithMemoryTracking<JoinActionRef> residual_conditions;
     for (const auto & condition : join_expression)
     {
         auto inequality = keys.size() < 2 ? tryGetIEJoinKeyCondition(condition) : std::nullopt;
