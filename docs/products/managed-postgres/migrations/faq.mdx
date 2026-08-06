@@ -25,26 +25,34 @@ ALTER TYPE your_enum_type ADD VALUE 'new_value';
 
 Replace `your_enum_type` with the name of your enum type and `'new_value'` with the missing value from the error message.
 
-### I'm seeing a unique constraint violation error during replication {#unique-constraint-violation}
+### I'm seeing a unique constraint or check constraint violation error during replication {#constraint-violation}
 
-Unique constraint violations can occur during logical replication when the replication order causes a conflict with an existing unique constraint on the target. This can occur in CDC workloads involving replaying operations that temporarily violate uniqueness before a subsequent update resolves it.
+Constraint violations can occur during logical replication when the replication order causes a conflict with an existing constraint on the target.
 
-To unblock replication, drop the unique constraint on the target Postgres:
+- **Unique constraints**: CDC workloads may replay operations that temporarily violate uniqueness before a subsequent update resolves it.
+- **Check constraints**: A check constraint on the target may be stricter than the source, or an intermediate state during replication may not satisfy the constraint.
+
+To unblock replication, drop the offending constraint on the target Postgres:
 
 ```sql
+-- Drop a unique constraint
 ALTER TABLE your_table DROP CONSTRAINT your_constraint_name;
+
+-- Drop a check constraint
+ALTER TABLE your_table DROP CONSTRAINT your_check_constraint_name;
 ```
 
-You can find the constraint name by running:
+You can find the constraint details using the name from the error message:
 
 ```sql
-SELECT conname, conrelid::regclass
+SELECT conname, conrelid::regclass, contype
 FROM pg_constraint
-WHERE contype = 'u';
+WHERE conname = 'your_constraint_name';
 ```
 
-Re-add the constraint during cutover, once replication is complete and the source is no longer active:
+Re-add the constraints during cutover, once replication is complete and the source is no longer active:
 
 ```sql
 ALTER TABLE your_table ADD CONSTRAINT your_constraint_name UNIQUE (column1, column2);
+ALTER TABLE your_table ADD CONSTRAINT your_check_constraint_name CHECK (column1 > 0);
 ```

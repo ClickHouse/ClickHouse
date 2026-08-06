@@ -455,7 +455,7 @@ The wait time in milliseconds for a connection when the connection pool is full.
 Possible values:
 
 - Positive integer.
-- 0 — Infinite timeout: wait until a connection is returned to the pool.
+- 0 — Infinite timeout.
 )", 0) \
     DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
 The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
@@ -2801,8 +2801,7 @@ HTTP send timeout (in seconds).
 
 Possible values:
 
-- Any positive integer.
-- 0 - Disabled (infinite timeout).
+- Any positive integer (seconds). `0` is **not** an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
 
 :::note
 It's applicable only to the default profile. A server reboot is required for the changes to take effect.
@@ -2813,8 +2812,7 @@ HTTP receive timeout (in seconds).
 
 Possible values:
 
-- Any positive integer.
-- 0 - Disabled (infinite timeout).
+- Any positive integer (seconds). `0` is **not** an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
 )", 0) \
     DECLARE(UInt64, http_max_uri_size, 1048576, R"(
 Sets the maximum URI length of an HTTP request.
@@ -6621,7 +6619,7 @@ Maximum number of bytes in the set for lazy FINAL optimization. If exceeded, fal
 Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. If less than this fraction of marks is filtered, falls back to normal FINAL. Value 0 disables this check.
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
-Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
+Enables lazy columns replication in `JOIN`, `ARRAY JOIN` and lambda captures of higher-order functions (e.g. `arrayMap`), it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
     DECLARE(UInt64, query_plan_max_set_size_for_projection_match, 10000, R"(
 Maximum number of rows in an `IN`-clause set for which the projection matcher computes and compares content hashes when deciding whether two sets are equal. Sets larger than this are treated as non-matching and skip the projection. Zero disables content-hash comparison entirely: a projection match never succeeds for nodes containing `IN`-clause sets.
