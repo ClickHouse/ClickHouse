@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS json_all_values_dynamic_token;
 
 SET input_format_try_infer_datetimes = 1;
 SET input_format_try_infer_datetimes_only_datetime64 = 1;
+SET session_timezone = 'UTC';
 
 CREATE TABLE json_all_values_dynamic_bloom
 (
