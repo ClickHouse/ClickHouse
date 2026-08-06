@@ -40,7 +40,7 @@ Function/arrayPartialShuffle#0            unstable  # the output is not the same
 Function/arrayPartialShuffle#1            unstable  # the output is random and sometimes equals the documented one
 Function/arrayPartialShuffle#2            unstable  # the output is not the same on every run
 Function/arrayRandomSample#0              unstable  # the output is random and sometimes equals the documented one
-Function/arrayRandomSample#1              output  # the documented response is out of date; it could not be rewritten automatically
+Function/arrayRandomSample#1              unstable  # the output is random and sometimes equals the documented one
 Function/arrayShuffle#0                   unstable  # the output is not the same on every run
 Function/buildId#0                        output  # the response describes the server or the machine it runs on
 Function/catboostEvaluate#0               error  # the example reads a demo dataset that the server under test does not have
