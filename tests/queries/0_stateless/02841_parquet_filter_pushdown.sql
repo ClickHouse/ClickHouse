@@ -2,6 +2,10 @@
 
 set output_format_parquet_row_group_size = 100;
 
+-- This test isolates min/max statistics pushdown; disable dictionary filtering so it doesn't
+-- add its own (orthogonal) row group pruning on top.
+set input_format_parquet_dictionary_filter_push_down = 0;
+
 set input_format_null_as_default = 1;
 set engine_file_truncate_on_insert = 1;
 set optimize_or_like_chain = 0;

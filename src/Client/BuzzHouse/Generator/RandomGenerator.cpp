@@ -239,8 +239,23 @@ String RandomGenerator::nextDateTime(const String & separator, const bool allow_
         separator);
 }
 
-String RandomGenerator::nextDateTime64(const String & separator, const bool allow_func, const bool has_subseconds)
+String RandomGenerator::nextDateTime64(const String & separator, const bool allow_func, const uint32_t scale)
 {
+    /// DateTime64 stores ticks as Int64 in units of 10^-scale seconds, so the representable
+    /// year range shrinks as the scale grows. Interior bounds so any random month/day/time fits.
+    uint32_t min_year = 1;
+    uint32_t max_year = 9999;
+    if (scale == 8)
+    {
+        max_year = 4880;
+    }
+    else if (scale >= 9)
+    {
+        min_year = 1678;
+        max_year = 2261;
+    }
+    const bool has_subseconds = scale > 0;
+
     if (allow_func && this->nextMediumNumber() < 21)
     {
         const int32_t offset_seconds = second_offsets(generator);
@@ -253,31 +268,24 @@ String RandomGenerator::nextDateTime64(const String & separator, const bool allo
         const String sub0 = has_subseconds ? ".000000000" : "";
         switch (this->randomInt<uint32_t>(0, 2))
         {
-            case 0: return separator + "1900-01-01 00:00:00" + sub0 + separator; /// Min DateTime64
-            case 1: return separator + "2299-12-31 23:59:59" + sub + separator; /// Max DateTime64
+            case 0: return fmt::format("{}{:04}-01-01 00:00:00{}{}", separator, min_year, sub0, separator); /// Min DateTime64
+            case 1: return fmt::format("{}{:04}-12-31 23:59:59{}{}", separator, max_year, sub, separator); /// Max DateTime64
             case 2: return separator + "1970-01-01 00:00:00" + sub0 + separator; /// Epoch
             default: UNREACHABLE();
         }
     }
+    std::uniform_int_distribution<uint32_t> year_dist(min_year, max_year);
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
-    const uint32_t hour = hours(generator);
-    const uint32_t minute = minutes(generator);
-    const uint32_t second = minutes(generator);
     return fmt::format(
-        "{}{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}{}",
+        "{}{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}{}{}",
         separator,
-        1900 + datetime64_years(generator),
-        month < 10 ? "0" : "",
+        year_dist(generator),
         month,
-        day < 10 ? "0" : "",
         day,
-        hour < 10 ? "0" : "",
-        hour,
-        minute < 10 ? "0" : "",
-        minute,
-        second < 10 ? "0" : "",
-        second,
+        hours(generator),
+        minutes(generator),
+        minutes(generator),
         has_subseconds ? "." : "",
         has_subseconds ? std::to_string(subseconds(generator)) : "",
         separator);

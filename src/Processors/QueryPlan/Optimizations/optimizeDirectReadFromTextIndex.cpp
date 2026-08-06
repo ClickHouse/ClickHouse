@@ -74,6 +74,11 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
         return result_name;
     }
 
+    /// Render a constant by value: its result_name can differ between the query and preprocessor DAGs,
+    /// so comparing by value keeps the haystack and preprocessor names consistent.
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->column)
+        return applyVisitor(FieldVisitorToString(), node->column->getField());
+
     return node->result_name;
 }
 
@@ -205,7 +210,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
         size_t num_materialized_parts = std::ranges::count_if(unique_parts, [&](const auto & part)
         {
-            return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName(), &part->getDataPartStorage());
+            return !!index.index->getDeserializedFormat(*part, index.index->getFileName());
         });
 
         text_index_read_infos[index.index->index.name] =
@@ -903,7 +908,11 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 
     bool optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
-        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_from_text_index && !already_has_direct_read);
+    {
+        /// virtual-column/direct-read rewrite is pointless for a deferred PREWHERE (the filter never runs during reading)
+        bool direct_read_allowed = direct_read_from_text_index && !already_has_direct_read && !read_from_merge_tree_step->isPrewhereDeferredAfterFinal();
+        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_allowed);
+    }
 
     if (stack.size() < 2)
         return;
