@@ -54,6 +54,9 @@ and [LowCardinality](/reference/data-types/lowcardinality) columns are written a
 (Vortex chooses dictionary and other encodings adaptively by itself).
 [DateTime](/reference/data-types/datetime) columns are written as `vortex.timestamp` with second precision,
 so they are read back as [DateTime64](/reference/data-types/datetime64) with scale 0.
+[IPv4](/reference/data-types/ipv4) columns are written as `U32` because Vortex has no type for IP addresses,
+so schema inference reads them back as [UInt32](/reference/data-types/int-uint). Specify the type explicitly
+to read such a column back as `IPv4`: `SELECT * FROM file('data.vortex', Vortex, 'ip IPv4')`.
 
 The data types of ClickHouse table columns do not have to match the corresponding Vortex data fields.
 When inserting data, ClickHouse interprets data types according to the table above and then
