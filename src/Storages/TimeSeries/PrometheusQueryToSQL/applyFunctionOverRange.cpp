@@ -105,6 +105,12 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"deriv",
+             {
+                 "timeSeriesDerivToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             {"changes",
              {
                  "timeSeriesChangesToGrid",
@@ -119,7 +125,6 @@ namespace
 
             /// TODO:
             /// predict_linear
-            /// deriv
             /// avg_over_time
             /// min_over_time
             /// max_over_time
@@ -152,7 +157,7 @@ bool isFunctionOverRange(std::string_view function_name)
 
 
 SQLQueryPiece applyFunctionOverRange(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     return applyFunctionOverRange(function_node, function_node->function_name, std::move(arguments), context);
 }
