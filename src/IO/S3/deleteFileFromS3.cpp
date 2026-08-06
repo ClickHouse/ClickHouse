@@ -187,7 +187,7 @@ void deleteFilesFromS3(
 
                     if (successful_keys)
                     {
-                        successful_keys.reserve(current_chunk.size());
+                        successful_keys->reserve(current_chunk.size());
                         for (const auto & chunk : current_chunk)
                         {
                             successful_keys->emplace_back(chunk.GetKey());
