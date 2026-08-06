@@ -543,6 +543,48 @@ static void BM_RuntimeFilterExactMergeUInt64(benchmark::State & state)
     recordRows(state, filters_to_merge * keys_per_filter);
 }
 
+/// Measures only `IRuntimeFilter::finishInsert` for the approximate filter. With `EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER`
+/// set to 1 the filter switches to the Bloom representation during `insert`, so `finishInsertImpl` runs
+/// `checkBloomFilterWorthiness` — a popcount scan over the whole `BLOOM_FILTER_BYTES` array whose cost is independent
+/// of the inserted row count. Construction and `insert` are excluded from the timing.
+static void BM_RuntimeFilterFinishInsertApproximateUInt64(benchmark::State & state)
+{
+    const auto rows = static_cast<size_t>(state.range(0));
+    const auto type = uint64Type();
+    auto build_column = makeShuffledUInt64Column(rows);
+
+    for (auto _ : state)
+    {
+        state.PauseTiming();
+        auto filter = makeRuntimeFilter(RuntimeFilterKind::Approximate, type, DISABLE_ADAPTIVE_SKIP_THRESHOLD);
+        filter->insert(build_column);
+        state.ResumeTiming();
+
+        filter->finishInsert();
+        benchmark::DoNotOptimize(filter.get());
+    }
+
+    recordRows(state, rows);
+}
+
+/// Build of the exact filter including `finishInsert`, which selects the `ZERO` / `ONE` / `MANY` lookup fast path.
+/// The row counts cover all three outcomes. Complements `BM_RuntimeFilterApproximateBuild*`, which likewise include
+/// `finishInsert` through `buildRuntimeFilter`.
+static void BM_RuntimeFilterExactContainsBuildUInt64(benchmark::State & state)
+{
+    const auto rows = static_cast<size_t>(state.range(0));
+    const auto type = uint64Type();
+    auto build_column = makeShuffledUInt64Column(rows);
+
+    for (auto _ : state)
+    {
+        auto filter = buildRuntimeFilter(RuntimeFilterKind::ExactContains, type, build_column);
+        benchmark::DoNotOptimize(filter.get());
+    }
+
+    recordRows(state, rows);
+}
+
 static void BM_RuntimeFilterAdaptiveSkipApproximateUInt64(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
@@ -563,7 +605,13 @@ static void BM_RuntimeFilterAdaptiveSkipApproximateUInt64(benchmark::State & sta
     recordRows(state, rows);
 }
 
-static void BM_RuntimeFilterBuildTransformUInt64(benchmark::State & state)
+/// The `InsertOnly` transform benchmarks measure only the per-chunk `transform` path (optional cast plus
+/// `IRuntimeFilter::insert`). The end-of-build work of `BuildRuntimeFilterTransform` — `finish` publishing the filter
+/// into `RuntimeFilterLookup::add`, which also runs `finishInsert` — requires a query context with a registered
+/// lookup, so it is exercised only by the XML performance tests (see the note at the top of this file). The
+/// finalization cost itself is measured in isolation by `BM_RuntimeFilterFinishInsertApproximateUInt64` below, and is
+/// included in the `BM_RuntimeFilter*Build*` benchmarks that construct filters through `buildRuntimeFilter`.
+static void BM_RuntimeFilterBuildTransformInsertOnlyUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
     const auto chunk_rows = static_cast<size_t>(state.range(1));
@@ -603,7 +651,7 @@ static void BM_RuntimeFilterBuildTransformUInt64(benchmark::State & state)
     recordRows(state, rows);
 }
 
-static void BM_RuntimeFilterBuildTransformCastUInt32ToUInt64(benchmark::State & state)
+static void BM_RuntimeFilterBuildTransformInsertOnlyCastUInt32ToUInt64(benchmark::State & state)
 {
     ensureFunctionsRegistered();
 
@@ -696,8 +744,18 @@ BENCHMARK(BM_RuntimeFilterExactMergeUInt64)
 
 BENCHMARK(BM_RuntimeFilterAdaptiveSkipApproximateUInt64)->Args({/*key_count=*/10000, /*rows=*/65536});
 
-BENCHMARK(BM_RuntimeFilterBuildTransformUInt64)->Args({/*rows=*/10000, /*chunk_rows=*/8192})->Args({/*rows=*/100000, /*chunk_rows=*/8192});
+BENCHMARK(BM_RuntimeFilterFinishInsertApproximateUInt64)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
 
-BENCHMARK(BM_RuntimeFilterBuildTransformCastUInt32ToUInt64)
+BENCHMARK(BM_RuntimeFilterExactContainsBuildUInt64)
+    ->Arg(/*rows=*/0)
+    ->Arg(/*rows=*/1)
+    ->Arg(/*rows=*/10000)
+    ->Arg(/*rows=*/100000);
+
+BENCHMARK(BM_RuntimeFilterBuildTransformInsertOnlyUInt64)
+    ->Args({/*rows=*/10000, /*chunk_rows=*/8192})
+    ->Args({/*rows=*/100000, /*chunk_rows=*/8192});
+
+BENCHMARK(BM_RuntimeFilterBuildTransformInsertOnlyCastUInt32ToUInt64)
     ->Args({/*rows=*/10000, /*chunk_rows=*/8192})
     ->Args({/*rows=*/100000, /*chunk_rows=*/8192});

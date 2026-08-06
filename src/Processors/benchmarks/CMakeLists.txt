@@ -2,6 +2,8 @@ clickhouse_add_executable(runtime_filter
     runtime_filter.cpp
     ../../Functions/ComparisonParams.cpp
     ../../Functions/equals.cpp
+    ../../Functions/isDistinctFrom.cpp
+    ../../Functions/isNotDistinctFrom.cpp
     ../../Functions/notEquals.cpp
     ../../Functions/registerFunctions.cpp)
 target_link_libraries(runtime_filter PRIVATE
