@@ -1,18 +1,44 @@
 ---
-description: 'ClickHouse의 네이티브 클라이언트 및 인터페이스'
+description: 'ClickHouse용 네이티브 클라이언트와 인터페이스'
 keywords: ['클라이언트', '인터페이스', 'CLI', 'SQL 콘솔', '드라이버']
 slug: /interfaces/natives-clients-and-interfaces
-title: '네이티브 클라이언트 및 인터페이스'
+title: '네이티브 클라이언트와 인터페이스'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-ClickHouse는 연결에 사용할 수 있는 다양한 네이티브 클라이언트와 인터페이스를 제공합니다.
+ClickHouse는 연결에 사용할 수 있는 여러 네이티브 클라이언트와 인터페이스를 제공합니다.
 
-자세한 내용은 아래 페이지를 참조하십시오:
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/ko/concepts/features/interfaces/cli">
+    로컬 및 Cloud용 ClickHouse CLI입니다.
+  </Card>
 
-| 섹션                                                         | 요약                                                        |
-| ---------------------------------------------------------- | --------------------------------------------------------- |
-| [clickhousectl](/ko/concepts/features/interfaces/cli)         | 로컬 및 Cloud용 ClickHouse CLI입니다.                            |
-| [ClickHouse Client](/ko/concepts/features/interfaces/client)  | command-line 옵션과 설정 파일을 지원하는 네이티브 command-line client입니다. |
-| [드라이버 및 인터페이스](/ko/concepts/features/interfaces/overview)     | 다양한 네트워크 인터페이스, 라이브러리 및 시각적 인터페이스를 다룹니다.                  |
-| [SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) | ClickHouse Cloud에서 데이터를 빠르고 쉽게 다룰 수 있는 방법입니다.             |
+  <Card title="ClickHouse Client" icon="keyboard" href="/ko/concepts/features/interfaces/client">
+    네이티브 command-line client로, command-line options과 설정 파일을 지원합니다.
+  </Card>
+
+  <Card title="드라이버와 인터페이스" icon="plug" href="/ko/concepts/features/interfaces/overview">
+    ClickHouse에 연결하기 위한 네트워크 인터페이스, 드라이버 및 도구입니다.
+  </Card>
+
+  <Card title="C++ 클라이언트 라이브러리" icon="code" href="/ko/concepts/features/interfaces/cpp">
+    ClickHouse C++ 클라이언트 라이브러리입니다.
+  </Card>
+
+  <Card title="스키마 추론" icon="wand-magic-sparkles" href="/ko/concepts/features/interfaces/schema-inference">
+    입력 데이터에서 자동으로 스키마를 추론합니다.
+  </Card>
+
+  <Card title="웹 터미널" icon="globe" href="/ko/concepts/features/interfaces/web-terminal">
+    WebSocket을 통한 브라우저 기반 `clickhouse-client` 세션입니다.
+  </Card>
+
+  <Card title="웹 SQL UI (실행)" icon="browser" href="/ko/concepts/features/interfaces/web-sql">
+    ClickHouse가 `/play`에서 제공하는 기본 제공 브라우저 내 SQL 인터페이스입니다.
+  </Card>
+
+  <Card title="타사 인터페이스" icon="puzzle-piece" href="/ko/concepts/features/interfaces/third-party/index">
+    타사 도구, 라이브러리 및 통합입니다.
+  </Card>
+</CardGroup>

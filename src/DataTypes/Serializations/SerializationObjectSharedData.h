@@ -294,6 +294,30 @@ private:
     {
         explicit SubstreamsCachePathsDataElement(std::shared_ptr<PathsDataChunks> paths_data_chunks_) : paths_data_chunks(paths_data_chunks_) {}
 
+        void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+        {
+            if (!paths_data_chunks)
+                return;
+
+            for (const auto & chunk : *paths_data_chunks)
+            {
+                for (const auto & [path, column] : chunk.paths_data)
+                {
+                    if (column)
+                        callback(column);
+                }
+
+                for (const auto & [path, subcolumns] : chunk.paths_subcolumns_data)
+                {
+                    for (const auto & [subcolumn_name, column] : subcolumns)
+                    {
+                        if (column)
+                            callback(column);
+                    }
+                }
+            }
+        }
+
         std::shared_ptr<PathsDataChunks> paths_data_chunks;
     };
 

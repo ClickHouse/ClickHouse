@@ -1,0 +1,200 @@
+---
+title: 'DataStore: API compatible con pandas con optimización SQL'
+sidebarTitle: 'Descripción general'
+slug: /chdb/datastore
+description: 'DataStore ofrece una API compatible con pandas con optimización SQL para análisis de datos de alto rendimiento'
+keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+DataStore es la API compatible con pandas de chDB que combina la conocida interfaz de DataFrame de Pandas con la potencia de la optimización de consultas SQL y le permite escribir código al estilo de pandas mientras obtiene el rendimiento de ClickHouse.
+
+<div id="key-features">
+  ## Características principales
+</div>
+
+* **Compatibilidad con Pandas**: 209 métodos de pandas DataFrame, 56 métodos `.str`, 42+ métodos `.dt`
+* **Optimización SQL**: Las operaciones se compilan automáticamente como consultas SQL optimizadas
+* **Evaluación diferida**: Las operaciones se aplazan hasta que se necesitan los resultados
+* **630+ métodos de API**: Amplia API para la manipulación de datos
+* **Extensiones de ClickHouse**: Accesores adicionales (`.arr`, `.json`, `.url`, `.ip`, `.geo`) no disponibles en pandas
+
+<div id="architecture">
+  ## Arquitectura
+</div>
+
+<Image size="md" img="/images/chdb/datastore_architecture.png" alt="Arquitectura de DataStore" />
+
+DataStore usa **evaluación diferida** con **ejecución con doble motor**:
+
+1. **Cadena de operaciones diferidas**: las operaciones se registran, no se ejecutan de inmediato
+2. **Selección inteligente de motor**: QueryPlanner dirige cada segmento al motor óptimo (chDB para SQL, Pandas para operaciones complejas)
+3. **Caché intermedia**: los resultados se almacenan en caché en cada paso para agilizar la exploración iterativa
+
+Consulta [Modelo de ejecución](/es/chdb/datastore/execution-model) para obtener más detalles.
+
+<div id="migration">
+  ## Migración en una sola línea desde Pandas
+</div>
+
+```python
+# Before (pandas)
+import pandas as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+
+# After (DataStore) - just change the import!
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+```
+
+Su código actual de pandas funciona sin cambios, pero ahora se ejecuta en el motor de ClickHouse.
+
+<div id="performance">
+  ## Comparación de rendimiento
+</div>
+
+DataStore ofrece mejoras significativas de rendimiento respecto a pandas, especialmente en agregaciones y canalizaciones complejas:
+
+| Operación             | Pandas  | DataStore | Aumento de velocidad |
+| --------------------- | ------- | --------- | -------------------- |
+| GroupBy count         | 347ms   | 17ms      | **19.93x**           |
+| Canalización compleja | 2,047ms | 380ms     | **5.39x**            |
+| Filter+Sort+Head      | 1,537ms | 350ms     | **4.40x**            |
+| GroupBy agg           | 406ms   | 141ms     | **2.88x**            |
+
+*Benchmark con 10 M de filas. Consulta el [script de benchmark](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py) y la [Guía de rendimiento](/es/chdb/guides/pandas-performance) para obtener más detalles.*
+
+<div id="when-to-use">
+  ## Cuándo usar DataStore
+</div>
+
+**Usa DataStore cuando:**
+
+* Trabajas con conjuntos de datos grandes (millones de filas)
+* Realizas agregaciones y operaciones de GroupBy
+* Consultas datos de archivos, bases de datos o almacenamiento en la nube
+* Creas canalizaciones de datos complejas
+* Quieres la API de pandas con mejor rendimiento
+
+**Usa la API de SQL puro cuando:**
+
+* Prefieres escribir SQL directamente
+* Necesitas un control preciso sobre la ejecución de consultas
+* Trabajas con funciones específicas de ClickHouse que no están expuestas en la API de pandas
+
+<div id="comparison">
+  ## Comparación de características
+</div>
+
+| Característica                       | Pandas | Polars   | DuckDB | DataStore       |
+| ------------------------------------ | ------ | -------- | ------ | --------------- |
+| Compatible con la API de Pandas      | -      | Parcial  | No     | **Completa**    |
+| Evaluación diferida                  | No     | Sí       | Sí     | **Sí**          |
+| Soporte para consultas SQL           | No     | Sí       | Sí     | **Sí**          |
+| Funciones de ClickHouse              | No     | No       | No     | **Sí**          |
+| Accesores de String/DateTime         | Sí     | Sí       | No     | **Sí + extras** |
+| Array/JSON/URL/IP/Geo                | No     | Parcial  | No     | **Sí**          |
+| Consultas directas sobre archivos    | No     | Sí       | Sí     | **Sí**          |
+| Soporte de almacenamiento en la nube | No     | Limitado | Sí     | **Sí**          |
+
+<div id="api-stats">
+  ## Estadísticas de la API
+</div>
+
+| Categoría                      | Cantidad | Cobertura                            |
+| ------------------------------ | -------- | ------------------------------------ |
+| Métodos de DataFrame           | 209      | 100% de pandas                       |
+| Accesor Series.str             | 56       | 100% de pandas                       |
+| Accesor Series.dt              | 42+      | 100%+ (incluye extras de ClickHouse) |
+| Accesor Series.arr             | 37       | Específico de ClickHouse             |
+| Accesor Series.json            | 13       | Específico de ClickHouse             |
+| Accesor Series.url             | 15       | Específico de ClickHouse             |
+| Accesor Series.ip              | 9        | Específico de ClickHouse             |
+| Accesor Series.geo             | 14       | Específico de ClickHouse             |
+| **Total de métodos de la API** | **630+** | -                                    |
+
+<div id="navigation">
+  ## Navegación por la documentación
+</div>
+
+<div id="getting-started">
+  ### Primeros pasos
+</div>
+
+* [Inicio rápido](/es/chdb/datastore/quickstart) - Instalación y uso básico
+* [Migración desde Pandas](/es/chdb/guides/migration-from-pandas) - Guía de migración paso a paso
+
+<div id="api-reference">
+  ### Referencia de la API
+</div>
+
+* [Métodos de fábrica](/es/chdb/datastore/factory-methods) - Creación de DataStore a partir de varias fuentes
+* [Construcción de consultas](/es/chdb/datastore/query-building) - Operaciones de consulta al estilo SQL
+* [Compatibilidad con pandas](/es/chdb/datastore/pandas-compat) - Los 209 métodos compatibles con pandas
+* [Accesores](/es/chdb/datastore/accessors) - Accesores de String, DateTime, Array, JSON, URL, IP y Geo
+* [Agregación](/es/chdb/datastore/aggregation) - Funciones de agregación y de ventana
+* [Operaciones de E/S](/es/chdb/datastore/io) - Lectura y escritura de datos
+
+<div id="advanced-topics">
+  ### Temas avanzados
+</div>
+
+* [Modelo de ejecución](/es/chdb/datastore/execution-model) - evaluación diferida y almacenamiento en caché
+* [Referencia de class](/es/chdb/datastore/class-reference) - Referencia completa de la API
+
+<div id="configuration-debugging">
+  ### Configuración y depuración
+</div>
+
+* [Configuración](/es/chdb/configuration/index) - Todas las opciones de configuración
+* [Modo de rendimiento](/es/chdb/configuration/performance-mode) - Modo centrado en SQL para obtener el máximo rendimiento
+* [Depuración](/es/chdb/debugging/index) - Explain, perfilado y registro
+
+<div id="pandas-user-guides">
+  ### Guías para usuarios de Pandas
+</div>
+
+* [Recetario de Pandas](/es/chdb/guides/pandas-cookbook) - Patrones comunes
+* [Diferencias clave](/es/chdb/guides/pandas-differences) - Diferencias importantes con respecto a pandas
+* [Guía de rendimiento](/es/chdb/guides/pandas-performance) - Consejos de optimización
+* [SQL para usuarios de Pandas](/es/chdb/guides/pandas-to-sql) - Comprender el SQL que hay detrás de las operaciones de pandas
+
+<div id="quick-example">
+  ## Ejemplo rápido
+</div>
+
+```python
+from chdb import datastore as pd
+
+# Read data from various sources
+ds = pd.read_csv("sales.csv")
+# or: ds = pd.DataStore.uri("s3://bucket/sales.parquet")
+# or: ds = pd.DataStore.from_mysql("mysql://user:pass@host/db/table")
+
+# Familiar pandas operations - automatically optimized to SQL
+result = (ds
+    .filter(ds['amount'] > 1000)           # WHERE amount > 1000
+    .groupby('region')                      # GROUP BY region
+    .agg({'amount': ['sum', 'mean']})       # SUM(amount), AVG(amount)
+    .sort_values('sum', ascending=False)    # ORDER BY sum DESC
+    .head(10)                               # LIMIT 10
+)
+
+# View the generated SQL
+print(result.to_sql())
+
+# Execute and get results
+df = result.to_df()  # Returns DataFrame de Pandas
+```
+
+<div id="next-steps">
+  ## Próximos pasos
+</div>
+
+* **¿Es la primera vez que usas DataStore?** Empieza con la [Guía de inicio rápido](/es/chdb/datastore/quickstart)
+* **¿Vienes de pandas?** Lee la [Guía de migración](/es/chdb/guides/migration-from-pandas)
+* **¿Quieres saber más?** Consulta la [Referencia de la API](/es/chdb/datastore/class-reference)
