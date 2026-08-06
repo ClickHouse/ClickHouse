@@ -1747,6 +1747,14 @@ void LocalServer::processConfig()
     if (default_database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabase(default_database);
+    /// An explicitly configured database (the `--database` option or a config-file `database` key)
+    /// must also win as the `database` setting; the global context is exempt from the automatic
+    /// mirroring in `setCurrentDatabase`, so without this a stale `database` value inherited from a
+    /// profile would win back in `executeQuery` and unqualified names would resolve in the wrong
+    /// database. When no database is configured explicitly, the setting is left untouched so a
+    /// profile-provided `database` keeps working as the default choice, like on the server.
+    if (getClientConfiguration().has("database"))
+        global_context->setSetting("database", default_database);
 
     server_display_name = getClientConfiguration().getString("display_name", "");
 

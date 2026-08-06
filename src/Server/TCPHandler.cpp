@@ -52,6 +52,8 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SettingSource.h>
+#include <Common/SettingsChanges.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
@@ -479,7 +481,16 @@ void TCPHandler::runImpl()
 
             /// When connecting, the default database could be specified.
             if (!default_database.empty())
+            {
+                /// `database` is a real setting, so enforce its constraints on the connect-time
+                /// database too: a profile that makes `database` `const` or restricts its values
+                /// must reject a database chosen in the connection handshake consistently with
+                /// `USE`, `SET database = ...` and the HTTP `?database=...` parameter.
+                SettingsChanges database_change;
+                database_change.setSetting("database", default_database);
+                session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
                 session->sessionContext()->setCurrentDatabase(default_database);
+            }
         }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
