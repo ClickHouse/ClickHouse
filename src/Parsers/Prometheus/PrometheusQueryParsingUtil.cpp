@@ -733,17 +733,33 @@ namespace
         return true;
     }
 
-    bool tryParseDurationWithPositivity(
+    struct ParsedDurationInfo
+    {
+        bool is_positive = false;
+        bool is_exact = true;
+    };
+
+    bool tryParseDurationWithInfo(
         std::string_view input,
         UInt32 timestamp_scale,
         DurationType & res_duration,
-        bool & is_positive,
+        ParsedDurationInfo & info,
         String * error_message,
         size_t * error_pos)
     {
-        bool result = tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, &is_positive);
-        if (result && is_positive && res_duration == 0)
-            res_duration = 1;
+        bool result = tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, &info.is_positive);
+        if (!result || !info.is_positive || timestamp_scale >= 3)
+            return result;
+
+        /// Parse at millisecond precision to detect a positive fraction discarded at the timestamp scale.
+        DurationType millisecond_duration;
+        bool millisecond_is_positive = false;
+        if (tryParseNumber(input, 3, millisecond_duration, nullptr, nullptr, &millisecond_is_positive) && millisecond_is_positive)
+        {
+            const auto divisor = DecimalUtils::scaleMultiplier<DurationType>(3 - timestamp_scale);
+            info.is_exact = millisecond_duration.value % divisor == 0;
+        }
+
         return result;
     }
 }
@@ -806,21 +822,24 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
         return false;
     }
 
-    bool is_positive = false;
-    if (!tryParseDurationWithPositivity(
-            input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, is_positive, error_message, error_pos))
+    ParsedDurationInfo range_info;
+    if (!tryParseDurationWithInfo(
+            input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, range_info, error_message, error_pos))
     {
         if (error_pos)
             *error_pos += start_pos;
         return false;
     }
 
-    if (!is_positive)
+    if (!range_info.is_positive)
     {
         setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
         setErrorPos(error_pos, start_pos);
         return false;
     }
+
+    if (!range_info.is_exact || res_range == 0)
+        ++res_range.value;
 
     return true;
 }
@@ -887,38 +906,48 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         return false;
     }
 
-    bool is_positive = false;
-    if (!tryParseDurationWithPositivity(
-            input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, is_positive, error_message, error_pos))
+    ParsedDurationInfo range_info;
+    if (!tryParseDurationWithInfo(
+            input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, range_info, error_message, error_pos))
     {
         if (error_pos)
             *error_pos += range_start_pos;
         return false;
     }
 
-    if (!is_positive)
+    if (!range_info.is_positive)
     {
         setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
         setErrorPos(error_pos, range_start_pos);
         return false;
     }
 
+    if (!range_info.is_exact || res_range == 0)
+        ++res_range.value;
+
     res_step.reset();
 
     if (step_start_pos != step_end_pos)
     {
-        bool is_positive_step = false;
-        if (!tryParseDurationWithPositivity(
-                input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), is_positive_step, error_message, error_pos))
+        ParsedDurationInfo step_info;
+        if (!tryParseDurationWithInfo(
+                input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), step_info, error_message, error_pos))
         {
             if (error_pos)
                 *error_pos += step_start_pos;
             return false;
         }
 
-        if (!is_positive_step)
+        if (!step_info.is_positive)
         {
             setErrorMessage(error_message, "Cannot parse time range {}: Expected a step greater than zero", quoteString(input));
+            setErrorPos(error_pos, step_start_pos);
+            return false;
+        }
+
+        if (!step_info.is_exact || *res_step == 0)
+        {
+            setErrorMessage(error_message, "Cannot parse time range {}: Expected a step representable at the timestamp precision", quoteString(input));
             setErrorPos(error_pos, step_start_pos);
             return false;
         }

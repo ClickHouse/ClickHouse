@@ -1603,7 +1603,14 @@ TEST(PromQLParser, PreservePositiveDurationRangesAtSecondPrecision)
 {
     for (const auto & [query, expected] : std::initializer_list<std::pair<std::string_view, std::string_view>>{
              {"up[1ms]", "up[1]"},
-             {"up[5m:1ms]", "up[300:1]"},
+             {"up[999ms]", "up[1]"},
+             {"up[1000ms]", "up[1]"},
+             {"up[1001ms]", "up[2]"},
+             {"up[1999ms]", "up[2]"},
+             {"up[2000ms]", "up[2]"},
+             {"up[0.999]", "up[1]"},
+             {"up[1.000]", "up[1]"},
+             {"up[1.001]", "up[2]"},
              {"up[5m:]", "up[300:]"},
          })
     {
@@ -1623,6 +1630,29 @@ TEST(PromQLParser, PreservePositiveDurationRangesAtSecondPrecision)
 
         EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
     }
+}
+
+
+TEST(PromQLParser, RejectUnrepresentableSubqueryStepsAtSecondPrecision)
+{
+    for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
+             {"up[5m:1ms]", 6},
+             {"up[5m:1001ms]", 6},
+             {"up[5m:1.001]", 6},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+    }
+
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+    EXPECT_TRUE(query_tree.tryParse("up[5m:1s]", 0, &error_message, &error_pos)) << error_message;
 }
 
 

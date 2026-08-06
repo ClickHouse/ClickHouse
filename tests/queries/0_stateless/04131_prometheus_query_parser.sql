@@ -104,7 +104,8 @@ CREATE TABLE ts_second_precision
     time_series Array(Tuple(DateTime64(0), Float64))
 ) ENGINE = TimeSeries;
 SELECT count() FROM prometheusQuery('ts_second_precision', 'up[1ms]', 1000);
-SELECT count() FROM prometheusQuery('ts_second_precision', 'up[5m:1ms]', 1000);
+SELECT count() FROM prometheusQuery('ts_second_precision', 'up[5m:1s]', 1000);
+SELECT * FROM prometheusQuery('ts_second_precision', 'up[5m:1ms]', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
 DROP TABLE ts_second_precision;
 
 SELECT '--- error: invalid syntax ---';
