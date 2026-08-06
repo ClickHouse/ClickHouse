@@ -356,6 +356,43 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhereOr)
           R"(SELECT "column", "apply_id" FROM "test"."table")");
 }
 
+TEST(TransformQueryForExternalDatabase, NegationOverPrunedConjunction)
+{
+    const State & state = State::instance();
+
+    /// Pruning a conjunct is only sound in a positive context: `NOT (column > 2 AND table2.num = 1)`
+    /// must not be pushed down as `NOT (column > 2)` — for a row with `column = 5` and `table2.num = 0`
+    /// the original predicate is true, but the narrowed remote filter drops the row before the local
+    /// re-filtering can see it. Once pruning modified a conjunction, the enclosing negation is kept
+    /// local as a whole.
+    check(state, 2, {"column", "apply_id"},
+          "SELECT column FROM test.table "
+          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
+          "WHERE NOT (column > 2 AND table2.num = 1)",
+          R"(SELECT "column", "apply_id" FROM "test"."table")");
+
+    /// Safe sibling conjuncts are still pushed down.
+    check(state, 2, {"column", "apply_id"},
+          "SELECT column FROM test.table "
+          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
+          "WHERE apply_id = 1 AND NOT (column > 2 AND table2.num = 1)",
+          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "apply_id" = 1)");
+
+    /// The same fail-close rule when the pruned conjunct is over a local-only column.
+    check(state, 1, {"column", "field"},
+          "SELECT column, field FROM table WHERE NOT (column > 2 AND field = 'test')",
+          R"(SELECT "column", "field" FROM "test"."table")",
+          "", {"field"});
+
+    /// Strict mode rejects a condition kept local because of a local-only column.
+    state.context->setSetting("external_table_strict_query", true);
+    EXPECT_THROW(
+        check(state, 1, {"column", "field"},
+              "SELECT column, field FROM table WHERE NOT (column > 2 AND field = 'test')", "", "", {"field"}),
+        Exception);
+    state.context->setSetting("external_table_strict_query", false);
+}
+
 TEST(TransformQueryForExternalDatabase, LocalOnlyColumns)
 {
     const State & state = State::instance();

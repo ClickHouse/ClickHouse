@@ -348,23 +348,27 @@ bool isCompatible(
     return node->as<ASTIdentifier>();
 }
 
-bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, const NameSet & local_only_names, bool & mentions_local_only);
+bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, const NameSet & local_only_names, bool & mentions_local_only, bool & subtree_changed);
 
-void removeUnknownChildren(ASTs & children, const NameSet & known_names, const NameSet & local_only_names, bool & mentions_local_only)
+void removeUnknownChildren(ASTs & children, const NameSet & known_names, const NameSet & local_only_names, bool & mentions_local_only, bool & subtree_changed)
 {
 
     ASTs new_children;
     for (auto & child : children)
     {
-        bool leave_child = removeUnknownSubexpressions(child, known_names, local_only_names, mentions_local_only);
+        bool leave_child = removeUnknownSubexpressions(child, known_names, local_only_names, mentions_local_only, subtree_changed);
         if (leave_child)
             new_children.push_back(child);
+        else
+            subtree_changed = true;
     }
     children = std::move(new_children);
 }
 
 /// return `true` if we should leave node in tree
-bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, const NameSet & local_only_names, bool & mentions_local_only)
+/// `subtree_changed` is set whenever the kept node is not the original expression (some part of it was
+/// pruned), so an enclosing node can decide whether keeping the modified subtree is still sound.
+bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, const NameSet & local_only_names, bool & mentions_local_only, bool & subtree_changed)
 {
     if (const auto * ident = node->as<ASTIdentifier>())
     {
@@ -390,11 +394,13 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, con
         /// (`local_only_names`) — the whole disjunction must stay local so the local filter can evaluate
         /// every branch over unfiltered rows.
         bool child_mentions_local_only = false;
-        const size_t children_before = func->arguments->children.size();
-        removeUnknownChildren(func->arguments->children, known_names, local_only_names, child_mentions_local_only);
+        bool children_changed = false;
+        removeUnknownChildren(func->arguments->children, known_names, local_only_names, child_mentions_local_only, children_changed);
         if (child_mentions_local_only)
             mentions_local_only = true;
-        if (func->name == "or" && func->arguments->children.size() != children_before)
+        if (children_changed)
+            subtree_changed = true;
+        if (func->name == "or" && children_changed)
             return false;
         /// all children removed, current node can be removed too
         if (func->arguments->children.size() == 1)
@@ -407,11 +413,21 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, con
     }
 
     bool leave_child = true;
+    bool children_changed = false;
     for (auto & child : node->children)
     {
         /// Visit every child even after the node is already known to be removed: a later child may mention
         /// a local-only column, and an enclosing disjunction must learn about it.
-        leave_child = removeUnknownSubexpressions(child, known_names, local_only_names, mentions_local_only) && leave_child;
+        leave_child = removeUnknownSubexpressions(child, known_names, local_only_names, mentions_local_only, children_changed) && leave_child;
+    }
+    /// An arbitrary function is not guaranteed to be monotone with respect to its arguments: for example,
+    /// widening the argument of `not` narrows the negation, so `NOT (column > 2 AND other_table.num = 1)`
+    /// must not become `NOT (column > 2)` after the foreign conjunct is pruned. Whenever a kept child was
+    /// modified, fail close and remove the whole node — the condition is then evaluated by the local filter.
+    if (children_changed)
+    {
+        subtree_changed = true;
+        return false;
     }
     return leave_child;
 }
@@ -425,9 +441,11 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names, con
 // `local_only_columns` are columns that do exist in the external table but whose predicates the caller
 // requires to be evaluated locally (e.g. a pushdown over them would compare differently on the remote
 // side). Their conditions are removed from the remote filter like unknown ones. A disjunction with any
-// removed branch is removed as a whole (a narrower remote filter would lose rows), and
-// `mentions_local_only` reports that some condition was kept local because of a local-only column (so
-// strict mode can reject the query).
+// removed branch is removed as a whole (a narrower remote filter would lose rows), and the same
+// fail-close rule applies to any other function (such as `not`) whose argument was modified by
+// pruning — an arbitrary function is not monotone with respect to its arguments, so a widened
+// argument could narrow the enclosing predicate. `mentions_local_only` reports that some condition
+// was kept local because of a local-only column (so strict mode can reject the query).
 bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns, const NameSet & local_only_columns, bool & mentions_local_only)
 {
     if (!node)
@@ -437,13 +455,17 @@ bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList
     for (const auto & col : available_columns)
         known_names.insert(col.name);
 
+    /// Whether pruning modified the tree only matters for enclosing nodes, so at the top level
+    /// (a plain conjunction context) the flag is consumed and discarded.
+    bool subtree_changed = false;
+
     if (auto * expr_list = node->as<ASTExpressionList>(); expr_list && !expr_list->children.empty())
     {
         /// traverse expression list on top level
-        removeUnknownChildren(expr_list->children, known_names, local_only_columns, mentions_local_only);
+        removeUnknownChildren(expr_list->children, known_names, local_only_columns, mentions_local_only, subtree_changed);
         return !expr_list->children.empty();
     }
-    return removeUnknownSubexpressions(node, known_names, local_only_columns, mentions_local_only);
+    return removeUnknownSubexpressions(node, known_names, local_only_columns, mentions_local_only, subtree_changed);
 }
 
 String transformQueryForExternalDatabaseImpl(
