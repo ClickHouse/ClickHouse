@@ -99,6 +99,22 @@ def jetstream_ack_pending(nats_cluster, stream, durable):
     return asyncio.run(run())
 
 
+def jetstream_delivered_count(nats_cluster, stream, durable):
+    """Cumulative number of deliveries to the consumer. Monotone, and it counts redeliveries,
+    unlike num_ack_pending, which stops rising once every message is already pending."""
+
+    async def run():
+        nc = await nats_connect_ssl(nats_cluster)
+        js = nc.jetstream()
+        info = await js.consumer_info(stream, durable)
+        await nc.close()
+        return info.delivered
+
+    delivered = asyncio.run(run())
+    assert delivered is not None, f"consumer {durable} reported no delivery information"
+    return delivered.consumer_seq
+
+
 def setup_consuming_table(table, subject):
     instance.query(
         f"""
@@ -745,16 +761,36 @@ def test_direct_select_leftover_does_not_pollute_view(nats_cluster):
     )
     jetstream_publish(nats_cluster, subject, 0, n)
 
-    # One direct read returns a single row (block size 1) and leaves the rest of the delivered burst
-    # buffered locally; retry until a read returns, confirming the burst was delivered.
-    for _ in range(40):
-        res = instance.query(
-            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
-            ignore_error=True,
+    # A direct read returns a single row (block size 1) while the broker keeps streaming the rest of
+    # the burst into the consumer's local queue, so a read that returns a row proves only that one
+    # message arrived. Retry until one read is seen to have been delivered more than it returned,
+    # which is what leaves stale copies for the view below to inherit. Each attempt issues exactly
+    # one read on purpose: a second read drops that queue before resubscribing. The surplus is
+    # measured on delivered.consumer_seq because num_ack_pending stops rising once all messages are
+    # already pending, and ack_wait here is short enough for that to happen.
+    deadline = time.time() + 60
+    left_over = False
+    returned = surplus = 0
+    while time.time() < deadline and not left_over:
+        delivered_before = jetstream_delivered_count(nats_cluster, stream, durable)
+        returned = len(
+            [
+                key
+                for key in instance.query(
+                    f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
+                    ignore_error=True,
+                ).split()
+                if key.strip()
+            ]
         )
-        if res.strip():
-            break
-    assert jetstream_ack_pending(nats_cluster, stream, durable) == n
+        surplus = jetstream_delivered_count(nats_cluster, stream, durable) - delivered_before
+        left_over = returned > 0 and surplus > returned
+        if not left_over:
+            time.sleep(0.3)
+    assert left_over, (
+        f"no direct SELECT left unreturned messages buffered in the consumer "
+        f"(last attempt returned {returned} of {surplus} delivered)"
+    )
 
     # Let the unacked messages pass ack_wait so the broker will redeliver them to the next subscription.
     time.sleep(3)
