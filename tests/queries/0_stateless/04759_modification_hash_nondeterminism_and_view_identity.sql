@@ -24,12 +24,17 @@ SELECT 'non-deterministic view null', modification_hash IS NULL FROM system.tabl
 
 -- 1b. The query cache with the consistency setting bypasses a non-deterministic query - no entry is
 -- stored - even when `query_cache_nondeterministic_function_handling = 'save'` would allow caching it.
--- Without the consistency setting the same query is stored (the control). The unique literals keep the
--- lookups in the server-wide `system.query_cache` independent of other tests.
-SELECT count(), 'qc_04759_nondet' FROM t WHERE rand() >= 0 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1, query_cache_nondeterministic_function_handling = 'save';
-SELECT 'non-deterministic query not stored', count() = 0 FROM system.query_cache WHERE query LIKE '%qc_04759_nondet%' AND query NOT LIKE '%system.query_cache%';
-SELECT count(), 'qc_04759_nondet_control' FROM t WHERE rand() >= 0 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_nondeterministic_function_handling = 'save';
-SELECT 'control query stored', count() > 0 FROM system.query_cache WHERE query LIKE '%qc_04759_nondet_control%' AND query NOT LIKE '%system.query_cache%';
+-- Without the consistency setting the same query is stored (the control).
+-- `system.query_cache` is server-wide and its entries outlive a single test run (`query_cache_ttl`
+-- defaults to 60 seconds), so both lookups below must be immune to entries of a concurrent or earlier
+-- run of this very test: the two marker literals are chosen so that neither is a substring of the
+-- other, and the current database name is folded into the cached queries (the predicate is a no-op for
+-- the result, and the query parameter is substituted before the query text is stored), which makes
+-- every run's entries distinguishable.
+SELECT count(), 'qc_04759_nondet' FROM t WHERE rand() >= 0 AND {CLICKHOUSE_DATABASE:String} != '' SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1, query_cache_nondeterministic_function_handling = 'save';
+SELECT 'non-deterministic query not stored', count() = 0 FROM system.query_cache WHERE query LIKE '%qc_04759_nondet%' AND query LIKE '%' || currentDatabase() || '%' AND query NOT LIKE '%system.query_cache%';
+SELECT count(), 'qc_04759_control' FROM t WHERE rand() >= 0 AND {CLICKHOUSE_DATABASE:String} != '' SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_nondeterministic_function_handling = 'save';
+SELECT 'control query stored', count() > 0 FROM system.query_cache WHERE query LIKE '%qc_04759_control%' AND query LIKE '%' || currentDatabase() || '%' AND query NOT LIKE '%system.query_cache%';
 
 -- 2. A view and a materialized view in an `Ordinary` database have no UUID and fail closed, even over
 -- a table (in the test's `Atomic` database) that reports a hash itself.
