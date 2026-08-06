@@ -46,6 +46,12 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
+    /// For an explicitly specified key, `throw_on_zero_files_match` is not enough: `KeysIterator` probes
+    /// the object metadata, and that probe throws for a key that does not exist. Sampling a path is only
+    /// needed to infer hive partitioning, so a missing key must leave the sample empty instead of failing
+    /// the query during analysis. A key that is really needed for reading is probed again by the reader,
+    /// which does report the error.
+    query_settings.ignore_non_existent_file = true;
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
