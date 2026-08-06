@@ -69,6 +69,36 @@ DROP TABLE other_expr_key;
 DROP TABLE dist_expr_key;
 DROP TABLE shard_expr_key;
 
+-- The initiator and the shard disagree when a `USING` key resolves to an alias nested in the `SELECT`
+-- list while the left table also has a real column of that name. Only top-level aliases survive into the
+-- shipped SQL, so the shard cannot see the nested one and silently joins by the real column instead.
+-- The key is shipped rather than rejected by an explicit owner decision, recorded at
+-- https://github.com/ClickHouse/ClickHouse/pull/110739#discussion_r3629326104, which reads in part:
+-- "the remote server joins by the real column, so the result may differ from local execution - this
+-- divergence is accepted, documented in the setting description, and pinned by a test case".
+-- https://github.com/ClickHouse/ClickHouse/issues/111276 stays open to document it.
+-- Pinned here as well, on the values, so that a change of mind on that decision shows up as a diff:
+-- the local answer is 11 and the distributed one is 0 for the same data.
+DROP TABLE IF EXISTS shard_shadowed_key;
+DROP TABLE IF EXISTS dist_shadowed_key;
+
+CREATE TABLE shard_shadowed_key (x UInt64, id UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO shard_shadowed_key VALUES (1, 5);
+
+CREATE TABLE dist_shadowed_key AS shard_shadowed_key
+    ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), shard_shadowed_key, rand());
+
+SELECT 'a nested SELECT-list alias shadowing a real column, locally';
+SELECT sum(x + 10 AS id) FROM shard_shadowed_key AS t JOIN (SELECT 11 AS id) t2 USING (id)
+SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1;
+
+SELECT 'the same over a Distributed table: joins by the real column instead';
+SELECT sum(x + 10 AS id) FROM dist_shadowed_key AS t JOIN (SELECT 11 AS id) t2 USING (id)
+SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1, distributed_product_mode = 'local';
+
+DROP TABLE dist_shadowed_key;
+DROP TABLE shard_shadowed_key;
+
 DROP TABLE other_using_alias;
 DROP TABLE dist_using_alias;
 DROP TABLE shard_using_alias;

@@ -76,3 +76,7 @@ the same, resolved through the SELECT list
 4
 5
 5
+a nested SELECT-list alias shadowing a real column, locally
+11
+the same over a Distributed table: joins by the real column instead
+0
