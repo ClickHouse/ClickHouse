@@ -1084,24 +1084,24 @@ def _ensure_lldb_installed():
         return
     if shutil.which("lldb"):
         return
+    # The macOS runner already brew-installs llvm at provisioning, but keg-only
+    # `llvm` is not symlinked onto the system PATH, so `lldb` is present yet
+    # undiscoverable. Prepend the formula's stable `opt/llvm` bin dir (derived
+    # directly, the same way `runner-init.py`'s `macos_job_path` does) and
+    # re-check before paying for a networked `brew install` on the timeout
+    # cleanup path — that keeps `stop_tests` bounded and still works offline.
+    brew_prefix = "/opt/homebrew" if platform.machine() == "arm64" else "/usr/local"
+    os.environ["PATH"] = f"{brew_prefix}/opt/llvm/bin:{os.environ.get('PATH', '')}"
+    if shutil.which("lldb"):
+        return
     if _LLDB_INSTALL_ATTEMPTED:
         return
     _LLDB_INSTALL_ATTEMPTED = True
-    # The macOS runner already brew-installs llvm at provisioning (see
-    # runner-init.py), so this is just a safety net there.
+    # Genuine package-missing fallback; the PATH prepend above already ran.
     try:
         subprocess.run(["brew", "install", "llvm"], check=True, timeout=600)
     except Exception as e:
         print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
-        return
-    # `brew install llvm` is keg-only — it does not symlink `lldb` onto the
-    # system PATH — so prepend the formula's bin dir, or `shutil.which("lldb")`
-    # in `get_stacktraces_from_lldb` stays empty and the install is wasted. The
-    # keg-only `opt/llvm` path is stable across versions, so derive it directly
-    # (the same way `runner-init.py`'s `macos_job_path` assembles the job PATH)
-    # rather than spending a second `brew --prefix llvm` subprocess on it.
-    brew_prefix = "/opt/homebrew" if platform.machine() == "arm64" else "/usr/local"
-    os.environ["PATH"] = f"{brew_prefix}/opt/llvm/bin:{os.environ.get('PATH', '')}"
 
 
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
