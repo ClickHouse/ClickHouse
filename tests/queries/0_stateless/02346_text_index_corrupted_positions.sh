@@ -36,7 +36,9 @@ phrase_via_index () {
     ${CLICKHOUSE_CLIENT} -q "
     SYSTEM DROP TEXT INDEX CACHES;
     SYSTEM DROP MARK CACHE;
-    SYSTEM DROP UNCOMPRESSED CACHE;" >/dev/null 2>&1
+    SYSTEM DROP UNCOMPRESSED CACHE;
+    SYSTEM DROP MMAP CACHE;
+    SYSTEM DROP PAGE CACHE;" >/dev/null 2>&1
     local out
     if out=$(${CLICKHOUSE_CLIENT} -q "
         SELECT count() FROM t_pos WHERE hasPhrase(s, 'needle alpha')
@@ -67,12 +69,6 @@ head -c "$(stat -c%s "${POS}.orig")" /dev/zero > "${POS}"
 echo "zeroed_directory:"
 phrase_via_index
 
-# Truncated blob: the directory's declared sizes now run past the end of the token's data.
-cp "${POS}.orig" "${POS}"
-truncate -s 3 "${POS}"
-echo "truncated_blob:"
-phrase_via_index
-
 # Oversized declared sizes: high bits set in the directory's leading bytes inflate every count.
 cp "${POS}.orig" "${POS}"
 printf '\xff\xff\xff\xff' | dd of="${POS}" bs=1 seek=0 conv=notrunc status=none
@@ -93,9 +89,20 @@ cp "${POS}.orig" "${POS}"
 echo "restored_matches_scan:"
 ${CLICKHOUSE_CLIENT} -q "
 SYSTEM DROP TEXT INDEX CACHES;
+SYSTEM DROP MARK CACHE;
+SYSTEM DROP UNCOMPRESSED CACHE;
+SYSTEM DROP MMAP CACHE;
+SYSTEM DROP PAGE CACHE;
 SELECT (SELECT count() FROM t_pos WHERE hasPhrase(s, 'needle alpha') SETTINGS use_skip_indexes = 0)
      = (SELECT count() FROM t_pos WHERE hasPhrase(s, 'needle alpha')
         SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1)"
+
+# Truncated blob, last: shrinking the file leaves the part's cached size stale, so any case after
+# this one would fail on the stale size rather than on the bytes it means to test.
+cp "${POS}.orig" "${POS}"
+truncate -s 3 "${POS}"
+echo "truncated_blob:"
+phrase_via_index
 
 rm -f "${POS}.orig"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_pos SYNC"

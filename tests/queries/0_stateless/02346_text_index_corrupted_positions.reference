@@ -4,8 +4,6 @@ intact_matches_scan:
 1
 zeroed_directory:
 error
-truncated_blob:
-error
 inflated_directory:
 error
 fixture_directory_bytes:
@@ -14,3 +12,5 @@ declared_size_past_blob:
 error
 restored_matches_scan:
 1
+truncated_blob:
+error
