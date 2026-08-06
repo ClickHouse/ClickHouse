@@ -11,7 +11,7 @@ const Icon = () => {
 }
 export const CloudNotSupportedBadge = () => {
     return (
-        <a href="/es/products/cloud/guides/cloud-compatibility#clickhouse-cloud-architecture" className="cloudNotSupportedBadge">
+        <a href="/es/products/cloud/guides/cloud-compatibility#list-of-unsupported-features" className="cloudNotSupportedBadge">
             <Icon />No disponible en ClickHouse Cloud
         </a>
     )
