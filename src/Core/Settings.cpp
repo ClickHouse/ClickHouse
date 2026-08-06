@@ -8520,9 +8520,9 @@ Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgre
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
-Allow experimental delta-kernel-rs implementation.
-)", BETA) \
+    DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
+Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
+)", BETA, allow_experimental_delta_kernel_rs) \
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \
