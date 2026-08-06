@@ -98,6 +98,44 @@ QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & nod
 }
 
 void inlineAliasColumnsImpl(QueryTreeNodePtr & node);
+void inlineAliasColumnsInExpression(QueryTreeNodePtr & node);
+
+/// A `JOIN USING` key is a `ColumnNode` whose expression is a `ListNode` recording how the key resolves on
+/// each side, and a side's entry can itself be an `ALIAS` column. Such an entry keeps the key's name as an
+/// alias when inlined, because the shipped SQL renders the entry rather than the key: `USING (x AS a)` is
+/// what lets a remote server resolve a key that exists only as an `ALIAS` column of the initiator's table.
+/// The alias also tells `rejectUnshippableJoinUsingKeys` which keys no remote server can resolve, and it
+/// reads the entry expecting exactly this shape.
+void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
+{
+    auto * using_list = join_expression->as<ListNode>();
+    if (!using_list)
+        return;
+
+    for (auto & using_node : using_list->getNodes())
+    {
+        auto * using_column = using_node->as<ColumnNode>();
+        if (!using_column || !using_column->hasExpression())
+            continue;
+
+        auto * key_sides = using_column->getExpression()->as<ListNode>();
+        if (!key_sides)
+            continue;
+
+        for (auto & side : key_sides->getNodes())
+        {
+            const auto * side_column = side->as<ColumnNode>();
+            auto expression = getInlineableAliasColumnExpression(side);
+            if (!expression)
+                continue;
+
+            const String key_name = side_column->getColumnName();
+            inlineAliasColumnsInExpression(expression);
+            expression->setAlias(key_name);
+            side = expression;
+        }
+    }
+}
 
 /// Inline `ALIAS` columns inside an expression subtree without assigning any alias. Nested subqueries are
 /// handed back to `inlineAliasColumnsImpl` so their own projection columns keep their names.
@@ -113,19 +151,18 @@ void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
     while (auto expression = getInlineableAliasColumnExpression(node))
         node = expression;
 
-    /// A `JOIN USING` key is a `ColumnNode` whose expression is a `ListNode` recording how the key resolves
-    /// on each side, and each side's entry can itself look like an inlineable `ALIAS` column. That list is
-    /// analyzer bookkeeping rather than an expression to evaluate - the shipped SQL just renders
-    /// `USING (name)` - and `rejectUnshippableJoinUsingKeys` reads it to decide whether a remote server can
-    /// resolve the key at all. Rewriting it would destroy what that check reads, so leave it alone.
     auto * join_node = node->as<JoinNode>();
-    const bool skip_using_keys = join_node && join_node->isUsingJoinExpression();
+    const bool using_join = join_node && join_node->isUsingJoinExpression();
 
     for (auto & child : node->getChildren())
     {
-        if (!child || (skip_using_keys && child == join_node->getJoinExpression()))
+        if (!child)
             continue;
-        inlineAliasColumnsInExpression(child);
+
+        if (using_join && child == join_node->getJoinExpression())
+            inlineJoinUsingKeys(child);
+        else
+            inlineAliasColumnsInExpression(child);
     }
 }
 
