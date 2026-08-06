@@ -1854,12 +1854,20 @@ def test_quota_execution_time_top_of_range_value_from_users_xml():
     # of 18446744073.709551615 is exactly the UInt64 maximum, while the product of doubles rounds up
     # to 2^64 and used to be rejected as out of range. The scaled value is therefore taken from the
     # configured text, mirroring the SQL CREATE QUOTA path.
+    # The system tables expose the limit exactly (as a Decimal): a Float64 column used to show it as
+    # the different, out-of-range value 18446744073.709553.
     copy_quota_xml("execution_time_top_of_range.xml")
     assert (
         instance.query(
-            "SELECT max_execution_time >= 18446744073 FROM system.quota_limits WHERE quota_name = 'myQuota'"
+            "SELECT max_execution_time FROM system.quota_limits WHERE quota_name = 'myQuota'"
         )
-        == "1\n"
+        == "18446744073.709551615\n"
+    )
+    assert (
+        instance.query(
+            "SELECT DISTINCT max_execution_time FROM system.quota_usage WHERE quota_name = 'myQuota'"
+        )
+        == "18446744073.709551615\n"
     )
 
     # Restore a clean config so later periodic reloads do not fail.

@@ -2,14 +2,17 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
 #include <Access/Quota.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/QuotaValueFromText.h>
 #include <base/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
@@ -23,9 +26,11 @@ namespace
     {
         out_column_null_map.push_back(false);
         if (type_info.output_as_float)
-            static_cast<ColumnFloat64 &>(out_column)
-                .getData()
-                .push_back(static_cast<double>(value) / static_cast<double>(type_info.output_denominator));
+            /// The denominator is a power of ten and the column's scale is its number of zeros, so the
+            /// raw value is exactly the unscaled integer of the Decimal. A division of doubles here
+            /// would round away the low bits of a value near the top of the range and show a different,
+            /// out-of-range limit (see `QuotaTypeInfo::valueToString`).
+            static_cast<ColumnDecimal<Decimal128> &>(out_column).getData().push_back(Decimal128(static_cast<Int128>(value)));
         else
             static_cast<ColumnUInt64 &>(out_column).getData().push_back(value / type_info.output_denominator);
     }
@@ -68,7 +73,9 @@ ColumnsDescription StorageSystemQuotaLimits::getColumnsDescription()
         String column_name = "max_" + type_info.name;
         DataTypePtr data_type;
         if (type_info.output_as_float)
-            data_type = std::make_shared<DataTypeFloat64>();
+            /// A Decimal wide enough for any value of the underlying UInt64, with the denominator's
+            /// zeros as the scale, represents every stored value exactly, unlike a Float64.
+            data_type = createDecimal<DataTypeDecimal>(std::numeric_limits<QuotaValue>::digits10 + 1, decimalZerosOfPowerOfTen(type_info.output_denominator));
         else
             data_type = std::make_shared<DataTypeUInt64>();
 

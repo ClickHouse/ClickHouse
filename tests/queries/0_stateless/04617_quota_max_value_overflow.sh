@@ -107,6 +107,11 @@ SHOW CREATE QUOTA ${QUOTA}_n;
 CREATE QUOTA ${QUOTA}_s FOR INTERVAL 1 hour MAX execution_time = 18446744073.709551615;
 SHOW CREATE QUOTA ${QUOTA}_s;
 
+-- The system tables expose a scaled limit exactly as well, as a Decimal whose unscaled integer is the
+-- stored value: a Float64 column used to show the top-of-range limit as the different, out-of-range
+-- value 18446744073.709553.
+SELECT max_execution_time, toTypeName(max_execution_time) FROM system.quota_limits WHERE quota_name = '${QUOTA}_s';
+
 CREATE QUOTA ${QUOTA}_i FOR INTERVAL 1 hour MAX execution_time = 18446744073;
 SHOW CREATE QUOTA ${QUOTA}_i;
 
