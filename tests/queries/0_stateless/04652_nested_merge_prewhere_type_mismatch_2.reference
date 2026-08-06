@@ -31,10 +31,10 @@
 -- an explicit PREWHERE through both views keeps working --
 10
 10
--- re-attached tables are lazy proxies --
-lazy_inner	TableProxy
+-- only the re-attached MergeTree is a lazy proxy --
+lazy_inner	Merge
 lazy_leaf	TableProxy
-lazy_outer	TableProxy
+lazy_outer	Merge
 -- the proxy must still reject the mismatched column, not abort --
 -- a matching column still supports PREWHERE through the proxy --
 10
