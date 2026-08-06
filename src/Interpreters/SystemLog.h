@@ -184,6 +184,13 @@ struct SystemLogSettings
 
     String engine;
     bool symbolize_traces = false;
+
+    /// Settings of the `all_...` union table over the log table, its rotated versions and/or
+    /// the same tables across a cluster. See the `create_union_system_log_tables` section
+    /// of the server configuration. The union table is created when at least one of the
+    /// two fields below is set.
+    bool union_table_merge_rotated_tables = false;
+    String union_table_cluster;
 };
 
 template <typename LogElement>
@@ -247,17 +254,39 @@ protected:
 private:
     /* Saving thread data */
     const StorageID table_id;
+    /// The `all_...` table over the log table, its rotated versions and/or the same tables
+    /// across a cluster (see `create_union_system_log_tables` in the server config).
+    const StorageID union_table_id;
     const String storage_def;
+    const bool union_table_merge_rotated_tables;
+    const String union_table_cluster;
     std::unique_ptr<ISystemLogFlushPolicy> flush_policy;
     String create_query;
     String old_create_query;
+    /// Expected CREATE query of the union table. Empty when the union table is not configured.
+    String union_create_query;
     bool is_prepared = false;
+    /// Whether the definition of the union table has to be verified against the expected one.
+    /// This is done at the first flush and after each rotation of the log table; on other
+    /// flushes the union table is only recreated if it went missing (e.g. dropped by a user).
+    bool union_table_check_pending = true;
+    /// Set when the union table cannot be created (e.g. the configured cluster does not exist)
+    /// or the database engine does not support it, to avoid retrying the creation and polluting
+    /// the log on every flush. Reset on rotation of the log table.
+    bool union_table_broken = false;
 
     void savingThreadFunction() override;
 
     /// flushImpl can be executed only in saving_thread.
     void flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end);
     ASTPtr getCreateTableQuery();
+    ASTPtr getCreateUnionTableQuery();
+
+    /// Creates or updates the `all_...` union table if it is configured.
+    /// The table is stateless (a proxy over the `merge`/`clusterAllReplicas` table functions),
+    /// so it is recreated with an atomic exchange whenever its definition differs from the
+    /// expected one. Failures are logged and never interfere with flushing the log itself.
+    void prepareUnionTable();
 };
 
 }
