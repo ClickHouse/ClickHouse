@@ -55,13 +55,15 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
         case StoreMethod::SINGLE_SCALAR:
         {
             /// For const scalar:
-            /// SELECT 0 AS group, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
+            /// SELECT toUInt64(0) AS group, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
             ///
             /// For single scalar:
-            /// SELECT 0 AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
+            /// SELECT toUInt64(0) AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
             SelectQueryBuilder builder;
 
-            builder.select_list.push_back(make_intrusive<ASTLiteral>(0u));
+            /// Group #0 is the reserved empty-tags group; a bare literal `0` would be typed as
+            /// `UInt8` while the `group` column of a vector grid must be `UInt64`.
+            builder.select_list.push_back(makeASTFunction("toUInt64", make_intrusive<ASTLiteral>(0u)));
             builder.select_list.back()->setAlias(ColumnNames::Group);
 
             ASTPtr value = (query_piece.store_method == StoreMethod::CONST_SCALAR)
@@ -92,11 +94,12 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
 
         case StoreMethod::SCALAR_GRID:
         {
-            /// SELECT 0 AS group, values
+            /// SELECT toUInt64(0) AS group, values
             /// FROM <scalar_grid>
             SelectQueryBuilder builder;
 
-            builder.select_list.push_back(make_intrusive<ASTLiteral>(0u));
+            /// See the comment about `toUInt64(0)` above.
+            builder.select_list.push_back(makeASTFunction("toUInt64", make_intrusive<ASTLiteral>(0u)));
             builder.select_list.back()->setAlias(ColumnNames::Group);
 
             builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
