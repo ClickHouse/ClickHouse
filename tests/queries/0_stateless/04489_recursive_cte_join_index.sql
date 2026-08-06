@@ -799,9 +799,13 @@ SELECT sum(n) FROM joined_pr_non_replicated
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 0, automatic_parallel_replicas_mode = 0;
 
--- The same for a view over a `MergeTree` table: it is eligible only while
--- `parallel_replicas_allow_view_over_mergetree` is on, so with the view support turned off
--- the forced mode must not reject the query ...
+-- A view over a `MergeTree` table can engage parallel replicas regardless of
+-- `parallel_replicas_allow_view_over_mergetree`: that setting only gates the *outer*
+-- planner's unwrapping of the view, while with the setting off `StorageView::readImpl`
+-- still re-interprets the inner query with the reading context's settings, and that inner
+-- planner engages parallel replicas for the bare eligible `MergeTree` (the plain read's
+-- plan contains `ReadFromRemoteParallelReplicas` over the view's inner query either way).
+-- The forced mode must therefore fail closed with the view support turned off too ...
 CREATE VIEW edges_view AS SELECT * FROM edges;
 
 WITH RECURSIVE view_pr AS
@@ -813,9 +817,9 @@ WITH RECURSIVE view_pr AS
 SELECT sum(n) FROM view_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 0,
-    automatic_parallel_replicas_mode = 0;
+    automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
--- ... and must reject it once the view really can be read with parallel replicas.
+-- ... and with it on, when the outer planner itself can read the view with parallel replicas.
 WITH RECURSIVE view_pr_throw AS
 (
     SELECT 1 AS n
@@ -1042,6 +1046,59 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE edges_merge_dist;
+
+-- An ordinary `VIEW` over a local table cannot engage parallel replicas (with the default
+-- `parallel_replicas_for_non_replicated_merge_tree = 0` at the CREATE below, the inner
+-- `MergeTree` is not eligible either way), so it must keep running under the forcing mode.
+DROP VIEW IF EXISTS edges_view_local;
+CREATE VIEW edges_view_local AS SELECT * FROM edges;
+
+WITH RECURSIVE view_local_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM view_local_pr AS t INNER JOIN edges_view_local AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM view_local_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    automatic_parallel_replicas_mode = 0;
+
+DROP VIEW edges_view_local;
+
+-- An ordinary non-inlined `VIEW` re-interprets its inner query with the reading context's
+-- settings, so a view over a `Distributed` table still reaches `ClusterProxy` and can engage
+-- parallel replicas even though the view storage itself is not remote — the forcing mode
+-- must fail closed instead of silently downgrading to a plain read.
+DROP VIEW IF EXISTS edges_view_dist;
+CREATE VIEW edges_view_dist AS SELECT * FROM edges_dist_replicas;
+
+WITH RECURSIVE view_dist_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM view_dist_pr_throw AS t INNER JOIN edges_view_dist AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM view_dist_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP VIEW edges_view_dist;
+
+-- The `view` table function is a `StorageView` too and must be checked the same way.
+WITH RECURSIVE view_fn_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM view_fn_pr_throw AS t
+    INNER JOIN view(SELECT * FROM edges_dist_replicas) AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM view_fn_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE edges_dist_replicas;
 
 DROP TABLE edges;

@@ -8,6 +8,7 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageView.h>
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -31,6 +32,8 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -221,6 +224,68 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
     return true;
 }
 
+bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_context);
+
+/// Whether reading an ordinary `VIEW` that the analyzer did not inline could engage
+/// parallel replicas.
+///
+/// With `analyzer_inline_views = 0` (the default) an ordinary view stays a `TableNode`
+/// wrapping `StorageView` in the resolved query tree, and neither of the storage-level
+/// checks sees through it: `StorageView::isRemote` is `false`, and the planner's rule
+/// (`canUseTableForParallelReplicas`) unwraps a view only to an underlying `MergeTree`,
+/// subject to `parallel_replicas_allow_view_over_mergetree`. Yet `StorageView::readImpl`
+/// interprets the inner query with a context derived from the reading context (see
+/// `getViewContext` in `StorageView.cpp`), so the parallel-replica settings pass through
+/// it: a view defined over a `Distributed` table still reaches `ClusterProxy` and consults
+/// them, and a view over an eligible `MergeTree` can engage them through that inner
+/// interpretation even with `parallel_replicas_allow_view_over_mergetree = 0` (the setting
+/// only gates the outer planner's unwrapping, and the disable in `getViewContext` is gated
+/// on it too).
+/// Decide the view's eligibility the way the planner's own view unwrapping does
+/// (`StorageView::getUnderlyingMergeTreeStorageForParallelReplicas`): resolve the inner
+/// query into a query tree — with the same context the read would use — and run the
+/// same eligibility walk over it. Nested views recurse naturally through the walk.
+bool mayEngageParallelReplicasForView(const StorageView & view, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+{
+    /// A parameterized view cannot be resolved without its arguments. It also cannot
+    /// really appear here: the analyzer resolves a parameterized-view invocation into a
+    /// fresh `StorageView` with the parameters already substituted
+    /// (`Context::buildParameterizedViewStorage`), for which this is `false`.
+    if (view.isParameterizedView())
+        return false;
+
+    /// Resolving a query with an insertion-table context can poison the schema cache of
+    /// table functions inside the view (`use_structure_from_insertion_table_in_table_functions`
+    /// infers their structure from the insertion table) — the same guard as in
+    /// `StorageView::getUnderlyingMergeTreeStorageForParallelReplicas`. The read itself
+    /// decides then; nothing is checked ahead of it.
+    if (context->hasInsertionTable())
+        return false;
+
+    auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
+
+    QueryTreeNodePtr inner_query_tree;
+    try
+    {
+        inner_query_tree = buildQueryTree(storage_snapshot->metadata->getSelectQuery().inner_query->clone(), view_context);
+        QueryTreePassManager pass_manager(view_context);
+        addQueryTreePasses(pass_manager);
+        pass_manager.runOnlyResolve(inner_query_tree);
+    }
+    catch (...) // Ok: reading the view resolves the same inner query with an equivalent context and will surface the same error, so treating the view as unable to engage parallel replicas does not silently downgrade anything.
+    {
+        /// A preflight failure must also not fail a recursive query whose steps never
+        /// actually read the view (e.g. the recursion produces no rows).
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__,
+            fmt::format("Failed to resolve the inner query of view {} while checking parallel-replica eligibility", view.getStorageID().getFullTableName()),
+            LogsLevel::trace);
+        return false;
+    }
+
+    return mayEngageParallelReplicas(inner_query_tree.get(), view_context);
+}
+
 /// Whether parallel replicas could actually be engaged for a query subtree.
 ///
 /// A recursive step that reads nothing but local, non-`MergeTree` storages — in
@@ -246,6 +311,11 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
 /// the parallel-replica machinery and only when the cluster has a suitable shape, which is
 /// what `mayEngageParallelReplicasForRemoteStorage` checks positively. Remote engines that
 /// read directly (`MongoDB`, `MySQL`, ...) never consult the setting and are not eligible.
+///
+/// An ordinary non-inlined `VIEW` is eligible when its inner query is: the view's read
+/// re-interprets that query with the reading context's settings, so a view over a remote
+/// source can engage parallel replicas even though the view storage itself is not remote
+/// (see `mayEngageParallelReplicasForView`).
 ///
 /// The walk is scoped to `scope_context`: subqueries with a `SETTINGS` clause of their
 /// own get their own context, and the settings that decide whether parallel replicas
@@ -285,14 +355,24 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_c
 
             if (canUseTableForParallelReplicas(*table_node, scope_context))
                 return true;
+
+            if (const auto * view = typeid_cast<const StorageView *>(storage.get());
+                view && mayEngageParallelReplicasForView(*view, table_node->getStorageSnapshot(), scope_context))
+                return true;
         }
         else if (const auto * table_function_node = subtree_node->as<TableFunctionNode>())
         {
             /// A table function resolving to a remote storage (`remote`, `cluster`) can be read
             /// with parallel replicas; local ones (`numbers`, `file`, ...) never are — the
-            /// planner rejects a `TABLE_FUNCTION` join-tree node outright.
+            /// planner rejects a `TABLE_FUNCTION` join-tree node outright. The `view` table
+            /// function and a parameterized-view invocation resolve to a `StorageView`, whose
+            /// read re-interprets the inner query — check it like a view table.
             const auto & storage = table_function_node->getStorage();
             if (storage && storage->isRemote() && mayEngageParallelReplicasForRemoteStorage(*storage, scope_context))
+                return true;
+
+            if (const auto * view = typeid_cast<const StorageView *>(storage.get());
+                view && mayEngageParallelReplicasForView(*view, table_function_node->getStorageSnapshot(), scope_context))
                 return true;
         }
 
