@@ -210,10 +210,11 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
 
 ## Returned value {#returned-value}
 
-The function returns three columns:
+The function returns four columns:
 - `id` - Contains the identifiers of time series matching the specified selector.
 - `timestamp` - Contains timestamps.
 - `value` - Contains values.
+- `is_stale_marker` - Whether this sample is a Prometheus staleness marker.
 
 There is no specific order for returned data.
 
@@ -264,7 +265,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `changes`, `resets` |
+| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `stddev_over_time`, `stdvar_over_time`, `changes`, `resets` |
 | Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -334,7 +335,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `changes`, `resets` |
+| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `stddev_over_time`, `stdvar_over_time`, `changes`, `resets` |
 | Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
