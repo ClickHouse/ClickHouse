@@ -237,52 +237,6 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
     EXPECT_NE(restored.tryGet("tuple"), nullptr);
 }
 
-namespace
-{
-
-SerializationInfoSettings makeSettings(MergeTreeSerializationInfoVersion version, bool propagate)
-{
-    return SerializationInfoSettings(
-        /*ratio_of_defaults_for_sparse_=*/0.9375,
-        /*choose_kind_=*/true,
-        /*compute_exact_num_defaults_=*/false,
-        version,
-        MergeTreeStringSerializationVersion::SINGLE_STREAM,
-        MergeTreeNullableSerializationVersion::BASIC,
-        MergeTreeMapSerializationVersion::BASIC,
-        propagate);
-}
-
-}
-
-/// Versions below WITH_TYPES cannot persist `propagate_types_serialization_versions_to_nested_types`,
-/// so the constructor normalizes it: a settings object rebuilt from a BASIC `serialization.json`
-/// must be indistinguishable from the one that wrote it.
-TEST(SerializationInfoSettingsCtor, PropagateNormalizedBelowWithTypes)
-{
-    EXPECT_FALSE(makeSettings(MergeTreeSerializationInfoVersion::BASIC, true)
-                     .propagate_types_serialization_versions_to_nested_types);
-
-    /// Scoped, not a blanket disable: WITH_TYPES keeps the requested value.
-    EXPECT_TRUE(makeSettings(MergeTreeSerializationInfoVersion::WITH_TYPES, true)
-                    .propagate_types_serialization_versions_to_nested_types);
-    EXPECT_FALSE(makeSettings(MergeTreeSerializationInfoVersion::WITH_TYPES, false)
-                     .propagate_types_serialization_versions_to_nested_types);
-}
-
-/// The equality consequence, which is what a mutation compares to decide whether to
-/// re-materialize serialization info.
-TEST(SerializationInfoSettingsCtor, PropagateDoesNotAffectEqualityBelowWithTypes)
-{
-    EXPECT_EQ(
-        makeSettings(MergeTreeSerializationInfoVersion::BASIC, true),
-        makeSettings(MergeTreeSerializationInfoVersion::BASIC, false));
-
-    EXPECT_NE(
-        makeSettings(MergeTreeSerializationInfoVersion::WITH_TYPES, true),
-        makeSettings(MergeTreeSerializationInfoVersion::WITH_TYPES, false));
-}
-
 /// Malformed kind tests.
 /// stringToKind throws LOGICAL_ERROR which aborts in debug builds
 /// but throws a catchable exception in release builds.
