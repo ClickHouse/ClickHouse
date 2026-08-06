@@ -321,8 +321,10 @@ public:
             /// this expression will be analyzed and then represented by following:
             ///   args in hyperrectangle [10, 20] × [20, 30].
             FUNCTION_ARGS_IN_HYPERRECTANGLE,
-            /// Special for pointInPolygon to utilize minmax indices.
+            /// Special for pointInPolygon to utilize primary key and minmax indices.
             /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
+            /// where x, y are key columns, or pointInPolygon(coord, [...])
+            /// where coord is a key column of type Point (Tuple of two coordinates).
             FUNCTION_POINT_IN_POLYGON,
             /// Can take any value.
             FUNCTION_UNKNOWN,
@@ -368,7 +370,8 @@ public:
         ///  * if FUNCTION[_NOT]_IN_SET: one or more elements in nondecreasing order, same as
         ///    set_index->getIndexesMapping()[..].key_index,
         ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
-        ///    as in pointInPolygon((x, y), ...).
+        ///    as in pointInPolygon((x, y), ...), or one element if the point is a whole
+        ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...).
         std::vector<size_t> key_columns;
 
         /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
@@ -388,7 +391,8 @@ public:
         Hyperrectangle space_filling_curve_args_hyperrectangle;
 
         /// For FUNCTION_POINT_IN_POLYGON.
-        /// `key_columns` has two elements for the point coordinates (x, y).
+        /// `key_columns` has two elements for the point coordinates (x, y),
+        /// or one element if the point is a whole key column of Tuple type.
         std::shared_ptr<Polygon> polygon;
 
         /// What functions are applied to the key column before doing the range/set/etc check.
@@ -458,7 +462,8 @@ public:
     ///
     /// NOTE: we also need to examine special functions that generate atoms. For
     /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
-    /// on a given regular expression, which is relaxed for simplicity.
+    /// on a given regular expression. Such an atom is relaxed unless the regular
+    /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
 
     bool isSinglePoint() const { return single_point; }
@@ -562,7 +567,7 @@ private:
     /// A bare numeric key column used directly as a boolean condition (`WHERE flag`)
     /// produces the single atom `flag != 0`.
     void extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
-    void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, RPN & out);
+    void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const BuildInfo & info, RPN & out);
     void extractBinaryComparisonAtoms(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,

@@ -2,6 +2,9 @@
 -- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
 
 SET explain_query_plan_default = 'legacy';
+-- The sparsity-stats trivial count would answer `count() WHERE flag` without index analysis,
+-- hiding the `Condition`/`Granules` output this test pins.
+SET optimize_trivial_count_with_sparsity_filter = 0;
 
 -- { echo }
 
