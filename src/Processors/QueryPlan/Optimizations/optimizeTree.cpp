@@ -547,8 +547,13 @@ void optimizeTreeSecondPass(
         optimizeExchanges(root);
 
     /// Force set-operation branches to expose full columns so they agree after a fragment is serialized
-    /// and constness is re-derived per step.
-    if (optimization_settings.make_distributed_plan)
+    /// and constness is re-derived per step. A plan with no exchanges is never split into serialized
+    /// fragments (`convertToDistributed` keeps it as a single stage executed in this process), so it
+    /// must keep its constants: e.g. a child plan of `ReadFromMerge` is united into the parent pipeline
+    /// in-process, and materializing the constants of a `Union` inside one child (such as a `Buffer`
+    /// table reading its destination table and its buffers) while a sibling child keeps them const
+    /// breaks the equal-headers invariant across the children of `ReadFromMerge`.
+    if (optimization_settings.make_distributed_plan && planContainsLogicalExchange(root))
         materializeConstantsForSetOperationBranches(root, nodes);
 
     /// Vector search first pass optimization sets up everything for vector index usage.

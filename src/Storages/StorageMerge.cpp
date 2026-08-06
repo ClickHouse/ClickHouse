@@ -587,19 +587,6 @@ ReadFromMerge::ReadFromMerge(
 {
 }
 
-/// A child plan of `ReadFromMerge` is united into the parent pipeline in this process and is
-/// never serialized as a distributed fragment, so it must not be converted to a distributed
-/// plan, and distributed-plan-only rewrites (such as materializing constants in set-operation
-/// branches, which run even when `optimize_plan` is false) must not run on it: they could
-/// change the constness of one child's header while a sibling keeps its constants, breaking
-/// the equal-headers invariant across the children of `ReadFromMerge`.
-static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(const ContextPtr & context)
-{
-    QueryPlanOptimizationSettings settings(context);
-    settings.make_distributed_plan = false;
-    return settings;
-}
-
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
     output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
@@ -625,7 +612,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(getChildPlanOptimizationSettings(context));
+            child.plan.optimize(QueryPlanOptimizationSettings(context));
         }
     }
 
@@ -1002,7 +989,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     child.plan.addStep(std::move(filter_step));
                 }
 
-                child.plan.optimize(getChildPlanOptimizationSettings(modified_context));
+                child.plan.optimize(QueryPlanOptimizationSettings(modified_context));
             }
 
             res.emplace_back(std::move(child));
@@ -1296,7 +1283,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!child.plan.isInitialized())
         return nullptr;
 
-    QueryPlanOptimizationSettings optimization_settings = getChildPlanOptimizationSettings(context);
+    QueryPlanOptimizationSettings optimization_settings(context);
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
