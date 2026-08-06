@@ -1289,6 +1289,12 @@ InputOrderInfoPtr buildInputOrderInfo(
             if (!can_read)
                 return nullptr;
 
+            /// Same as for the direct `ReadFromMergeTree` path above, forwarded to the child reads.
+            if (find_reading_ctx.passed_residual_cpu_step
+                || (sorting.hasLimitByHint()
+                    && order_info.input_order->sort_description_for_merging.size() >= description.size()))
+                merge->setPreferMultipleStreams();
+
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
@@ -1380,6 +1386,10 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = merge->requestReadingInOrder(order_info.input_order);
             if (!can_read)
                 return {};
+
+            /// Aggregation-in-order needs multiple parallel streams, same as the direct
+            /// `ReadFromMergeTree` path above; forward the opt-out to the child reads.
+            merge->setPreferMultipleStreams();
         }
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1506,6 +1516,10 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
 
+        /// Distinct-in-order runs a parallel pre-distinct transform per stream, same as the direct
+        /// `ReadFromMergeTree` path above; forward the opt-out to the child reads.
+        merge->setPreferMultipleStreams();
+
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
@@ -1603,6 +1617,10 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
+
+        /// `LimitByStep` runs a per-stream pre-filter, same as the direct `ReadFromMergeTree` path
+        /// above; forward the opt-out to the child reads.
+        merge->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);

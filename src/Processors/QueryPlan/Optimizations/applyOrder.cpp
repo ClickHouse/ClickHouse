@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/StorageMerge.h>
 
 #include <Functions/IFunction.h>
 
@@ -56,6 +57,13 @@ static void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
         if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
         {
             reading->setPreferMultipleStreams();
+            return;
+        }
+
+        /// A `Merge` table hides the actual reads inside child plans - forward the opt-out to them.
+        if (auto * merge = typeid_cast<ReadFromMerge *>(step))
+        {
+            merge->setPreferMultipleStreams();
             return;
         }
 

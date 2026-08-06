@@ -1,0 +1,14 @@
+baseline_prefetching_used
+1
+no_prefetching_limit_by
+0
+no_prefetching_order_by_limit_by
+0
+no_prefetching_distinct
+0
+no_prefetching_aggregation_in_order
+0
+no_prefetching_residual_filter
+0
+correctness
+1

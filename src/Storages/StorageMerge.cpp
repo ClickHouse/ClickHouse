@@ -41,6 +41,7 @@
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -1756,6 +1757,28 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
+/// Mirrors the `passed_residual_cpu_step` check that `optimizeReadInOrder` does for a direct
+/// `ReadFromMergeTree`, but for the child plans of a `Merge` table. The residual filter of the outer
+/// query is pushed *into* the child plan, above the child read, where `PrefetchingConcatProcessor`
+/// would collapse the streams and serialize it. The outer pass cannot see those steps - it only sees
+/// `ReadFromMerge` - so the check has to happen here.
+static void preferMultipleStreamsForResidualCpuWork(QueryPlan::Node * node, bool passed_residual_cpu_step)
+{
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+    {
+        if (passed_residual_cpu_step)
+            read_from_merge_tree->setPreferMultipleStreams();
+        return;
+    }
+
+    passed_residual_cpu_step = passed_residual_cpu_step
+        || typeid_cast<FilterStep *>(node->step.get()) != nullptr
+        || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;
+
+    for (auto * child : node->children)
+        preferMultipleStreamsForResidualCpuWork(child, passed_residual_cpu_step);
+}
+
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
 {
     filterTablesAndCreateChildrenPlans();
@@ -1779,9 +1802,33 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     if (!ok)
         return false;
 
+    /// Residual per-row work that got pushed into the child plans must stay parallel, exactly as
+    /// for a direct `ReadFromMergeTree` read.
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            preferMultipleStreamsForResidualCpuWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ false);
+
     order_info = order_info_;
     query_info.input_order_info = order_info;
     return true;
+}
+
+void ReadFromMerge::setPreferMultipleStreams()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    /// The opt-out has to reach the child `ReadFromMergeTree` steps: it is their
+    /// `PrefetchingConcatProcessor` that would otherwise collapse a single-part filtered read into
+    /// a single stream and serialize the per-stream work above the `Merge` table.
+    auto prefer_multiple_streams = [](ReadFromMergeTree & read_from_merge_tree)
+    {
+        read_from_merge_tree.setPreferMultipleStreams();
+        return true;
+    };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), prefer_multiple_streams);
 }
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
