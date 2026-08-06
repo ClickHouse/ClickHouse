@@ -98,3 +98,36 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingHintIsClearedByLocalProcessi
     ASSERT_EQ(file_status->state.load(), FileStatus::State::Processing);
     ASSERT_EQ(file_status->processed_rows.load(), 5UL);
 }
+
+/// A terminal state committed by another processor replaces the data of an abandoned
+/// local attempt: `Processed` must not keep a stale exception, and `Failed` must carry
+/// the exception of the processor which actually failed the file.
+TEST(ObjectStorageQueueFileStatus, ForeignTerminalStateReplacesDataOfPreviousLocalAttempt)
+{
+    auto file_status = std::make_shared<FileStatus>("data/file.csv");
+
+    file_status->onProcessing();
+    file_status->processed_rows = 10;
+    file_status->retries = 2;
+    file_status->onFailed("Cannot read the file");
+
+    /// Another processor has committed the file as processed.
+    file_status->onTerminalStateByAnotherProcessor(FileStatus::State::Processed, "", /* retries_ */ 0);
+
+    ASSERT_EQ(file_status->state.load(), FileStatus::State::Processed);
+    ASSERT_EQ(file_status->processed_rows.load(), 0UL);
+    ASSERT_EQ(file_status->processing_start_time.load(), 0);
+    ASSERT_EQ(file_status->processing_end_time.load(), 0);
+    ASSERT_EQ(file_status->getException(), "");
+    ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
+
+    /// Another processor has failed the file: its exception and retries are reported.
+    file_status->onProcessing();
+    file_status->processed_rows = 5;
+    file_status->onTerminalStateByAnotherProcessor(FileStatus::State::Failed, "Cannot parse the file", /* retries_ */ 3);
+
+    ASSERT_EQ(file_status->state.load(), FileStatus::State::Failed);
+    ASSERT_EQ(file_status->processed_rows.load(), 0UL);
+    ASSERT_EQ(file_status->getException(), "Cannot parse the file");
+    ASSERT_EQ(file_status->retries.load(), 3UL);
+}

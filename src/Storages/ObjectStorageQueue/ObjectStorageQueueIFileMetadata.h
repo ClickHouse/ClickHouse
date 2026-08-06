@@ -41,6 +41,9 @@ public:
         /// The `processing` node in keeper is held by another processor
         /// (another server, or another table on this server).
         void onProcessingByAnotherProcessor();
+        /// The file was committed by another processor: replace the data of a previous
+        /// local attempt with the terminal state discovered in keeper.
+        void onTerminalStateByAnotherProcessor(State state_, const std::string & exception, size_t retries_);
         /// Whether the `Processing` state is only a cached observation of a foreign node.
         bool isProcessingByAnotherProcessor() const { return processing_by_another_processor_since.load() != 0; }
         /// Whether a file in `Processing` state may be attempted again: only if the state is a
@@ -68,6 +71,16 @@ public:
         std::string last_exception;
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
+
+    /// A terminal state of a file discovered in keeper (a `processed` or `failed` node
+    /// committed by another processor).
+    struct FileTerminalState
+    {
+        FileStatus::State state;
+        /// The exception from the `failed` node; empty for `Processed`.
+        std::string exception = {};
+        size_t retries = 0;
+    };
 
     /// Helper structure for storing the flag of presence or absence of a node in the keeper.
     struct PartitionLastProcessedFileInfo

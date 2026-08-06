@@ -1095,7 +1095,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     ObjectStorageQueueBucketingMode bucketing_mode,
     ObjectStorageQueuePartitioningMode partitioning_mode,
     const ObjectStorageQueueFilenameParser * parser,
-    std::unordered_map<std::string, FileStatus::State> & terminal_states,
+    std::unordered_map<std::string, FileTerminalState> & terminal_states,
     LoggerPtr log_)
 {
     const bool use_buckets_for_processing = buckets_num > 1;
@@ -1149,7 +1149,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                     && path <= max_processed_file->second)
                 {
                     LOG_TEST(log_, "Skipping file {}: Processed", path);
-                    terminal_states.emplace(path, FileStatus::State::Processed);
+                    terminal_states.emplace(path, FileTerminalState{.state = FileStatus::State::Processed});
                     continue;
                 }
             }
@@ -1158,7 +1158,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                 if (path <= last_processed_file_map[bucket][""])
                 {
                     LOG_TEST(log_, "Skipping file {}: Processed", path);
-                    terminal_states.emplace(path, FileStatus::State::Processed);
+                    terminal_states.emplace(path, FileTerminalState{.state = FileStatus::State::Processed});
                     continue;
                 }
             }
@@ -1196,7 +1196,13 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
         else
         {
             LOG_TEST(log_, "Skipping file {}: Failed", filename);
-            terminal_states.emplace(std::move(filename), FileStatus::State::Failed);
+            auto failed_node_metadata = NodeMetadata::fromString(responses[i].data);
+            terminal_states.emplace(
+                std::move(filename),
+                FileTerminalState{
+                    .state = FileStatus::State::Failed,
+                    .exception = std::move(failed_node_metadata.last_exception),
+                    .retries = failed_node_metadata.retries});
         }
 
     }

@@ -136,7 +136,7 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
     std::vector<std::string> & paths,
     const std::filesystem::path & zk_path_,
     const std::string & zookeeper_name_,
-    std::unordered_map<std::string, FileStatus::State> & terminal_states,
+    std::unordered_map<std::string, FileTerminalState> & terminal_states,
     LoggerPtr log_)
 {
     std::vector<std::string> check_paths;
@@ -172,11 +172,16 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
         }
         else
         {
-            const auto state = responses[i].error == Coordination::Error::ZOK
-                ? FileStatus::State::Processed
-                : FileStatus::State::Failed;
-            LOG_TEST(log_, "Skipping file {}: {}", paths[i / 2], state);
-            terminal_states.emplace(std::move(paths[i / 2]), state);
+            FileTerminalState terminal{.state = FileStatus::State::Processed};
+            if (responses[i].error != Coordination::Error::ZOK)
+            {
+                auto failed_node_metadata = NodeMetadata::fromString(responses[i + 1].data);
+                terminal.state = FileStatus::State::Failed;
+                terminal.exception = std::move(failed_node_metadata.last_exception);
+                terminal.retries = failed_node_metadata.retries;
+            }
+            LOG_TEST(log_, "Skipping file {}: {}", paths[i / 2], terminal.state);
+            terminal_states.emplace(std::move(paths[i / 2]), std::move(terminal));
         }
         i += 2;
     }

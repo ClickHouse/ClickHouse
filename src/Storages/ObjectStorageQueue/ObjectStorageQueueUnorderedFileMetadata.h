@@ -31,7 +31,7 @@ public:
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         const std::string & zookeeper_name_,
-        std::unordered_map<std::string, FileStatus::State> & terminal_states,
+        std::unordered_map<std::string, FileTerminalState> & terminal_states,
         LoggerPtr log_);
 
     PathState getPathState(std::string & failure_message) const override;

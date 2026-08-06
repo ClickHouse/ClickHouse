@@ -141,7 +141,8 @@ def test_cached_state_updated_when_foreign_processor_commits(started_cluster):
     `processed` (or `failed`) node appears in keeper. That discovery is written back
     into the local file status cache, so `system.s3queue_metadata_cache` reports the
     terminal state instead of keeping the stale foreign `Processing` observation
-    until cache eviction.
+    until cache eviction. The whole cached record follows keeper: a file failed by
+    another processor carries the exception from the `failed` node.
     """
     node = started_cluster.instances["instance"]
 
@@ -168,11 +169,29 @@ def test_cached_state_updated_when_foreign_processor_commits(started_cluster):
         },
     )
 
-    conflict_file = f"{files_path}/test_1.csv"
-    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    # `test_1.csv` will be committed as processed by the foreign processor,
+    # `test_2.csv` will be failed by it.
+    processed_file = f"{files_path}/test_1.csv"
+    failed_file = f"{files_path}/test_2.csv"
     zk = started_cluster.get_kazoo_client("zoo1")
     zk.ensure_path(f"{keeper_path}/processing")
-    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    def keeper_node_of(file_path):
+        return node.query(f"SELECT sipHash64('{file_path}')").strip()
+
+    for conflict_file in (processed_file, failed_file):
+        zk.create(f"{keeper_path}/processing/{keeper_node_of(conflict_file)}", b"another processor")
+
+    def foreign_node_metadata(file_path, exception, retries):
+        return json.dumps(
+            {
+                "file_path": file_path,
+                "last_processed_timestamp": int(time.time()),
+                "last_exception": exception,
+                "retries": retries,
+                "processor_id": "0",
+            }
+        ).encode()
 
     try:
         create_mv(node, table_name, dst_table_name)
@@ -180,36 +199,47 @@ def test_cached_state_updated_when_foreign_processor_commits(started_cluster):
         def get_count():
             return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
 
-        run_with_retry(lambda x: x == files_to_generate - 1, get_count)
+        run_with_retry(lambda x: x == files_to_generate - 2, get_count)
 
-        def get_cached_status():
+        def get_cached_status(file_path):
             return node.query(
                 f"SELECT status FROM system.s3queue_metadata_cache "
-                f"WHERE file_path LIKE '%{conflict_file}'"
+                f"WHERE file_path LIKE '%{file_path}'"
             ).strip()
 
-        # The cached state of the file is an observation of the foreign `processing` node.
-        run_with_retry(lambda x: x == "Processing", get_cached_status)
+        # The cached states of the files are observations of the foreign `processing` nodes.
+        run_with_retry(lambda x: x == "Processing", lambda: get_cached_status(processed_file))
+        run_with_retry(lambda x: x == "Processing", lambda: get_cached_status(failed_file))
 
-        # The foreign processor commits the file.
-        node_metadata = json.dumps(
-            {
-                "file_path": conflict_file,
-                "last_processed_timestamp": int(time.time()),
-                "last_exception": "",
-                "retries": 0,
-                "processor_id": "0",
-            }
+        # The foreign processor commits one file and fails the other.
+        zk.create(
+            f"{keeper_path}/processed/{keeper_node_of(processed_file)}",
+            foreign_node_metadata(processed_file, exception="", retries=0),
         )
-        zk.create(f"{keeper_path}/processed/{conflict_node}", node_metadata.encode())
-        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+        zk.delete(f"{keeper_path}/processing/{keeper_node_of(processed_file)}")
+        zk.create(
+            f"{keeper_path}/failed/{keeper_node_of(failed_file)}",
+            foreign_node_metadata(failed_file, exception="Cannot parse the file", retries=100),
+        )
+        zk.delete(f"{keeper_path}/processing/{keeper_node_of(failed_file)}")
 
-        # The cached state follows keeper instead of staying `Processing`.
-        run_with_retry(lambda x: x == "Processed", get_cached_status)
+        # The cached states follow keeper instead of staying `Processing`.
+        run_with_retry(lambda x: x == "Processed", lambda: get_cached_status(processed_file))
+        run_with_retry(lambda x: x == "Failed", lambda: get_cached_status(failed_file))
 
-        # The file was never ingested by this table.
-        assert get_count() == files_to_generate - 1
+        # The failed file carries the exception of the processor which failed it.
+        assert (
+            node.query(
+                f"SELECT exception FROM system.s3queue_metadata_cache "
+                f"WHERE file_path LIKE '%{failed_file}'"
+            ).strip()
+            == "Cannot parse the file"
+        )
+
+        # Neither file was ingested by this table.
+        assert get_count() == files_to_generate - 2
         assert node.query(f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_1.csv'").strip() == "0"
+        assert node.query(f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_2.csv'").strip() == "0"
     finally:
         node.query(
             f"""
@@ -302,5 +332,86 @@ def test_foreign_processing_node_cache_ttl_is_per_table(started_cluster):
         DROP TABLE IF EXISTS {dst_table_name};
         DROP TABLE IF EXISTS {second_table_name};
         DROP TABLE IF EXISTS {first_table_name};
+        """
+        )
+
+
+def test_foreign_processing_node_cache_ttl_is_alterable(started_cluster):
+    """`foreign_processing_node_cache_ttl_seconds` must be changeable on a live table.
+
+    Shortening the TTL with `ALTER TABLE ... MODIFY SETTING` is how an operator gets a
+    stuck file retried immediately. The running streaming task reads the value through
+    a reference to the storage, so the new value applies without recreating the table
+    or its file iterator.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_foreign_ttl_alter_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    files_to_generate = 3
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            # Without the ALTER below the file would not be retried for an hour.
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 3600,
+        },
+    )
+
+    conflict_file = f"{files_path}/test_1.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        run_with_retry(lambda x: x == files_to_generate - 1, get_count)
+
+        # The foreign `processing` node has been observed; its owner releases the file
+        # without committing it. The observation is trusted for an hour.
+        def get_cached_status():
+            return node.query(
+                f"SELECT status FROM system.s3queue_metadata_cache "
+                f"WHERE file_path LIKE '%{conflict_file}'"
+            ).strip()
+
+        run_with_retry(lambda x: x == "Processing", get_cached_status)
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+
+        node.query(
+            f"ALTER TABLE {table_name} MODIFY SETTING s3queue_foreign_processing_node_cache_ttl_seconds = 0"
+        )
+
+        # The new value is reported and, more importantly, in effect: the file is
+        # retried by the already-running streaming task.
+        assert (
+            node.query(
+                f"SELECT value FROM system.s3_queue_settings "
+                f"WHERE table = '{table_name}' AND name = 'foreign_processing_node_cache_ttl_seconds'"
+            ).strip()
+            == "0"
+        )
+        run_with_retry(lambda x: x == files_to_generate, get_count)
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
         """
         )

@@ -108,7 +108,7 @@ public:
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
-        std::unordered_map<std::string, FileStatus::State> & terminal_states,
+        std::unordered_map<std::string, FileTerminalState> & terminal_states,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);

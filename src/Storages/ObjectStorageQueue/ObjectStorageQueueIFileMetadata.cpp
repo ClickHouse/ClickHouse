@@ -107,6 +107,20 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor
     processing_by_another_processor_since = now();
 }
 
+void ObjectStorageQueueIFileMetadata::FileStatus::onTerminalStateByAnotherProcessor(State state_, const std::string & exception, size_t retries_)
+{
+    chassert(state_ == State::Processed || state_ == State::Failed);
+    /// The data of an abandoned local attempt does not describe the terminal state.
+    processing_by_another_processor_since = 0;
+    processing_start_time = {};
+    processing_end_time = {};
+    processed_rows = 0;
+    retries = retries_;
+    state = state_;
+    std::lock_guard lock(last_exception_mutex);
+    last_exception = exception;
+}
+
 bool ObjectStorageQueueIFileMetadata::FileStatus::shouldRetryProcessing(time_t ttl_sec) const
 {
     const time_t since = processing_by_another_processor_since.load();

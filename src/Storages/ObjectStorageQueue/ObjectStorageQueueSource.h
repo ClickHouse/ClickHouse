@@ -58,7 +58,7 @@ public:
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_,
-            time_t foreign_processing_node_cache_ttl_sec_ = 0);
+            const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec_);
 
         bool isFinished();
 
@@ -99,7 +99,9 @@ public:
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
         /// A per-table setting: `metadata` is shared by the tables with the same `keeper_path`.
-        const time_t foreign_processing_node_cache_ttl_sec;
+        /// A reference to the storage member (like `shutdown_called`): the setting is changeable
+        /// by `ALTER TABLE ... MODIFY SETTING`, and a new value applies from the next use.
+        const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;

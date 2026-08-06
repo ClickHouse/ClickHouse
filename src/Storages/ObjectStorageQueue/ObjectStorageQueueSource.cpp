@@ -102,7 +102,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
     std::atomic<bool> & shutdown_called_,
-    time_t foreign_processing_node_cache_ttl_sec_)
+    const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec_)
     : WithContext(context_)
     , metadata(metadata_)
     , object_storage(object_storage_)
@@ -275,7 +275,7 @@ ObjectStorageQueueSource::FileIterator::next()
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->getPath(),
                         /* bucket_info */ {}, /// No buckets for Unordered mode.
-                        foreign_processing_node_cache_ttl_sec);
+                        foreign_processing_node_cache_ttl_sec.load());
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -478,14 +478,14 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
         const auto status = metadata->tryGetFileStatus(path);
         if (!status
             || !status->isProcessingByAnotherProcessor()
-            || status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec))
+            || status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec.load()))
             return false;
 
         LOG_TEST(log, "Skipping file {}: Processing by another processor", path);
         return true;
     });
 
-    std::unordered_map<std::string, FileStatus::State> terminal_states;
+    std::unordered_map<std::string, ObjectStorageQueueIFileMetadata::FileTerminalState> terminal_states;
 
     const auto & zookeeper_name = metadata->getZooKeeperName();
     if (mode == ObjectStorageQueueMode::UNORDERED)
@@ -506,7 +506,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     /// The states found terminal in keeper are terminal for the file status cache
     /// (`system.s3queue_metadata_cache`) as well: without this a file committed by another
     /// processor could stay cached as `Processing` until cache eviction.
-    for (const auto & [path, state] : terminal_states)
+    for (const auto & [path, terminal_state] : terminal_states)
     {
         const auto status = metadata->tryGetFileStatus(path);
         if (!status)
@@ -516,7 +516,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
         if (status->state.load() == FileStatus::State::Processing && !status->isProcessingByAnotherProcessor())
             continue;
 
-        status->updateState(state);
+        status->onTerminalStateByAnotherProcessor(terminal_state.state, terminal_state.exception, terminal_state.retries);
     }
 
     std::unordered_set<std::string> paths_set;
@@ -590,7 +590,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, foreign_processing_node_cache_ttl_sec);
+            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, foreign_processing_node_cache_ttl_sec.load());
             if (!file_metadata->trySetProcessing())
                 continue;
         }

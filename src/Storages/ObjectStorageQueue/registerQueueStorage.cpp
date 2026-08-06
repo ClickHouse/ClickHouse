@@ -508,7 +508,7 @@ Default value: `21600` (6 hours).
 
 ### `foreign_processing_node_cache_ttl_seconds` {#foreign_processing_node_cache_ttl_seconds}
 
-When a server finds that a file is already being processed by another processor (the `processing` node in ZooKeeper is created by someone else), it remembers this observation in memory and skips the file without a request to ZooKeeper while the observation is fresh. This setting defines for how long the observation is trusted. It is not a terminal state: the other processor can release the file without committing it, so after this period ZooKeeper is checked again. Zero means to always check ZooKeeper.
+When a server finds that a file is already being processed by another processor (the `processing` node in ZooKeeper is created by someone else), it remembers this observation in memory and skips the file without a request to ZooKeeper while the observation is fresh. This setting defines for how long the observation is trusted. It is not a terminal state: the other processor can release the file without committing it, so after this period ZooKeeper is checked again. Zero means to always check ZooKeeper. The setting can be changed on a live table with `ALTER TABLE ... MODIFY SETTING`.
 
 Default value: `300` (5 minutes).
 

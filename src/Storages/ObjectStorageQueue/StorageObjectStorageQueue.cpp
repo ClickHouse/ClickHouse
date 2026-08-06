@@ -1329,6 +1329,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "deduplication_v2",
     "metadata_cache_size_bytes",
     "metadata_cache_size_elements",
+    "foreign_processing_node_cache_ttl_seconds",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
@@ -1363,6 +1364,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "deduplication_v2",
     "metadata_cache_size_bytes",
     "metadata_cache_size_elements",
+    "foreign_processing_node_cache_ttl_seconds",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1695,6 +1697,8 @@ void StorageObjectStorageQueue::alter(
                 commit_on_select = change.value.safeGet<UInt64>();
             else if (change.name == "deduplication_v2")
                 deduplication_v2 = change.value.safeGet<UInt64>();
+            else if (change.name == "foreign_processing_node_cache_ttl_seconds")
+                foreign_processing_node_cache_ttl_seconds = static_cast<time_t>(change.value.safeGet<UInt64>());
         }
 
         files_metadata->updateSettings(changed_settings);
@@ -1790,7 +1794,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
     settings[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds]
-        = static_cast<UInt64>(foreign_processing_node_cache_ttl_seconds);
+        = static_cast<UInt64>(foreign_processing_node_cache_ttl_seconds.load());
     const auto & file_statuses_cache = files_metadata->getFileStatusesCache();
     settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
     settings[ObjectStorageQueueSetting::metadata_cache_size_elements] = file_statuses_cache.maxCount();
@@ -1917,7 +1921,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     /// while the failed node is still per-file.
     const bool is_ordered = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
 
-    auto file_metadata = files_metadata->getFileMetadata(path, /* bucket_info */ {}, foreign_processing_node_cache_ttl_seconds);
+    auto file_metadata = files_metadata->getFileMetadata(path, /* bucket_info */ {}, foreign_processing_node_cache_ttl_seconds.load());
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
 
