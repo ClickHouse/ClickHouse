@@ -2,7 +2,7 @@ import argparse
 import os
 import shutil
 
-from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
+from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -96,6 +96,11 @@ def parse_args():
         help="Optional user-defined job start stage (for local run)",
         default=None,
     )
+    parser.add_argument(
+        "--build-examples",
+        help="Build `clickhouse-examples` in addition to the regular targets",
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -105,37 +110,13 @@ def run_shell(name, command, **kwargs):
     print(f"\n<<<< {name}\n")
 
 
-def main():
-    args = parse_args()
+def setup_build_caches_env(info):
+    """Configure compiler/clang-tidy cache environment for a build.
 
-    stages = list(JobStages)
-    stage = args.param or JobStages.CHECKOUT_SUBMODULES
-    if stage:
-        assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
-        print(f"Job will start from stage [{stage}]")
-        while stage in stages:
-            stages.pop(0)
-        stages.insert(0, stage)
-
-    build_type = args.build_type.lower()
-    assert (
-        build_type
-    ), "--build-type must be provided either as input argument or as a parameter of parametrized job in CI"
-    assert (
-        build_type in BUILD_TYPE_TO_CMAKE
-    ), f"--build_type option is invalid [{build_type}]"
-
-    cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
-    info = Info()
-
-    # Cache-warmup build (MasterCI): compile with the PR release build's cmake
-    # flags (no official-build flag, debug symbols stripped, no PGO/BOLT) so the
-    # object files it compiles share sccache keys with PR builds, while keeping
-    # the shared sccache read-write (master, pr_number == 0).
-    cache_warmup = build_type in PR_CACHE_WARMUP_BUILD_TYPES
-    assert not (
-        cache_warmup and info.pr_number > 0
-    ), "sccache-warmup builds are only meant to run on master/release (pr_number == 0)"
+    Extracted so that other jobs (e.g. the unit-test bugfix validation job, which
+    has to build `unit_tests_dbms` at the merge-base) configure the caches exactly
+    like the regular build job and therefore hit the same shared cache entries.
+    """
     # Global sccache settings for local and CI runs
     os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
     os.environ["SCCACHE_CACHE_SIZE"] = "40G"
@@ -169,12 +150,46 @@ def main():
         if info.pr_number > 0:
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
 
-        os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        )
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
+
+def main():
+    args = parse_args()
+
+    stages = list(JobStages)
+    stage = args.param or JobStages.CHECKOUT_SUBMODULES
+    if stage:
+        assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
+        print(f"Job will start from stage [{stage}]")
+        while stage in stages:
+            stages.pop(0)
+        stages.insert(0, stage)
+
+    build_type = args.build_type.lower()
+    assert (
+        build_type
+    ), "--build-type must be provided either as input argument or as a parameter of parametrized job in CI"
+    assert (
+        build_type in BUILD_TYPE_TO_CMAKE
+    ), f"--build_type option is invalid [{build_type}]"
+    assert not args.build_examples or build_type in (
+        BuildTypes.ARM_RELEASE,
+        BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+    ), "--build-examples is only supported for ARM release builds"
+
+    cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
+    if args.build_examples:
+        cmake_cmd += " -DENABLE_EXAMPLES=1"
+    info = Info()
+
+    # Cache-warmup build (MasterCI): compile with the PR release build's cmake
+    # flags (no official-build flag, debug symbols stripped, no PGO/BOLT) so the
+    # object files it compiles share sccache keys with PR builds, while keeping
+    # the shared sccache read-write (master, pr_number == 0).
+    cache_warmup = build_type in PR_CACHE_WARMUP_BUILD_TYPES
+    assert not (
+        cache_warmup and info.pr_number > 0
+    ), "sccache-warmup builds are only meant to run on master/release (pr_number == 0)"
+
+    setup_build_caches_env(info)
 
     # The cache-warmup build must match PR compiler flags, so it skips the
     # official-build flag (PR builds do not set it).
@@ -359,6 +374,8 @@ def main():
     if res and JobStages.BUILD in stages:
         if build_type == BuildTypes.ARM_FUZZERS:
             targets = "fuzzers"
+        elif args.build_examples:
+            targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
             targets = "clickhouse-bundle"
         elif build_type in (

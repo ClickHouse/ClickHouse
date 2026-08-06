@@ -6,7 +6,7 @@ title: 'SYSTEM Statements'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
@@ -17,7 +17,7 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 ## SYSTEM RELOAD DICTIONARIES {#reload-dictionaries}
 
 The `SYSTEM RELOAD DICTIONARIES` query reloads dictionaries with a status of `LOADED` (see the `status` column of [`system.dictionaries`](/reference/system-tables/dictionaries)), i.e dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](/reference/settings/server-settings/settings#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through use of the [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictGet) function or use of `SELECT` from tables with `ENGINE = Dictionary`.
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through use of the [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictGet) function or use of `SELECT` from tables with `ENGINE = Dictionary`.
 
 **Syntax**
 
@@ -101,7 +101,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 
 ## SYSTEM RELOAD ASYNCHRONOUS METRICS {#reload-asynchronous-metrics}
 
-Re-calculates all [asynchronous metrics](/reference/system-tables/asynchronous_metrics). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](/reference/settings/server-settings/settings), updating them manually using this statement is typically not necessary.
+Re-calculates all [asynchronous metrics](/reference/system-tables/asynchronous_metrics). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s), updating them manually using this statement is typically not necessary.
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -120,7 +120,7 @@ Clears the mark cache.
 ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE {#drop-primary-index-cache}
 
 Clears the primary index cache, which holds the primary keys of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory.
-Its size is configured with the server-level setting [`primary_index_cache_size`](/reference/settings/server-settings/settings#primary_index_cache_size).
+Its size is configured with the server-level setting [`primary_index_cache_size`](/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
@@ -134,6 +134,9 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 
 Clears the parquet metadata cache.
 
+## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
+
+Clears the in-memory cache of parsed Paimon metadata files (manifest lists and manifests).
 ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
 
 Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.
@@ -253,13 +256,13 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 ## SYSTEM CLEAR|DROP UNCOMPRESSED CACHE {#drop-uncompressed-cache}
 
 Clears the uncompressed data cache.
-The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](/reference/settings/session-settings#use_uncompressed_cache).
-Its size can be configured using the server-level setting [`uncompressed_cache_size`](/reference/settings/server-settings/settings#uncompressed_cache_size).
+The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](/reference/settings/session-settings/use#use_uncompressed_cache).
+Its size can be configured using the server-level setting [`uncompressed_cache_size`](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size).
 
 ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
 
 Clears the compiled expression cache.
-The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](/reference/settings/session-settings#compile_expressions).
+The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](/reference/settings/session-settings/compile#compile_expressions).
 
 ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
@@ -281,11 +284,11 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
-Clears cache for schemas loaded from [`format_schema_path`](/reference/settings/server-settings/settings#format_schema_path).
+Clears cache for schemas loaded from [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path).
 
 Supported targets:
 - Protobuf: Removes imported Protobuf message definitions from memory.
-- Files: Deletes cached schema files stored locally in the [`format_schema_path`](/reference/settings/server-settings/settings#format_schema_path), generated when `format_schema_source` is set to `query`.
+- Files: Deletes cached schema files stored locally in the [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path), generated when `format_schema_source` is set to `query`.
 Note: If no target is specified, both caches are cleared.
 
 ```sql
@@ -417,7 +420,7 @@ The instrumentation point information can be collected from [`system.instrumenta
 
 ## Managing Distributed Tables {#managing-distributed-tables}
 
-ClickHouse can manage [distributed](/reference/engines/table-engines/special/distributed) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [`START DISTRIBUTED SENDS`](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [`distributed_foreground_insert`](/reference/settings/session-settings#distributed_foreground_insert) setting.
+ClickHouse can manage [distributed](/reference/engines/table-engines/special/distributed) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [`START DISTRIBUTED SENDS`](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [`distributed_foreground_insert`](/reference/settings/session-settings/distributed#distributed_foreground_insert) setting.
 
 ### SYSTEM STOP DISTRIBUTED SENDS {#stop-distributed-sends}
 
@@ -428,7 +431,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-In case of [`prefer_localhost_replica`](/reference/settings/session-settings#prefer_localhost_replica) is enabled (the default), the data to local shard will be inserted anyway.
+In case of [`prefer_localhost_replica`](/reference/settings/session-settings/prefer#prefer_localhost_replica) is enabled (the default), the data to local shard will be inserted anyway.
 </Note>
 
 ### SYSTEM FLUSH DISTRIBUTED {#flush-distributed}
@@ -880,6 +883,74 @@ If there's a refresh in progress for the given view on the current replica, inte
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+## Managing Background Activity {#managing-background-activity}
+
+Engine-agnostic commands to control the background activity of a single table, or of every such table on the server at once. They cover:
+
+- [Refreshable materialized views](/reference/statements/create/view#refreshable-materialized-view) (the periodic refresh), and
+- the streaming table engines that continuously consume from an external source: [Kafka](/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/reference/engines/table-engines/integrations/rabbitmq), [NATS](/reference/engines/table-engines/integrations/nats), [S3Queue](/reference/engines/table-engines/integrations/s3queue) and [AzureQueue](/reference/engines/table-engines/integrations/azure-queue).
+
+For a refreshable materialized view each verb is an alias of the corresponding `SYSTEM ... VIEW` command from [Managing Refreshable Materialized Views](#managing-refreshable-materialized-views), so `SYSTEM STOP [db.]name` behaves exactly like `SYSTEM STOP VIEW [db.]name`, and so on.
+
+The per-table and wildcard forms differ in how they treat tables without a background activity. The per-table form (`SYSTEM STOP [db.]table`) throws an error if the named table is neither a streaming engine nor a refreshable materialized view. The wildcard form silently skips such tables, so it is always safe to run.
+
+`STOP` and `CANCEL` interrupt consumption as soon as possible. For [Kafka](/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/reference/engines/table-engines/integrations/rabbitmq) and [NATS](/reference/engines/table-engines/integrations/nats) they stop reading from the source but do not interrupt an insert that has already started: a block already being written into the materialized views still finishes and commits. [S3Queue](/reference/engines/table-engines/integrations/s3queue) and [AzureQueue](/reference/engines/table-engines/integrations/azure-queue) read and insert in a single pipeline. With deduplication enabled (default) the insert is cancelled too and the files are reprocessed later. With deduplication disabled the in-flight batch finishes and commits instead (like the engines above) to avoid duplicating rows. Data that was read but not yet committed is consumed again later, so nothing is lost, except for core NATS (without JetStream), which cannot redeliver and drops it.
+
+`PAUSE` does not interrupt a running insert, so it normally does not lose anything. Core NATS is the exception: pausing stops consuming and drops the messages it had already received but not yet inserted, and core NATS cannot redeliver them.
+
+<Note>
+None of these states persist across a server restart. After a restart, refreshable views resume their configured schedules and streaming engines resume consuming.
+</Note>
+
+### SYSTEM STOP {#stop-background}
+
+Stop the background activity and keep it stopped: interrupt what is running now, and run nothing further until `SYSTEM START`. Equivalent to `PAUSE` + `CANCEL`.
+
+```sql
+SYSTEM STOP [db.]table
+SYSTEM STOP ALL BACKGROUND
+```
+
+### SYSTEM START {#start-background}
+
+Resume activity, undoing a previous `SYSTEM STOP` or `SYSTEM PAUSE`. No activity is interrupted.
+
+```sql
+SYSTEM START [db.]table
+SYSTEM START ALL BACKGROUND
+```
+
+### SYSTEM PAUSE {#pause-background}
+
+Prevent further background activity, but let whatever is running right now finish first.
+
+```sql
+SYSTEM PAUSE [db.]table
+SYSTEM PAUSE ALL BACKGROUND
+```
+
+### SYSTEM CANCEL {#cancel-background}
+
+Interrupt the activity running right now only, without blocking future activity — the table keeps refreshing or consuming on its schedule. Does nothing if no activity is in progress.
+
+```sql
+SYSTEM CANCEL [db.]table
+SYSTEM CANCEL ALL BACKGROUND
+```
+
+### SYSTEM REFRESH {#refresh-background}
+
+Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it.
+
+```sql
+SYSTEM REFRESH [db.]table
+SYSTEM REFRESH ALL BACKGROUND
+```
+
+### Privileges {#background-privileges}
+
+Each command requires the privilege of the targeted engine: `SYSTEM VIEWS` for a refreshable materialized view and `SYSTEM STREAMING ENGINES` for a streaming table. Both are children of `SYSTEM BACKGROUND`, so granting `SYSTEM BACKGROUND` allows controlling the background activity of every such table. The `ALL BACKGROUND` forms apply only to the tables the user is allowed to control and silently skip the rest.
 
 ## SYSTEM FLUSH OBJECT STORAGE QUEUE {#flush-object-storage-queue}
 
