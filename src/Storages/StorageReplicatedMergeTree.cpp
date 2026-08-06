@@ -6766,6 +6766,11 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
             return alter && !alter->partition && !alter->partitions && alter->predicate;
         });
 
+    /// An ALTER mutation is interpreted asynchronously in a context derived from the background
+    /// context, while a lightweight update interprets its commands in the foreground with the
+    /// submitting context. The pruning analysis must run in the matching context.
+    const bool commands_run_in_background = (op == CommittingBlock::Op::Mutation);
+
     /// The pruned set must be recomputed on every retry: a `ZBADVERSION` means the partition
     /// list changed concurrently, and the new partition may have been created by an insert
     /// on this very replica. In that case widening with ZK-only partitions below does not
@@ -6783,7 +6788,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
         if (has_pruned_commands)
             local_partition_ids = getAllPartitionIds();
 
-        const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
+        const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context, commands_run_in_background);
         if (!mutation_affected_partition_ids.has_value())
             break;
 

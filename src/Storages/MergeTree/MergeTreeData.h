@@ -1179,12 +1179,19 @@ public:
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     /// Returns the set of partition IDs affected by mutation commands.
     /// nullopt means all partitions are affected. An empty set means zero partitions are affected.
-    std::optional<std::set<String>> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
+    /// `commands_run_in_background` tells how the commands will be interpreted: an ALTER mutation
+    /// runs asynchronously with a context derived from the background context, while a lightweight
+    /// update interprets its commands in the foreground with the submitting context. The predicate
+    /// analysis must run in the matching context, otherwise it accepts or rejects predicates the
+    /// execution would treat differently.
+    std::optional<std::set<String>> getPartitionIdsAffectedByCommands(
+        const MutationCommands & commands, ContextPtr query_context, bool commands_run_in_background) const;
 
     /// Analyze the predicate and return partition IDs that cannot be pruned away.
     /// Returns nullopt if pruning is not possible (e.g. no partition key, predicate doesn't reference it,
     /// or an error occurred during analysis). An empty set means zero partitions are affected.
-    std::optional<std::set<String>> getPartitionIdsPrunedByPredicate(const ASTPtr & predicate, ContextPtr query_context) const;
+    std::optional<std::set<String>> getPartitionIdsPrunedByPredicate(
+        const ASTPtr & predicate, ContextPtr query_context, bool command_runs_in_background) const;
 
     /// Returns set of partition_ids of all Active parts
     std::unordered_set<String> getAllPartitionIds() const;

@@ -8817,7 +8817,7 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
 }
 
 std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
-    const ASTPtr & predicate, ContextPtr query_context) const
+    const ASTPtr & predicate, ContextPtr query_context, bool command_runs_in_background) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     if (!metadata_snapshot->hasPartitionKey())
@@ -8828,15 +8828,30 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 
     auto predicate_clone = predicate->clone();
 
-    /// The analysis must accept everything the mutation itself accepts. A mutation does not run
-    /// with the submitting session's context: the background worker builds a fresh context from
-    /// the background context (`MutatePlainMergeTreeTask::createTaskContext`,
+    /// The analysis must accept everything the mutation itself accepts, so it has to run in the
+    /// same context the commands will be interpreted in. An ALTER mutation does not run with the
+    /// submitting session's context: the background worker builds a fresh context from the
+    /// background context (`MutatePlainMergeTreeTask::createTaskContext`,
     /// `MutateFromLogEntryTask::prepare`), so session-only settings - most importantly the
     /// analyzer selection consulted by `shouldUseAnalyzerForMutations` - do not propagate to the
     /// execution. Derive the analysis context the same way, so that the pruning analysis and the
-    /// asynchronous execution cannot diverge.
-    auto execution_context = Context::createCopy(getContext()->getBackgroundContext());
-    execution_context->makeQueryContextForMutate(*getSettings());
+    /// asynchronous execution cannot diverge. A lightweight update, on the contrary, interprets
+    /// its commands in the foreground with the submitting context
+    /// (`MergeTreeData::updateLightweightImpl`), where the session settings and the current
+    /// database do apply: unlike ALTER commands, which `InterpreterAlterQuery` qualifies with
+    /// `AddDefaultDatabaseVisitor`, its predicate may reference tables without a database, so
+    /// analyzing it in the background context (which has no current database) would reject
+    /// a predicate the update itself accepts.
+    ContextMutablePtr execution_context;
+    if (command_runs_in_background)
+    {
+        execution_context = Context::createCopy(getContext()->getBackgroundContext());
+        execution_context->makeQueryContextForMutate(*getSettings());
+    }
+    else
+    {
+        execution_context = Context::createCopy(query_context);
+    }
 
     /// The predicate comes from a serialized mutation command that was re-parsed, so its set
     /// operations (`UNION`/`INTERSECT`/`EXCEPT`) are not normalized yet and the analyzer would
@@ -8969,7 +8984,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 }
 
 std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands(
-    const MutationCommands & commands, ContextPtr query_context) const
+    const MutationCommands & commands, ContextPtr query_context, bool commands_run_in_background) const
 {
     std::set<String> affected_partition_ids;
     bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning];
@@ -8994,7 +9009,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands
         }
         else if (optimize_with_pruning && alter && alter->predicate)
         {
-            auto pruned = getPartitionIdsPrunedByPredicate(ASTPtr(alter->predicate), query_context);
+            auto pruned = getPartitionIdsPrunedByPredicate(ASTPtr(alter->predicate), query_context, commands_run_in_background);
             if (!pruned.has_value())
             {
                 /// Pruning was not possible, fall back to all partitions
