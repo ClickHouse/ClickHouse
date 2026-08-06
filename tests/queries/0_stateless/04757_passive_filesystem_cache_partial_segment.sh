@@ -43,9 +43,10 @@ settings disk = disk(
   min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 insert into test select number, randomPrintableASCII(300) from numbers(400000)
 settings max_insert_block_size = 200000;
-system drop filesystem cache;
 "
 
+# The cache is freshly created with a per-database unique name, so it starts empty (no need to drop
+# it -- an unqualified `system drop filesystem cache` would wipe other tests' caches too).
 # Fill a prefix only: the LIMIT read stops in the middle of a 32Mi segment.
 ${CLICKHOUSE_CLIENT} --query "
 select sum(length(b)) from (select b from test order by a limit 60000) format Null
@@ -54,7 +55,7 @@ settings read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0, ${READ
 
 # Fixture liveness: without a PARTIALLY DOWNLOADED segment carrying a usable prefix the oracle below
 # would pass vacuously. Note the state is spelled with a SPACE in system.filesystem_cache.
-echo -n 'partial segment with a usable prefix exists: '
+echo -n 'partially downloaded segment with downloaded bytes exists: '
 ${CLICKHOUSE_CLIENT} --query "
 select count() > 0 from system.filesystem_cache
 where cache_name = '${CLICKHOUSE_TEST_UNIQUE_NAME}'
@@ -76,6 +77,22 @@ echo -n 'passive read served more bytes from the cache than from the source: '
 ${CLICKHOUSE_CLIENT} --query "
 select ProfileEvents['CachedReadBufferReadFromCacheBytes']
      > ProfileEvents['CachedReadBufferReadFromSourceBytes']
+from system.query_log
+where query_id = '$query_id' and type = 'QueryFinish' and current_database = currentDatabase();
+"
+
+echo -n 'passive read fetched nothing from the source: '
+${CLICKHOUSE_CLIENT} --query "
+select ProfileEvents['CachedReadBufferReadFromSourceBytes'] = 0
+from system.query_log
+where query_id = '$query_id' and type = 'QueryFinish' and current_database = currentDatabase();
+"
+
+# Passive mode must never populate the cache. CachedReadBufferCacheWriteBytes is incremented only in
+# CachedOnDiskReadBufferFromFile::writeCache, so 0 pins the second half of the setting's contract.
+echo -n 'passive read wrote nothing to the cache: '
+${CLICKHOUSE_CLIENT} --query "
+select ProfileEvents['CachedReadBufferCacheWriteBytes'] = 0
 from system.query_log
 where query_id = '$query_id' and type = 'QueryFinish' and current_database = currentDatabase();
 "
