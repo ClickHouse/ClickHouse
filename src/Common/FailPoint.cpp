@@ -258,6 +258,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(atomic_populate_pause_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_after_view_publication) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \

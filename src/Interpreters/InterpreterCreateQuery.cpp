@@ -168,6 +168,7 @@ namespace FailPoints
     extern const char create_or_replace_before_rename[];
     extern const char atomic_populate_fail_before_subscription[];
     extern const char atomic_populate_pause_before_subscription[];
+    extern const char atomic_populate_pause_after_view_publication[];
 }
 
 namespace ErrorCodes
@@ -1991,25 +1992,51 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// keyed by name, so a concurrent RENAME or EXCHANGE of the source between resolving it and
     /// registering the subscription would wire the view to whatever table owns the name afterwards while
     /// the backfill reads the table that owned it before - or leave the subscription on a name nobody
-    /// owns. Queries that take several DDL guards (RENAME, EXCHANGE) acquire them in ascending
-    /// (database, table) order, and doCreateTable below takes the view's own guard, so to avoid deadlocks
-    /// the source guard is taken before the view's when the source name orders first and after it
-    /// otherwise.
+    /// owns. The source guard also has to be held from *before* doCreateTable publishes the view: a
+    /// RENAME of the source landing between the publication and the guard acquisition would make
+    /// getValidatedAtomicPopulateSource fall back to the legacy population, whose INSERT ... SELECT then
+    /// fails on the vanished name and leaves the just-published view behind. Queries that take several
+    /// DDL guards (RENAME, EXCHANGE) acquire them in ascending (database, table) order, so to avoid
+    /// deadlocks both guards are taken here, before the publication, in that canonical order
+    /// (doCreateTable then sees the view's guard already held and does not re-acquire it).
     DDLGuardPtr source_ddl_guard;
-    std::optional<QualifiedTableName> populate_source_name;
     bool populate_atomically = shouldPopulateMaterializedViewAtomically(create);
     if (populate_atomically && likely(need_ddl_guard))
-        populate_source_name = tryGetAtomicPopulateSourceName(create);
-
-    auto lock_populate_source_name = [&]
     {
-        source_ddl_guard = DatabaseCatalog::instance().getDDLGuard(populate_source_name->database, populate_source_name->table, nullptr);
-    };
+        if (auto populate_source_name = tryGetAtomicPopulateSourceName(create))
+        {
+            UniqueTableName view_name{create.getDatabase(), create.getTable()};
+            UniqueTableName source_name{populate_source_name->database, populate_source_name->table};
 
-    if (populate_source_name
-        && UniqueTableName{populate_source_name->database, populate_source_name->table}
-            < UniqueTableName{create.getDatabase(), create.getTable()})
-        lock_populate_source_name();
+            auto lock_view_name = [&]
+            {
+                chassert(!ddl_guard);
+                ddl_guard = DatabaseCatalog::instance().getDDLGuard(view_name.database_name, view_name.table_name, nullptr);
+            };
+            auto lock_source_name = [&]
+            {
+                source_ddl_guard = DatabaseCatalog::instance().getDDLGuard(source_name.database_name, source_name.table_name, nullptr);
+            };
+
+            if (source_name < view_name)
+            {
+                lock_source_name();
+                lock_view_name();
+            }
+            else if (view_name < source_name)
+            {
+                lock_view_name();
+                lock_source_name();
+            }
+            else
+            {
+                /// The view cannot select from itself - the name it is being created under owns no table
+                /// yet - so equal names mean the source does not exist and the population will fail with
+                /// its natural error. Locking the same name twice would self-deadlock, so the view's own
+                /// guard, which doCreateTable takes below, covers both roles of the name.
+            }
+        }
+    }
 
     /// Actually creates table
     bool created = doCreateTable(create, properties, ddl_guard, mode);
@@ -2034,8 +2061,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// `DatabaseCatalog::getReadyDependentViews` from returning any view of that source.
     if (populate_atomically)
     {
-        if (populate_source_name && !source_ddl_guard)
-            lock_populate_source_name();
+        /// Covers the window between the view's publication above and the cut: the source's guard is
+        /// already held here, so a concurrent RENAME or EXCHANGE of the source must wait until the view
+        /// is subscribed (see 04813_atomic_populate_materialized_view_rename_after_publication).
+        FailPointInjection::pauseFailPoint(FailPoints::atomic_populate_pause_after_view_publication);
 
         if (auto result = fillMaterializedViewAtomically(create, ddl_guard, source_ddl_guard))
             return std::move(*result);
@@ -2932,10 +2961,33 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
     /// and then atomically swaps it in via EXCHANGE/RENAME. Coordinating the exclusive-lock cut with that
     /// swap (and with the old view's still-live subscription) is not handled here, so those queries keep
     /// the legacy non-atomic population; only the plain CREATE flow is atomic.
-    return create.isCreateQueryWithImmediateInsertSelect()
+    bool applies = create.isCreateQueryWithImmediateInsertSelect()
         && create.is_materialized_view && !create.is_window_view && !create.is_clone_as && !internal
         && !create.replace_table && !create.replace_view
         && getContext()->getSettingsRef()[Setting::materialized_views_populate_atomically];
+
+    if (!applies)
+        return false;
+
+    /// A CREATE executed as an entry of a `Replicated` database's DDL log (`POPULATE` is allowed there
+    /// with `database_replicated_allow_heavy_create`) cannot honor the atomic path's "a failed CREATE
+    /// leaves nothing behind" contract: by the time the population fails, the entry's metadata transaction
+    /// has already been committed by the creation of the view - `DatabaseReplicated::dropTable` would try
+    /// to add a `ZooKeeper` operation to an already executed transaction (a logical error) - and even a
+    /// successful unilateral drop would diverge this replica from the replicas where the same entry
+    /// succeeded. Rather than advertising rollback-and-retry semantics that cannot be provided, fall back
+    /// to the legacy non-atomic population, the pre-existing behavior of `POPULATE` under this override.
+    if (getContext()->getZooKeeperMetadataTransaction())
+    {
+        LOG_INFO(getLogger("InterpreterCreateQuery"),
+            "Populating materialized view {}.{} non-atomically because it is created by an entry of a "
+            "replicated database DDL log, where a failed atomic population could not be rolled back. "
+            "Rows inserted into the source during the population may be missed or duplicated.",
+            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        return false;
+    }
+
+    return true;
 }
 
 std::optional<QualifiedTableName> InterpreterCreateQuery::tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const
@@ -3064,21 +3116,11 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// that here would buy nothing and can hang the failed `CREATE` indefinitely: `clickhouse-local`
         /// never finishes `waitTableFinallyDropped`, so a synchronous drop turns a rollback into a hang.
         ///
-        /// In a `Replicated` database the view is not ours to drop. The `CREATE` is executed here as an entry
-        /// of the replicated DDL log, whose metadata transaction has already been committed by the creation
-        /// of the view - `DatabaseReplicated::dropTable` would try to add a `ZooKeeper` operation to an
-        /// already executed transaction (a logical error), and even if it could, unilaterally removing the
-        /// view on this replica only would diverge it from the replicas where the same entry succeeded.
-        /// There the failed entry is the replicated DDL machinery's business, so just rethrow.
-        if (getContext()->getZooKeeperMetadataTransaction())
-        {
-            LOG_WARNING(
-                getLogger("InterpreterCreateQuery"),
-                "Not rolling back the failed atomic population of materialized view {}.{}: it is created by an "
-                "entry of a replicated database DDL log, which handles the failure itself",
-                backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
-            throw;
-        }
+        /// In a `Replicated` database the view would not be ours to drop - the entry's metadata transaction
+        /// is already committed and a unilateral drop would diverge this replica - which is why
+        /// `shouldPopulateMaterializedViewAtomically` never takes the atomic path for a CREATE executed as
+        /// an entry of a replicated database DDL log.
+        chassert(!getContext()->getZooKeeperMetadataTransaction());
 
         try
         {

@@ -172,7 +172,7 @@ Atomicity requires the source table to support reading a pinned point-in-time sn
 
 Atomic population applies to plain `CREATE MATERIALIZED VIEW` only. `CREATE OR REPLACE` / `REPLACE MATERIALIZED VIEW ... POPULATE` always use the legacy, non-atomic population.
 
-`POPULATE` is not supported with `Replicated` databases (use `database_replicated_allow_heavy_create` to override) and is not supported in ClickHouse Cloud.
+`POPULATE` is not supported with `Replicated` databases (use `database_replicated_allow_heavy_create` to override) and is not supported in ClickHouse Cloud. When it is enabled through that override, the population is always the legacy, non-atomic one — a failed population could not be rolled back consistently on all replicas.
 </Note>
 
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
