@@ -177,6 +177,21 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_json_b.parquet', 'Parquet') SETTINGS $JSON_OPTS, schema_inference_make_json_columns_nullable = 0;
     DESC file('${T}_json_b.parquet', 'Parquet') SETTINGS $JSON_OPTS, schema_inference_make_json_columns_nullable = 1;" | awk -F'\t' '$1 == "j" {print $2}'
 
+# --- input_format_json_infer_array_of_dynamic_from_array_of_different_types ----------------
+# Decides whether a heterogeneous JSON array becomes Array(Dynamic) or stays an unnamed Tuple,
+# so each pair must report the type its own query asked for. The array must mix types: a
+# single-type array infers Array(Nullable(Int64)) at both values.
+for suffix in a b; do printf '{"a":[42,"hello",[1,2,3]]}\n' > "${T}_dyn_${suffix}.json"; done
+touch -d "$AGE" "${T}"_dyn_*.json
+echo "-- JSONEachRow array_of_dynamic, dynamic=1 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_dyn_a.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 1;
+    DESC file('${T}_dyn_a.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;" | awk -F'\t' '{print $2}'
+echo "-- JSONEachRow array_of_dynamic, dynamic=0 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_dyn_b.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;
+    DESC file('${T}_dyn_b.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 1;" | awk -F'\t' '{print $2}'
+
 # --- Template ----------------------------------------------------------------------------
 # The row format's own field rule (CSV here) must key the entry, not format_regexp_escaping_rule.
 # The field must be rule-specific: an Escaped field infers String at both exponent values.
@@ -213,6 +228,13 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_deep_a.parquet', 'Parquet') SETTINGS max_parser_depth = 1000 FORMAT Null;
     SELECT extract(additional_format_info, 'max_parser_depth=\d+'), extract(additional_format_info, 'local_time_as_utc=\w+'), extract(additional_format_info, 'allow_geoparquet_parser=\w+'), extract(additional_format_info, 'skip_columns_with_unsupported_types=\w+'), extract(additional_format_info, 'schema_inference_make_json_columns_nullable=\w+')
     FROM system.schema_inference_cache;"
+
+echo "-- JSON key carries the array_of_dynamic field, once per setting value"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_dyn_a.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 1 FORMAT Null;
+    DESC file('${T}_dyn_a.json', 'JSONEachRow') SETTINGS input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0 FORMAT Null;
+    SELECT extract(additional_format_info, 'infer_array_of_dynamic_from_array_of_different_values=\w+')
+    FROM system.schema_inference_cache ORDER BY ALL;"
 
 echo "-- Template key follows the row format's rule, not format_regexp_escaping_rule"
 $CLICKHOUSE_LOCAL -m -q "

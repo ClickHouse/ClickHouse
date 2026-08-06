@@ -65,6 +65,12 @@ JSON
 -- Parquet make_json_columns_nullable, nullable=0 first
 JSON
 Nullable(JSON)
+-- JSONEachRow array_of_dynamic, dynamic=1 first
+Array(Dynamic)
+Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))
+-- JSONEachRow array_of_dynamic, dynamic=0 first
+Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))
+Array(Dynamic)
 -- Template exponent, exp=1 first
 Nullable(Float64)
 Nullable(String)
@@ -80,5 +86,8 @@ input_format_try_infer_exponent_floats=true
 1
 -- Parquet key carries max_parser_depth and all four new Parquet fields
 max_parser_depth=1000	local_time_as_utc=true	allow_geoparquet_parser=true	skip_columns_with_unsupported_types=false	schema_inference_make_json_columns_nullable=false
+-- JSON key carries the array_of_dynamic field, once per setting value
+infer_array_of_dynamic_from_array_of_different_values=false
+infer_array_of_dynamic_from_array_of_different_values=true
 -- Template key follows the row format's rule, not format_regexp_escaping_rule
 1	0
