@@ -32,10 +32,9 @@ struct ColumnWithTypeAndName;
 /// Native ClickHouse reader for the `Arrow` (file) and `ArrowStream` (stream) IPC formats.
 ///
 /// Does not use the Apache Arrow C++ library: it parses the IPC metadata (FlatBuffers) directly and
-/// decodes record-batch buffers straight into ClickHouse columns. Selected via
-/// `input_format_arrow_use_native_reader`. The streaming format is read sequentially; the file format
-/// uses the footer for random access to record batches (seeking the input, or loading it into memory
-/// when the input is not seekable).
+/// decodes record-batch buffers straight into ClickHouse columns. The streaming format is read
+/// sequentially; the file format uses the footer for random access to record batches (seeking the
+/// input, or loading it into memory when the input is not seekable).
 class ArrowIPCBlockInputFormat final : public IInputFormat
 {
 public:
