@@ -1772,8 +1772,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
 
+        /// `column_statistics_decl` covers the column-declaration spelling
+        /// `ALTER TABLE t ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which must honor the same
+        /// gate as the dedicated `ADD/DROP/MODIFY STATISTICS` commands.
         if ((command.type == AlterCommand::ADD_STATISTICS || command.type == AlterCommand::DROP_STATISTICS
-             || command.type == AlterCommand::MODIFY_STATISTICS)
+             || command.type == AlterCommand::MODIFY_STATISTICS || command.column_statistics_decl != nullptr)
             && !context->getSettingsRef()[Setting::allow_statistics])
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
 
