@@ -247,9 +247,8 @@ AsynchronousInsertQueue::InsertData::Entry::Entry(
 
 void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
 {
-    /// Back to the tracker that was charged for it when the data was pushed, which is still alive because this
-    /// entry holds its group. Freeing it against the flush instead would credit the flush for memory it never
-    /// allocated, and leave the pushing user charged for data that is gone.
+    /// Freed against the group that pushed the data, still alive via this entry, not the flush: crediting the
+    /// flush would leave the pushing user charged for data that is already gone.
     if (pushing_thread_group)
     {
         MemoryTrackerSwitcher switcher(&pushing_thread_group->memory_tracker);
@@ -383,9 +382,8 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     /// lambda copyable and allow to save it to the thread pool.
     auto data_shared = std::make_shared<InsertDataPtr>(std::move(data));
 
-    /// The job's own copy of the key is the queue's bookkeeping: it outlives the query that pushed the data and
-    /// is released on a flush thread, which could not uncharge that query. Allocated and released the same way,
-    /// so that neither the pushing query nor the flush is charged for it.
+    /// The job's own copy of the key outlives the pushing query and is freed on a flush thread that can't
+    /// uncharge it, so allocate and release it the same way, charged to neither side.
     std::shared_ptr<const InsertQuery> job_key;
     {
         MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
@@ -595,11 +593,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     {
         std::lock_guard lock(shard.mutex);
 
-        /// The queue's own bookkeeping - the `InsertQuery` key with its cloned AST and `Settings` copy, the
-        /// `InsertData` holder and the map and list nodes - outlives this query and is freed by a flush thread,
-        /// which cannot uncharge it here. Pending entries stay charged to the query, and therefore to the user,
-        /// until it ends; from then on they are accounted only in the server total, since the queue, not the
-        /// user, decides when they are flushed.
+        /// The queue's own bookkeeping (the `InsertQuery` key, `InsertData` holder, map/list nodes) outlives
+        /// this query, freed by a flush thread; entries stay charged to it until it ends, then to the server total.
         MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
 
         auto [it, inserted] = shard.iterators.try_emplace(key.hash);
@@ -1054,17 +1049,15 @@ try
     /// We want the remote part to decide if the insert will be async or not.
     key.settings->setDefaultValue("async_insert");
 
-    /// Declared before `insert_context` so the context, which accumulates per-column access info while
-    /// this thread is attached and charged to the inserting user, is freed before the detach below
-    /// re-parents the tracker to `total_memory_tracker`.
+    /// Declared before `insert_context` so it's freed before the detach below reparents the tracker to
+    /// `total_memory_tracker`; it accumulates access info charged to the inserting user while attached.
     DB::QueryScope query_scope;
 
     auto insert_context = Context::createCopy(global_context);
     insert_context->makeQueryContext();
 
-    /// This context is created before the scope below exists, so nothing charged the flush for it. Release it the
-    /// same way, or the flush would be credited for memory it never allocated. Runs before the scope is left, so
-    /// what the context accumulated while attached, such as per-column access info, is settled with the flush.
+    /// Created before the scope exists, so nothing charged the flush for it; release it the same way, before
+    /// the scope ends, so what it accumulated while attached is settled with the flush instead.
     SCOPE_EXIT_SAFE({
         MemoryTrackerBlockerInThread flush_context_not_charged_to_the_flush;
         insert_context.reset();

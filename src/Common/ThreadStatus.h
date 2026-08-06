@@ -87,14 +87,12 @@ public:
 
     const FatalErrorCallback fatal_error_callback;
 
-    /// False for a group whose work is deliberately accounted in the server total rather than on the query's
-    /// user, see `createForWorkNotChargedToTheQuery`. Such a group keeps that policy even when the work it does
-    /// runs a query of its own, which would otherwise reparent its tracker to that query's user.
+    /// False for work deliberately accounted in the server total rather than the query's user, see
+    /// `createForWorkNotChargedToTheQuery`; kept even if that work runs a query of its own.
     const bool charge_memory_to_query_user = true;
 
-    /// A group built on top of another one points into it: its counters and memory tracker chain to the
-    /// parent's and its shared data holds the parent's callbacks. Keep the parent alive for at least as long.
-    /// Declared before those members so that it outlives them.
+    /// A group chained on a parent shares its counters, memory tracker and callbacks, so the parent must
+    /// outlive it. Declared first so it is destroyed last.
     const ThreadGroupPtr parent_group;
 
     const Int32 os_threads_nice_value;
@@ -143,11 +141,8 @@ public:
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
 
-    /// For server-side work that a query only triggers, such as loading a dictionary: profile events still roll
-    /// up to the parent group, but memory is accounted globally instead of on the query's user, because the work
-    /// outlives the query and is released by threads that cannot uncharge it. Unlike
-    /// `MemoryTrackerBlockerInThread`, this also covers the threads the work spawns, since they inherit the
-    /// group rather than the thread-local blocker.
+    /// For work a query only triggers (e.g. loading a dictionary) that outlives it and can't be uncharged from
+    /// the query: memory is accounted globally, covering spawned threads too, unlike `MemoryTrackerBlockerInThread`.
     static ThreadGroupPtr createForWorkNotChargedToTheQuery(ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;

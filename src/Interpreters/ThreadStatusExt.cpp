@@ -437,9 +437,8 @@ void ThreadStatus::detachFromGroup()
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
-    /// Free the query-scoped state (`local_data` holds the query text for logs) while the tracker still
-    /// points at the query: after the re-parenting below these frees would land on `total_memory_tracker`
-    /// and leave the charge on the per-user tracker. `finalizePerformanceCounters` is its last reader.
+    /// Free query-scoped state (e.g. `local_data`'s query text for logs) here, while the tracker still points at
+    /// the query; freeing after the re-parent below would land on `total_memory_tracker`, leaving the user charged.
     clearQueryId();
     query_context.reset();
     local_data = {};
@@ -573,9 +572,8 @@ void ThreadStatus::initPerformanceCounters()
 
     if (!taskstats)
     {
-        /// Per thread, not per query: created on the first attach and kept until the thread dies, so the
-        /// free lands on the global tracker and charging the query that happened to attach first would
-        /// leave it on that user's tracker for good.
+        /// `taskstats` is created once per thread, not per query, and kept until the thread dies; charging
+        /// the query that happened to attach first would leave it on that user's tracker for good.
         MemoryTrackerBlockerInThread not_charged_to_the_query;
         try
         {

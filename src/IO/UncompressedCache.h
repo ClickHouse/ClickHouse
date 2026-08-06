@@ -25,9 +25,8 @@ struct UncompressedCacheCell
     size_t compressed_size{};
     UInt32 additional_bytes{};
 
-    /// `data` is filled without charging the query that read it, see `CachedCompressedReadBuffer::nextImpl`, so
-    /// release it the same way: these bytes leave the server total, not the tracker of whichever query happens
-    /// to evict the cell or to hold its last reference.
+    /// `data` was allocated without charging the query, see `CachedCompressedReadBuffer::nextImpl`; release it
+    /// the same way so eviction never gets credited to whichever query triggers it.
     ~UncompressedCacheCell()
     {
         MemoryTrackerBlockerInThread cached_bytes_not_charged_to_the_query;

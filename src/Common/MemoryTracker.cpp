@@ -557,29 +557,20 @@ void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
 
 void MemoryTracker::settleDriftOnQueryEnd()
 {
-    /// Whatever is left here is drift: memory the query allocated that something else will free, or memory it
-    /// was credited for that it never allocated. The bytes are accounted globally either way, so hand the
-    /// difference to the global tracker and let the per-user tracker end at zero for this query. Otherwise a
-    /// user who always has a query in flight accumulates the drift until `max_memory_usage_for_user` trips on
-    /// memory it does not hold, or reads lower than what it does hold.
-    ///
-    /// This is the safety net, not a substitute for accounting each site correctly, which is what the warning
-    /// below is for. Also generalises what merges do by hand at the end of a background task.
+    /// Drift is memory accounted globally already (allocated here but freed elsewhere, or vice versa); hand it
+    /// to the global tracker instead of letting it pile up on the user. Safety net, not a fix for each site.
     Int64 drift = amount.load(std::memory_order_relaxed);
     if (drift == 0)
         return;
 
-    /// Only a tracker whose parent is the user's is a query, or a background task, ending. A nested group such
-    /// as a view or a merge inside `OPTIMIZE` leaves its outstanding bytes to the query above it, which accounts
-    /// for them too and settles them in turn. A group deliberately parented to the global tracker, or one in a
-    /// standalone tool such as the client, has no user to settle with at all.
+    /// Only settle here if our parent is the user's tracker (a query or background task ending); nested groups
+    /// (a view, a merge inside `OPTIMIZE`) leave their drift to the query above them instead.
     auto * user_tracker = parent.load(std::memory_order_relaxed);
     if (!user_tracker || user_tracker->level != VariableContext::User)
         return;
 
-    /// Take away no more than the user holds, so that settling never pushes it below zero: another query of the
-    /// same user may have released the same bytes already, or be releasing them right now, which is why the
-    /// amount actually removed is what gets settled rather than what was read beforehand.
+    /// Never take more than the user currently holds: another query of theirs may already be releasing the
+    /// same bytes, so settle what was actually removed, not what was read before the subtraction.
     if (drift > 0)
     {
         drift = user_tracker->subtractAtMostWhatIsThere(drift);
@@ -591,10 +582,8 @@ void MemoryTracker::settleDriftOnQueryEnd()
     ProfileEvents::increment(ProfileEvents::QueryMemoryDriftSettledBytes, drift < 0 ? -drift : drift);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Each of these is a site that charges one tracker and frees against another. A leftover charge usually
-    /// means the query allocated something that outlives it, which is also a hint that the object wants an
-    /// arena with that longer lifetime rather than the query's. The threshold is a starting point, to be
-    /// lowered as the sites it finds are fixed.
+    /// A leftover charge usually means the query allocated something that outlives it, hinting it wants a
+    /// longer-lived arena instead of the query's. Threshold is a starting point, lowered as flagged sites get fixed.
     static constexpr Int64 warn_threshold = 1024 * 1024;
     if ((drift > warn_threshold || drift < -warn_threshold) && !drift_expected.load(std::memory_order_relaxed))
     {
@@ -613,8 +602,8 @@ void MemoryTracker::settleDriftOnQueryEnd()
 
     if (drift > 0)
     {
-        /// The user's share is already gone, so only this tracker is left to clear. It is being destroyed, but
-        /// its metric, such as `MergesMutationsMemoryTracking`, has to follow.
+        /// The user's share is already gone, so only this tracker's own metric (e.g. `MergesMutationsMemoryTracking`)
+        /// is left to clear before destruction.
         amount.fetch_sub(drift, std::memory_order_relaxed);
 
         auto metric_loaded = metric.load(std::memory_order_relaxed);
@@ -792,10 +781,8 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
             amount.fetch_sub(new_amount);
             accounted_size += new_amount;
 
-            /// This tracker never held these bytes. Inside a query - a view, a merge - the tracker above it is
-            /// charged for them, so the whole free still goes up. A query, though, does not free what the other
-            /// queries of its user hold: those bytes are the server's, so credit the global tracker for them
-            /// directly instead of taking them off the user, which would leave it reading below what it holds.
+            /// This tracker never held these bytes: a nested group (view, merge) leaves them charged to the
+            /// tracker above it, but a query freeing another query's data of its own user credits the global tracker.
             if (auto * loaded_parent = parent.load(std::memory_order_relaxed);
                 loaded_parent && loaded_parent->level == VariableContext::User)
             {

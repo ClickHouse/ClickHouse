@@ -237,10 +237,8 @@ StoragePtr StorageFactory::get(
 
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
-    /// The storage object and its metadata live until the table is detached or the server stops, far longer
-    /// than the query creating them, so keep them in the arena for table-lifetime state instead of
-    /// fragmenting the per-CPU arenas that serve queries. The charge is settled when the query ends, see
-    /// `MemoryTracker::settleDriftOnQueryEnd`.
+    /// The storage object and its metadata outlive the query, so route them to the table-lifetime arena instead
+    /// of fragmenting the per-CPU query arenas. Settled on query end, see `MemoryTracker::settleDriftOnQueryEnd`.
     StoragePtr res;
     {
         ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());

@@ -133,9 +133,8 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
 
 MergeListElement::~MergeListElement()
 {
-    /// The merge leaves the part it produced to the table, and may hand memory to other threads, so its tracker
-    /// ends non-zero. That is settled in `MemoryTracker::settleDriftOnQueryEnd`, and expected here rather than
-    /// reported, for this merge and for the query that started it.
+    /// The merge leaves its part to the table and may hand memory to other threads, so its tracker ends
+    /// non-zero; mark it expected (and for the query that started it) so `settleDriftOnQueryEnd` doesn't warn.
     thread_group->memory_tracker.setDriftExpected();
 }
 

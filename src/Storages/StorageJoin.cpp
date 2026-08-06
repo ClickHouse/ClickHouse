@@ -222,9 +222,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
     {
-        /// The data being replaced was settled into the server total when the query that inserted it ended, so
-        /// releasing it must not be credited to this mutation. What it builds instead stays charged to it while
-        /// it runs, and is settled when it ends, as on insert.
+        /// The data being replaced was already settled into the server total, so releasing it must not credit
+        /// this mutation. The new data it builds stays charged to it instead, settled the same way when it ends.
         MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         join = std::move(new_data);
     }

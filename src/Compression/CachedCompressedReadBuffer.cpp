@@ -56,9 +56,8 @@ bool CachedCompressedReadBuffer::nextImpl()
         {
             cell->additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
             {
-                /// These bytes belong to the cache, which outlives this query and is freed by whichever query's
-                /// insertion evicts them. The reader's own input buffer, codec and compressed buffer, allocated
-                /// above, stay charged to this query.
+                /// The cache owns this data and frees it later (whichever insertion evicts it), so don't charge
+                /// it to this query; the reader's own buffers above stay charged to it.
                 MemoryTrackerBlockerInThread cached_bytes_not_charged_to_the_query;
                 cell->data.resize(size_decompressed + cell->additional_bytes);
             }

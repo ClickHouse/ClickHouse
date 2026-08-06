@@ -182,9 +182,8 @@ public:
         return rss.load(std::memory_order_relaxed);
     }
 
-    /// Tells that the query deliberately leaves memory to a structure that outlives it, such as the data of an
-    /// in-memory table, so that what is settled at the end is not reported as a bug. Applies to the task
-    /// trackers above as well, since they are charged for the same bytes.
+    /// Marks memory the query deliberately leaves to something that outlives it (e.g. an in-memory table) so
+    /// the settle at query end isn't reported as a bug. Propagates up through the task trackers too.
     void setDriftExpected()
     {
         for (auto * tracker = this; tracker; tracker = tracker->parent.load(std::memory_order_relaxed))
@@ -198,11 +197,8 @@ public:
     /// zero for that query. Warns in debug builds when the amount is large enough to be a real bug.
     void settleDriftOnQueryEnd();
 
-    /// Hand `size` bytes over from the query to the server: the memory stays allocated and the global tracker
-    /// keeps accounting it, while this tracker and its parents below the global one stop counting it. For data
-    /// a query allocates and leaves in a table, which must be checked against the limits while the query runs
-    /// but must not stay charged to the user, since nothing would ever uncharge it there.
-    /// NOTE: alloc/free cannot be used for this, they would change the total as well.
+    /// Moves `size` bytes off this tracker chain onto the global tracker: stays allocated and counted globally,
+    /// just no longer charged to the query/user. Not alloc/free (that would also change the total).
     void transferToGlobal(Int64 size);
 
     Int64 getPeak() const

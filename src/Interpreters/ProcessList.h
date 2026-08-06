@@ -345,11 +345,8 @@ struct ProcessListForUser
 
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
-    /// Starts a new measurement period for a user that has no queries left: the limits are dropped so that the
-    /// next query installs its own, and the peak starts over.
-    /// The amount is deliberately left alone: each query settles what it leaves behind when its tracker goes
-    /// away, see `MemoryTracker::settleDriftOnQueryEnd`, so a user without queries is already at zero. Zeroing
-    /// it here would instead erase what a query whose thread group is still alive is charged for.
+    /// Drops the user's limits and peak so the next query starts a fresh period; the amount is left alone
+    /// on purpose, each query settles its own drift on end, see `MemoryTracker::settleDriftOnQueryEnd`.
     void resetTrackers()
     {
         /// TODO: should we drop user_temp_data_on_disk here?

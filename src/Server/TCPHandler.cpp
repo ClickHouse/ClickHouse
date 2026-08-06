@@ -570,10 +570,8 @@ void TCPHandler::runImpl()
         });
 
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
-        /// Declared before `query_scope` so it is released after the thread detaches. The query context is
-        /// created before the scope exists, so it is never charged to the query; releasing it while the thread
-        /// is still attached would credit the query for ~16 KB of `Settings` it never held, which pushes the
-        /// per-user tracker below what the user actually holds.
+        /// Declared before `query_scope` so it is freed after the thread detaches. Created before the scope
+        /// exists, so it's never charged to the query; releasing it while attached pushes the tracker negative.
         ContextMutablePtr query_context_to_release_after_detaching;
         /// Initialized later. It has to be destroyed after query_state is destroyed.
         std::optional<QueryScope> query_scope;
