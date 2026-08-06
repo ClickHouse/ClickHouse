@@ -155,6 +155,40 @@ void expectReadDoesNotUseAsyncBoundedBuffer(const std::function<void()> & read)
         << "mutable-metadata read went through AsynchronousBoundedReadBuffer (cached-size chassert path)";
 }
 
+/// `Bugfix validation (unit tests)` compiles this test against the merge-base sources, where the
+/// three `PaimonMetadata` accessors this PR adds do not exist yet. Dispatch on their presence from
+/// a template so the discarded branch is not instantiated; the test then builds against both
+/// sources and demonstrates the bug at runtime on the before-binary. Each fallback reproduces the
+/// merge-base behaviour that the accessor replaces - a failed snapshot load was always skipped,
+/// no table-identity probe existed, and a committed watermark was always trusted - so the
+/// assertions that pin the fix still fail there. No assertion is removed or weakened.
+template <typename Metadata = PaimonMetadata>
+bool snapshotLoadFailureSkippable(const ObjectStoragePtr & storage, const String & snapshot_path)
+{
+    if constexpr (requires { Metadata::isSnapshotLoadFailureSkippable(storage, snapshot_path); })
+        return Metadata::isSnapshotLoadFailureSkippable(storage, snapshot_path);
+    else
+        return true;
+}
+
+template <typename Metadata = PaimonMetadata>
+Int64 schemaZeroTimeMillis(PaimonTableClient & table_client)
+{
+    if constexpr (requires { Metadata::readSchemaZeroTimeMillis(table_client); })
+        return Metadata::readSchemaZeroTimeMillis(table_client);
+    else
+        return 0;
+}
+
+template <typename Metadata = PaimonMetadata>
+bool committedWatermarkFromSameTable(std::optional<Int64> committed_table_identity, Int64 current_table_identity)
+{
+    if constexpr (requires { Metadata::isCommittedWatermarkFromSameTable(committed_table_identity, current_table_identity); })
+        return Metadata::isCommittedWatermarkFromSameTable(committed_table_identity, current_table_identity);
+    else
+        return true;
+}
+
 }
 
 
@@ -314,13 +348,13 @@ TEST(PaimonIncrementalRead, SkipsOnlyGenuinelyMissingSnapshots)
     const auto snapshot2 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "2");
 
     /// The snapshot file is still there: a failed load must not be skipped (fail closed).
-    EXPECT_FALSE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
+    EXPECT_FALSE(snapshotLoadFailureSkippable(storage, snapshot1.string()));
     /// The snapshot file never existed / was removed by compaction: skipping is safe.
-    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot2.string()));
+    EXPECT_TRUE(snapshotLoadFailureSkippable(storage, snapshot2.string()));
 
     /// Removing the file flips the verdict for the same snapshot id.
     fs::remove(snapshot1);
-    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
+    EXPECT_TRUE(snapshotLoadFailureSkippable(storage, snapshot1.string()));
 }
 
 /// A backend that cannot answer the probe must not be read as "the snapshot is gone".
@@ -336,22 +370,22 @@ TEST(PaimonIncrementalRead, TreatsUnknownExistenceAsNotSkippable)
     auto storage = std::make_shared<ProbeFailingObjectStorage>(tmp.path.string());
 
     /// Baseline: the delegate answers, so the verdict is the ordinary one.
-    EXPECT_FALSE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
+    EXPECT_FALSE(snapshotLoadFailureSkippable(storage, snapshot1.string()));
 
     /// The backend fails the probe: the failure must propagate, not become "skippable".
     storage->fail_probe = true;
     EXPECT_THROW(
-        PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()), DB::Exception);
+        snapshotLoadFailureSkippable(storage, snapshot1.string()), DB::Exception);
 
     /// The same holds when the object is genuinely absent: an unanswerable probe never
     /// licenses advancing the watermark, so absence must not be inferred from an error.
     fs::remove(snapshot1);
     EXPECT_THROW(
-        PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()), DB::Exception);
+        snapshotLoadFailureSkippable(storage, snapshot1.string()), DB::Exception);
 
     /// Once the backend answers again, a genuine absence is still skippable.
     storage->fail_probe = false;
-    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
+    EXPECT_TRUE(snapshotLoadFailureSkippable(storage, snapshot1.string()));
 }
 
 /// The LATEST hint is only trusted when `snapshot-N` is present and `snapshot-N+1` is absent.
@@ -421,7 +455,7 @@ TEST(PaimonIncrementalRead, DetectsRecreateOnReusedTargetSnapshotPath)
     PaimonTableClient client(storage, table.string(), getContext().context);
 
     /// Identity latched when the ClickHouse table was created.
-    const Int64 latched_time_millis = PaimonMetadata::readSchemaZeroTimeMillis(client);
+    const Int64 latched_time_millis = schemaZeroTimeMillis(client);
     EXPECT_EQ(latched_time_millis, 1000);
     EXPECT_EQ(client.getSnapshot({1, snapshot1.string()}).id, 1);
 
@@ -433,7 +467,7 @@ TEST(PaimonIncrementalRead, DetectsRecreateOnReusedTargetSnapshotPath)
 
     EXPECT_EQ(client.getSnapshot({1, snapshot1.string()}).id, 1)
         << "the recreated table reuses the snapshot path, so the load itself cannot detect the recreate";
-    EXPECT_NE(PaimonMetadata::readSchemaZeroTimeMillis(client), latched_time_millis)
+    EXPECT_NE(schemaZeroTimeMillis(client), latched_time_millis)
         << "identity probe must see the recreate that the targeted snapshot load cannot";
 }
 
@@ -461,15 +495,15 @@ TEST(PaimonIncrementalRead, DiscardsWatermarkFromAnEarlierTableGeneration)
     PaimonTableClient client(storage, table.string(), getContext().context);
 
     /// Identity latched when the ClickHouse table was created, and a watermark committed for it.
-    const Int64 old_generation = PaimonMetadata::readSchemaZeroTimeMillis(client);
+    const Int64 old_generation = schemaZeroTimeMillis(client);
     EXPECT_EQ(old_generation, 1000);
-    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, old_generation));
+    EXPECT_TRUE(committedWatermarkFromSameTable(old_generation, old_generation));
 
     /// First half of a non-atomic external DROP: `snapshot-2` is gone, `schema-0` is untouched.
     fs::remove(snapshot_path(2));
-    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot_path(2).string()))
+    EXPECT_TRUE(snapshotLoadFailureSkippable(storage, snapshot_path(2).string()))
         << "a deleted snapshot file is indistinguishable from a compaction gap at this point";
-    EXPECT_EQ(PaimonMetadata::readSchemaZeroTimeMillis(client), old_generation)
+    EXPECT_EQ(schemaZeroTimeMillis(client), old_generation)
         << "the identity re-validation before the commit cannot see this half of the DROP either";
     /// So a watermark may legitimately be committed for snapshot 3 under the old generation here.
 
@@ -480,11 +514,11 @@ TEST(PaimonIncrementalRead, DiscardsWatermarkFromAnEarlierTableGeneration)
     writeFile(schema0, R"({"version":3,"timeMillis":2000})");
     writeFile(snapshot_path(1), makeSnapshotJson(1));
 
-    const Int64 new_generation = PaimonMetadata::readSchemaZeroTimeMillis(client);
+    const Int64 new_generation = schemaZeroTimeMillis(client);
     EXPECT_EQ(new_generation, 2000);
-    EXPECT_FALSE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, new_generation))
+    EXPECT_FALSE(committedWatermarkFromSameTable(old_generation, new_generation))
         << "the watermark of the dropped table must not be inherited by the recreated one";
-    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(new_generation, new_generation));
+    EXPECT_TRUE(committedWatermarkFromSameTable(new_generation, new_generation));
 
     /// A watermark written before generation tracking existed carries no marker, so it may equally
     /// be this table's progress or progress inherited from a dropped one: it is of unknown
@@ -492,12 +526,12 @@ TEST(PaimonIncrementalRead, DiscardsWatermarkFromAnEarlierTableGeneration)
     /// data.  Discarding it takes the initial-read branch, which always commits a watermark and so
     /// latches the marker - the unmarked state is left behind after a single batch, whether or not
     /// that batch had any new snapshots to read.
-    EXPECT_FALSE(PaimonMetadata::isCommittedWatermarkFromSameTable(std::nullopt, new_generation))
+    EXPECT_FALSE(committedWatermarkFromSameTable(std::nullopt, new_generation))
         << "an unmarked watermark may have been inherited from a dropped table at the same keeper_path";
     /// A table whose identity could not be latched has nothing to compare against, so the watermark
     /// is taken at face value there.
-    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, 0));
-    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(std::nullopt, 0));
+    EXPECT_TRUE(committedWatermarkFromSameTable(old_generation, 0));
+    EXPECT_TRUE(committedWatermarkFromSameTable(std::nullopt, 0));
 }
 
 #endif
