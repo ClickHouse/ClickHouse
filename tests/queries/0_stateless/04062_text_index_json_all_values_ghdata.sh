@@ -102,7 +102,7 @@ echo "-- Array: equality on array subcolumn"
 run_query "SELECT count() FROM ghdata WHERE data.payload.pull_request.labels[].name = ['dependencies', 'submodules']"
 
 echo "-- SELECT JSONAllValues with filter returning 1 row"
-run_query "SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id = 14690746673"
+run_query "SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id = '14690746673'"
 
 echo "-- Verify correctness: results match with index disabled"
 run_query_no_idx "SELECT count() FROM ghdata WHERE data.actor.login = 'dependabot[bot]'"
@@ -119,6 +119,6 @@ run_query_no_idx "SELECT count() FROM ghdata WHERE data.type = 'WatchEvent' AND 
 run_query_no_idx "SELECT count() FROM ghdata WHERE hasAllTokens(JSONAllValues(data), ['football', 'team'])"
 run_query_no_idx "SELECT count() FROM ghdata WHERE hasAnyTokens(JSONAllValues(data), ['football', 'calculator'])"
 run_query_no_idx "SELECT count() FROM ghdata WHERE data.payload.pull_request.labels[].name = ['dependencies', 'submodules']"
-run_query_no_idx "SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id = 14690746673"
+run_query_no_idx "SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id = '14690746673'"
 
 $MY_CLICKHOUSE_CLIENT --query "DROP TABLE ghdata;"

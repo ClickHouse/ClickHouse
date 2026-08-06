@@ -83,7 +83,7 @@ Condition: (mode: All; tokens: ["dependencies", "submodules"])
 Parts: 1/1
 Granules: 3/50
 -- SELECT JSONAllValues with filter returning 1 row
-SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id = 14690746673
+SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id = '14690746673'
 310	1997184657549209849	310	15450791830078104110
 Condition: (mode: All; tokens: ["14690746673"])
 Parts: 1/1
