@@ -680,13 +680,21 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     // because narrowPipe doesn't preserve order. Also, if we are doing a memory efficient distributed agggregation, bucket
     // order must be preserved.
     //
-    // Order must be preserved as well when the children were read at a stage above `FetchColumns` and the query has an
-    // `ORDER BY`: every child then sorts on its own (a `Distributed` child sorts on the shards), so the step on top of
-    // `ReadFromMerge` is `Sorting (Merge sorted streams ... for ORDER BY)`, which requires each input stream to be
+    // Order must be preserved as well when the children were read at a stage where the query's `ORDER BY` has already
+    // run remotely: every child then sorts on its own (a `Distributed` child sorts on the shards), so the step on top
+    // of `ReadFromMerge` is `Sorting (Merge sorted streams ... for ORDER BY)`, which requires each input stream to be
     // sorted. Narrowing would feed it unsorted streams, silently producing a wrongly ordered - and, together with
     // `LIMIT`, incomplete - result.
-    const bool children_produce_sorted_streams
-        = common_processed_stage > QueryProcessingStage::FetchColumns && queryHasOrderBy(query_info);
+    //
+    // That happens at any stage above `WithMergeableState` (the remote side did the full `ORDER BY`), and at
+    // `WithMergeableState` only for queries without aggregation and window functions - the same conditions under
+    // which the remote part of a distributed query performs the preliminary sort (and the planner merges sorted
+    // streams instead of doing a full sort on the initiator). For example, a window function query over `Distributed`
+    // is processed only up to `WithMergeableState` with no remote sort, so narrowing remains allowed.
+    const bool children_produce_sorted_streams = queryHasOrderBy(query_info)
+        && (common_processed_stage > QueryProcessingStage::WithMergeableState
+            || (common_processed_stage > QueryProcessingStage::FetchColumns && !query_info.need_aggregate
+                && !query_info.has_window));
 
     const bool should_not_narrow = query_info.input_order_info
         || children_produce_sorted_streams
