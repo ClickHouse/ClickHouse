@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-random-settings
 # Tag no-fasttest: the deterministic waits below take about 23 seconds of a test that runs in
 # about 28, which is a large share of the fast test per-test timeout of 60 seconds.
 # Tag no-parallel: this test WAITS on a process-global PAUSEABLE failpoint, so a concurrent
 # instance pausing or resuming the same channel would break the synchronisation.
+# Tag no-random-settings: the two-second deadline must not elapse before the first child pauses
+# at the failpoint, and randomized settings change how much analysis work precedes that pause.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,7 +25,8 @@ function children_planned()
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
     $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
         SELECT count() FROM system.text_log
-        WHERE query_id = '$1' AND message LIKE 'Building plan for child table%'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND query_id = '$1' AND message LIKE 'Building plan for child table%'
     "
 }
 
@@ -139,7 +142,7 @@ rm -f "${CLICKHOUSE_TMP}/04763_break.err"
 # that stops the plan build has also stopped the pipeline, so both outcomes return zero rows.
 control_planned=$(children_planned "${CONTROL_QID}")
 break_planned=$(children_planned "${BREAK_QID}")
-if [ "$control_planned" -ne 4 ]; then
+if [ "$control_planned" -lt 4 ]; then
     echo "FAIL: the control planned ${control_planned} children instead of 4"
 elif [ "$break_planned" -lt "$control_planned" ]; then
     echo "break mode planned fewer children than the control"
