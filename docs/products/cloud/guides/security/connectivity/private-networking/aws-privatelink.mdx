@@ -50,7 +50,10 @@ ClickHouse Cloud supports [cross-region PrivateLink](https://aws.amazon.com/abou
 - us-west-1
 - us-east-2
 - us-east-1
-Pricing considerations: AWS will charge users for cross region data transfer, see pricing [here](https://aws.amazon.com/privatelink/pricing/).
+</Note>
+
+<Note>
+AWS charges for cross-region data transfer. See [AWS PrivateLink pricing](https://aws.amazon.com/privatelink/pricing/) for details.
 </Note>
 
 **Please complete the following to enable AWS PrivateLink**:
@@ -144,7 +147,9 @@ Select **Endpoint services that use NLBs and GWLBs** and use `Service name`<sup>
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink Endpoint Settings" border/>
 
-If you want to establish a cross-regional connection via PrivateLink, enable the "Cross region endpoint" checkbox and specify the service region. The service region is where the ClickHouse instance is running.
+<Note>
+For a cross-region connection, enable the **Cross region endpoint** checkbox and specify the service region where your ClickHouse service is running.
+</Note>
 
 If you get a "Service name couldn't be verified." error, please contact Customer Support to request adding new regions to the supported regions list.
 
