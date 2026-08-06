@@ -25,8 +25,10 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/parseQuery.h>
 #include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -59,8 +61,13 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
@@ -434,10 +441,76 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
     return hash.get128();
 }
 
+/// Parses the filter expressions a query inherits from settings rather than from its own text:
+/// every value of `additional_table_filters` and the `additional_result_filter` expression. They are
+/// applied by the interpreter/planner only after the referenced-tables walk runs, and they can contain
+/// subqueries (e.g. `x IN (SELECT x FROM t2)`) whose tables never appear in the query AST, so the walk
+/// has to see them too. Returns false when a filter cannot be parsed (the query itself will fail on it
+/// later with the same error) - the caller then fails closed.
+static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filter_asts)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    try
+    {
+        auto parse_filter = [&](const String & filter)
+        {
+            ParserExpression parser;
+            filter_asts.push_back(parseQuery(
+                parser,
+                filter.data(),
+                filter.data() + filter.size(),
+                "additional filter",
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]));
+        };
+
+        /// All entries are collected, not only those matching a table of the current query: matching
+        /// (by name or alias, possibly of a table inside a view this query reads through) would need
+        /// name resolution, and hashing a superset is conservative - it can only produce extra cache
+        /// misses, never a stale hit.
+        for (const auto & entry : settings[Setting::additional_table_filters].value)
+            parse_filter(entry.safeGet<Tuple>().at(1).safeGet<String>());
+
+        const String & additional_result_filter = settings[Setting::additional_result_filter];
+        if (!additional_result_filter.empty())
+            parse_filter(additional_result_filter);
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    return true;
+}
+
 std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context)
 {
+    ASTs filter_asts;
+    if (!parseFilterASTsInjectedFromSettings(context, filter_asts))
+        return {};
+
     /// The CTE expansion inside mutates the AST, so work on a copy.
-    return computeReferencedTablesModificationHashImpl(ast->clone(), context);
+    auto query_hash = computeReferencedTablesModificationHashImpl(ast->clone(), context);
+    if (!query_hash)
+        return {};
+
+    if (filter_asts.empty())
+        return query_hash;
+
+    /// Fold the dependencies of the settings-injected filters into the query's own hash, applying the
+    /// same rules (fail closed on non-deterministic functions, `dictGet`-like calls, SQL UDFs, ...).
+    SipHash combined;
+    combined.update(*query_hash);
+    for (const auto & filter_ast : filter_asts)
+    {
+        auto filter_hash = computeReferencedTablesModificationHashImpl(filter_ast->clone(), context);
+        if (!filter_hash)
+            return {};
+        combined.update(*filter_hash);
+    }
+    return combined.get128();
 }
 
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
