@@ -1302,6 +1302,26 @@ def test_unary_operators():
         "Multiple series have the same tags {'job': 'unary_overlap'}",
     )
 
+    send_data(
+        [
+            ({"__name__": "metric_a"}, {0: 1}),
+            ({"__name__": "metric_b"}, {0: 3, 600: 4}),
+        ]
+    )
+
+    # Unary metric-name removal must also compose correctly with the OR operator.
+    do_range_query_test(
+        "-metric_a or -metric_b",
+        0,
+        1200,
+        600,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[0, "-1"], [600, "-4"]]}]}',
+        [[
+            "[]",
+            "[('1970-01-01 00:00:00.000',-1),('1970-01-01 00:10:00.000',-4)]",
+        ]],
+    )
+
 
 def test_conversion_functions():
     do_query_test(
