@@ -142,10 +142,11 @@ public:
     }
 
     /// Not reached: every caller is behind `params.aggregates_size == 0`, `is_simple_count`, or an explicit
-    /// set branch. Throws rather than `UNREACHABLE()`, so a wrong assumption here stays diagnosable.
+    /// set branch. `UNREACHABLE` rather than a throw, so that the compiler drops this and the paths leading
+    /// to it instead of emitting them; in debug builds it is an `abort`, which still catches a mistake.
     [[noreturn]] static char *& getMapped()
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A set-mode aggregation method has no mapped value to read");
+        UNREACHABLE();
     }
 };
 
@@ -204,7 +205,7 @@ public:
     /// See `EmplaceResultImpl<void>::getMapped` - not reached, present only so generic code compiles.
     [[noreturn]] static char *& getMapped()
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A set-mode aggregation method has no mapped value to read");
+        UNREACHABLE();
     }
 };
 
