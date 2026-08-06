@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -6,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -148,6 +150,27 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return delegate(arguments)->getResultType(); }
 
 private:
+    /// A function over the given arguments that never reads them and returns a constant NULL,
+    /// as the mini-plan machinery: the argument slots stay unused and the only step passes a
+    /// NULL constant through, so the argument types the analyzer sees stay the real ones.
+    FunctionBasePtr buildNullResult(const ColumnsWithTypeAndName & arguments) const
+    {
+        const DataTypePtr null_type = makeNullable(std::make_shared<DataTypeNothing>());
+        VectorWithMemoryTracking<FunctionKQLBinNumeric::Slot> slots{{arguments[0].type, {}}, {arguments[1].type, {}}};
+        slots.push_back({null_type, Field()});
+
+        auto identity
+            = FunctionFactory::instance().get("identity", getContext())->build({ColumnWithTypeAndName{nullptr, null_type, ""}});
+        slots.push_back({identity->getResultType(), {}});
+        VectorWithMemoryTracking<FunctionKQLBinNumeric::Step> steps;
+        steps.push_back({std::move(identity), {2}, 3});
+
+        DataTypes argument_types;
+        for (const auto & argument : arguments)
+            argument_types.push_back(argument.type);
+        return std::make_shared<FunctionKQLBinNumeric>(std::move(slots), std::move(steps), std::move(argument_types));
+    }
+
     FunctionBasePtr delegate(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() != 2)
@@ -169,7 +192,9 @@ private:
             return FunctionFactory::instance().get("divide", getContext())->build(null_arguments);
         }
 
-        /// A datetime rounded by an interval is exactly `toStartOfInterval`.
+        /// A datetime rounded by an interval is exactly `toStartOfInterval`. Kusto returns null
+        /// for a negative bin size; `toStartOfInterval` only takes a constant interval, so the
+        /// sign is known here.
         if (isDateOrDate32OrDateTimeOrDateTime64(value_type))
         {
             if (!isInterval(bin_type))
@@ -178,6 +203,12 @@ private:
                     "Function {} rounds a datetime by a timespan, but the second argument has type {}",
                     getName(),
                     arguments[1].type->getName());
+            if (arguments[1].column && isColumnConst(*arguments[1].column))
+            {
+                const Field interval = assert_cast<const ColumnConst &>(*arguments[1].column).getField();
+                if (!interval.isNull() && interval.safeGet<Int64>() < 0)
+                    return buildNullResult(arguments);
+            }
             return FunctionFactory::instance().get("toStartOfInterval", getContext())->build(arguments);
         }
 
@@ -211,7 +242,21 @@ private:
         };
 
         constexpr size_t value_slot = 0;
-        constexpr size_t bin_slot = 1;
+        size_t bin_slot = 1;
+        const size_t zero = add_constant(std::make_shared<DataTypeUInt8>(), Field(UInt64(0)));
+
+        /// Kusto's contract: a negative bin size makes the result null, whatever the value. The
+        /// bin size may be a column, so the check is per row: the bin size is routed through
+        /// `if(roundTo < 0, NULL, roundTo)` up front, and the chain below inherits the null
+        /// instead of every step guarding. An unsigned bin size cannot be negative, so it skips
+        /// the detour (which would also signed-flip the unsigned-only branch below).
+        if (!WhichDataType(bin_type).isUInt())
+        {
+            const size_t null_literal = add_constant(makeNullable(std::make_shared<DataTypeNothing>()), Field());
+            const size_t bin_negative = add_step("less", {bin_slot, zero});
+            bin_slot = add_step("if", {bin_negative, null_literal, bin_slot});
+        }
+
         if (WhichDataType(value_type).isUInt() && WhichDataType(bin_type).isUInt())
         {
             /// Unsigned operands never need the floor adjustment below, and must not take it:
@@ -223,7 +268,6 @@ private:
         {
             /// `intDiv` truncates toward zero, so when the division is inexact and the operands'
             /// signs differ, the truncated quotient sits one bin above the floor.
-            const size_t zero = add_constant(std::make_shared<DataTypeUInt8>(), Field(UInt64(0)));
             const size_t quotient = add_step("intDiv", {value_slot, bin_slot});
             const size_t remainder = add_step("modulo", {value_slot, bin_slot});
             const size_t inexact = add_step("notEquals", {remainder, zero});
