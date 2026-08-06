@@ -112,9 +112,9 @@ ColumnPtr deserializeRange(
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    ColumnPtr column = column_type->createColumn();
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, nullptr);
-    return column;
+    auto column = column_type->createColumn();
+    serialization->deserializeBinaryBulkWithMultipleStreams(*column, rows_offset, limit, settings, state, nullptr);
+    return std::move(column);
 }
 
 void assertRangesEqual(const IColumn & expected, size_t expected_offset, const IColumn & actual)

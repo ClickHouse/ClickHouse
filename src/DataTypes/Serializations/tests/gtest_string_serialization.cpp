@@ -201,21 +201,20 @@ TEST(StringSerialization, WithSizeStreamRowsOffsetSubstreamsCacheReuse)
     /// rows_offset + limit while the column only holds `limit` rows (the chassert in
     /// addColumnWithNumReadRowsToSubstreamsCache catches this directly in debug builds).
     ISerialization::SubstreamsCache cache;
-    ColumnPtr first = ColumnString::create();
-    serialization->deserializeBinaryBulkWithMultipleStreams(first, rows_offset, limit, settings, state, &cache);
+    auto first = ColumnString::create();
+    serialization->deserializeBinaryBulkWithMultipleStreams(*first, rows_offset, limit, settings, state, &cache);
 
     const auto & first_string = assert_cast<const ColumnString &>(*first);
     ASSERT_EQ(first_string.size(), limit);
     ASSERT_EQ(first_string.getOffsets().back(), first_string.getChars().size());
     ASSERT_EQ(first_string.getDataAt(0), src->getDataAt(rows_offset));
 
-    /// Now serve the same range from the cache while forcing the "insert into the result column" path
-    /// (insert_only_rows_in_current_range_from_substreams_cache), which inserts exactly num_read_rows rows
-    /// from the tail of the cached column. An over-counted cache entry reads out of bounds here (release), so
-    /// this second lookup is what makes the bug observable even where the chassert above is compiled out.
-    settings.insert_only_rows_in_current_range_from_substreams_cache = true;
-    ColumnPtr second = ColumnString::create();
-    serialization->deserializeBinaryBulkWithMultipleStreams(second, rows_offset, limit, settings, state, &cache);
+    /// Now serve the same range from the cache. insertDataFromCachedColumn always inserts exactly
+    /// num_read_rows rows from the tail of the cached column, so an over-counted cache entry reads out of
+    /// bounds here (release), which is what makes the bug observable even where the chassert above is
+    /// compiled out.
+    auto second = ColumnString::create();
+    serialization->deserializeBinaryBulkWithMultipleStreams(*second, rows_offset, limit, settings, state, &cache);
 
     const auto & second_string = assert_cast<const ColumnString &>(*second);
     ASSERT_EQ(second_string.size(), limit);
