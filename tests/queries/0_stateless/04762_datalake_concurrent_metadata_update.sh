@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
-# Random settings limits: optimize_count_from_files=(1, None); optimize_trivial_count_query=(1, None)
 
 # Concurrent readers of the same DeltaLake table while its metadata is republished.
 # A data race is not visible in query output, so a regression shows up as a sanitizer
 # report rather than as a diff against the reference.
-#
-# Either count optimization drawn 0 makes every `SELECT count()` below read all Parquet
-# files instead of their metadata, which multiplies the run time by more than an order of
-# magnitude. Both are pinned to their default so the concurrency, not the read volume,
-# decides how long the test takes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,7 +28,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 \
 $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=1 \
     -q "SELECT total_rows IS NOT NULL FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
 
-# The probe above cached delta-kernel metadata, whose supportsUpdate() is true, so further
+# The probe above cached delta-kernel metadata, whose `supportsUpdate` is true, so further
 # queries refresh it in place instead of reassigning the pointer. Re-creating under the
 # kernel-disabled setting caches metadata that has to be replaced instead.
 $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 --multiquery "$CREATE"
@@ -43,9 +37,9 @@ $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 --multiquery "$CREATE"
 # One long-lived client per stream keeps the queries back to back. Each iteration ends with a
 # marker: the race is invisible in query output, so without counting the queries a stream
 # really issued, one dying early would still match the reference.
-# The kernel-disabled stream keeps re-creating replaceable metadata, and must not run a read
-# pipeline: createFileIterator reads the metadata twice, so it can pin no snapshot version from
-# one object and then call iterate() on another that requires one (issue filed separately).
+# The kernel-disabled stream must not run a read pipeline: `createFileIterator` reads the metadata
+# twice, so it can pin no snapshot version from the object the first read saw and then call
+# `iterate` on a replacement that requires one. DESCRIBE reaches `update` without that iterator.
 STREAMS=4
 QUERIES=12
 READS="SELECT total_rows, total_bytes FROM system.tables WHERE database = currentDatabase() FORMAT Null; SELECT 1 FORMAT TSVRaw;"
