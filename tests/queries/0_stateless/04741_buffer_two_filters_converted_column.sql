@@ -26,8 +26,10 @@ DROP ROW POLICY IF EXISTS p04741_lc ON t04741_lc_buf;
 DROP ROW POLICY IF EXISTS p04741_bare ON t04741_bare_buf;
 DROP ROW POLICY IF EXISTS p04741_nul ON t04741_nul_buf;
 
--- Each destination holds a row both filters accept, a row only the row policy rejects and a row only
--- the PREWHERE rejects, so dropping either filter changes the output of every two-filter arm.
+-- Every arm whose two filters meet the same converted column holds a row both filters accept, a row
+-- only its row policy rejects and a row only its PREWHERE rejects, so neither filter can go missing
+-- unnoticed. Arms J and I are the deliberate exceptions, each showing a filter on another column is
+-- unaffected: J has no policy-only-rejected row and I has no PREWHERE-only-rejected row.
 CREATE TABLE t04741_map_dst (k UInt8, m Array(Tuple(String, UInt64))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t04741_map_dst VALUES (1, [('a', 1), ('b', 2)]), (2, [('b', 2)]), (3, [('a', 1)]);
 CREATE TABLE t04741_map_buf (k UInt8, m Map(String, UInt64))
@@ -120,8 +122,9 @@ CREATE ROW POLICY p04741_bare ON t04741_bare_buf USING f TO ALL;
 SELECT 'Z bare-column row policy and PREWHERE on the same column';
 SELECT f FROM t04741_bare_buf PREWHERE f < 4 ORDER BY f;
 
--- A Nullable parent with both filters on the same column. The PREWHERE must accept the NULL row,
--- otherwise it implies the policy and the arm cannot detect a lost row policy.
+-- A Nullable parent with both filters on the same column. This is a control: a Nullable parent was
+-- already correct before the fix, so the arm pins that the fix does not regress it. The PREWHERE must
+-- accept the NULL row, otherwise it implies the policy and the arm cannot detect a lost row policy.
 CREATE ROW POLICY p04741_nul ON t04741_nul_buf USING n != '9' TO ALL;
 
 SELECT 'Y Nullable parent, both filters on the same column';

@@ -430,7 +430,7 @@ void StorageBuffer::read(
                 /// carries each step's outputs forward, so such a column reaches the next prefix
                 /// already holding this table's type and must not be converted a second time. The
                 /// call order below must match the step order in the consumers building these steps
-                /// (MergeTreeSelectProcessor::getPrewhereActions, Parquet's Reader::preparePrewhere).
+                /// (`MergeTreeSelectProcessor::getPrewhereActions`, Parquet's `Reader::preparePrewhere`).
                 NameSet already_converted;
 
                 /// The prefix converts the whole sample block, but the filter runs inside the
