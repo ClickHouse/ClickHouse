@@ -110,6 +110,12 @@ class LogCluster:
 
         response = None
         for retry in range(retries):
+            # A retry re-sends the whole body. requests consumes a file-like
+            # body on the first attempt, and re-posting the exhausted stream
+            # would run an INSERT with an empty body: it succeeds and the
+            # telemetry is silently lost. Rewind it before every attempt.
+            if hasattr(data, "seek"):
+                data.seek(0)
             try:
                 response = self._session.post(
                     url=self.url,
@@ -125,14 +131,18 @@ class LogCluster:
                         f"WARNING: LogCluster query failed with code {response.status_code}"
                     )
                 if response.status_code >= 500:
-                    # A retryable error
-                    time.sleep(1)
+                    # A retryable error: the shared cluster goes through
+                    # minutes-long server-wide memory-pressure spikes (Code 241
+                    # for every query), the same ones `select` below rides out
+                    # on this schedule.
+                    time.sleep(5 * (retry + 1))
                     continue
                 else:
                     break
             except Exception:
                 print("WARNING: LogCluster query failed with exception")
                 traceback.print_exc()
+                time.sleep(5 * (retry + 1))
         if response is not None:
             print(
                 f"ERROR: Failed to query LogCluster, query:\n {query}\n    reason:\n {response.text}"
@@ -226,17 +236,23 @@ class LogClusterBuildProfileQueries:
     def insert_profile_data(self, build_name, start_time, file, reduced=False):
         query = self._profile_query(build_name, start_time, reduced=reduced)
         with open(file, "rb") as data_fd:
-            assert self._log_cluster.do_query(query, data=data_fd, timeout=50)
+            assert self._log_cluster.do_query(
+                query, data=data_fd, retries=8, timeout=50
+            )
 
     def insert_build_size_data(self, build_name, start_time, file):
         query = self._build_size_query(build_name, start_time)
         with open(file, "rb") as data_fd:
-            assert self._log_cluster.do_query(query, data=data_fd, timeout=50)
+            assert self._log_cluster.do_query(
+                query, data=data_fd, retries=8, timeout=50
+            )
 
     def insert_binary_symbol_data(self, build_name, start_time, file):
         query = self._binary_symbol_query(build_name, start_time)
         with open(file, "rb") as data_fd:
-            assert self._log_cluster.do_query(query, data=data_fd, timeout=50)
+            assert self._log_cluster.do_query(
+                query, data=data_fd, retries=8, timeout=50
+            )
 
     def _profile_query(self, build_name, start_time, reduced=False):
         where = ""
