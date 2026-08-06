@@ -94,6 +94,10 @@ SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('type', 0)))) 
 SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('type', false)))) FROM inference_04509;
 SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('iteration_end', toInt8(1))))) FROM inference_04509;
 
+-- `iteration_begin` and `iteration_end` address the boosting rounds of the model, so every round of the
+-- default 100 is a valid bound.
+SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('iteration_begin', 1, 'iteration_end', 100)))) FROM inference_04509;
+
 SELECT 'Negative: prediction parameters';
 
 SELECT 'Error: unknown or forbidden prediction parameter';
@@ -119,6 +123,15 @@ SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', toInt128
 SELECT 'Error: an unsigned prediction parameter value that does not fit in Int64';
 -- Rejected instead of wrapping around to a negative one.
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', toUInt64(18446744073709551615))); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'Error: an iteration bound outside the boosting rounds of the model';
+-- XGBoost narrows both bounds to Int32 and range-checks only `iteration_end`, so an out-of-range
+-- `iteration_begin` would otherwise reach an unchecked index into the per-round tree offsets.
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', 101)); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', 2147483648, 'iteration_end', 0)); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_begin', -1)); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', 101)); -- { serverError XGBOOST_ERROR }
+SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('iteration_end', 2147483648)); -- { serverError XGBOOST_ERROR }
 
 SELECT 'Error: prediction type other than 0 (value) or 1 (margin) emits several values per row and is unsupported';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 2)); -- { serverError XGBOOST_ERROR }

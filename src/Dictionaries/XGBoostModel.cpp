@@ -311,7 +311,11 @@ String XGBoostModel::sanitizePredictParams(const PredictParameters & params)
     config.set("training", false);
 
     static const std::unordered_set<String> allowed_keys{ // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        "type", "iteration_begin", "iteration_end", "ntree_limit"};
+        "type", "iteration_begin", "iteration_end"};
+
+    /// Fetch upper limit for `iteration_begin` and `iteration_end`.
+    int boosted_rounds = 0;
+    throwOnError(XGBoosterBoostedRounds(booster, &boosted_rounds));
 
     for (const auto & [key, value] : params)
     {
@@ -324,6 +328,15 @@ String XGBoostModel::sanitizePredictParams(const PredictParameters & params)
                 "Unsupported prediction 'type' {}. Only 0 (value) and 1 (margin) are supported, "
                 "because predictXGBoost returns a single Float64 per row",
                 value);
+
+        if ((key == "iteration_begin" || key == "iteration_end") && (value < 0 || value > boosted_rounds))
+            throw Exception(
+                ErrorCodes::XGBOOST_ERROR,
+                "Prediction parameter '{}' is {}, but the model has {} boosting round(s), so it must be between 0 and {}",
+                key,
+                value,
+                boosted_rounds,
+                boosted_rounds);
 
         config.set(key, value);
     }

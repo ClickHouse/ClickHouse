@@ -164,9 +164,8 @@ The parameter names map to the prediction parameters of XGBoost's `XGBoosterPred
 | Parameter | Description | Default |
 | --- | --- | --- |
 | `type` | Prediction type. Only `0` (value) and `1` (margin) are accepted, because `predictXGBoost` returns a single `Float64` per row. Other XGBoost types (`2`/`3` SHAP contributions, `4`/`5` feature interactions, `6` leaf index) emit several values per row and are rejected. | `0` |
-| `iteration_begin` | First boosting iteration (tree) to include in the prediction. | `0` |
-| `iteration_end` | Last boosting iteration to include; `0` uses all trees. | `0` |
-| `ntree_limit` | Deprecated; limits the number of trees used. Prefer `iteration_begin` / `iteration_end`. | — |
+| `iteration_begin` | First boosting iteration (tree) to include in the prediction. Must not exceed the number of boosting iterations the model was trained with (`num_iterations`). | `0` |
+| `iteration_end` | Last boosting iteration to include; `0` uses all trees. Bounded like `iteration_begin`. | `0` |
 
 ## Notes {#notes}
 
