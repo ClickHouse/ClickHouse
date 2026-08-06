@@ -214,6 +214,13 @@ private:
 
     bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
 
+    /// The implicit `rand()` sharding key of a `Remote` database proxy (see `DatabaseRemote`) exists
+    /// only to spread `INSERT` rows across the shards; it says nothing about data placement. The read
+    /// path (shard pruning under `optimize_skip_unused_shards`/`force_optimize_skip_unused_shards`,
+    /// the distributed group-by optimization) must behave as if such a table has no sharding key,
+    /// exactly like a `Distributed` table declared without one.
+    bool hasShardingKeyForReads() const { return has_sharding_key && !is_remote_database_proxy; }
+
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
 

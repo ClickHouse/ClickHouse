@@ -529,7 +529,10 @@ StoragePtr DatabaseRemote::fetchTable(const String & table_name, ContextPtr loca
     /// `insert_shard_id` or `insert_distributed_one_random_shard` for the query, while the engine
     /// advertises that it forwards `INSERT` queries. Each row goes to a random shard, consistent
     /// with resolving the metadata from an arbitrary shard; an explicit `insert_shard_id` still
-    /// pins the shard for a query.
+    /// pins the shard for a query. The key only distributes the inserted rows: the read path of
+    /// `StorageDistributed` ignores it (see `hasShardingKeyForReads`), so shard pruning under
+    /// `force_optimize_skip_unused_shards` treats the proxy as a table without a sharding key,
+    /// exactly as before the key was introduced.
     ASTPtr sharding_key;
     if (table_cluster->getShardsInfo().size() > 1)
         sharding_key = makeASTFunction("rand");
@@ -732,10 +735,11 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
     /// recreated from them fails on the missing local objects (`SELECT`) or writes to the missing
     /// local replica (`INSERT`). Serialize the effective fallback addresses instead, so the emitted
     /// definition reconstructs the object that actually serves the queries.
+    const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
+
     String effective_addresses;
     if (remote_only_cluster)
     {
-        const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
         if (distributed && distributed->getCluster() == remote_only_cluster)
         {
             for (const auto & shard_addresses : remote_only_cluster->getShardsAddresses())
@@ -751,6 +755,12 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
             }
         }
     }
+
+    /// A proxy over more than one shard carries an implicit `rand()` sharding key (see `fetchTable`).
+    /// The `Remote` table engine accepts a trailing sharding key but does not add one on its own, so
+    /// the key must be serialized explicitly: otherwise the emitted definition recreates a table that
+    /// rejects a multi-shard `INSERT` (`STORAGE_REQUIRES_PARAMETER`), while the live proxy accepts it.
+    const bool has_implicit_sharding_key = distributed && distributed->getCluster()->getShardsInfo().size() > 1;
 
     /// The table is exposed as the `Remote`/`RemoteSecure` table engine, which is the persistent
     /// counterpart of the `remote`/`remoteSecure` table functions. Turn the database engine
@@ -779,12 +789,17 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
                     make_intrusive<ASTLiteral>(table_name),
                     make_intrusive<ASTLiteral>(username),
                     make_intrusive<ASTLiteral>(password)};
+                if (has_implicit_sharding_key)
+                    engine_arguments.push_back(makeASTFunction("rand"));
             }
             else
             {
                 /// The addresses are given as a named collection: append `table = '<name>'`.
                 engine_arguments.push_back(
                     makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_name)));
+                if (has_implicit_sharding_key)
+                    engine_arguments.push_back(
+                        makeASTOperator("equals", make_intrusive<ASTIdentifier>("sharding_key"), makeASTFunction("rand")));
             }
         }
         else
@@ -793,6 +808,8 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
             if (!effective_addresses.empty())
                 engine_arguments[0] = make_intrusive<ASTLiteral>(effective_addresses);
             engine_arguments.insert(engine_arguments.begin() + 2, make_intrusive<ASTLiteral>(table_name));
+            if (has_implicit_sharding_key)
+                engine_arguments.push_back(makeASTFunction("rand"));
         }
     }
 
@@ -1051,7 +1068,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
     const String common_description = R"DOCS_MD(
 The `Remote` and `RemoteSecure` database engines provide real-time access to the tables of a database on a remote ClickHouse server over the native TCP protocol. They are the ClickHouse-to-ClickHouse counterparts of the [`MySQL`](/engines/database-engines/mysql) and [`PostgreSQL`](/engines/database-engines/postgresql) database engines.
 
-The list of tables and their structure are fetched from the remote server on demand, so the database always reflects its current state. Each table is exposed as a [`Distributed`](/engines/table-engines/special/distributed) storage over an ad-hoc cluster built from the supplied addresses, which forwards `SELECT` and `INSERT` queries to the remote server. When the addresses describe several shards, an `INSERT` sends each row to a random shard (the proxy tables carry an implicit `rand()` sharding key); set `insert_shard_id` to pin the shard for a query. This is handy for federating several ClickHouse clusters or for plugging a larger cluster into `clickhouse-local` or a smaller cluster.
+The list of tables and their structure are fetched from the remote server on demand, so the database always reflects its current state. Each table is exposed as a [`Distributed`](/engines/table-engines/special/distributed) storage over an ad-hoc cluster built from the supplied addresses, which forwards `SELECT` and `INSERT` queries to the remote server. When the addresses describe several shards, an `INSERT` sends each row to a random shard (the proxy tables carry an implicit `rand()` sharding key, which only distributes the inserted rows and does not act as a shard-pruning key for reading); set `insert_shard_id` to pin the shard for a query. This is handy for federating several ClickHouse clusters or for plugging a larger cluster into `clickhouse-local` or a smaller cluster.
 )DOCS_MD";
 
     factory.registerDatabase(
