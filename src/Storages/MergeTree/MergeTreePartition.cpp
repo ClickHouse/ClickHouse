@@ -9,6 +9,7 @@
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
@@ -391,6 +392,15 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
     return res;
 }
 
+/// `load` sizes `value` before filling it, so a throw part way through leaves default-constructed
+/// Fields, which are Null, behind. A partition key column is not nullable and rejects them --
+/// LowCardinality throws "ColumnUnique can't contain null values" -- so serializing a partially
+/// loaded partition would abort the server from a path that only wants to log the part.
+static DataTypePtr nullableIfValueIsNull(const DataTypePtr & type, const Field & value)
+{
+    return value.isNull() ? makeNullableOrLowCardinalityNullable(type) : type;
+}
+
 void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const
 {
     const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
@@ -404,9 +414,10 @@ void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, Wri
     else if (key_size == 1)
     {
         const DataTypePtr & type = partition_key_sample.getByPosition(0).type;
-        auto column = type->createColumn();
+        auto effective_type = nullableIfValueIsNull(type, value[0]);
+        auto column = effective_type->createColumn();
         column->insert(value[0]);
-        type->getDefaultSerialization()->serializeText(*column, 0, out, format_settings);
+        effective_type->getDefaultSerialization()->serializeText(*column, 0, out, format_settings);
     }
     else
     {
@@ -415,8 +426,9 @@ void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, Wri
         for (size_t i = 0; i < key_size; ++i)
         {
             const auto & type = partition_key_sample.getByPosition(i).type;
-            types.push_back(type);
-            auto column = type->createColumn();
+            auto effective_type = nullableIfValueIsNull(type, value[i]);
+            types.push_back(effective_type);
+            auto column = effective_type->createColumn();
             column->insert(value[i]);
             columns.push_back(std::move(column));
         }
