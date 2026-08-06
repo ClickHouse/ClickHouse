@@ -5,6 +5,8 @@ download framing guard present: OK
 framing kind persisted: OK
 restore keys off framing kind: OK
 download strips real format clause: OK
+lexer walk accepts a quoted format name: OK
+fallback regex accepts a quoted format name: OK
 restore replays ndjson packets raw: OK
 non-200 ndjson dispatched as packets: OK
 snapshot cap helper present: OK
@@ -55,6 +57,8 @@ replay skips broken frames: OK
 failed-table finalization shared: OK
 live failures finalize the table: OK
 restored failures finalize the table: OK
+restored framed table decided by the format: OK
+every restore path expands a single value: OK
 replay clock comes from the packets: OK
 replay time reaches the metrics model: OK
 replay rebuilds the resource state: OK

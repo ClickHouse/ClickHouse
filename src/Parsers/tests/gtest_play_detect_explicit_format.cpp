@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -194,6 +195,23 @@ std::string stripExplicitFormat(const std::string & query)
     return query.substr(0, clause->start) + query.substr(clause->end);
 }
 
+/// Mirror of the no-WebAssembly fallback of `detectExplicitFormatClause` in play.html: without the
+/// lexer the page falls back to a best-effort text match anchored to a real trailing clause (only `;`
+/// or `SETTINGS` may follow the name). `std::regex` uses the ECMAScript grammar by default, so the
+/// pattern below is the browser's regular expression verbatim. Like the lexer branch, the name is
+/// reported unquoted while the span keeps the quotes, so the download strips the whole clause.
+std::optional<FormatClause> detectExplicitFormatClauseNoLexer(const std::string & query)
+{
+    /// A custom raw-string delimiter: the pattern itself contains `)"`.
+    static const std::regex re(R"RE(\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+))(?=\s*(?:;|\bSETTINGS\b|$)))RE", std::regex::icase);
+    std::smatch m;
+    if (!std::regex_search(query, m, re))
+        return std::nullopt;
+    std::string name = m[1].matched ? m[1].str() : (m[2].matched ? m[2].str() : m[3].str());
+    const size_t start = static_cast<size_t>(m.position(0));
+    return FormatClause{name, start, start + static_cast<size_t>(m.length(0))};
+}
+
 void expectFormat(const std::string & query, const std::optional<std::string> & expected)
 {
     const std::optional<std::string> result = detectExplicitFormat(query);
@@ -252,6 +270,44 @@ TEST(PlayDetectExplicitFormat, QuotedFormatNameIsARealClause)
     /// A quoted `format` word is an identifier, never the clause keyword - even in trailing
     /// position (`JSON` is then its alias).
     expectFormat("SELECT `format` JSON", std::nullopt);
+}
+
+TEST(PlayDetectExplicitFormat, NoLexerFallbackAcceptsAQuotedFormatName)
+{
+    /// A browser without WebAssembly has no lexer, so the page falls back to a text match. It must
+    /// honor the same contract as the lexer branch for the quoted spellings the server accepts:
+    /// otherwise `FORMAT `JSONCompactColumns`` still looks like "no explicit format" there, the page
+    /// adds its own `EventStream` framing, and the download does not strip the real clause.
+    const auto name = [](const std::string & query) -> std::optional<std::string>
+    {
+        const std::optional<FormatClause> clause = detectExplicitFormatClauseNoLexer(query);
+        if (clause)
+            return clause->name;
+        return std::nullopt;
+    };
+    const auto strip = [](const std::string & query)
+    {
+        const std::optional<FormatClause> clause = detectExplicitFormatClauseNoLexer(query);
+        if (!clause)
+            return query;
+        return query.substr(0, clause->start) + query.substr(clause->end);
+    };
+
+    /// The bare-word spelling kept working all along.
+    EXPECT_EQ(name("SELECT 1 FORMAT JSON"), std::optional<std::string>("JSON"));
+    /// The regression: quoted names, in both spellings and with either trailing clause terminator.
+    EXPECT_EQ(name("SELECT 1 FORMAT `JSON`"), std::optional<std::string>("JSON"));
+    EXPECT_EQ(name("SELECT * FROM system.numbers LIMIT 1 FORMAT `JSONCompactColumns`"),
+              std::optional<std::string>("JSONCompactColumns"));
+    EXPECT_EQ(name("SELECT 1 FORMAT \"TSV\""), std::optional<std::string>("TSV"));
+    EXPECT_EQ(name("SELECT 1 FORMAT `JSON`;"), std::optional<std::string>("JSON"));
+    EXPECT_EQ(name("SELECT 1 FORMAT `TSV` SETTINGS max_threads = 1"), std::optional<std::string>("TSV"));
+    /// The span covers the quotes, so the download strips the whole clause.
+    EXPECT_EQ(strip("SELECT 1 FORMAT `JSON`"), "SELECT 1 ");
+    EXPECT_EQ(strip("SELECT 1 FORMAT `TSV` SETTINGS max_threads = 1"), "SELECT 1  SETTINGS max_threads = 1");
+    /// Still anchored to a trailing clause: a `FORMAT` mention followed by more query text is not one.
+    EXPECT_EQ(name("SELECT 1 FORMAT `JSON` FROM t"), std::nullopt);
+    EXPECT_EQ(name("SELECT 1"), std::nullopt);
 }
 
 TEST(PlayDetectExplicitFormat, StringLiteralIsNotAFormatClause)

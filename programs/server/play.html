@@ -10051,7 +10051,15 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
         const base64 = !!snap.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
-        renderEventStreamText(snap.data, el, raw_text, base64, format, tab);
+        const rendered_image = renderEventStreamText(snap.data, el, raw_text, base64, format, tab);
+        /// What was rendered is decided the same way as in the live path (`postImpl`) and the
+        /// single-query restore (`materializeResult`): an image is neither a table nor raw text, the
+        /// default format is a table, any other format is raw text. `base64` says how the payloads
+        /// were ENCODED, never whether the result is a table - and every snapshot this PR writes is
+        /// base64, so gating the table finish on it (as this branch used to) left every restored
+        /// framed `Run all` table half-materialized: no totals, coloring, transpose, or
+        /// single-value expansion, and a failed one not finalized either.
+        const is_table = !rendered_image && isDefaultFormat(format);
         if (el.isExplainGraph) {
             try {
                 await el.renderGraph(() => matToken === tab.reqNum);
@@ -10062,18 +10070,19 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
                 return false;
             }
             if (matToken !== tab.reqNum) return true;
-        } else if (!raw_text && !base64) {
+        } else if (!snap.ok || snap.error) {
             /// A failed statement mirrors the live failure path for a framed table (`postImpl`):
             /// the same finalize-or-clear invariant, so a header-only failure hides its empty
-            /// table instead of leaving it above the replayed error. A successful statement
-            /// finishes like the live success path (no single-query layout pass; see `postMulti`).
-            if (!snap.ok || snap.error) {
-                el.finalizeFailedTable(true);
-            } else {
-                el.renderTotals();
-                el.applyColumnColors();
-                el.transposeIfNeeded();
-            }
+            /// table instead of leaving it above the replayed error. A failed raw/image statement
+            /// needs no finalization, like the common failure restore path below.
+            if (is_table) el.finalizeFailedTable(true);
+        } else {
+            /// A successful statement finishes exactly like the common restore path below, which in
+            /// turn mirrors the live success path (no single-query layout pass; see `postMulti`).
+            if (is_table) el.renderTotals();
+            el.applyColumnColors();
+            if (is_table) el.transposeIfNeeded();
+            if (is_table) el.expandSingleValueIfNeeded();
         }
         return true;
     }
@@ -13053,9 +13062,14 @@ async function detectExplicitFormatClause(query)
 {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
         /// Anchor the match to a real trailing clause (only `;` or `SETTINGS` may follow the name),
-        /// and capture just the `FORMAT <name>` span so the caller strips nothing else.
-        const m = query.match(/\bFORMAT\s+(\w+)(?=\s*(?:;|\bSETTINGS\b|$))/i);
-        return m ? { name: m[1], start: m.index, end: m.index + m[0].length } : null;
+        /// and capture just the `FORMAT <name>` span so the caller strips nothing else. The name is
+        /// parsed by an identifier parser on the server, so a backquoted or double-quoted spelling is
+        /// a real clause too: match all three and report the unquoted name, while the span keeps the
+        /// quotes so the download strips the whole clause - the same contract as the lexer branch.
+        const m = query.match(/\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+))(?=\s*(?:;|\bSETTINGS\b|$))/i);
+        if (!m) return null;
+        const name = m[1] ?? m[2] ?? m[3];
+        return { name, start: m.index, end: m.index + m[0].length };
     }
 
     /// Annotate the significant tokens with their character offsets in `query`, accumulating the

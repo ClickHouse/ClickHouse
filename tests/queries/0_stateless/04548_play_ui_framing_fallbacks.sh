@@ -112,6 +112,13 @@ echo "$page" | grep -q -F 'framing_kind:' && echo 'framing kind persisted: OK'
 [ "$(echo "$page" | grep -c 'snapshotFramingKind(')" -ge 2 ] && echo 'restore keys off framing kind: OK'
 # The download strips only a real trailing `FORMAT` clause using the SQL-lexer walk, not a raw regex.
 echo "$page" | grep -q -F 'const format_clause = await detectExplicitFormatClause(query)' && echo 'download strips real format clause: OK'
+# The server parses the `FORMAT` name with an identifier parser, so a quoted spelling is a real
+# clause. Both branches of `detectExplicitFormatClause` must accept it: the lexer walk (via
+# `TT.QuotedIdentifier`) and the no-WebAssembly fallback regex - otherwise a browser without
+# WebAssembly still treats `FORMAT `JSONCompactColumns`` as "no explicit format", adds the page's own
+# framing, and the download does not strip the real clause.
+echo "$page" | grep -q -F 'tokens[i + 1].type === TT.QuotedIdentifier' && echo 'lexer walk accepts a quoted format name: OK'
+echo "$page" | grep -q -F 'query.match(/\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+))(?=\s*(?:;|\bSETTINGS\b|$))/i)' && echo 'fallback regex accepts a quoted format name: OK'
 # The single-result restore (`restoreFromHistory`) dispatches an `ndjson_packets` snapshot at the
 # top level of its chain (`else if (kind === 'ndjson_packets')`), before the `!ok` and format
 # branches, so a successful packet stream whose format has a special restore path is replayed raw
@@ -255,6 +262,14 @@ echo "$page" | grep -q -F 'try { dispatchEventStreamBlock(block, handleEvent); }
 echo "$page" | grep -q -F 'finalizeFailedTable(measureNow)' && echo 'failed-table finalization shared: OK'
 [ "$(echo "$page" | grep -c -F 'finalizeFailedTable(tab.id === activeTabId);')" -eq 2 ] && echo 'live failures finalize the table: OK'
 [ "$(echo "$page" | grep -c -F 'el.finalizeFailedTable(true);')" -eq 2 ] && echo 'restored failures finalize the table: OK'
+# What a framed snapshot restores as is decided by the output format (and whether the payload turned
+# out to be an image), never by the payload ENCODING: every snapshot the page saves now carries
+# `base64: true`, so gating the table finish on it left a restored "Run all" framed table
+# half-materialized - no totals, coloring, transpose, or single-value expansion. The "Run all" path
+# derives it the way the single-result restore and the live path do, and runs the same finishing
+# passes, so a reopened tab looks exactly like the live run.
+echo "$page" | grep -q -F 'const is_table = !rendered_image && isDefaultFormat(format);' && echo 'restored framed table decided by the format: OK'
+[ "$(echo "$page" | grep -c -F 'el.expandSingleValueIfNeeded();')" -eq 3 ] && echo 'every restore path expands a single value: OK'
 # Replaying a saved `EventStream` snapshot dispatches the whole stream back-to-back, so the metrics
 # model must be timestamped from the packets themselves (`current_time`) instead of the wall clock -
 # otherwise a multi-second query restores with the rates and the sparkline history of the replay
