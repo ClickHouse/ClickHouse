@@ -71,6 +71,12 @@ enum class CatalogShape
     VanishedChildListingServerError,
     VanishedTableListing,
     VanishedTableListingUnauthorized,
+    /// The two shapes below serve a non-empty FIRST page and then 404 the follow-up page, modelling
+    /// a namespace dropped part-way through a paginated listing. A 404 names the namespace, so every
+    /// page collected so far must be discarded: returning the pages already read would report a
+    /// subset of a dropped namespace as if it were the whole of a live one.
+    VanishedChildListingSecondPage,
+    VanishedTableListingSecondPage,
     /// The root `/v1/namespaces` route itself 404s: a misconfigured endpoint, never a race.
     MissingRootRoute,
 };
@@ -79,7 +85,8 @@ bool isVanishingShape(CatalogShape shape)
 {
     return shape == CatalogShape::VanishedChildListing || shape == CatalogShape::VanishedChildListingUnauthorized
         || shape == CatalogShape::VanishedChildListingServerError || shape == CatalogShape::VanishedTableListing
-        || shape == CatalogShape::VanishedTableListingUnauthorized;
+        || shape == CatalogShape::VanishedTableListingUnauthorized
+        || shape == CatalogShape::VanishedChildListingSecondPage || shape == CatalogShape::VanishedTableListingSecondPage;
 }
 
 /// Requests the fake catalog served, so a test can assert the tolerant branch was really reached
@@ -197,6 +204,8 @@ public:
 
             if (parent == "doomed" && isVanishingShape(shape))
             {
+                /// Both pages count, so an arm can require >= 2 and thereby prove the follow-up
+                /// request really was issued and really did 404.
                 if (counters)
                     ++counters->doomed_child_listing;
                 if (shape == CatalogShape::VanishedChildListing)
@@ -205,6 +214,13 @@ public:
                     writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, NOT_AUTHORIZED_BODY);
                 else if (shape == CatalogShape::VanishedChildListingServerError)
                     writeError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, SERVER_ERROR_BODY);
+                else if (shape == CatalogShape::VanishedChildListingSecondPage)
+                {
+                    if (getPageToken(params).empty())
+                        writeJSON(response, R"({"namespaces":[["doomed","ghost"]],"next-page-token":"p2"})");
+                    else
+                        writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+                }
                 else
                     writeJSON(response, R"({"namespaces":[]})");
                 return;
@@ -228,14 +244,32 @@ public:
 
         if (path == "/v1/namespaces/doomed/tables")
         {
+            /// `getRawPath` drops the query, so the follow-up page arrives on this same route and is
+            /// counted too: an arm requiring >= 2 proves the second request happened.
             if (counters)
                 ++counters->doomed_table_listing;
             if (shape == CatalogShape::VanishedTableListing)
                 writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
             else if (shape == CatalogShape::VanishedTableListingUnauthorized)
                 writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, NOT_AUTHORIZED_BODY);
+            else if (shape == CatalogShape::VanishedTableListingSecondPage)
+            {
+                if (getPageToken(params).empty())
+                    writeJSON(response, R"({"identifiers":[{"name":"ghost_table"}],"next-page-token":"p2"})");
+                else
+                    writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+            }
             else
                 writeJSON(response, R"({"identifiers":[]})");
+            return;
+        }
+
+        /// A surviving first-page child of `doomed` is only ever requested when the child listing
+        /// wrongly keeps it, so serving a table here gives that failure a name to assert on. An
+        /// empty list would instead let the wrong behaviour produce the expected table set.
+        if (path == "/v1/namespaces/doomed%1Fghost/tables")
+        {
+            writeJSON(response, R"({"identifiers":[{"name":"ghost_table"}]})");
             return;
         }
 
@@ -309,6 +343,17 @@ private:
         for (const auto & [key, value] : params)
         {
             if (key == "parent")
+                return value;
+        }
+        return {};
+    }
+
+    /// Empty when absent, i.e. when the request is for the first page.
+    static std::string getPageToken(const Poco::URI::QueryParameters & params)
+    {
+        for (const auto & [key, value] : params)
+        {
+            if (key == "pageToken")
                 return value;
         }
         return {};
@@ -586,6 +631,39 @@ TEST(RestCatalog, GetTablesSkipsNamespaceVanishedDuringTableListing)
     EXPECT_GE(counters.doomed_table_listing.load(), 1u);
 }
 
+TEST(RestCatalog, ChildListingDiscardsEarlierPagesWhenNamespaceVanishes)
+{
+    /// The namespace is dropped after its first page of children was already read. That page named
+    /// `doomed.ghost`, which owns a table, so keeping the page would report `doomed.ghost.ghost_table`
+    /// as a live table of a namespace that no longer exists.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::VanishedChildListingSecondPage, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_EQ(sortedTableNames(catalog->getTables()), DB::Names{"alive.table_a"});
+    /// Anti-vacuity: the follow-up page really was requested, and it is the request that 404'd.
+    /// `>=` rather than an exact count, because a retriable status may reissue a request.
+    EXPECT_GE(counters.doomed_child_listing.load(), 2u);
+}
+
+TEST(RestCatalog, TableListingDiscardsEarlierPagesWhenNamespaceVanishes)
+{
+    /// Same race one level down: the first page of `doomed`'s tables was read before the namespace
+    /// was dropped, so keeping it would report `doomed.ghost_table`.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::VanishedTableListingSecondPage, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_EQ(sortedTableNames(catalog->getTables()), DB::Names{"alive.table_a"});
+    EXPECT_GE(counters.doomed_table_listing.load(), 2u);
+}
+
 TEST(RestCatalog, FilteredListingSkipsVanishedNamespace)
 {
     RequestCounters counters;
@@ -644,6 +722,7 @@ TEST(RestCatalog, MissingRootListingRouteStillThrows)
 
     expectThrowsCode([&] { catalog->getTables(); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
     EXPECT_GE(counters.root_listing.load(), 1u);
+    /// The root 404 short-circuits before any descent request is issued.
     EXPECT_EQ(counters.doomed_child_listing.load(), 0u);
 }
 
