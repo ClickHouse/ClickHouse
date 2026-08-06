@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -74,17 +75,31 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return executeImpl(arguments, true, input_rows_count);
+        return executeImpl(arguments, result_type, true, input_rows_count);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return executeImpl(arguments, false, input_rows_count);
+        return executeImpl(arguments, result_type, false, input_rows_count);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                          bool dry_run, size_t input_rows_count) const
+    {
+        auto res = executeUInt8(arguments, dry_run, input_rows_count);
+
+        /// group_by_use_nulls can promote the declared type on the query-tree node while this
+        /// function still produces UInt8. Nullability driven by the arguments does not reach
+        /// result_type here, so that promotion is its only source and no row can be NULL.
+        if (result_type->isNullable() && !res->isNullable())
+            return makeNullable(res);
+
+        return res;
+    }
+
+    ColumnPtr executeUInt8(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));

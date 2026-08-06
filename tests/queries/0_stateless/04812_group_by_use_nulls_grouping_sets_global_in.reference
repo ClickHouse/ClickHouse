@@ -1,0 +1,20 @@
+globalIn
+Nullable(UInt8)	1
+globalNotIn
+Nullable(UInt8)	0
+globalNullIn
+Nullable(UInt8)	1
+globalNotNullIn
+Nullable(UInt8)	0
+empty set
+Nullable(UInt8)	0
+low cardinality left
+Nullable(UInt8)	1
+control low cardinality result type
+LowCardinality(Nullable(UInt8))	1
+control local in
+Nullable(UInt8)	1
+control no group_by_use_nulls
+UInt8	1
+control subquery set
+Nullable(UInt8)	1
