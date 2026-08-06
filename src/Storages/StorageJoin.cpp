@@ -1,5 +1,4 @@
 #include <Storages/StorageJoin.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
@@ -14,6 +13,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
@@ -169,10 +169,12 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-
-    /// As in `StorageSet::truncate`: accounted on the global tracker, so do not credit this query.
-    MemoryTrackerBlockerInThread not_credited_to_the_query;
-    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    {
+        /// The data being dropped here was settled into the server total when the query that inserted it ended,
+        /// so releasing it must not be credited to this one.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    }
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
