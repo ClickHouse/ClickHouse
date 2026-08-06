@@ -123,8 +123,9 @@ SELECT 'Z bare-column row policy and PREWHERE on the same column';
 SELECT f FROM t04741_bare_buf PREWHERE f < 4 ORDER BY f;
 
 -- A Nullable parent with both filters on the same column. This is a control: a Nullable parent was
--- already correct before the fix, so the arm pins that the fix does not regress it. The PREWHERE must
--- accept the NULL row, otherwise it implies the policy and the arm cannot detect a lost row policy.
+-- already correct before the fix, so the arm pins that the fix does not regress it. Both filters
+-- reject the NULL row, so the arm's sensitivity comes from the other two rows: n = '9' only the
+-- policy rejects, n = '7' only the PREWHERE rejects.
 CREATE ROW POLICY p04741_nul ON t04741_nul_buf USING n != '9' TO ALL;
 
 SELECT 'Y Nullable parent, both filters on the same column';
