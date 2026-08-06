@@ -139,6 +139,10 @@ private:
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
+    /// Replaces the table's data. The blocks it drops belong to the table, and to the server total once the
+    /// query that wrote them has ended, so they are released without crediting whichever query replaces them.
+    void setData(std::unique_ptr<Blocks> new_data);
+
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
     MultiVersion<Blocks> data;

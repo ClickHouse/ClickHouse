@@ -1,6 +1,7 @@
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -129,8 +130,7 @@ public:
 
         auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
         UInt64 new_total_rows = storage.total_size_rows.load(std::memory_order_relaxed) + inserted_rows;
-        const UInt64 old_total_bytes = storage.total_size_bytes.load(std::memory_order_relaxed);
-        UInt64 new_total_bytes = old_total_bytes + inserted_bytes;
+        UInt64 new_total_bytes = storage.total_size_bytes.load(std::memory_order_relaxed) + inserted_bytes;
         const auto & memory_settings = storage.getMemorySettingsRef();
         while (!new_data->empty()
                && ((memory_settings[MemorySetting::max_bytes_to_keep] && new_total_bytes > memory_settings[MemorySetting::max_bytes_to_keep])
@@ -154,16 +154,9 @@ public:
         // append new data to modified storage table and commit
         new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
 
-        storage.data.set(std::move(new_data));
+        storage.setData(std::move(new_data));
         storage.total_size_rows.store(new_total_rows, std::memory_order_relaxed);
         storage.total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
-
-        /// The blocks now belong to the table, which outlives the query, so hand their charge to the global
-        /// tracker: the insert had to be accounted while it ran, but keeping the charge would leave it on the
-        /// per-user tracker for good. The table's accounted growth is an estimate of what the query was
-        /// charged (and nets out any blocks evicted above), so a fraction of a percent can be left over.
-        if (auto * thread_memory_tracker = CurrentThread::getMemoryTracker())
-            thread_memory_tracker->transferToGlobal(new_total_bytes - old_total_bytes);
     }
 
 private:
@@ -233,12 +226,22 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
 }
 
 
+void StorageMemory::setData(std::unique_ptr<Blocks> new_data)
+{
+    /// The blocks are the table's data now: still charged to the query that built them, which keeps it under the
+    /// memory limits, and settled to the server total when it ends rather than reported as unaccounted.
+    setCurrentQueryMemoryDriftExpected();
+
+    MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+    /// Kept until the end of the blocked scope so that dropping the blocks this replaces happens here, unless a
+    /// reader still holds that version, in which case they go with it.
+    auto replaced = data.get();
+    data.set(std::move(new_data));
+}
+
 void StorageMemory::drop()
 {
-    /// Charged to the global tracker on insert (see `MemorySink::onFinish`), so release it without crediting
-    /// this query. A `User`-level blocker still uncharges `total_memory_tracker`, which holds it.
-    MemoryTrackerBlockerInThread not_credited_to_the_query;
-    data.set(std::make_unique<Blocks>());
+    setData(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
@@ -409,17 +412,14 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     }
     total_size_bytes.store(bytes, std::memory_order_relaxed);
     total_size_rows.store(rows, std::memory_order_relaxed);
-    data.set(std::move(new_data));
+    setData(std::move(new_data));
 }
 
 
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-    /// Charged to the global tracker on insert (see `MemorySink::onFinish`), so release it without crediting
-    /// this query. A `User`-level blocker still uncharges `total_memory_tracker`, which holds it.
-    MemoryTrackerBlockerInThread not_credited_to_the_query;
-    data.set(std::make_unique<Blocks>());
+    setData(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
@@ -470,7 +470,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->erase(new_data->begin());
             }
 
-            data.set(std::move(new_data));
+            setData(std::move(new_data));
             total_size_rows.store(new_total_rows, std::memory_order_relaxed);
             total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
         }
@@ -712,7 +712,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     old_and_new_blocks.insert(old_and_new_blocks.end(), std::make_move_iterator(new_blocks.begin()), std::make_move_iterator(new_blocks.end()));
 
     /// Finish restoring.
-    data.set(std::make_unique<Blocks>(std::move(old_and_new_blocks)));
+    setData(std::make_unique<Blocks>(std::move(old_and_new_blocks)));
     total_size_bytes += new_bytes;
     total_size_rows += new_rows;
 }
