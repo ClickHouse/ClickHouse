@@ -24,7 +24,7 @@ using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
 struct StreamSettings
 {
     /// If true, read only the first snapshot and then finish (do not subscribe for updates).
-    bool bounded = false;
+    bool subscribe_for_updates = true;
     CursorTreeNodePtr cursor;
     WatermarkSettingsPtr watermark;
 

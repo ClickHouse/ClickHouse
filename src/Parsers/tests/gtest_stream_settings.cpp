@@ -259,7 +259,7 @@ TEST(ParserStreamSettings, StreamBoundedParses)
 
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
     ASSERT_NE(stream_ast, nullptr);
-    ASSERT_TRUE(stream_ast->bounded);
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
     ASSERT_FALSE(stream_ast->cursor);
 }
 
@@ -273,7 +273,7 @@ TEST(ParserStreamSettings, StreamBoundedCursorParses)
 
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
     ASSERT_NE(stream_ast, nullptr);
-    ASSERT_TRUE(stream_ast->bounded);
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
     ASSERT_TRUE(stream_ast->cursor);
 }
 
@@ -286,7 +286,7 @@ TEST(ParserStreamSettings, PlainStreamIsNotBounded)
 
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
     ASSERT_NE(stream_ast, nullptr);
-    ASSERT_FALSE(stream_ast->bounded);
+    ASSERT_TRUE(stream_ast->subscribe_for_updates);
 }
 
 TEST(ParserStreamSettings, FormatRoundTripPreservesBounded)
@@ -301,7 +301,7 @@ TEST(ParserStreamSettings, FormatRoundTripPreservesBounded)
 
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
     ASSERT_NE(stream_ast, nullptr);
-    ASSERT_TRUE(stream_ast->bounded);
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
     ASSERT_FALSE(stream_ast->cursor);
 }
 
@@ -316,6 +316,6 @@ TEST(ParserStreamSettings, FormatRoundTripPreservesBoundedCursor)
 
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
     ASSERT_NE(stream_ast, nullptr);
-    ASSERT_TRUE(stream_ast->bounded);
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
     ASSERT_TRUE(stream_ast->cursor);
 }

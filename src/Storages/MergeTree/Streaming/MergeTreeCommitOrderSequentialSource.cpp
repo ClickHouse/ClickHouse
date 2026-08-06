@@ -324,7 +324,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , requested_num_streams(requested_num_streams_)
     , max_block_size(max_block_size_)
     , subscription(std::move(subscription_))
-    , bounded(query_info_.table_expression_modifiers->getStreamSettings()->bounded)
+    , bounded(!query_info_.table_expression_modifiers->getStreamSettings()->subscribe_for_updates)
     , log(getLogger("MergeTreeCommitOrderSequentialSource"))
     , last_emitted_positions(buildMergeTreeCursor(query_info_.table_expression_modifiers->getStreamSettings()->cursor))
 {

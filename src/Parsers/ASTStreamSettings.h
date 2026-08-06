@@ -13,8 +13,7 @@ namespace DB
 ///
 struct ASTStreamSettings : public IAST
 {
-    /// If true, read only the first snapshot and then finish (do not subscribe for updates).
-    bool bounded = false;
+    bool subscribe_for_updates = true;
     CursorTreeNodePtr cursor;
     WatermarkSettingsPtr watermark;
 
@@ -23,7 +22,7 @@ public:
     ASTPtr clone() const override;
     bool hasTweaks() const;
 
-    void setBounded(bool bounded_);
+    void setSubscribeForUpdates(bool subscribe_for_updates_);
     void setCursor(CursorTreeNodePtr cursor_);
     void setWatermark(WatermarkSettingsPtr watermark_);
 

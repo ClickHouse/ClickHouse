@@ -133,7 +133,7 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     auto stream_settings = make_intrusive<ASTStreamSettings>();
 
     if (s_bounded.ignore(pos, expected))
-        stream_settings->setBounded(true);
+        stream_settings->setSubscribeForUpdates(false);
 
     if (s_cursor.ignore(pos, expected))
     {

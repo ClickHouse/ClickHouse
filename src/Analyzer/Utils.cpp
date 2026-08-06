@@ -486,7 +486,7 @@ static ASTPtr convertIntoTableExpressionAST(
         if (stream_settings.has_value())
         {
             auto ast_stream_settings = make_intrusive<ASTStreamSettings>();
-            ast_stream_settings->setBounded(stream_settings->bounded);
+            ast_stream_settings->setSubscribeForUpdates(stream_settings->subscribe_for_updates);
             if (stream_settings->cursor)
                 ast_stream_settings->setCursor(stream_settings->cursor->clone());
             if (stream_settings->watermark)

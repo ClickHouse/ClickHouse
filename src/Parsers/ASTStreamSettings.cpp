@@ -62,7 +62,7 @@ ASTPtr ASTStreamSettings::clone() const
 {
     auto cloned_stream_settings = make_intrusive<ASTStreamSettings>();
 
-    cloned_stream_settings->setBounded(bounded);
+    cloned_stream_settings->setSubscribeForUpdates(subscribe_for_updates);
     if (cursor)
         cloned_stream_settings->setCursor(cursor->clone());
     if (watermark)
@@ -73,12 +73,12 @@ ASTPtr ASTStreamSettings::clone() const
 
 bool ASTStreamSettings::hasTweaks() const
 {
-    return bounded || cursor != nullptr || watermark != nullptr;
+    return !subscribe_for_updates || cursor != nullptr || watermark != nullptr;
 }
 
-void ASTStreamSettings::setBounded(bool bounded_)
+void ASTStreamSettings::setSubscribeForUpdates(bool subscribe_for_updates_)
 {
-    bounded = bounded_;
+    subscribe_for_updates = subscribe_for_updates_;
 }
 
 void ASTStreamSettings::setCursor(CursorTreeNodePtr cursor_)
@@ -96,7 +96,7 @@ void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings & fo
 {
     bool need_space = false;
 
-    if (bounded)
+    if (!subscribe_for_updates)
     {
         ostr << "BOUNDED";
         need_space = true;
@@ -130,8 +130,8 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "StreamSettings");
 
-    if (bounded)
-        w.writeInt("bounded", 1);
+    if (!subscribe_for_updates)
+        w.writeInt("subscribe_for_updates", 0);
 
     if (cursor)
         w.writeFieldValue("cursor_tree", Field(cursorTreeToMap(cursor)));
@@ -148,8 +148,8 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    if (r.has("bounded"))
-        setBounded(r.getInt("bounded") != 0);
+    if (r.has("subscribe_for_updates"))
+        setSubscribeForUpdates(r.getInt("subscribe_for_updates") != 0);
 
     if (r.has("cursor_tree"))
     {

@@ -27,7 +27,7 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
     if (stream_settings)
     {
         buffer << ", stream";
-        if (stream_settings->bounded)
+        if (!stream_settings->subscribe_for_updates)
             buffer << " bounded";
     }
 }
@@ -53,7 +53,7 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 
     if (stream_settings.has_value())
     {
-        hash_state.update(stream_settings->bounded);
+        hash_state.update(stream_settings->subscribe_for_updates);
 
         if (stream_settings->cursor)
         {
@@ -113,7 +113,7 @@ String TableExpressionModifiers::formatForErrorMessage() const
         if (has_final || sample_size_ratio || sample_offset_ratio)
             buffer << ' ';
         buffer << "STREAM";
-        if (stream_settings->bounded)
+        if (!stream_settings->subscribe_for_updates)
             buffer << " BOUNDED";
     }
 
