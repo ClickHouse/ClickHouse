@@ -138,6 +138,20 @@ GREEN_COMMITS_TO_CONSIDER_FIXED = 2
 # table.
 FIRST_RUN_LOOKBACK_HOURS = 7 * 24
 
+# How many commits the per-commit history query returns at most. The guard
+# built on it needs the *whole* span since the failure started: the bar it
+# sets -- more than the longest run of clean commits between two occurrences
+# -- is only right when every occurrence in the window is in the sample, and a
+# cutoff that drops the oldest rows drops exactly the occurrences that set the
+# bar. So this is a backstop against an unbounded result set, not a sampling
+# decision, and it is sized to never matter: the span is bounded by the
+# failure window plus the lookback margin, a bit over a week, and `master`
+# takes well under a thousand commits in that time. When the result still
+# comes back this long, the history was cut and the guard cannot trust it:
+# `already_fixed` fails closed and stands the revert down instead of reading a
+# truncated record as "the failure is gone".
+COMMITS_QUERY_LIMIT = 2000
+
 # Table in the CI database that records the investigations. It joins with
 # `checks`: `test_name`, `check_names`, `commit_shas`, `report_url` and
 # `offending_pull_request_number` all carry values from there.
@@ -391,7 +405,7 @@ def quote_sql_string(value: str) -> str:
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def commits_since_the_failure_query(failure: Failure, limit=50) -> str:
+def commits_since_the_failure_query(failure: Failure, limit=COMMITS_QUERY_LIMIT) -> str:
     """Every `master` commit that ran the checks the failure was seen in since it
     first appeared, one row per commit, newest first, carrying which of those
     checks exercised the commit and which of them saw the failure on it.
@@ -521,6 +535,20 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
     the honest reading and errs towards not reverting.
     """
     commits = parse_json_each_row(cidb.query(commits_since_the_failure_query(failure)))
+    # The bar below is "longer than the longest clean run between two
+    # occurrences", and that is a statement about the whole history since the
+    # failure started. A result as long as the query's limit means the oldest
+    # part of that history was cut off -- and with it, possibly, an occurrence
+    # and the long quiet spell before it that would have raised the bar. A
+    # verdict read off a truncated record is a guess, so it is the third
+    # outcome: not established, revert stands down.
+    if len(commits) >= COMMITS_QUERY_LIMIT:
+        return (
+            f"whether the failure is gone cannot be established: the commit "
+            f"history since it started is longer than the {COMMITS_QUERY_LIMIT} "
+            f"commits the query returns, so the record is truncated and the "
+            f"failure's own quiet spells cannot be measured"
+        )
     first_failure = parse_db_time(failure.first_failure_time)
     required_checks = set(failure.check_names)
 
@@ -1174,29 +1202,41 @@ Most recent report: {failure.report_url}
 """
 
 
-def run_agent(prompt: str, verdict_file: str) -> str:
-    """Run the codex agent once and return what it wrote to `verdict_file`.
+def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
+    """Run the codex agent once in `workdir` and return what it wrote to
+    `verdict_file`.
 
     Broadly the same invocation as the Code Review job, which is what these
     runners are set up for: a writable workspace so the verdict file can be
     written, and network access for the CI database queries.
 
-    With one difference, and it is the point of this function. The agent runs
-    with **no GitHub credential at all**. The prompt tells it to change nothing,
-    but a prompt is not a boundary: the agent executes commands, with network
-    access, over CI output that a merged pull request can write -- and every
-    mutation it could make would happen *before* `culprit_guard`,
+    With two differences, and they are the point of this function. The agent
+    runs with **no GitHub credential at all**, and it runs **in a disposable
+    clone**, never in the job's own checkout. The prompt tells it to change
+    nothing, but a prompt is not a boundary: the agent executes commands, with
+    network access, over CI output that a merged pull request can write -- and
+    every mutation it could make would happen *before* `culprit_guard`,
     `already_fixed`, `already_handled` and `MAX_REVERTS_PER_RUN` ever run, so a
     revert this job would have refused could be pushed and merged around it.
     Wrapping `gh` would not fix that: the agent can read whatever token the
-    process can reach and call the API itself. The only boundary that holds is
-    the absence of the credential, so:
+    process can reach and call the API itself. The boundaries that hold are the
+    absence of the credential and the absence of the state, so:
 
     - `GH_CONFIG_DIR` points at an empty scratch directory, which is where `gh`
       keeps the App token this job authenticates for its own use. Nothing else
       shares it, and it is thrown away with the directory.
     - `GH_TOKEN` and `GITHUB_TOKEN` are unset in the child, because both
-      override `GH_CONFIG_DIR`, and `actions/checkout` exports the latter.
+      override `GH_CONFIG_DIR`. (`actions/checkout` also used to leave the
+      workflow token in the checkout's git config; this job's checkout is
+      generated with `persist-credentials: false`, so there is no credential
+      there to inherit either.)
+    - `workdir` is the clone `investigation_clone` makes for this one run, and
+      the agent's writable workspace is that clone: the checkout the
+      privileged phase later fetches and pushes from is not it. Whatever the
+      agent leaves behind -- a rewritten `origin`, an `insteadOf` mapping, a
+      `core.hooksPath`, a hook -- dies with the clone, which is deleted after
+      the run, instead of waiting in `.git` for the authenticated `git fetch`
+      and `Git.push` that follow.
 
     `gh` needs a token for everything, so the agent has no `gh`. It loses
     nothing it needs: the full history of the base branch is checked out
@@ -1220,6 +1260,7 @@ def run_agent(prompt: str, verdict_file: str) -> str:
             env={**os.environ, "CODEX_HOME": codex_home},
         )
         Shell.check(
+            f"cd {shlex.quote(workdir)} && "
             f"env -u GH_TOKEN -u GITHUB_TOKEN "
             f"CODEX_HOME={shlex.quote(codex_home)} "
             f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
@@ -1239,17 +1280,54 @@ def run_agent(prompt: str, verdict_file: str) -> str:
         return fd.read()
 
 
+def investigation_clone(path: str, repo: str) -> None:
+    """Make a fresh clone of the repository at `path` for one agent run: the
+    tip of the base branch, full commit history, no credential, and no shared
+    mutable git state with the job's own checkout.
+
+    The agent gets a repository of its own because handing it the job's
+    checkout would hand it the `.git` the privileged phase trusts afterwards.
+    `reset_worktree` restores the *worktree*, but it cannot restore what a
+    writable `.git` can carry: a rewritten `origin`, an `url.*.insteadOf`
+    mapping, a `core.hooksPath`, a `pre-push` hook -- and the phase that runs
+    with the write-capable token then fetches from whatever `origin` says and
+    executes whatever the hooks say. So the investigation happens in a clone
+    that nothing privileged ever reads, and the clone is deleted after the
+    run; the job's checkout is simply never in the agent's writable workspace.
+
+    Cloned from GitHub anonymously -- the URL carries no token and the
+    checkout's git config holds none (`persist-credentials: false`), so there
+    is nothing to leak into the clone's config. `--reference` points the clone
+    at the job checkout's object store: the objects come from the local disk
+    via an alternates *path*, which shares no file the agent could write
+    through (unlike hardlinks), and only what the checkout is missing is
+    fetched over the network. `--filter=tree:0` matches how the checkout
+    itself was unshallowed: the full commit history is present for `git log`,
+    and trees and blobs of older commits are fetched on demand -- from
+    `origin`, which in this clone is the public GitHub URL, so the lazy
+    fetches are anonymous too."""
+    Shell.check(f"rm -rf {shlex.quote(path)}", verbose=True, strict=True)
+    Shell.check(
+        f"git clone --filter=tree:0 --no-tags --single-branch "
+        f"--branch {BASE_BRANCH} --reference . "
+        f"https://github.com/{repo}.git {shlex.quote(path)}",
+        verbose=True,
+        strict=True,
+    )
+
+
 def reset_worktree() -> None:
     """Put the checkout back on the current tip of the base branch with nothing
     left behind.
 
-    Called before and after every agent run, and after every revert. The agent
-    is told to change nothing, but it has a writable workspace, and a revert has
-    to start from an untouched base branch. The branch is re-fetched every time
-    because the job moves it itself: a second revert in the same run has to be
-    built on top of the first one, not on the master the run started with.
-    `ci/tmp` is spared, since that is where the job keeps its own state,
-    including the verdict files."""
+    Called around every agent run, and after every revert. The agent runs in a
+    disposable clone (see `investigation_clone`) and never touches this
+    checkout, but a revert has to start from an untouched current base branch
+    either way, and the reset costs nothing. The branch is re-fetched every
+    time because the job moves it itself: a second revert in the same run has
+    to be built on top of the first one, not on the master the run started
+    with. `ci/tmp` is spared, since that is where the job keeps its own state,
+    including the investigation clones and the verdict files."""
     Shell.check("git revert --abort", verbose=False)
     Shell.check(
         f"git fetch --no-tags --prune --no-recurse-submodules origin "
@@ -1411,10 +1489,11 @@ def create_reintroduce(
     )
 
 
-def investigate(failure: Failure, index: int) -> Investigation:
+def investigate(failure: Failure, index: int, repo: str) -> Investigation:
     """Ask the agent about one failure and return the recorded investigation."""
     investigation = Investigation(failure=failure)
-    verdict_file = os.path.abspath(f"{TEMP_DIR}/investigation_{index}.json")
+    clone = os.path.abspath(f"{TEMP_DIR}/investigation_{index}")
+    verdict_file = os.path.join(clone, "verdict.json")
     prompt = investigation_prompt(failure, verdict_file)
     raw = ""
     error = ""
@@ -1424,7 +1503,10 @@ def investigate(failure: Failure, index: int) -> Investigation:
         # no GitHub call until the guards in `act` do, which mint their own.
         reset_worktree()
         try:
-            raw = run_agent(prompt, verdict_file)
+            # A fresh clone per attempt, not per failure: whatever the previous
+            # attempt's agent left in it is exactly what must not carry over.
+            investigation_clone(clone, repo)
+            raw = run_agent(prompt, verdict_file, clone)
             for name, value in parse_verdict(raw).items():
                 setattr(investigation, name, value)
             error = ""
@@ -1437,6 +1519,7 @@ def investigate(failure: Failure, index: int) -> Investigation:
             )
             traceback.print_exc()
         finally:
+            Shell.check(f"rm -rf {shlex.quote(clone)}", verbose=False)
             reset_worktree()
     if error:
         investigation.verdict = "error"
@@ -1809,7 +1892,7 @@ def run(results: List[Result], dry_run=False) -> None:
                     f"{len(failures) - index} failures are left to the next run"
                 )
                 break
-            investigation = investigate(failure, index)
+            investigation = investigate(failure, index, info.repo_name)
             investigations.append(investigation)
             print(
                 f"{failure.title!r}: {investigation.verdict} "

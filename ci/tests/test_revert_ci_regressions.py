@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -853,6 +854,32 @@ def test_an_empty_answer_is_not_evidence_that_the_failure_is_gone():
     assert "cannot be established" in fixed
 
 
+def test_a_truncated_commit_history_stands_the_revert_down():
+    """The bar is "longer than the longest clean run between two occurrences",
+    which is a statement about the whole history since the failure started. An
+    answer as long as the query's limit means the oldest part of that history
+    was cut off -- and with it, possibly, an occurrence and the quiet spell
+    before it that would have set the bar. Reading the truncated remainder
+    would let a still-recurring intermittent failure pass as fixed, so it is
+    the third outcome: not established, no revert."""
+    # The newest commits are clean, which would read as "the failure is gone"
+    # if the record were trusted.
+    rows = _commits(*([0] * 5 + [1] * (job.COMMITS_QUERY_LIMIT - 5)))
+    fixed = job.already_fixed(FakeCIDB(rows), make_failure())
+    assert "cannot be established" in fixed
+    assert "truncated" in fixed
+
+
+def test_the_commit_history_query_asks_for_more_than_a_week_of_commits():
+    """The whole span the guard reasons about is the failure window plus the
+    lookback margin, a bit over a week of `master`. The query's limit is a
+    backstop against an unbounded result, not a sampling decision, so it has
+    to be far above what that span can hold."""
+    query = job.commits_since_the_failure_query(make_failure())
+    assert f"LIMIT {job.COMMITS_QUERY_LIMIT}" in query
+    assert job.COMMITS_QUERY_LIMIT >= 1000
+
+
 def test_an_intermittent_failure_needs_more_than_its_own_quiet_spell():
     """A failure that hits one run in a hundred leaves clean commits behind it
     all the time, so two of them are what it does anyway, fix or no fix. The bar
@@ -1302,9 +1329,11 @@ def test_the_investigation_mints_no_github_token(monkeypatch):
         job.GHAuth, "auth", lambda **kwargs: calls.append(kwargs) or True
     )
     monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
+    monkeypatch.setattr(job, "investigation_clone", lambda *a, **k: None)
+    monkeypatch.setattr(job.Shell, "check", lambda *a, **k: True)
     monkeypatch.setattr(job, "run_agent", _unexpected("ran the agent"))
 
-    investigation = job.investigate(make_failure(), 0)
+    investigation = job.investigate(make_failure(), 0, "ClickHouse/ClickHouse")
 
     assert investigation.verdict == "error"
     assert calls == []
@@ -1336,7 +1365,7 @@ def test_the_agent_gets_its_own_empty_gh_config_and_no_token_in_its_environment(
     monkeypatch.setattr(job.subprocess, "run", lambda *a, **k: None)
     monkeypatch.setattr(job.Shell, "check", fake_check)
 
-    assert job.run_agent("investigate", str(verdict_file))
+    assert job.run_agent("investigate", str(verdict_file), str(tmp_path))
 
     assert len(commands) == 1
     command = commands[0]
@@ -1345,6 +1374,93 @@ def test_the_agent_gets_its_own_empty_gh_config_and_no_token_in_its_environment(
     # The scratch directory is created empty and thrown away, so the `gh` the
     # agent could run is not logged in to anything.
     assert "gh auth login" not in command
+    # The agent runs in the disposable clone it was given, not wherever the
+    # job process happens to be.
+    assert command.startswith(f"cd {shlex.quote(str(tmp_path))} && ")
+
+
+def test_the_agent_investigates_a_disposable_clone_and_not_the_checkout(monkeypatch):
+    """`reset_worktree` restores the worktree, but a writable `.git` can carry
+    a rewritten `origin`, an `insteadOf` mapping or a `pre-push` hook past it,
+    and the privileged phase then fetches from whatever `origin` says and
+    executes whatever the hooks say. So the agent gets a clone of its own,
+    fresh for every attempt, and the clone is removed afterwards."""
+    cloned = []
+    removals = []
+    agent_ran_in = []
+
+    def fake_clone(path, repo):
+        cloned.append((path, repo))
+
+    def fake_agent(prompt, verdict_file, workdir):
+        agent_ran_in.append(workdir)
+        assert verdict_file.startswith(workdir + os.sep)
+        return (
+            '{"verdict": "inconclusive", "confidence": "low",'
+            ' "explanation": "could not tell"}'
+        )
+
+    def fake_check(command, **_):
+        if command.startswith("rm -rf "):
+            removals.append(command)
+        return True
+
+    monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
+    monkeypatch.setattr(job, "investigation_clone", fake_clone)
+    monkeypatch.setattr(job, "run_agent", fake_agent)
+    monkeypatch.setattr(job.Shell, "check", fake_check)
+
+    investigation = job.investigate(make_failure(), 3, "ClickHouse/ClickHouse")
+
+    assert investigation.verdict == "inconclusive"
+    assert len(cloned) == 1
+    path, repo = cloned[0]
+    assert repo == "ClickHouse/ClickHouse"
+    # The agent worked in the clone, and the clone did not outlive the run.
+    assert agent_ran_in == [path]
+    assert removals == [f"rm -rf {shlex.quote(path)}"]
+    # A clone of its own, not the checkout the privileged phase trusts.
+    assert os.path.abspath(path) != os.path.abspath(".")
+
+
+def test_the_clone_is_anonymous_and_carries_the_full_history(monkeypatch):
+    """Cloned over the public HTTPS URL with no token in it, borrowing objects
+    from the checkout by an alternates path rather than by hardlinks, and
+    treeless the same way the checkout was unshallowed, so `git log` has the
+    whole history and older trees are fetched on demand -- anonymously,
+    because `origin` is the public URL."""
+    commands = []
+    monkeypatch.setattr(
+        job.Shell, "check", lambda command, **_: commands.append(command) or True
+    )
+
+    job.investigation_clone("/scratch/investigation_0", "ClickHouse/ClickHouse")
+
+    assert commands[0] == "rm -rf /scratch/investigation_0"
+    clone = commands[1]
+    assert "git clone" in clone
+    assert "https://github.com/ClickHouse/ClickHouse.git" in clone
+    assert "--filter=tree:0" in clone
+    assert "--reference ." in clone
+    assert f"--branch {job.BASE_BRANCH}" in clone
+    assert "@" not in clone  # no credential baked into any URL
+    assert clone.endswith(" /scratch/investigation_0")
+
+
+def test_the_checkout_does_not_persist_the_workflow_token():
+    """`actions/checkout` writes the workflow token into the local git config
+    (`http.<server>/.extraheader`) unless told not to, and a credential in the
+    checkout is a credential the job's environment carries around before any
+    guard has run. This job's generated workflow opts out, and the yaml is
+    what actually runs, so the property is pinned here."""
+    workflow = os.path.join(
+        os.path.dirname(__file__), "..", "..", ".github", "workflows", "hourly.yml"
+    )
+    with open(workflow, "r", encoding="utf-8") as fd:
+        text = fd.read()
+    job_block = text.split("revert_ci_regressions:", 1)[1]
+    checkout = job_block.split("- name: Prepare env script", 1)[0]
+    assert "persist-credentials: false" in checkout
 
 
 def test_the_revert_path_mints_the_token_itself(monkeypatch):
@@ -1479,7 +1595,9 @@ def _live_run(monkeypatch, cidb, act):
     monkeypatch.setattr(job, "connect", lambda: cidb)
     monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
     monkeypatch.setattr(job, "already_fixed", lambda *a, **k: "")
-    monkeypatch.setattr(job, "investigate", lambda failure, index: _investigation())
+    monkeypatch.setattr(
+        job, "investigate", lambda failure, index, repo: _investigation()
+    )
     monkeypatch.setattr(job, "act", act)
     monkeypatch.setattr(job, "record", lambda *a, **k: None)
     results = []

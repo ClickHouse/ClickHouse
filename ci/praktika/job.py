@@ -89,6 +89,15 @@ class Job:
 
         enable_gh_auth: bool = False
 
+        # If False, `actions/checkout` is generated with
+        # `persist-credentials: false`, so the workflow token is not written
+        # into the local git config (`http.<server>/.extraheader`). Set it for
+        # a job that runs untrusted code in the checkout and must not leave a
+        # GitHub credential within its reach; such a job has to mint its own
+        # token (`enable_gh_auth`) for anything privileged, and its plain
+        # `git fetch` runs unauthenticated.
+        checkout_persist_credentials: bool = True
+
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
 

@@ -130,6 +130,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
 
       - name: Prepare env script
         run: |
