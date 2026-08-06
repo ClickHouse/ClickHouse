@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -93,15 +94,37 @@ static size_t getMaxSizeForIndex(const Settings & settings)
     return settings[Setting::make_distributed_plan] ? 0 : settings[Setting::use_index_for_in_with_subqueries_max_values];
 }
 
-/// The in-place build plan carries `CreatingSetStep` at its root, which cannot cross a
-/// distributed-plan fragment boundary, so the set subquery always runs locally on the
-/// initiator. (Distributing the subquery itself would require converting it below the
-/// set-filling step.)
+/// The build plan has `CreatingSetStep` at its root, which cannot be serialized for remote
+/// execution, so it is never converted to a distributed plan itself; only the source below
+/// it is (`convertSetSourceForDistributedPlan`).
 static QueryPlanOptimizationSettings makeInplaceBuildOptimizationSettings(const ContextPtr & context)
 {
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.make_distributed_plan = false;
     return optimization_settings;
+}
+
+/// Distributes the set subquery itself: the values are deduplicated on the workers and the
+/// initiator receives the distinct values through the final gather, filling the set locally,
+/// so the set-filling step stays out of the fragments. A subquery that collapses to a single
+/// stage runs locally.
+static void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPtr & context)
+{
+    /// The transfer limits bound the values while they are deduplicated, so an over-limit set
+    /// fails during the build instead of after full materialization and transfer. Truncating a
+    /// membership set would change results, so the mode is forced to throw; the check at task
+    /// serialization remains as the backstop for sets built without this step.
+    const auto & settings = context->getSettingsRef();
+    SizeLimits transfer_limits(
+        settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], OverflowMode::THROW);
+
+    auto header = source_plan.getCurrentHeader();
+    source_plan.addStep(
+        std::make_unique<DistinctStep>(header, transfer_limits, 0, header->getNames(), /*pre_distinct_=*/false));
+
+    QueryPlanOptimizationSettings optimization_settings(context);
+    source_plan.optimize(optimization_settings);
+    source_plan.convertToDistributed(optimization_settings);
 }
 
 static bool equals(const DataTypes & lhs, const DataTypes & rhs)
@@ -437,6 +460,8 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
         if (!set_and_key->set->hasExplicitSetElements())
             set_and_key->set->fillSetElements();
         prepared_sets_cache = nullptr;
+        if (source)
+            convertSetSourceForDistributedPlan(*source, context);
     }
 
     auto plan = build(network_transfer_limits, prepared_sets_cache);
@@ -543,6 +568,12 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
                 throw;
         }
     }
+
+    /// Run the cloned subquery as a distributed plan; `source` itself stays untouched. The
+    /// fallback below runs locally: a plan that cannot be cloned (e.g. it reads from an
+    /// already-created `Pipe`) cannot be serialized for a worker either.
+    if (plan && context->getSettingsRef()[Setting::make_distributed_plan])
+        convertSetSourceForDistributedPlan(*plan, context);
 
     /// On the non-destructive path the speculative pipeline builds into this temporary set; it is
     /// published into `set_and_key` only after the build fully succeeds (see below). It stays null on the

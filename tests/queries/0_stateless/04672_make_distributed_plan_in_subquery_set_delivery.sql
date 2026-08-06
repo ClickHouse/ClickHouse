@@ -32,6 +32,10 @@ SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 0);
 SELECT '-- a set outside storage filters is not built at planning and is rejected at task serialization';
 SELECT sum(k IN (SELECT val FROM t_small WHERE id < 50)) FROM t_big; -- { serverError SUPPORT_IS_DISABLED }
 
+SELECT '-- the set subquery itself executes as a distributed plan (deduplicated before the gather)';
+SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50)
+    SETTINGS distributed_plan_default_reader_bucket_count = 3, distributed_plan_max_rows_to_broadcast = 0;
+
 SELECT '-- the transfer limits bound the shipped set';
 SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_rows_to_transfer = 10; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
