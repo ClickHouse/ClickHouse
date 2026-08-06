@@ -53,7 +53,7 @@ struct MinMaxIndexStoreFixture : public ::testing::Test
     }
 
     /// Stores `index` into a fresh part directory and returns the names of the files it left behind.
-    std::set<String> store(const String & part_dir, const IMergeTreeDataPart::MinMaxIndex & index, const NamesAndTypesList & columns)
+    std::set<String> store(const String & part_dir, const IMergeTreeDataPart::MinMaxIndex & index, const NamesAndTypesList & columns) const
     {
         fs::create_directories(tmp_dir / part_dir);
         DataPartStorageOnDiskFull part_storage(volume, "", part_dir);
