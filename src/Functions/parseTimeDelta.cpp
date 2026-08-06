@@ -35,6 +35,8 @@ namespace
     {
         int error_code;
         String error_message;
+        /// Always a string literal, matching Exception::message_format_string's static lifetime.
+        std::string_view error_pattern;
     };
 
     using Float64OrError = std::expected<Float64, ParseTimeDeltaError>;
@@ -197,7 +199,9 @@ namespace
                 }
                 else if (error_handling == ParseTimeDeltaErrorHandling::Exception)
                 {
-                    throw Exception(result.error().error_code, "{}", result.error().error_message);
+                    throw Exception(
+                        PreformattedMessage{result.error().error_message, result.error().error_pattern, {}},
+                        result.error().error_code);
                 }
                 else
                 {
@@ -269,8 +273,11 @@ namespace
 
 /// Reports a parse failure. No Exception is constructed here, so the recovering variants pay no
 /// exception cost and add nothing to system.errors.
-#define PARSE_TIME_DELTA_ERROR(...) \
-    return std::unexpected(ParseTimeDeltaError{ErrorCodes::BAD_ARGUMENTS, need_message ? fmt::format(__VA_ARGS__) : String{}})
+/// The pattern is recorded unconditionally: it becomes Exception::message_format_string, which
+/// system.errors, system.text_log and query_log group failures by.
+#define PARSE_TIME_DELTA_ERROR(pattern, ...) \
+    return std::unexpected( \
+        ParseTimeDeltaError{ErrorCodes::BAD_ARGUMENTS, need_message ? fmt::format(pattern, __VA_ARGS__) : String{}, pattern})
 
         Float64OrError parse(std::string_view str, bool need_message) const
         {
@@ -425,7 +432,9 @@ SELECT parseTimeDelta('1yr2mo')
     FunctionDocumentation::Description description_or_null = R"(
 Like [`parseTimeDelta`](#parseTimeDelta), but returns `NULL` instead of throwing when the input
 value cannot be parsed. Errors about the call itself (wrong number of arguments, non-`String`
-argument type) are still raised.
+argument type) are still raised; for a `Dynamic` or `Variant` argument this follows
+`dynamic_throw_on_type_mismatch` / `variant_throw_on_type_mismatch`, as it does for
+`parseTimeDelta` itself.
     )";
     FunctionDocumentation::Syntax syntax_or_null = "parseTimeDeltaOrNull(timestr)";
     FunctionDocumentation::ReturnedValue returned_value_or_null
@@ -450,7 +459,9 @@ SELECT parseTimeDeltaOrNull('11s+22min'), parseTimeDeltaOrNull('invalid')
     FunctionDocumentation::Description description_or_zero = R"(
 Like [`parseTimeDelta`](#parseTimeDelta), but returns `0` instead of throwing when the input value
 cannot be parsed. Errors about the call itself (wrong number of arguments, non-`String` argument
-type) are still raised.
+type) are still raised; for a `Dynamic` or `Variant` argument this follows
+`dynamic_throw_on_type_mismatch` / `variant_throw_on_type_mismatch`, as it does for
+`parseTimeDelta` itself.
     )";
     FunctionDocumentation::Syntax syntax_or_zero = "parseTimeDeltaOrZero(timestr)";
     FunctionDocumentation::ReturnedValue returned_value_or_zero

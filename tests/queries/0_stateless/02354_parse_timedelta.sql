@@ -47,5 +47,9 @@ SELECT parseTimeDeltaOrZero(1); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT dynamicType(d), parseTimeDeltaOrNull(d), parseTimeDeltaOrZero(d) FROM (SELECT materialize(CAST('junk' AS Dynamic)) AS d);
 SELECT toTypeName(parseTimeDelta(d)), toTypeName(parseTimeDeltaOrNull(d)), toTypeName(parseTimeDeltaOrZero(d)) FROM (SELECT materialize(CAST('1s' AS Dynamic)) AS d);
 -- ... while a non-String alternative is still a call error, as for the bare function
-SELECT parseTimeDeltaOrNull(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
-SELECT parseTimeDeltaOrZero(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT parseTimeDeltaOrNull(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d) SETTINGS dynamic_throw_on_type_mismatch = 1; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT parseTimeDeltaOrZero(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d) SETTINGS dynamic_throw_on_type_mismatch = 1; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+-- with dynamic_throw_on_type_mismatch = 0 the adaptor recovers that mismatch to NULL instead;
+-- the bare function is selected alongside so the "same as the bare function" claim is asserted
+SELECT parseTimeDelta(d), parseTimeDeltaOrNull(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d) SETTINGS dynamic_throw_on_type_mismatch = 0;
+SELECT parseTimeDelta(d), parseTimeDeltaOrZero(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d) SETTINGS dynamic_throw_on_type_mismatch = 0;

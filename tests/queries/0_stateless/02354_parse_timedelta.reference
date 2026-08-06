@@ -23,3 +23,5 @@ Float64	Nullable(Float64)	Float64
 LowCardinality(Nullable(Float64))	LowCardinality(Float64)
 String	\N	0
 Nullable(Float64)	Nullable(Float64)	Nullable(Float64)
+\N	\N
+\N	\N
