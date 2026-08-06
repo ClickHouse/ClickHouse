@@ -2,9 +2,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTracker.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Storages/StorageFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -14,6 +11,8 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -109,19 +108,7 @@ void SetOrJoinSink::consume(Chunk & chunk)
 {
     Block block = getHeader().cloneWithColumns(chunk.getColumns());
 
-    /// The rows now belong to a set or hash table that outlives the query, so hand their charge to the global
-    /// tracker; keeping it would leave it on the per-user tracker for good. The table's own growth is the
-    /// estimate: it covers the hash structures, which dominate and are charged to this query too, unlike
-    /// `Block::allocatedBytes`. It can be off by a fraction of a percent either way, and under concurrent
-    /// inserts the growth may be attributed to the wrong one of them, though the total still matches.
-    const UInt64 bytes_before = table.totalBytes(getContext()).value_or(0);
     table.insertBlock(block, getContext());
-    const UInt64 bytes_after = table.totalBytes(getContext()).value_or(0);
-    if (bytes_after > bytes_before)
-    {
-        if (auto * thread_memory_tracker = CurrentThread::getMemoryTracker())
-            thread_memory_tracker->transferToGlobal(bytes_after - bytes_before);
-    }
     if (persistent)
     {
         if (!backup_buf)
@@ -137,6 +124,10 @@ void SetOrJoinSink::consume(Chunk & chunk)
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
+
+    /// The set or the join table now holds this data: still charged to this query, which keeps the insert under
+    /// the memory limits, and settled to the server total when it ends rather than reported as unaccounted.
+    setCurrentQueryMemoryDriftExpected();
     if (backup_buf)
     {
         backup_stream->flush();
@@ -278,12 +269,12 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
     increment = 0;
 
-    /// Charged to the global tracker on insert, so do not credit this query; see `StorageMemory::truncate`.
-    MemoryTrackerBlockerInThread not_credited_to_the_query;
-
     auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
     new_set->setHeader(header.getColumnsWithTypeAndName());
     {
+        /// The data being dropped here was settled into the server total when the query that inserted it ended,
+        /// so releasing it must not be credited to this one.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         std::lock_guard lock(mutex);
         set = new_set;
     }
