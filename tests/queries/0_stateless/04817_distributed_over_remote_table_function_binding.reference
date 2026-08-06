@@ -1,0 +1,9 @@
+CREATE TABLE default.dist_remote\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', remote(\'127.0.0.1\', \'default\', \'bind_src\'))
+CREATE TABLE default.dist_cluster\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', cluster(\'test_shard_localhost\', \'default\', \'bind_src\'))
+CREATE TABLE default.dist_nested\n(\n    `number` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', numbers(assumeNotNull((\n    SELECT count()\n    FROM remote(\'127.0.0.1\', \'default\', \'bind_src\')\n))))
+6
+6
+6
+6
+3
+6
