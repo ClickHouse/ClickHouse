@@ -1,9 +1,6 @@
-import logging
-
 from helpers.iceberg_utils import (
     create_iceberg_table,
     default_upload_directory,
-    get_creation_expression,
     get_uuid_str,
 )
 
