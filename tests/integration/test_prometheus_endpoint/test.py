@@ -13,7 +13,11 @@ node_labels = cluster.add_instance(
     "node_labels",
     main_configs=["configs/prom_conf_labels.xml"],
     # The `shard` label is defined with from_env in the config; this exercises env-based resolution.
+    # `instance_env_variables=True` is required here: by default `env_variables` is merged into the
+    # whole cluster's shared env file, not scoped to this instance, so without it `node_handler_labels`'s
+    # own `PROM_SHARD` below would silently overwrite this one for every instance in the cluster.
     env_variables={"PROM_SHARD": "shard-01"},
+    instance_env_variables=True,
 )
 node_group_label_disabled = cluster.add_instance(
     "node_group_label_disabled",
@@ -24,6 +28,7 @@ node_handler_labels = cluster.add_instance(
     main_configs=["configs/prom_conf_handlers_labels.xml"],
     # Exercises the from_env path for a handler defined inside a `prometheus.handlers` block.
     env_variables={"PROM_SHARD": "shard-02"},
+    instance_env_variables=True,
 )
 
 
