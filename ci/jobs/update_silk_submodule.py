@@ -10,7 +10,10 @@ commit; a failed fetch or checkout never pushes a branch or opens a PR.
 import os
 import re
 import shlex
+import sys
 
+from ci.defs.defs import BASE_BRANCH
+from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell
 
@@ -23,6 +26,46 @@ REPOSITORY = "ClickHouse/ClickHouse"
 PR_TITLE = "Bump `silk` to the latest `clickhouse-public`"
 
 TOKENIZED_GITHUB_URL = re.compile(r"(https://x-access-token:)[^@\s]+(@github\.com/)")
+
+
+def on_current_base_branch():
+    """Refuse to run unless HEAD is the current tip of the base branch.
+
+    The workflow is SCHEDULE-triggered, but GitHub also generates a
+    `workflow_dispatch` trigger and reruns replay their original ref/sha. The
+    branch-name check rejects feature-branch dispatches; fetching the remote base
+    branch and comparing its tip with HEAD also rejects reruns of older `master`
+    commits. The check runs again after the bump so a run cannot publish if
+    `master` advanced while it was working."""
+    branch = Info().git_branch
+    if branch != BASE_BRANCH:
+        print(
+            f"Refusing to run: this workflow force-pushes '{BOT_BRANCH}' and manages a"
+            f" pull request, so it must run against '{BASE_BRANCH}', not '{branch}'"
+            " (e.g. a manual workflow_dispatch or a rerun from another ref).",
+            file=sys.stderr,
+        )
+        return False
+
+    if not Shell.check(
+        f"git fetch --no-tags origin {shlex.quote(BASE_BRANCH)}", verbose=True
+    ):
+        print(
+            f"Refusing to run: could not fetch the current '{BASE_BRANCH}' tip.",
+            file=sys.stderr,
+        )
+        return False
+
+    head = Shell.get_output("git rev-parse HEAD").strip()
+    current_base = Shell.get_output("git rev-parse FETCH_HEAD").strip()
+    if not head or not current_base or head != current_base:
+        print(
+            f"Refusing to run: HEAD ({head or 'unknown'}) is not the current "
+            f"'{BASE_BRANCH}' tip ({current_base or 'unknown'}).",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def pinned_commit():
@@ -124,8 +167,10 @@ def open_or_refresh_pr(body):
         return False
 
     existing = Shell.get_output(
-        f"gh pr list --head {BOT_BRANCH} --base master --state open "
-        f"--repo {shlex.quote(REPOSITORY)} --json number --jq '.[].number'"
+        f"gh pr list --head {BOT_BRANCH} --base {BASE_BRANCH} --state open "
+        f"--repo {shlex.quote(REPOSITORY)} "
+        "--json number,isCrossRepository "
+        "--jq 'map(select(.isCrossRepository == false)) | .[0].number // empty'"
     ).strip()
     if existing:
         print(f"PR #{existing} already open; branch refreshed")
@@ -135,7 +180,7 @@ def open_or_refresh_pr(body):
             verbose=True,
         )
     return Shell.check(
-        f"gh pr create --base master --head {BOT_BRANCH} "
+        f"gh pr create --base {BASE_BRANCH} --head {BOT_BRANCH} "
         f"--repo {shlex.quote(REPOSITORY)} "
         f"--title {shlex.quote(PR_TITLE)} --body {shlex.quote(body)}",
         verbose=True,
@@ -143,17 +188,30 @@ def open_or_refresh_pr(body):
 
 
 if __name__ == "__main__":
-    results = [Result.from_commands_run(name="Bump submodule", command=bump)]
+    results = [
+        Result.from_commands_run(
+            name="Run against current master", command=on_current_base_branch
+        )
+    ]
+
+    if results[-1].is_ok():
+        results.append(Result.from_commands_run(name="Bump submodule", command=bump))
 
     if results[-1].is_ok():
         if has_changes():
-            body = pr_body()
             results.append(
                 Result.from_commands_run(
-                    name="Open or refresh PR",
-                    command=lambda: open_or_refresh_pr(body),
+                    name="Master is still current", command=on_current_base_branch
                 )
             )
+            if results[-1].is_ok():
+                body = pr_body()
+                results.append(
+                    Result.from_commands_run(
+                        name="Open or refresh PR",
+                        command=lambda: open_or_refresh_pr(body),
+                    )
+                )
         else:
             results.append(
                 Result.from_commands_run(
