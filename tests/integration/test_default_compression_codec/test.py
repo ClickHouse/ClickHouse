@@ -933,3 +933,70 @@ def test_default_codec_approximate_when_recovered_from_column_data(start_cluster
     )
 
     node5.query("DROP TABLE approximate_default_codec SYNC")
+
+
+def test_default_codec_recovery_fenced_after_codec_alter(start_cluster):
+    # `detectDefaultCompressionCodec` proves the part's default codec from the `.bin` frame of a
+    # default-coded column, but it looks the codec declarations up in the *current* table metadata.
+    # When column codecs were altered after the part was written, the current declarations do not
+    # describe the part: a column that was explicitly coded at write time becomes "default-coded"
+    # after `ALTER TABLE ... MODIFY COLUMN ... REMOVE CODEC`, and its frame would then be read as
+    # proof of the part's default. The recovery must therefore distrust the column proof whenever
+    # the part records a metadata version different from the current one (`ReplicatedMergeTree`
+    # increments it on `ALTER`) and take the approximate `checksums.txt` fallback instead.
+    node1.query(
+        """
+    CREATE TABLE codec_alter_fence (
+        key UInt64 CODEC(ZSTD(1)),
+        data String CODEC(LZ4)
+    )
+    ENGINE = ReplicatedMergeTree('/codec_alter_fence', '1') ORDER BY tuple()
+    """
+    )
+
+    node1.query("INSERT INTO codec_alter_fence VALUES (1, 'Hello world')")
+
+    part_name = node1.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='codec_alter_fence' AND active"
+    ).strip()
+
+    # While `default_compression_codec.txt` is present, the exact write-time default is known: the
+    # part is smaller than 1024 bytes, so the `<compression>` config on this node picks `ZSTD(10)`.
+    assert (
+        node1.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='codec_alter_fence' AND active"
+        ).strip()
+        == "ZSTD(10)"
+    )
+
+    node1.query(f"ALTER TABLE codec_alter_fence DETACH PART '{part_name}'")
+
+    data_path = node1.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='codec_alter_fence'"
+    ).strip()
+    node1.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+
+    # Bump the table metadata while the part is detached: in the *current* metadata `data` is now
+    # default-coded, while in the part it is an explicitly-coded `LZ4` column.
+    node1.query("ALTER TABLE codec_alter_fence MODIFY COLUMN data REMOVE CODEC")
+
+    node1.query(f"ALTER TABLE codec_alter_fence ATTACH PART '{part_name}'")
+
+    assert node1.query("SELECT COUNT() FROM codec_alter_fence") == "1\n"
+
+    # Without the metadata-version fence the recovery would read the `data` column's `LZ4` frame as
+    # proof of the part's default and report `LZ4`. With the fence it must fall back to
+    # `checksums.txt`, whose frame is compressed with the built-in write-time default - `ZSTD(3)`,
+    # recovered without the level as `ZSTD(1)` - the same family as the real `ZSTD(10)` default.
+    assert (
+        node1.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='codec_alter_fence' AND active"
+        ).strip()
+        == "ZSTD(1)"
+    )
+
+    node1.query("DROP TABLE codec_alter_fence SYNC")

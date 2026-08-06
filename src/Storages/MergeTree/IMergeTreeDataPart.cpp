@@ -2018,7 +2018,11 @@ void IMergeTreeDataPart::removeMetadataVersion()
 
 CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const CompressionCodecPtr & fallback_codec) const
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    /// Consult the metadata that actually describes this part's columns: for a projection part the
+    /// table's columns say nothing about the projection's columns (which can be expressions such as
+    /// aggregates), so resolve through `getMetadataSnapshot`, which returns the projection's own
+    /// metadata for it.
+    auto metadata_snapshot = getMetadataSnapshot();
 
     const auto & storage_columns = metadata_snapshot->getColumns();
 
@@ -2033,13 +2037,26 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const Comp
             || storage_columns.hasExplicitDefaultCompressionCodec(column_name);
     };
 
+    /// The column proof is sound only when the codec declarations consulted above are the ones the
+    /// part was written under. After `ALTER TABLE ... MODIFY COLUMN ... CODEC(...)` (or a change
+    /// adding or removing a `Default` stage in a pipeline), the current declarations can make the
+    /// proof skip the only genuinely default-coded column - or, worse, read the frame of a column
+    /// that was explicitly coded at write time as proof of the default. Historical metadata is not
+    /// available here, so when the part records a metadata version different from the current one,
+    /// do not trust the column proof at all and take the approximate fallback. The fence is
+    /// best-effort: only `ReplicatedMergeTree` increments the metadata version on `ALTER` (for plain
+    /// `MergeTree` it stays 0), and a legacy part with no version recorded on disk had it fabricated
+    /// from the current metadata in `loadColumns` (`old_part_with_no_metadata_version_on_disk`), so
+    /// in both cases a mismatch is undetectable and the proof is kept, as before.
+    bool column_data_proves_default_codec = old_part_with_no_metadata_version_on_disk
+        || metadata_version == metadata_snapshot->getMetadataVersion();
+
     /// In a Compact part all columns share a single data file, and `getCompressionCodecForFile`
     /// reads that file's first frame, which belongs to whichever column was written first - not
     /// necessarily to the column being inspected. The first frame proves the default codec only when
     /// every stored column is default-coded; with mixed codecs the frame cannot be attributed to a
     /// particular column, so the column proof must be skipped in favor of the fallback.
-    bool column_data_proves_default_codec = true;
-    if (getType() == MergeTreeDataPartType::Compact)
+    if (column_data_proves_default_codec && getType() == MergeTreeDataPartType::Compact)
     {
         for (const auto & part_column : getColumns())
         {
