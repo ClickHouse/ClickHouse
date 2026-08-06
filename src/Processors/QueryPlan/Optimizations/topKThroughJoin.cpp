@@ -68,10 +68,29 @@ std::optional<JoinSemantics> getJoinSemanticsFromStep(IQueryPlanStep * step)
 /// For a physical `JoinStep` we read `hasDelayedBlocks()` / `canKeepLeftPipelineInOrder()`
 /// directly. For `JoinStepLogical` the algorithm is picked later from
 /// `JoinSettings::join_algorithms`, so we conservatively assume unavoidable delayed blocks are
-/// possible when the configured settings allow `JoinAlgorithm::GRACE_HASH` /
-/// `JoinAlgorithm::AUTO` (`JoinSwitcher`, and neither is pinnable), or - unless pinning is
-/// allowed - when automatic spilling is configured via `max_bytes_*_before_external_join`
-/// (which can wrap the chosen hash join in `SpillingHashJoin`).
+/// possible when the configured settings allow `JoinAlgorithm::GRACE_HASH` (never pinnable),
+/// or - unless pinning is allowed - when automatic spilling is configured via
+/// `max_bytes_*_before_external_join` (which can wrap the chosen hash join in
+/// `SpillingHashJoin`).
+///
+/// `JoinAlgorithm::AUTO` physicalizes to different joins (see the `AUTO` branch of
+/// `tryCreateJoin` in `PlannerJoins.cpp`):
+///  - with an effective spill threshold, temporary storage, and `GraceHashJoin::isSupported`,
+///    it returns `SpillingHashJoin` - pinnable, so not a blocker when pinning is allowed;
+///  - otherwise `JoinSwitcher` when `MergeJoin::isSupported` - a genuine blocker: it may
+///    switch to `MergeJoin` at runtime and is not pinnable;
+///  - otherwise plain `HashJoin` - no delayed blocks at all.
+/// With an effective spill threshold the `JoinSwitcher` outcome is unreachable: every join
+/// accepted by `MergeJoin::isSupported` (`ALL` x inner/left/right/full or `ANY`/`SEMI` x
+/// inner/left, one disjunct, no mixed condition) is also accepted by
+/// `GraceHashJoin::isSupported` (non-`ASOF` inner/left/right/full, one disjunct), so the
+/// `SpillingHashJoin` branch fires first. Therefore, when pinning is allowed and
+/// `getEffectiveMaxBytesBeforeExternalJoin() > 0` (the exact check the physicalization
+/// performs via `JoinAlgorithmParams`), `AUTO` is not a blocker either. The one remaining
+/// assumption is that temporary storage is configured (`TableJoin::getTempDataOnDisk`): a
+/// server without it makes `AUTO` fall back to `JoinSwitcher`, and the deferral then loses
+/// the top-k pushdown - a plan-shape pessimization, not a correctness issue, since nothing
+/// gets pinned.
 bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step, bool allow_pinning_spilling_join)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -89,9 +108,11 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step, bool allow_pinning_sp
         if (!allow_pinning_spilling_join
             && (js.max_bytes_before_external_join > 0 || js.max_bytes_ratio_before_external_join > 0.0))
             return true;
-        return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
+        const bool auto_is_pinnable_spilling_join
+            = allow_pinning_spilling_join && js.getEffectiveMaxBytesBeforeExternalJoin() > 0;
+        return std::ranges::any_of(js.join_algorithms, [&](JoinAlgorithm a)
         {
-            return a == JoinAlgorithm::GRACE_HASH || a == JoinAlgorithm::AUTO;
+            return a == JoinAlgorithm::GRACE_HASH || (a == JoinAlgorithm::AUTO && !auto_is_pinnable_spilling_join);
         });
     }
     /// Unknown step kind - be conservative.
