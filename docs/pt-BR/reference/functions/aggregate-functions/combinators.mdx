@@ -134,6 +134,108 @@ Mescla os estados intermediários de agregação da mesma forma que o combinador
 
 Converte uma função de agregação para tabelas em uma função de agregação para arrays, que agrega os elementos correspondentes dos arrays e retorna um array de resultados. Por exemplo, `sumForEach` para os arrays `[1, 2]`, `[3, 4, 5]` e `[6, 7]` retorna o resultado `[10, 13, 5]` após somar os elementos correspondentes dos arrays.
 
+<div id="-tuple">
+  ## -Tuple
+</div>
+
+O sufixo `-Tuple` pode ser acrescentado a qualquer função de agregação. A função combinada recebe um argumento do tipo `Tuple` para cada argumento da função de agregação subjacente; todas as tuplas devem ter o mesmo número de elementos. A agregação é aplicada independentemente em cada posição do elemento, recebendo o elemento correspondente de cada `Tuple`, e retorna uma `Tuple` com os resultados.
+
+Se a primeira `Tuple` de entrada tiver nomes de elementos explícitos, eles serão preservados no resultado.
+
+Funções de agregação que tratam valores `NULL` por conta própria (`anyRespectNulls`, `anyLastRespectNulls`, o modificador `RESPECT NULLS`) não oferecem suporte ao tipo `Nullable(Tuple(...))` como argumento; use elementos `Nullable` em vez disso.
+
+**Sintaxe**
+
+```sql
+<aggFunction>Tuple(tuple1[, tuple2, ...])
+```
+
+**Argumentos**
+
+* `tuple1[, tuple2, ...]` — Colunas do tipo `Tuple`, uma para cada argumento da função de agregação subjacente, todas com o mesmo número de elementos. Cada elemento deve ser de um tipo compatível com a função de agregação subjacente na posição correspondente do argumento.
+
+**Valores retornados**
+
+* Uma `Tuple` contendo o resultado da aplicação da função de agregação a cada elemento independentemente.
+
+Tipo: `Tuple(aggFunction(element1), aggFunction(element2), ...)`.
+
+**Exemplo**
+
+Consulta:
+
+```sql
+SELECT sumTuple(t) FROM
+(
+    SELECT tuple(toInt64(1), toFloat64(2.5)) AS t
+    UNION ALL
+    SELECT tuple(toInt64(3), toFloat64(4.5))
+    UNION ALL
+    SELECT tuple(toInt64(5), toFloat64(6.5))
+);
+```
+
+Resultado:
+
+```text
+┌─sumTuple(t)─┐
+│ (9,13.5)    │
+└─────────────┘
+```
+
+Uso com `GROUP BY`:
+
+```sql
+SELECT
+    k,
+    avgTuple(t)
+FROM
+(
+    SELECT
+        number % 2 AS k,
+        tuple(toInt64(number), toFloat64(number) * 1.5) AS t
+    FROM numbers(6)
+)
+GROUP BY k
+ORDER BY k;
+```
+
+```text
+┌─k─┬─avgTuple(t)─┐
+│ 0 │ (2,3)       │
+│ 1 │ (3,4.5)     │
+└───┴─────────────┘
+```
+
+Uso com uma função de agregação com múltiplos argumentos: cada argumento `Tuple` fornece um argumento para a função subjacente, e os elementos são combinados de acordo com a posição:
+
+```text
+corrTuple((a1, a2), (b1, b2)) = (corr(a1, b1), corr(a2, b2))
+```
+
+```sql
+SELECT corrTuple((a1, a2), (b1, b2))
+FROM
+(
+    SELECT
+        toFloat64(number) AS a1,
+        toFloat64(number * 2) AS a2,
+        toFloat64(100 - number) AS b1,
+        toFloat64(number * 3) AS b2
+    FROM numbers(10)
+);
+```
+
+```text
+┌─corrTuple((a1, a2), (b1, b2))─┐
+│ (-1,1)                        │
+└───────────────────────────────┘
+```
+
+`a1` e `b1` são anticorrelacionados, enquanto `a2` e `b2` são proporcionais, portanto o resultado é `(-1, 1)`.
+
+`-Tuple` pode ser combinado com outros combinadores, como `-If`. Por exemplo: `sumTupleIf(tuple_column, cond)`.
+
 <div id="-distinct">
   ## -Distinct
 </div>

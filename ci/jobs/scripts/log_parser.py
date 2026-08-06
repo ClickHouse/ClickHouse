@@ -1,3 +1,4 @@
+import itertools
 import re
 import string
 import sys
@@ -26,18 +27,55 @@ class FuzzerLogParser:
         r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
     )
     RUNTIME_ERROR_PATTERN = r".*runtime error: .*|.*is located.*"
-    # A genuine logical error is logged by `abortOnFailedAssertion` via `LOG_FATAL` as
-    # `<date> <time> [ tid ] {query_id} <Fatal> [logger]: Logical error: '...'`. The pattern is
-    # anchored to the real line prefix (logger optionally empty) and requires BOTH the `<Fatal>`
-    # level and the `Logical error:` colon, so it matches neither: (1) query-echo comment lines
-    # (no prefix); (2) a `] {id} <Fatal> ... Logical error` substring copied inside a `<Fatal>`
-    # signal record's embedded query (mid-line, not at the line start); nor (3) benign non-fatal
-    # messages that merely mention the phrase, e.g. KafkaConsumer's `<Warning> ...: Logical error.
-    # Not all polled messages ...`. Group 1 captures the query id, group 2 the message.
+    # A `Logical error:` message logged by `abortOnFailedAssertion` as a whole formatted
+    # `<date> <time> [ tid ] {query_id} <Fatal> [logger]:` record, anchored to the line start.
+    # Group 1 is the query id, group 2 the message.
     LOGICAL_ERROR_SERVER_PATTERN = (
         r"^[0-9]{4}\.[0-9]{2}\.[0-9]{2} [0-9:.]+ \[ [0-9]+ \] "
         r"\{([^}]*)\} <Fatal> [A-Za-z0-9_:]*: (Logical error:.*)"
     )
+    # (name, flag_name, pattern, server_pattern) checked in this order by `parse_failure`;
+    # `pattern` also bounds the thread-less `Format string:` search by the next failure of any
+    # kind, so keep every one here. `server_pattern` replaces it for the server-log scan.
+    ERROR_PATTERNS = [
+        (
+            "Sanitizer",
+            "is_sanitizer_error",
+            SANITIZER_ERROR_PATTERN,
+            None,
+        ),
+        (
+            "Logical error",
+            "is_logical_error",
+            r"Logical error.*",
+            LOGICAL_ERROR_SERVER_PATTERN,
+        ),
+        (
+            "Assertion",
+            "is_logical_error",
+            r"Assertion.*failed|Failed assertion.*|.*_LIBCPP_ASSERT.*",
+            None,
+        ),
+        (
+            "Runtime error",
+            "is_sanitizer_error",
+            RUNTIME_ERROR_PATTERN,
+            None,
+        ),
+        ("SegFault", "is_segfault", r"Segmentation fault.*", None),
+        (
+            "Signal",
+            "is_killed_by_signal",
+            r"Received signal.*|.*Child process was terminated by signal 9.*",
+            None,
+        ),
+        (
+            "Memory limit exceeded",
+            "is_memory_limit_exceeded",
+            r".*\(total\) memory limit exceeded.*",
+            None,
+        ),
+    ]
     SQL_COMMANDS = [
         "SELECT",
         "INSERT",
@@ -81,6 +119,106 @@ class FuzzerLogParser:
         self.stderr_log = stderr_log
         self.stack_trace_str = stack_trace_str
 
+    @staticmethod
+    def extract_format_string(line):
+        # Extract the format string content between quotes
+        # Example: "... <Fatal> : Format string: 'Unknown numeric column of type: {}'."
+        start_idx = line.find("Format string: ")
+        if start_idx == -1:
+            return ""
+        substring = line[start_idx + len("Format string: ") :]
+        # Remove quotes and trailing period
+        return substring.strip().rstrip(".").strip("'\"")
+
+    @staticmethod
+    def thread_id(line):
+        # The thread id of a server log line: "... [ 4353 ] {} <Fatal> : ...".
+        match = re.search(r"\[ (\d+) \] \{", line)
+        return match.group(1) if match else ""
+
+    @staticmethod
+    def has_formatted_records(log_file):
+        # Whether the file contains at least one line that starts with a server log record
+        # prefix. A file without any (e.g. stderr.log standing in for an absent server log)
+        # carries no query ids, so patterns anchored to the prefix cannot match it at all.
+        return bool(
+            Shell.get_output(
+                f"rg --text -c -m1 '^[0-9]{{4}}\\.[0-9]{{2}}\\.[0-9]{{2}} [0-9:.]+ "
+                f"\\[ [0-9]+ \\] \\{{' {log_file}"
+            )
+        )
+
+    def find_format_string(self, matched_pattern, matched_log_file):
+        # Find the `Format string:` message belonging to the failure matched by
+        # `matched_pattern`. `abortOnFailedAssertion` logs it immediately after the
+        # `Logical error:` message, from the same thread, but does not log it at all
+        # when the format string is empty. So it belongs to this failure only if it is
+        # the next fatal message of the same thread; otherwise this failure has none
+        # and "" is returned, so that an unrelated later failure never renames it.
+        # When the input has no thread ids, the search is bounded by the failure
+        # block instead. `None` means the search could not be bounded to the failure
+        # - e.g. the matched line could not be located in the input.
+        if self.stack_trace_str:
+            lines = self.stack_trace_str.splitlines()
+            match_index = next(
+                (i for i, line in enumerate(lines) if re.search(matched_pattern, line)),
+                -1,
+            )
+            if match_index == -1:
+                return None
+            thread = self.thread_id(lines[match_index])
+            if thread:
+                next_fatal_line = next(
+                    (
+                        line
+                        for line in lines[match_index + 1 :]
+                        if f"[ {thread} ] {{" in line and "<Fatal>" in line
+                    ),
+                    "",
+                )
+                return self.extract_format_string(next_fatal_line)
+            # The input has no thread ids (e.g. a bare stack trace string), so bound
+            # the search by the failure block instead.
+            return self.format_string_within_failure_block(lines[match_index + 1 :])
+
+        if not matched_log_file:
+            return None
+        match_position, _, match_line = Shell.get_output(
+            f"rg --text -n -m1 '{matched_pattern}' {matched_log_file}"
+        ).partition(":")
+        if not match_position.isdigit():
+            return None
+        thread = self.thread_id(match_line)
+        if thread:
+            next_fatal_line = Shell.get_output(
+                f"tail -n +{int(match_position) + 1} {matched_log_file}"
+                f" | rg --text -m1 '\\[ {thread} \\] \\{{.*<Fatal>'"
+            )
+            return self.extract_format_string(next_fatal_line)
+        # The file has no thread ids either (e.g. stderr.log standing in for an
+        # absent server log), so bound the search by the failure block, same as for
+        # the string input above. Stream the lines instead of loading the file.
+        with open(matched_log_file, errors="replace") as f:
+            return self.format_string_within_failure_block(
+                itertools.islice(f, int(match_position), None)
+            )
+
+    def format_string_within_failure_block(self, lines):
+        # Find the `Format string:` line within the failure block that starts right
+        # after the matched failure line, for inputs without thread ids: the format
+        # string belongs to the matched failure only if it appears before the next
+        # fatal / failure line. The next failure may be carried by any pattern (e.g.
+        # an assertion following a logical error), so check all of them, not just
+        # the matched one.
+        for line in lines:
+            if "Format string: " in line:
+                return self.extract_format_string(line)
+            if "<Fatal>" in line or any(
+                re.search(pattern, line) for _, _, pattern, _ in self.ERROR_PATTERNS
+            ):
+                return ""
+        return ""
+
     def parse_failure(self):
         files = []
         is_logical_error = False
@@ -88,53 +226,17 @@ class FuzzerLogParser:
         is_killed_by_signal = False
         is_segfault = False
         is_memory_limit_exceeded = False
-        # `server_pattern` (when set) replaces `pattern` for the server-log scan: it captures the
-        # log record's query id (group 1) and the message (group 2). See
-        # LOGICAL_ERROR_SERVER_PATTERN for why it is anchored to the record prefix.
-        error_patterns = [
-            (
-                "Sanitizer",
-                "is_sanitizer_error",
-                self.SANITIZER_ERROR_PATTERN,
-                None,
-            ),
-            (
-                "Logical error",
-                "is_logical_error",
-                r"Logical error.*",
-                self.LOGICAL_ERROR_SERVER_PATTERN,
-            ),
-            (
-                "Assertion",
-                "is_logical_error",
-                r"Assertion.*failed|Failed assertion.*|.*_LIBCPP_ASSERT.*",
-                None,
-            ),
-            (
-                "Runtime error",
-                "is_sanitizer_error",
-                self.RUNTIME_ERROR_PATTERN,
-                None,
-            ),
-            ("SegFault", "is_segfault", r"Segmentation fault.*", None),
-            (
-                "Signal",
-                "is_killed_by_signal",
-                r"Received signal.*|.*Child process was terminated by signal 9.*",
-                None,
-            ),
-            (
-                "Memory limit exceeded",
-                "is_memory_limit_exceeded",
-                r".*\(total\) memory limit exceeded.*",
-                None,
-            ),
-        ]
 
         error_output = None
+        matched_pattern = None
+        matched_log_file = None
         fatal_query_id = _NOT_SUPPLIED
-        for name, flag_name, pattern, server_pattern in error_patterns:
+        for name, flag_name, pattern, server_pattern in self.ERROR_PATTERNS:
             output = ""
+            file = None
+            # The pattern that produced `output`, so that `find_format_string` bounds the
+            # search by the same line this scan matched.
+            scan_pattern = pattern
             if self.stack_trace_str:
                 output = Shell.get_output(
                     f"echo '{self.stack_trace_str}' | rg --text -A 10 -o '{pattern}' | head -n10",
@@ -150,19 +252,20 @@ class FuzzerLogParser:
                 else:
                     assert self.server_log, "No server log provided"
                     file = self.server_log
-                if server_pattern:
-                    # Group 1 = the record's query id, group 2 = the message. `rg -r '$2'`
-                    # prints only the message so the failure name matches the original
-                    # (unanchored) behaviour for genuine records; the query id is captured
-                    # separately so get_failed_query() can look up the *crashing* query.
+                # An anchored pattern cannot match a file without formatted records, so it
+                # must not be used there or the failure would be missed entirely.
+                if server_pattern and self.has_formatted_records(file):
+                    scan_pattern = server_pattern
+                    # `rg -r '$2'` prints only the message, so the failure name matches the
+                    # unanchored behaviour for genuine records.
                     output = Shell.get_output(
                         f"rg --text -A 10 -o -r '$2' '{server_pattern}' {file} | head -n10",
                         strict=True,
                     )
                     if output:
-                        # Capture the id from group 1 of the record, not via get_output (which
-                        # strips), so an id with surrounding spaces (e.g. `{ q }`) is preserved
-                        # for get_failed_query()'s exact `{...}` lookup.
+                        # Read the id from group 1 of the record rather than through
+                        # `Shell.get_output`, which strips, so an id with surrounding spaces
+                        # (e.g. `{ q }`) survives `get_failed_query`'s exact `{...}` lookup.
                         fatal_record = Shell.get_output(
                             f"rg --text -o '{server_pattern}' {file} | head -n1",
                             strict=True,
@@ -177,6 +280,8 @@ class FuzzerLogParser:
 
             if output:
                 error_output = output
+                matched_pattern = scan_pattern
+                matched_log_file = file
                 if flag_name == "is_sanitizer_error":
                     is_sanitizer_error = True
                 elif flag_name == "is_logical_error":
@@ -205,17 +310,25 @@ class FuzzerLogParser:
         if marker_pos != -1:
             result_name = result_name[:marker_pos].rstrip().removesuffix(".")
         format_message = ""
-        for i, line in enumerate(error_lines):
-            if "Format string: " in line:
-                # Extract the format string content between quotes
-                # Example: "... <Fatal> : Format string: 'Unknown numeric column of type: {}'."
-                start_idx = line.find("Format string: ")
-                if start_idx != -1:
-                    substring = line[start_idx + len("Format string: ") :]
-                    # Remove quotes and trailing period
-                    substring = substring.strip().rstrip(".").strip("'\"")
-                    format_message = substring
-                break
+        # `abortOnFailedAssertion` logs the `Format string:` line right after the
+        # `Logical error:` line, but messages from other threads (together with their
+        # multi-line stack traces) may interleave between the two and push it out of
+        # the 10-line window captured above, while the window may as well reach into a
+        # later unrelated failure. So, for a logical error, take the format string from
+        # the matched failure itself - the next fatal message of the same thread.
+        bounded_format_message = (
+            self.find_format_string(matched_pattern, matched_log_file)
+            if is_logical_error
+            else None
+        )
+        if bounded_format_message is not None:
+            format_message = bounded_format_message
+        else:
+            # The thread that logged the failure is unknown - scan the window.
+            for line in error_lines:
+                if "Format string: " in line:
+                    format_message = self.extract_format_string(line)
+                    break
         is_check_failed = bool(
             error_lines and re.search(r"\w+Sanitizer: CHECK failed:", error_lines[0])
         )
@@ -587,32 +700,21 @@ class FuzzerLogParser:
         # TODO: Fetch the failed query from fuzzer.log instead of server.log to ensure exact matching.
         # The server.log may normalize whitespace or format queries differently, making it difficult
         # to locate the corresponding query and its dependencies in fuzzer.log.
-        # When the caller already identified the fatal record (and thus its query id), use it
-        # directly: re-grepping the whole log for a query id here can land on an unrelated
-        # record (e.g. a benign "... is located ..." trace line) and report the wrong query.
-        # An explicitly supplied empty id means the fatal record had no query (e.g. a background
-        # exception), so there is no failed query to report - do not fall back to the whole-log
-        # grep, which would attribute an unrelated one.
-        # `Inconsistent AST formatting` logical errors carry the offending query INLINE in the
-        # fatal message (`Logical error: 'Inconsistent AST formatting: the query:\n<Q>\n...'`)
-        # and, in debug/sanitizer builds, abort during construction before any `executeQuery`
-        # record is logged - so the query id lookup below would find nothing. Extract the inline
-        # query first. When a specific fatal record was selected (query_id supplied), scope the
-        # search to that record's line so an unrelated earlier query merely quoting the phrase in
-        # a comment cannot supply the query; only the no-record (legacy) path scans the whole log.
-        # An explicitly empty id means the selected record had no query at all: report none, and
-        # do NOT run even the AST search (which could pick up an unrelated earlier comment).
+        # An explicitly supplied empty id means the caller selected a fatal record that carried no
+        # query, so there is no failed query to report - and in particular do not fall back to the
+        # whole-log scan below, which would attribute an unrelated one.
         if query_id == "":
             return None
-        # Query ids are arbitrary user-controllable strings (Context::setCurrentQueryId does not
-        # validate them), so they must be treated as literal, not as regex or shell text, when
-        # interpolated into the grep commands below. re.escape neutralizes regex metacharacters;
-        # the single-quote escape keeps a `'` in the id from breaking out of the shell quoting.
+        if not self.server_log:
+            # Without a file argument `rg` would search the working directory.
+            return None
+        # `Inconsistent AST formatting` carries the offending query inline in the fatal message
+        # and aborts before any `executeQuery` record is logged, so the id lookup below would
+        # find nothing - extract the inline query first, scoped to the selected record.
         if query_id is not _NOT_SUPPLIED:
+            # Query ids are arbitrary user-controllable strings, so interpolate as a literal:
+            # `re.escape` for the regex, the quote escape for the shell.
             qid_rx = re.escape(query_id).replace("'", "'\\''")
-            # Anchor to the real record prefix (like LOGICAL_ERROR_SERVER_PATTERN) so a comment
-            # that merely embeds "{qid} <Fatal> ... Logical error: Inconsistent AST" mid-line
-            # cannot supply the query - only the genuine record with this id at the line start.
             ast_grep = (
                 f"rg --text -A10 "
                 f"'^[0-9]{{4}}\\.[0-9]{{2}}\\.[0-9]{{2}} [0-9:.]+ \\[ [0-9]+ \\] "
@@ -620,9 +722,7 @@ class FuzzerLogParser:
                 f".*Inconsistent AST formatting: the query:' {self.server_log}"
             )
         else:
-            ast_grep = (
-                f"rg --text -A10 'Inconsistent AST formatting: the query:' {self.server_log}"
-            )
+            ast_grep = f"rg --text -A10 'Inconsistent AST formatting: the query:' {self.server_log}"
         inconsistent_ast_output = Shell.get_output(ast_grep, verbose=True)
         if "Inconsistent AST formatting: the query:" in inconsistent_ast_output:
             lines = inconsistent_ast_output.splitlines()
@@ -640,7 +740,6 @@ class FuzzerLogParser:
             if not failure_output:
                 return None
 
-            assert failure_output, "No failure found in server log"
             # Find the first line that has a proper log format with query ID.
             # rg may match continuation lines (e.g. SQL comments like "-- Logical error query")
             # that lack the "] {query_id}" prefix.
@@ -652,8 +751,8 @@ class FuzzerLogParser:
                 print("ERROR: Query id not found")
                 return None
         print(f"Query id: {query_id}")
-        # Match the id inside its `{...}` delimiters (exact) rather than as a bare prefix, so
-        # e.g. `q2` does not also match `{q20}`; escape it as a literal regex/shell substring.
+        # Match the id inside its `{...}` delimiters so that e.g. `q2` does not also match
+        # `{q20}`; escape it as a literal, as above.
         qid_grep = re.escape(query_id).replace("'", "'\\''")
         query_command = Shell.get_output(
             f"grep -aE '\\{{{qid_grep}\\}} <[^>]*> executeQuery:' {self.server_log} | tail -n1"
