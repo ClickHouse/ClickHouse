@@ -315,7 +315,9 @@ bool searchColumnFeedsIntoFunction(const ActionsDAG & dag, const String & search
         if (!inserted)
             return it->second;
 
-        bool result = (node->type == ActionsDAG::ActionType::INPUT && node->result_name == search_column);
+        /// isSearchColumnNode also unwraps an ALIAS and strips the qualification the old analyzer
+        /// adds, so `tab.vec` is recognised as well as `vec`.
+        bool result = isSearchColumnNode(node, search_column);
         if (!result)
         {
             for (const auto * child : node->children)
