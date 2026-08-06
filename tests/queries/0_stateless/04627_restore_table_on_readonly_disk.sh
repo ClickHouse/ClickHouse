@@ -20,7 +20,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS reader SYNC"
 
 # Writer: a read-write plain_rewritable object-storage disk; populates the shared location.
 ${CLICKHOUSE_CLIENT} --query "
-CREATE TABLE writer (key UInt64) ORDER BY key
+CREATE TABLE writer (key UInt64) PARTITION BY key ORDER BY key
 SETTINGS table_disk = true,
   disk = disk(
       name = 04627_writer_${CLICKHOUSE_DATABASE},
@@ -33,7 +33,7 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO writer VALUES (1), (2), (3)"
 
 # Reader: the SAME storage, read-only — the shape of a shared/example dataset table.
 ${CLICKHOUSE_CLIENT} --query "
-CREATE TABLE reader (key UInt64) ORDER BY key
+CREATE TABLE reader (key UInt64) PARTITION BY key ORDER BY key
 SETTINGS table_disk = true,
   disk = disk(
       read_only = true,
@@ -52,6 +52,12 @@ ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.reader TO Disk
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE ${CLICKHOUSE_DATABASE}.reader AS ${CLICKHOUSE_DATABASE}.reader_restored FROM Disk('backups', '${backup_name}')" | grep -o "RESTORED"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM reader_restored ORDER BY key"
 
+# A partition-filtered RESTORE (a strict subset) onto read-only storage cannot honor the filter (the data
+# phase is skipped, so the engine never applies it). It must fail closed instead of silently exposing the
+# whole dataset.
+${CLICKHOUSE_CLIENT} --query "RESTORE TABLE ${CLICKHOUSE_DATABASE}.reader AS ${CLICKHOUSE_DATABASE}.reader_part PARTITIONS 1 FROM Disk('backups', '${backup_name}')" 2>&1 | grep -o "CANNOT_RESTORE_TABLE" | head -n1
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS reader_part SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS reader_restored SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS reader SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS writer SYNC"

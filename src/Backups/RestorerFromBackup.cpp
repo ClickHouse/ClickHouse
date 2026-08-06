@@ -977,13 +977,22 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         ThreadName::RESTORE_TABLE_DATA);
 }
 
-bool RestorerFromBackup::shouldRestoreTableData(const QualifiedTableName & table_name, const StoragePtr & storage) const
+bool RestorerFromBackup::shouldRestoreTableData(
+    const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions) const
 {
     chassert(storage);
 
     auto policy = storage->getStoragePolicy();
     if (!policy || !policy->isReadOnly())
         return true;
+
+    if (partitions)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore specific partitions of table {} onto read-only storage policy {}: its data is served "
+            "directly by the read-only storage, so the requested partition filter cannot be applied",
+            table_name.getFullName(),
+            policy->getName());
 
     LOG_INFO(
         log,
@@ -1007,7 +1016,7 @@ void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_
                 storage->getName());
         }
 
-        if (!shouldRestoreTableData(table_name, storage))
+        if (!shouldRestoreTableData(table_name, storage, partitions))
             return;
 
         storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);

@@ -110,7 +110,7 @@ private:
     /// Whether the data of the table should be restored from the backup (mirrors `shouldBackupTableData`
     /// on the backup side). False for tables on a fully read-only storage policy: no write can succeed
     /// there, and the data is expected to be already present on the shared read-only storage.
-    bool shouldRestoreTableData(const QualifiedTableName & table_name, const StoragePtr & storage) const;
+    bool shouldRestoreTableData(const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions) const;
 
     void runDataRestoreTasks();
 
