@@ -146,7 +146,8 @@ private:
     void removeObjectsBatchIfExists(
         const StoredObjects & objects,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-        BlobStorageLogWriterPtr blob_storage_log);
+        BlobStorageLogWriterPtr blob_storage_log,
+        StoredObjects * successful_objects = nullptr);
 
     std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
 

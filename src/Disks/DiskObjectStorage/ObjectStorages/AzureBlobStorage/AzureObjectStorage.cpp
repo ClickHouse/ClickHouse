@@ -433,7 +433,8 @@ void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
 void AzureObjectStorage::removeObjectsBatchIfExists(
     const StoredObjects & objects,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    BlobStorageLogWriterPtr blob_storage_log)
+    BlobStorageLogWriterPtr blob_storage_log,
+    StoredObjects * successful_objects)
 {
     /// https://github.com/Azure/azure-sdk-for-python/issues/22821#issuecomment-1024753986
     static constexpr size_t AZURE_BATCH_MAX_SUBREQUESTS = 256;
@@ -484,12 +485,18 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
             {
                 deferred_response.GetResponse();
                 add_log_entry(object, avg_elapsed_us);
+
+                if (successful_objects)
+                    successful_objects->emplace_back(object);
             }
             catch (const Azure::Storage::StorageException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                 {
                     add_log_entry(object, avg_elapsed_us);
+
+                    if (successful_objects)
+                        successful_objects->emplace_back(object);
                 }
                 else
                 {
@@ -523,7 +530,7 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects, Sto
         return;
     }
 
-    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log);
+    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log, successful_objects);
 }
 
 static void setAzureBlobTag(
