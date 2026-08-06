@@ -258,6 +258,17 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
         )
         print(f"Running docker container: [{run_command}]")
         container_id = Shell.get_output(run_command, verbose=True, strict=True)
+        # The image boots systemd, whose `systemd-tmpfiles-setup.service` unlinks the dnf lock
+        # files (`/usr/lib/tmpfiles.d/dnf.conf`). Wait for the bus first: while it is down
+        # `systemctl` cannot reach systemd, so a gate built on it alone silently does nothing.
+        Shell.check(
+            f"docker exec {container_id} bash -c '"
+            f"for _ in $(seq 1 600); do systemctl show -p Version --value >/dev/null 2>&1 "
+            f"&& break; sleep 0.1; done; "
+            f"systemctl start systemd-tmpfiles-setup.service'",
+            verbose=True,
+            strict=True,
+        )
         test_script_path = TEMP_PATH / "install.sh"
         test_script_path.write_text(command)
         # Shell.check(f"chmod +x {test_script_path}")
