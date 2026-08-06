@@ -1211,7 +1211,7 @@ h3HexRing(index, k)
 
 ## h3GetUnidirectionalEdge {#h3getunidirectionaledge}
 
-Returns a unidirectional edge H3 index based on the provided origin and destination. Throws an exception if either input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting).
+Returns a unidirectional edge H3 index for two adjacent H3 cell indices (origin and destination). Throws an exception if either input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting). For valid cells that are not neighbors (including the same cell twice), returns `0`.
 
 **Syntax**
 
@@ -1412,7 +1412,7 @@ h3GetUnidirectionalEdgeBoundary(index)
 
 **Returned value**
 
-- Array of pairs '(lon, lat)'. [Array](/reference/data-types/array)([Float64](/reference/data-types/float), [Float64](/reference/data-types/float)).
+- Array of pairs '(lat, lon)'. [Array](/reference/data-types/array)([Float64](/reference/data-types/float), [Float64](/reference/data-types/float)).
 
 **Example**
 
