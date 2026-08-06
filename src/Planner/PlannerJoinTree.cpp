@@ -1968,11 +1968,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             modified_query_info.cluster = std::move(cluster);
                             till_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
                             QueryPlan query_plan_parallel_replicas;
-                            /// Inline ALIAS columns before the per-replica query is built, just like the
-                            /// task-based parallel-replicas path.
-                            auto custom_key_query_tree = table_expression_query_info.query_tree->clone();
-                            inlineAliasColumns(custom_key_query_tree);
-                            modified_query_info.query_tree = custom_key_query_tree;
                             auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                                 query_plan_parallel_replicas,
@@ -1981,7 +1976,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 metadata_snapshot->getColumns(),
                                 storage_snapshot,
                                 till_stage,
-                                custom_key_query_tree,
+                                table_expression_query_info.query_tree,
                                 query_context);
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
