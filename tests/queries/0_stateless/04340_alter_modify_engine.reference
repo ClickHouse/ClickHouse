@@ -28,7 +28,9 @@ summing explicit	1	30	7
 coalescing explicit	1	10	7
 graphite rollup	max_a	2020-01-01 00:00:00	5	2
 graphite time Date	GraphiteMergeTree
+graphite time Date rollup	max_a	2019-04-14	5	2
 graphite time UInt32	GraphiteMergeTree
+graphite time UInt32 rollup	max_a	0	5	2
 graphite nullable time rejected	MergeTree	1
 graphite nullable path rejected	MergeTree	1
 graphite nullable version accepted	max_a	2020-01-01 00:00:00	1	\N

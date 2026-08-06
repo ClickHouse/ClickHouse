@@ -361,19 +361,29 @@ CREATE TABLE t_graphite_time (key UInt32, Path String, Time DateTime64(3), Value
 ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_graphite_time;
 
--- The accepted types must not be rejected by that check: Date and an integer.
+-- The accepted types must not be rejected by that check: Date and an integer. Both roll up two
+-- versions of one path, so a type accepted here but unreadable by `getUInt` at merge time reddens
+-- on the OPTIMIZE rather than passing on the engine name alone.
 CREATE TABLE t_graphite_time (key UInt32, Path String, Time Date, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_time VALUES (1, 'max_a', toDate('2020-01-01'), 1, 1);
+INSERT INTO t_graphite_time VALUES (1, 'max_a', toDate('2020-01-01'), 5, 2);
 ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
 DETACH TABLE t_graphite_time;
 ATTACH TABLE t_graphite_time;
+OPTIMIZE TABLE t_graphite_time FINAL;
 SELECT 'graphite time Date', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite_time';
+SELECT 'graphite time Date rollup', Path, toString(Time), Value, Version FROM t_graphite_time ORDER BY Time;
 DROP TABLE t_graphite_time;
 
 CREATE TABLE t_graphite_time (key UInt32, Path String, Time UInt32, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_time VALUES (1, 'max_a', 10, 1, 1);
+INSERT INTO t_graphite_time VALUES (1, 'max_a', 80, 5, 2);
 ALTER TABLE t_graphite_time MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
 DETACH TABLE t_graphite_time;
 ATTACH TABLE t_graphite_time;
+OPTIMIZE TABLE t_graphite_time FINAL;
 SELECT 'graphite time UInt32', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite_time';
+SELECT 'graphite time UInt32 rollup', Path, toString(Time), Value, Version FROM t_graphite_time ORDER BY Time;
 DROP TABLE t_graphite_time;
 
 -- (z2) a nullable path or time column is rejected too. The rollup reads them with `getDataAt` and
