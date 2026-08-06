@@ -1,4 +1,8 @@
--- Tags: no-random-merge-tree-settings, no-random-settings
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel-replicas
+-- no-parallel-replicas: the test asserts per-source read counts in processors_profile_log
+--                       for a single-node in-order merge; with parallel replicas the
+--                       coordinator splits the read into ranges across sources, so the
+--                       front/deferred source distinction does not apply.
 
 create table tab (x UInt64) engine = MergeTree order by x;
 
