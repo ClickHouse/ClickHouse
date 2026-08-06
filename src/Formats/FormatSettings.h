@@ -298,6 +298,7 @@ struct FormatSettings
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
         bool write_named_tuples_as_objects = true;
         bool skip_null_value_in_named_tuples = false;
+        bool skip_null_value_in_json_columns = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
         bool ignore_unknown_keys_in_named_tuple = false;
         bool serialize_as_strings = false;

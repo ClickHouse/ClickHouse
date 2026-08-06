@@ -218,6 +218,7 @@
     "output_format_json_quote_64bit_integers": "/reference/settings/formats/output-format",
     "output_format_json_quote_decimals": "/reference/settings/formats/output-format",
     "output_format_json_quote_denormals": "/reference/settings/formats/output-format",
+    "output_format_json_skip_null_value_in_json_columns": "/reference/settings/formats/output-format",
     "output_format_json_skip_null_value_in_named_tuples": "/reference/settings/formats/output-format",
     "output_format_json_validate_utf8": "/reference/settings/formats/output-format",
     "output_format_markdown_escape_special_characters": "/reference/settings/formats/output-format",

@@ -1009,6 +1009,9 @@ Enabled by default.
     DECLARE(Bool, output_format_json_skip_null_value_in_named_tuples, false, R"(
 Skip key value pairs with null value when serialize named tuple columns as JSON objects. It is only valid when output_format_json_named_tuples_as_objects is true.
 )", 0) \
+    DECLARE(Bool, output_format_json_skip_null_value_in_json_columns, false, R"(
+Skips paths with null values when serializing `JSON` columns.
+)", 0) \
     DECLARE(Bool, output_format_json_array_of_rows, false, R"(
 Enables the ability to output all rows as a JSON array in the [JSONEachRow](/interfaces/formats/JSONEachRow) format.
 

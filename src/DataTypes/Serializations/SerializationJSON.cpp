@@ -133,6 +133,9 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
     for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
         auto path_info = it.getCurrentPathInfo();
+        if (settings.json.skip_null_value_in_json_columns && path_info.column->isNullAt(path_info.row))
+            continue;
+
         PathElements path_elements(path_info.path);
         /// Change prefix to common prefix between current prefix and current path.
         /// If prefix changed (it can only decrease), close all finished objects.
