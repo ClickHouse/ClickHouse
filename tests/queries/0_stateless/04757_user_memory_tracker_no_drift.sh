@@ -74,6 +74,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT number, repeat('x', 100) FROM numbers(20000) FOR
 for _ in {1..5}; do
     ${CLICKHOUSE_CLIENT} --user "$user" --async_insert 1 --wait_for_async_insert 0 \
         --async_insert_busy_timeout_min_ms 60000 --async_insert_busy_timeout_max_ms 60000 \
+        --async_insert_use_adaptive_busy_timeout 0 \
         --async_insert_max_data_size 1000000000 --async_insert_max_query_number 1000000 \
         -q "INSERT INTO mt FORMAT CSV" < "$data_file"
 done
