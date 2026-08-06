@@ -4,7 +4,7 @@ The following tables list features and self-managed procedures that are marked a
 
 | Unsupported capability | Documentation |
 |---|---|
-| Self-managed `ClickHouse Keeper` deployment and configuration | [Deployment](/guides/oss/deployment-and-scaling/keeper), [Unique paths](/guides/oss/deployment-and-scaling/keeper#configuring-clickhouse-keeper-with-unique-paths), [Dynamic reconfiguration](/guides/oss/deployment-and-scaling/keeper#reconfiguration), [Secure ZooKeeper connections](/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper) |
+| Self-managed `ClickHouse Keeper` deployment and configuration | [Keeper guide](/guides/oss/deployment-and-scaling/keeper), [Secure ZooKeeper connections](/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper) |
 | Manual TLS certificate provisioning and server configuration | [ACME provisioning](/concepts/features/security/tls/configuring-tls-acme-client), [TLS configuration](/concepts/features/security/tls/configuring-tls) |
 | Manual hot/warm/cold storage-tier configuration with `TTL` | [Guide](/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture) |
 | Running self-managed hardware performance tests | [Guide](/concepts/features/performance/troubleshoot/performance-test) |
@@ -25,7 +25,7 @@ The following tables list features and self-managed procedures that are marked a
 |---|---|
 | PostgreSQL wire-protocol interface | [Reference](/concepts/features/interfaces/postgresql) |
 | SSH interface with PTY | [Reference](/concepts/features/interfaces/ssh) |
-| `MaterializedPostgreSQL` replication engine | [ClickPipes guide](/integrations/clickpipes/postgres/connecting-to-postgresql#using-the-materializedpostgresql-database-engine), [Connector guide](/integrations/connectors/data-sources/postgres#using-the-materializedpostgresql-database-engine), [Database engine](/reference/engines/database-engines/materialized-postgresql), [Table engine](/reference/engines/table-engines/integrations/materialized-postgresql) |
+| `MaterializedPostgreSQL` replication engine | [ClickPipes guide](/integrations/clickpipes/postgres/connecting-to-postgresql#using-the-materializedpostgresql-database-engine), [Connector guide](/integrations/connectors/data-sources/postgres), [Database engine](/reference/engines/database-engines/materialized-postgresql), [Table engine](/reference/engines/table-engines/integrations/materialized-postgresql) |
 | ODBC integration and the `ODBC` table engine | [Integration guide](/integrations/connectors/data-ingestion/odbc-with-clickhouse), [Table engine](/reference/engines/table-engines/integrations/odbc) |
 | MinIO S3-compatible object-storage integration | [Guide](/integrations/connectors/data-ingestion/s3-minio) |
 | Tigris S3-compatible object-storage integration | [Guide](/integrations/connectors/data-ingestion/s3-tigris) |
