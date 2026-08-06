@@ -82,7 +82,7 @@ echo "-- topk's own value order (descending) is propagated as a sort order, so o
 promql_client -q "topk(2, up) or vector(99)"
 
 echo "-- topk with by(...) grouping is NOT given a flat cross-bucket sort_key (Prometheus only orders within a bucket), so it composes with or as unordered, but the grouping itself is preserved (all 3 singleton buckets pass through)"
-promql_client -q "topk(2, up) by (instance) or vector(99)" | sort
+promql_client -q "topk(2, up) by (instance) or vector(99)" | LC_ALL=C sort
 
 echo "-- or breaks ties within an unsorted side using a content hash of each row's tags, not row order"
 # `up{host2}` and `up{host3}` both lack a `sort_key` (see applyBinaryOperatorOr.cpp), so their
@@ -111,7 +111,7 @@ query='sort_desc(up{instance="host1"}) or (up{instance="host2"} or up{instance="
 # (the row-set check and the default-settings side of the determinism diff), instead of
 # running the same query/settings combination twice.
 default_output=$(promql_client -q "$query")
-echo "$default_output" | sort
+echo "$default_output" | LC_ALL=C sort
 diff <(echo "$default_output") <(promql_client -q "$query" --max_threads 1 --query_plan_join_swap_table false) && echo "OK: same row order regardless of max_threads/query_plan_join_swap_table"
 
 echo "-- sort_desc ordering does not survive a subquery and range function"
