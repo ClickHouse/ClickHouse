@@ -89,14 +89,14 @@ def parse_args() -> argparse.Namespace:
         help="GitHub login to assign the changelog PR to",
     )
     parser.add_argument(
-        "--only-repo",
+        "--skip-repo",
         action="store_true",
-        help="Run only repo updates (skip tag push, branch push, version bump)",
+        help="Skip repo updates (package export/test)",
     )
     parser.add_argument(
-        "--only-docker",
+        "--skip-docker",
         action="store_true",
-        help="Run only docker builds (skip tag push, branch push, version bump)",
+        help="Skip docker image builds",
     )
     parser.add_argument(
         "--dry-run",
@@ -118,10 +118,10 @@ def parse_args() -> argparse.Namespace:
         args.release_type = _wi("type") or None
     if not args.dry_run:
         args.dry_run = _wi("dry-run").lower() == "true"
-    if not args.only_repo:
-        args.only_repo = _wi("only-repo").lower() == "true"
-    if not args.only_docker:
-        args.only_docker = _wi("only-docker").lower() == "true"
+    if not args.skip_repo:
+        args.skip_repo = _wi("skip-repo").lower() == "true"
+    if not args.skip_docker:
+        args.skip_docker = _wi("skip-docker").lower() == "true"
     if args.assignee is None:
         args.assignee = _wi("assignee")
 
@@ -230,9 +230,9 @@ def main():
     # Authenticate to Docker Hub in the setup phase, before any release
     # mutation (tag push, GitHub release, repo export). Pushing docker images
     # is part of the release contract, so a missing/expired registry token must
-    # stop the run before partial publication. Gated on patch && !dry_run so it
-    # also covers only-repo / only-docker recovery runs.
-    if args.release_type == "patch" and not args.dry_run:
+    # stop the run before partial publication. Gated on the docker phase running
+    # this attempt (patch, not dry-run, docker not skipped).
+    if args.release_type == "patch" and not args.dry_run and not args.skip_docker:
 
         def docker_login():
             Shell.check(
@@ -249,7 +249,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.only_docker:
+    if args.release_type == "patch" and not args.skip_repo:
         arch = "amd64" if Shell.get_output("uname -m") == "x86_64" else "arm64"
         geesefs_bin_dir = os.path.expanduser("~/.local/bin")
         os.makedirs(geesefs_bin_dir, exist_ok=True)
@@ -365,23 +365,23 @@ def main():
     # Prepare decides whether this run creates a new release (push tag, bump
     # version, changelog PR) or only re-publishes artifacts for an existing /
     # out-of-order ref. The creation steps below run only when it does; a
-    # recovery (only-repo/only-docker) or an out-of-order full run skips them
+    # recovery (skip-repo/skip-docker) or an out-of-order full run skips them
     # without erroring and just re-exports repos / rebuilds docker.
     create_new_release = False
     if ok:
         with open(RELEASE_INFO_FILE) as f:
             create_new_release = json.load(f)["create_new_release"]
 
-    # only-repo / only-docker only re-publish artifacts for an already-created
-    # release (repo/Docker recovery). If the ref resolves to a new release, they
-    # would otherwise fall through to the creation steps below (push tag, bump
-    # version, PRs) and produce a partial new release, so reject that misuse and
-    # require the release tag instead.
-    if ok and create_new_release and (args.only_repo or args.only_docker):
+    # skip-repo / skip-docker mark a partial run that only re-publishes artifacts
+    # for an already-created release (repo/Docker recovery). If the ref resolves
+    # to a new release, they would otherwise fall through to the creation steps
+    # below (push tag, bump version, PRs) and produce a partial new release, so
+    # reject that misuse and require the release tag instead.
+    if ok and create_new_release and (args.skip_repo or args.skip_docker):
 
         def _require_recovery_ref():
             raise RuntimeError(
-                "only-repo/only-docker re-publish an existing release and must be "
+                "skip-repo/skip-docker re-publish an existing release and must be "
                 "run against its release tag (recovery); the given ref resolves to "
                 "a new release. Pass the release tag as the ref."
             )
@@ -394,7 +394,7 @@ def main():
     # already merged. This converges a fresh release and a recovery / rerun after
     # a failed create-or-merge through the same path. These PR operations key off
     # the PR's actual state, not the run mode, so they run regardless of
-    # only-repo/only-docker: a cheap recovery run can create a missing release PR
+    # skip-repo/skip-docker: a cheap recovery run can create a missing release PR
     # or enqueue an open-but-unmerged one (e.g. when the original run's enqueue
     # lost the race with a still-pending `CH Inc sync` required check).
     if args.dry_run:
@@ -428,7 +428,7 @@ def main():
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag or opening the changelog PR, so a missing-artifacts run
     # aborts without leaving a tag / PR behind.
-    if args.release_type == "patch" and not args.only_docker:
+    if args.release_type == "patch" and not args.skip_repo:
         step(
             name="Download All Release Artifacts",
             command=[
@@ -660,8 +660,8 @@ def main():
 
     if (
         args.release_type == "patch"
-        and not args.only_repo
-        and not args.only_docker
+        and not args.skip_repo
+        and not args.skip_docker
     ):
         # Restore the working tree after the changelog/version-bump steps, which
         # dirty it. A no-op on recovery / out-of-order runs (they skip the
@@ -685,7 +685,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.only_docker:
+    if args.release_type == "patch" and not args.skip_repo:
         for name, flag in (
             ("Export TGZ Packages", "--export-tgz"),
             ("Test TGZ Packages", "--test-tgz"),
@@ -703,7 +703,12 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if ok and args.release_type == "patch" and not args.dry_run:
+    if (
+        ok
+        and args.release_type == "patch"
+        and not args.dry_run
+        and not args.skip_docker
+    ):
         with open(RELEASE_INFO_FILE) as f:
             release_info = json.load(f)
         release_tag = release_info["release_tag"]
