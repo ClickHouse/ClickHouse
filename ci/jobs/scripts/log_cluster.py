@@ -103,6 +103,7 @@ class LogCluster:
             params["database"] = db_name
 
         response = None
+        post_attempted = False
         for retry in range(retries):
             # is_ready is a cheap `SELECT 1` against the same writer endpoint,
             # so it fails during the same pressure spikes as the INSERT itself.
@@ -123,6 +124,7 @@ class LogCluster:
             if hasattr(data, "seek"):
                 data.seek(0)
             try:
+                post_attempted = True
                 response = self._session.post(
                     url=self.url,
                     params=params,
@@ -153,6 +155,12 @@ class LogCluster:
             print(
                 f"ERROR: Failed to query LogCluster, query:\n {query}\n    reason:\n {response.text}"
             )
+        elif post_attempted:
+            # The endpoint was ready but every POST raised before returning a
+            # response (timeout, connection reset, ...). Blaming readiness here
+            # would point the incident at the wrong subsystem; the tracebacks
+            # of the attempts are already in the log above.
+            print("ERROR: Every LogCluster POST attempt failed with an exception")
         else:
             # Every attempt gave up before its POST: the endpoint never became
             # ready. Say so, otherwise the caller's fail-close assert reports a

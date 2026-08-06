@@ -756,6 +756,69 @@ def test_do_query_retries_the_readiness_probe(monkeypatch):
     assert readiness == []
 
 
+def test_do_query_blames_the_post_not_readiness_when_every_post_raises(
+    monkeypatch, capsys
+):
+    """When the writer is ready but every `POST` raises, the terminal
+    diagnostic must blame the transport, not readiness.
+
+    `response` stays `None` on this path too, and reporting it as `LogCluster
+    not ready` would point the incident at the wrong subsystem: the readiness
+    probe succeeded every time.
+    """
+    from ci.jobs.scripts import log_cluster as log_cluster_module
+
+    monkeypatch.setattr(log_cluster_module.time, "sleep", lambda _: None)
+
+    class _Session:
+        def __init__(self):
+            self.posts = 0
+
+        def post(self, url, params, data, headers, timeout):
+            self.posts += 1
+            raise ConnectionError("connection reset")
+
+    cluster = LogCluster()
+    cluster.is_ready = lambda: True
+    cluster.url = "https://example"
+    cluster._auth = {}
+    cluster._session = _Session()
+
+    assert not cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"", retries=3)
+    assert cluster._session.posts == 3
+    out = capsys.readouterr().out
+    assert "ERROR: Every LogCluster POST attempt failed with an exception" in out
+    assert "ERROR: LogCluster not ready" not in out
+
+
+def test_do_query_reports_never_ready(monkeypatch, capsys):
+    """When the readiness probe fails on every retry, the terminal diagnostic
+    must say so: the caller's fail-close `assert` is otherwise the only thing
+    in the log."""
+    from ci.jobs.scripts import log_cluster as log_cluster_module
+
+    monkeypatch.setattr(log_cluster_module.time, "sleep", lambda _: None)
+
+    class _Session:
+        def __init__(self):
+            self.posts = 0
+
+        def post(self, url, params, data, headers, timeout):
+            self.posts += 1
+            return None
+
+    cluster = LogCluster()
+    cluster.is_ready = lambda: False
+    cluster.url = "https://example"
+    cluster._auth = {}
+    cluster._session = _Session()
+
+    assert not cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"", retries=3)
+    assert cluster._session.posts == 0
+    out = capsys.readouterr().out
+    assert "ERROR: LogCluster not ready" in out
+
+
 def test_do_query_does_not_retry_client_errors(monkeypatch):
     """A 4xx is not transient: retrying a rejected query only re-runs the
     rejection, so a single attempt must be the end of it."""
