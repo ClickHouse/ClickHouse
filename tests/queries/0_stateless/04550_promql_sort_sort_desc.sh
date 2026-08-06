@@ -81,6 +81,9 @@ promql_client -q "vector(99) or sort_desc(up)"
 echo "-- topk's own value order (descending) is propagated as a sort order, so or preserves it as an ordered left prefix"
 promql_client -q "topk(2, up) or vector(99)"
 
+echo "-- topk with by(...) grouping is NOT given a flat cross-bucket sort_key (Prometheus only orders within a bucket), so it composes with or as unordered, but the grouping itself is preserved (all 3 singleton buckets pass through)"
+promql_client -q "topk(2, up) by (instance) or vector(99)" | sort
+
 echo "-- or breaks ties within an unsorted side using a content hash of each row's tags, not row order"
 # `up{host2}` and `up{host3}` both lack a `sort_key` (see applyBinaryOperatorOr.cpp), so their
 # relative order in the output is decided by a fallback tiebreak. That tiebreak used to be

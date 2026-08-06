@@ -274,7 +274,14 @@ SQLQueryPiece applyLimitAggregationOperator(
     /// rank by - the same at every point of the time grid, i.e. a per-series property rather than a
     /// per-time-step one (`topk`/`bottomk` re-select independently at each time step in general).
     /// `limitk`'s selection is sampling-based, not value-based, so it never gets a sort order.
-    bool produce_sort_key = impl_info->order_descending.has_value() && (res.start_time == res.end_time);
+    ///
+    /// With `by`/`without` grouping, Prometheus only guarantees series are sorted by value *within*
+    /// each bucket, with no guarantee on the order buckets themselves appear in - not a single flat
+    /// value-sort across all buckets. A `sort_key` built purely from `value`, with no group/bucket
+    /// component, would assert exactly that unsupported flat order, so grouped `topk`/`bottomk`
+    /// don't get a `sort_key` either; producing a genuine per-bucket-consecutive order is deferred.
+    bool produce_sort_key = impl_info->order_descending.has_value() && (res.start_time == res.end_time)
+        && !(operator_node->by || operator_node->without);
     res.has_sort_order = produce_sort_key;
 
     /// Step 1: collect all series within each aggregation group.
