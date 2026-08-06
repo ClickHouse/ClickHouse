@@ -5,7 +5,9 @@
 -- is read partially at that point: only the array offsets are read from the part, and the
 -- nested column stays empty until `fillMissingColumns` completes it. Serializing such a
 -- column produced a `ColumnArray` with inconsistent offsets and threw a logical error.
--- Partially read columns must be excluded from the sample.
+-- A block with a partially read column must not be serialized; the statistics are marked
+-- unsupported for the query instead, because scaling the block's total read bytes with a
+-- compression ratio sampled from the remaining columns would poison the cached estimate.
 
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas';
