@@ -262,7 +262,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// must not force a huge scale onto the whole vector (it would overflow the quantization
     /// of large values), so when the largest sampled alpha does not work out, the median
     /// sampled alpha is tried too and the high-precision values become exceptions.
-    std::array<UInt8, 32> sampled_alphas;
+    std::array<UInt8, 32> sampled_alphas{};
     UInt32 sampled_alpha_count = 0;
     {
         const UInt32 samples = std::min<UInt32>(count, 32);
@@ -280,8 +280,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         std::sort(sampled_alphas.begin(), sampled_alphas.begin() + sampled_alpha_count);
     }
 
-    alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized;
-    std::array<UInt16, WALLABY_MAX_EXCEPTIONS> exception_positions;
+    /// Filled before use; zeroing per vector is a measurable cost on the compression path.
+    alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+    std::array<UInt16, WALLABY_MAX_EXCEPTIONS> exception_positions{};
     UInt32 exception_count = 0;
 
     const auto quantizeAll = [&](UInt8 candidate_alpha) -> bool
@@ -350,8 +351,8 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     if (bits >= Traits::width_bits)
         return std::nullopt;
 
-    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes;
-    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> packed;
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> packed; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
 
     if (use_delta)
     {
@@ -443,7 +444,7 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
     UInt32 sampled = 0;
     UInt32 low_bits_collisions = 0;
     {
-        std::array<UInt16, 128> sample_keys;
+        std::array<UInt16, 128> sample_keys{};
         UInt32 keys = 0;
         for (UInt32 i = 8; i < count && keys < sample_keys.size(); i += 8)
         {
@@ -624,6 +625,15 @@ void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
 
     BitReader reader(payload, payload_size);
 
+    /// `BitReader` silently produces zero bits past the end of the buffer, so every read
+    /// is preceded by an explicit check to make truncated payloads throw deterministically.
+    const auto require_bits = [&](UInt64 bits)
+    {
+        if (reader.remaining() < bits)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, XOR payload is truncated");
+    };
+
+    require_bits(8 + width);
     const bool omit_trail = (reader.readBits(8) & 1) != 0;
 
     std::array<T, WALLABY_RING_SIZE> ring{};
@@ -639,8 +649,10 @@ void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
     UInt32 produced = 1;
     while (produced < count)
     {
+        require_bits(1);
         if (reader.readBit())
         {
+            require_bits(WALLABY_RUN_LENGTH_BITS);
             const UInt32 run_length = static_cast<UInt32>(reader.readBits(WALLABY_RUN_LENGTH_BITS));
             if (run_length == 0 || run_length > count - produced)
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt run length");
@@ -651,26 +663,32 @@ void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
         }
 
         T value;
+        require_bits(2);
         const UInt8 tag = static_cast<UInt8>(reader.readBits(2));
         switch (tag)
         {
             case 0b00:
+                require_bits(WALLABY_RING_INDEX_BITS);
                 value = ring[reader.readBits(WALLABY_RING_INDEX_BITS)];
                 break;
             case 0b01:
             case 0b10:
             {
+                const UInt8 trail_field_bits = omit_trail ? 0 : Traits::trail_bits;
+                require_bits((tag == 0b10 ? WALLABY_RING_INDEX_BITS : 0) + WALLABY_LEAD_CLASS_BITS + trail_field_bits);
                 const UInt32 slot = tag == 0b01 ? newest_slot : static_cast<UInt32>(reader.readBits(WALLABY_RING_INDEX_BITS));
                 const UInt8 class_index = static_cast<UInt8>(reader.readBits(WALLABY_LEAD_CLASS_BITS));
                 const UInt8 trail = omit_trail ? 0 : static_cast<UInt8>(reader.readBits(Traits::trail_bits));
                 const Int32 center_length = width - Traits::lead_classes[class_index] - trail;
                 if (center_length <= 0)
                     throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt center length");
+                require_bits(static_cast<UInt64>(center_length));
                 const T center = static_cast<T>(reader.readBits(static_cast<UInt8>(center_length)));
                 value = ring[slot] ^ (center << trail);
                 break;
             }
             default:
+                require_bits(width);
                 value = static_cast<T>(reader.readBits(width));
                 break;
         }
@@ -692,10 +710,10 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
 
     /// Scratch buffers for candidate encodings; the XOR encoding is at most ~5% larger than raw.
     constexpr UInt32 scratch_size = WALLABY_VECTOR_VALUES * sizeof(T) + WALLABY_VECTOR_VALUES / 2 + 64;
-    std::array<char, scratch_size> decimal_scratch;
-    std::array<char, scratch_size> xor_scratch;
-    alignas(64) std::array<FloatType, WALLABY_VECTOR_VALUES> values;
-    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> words;
+    std::array<char, scratch_size> decimal_scratch{};
+    std::array<char, scratch_size> xor_scratch{};
+    alignas(64) std::array<FloatType, WALLABY_VECTOR_VALUES> values{};
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> words{};
 
     char * out = dest;
     UInt32 processed = 0;
@@ -769,9 +787,9 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, source is truncated");
     };
 
-    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes;
-    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> unpacked;
-    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> words;
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes{};
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> unpacked{};
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> words{};
 
     char * out = dest;
     UInt32 produced = 0;
@@ -972,12 +990,11 @@ UInt32 CompressionCodecWallaby::doDecompressData(const char * source, UInt32 sou
             consumed = decompressImpl<UInt32>(src, body_size, dest, values_count);
     }
 
+    if (body_size - consumed != trailing_bytes)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, source size does not match the encoded stream");
+
     if (trailing_bytes > 0)
-    {
-        if (body_size - consumed < trailing_bytes)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, source is truncated");
         memcpy(dest + uncompressed_size - trailing_bytes, src + consumed, trailing_bytes);
-    }
 
     return uncompressed_size;
 }
