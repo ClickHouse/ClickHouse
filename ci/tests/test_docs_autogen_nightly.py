@@ -2,10 +2,37 @@ import os
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs import docs_autogen_nightly, docs_job_mintlify
+from ci.jobs.scripts.workflow_hooks import feature_docs
+
+
+def test_changelog_check_runs_only_for_relevant_changes(monkeypatch):
+    assert (
+        docs_job_mintlify.CHANGELOGS_CHECK
+        not in docs_job_mintlify.DEFAULT_CHECKS
+    )
+
+    changed_files = ["docs/en/getting-started/example.md"]
+    info = SimpleNamespace(get_changed_files=lambda: changed_files)
+    monkeypatch.setattr(docs_job_mintlify, "Info", lambda: info)
+
+    assert not docs_job_mintlify._changelogs_check_should_run()
+
+    for path in docs_job_mintlify.CHANGELOGS_CHECK_TRIGGERS:
+        changed_files[:] = [path]
+        assert docs_job_mintlify._changelogs_check_should_run()
+
+
+def test_changelog_check_skips_when_changed_files_are_unavailable(monkeypatch):
+    info = SimpleNamespace(get_changed_files=lambda: None)
+    monkeypatch.setattr(docs_job_mintlify, "Info", lambda: info)
+
+    assert not docs_job_mintlify._changelogs_check_should_run()
 
 
 def test_open_bot_pr_scopes_head_to_base_and_repository(monkeypatch):
@@ -231,8 +258,42 @@ def test_regenerate_runs_all_generator_families(monkeypatch):
     assert "autogenerate_docs.py --write" in command
     assert "--binary ci/tmp/clickhouse" in command
     assert "--docs-dir docs" in command
+    assert "utils/generate-system-tables-docs" in command
+    assert "--docs-dir docs/reference/system-tables" in command
+    assert "utils/generate-async-metrics-docs" in command
     assert "--only" not in command
     assert kwargs == {"verbose": True}
+
+
+@pytest.mark.parametrize(
+    "source_path",
+    [
+        "src/Common/AsynchronousMetrics.cpp",
+        "src/Storages/StorageAlias.cpp",
+        "src/DataTypes/DataTypeDomainBool.cpp",
+        "src/Core/Settings.cpp",
+    ],
+)
+def test_feature_docs_accepts_source_owned_documentation(monkeypatch, source_path):
+    info = SimpleNamespace(
+        pr_labels=[feature_docs.Labels.PR_FEATURE],
+        get_kv_data=lambda key: [source_path] if key == "changed_files" else None,
+    )
+    monkeypatch.setattr(feature_docs, "Info", lambda: info)
+
+    assert feature_docs.check_docs()
+
+
+def test_feature_docs_rejects_unrelated_source_change(monkeypatch):
+    info = SimpleNamespace(
+        pr_labels=[feature_docs.Labels.PR_FEATURE],
+        get_kv_data=lambda key: (
+            ["src/Core/Field.cpp"] if key == "changed_files" else None
+        ),
+    )
+    monkeypatch.setattr(feature_docs, "Info", lambda: info)
+
+    assert not feature_docs.check_docs()
 
 
 def test_push_uses_shared_git_helper(monkeypatch):
