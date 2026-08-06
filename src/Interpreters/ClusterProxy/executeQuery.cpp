@@ -2,6 +2,8 @@
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
@@ -49,8 +51,10 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
@@ -67,6 +71,8 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
@@ -853,45 +859,92 @@ static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr>
 /// joined or subquery input as well. `TablesStatus` reports the replication delay only for
 /// replicated tables, and a `Merge` table (or the `merge` table function, which does not even exist
 /// on the replicas under its generated id) is represented by its underlying replicated tables.
-static std::vector<QualifiedTableName> collectReplicatedTablesToCheck(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+/// Replicated tables can also hide behind wrapper storages: a materialized view forwards reads to
+/// its target table, and a view that the analyzer did not inline (`analyzer_inline_views` is off,
+/// or the view is parameterized) expands into its stored query only at read time, so its inputs do
+/// not appear in the shipped query tree at all - recurse through both.
+class ReplicatedTablesToCheckCollector
 {
-    std::set<QualifiedTableName> tables;
-
-    std::vector<const IQueryTreeNode *> nodes_to_visit{query_tree.get()};
-    while (!nodes_to_visit.empty())
+public:
+    ReplicatedTablesToCheckCollector(const ContextPtr & context_, bool enumerate_view_sources_)
+        : context(context_)
+        , enumerate_view_sources(enumerate_view_sources_)
     {
-        const auto * node = nodes_to_visit.back();
-        nodes_to_visit.pop_back();
+    }
 
-        if (const auto * table_node = node->as<TableNode>())
-        {
-            const auto & storage = table_node->getStorage();
-            if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
-            {
-                auto child_tables = merge_storage->getReplicatedChildTableNames(context);
-                tables.insert(child_tables.begin(), child_tables.end());
-            }
-            else if (storage->supportsReplication())
-                tables.insert(table_node->getStorageID().getQualifiedName());
-        }
-        else if (const auto * table_function_node = node->as<TableFunctionNode>())
-        {
-            if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_node->getStorage().get()))
-            {
-                auto child_tables = merge_storage->getReplicatedChildTableNames(context);
-                tables.insert(child_tables.begin(), child_tables.end());
-            }
-        }
+    std::vector<QualifiedTableName> collect(const QueryTreeNodePtr & query_tree)
+    {
+        visitQueryTree(query_tree.get());
+        return {tables.begin(), tables.end()};
+    }
 
-        for (const auto & child : node->getChildren())
+private:
+    void visitQueryTree(const IQueryTreeNode * root)
+    {
+        std::vector<const IQueryTreeNode *> nodes_to_visit{root};
+        while (!nodes_to_visit.empty())
         {
-            if (child)
-                nodes_to_visit.push_back(child.get());
+            const auto * node = nodes_to_visit.back();
+            nodes_to_visit.pop_back();
+
+            if (const auto * table_node = node->as<TableNode>())
+                visitStorage(table_node->getStorage());
+            else if (const auto * table_function_node = node->as<TableFunctionNode>())
+                visitStorage(table_function_node->getStorage());
+
+            for (const auto & child : node->getChildren())
+            {
+                if (child)
+                    nodes_to_visit.push_back(child.get());
+            }
         }
     }
 
-    return {tables.begin(), tables.end()};
-}
+    void visitStorage(const StoragePtr & storage)
+    {
+        if (!storage)
+            return;
+
+        /// A view can reference another view; guard against revisiting (and against reference cycles).
+        if (!visited_storages.insert(storage->getStorageID().getFullTableName()).second)
+            return;
+
+        if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
+        {
+            auto child_tables = merge_storage->getReplicatedChildTableNames(context);
+            tables.insert(child_tables.begin(), child_tables.end());
+        }
+        else if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
+        {
+            /// Reading from a materialized view reads from its target table.
+            visitStorage(materialized_view->tryGetTargetTable());
+        }
+        else if (const auto * view = typeid_cast<const StorageView *>(storage.get()))
+        {
+            if (!enumerate_view_sources)
+                return;
+
+            /// Resolve the stored query the same way reading from the view would, and collect from
+            /// the resolved tree. A resolution error propagates: returning an incomplete list would
+            /// silently admit a replica that is stale on one of the view's inputs.
+            auto metadata_snapshot = view->getInMemoryMetadataPtr(context, false);
+            auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+            auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
+            auto inner_query_tree = buildQueryTree(metadata_snapshot->getSelectQuery().inner_query->clone(), view_context);
+            QueryTreePassManager pass_manager(view_context);
+            addQueryTreePasses(pass_manager);
+            pass_manager.runOnlyResolve(inner_query_tree);
+            visitQueryTree(inner_query_tree.get());
+        }
+        else if (storage->supportsReplication())
+            tables.insert(storage->getStorageID().getQualifiedName());
+    }
+
+    ContextPtr context;
+    bool enumerate_view_sources;
+    std::set<QualifiedTableName> tables;
+    std::set<String> visited_storages;
+};
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
@@ -931,7 +984,14 @@ void executeQueryWithParallelReplicas(
     /// for coordinated reading.
     std::vector<QualifiedTableName> tables_to_check;
     if (query_tree)
-        tables_to_check = collectReplicatedTablesToCheck(query_tree, context);
+    {
+        /// Enumerating the sources of a view requires resolving its stored query, so do it only
+        /// when a lagging replica is actually excluded from reading.
+        const auto & settings_ref = context->getSettingsRef();
+        const bool enumerate_view_sources = !settings_ref[Setting::fallback_to_stale_replicas_for_distributed_queries]
+            && settings_ref[Setting::max_replica_delay_for_distributed_queries] > 0;
+        tables_to_check = ReplicatedTablesToCheckCollector(context, enumerate_view_sources).collect(query_tree);
+    }
 
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
 

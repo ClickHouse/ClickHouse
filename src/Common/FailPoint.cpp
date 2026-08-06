@@ -172,6 +172,7 @@ static struct InitFiu
     PAUSEABLE(async_insert_flush_pause_in_executor) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
+    REGULAR(tables_status_report_replicated_tables_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
     REGULAR(zero_copy_lock_zk_fail_after_op) \
     REGULAR(plain_object_storage_write_fail_on_directory_create) \

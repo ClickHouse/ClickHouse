@@ -137,6 +137,7 @@ namespace ServerSetting
 namespace FailPoints
 {
 extern const char parallel_replicas_reading_response_timeout[];
+extern const char tables_status_report_replicated_tables_stale[];
 extern const char tcp_handler_fail_connection_setup[];
 }
 }
@@ -1713,6 +1714,16 @@ void TCPHandler::processTablesStatusRequest()
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
             status.is_readonly = replicated_table->isTableReadOnly();
+
+            /// For testing: report every replicated table as lagging, as if this server did not keep
+            /// up. Unlike the client-side `replicated_merge_tree_all_replicas_stale`, which marks the
+            /// replica stale whatever set of tables it was asked about, this one keeps non-replicated
+            /// tables fresh - so a replicated table hidden behind a wrapper storage (a view or a
+            /// materialized view) looks stale only when the freshness check resolved the wrapper to it.
+            fiu_do_on(FailPoints::tables_status_report_replicated_tables_stale,
+            {
+                status.absolute_delay = 100;
+            });
         }
         else
             status.is_replicated = false;
