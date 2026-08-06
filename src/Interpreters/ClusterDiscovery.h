@@ -191,6 +191,8 @@ private:
     void applyParsedConfig(ParsedDiscoveryConfig && parsed);
     void addStaticCluster(ParsedStaticDiscovery && parsed);
     void removeStaticCluster(const String & name);
+    /// Remove a multicluster-discovered cluster so a static config entry can take its name.
+    void removeDynamicCluster(const String & name);
     bool updateStaticClusterFields(ClusterInfo & info, const ParsedStaticDiscovery & parsed);
     void addMulticlusterRoot(ParsedMulticlusterDiscovery && parsed);
     void removeMulticlusterRoot(const String & full_path);

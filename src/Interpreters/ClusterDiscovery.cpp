@@ -285,6 +285,20 @@ void ClusterDiscovery::addStaticCluster(ParsedStaticDiscovery && parsed)
 {
     const String name = parsed.name;
 
+    if (auto existing = clusters_info.find(name); existing != clusters_info.end())
+    {
+        if (existing->second.isDynamic())
+        {
+            /// Static config wins over multicluster discovery (same as findDynamicClusters).
+            removeDynamicCluster(name);
+        }
+        else
+        {
+            LOG_DEBUG(log, "Static discovery cluster '{}' already exists, skip add", name);
+            return;
+        }
+    }
+
     clusters_info.emplace(
         name,
         ClusterInfo(
@@ -328,6 +342,17 @@ void ClusterDiscovery::removeStaticCluster(const String & name)
     }
 
     LOG_DEBUG(log, "Static discovery cluster '{}' removed due to config change", name);
+}
+
+void ClusterDiscovery::removeDynamicCluster(const String & name)
+{
+    auto it = clusters_info.find(name);
+    if (it == clusters_info.end() || !it->second.isDynamic())
+        return;
+
+    removeCluster(name, /* is_dynamic */ true);
+    clusters_info.erase(name);
+    LOG_DEBUG(log, "Dynamic discovery cluster '{}' removed to make way for static config", name);
 }
 
 bool ClusterDiscovery::updateStaticClusterFields(ClusterInfo & info, const ParsedStaticDiscovery & parsed)
@@ -410,10 +435,7 @@ void ClusterDiscovery::removeMulticlusterRoot(const String & full_path)
     }
 
     for (const auto & name : dynamic_clusters)
-    {
-        removeCluster(name, /* is_dynamic */ true);
-        clusters_info.erase(name);
-    }
+        removeDynamicCluster(name);
 
     clusters_to_update->set();
 
@@ -804,10 +826,10 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     if (nodes_info.empty())
     {
         String name = cluster_info.name;
-        bool is_dynamic = cluster_info.isDynamic();
-        removeCluster(name, is_dynamic);
-        if (is_dynamic)
-            clusters_info.erase(name);
+        if (cluster_info.isDynamic())
+            removeDynamicCluster(name);
+        else
+            removeCluster(name, /* is_dynamic */ false);
         return true;
     }
 
@@ -1111,10 +1133,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
             clusters_to_insert.insert(cluster_name);
 
         for (const auto & cluster_name : clusters_to_remove)
-        {
-            removeCluster(cluster_name, /* is_dynamic_cluster */true);
-            clusters_info.erase(cluster_name);
-        }
+            removeDynamicCluster(cluster_name);
 
         clusters_info.merge(new_dynamic_clusters_info);
 
