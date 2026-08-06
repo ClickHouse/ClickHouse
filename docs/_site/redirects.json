@@ -1,5 +1,9 @@
 [
   {
+    "source": "/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
+  },
+  {
     "source": "/docs/products/bring-your-own-cloud",
     "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
   },
@@ -1980,7 +1984,7 @@
     "source": "/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
