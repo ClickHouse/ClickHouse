@@ -19,7 +19,8 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for the unary operator.
-    void checkArgumentTypes(const PQT::UnaryOperator * operator_node, const SQLQueryPiece & argument, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::UnaryOperator * operator_node, const SQLQueryPiece & argument, const ConverterContext & context)
     {
         const auto & operator_name = operator_node->operator_name;
         if (!(operator_name == "+" || operator_name == "-"))
@@ -39,7 +40,7 @@ namespace
 
 
 SQLQueryPiece applyUnaryOperator(
-    const PQT::UnaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context)
+    const PrometheusQueryTree::UnaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context)
 {
     checkArgumentTypes(operator_node, argument, context);
     const auto & operator_name = operator_node->operator_name;
