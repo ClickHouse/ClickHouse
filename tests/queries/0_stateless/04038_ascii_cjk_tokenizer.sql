@@ -54,8 +54,9 @@ explain estimate select * from tab where str like '%错误503需要%';
 
 drop table tab;
 
--- backward compatibility: unicodeWord alias
+-- Aliases
 select tokens('taichi张三丰in the house', 'unicodeWord');
+select tokens('taichi张三丰in the house', 'unicode_word');
 
 drop table if exists tab2;
 create table tab2 (key UInt64, str String, index text_idx(str) type text(tokenizer = unicodeWord)) engine MergeTree order by key;

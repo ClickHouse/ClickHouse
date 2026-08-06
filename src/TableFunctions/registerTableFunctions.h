@@ -14,6 +14,7 @@ void registerTableFunctionGenerateSeries(TableFunctionFactory & factory);
 void registerTableFunctionNull(TableFunctionFactory & factory);
 void registerTableFunctionZeros(TableFunctionFactory & factory);
 void registerTableFunctionExecutable(TableFunctionFactory & factory);
+void registerTableFunctionEval(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionFileCluster(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
@@ -38,6 +39,7 @@ void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory);
+void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & factory);
 #if USE_USEARCH
 void registerTableFunctionVectorSearch(TableFunctionFactory & factory);
 #endif

@@ -53,6 +53,13 @@ public:
         return makeNullableOrLowCardinalityNullable(arguments[0].column);
     }
 
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    {
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true, .is_strict = true };
+    }
+
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
 

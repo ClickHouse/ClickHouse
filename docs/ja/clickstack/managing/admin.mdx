@@ -1,0 +1,26 @@
+---
+slug: /use-cases/observability/clickstack/admin
+title: 'ClickStack - 管理'
+sidebarTitle: '管理'
+description: 'ClickStack で基本的な管理タスクを実行する方法。'
+doc_type: 'guide'
+keywords: ['clickstack', 'admin']
+---
+
+ClickStack の管理タスクの大半は、基盤となる ClickHouse database に対して直接実行されます。ClickStack をデプロイするユーザーは、ClickHouse の概念と管理の基本を理解している必要があります。
+
+管理操作では通常、DDL ステートメントを実行します。利用可能なオプションは、Managed ClickStack と ClickStack Open Source のどちらを使用しているかによって異なります。
+
+<div id="clickstack-oss">
+  ## ClickStack Open Source
+</div>
+
+ClickStack Open Source のデプロイでは、ユーザーは[ClickHouse client](/ja/concepts/features/interfaces/cli)を使用して管理タスクを実行します。このクライアントは ClickHouse ネイティブプロトコル経由でデータベースに接続し、DDL や各種管理操作を完全にサポートするとともに、クエリに対する対話的なフィードバックも提供します。
+
+<div id="clickstack-managed">
+  ## Managed ClickStack
+</div>
+
+Managed ClickStack では、ClickHouse client と [SQL Console](/ja/products/cloud/features/sql-console-features/sql-console) の両方を利用できます。client 経由で接続するには、[サービスの認証情報](/ja/products/cloud/guides/sql-console/connection-details)を取得する必要があります。
+
+[SQL Console](/ja/products/cloud/features/sql-console-features/sql-console) は Web ベースのインターフェイスで、SQL のオートコンプリート、クエリ履歴、結果を可視化するための組み込みチャートなど、より便利な機能を提供します。

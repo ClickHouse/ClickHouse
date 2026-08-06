@@ -73,7 +73,7 @@ using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSeriali
 
 
 /// Validate that a vector contains no `NaN`/`Inf` and (for `i8` quantization)
-/// has non-zero magnitude — both cause undefined behavior in USearch.
+/// has a non-zero and finite squared magnitude — both cause undefined behavior in USearch.
 template <typename T>
 void checkVectorIsSane(
     const T * vector,
@@ -106,9 +106,9 @@ void checkVectorIsSane(
         }
     }
 
-    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
+    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && (magnitude_squared == 0.0 || !std::isfinite(magnitude_squared)))
         throw Exception(error_code,
-            "Zero-magnitude vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
+            "Zero-magnitude or non-finite vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
 }
 
 
