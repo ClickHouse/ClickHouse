@@ -140,11 +140,21 @@ public:
     {
         if constexpr (is_decimal<T1>)
         {
-            /// `Decimal` needs a per-row conversion with the source scale, so the column cannot be fed
-            /// to the vectorized `addMany` kernel directly. Stage a cache-resident tile of converted
-            /// values instead and accumulate the tile with that same kernel; the conversion itself
-            /// auto-vectorizes (`scvtf`/`fdiv` on AArch64, `vcvtdq2pd`/`vdivpd` for `Decimal32` on x86)
-            /// because it no longer sits in a loop carrying the moment state.
+            /// A `Decimal` column holds unscaled integers. The scale lives in the data type, not in
+            /// the column, so an element only becomes a number as `value / 10^scale`. `addMany` is a
+            /// member of `VarMoments` and knows nothing about scale - and handing it the column would
+            /// not even fail to compile, because `Decimal` converts implicitly to its native integer
+            /// (`Decimal::operator T`), so it would quietly accumulate the unscaled integers. Hence
+            /// the conversion has to happen before the kernel sees the values.
+            ///
+            /// Converting the whole range into one buffer would push it out to memory and read it
+            /// back, so the values are converted a tile at a time and each tile is accumulated while
+            /// it is still in L1. Keeping the two loops separate is also what lets the accumulation
+            /// vectorize on `x86-64-v3`, which has no packed `int64 -> double` (`vcvtqq2pd` arrived
+            /// with AVX-512): in a fused convert-and-accumulate loop the scalar converts would drag
+            /// the accumulation back down with them. Alone in its own loop, the conversion vectorizes
+            /// on its own where the target allows it - `vcvtdq2pd`/`vdivpd` for `Decimal32` on x86,
+            /// `scvtf`/`fdiv` on AArch64.
             if constexpr (StatFunc::num_args == 1)
             {
                 if (if_argument_pos < 0)
