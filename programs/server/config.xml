@@ -1249,6 +1249,10 @@
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
 
+        <!-- Create `system.user_query_log`, which shows every user their own query log records
+             without requiring access to the query log table. -->
+        <enable_user_query_log>true</enable_user_query_log>
+
         <!-- example of using a different storage policy for a system table -->
         <!-- storage_policy>local_ssd</storage_policy -->
     </query_log>

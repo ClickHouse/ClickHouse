@@ -168,7 +168,7 @@ bool isFullPageDescription(std::string_view description)
         else if (!in_code_block)
         {
             const size_t hashes = line.find_first_not_of('#');
-            if (hashes >= 1 && hashes <= 6 && line[hashes] == ' ' && line.find("{#") != std::string_view::npos)
+            if (hashes >= 1 && hashes <= 6 && line[hashes] == ' ' && line.contains("{#"))
                 return true;
         }
 
