@@ -1,0 +1,7 @@
+10
+cancelled: the plan build stopped iterating over children
+1
+break mode: the plan build stopped iterating over children
+break mode client status: 0
+break mode stderr bytes: 0
+break mode planned fewer children than the control
