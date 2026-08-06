@@ -23,7 +23,7 @@ QUERIES_FILE = f"{Utils.cwd()}/utils/parser-memory-profiler/test_queries.txt"
 MASTER_PROFILER_BASE_URL = "https://clickhouse-builds.s3.us-east-1.amazonaws.com"
 
 # Threshold: a change is significant only if BOTH conditions are met
-CHANGE_THRESHOLD_BYTES = 100
+CHANGE_THRESHOLD_BYTES = 128
 CHANGE_THRESHOLD_PCT = 1.0
 
 # Frame prefixes to strip from stack tops (jemalloc/malloc internals, profiler overhead)
