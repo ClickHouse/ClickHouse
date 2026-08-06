@@ -239,11 +239,8 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
     /// methods. `chooseMethod` never returns those here; this branch only exists because the dispatch macro
     /// is generated over every `AggregatedDataVariants::Type`, including the void ones used by GROUP BY.
     if constexpr (!Method::State::has_mapped)
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LimitByTransform does not support void-mapped aggregation methods");
-    }
-    else
-    {
+
     typename Method::State state(grouping_key_columns, data.key_sizes, hash_method_context);
 
     UInt64 current_run_start_row = 0;
@@ -291,7 +288,6 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
     /// Flush the final run, which extends to the end of the chunk.
     processRun(current_run_start_row, row_count - current_run_start_row, current_run_group_idx);
-    }
 }
 
 void LimitByTransform::transform(Chunk & chunk)

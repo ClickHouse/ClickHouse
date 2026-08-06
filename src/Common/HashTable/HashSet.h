@@ -69,13 +69,39 @@ public:
                 this->insert(rhs.buf[i]);
     }
 
-    /// Call func(const Key &) for each set element. Mirrors HashMapTable::forEachValue (which passes the
-    /// mapped value too); used by the Aggregator to emit keys for `GROUP BY` without aggregate functions.
+    /// Call func(const Key &, char *& mapped) for each set element, like HashMapTable::forEachValue. A set
+    /// cell has no mapped value, so `func` gets the dummy (see `voidMappedDummy`) - it is only there so that
+    /// the Aggregator's key-emitting code stays one generic body over map and set tables.
     template <typename Func>
     void forEachValue(Func && func)
     {
         for (auto & cell : *this)
-            func(cell.getKey());
+            func(cell.getKey(), voidMappedDummy());
+    }
+
+    /** The mapped-value interface of `HashMapTable`, for a table whose cells hold no mapped value. A set has
+      * none, so every operation that visits mapped values visits nothing and `func` is never called:
+      * `forEachMapped` iterates nothing, and `mergeToViaFind` - which in the map version only combines the
+      * mapped values of keys present on both sides - has nothing to combine. `mergeToViaEmplace` still
+      * unions the keys, because that part of it is the merge; only the combining callback is dropped.
+      *
+      * Defined so that the Aggregator's state-maintaining code stays one generic body over map and set
+      * tables instead of being split in two by `if constexpr`.
+      */
+    template <typename Func>
+    void forEachMapped(Func &&)
+    {
+    }
+
+    template <typename Func, bool prefetch = false>
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func &&)
+    {
+        mergeToViaEmplace<prefetch>(that);
+    }
+
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaFind(Self &, Func &&)
+    {
     }
 
     /// Merge every key of *this into `that`, growing `that` incrementally (with optional prefetch), reusing
@@ -158,6 +184,12 @@ public:
 
         for (size_t i = 0; i < Base::NUM_BUCKETS; ++i)
             this->impls[i].merge(rhs.impls[i]);
+    }
+
+    /// A set has no mapped values - see `HashSetTable::forEachMapped`.
+    template <typename Func>
+    void forEachMapped(Func &&)
+    {
     }
 
     /// Writes its content in a way that it will be correctly read by HashSetTable.

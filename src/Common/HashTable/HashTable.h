@@ -142,6 +142,19 @@ struct VoidMapped
     }
 };
 
+/** Generic code that maintains per-key state writes into, and reads back, a cell's mapped value. A table
+  * whose cells have no mapped value never *executes* that code, but it is still instantiated for such a
+  * table, so it has to compile. The void specialisations hand out this dummy in place of a mapped value
+  * (see `ColumnsHashing::EmplaceResultImpl<void>` and `HashSetTable::forEachValue`).
+  *
+  * It is per-thread, so that code which does reach it - which would be a bug - cannot become a data race.
+  */
+inline char *& voidMappedDummy()
+{
+    static thread_local char * dummy = nullptr;
+    return dummy;
+}
+
 /** Compile-time interface for cell of the hash table.
   * Different cell types are used to implement different hash tables.
   * The cell must contain a key.
