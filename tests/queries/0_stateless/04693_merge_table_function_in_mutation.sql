@@ -116,6 +116,16 @@ DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd_plain WHERE id IN (SELECT i
     SETTINGS lightweight_delete_mode = 'lightweight_update';
 SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd_plain ORDER BY id;
 
+-- A common table expression is expanded before the database is filled in, so its name is not
+-- qualified as if it were a table, and the table it reads is resolved in the updated database.
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu
+    SET v = 6 WHERE id IN (WITH c AS (SELECT id FROM t_lwu_src) SELECT id FROM c);
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 6;
+
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu
+    SET v = (WITH c AS (SELECT max(id) AS m FROM t_lwu_src) SELECT m FROM c) WHERE id = 2;
+SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 2;
+
 DROP TABLE t_lwu_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP TABLE t_merge_mutation;

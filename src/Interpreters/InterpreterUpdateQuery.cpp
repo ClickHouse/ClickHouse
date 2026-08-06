@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -158,6 +159,19 @@ BlockIO InterpreterUpdateQuery::execute()
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+    }
+
+    /// Expand CTEs before filling the default database, otherwise a CTE alias is qualified as if it
+    /// were a table.
+    if (update_query.predicate)
+    {
+        ASTPtr predicate = update_query.predicate->ptr();
+        ApplyWithSubqueryVisitor::visit(predicate);
+    }
+    if (update_query.assignments)
+    {
+        ASTPtr assignments = update_query.assignments->ptr();
+        ApplyWithSubqueryVisitor::visit(assignments);
     }
 
     /// Add default database to table identifiers that we can encounter in the update expression.
