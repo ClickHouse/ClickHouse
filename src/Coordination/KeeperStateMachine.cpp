@@ -1288,7 +1288,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     else
     {
         LOG_WARNING(log, "Cannot push snapshot task into queue");
-        /// Run cleanup inline so snapshot mode is disabled and `when_done(false)` fires once.
+        /// Run cleanup inline so the read view is retired and `when_done(false)` fires once.
         snapshot_cleanup_transferred = true;
         /// push returned false, so the task was not consumed; the use-after-move is unreachable.
         /// NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
@@ -1926,6 +1926,12 @@ KeeperStorageStats KeeperStateMachine::getStorageStats() const
     std::shared_lock storage_lock(state_machine_storage_mutex);
     std::lock_guard response_lock(process_and_responses_lock);
     return storage->getStorageStats();
+}
+
+std::unique_ptr<KeeperNodesReadView> KeeperStateMachine::getStorageReadView() const
+{
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    return storage->issueReadView();
 }
 
 void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
