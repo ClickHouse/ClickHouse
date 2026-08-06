@@ -121,9 +121,7 @@ def assert_slow_index_build_is_still_in_flight(table):
         "not take effect, so this arm cannot exercise the interruption point"
     )
     assert (
-        node.query(
-            f"SELECT count() FROM system.merges WHERE table = '{table}'"
-        ).strip()
+        node.query(f"SELECT count() FROM system.merges WHERE table = '{table}'").strip()
         != "0"
     ), "the background merge is no longer running: nothing is left to interrupt"
     assert (
