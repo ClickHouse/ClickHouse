@@ -3099,8 +3099,15 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// realistically `lockExclusively` timed out on a busy source, before `addDependencies` subscribed
         /// the view to it. Letting the exception escape as-is would leave behind a view that exists but is
         /// not registered as a dependent of the source, so future inserts would silently never populate it.
-        /// Drop the just-created view instead, so the failed CREATE leaves nothing behind and can simply be
-        /// retried (the same no-orphan contract as the temporary-table path of CREATE TABLE ... AS SELECT).
+        /// Drop the just-created view instead, so the failed CREATE leaves behind nothing of what it
+        /// created and can simply be retried (the same no-orphan contract as the temporary-table path of
+        /// CREATE TABLE ... AS SELECT). The contract covers the objects this CREATE created: the view, its
+        /// subscription and - for the plain ENGINE form, where the view owns its data - the populated rows,
+        /// which the DROP removes with the view. For the `TO target` form the target table is a pre-existing
+        /// table that is not ours to roll back: rows the failed population already appended to it stay
+        /// there, exactly as after a failed `INSERT ... SELECT` into that table (ClickHouse inserts are not
+        /// transactional across blocks), so retrying the CREATE backfills them again. That caveat is
+        /// documented, and a test pins it down.
         /// A failure after the subscription is rolled back the same way - the DROP also removes the
         /// registered dependencies. That covers both building the population pipeline and running it: the
         /// population executes eagerly inside the `try` (see fillMaterializedViewAtomicallyImpl), so a
