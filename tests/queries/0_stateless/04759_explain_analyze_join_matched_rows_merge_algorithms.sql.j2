@@ -32,6 +32,10 @@ SELECT 'ground truth: rows, matched';
 SELECT count(), countIf(k IN (SELECT k FROM right_dup_keys)) FROM left_side;
 SELECT count(), countIf(k IN (SELECT k FROM left_side)) FROM right_dup_keys;
 
+-- `parallel_full_sorting_merge` builds the same `FullSortingMergeJoin`, but the optimizer rewrites it
+-- into independent per-shard joins, and only when neither side is already sorted - hence
+-- `optimize_read_in_order = 0`, without which it would repeat the case above. The counts must survive
+-- being summed over the shards. `ASOF` is never sharded, its trailing key is an inequality.
 {% set all_kinds = ['ALL INNER', 'ALL LEFT', 'ALL RIGHT', 'ALL FULL'] -%}
 {% set any_kinds = ['ANY INNER', 'ANY LEFT', 'ANY RIGHT'] -%}
 {% set semi_anti_kinds = ['SEMI LEFT', 'SEMI RIGHT', 'ANTI LEFT', 'ANTI RIGHT'] -%}
@@ -45,6 +49,9 @@ SELECT count(), countIf(k IN (SELECT k FROM left_side)) FROM right_dup_keys;
         all_kinds + ['ANY INNER', 'ANY LEFT', 'SEMI LEFT']),
 
     ('full_sorting_merge', "join_algorithm = 'full_sorting_merge'",
+        all_kinds + any_kinds + asof_kinds),
+
+    ('parallel_full_sorting_merge', "join_algorithm = 'parallel_full_sorting_merge', max_threads = 8, optimize_read_in_order = 0",
         all_kinds + any_kinds + asof_kinds),
 ] -%}
 
