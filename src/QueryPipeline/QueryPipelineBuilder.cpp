@@ -393,6 +393,30 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     return result;
 }
 
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesPaired(
+    std::unique_ptr<QueryPipelineBuilder> left,
+    std::unique_ptr<QueryPipelineBuilder> right,
+    ProcessorPtr joining,
+    Processors * collected_processors)
+{
+    left->checkInitializedAndNotCompleted();
+    right->checkInitializedAndNotCompleted();
+
+    left->pipe.dropExtremes();
+    right->pipe.dropExtremes();
+
+    if (left->hasTotals() || right->hasTotals())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
+
+    /// The joining transform may rely on the order of each input stream (e.g. IEJoin expects
+    /// pre-sorted inputs), so a multi-stream input cannot be silently squashed here.
+    if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());
+
+    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+}
+
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShapedByShards(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
