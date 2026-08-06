@@ -1,4 +1,5 @@
 import shlex
+import sys
 
 from ci.defs.defs import BASE_BRANCH
 from praktika.git import Git
@@ -142,11 +143,29 @@ def open_or_refresh_pr():
     return Shell.check(f"gh pr edit {pr} --add-label {LABEL}", verbose=True)
 
 
+def on_base_branch():
+    """Refuse to manage the shared bot pull request from a non-base branch."""
+    branch = Info().git_branch
+    if branch != BASE_BRANCH:
+        print(
+            f"Refusing to run: this workflow force-pushes '{BRANCH}' and manages a"
+            f" pull request, so it must run against '{BASE_BRANCH}', not '{branch}'"
+            " (e.g. a workflow_dispatch from another branch).",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 if __name__ == "__main__":
     results = [
-        Result.from_commands_run(name="Regenerate docs", command=regenerate)
+        Result.from_commands_run(name="Run against base branch", command=on_base_branch)
     ]
-    # Fail closed: only touch the pull request when regeneration succeeded.
+    # Fail closed: only regenerate and touch the pull request from the base branch.
+    if results[-1].is_ok():
+        results.append(
+            Result.from_commands_run(name="Regenerate docs", command=regenerate)
+        )
     if results[-1].is_ok():
         results.append(
             Result.from_commands_run(

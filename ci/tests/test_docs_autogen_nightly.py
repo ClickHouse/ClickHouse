@@ -165,6 +165,31 @@ def test_clickhouse_connect_sync_exemption_is_scoped():
         assert not docs_job_mintlify._is_trusted_clickhouse_connect_sync(info)
 
 
+def test_base_branch_accepts_master(monkeypatch):
+    monkeypatch.setattr(
+        docs_autogen_nightly,
+        "Info",
+        lambda: SimpleNamespace(git_branch=docs_autogen_nightly.BASE_BRANCH),
+    )
+
+    assert docs_autogen_nightly.on_base_branch()
+
+
+@pytest.mark.parametrize("branch", ["feature", docs_autogen_nightly.BRANCH])
+def test_base_branch_rejects_other_branches(monkeypatch, capsys, branch):
+    monkeypatch.setattr(
+        docs_autogen_nightly,
+        "Info",
+        lambda: SimpleNamespace(git_branch=branch),
+    )
+
+    assert not docs_autogen_nightly.on_base_branch()
+    assert (
+        f"must run against '{docs_autogen_nightly.BASE_BRANCH}', not '{branch}'"
+        in capsys.readouterr().err
+    )
+
+
 def test_regenerate_runs_all_generator_families(monkeypatch):
     checks = []
     monkeypatch.setattr(
