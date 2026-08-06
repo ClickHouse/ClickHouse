@@ -889,6 +889,9 @@ public:
     /// it is reset if not specified, because it is a property of the authentication, not of the user.
     /// `authentication_valid_until_` records the method's expiry (0 = none) for the same reason; it is
     /// likewise reset if not specified, so switching the principal never keeps a stale expiry.
+    /// Callers that switch the principal within the SAME authenticated session (e.g. `EXECUTE AS`)
+    /// must read both limits back from the source context and pass them here, so the session cannot
+    /// escape its credential's limit by impersonating a less restricted principal.
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0);
     UserPtr getUser() const;
 
