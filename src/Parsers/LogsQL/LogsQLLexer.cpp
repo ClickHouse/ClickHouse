@@ -73,12 +73,19 @@ constexpr std::string_view denied_first_compound_tokens[] = {"/", ".", "$"};
 
 }
 
-LogsQLLexer::LogsQLLexer(const char * begin_, const char * end_)
-    : begin(begin_), end(end_), current(begin_), token_begin(begin_)
+LogsQLLexer::LogsQLLexer(const char * begin_, const char * end_, bool truncated_)
+    : begin(begin_), end(end_), truncated(truncated_), current(begin_), token_begin(begin_)
 {
     nextToken();
     /// The first token has no previous token.
     prev_raw_token.clear();
+}
+
+void LogsQLLexer::checkTruncation(const char * pos) const
+{
+    if (truncated && pos >= end)
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "Max query size exceeded (can be increased with the `max_query_size` setting)");
 }
 
 void LogsQLLexer::throwSyntaxError(const String & message) const
@@ -170,7 +177,10 @@ String LogsQLLexer::decodeDoubleQuoted(const char *& pos) const
     while (true)
     {
         if (pos == end || *pos == '\n')
+        {
+            checkTruncation(pos);
             throwSyntaxError("unterminated quoted string");
+        }
         char c = *pos;
         if (c == quote)
         {
@@ -186,7 +196,10 @@ String LogsQLLexer::decodeDoubleQuoted(const char *& pos) const
 
         ++pos;
         if (pos == end)
+        {
+            checkTruncation(pos);
             throwSyntaxError("unterminated escape sequence in quoted string");
+        }
         char e = *pos;
         switch (e)
         {
@@ -261,7 +274,10 @@ String LogsQLLexer::decodeBacktickQuoted(const char *& pos) const
     while (true)
     {
         if (pos == end)
+        {
+            checkTruncation(pos);
             throwSyntaxError("unterminated backtick-quoted string");
+        }
         char c = *pos;
         ++pos;
         if (c == '`')
@@ -290,6 +306,7 @@ void LogsQLLexer::nextToken()
     {
         if (s == end)
         {
+            checkTruncation(s);
             token_begin = end;
             current = end;
             return;

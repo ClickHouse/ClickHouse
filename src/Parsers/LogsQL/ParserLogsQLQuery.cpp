@@ -33,14 +33,28 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     const char * begin = pos->begin;
 
+    /// The LogsQL text is scanned from the raw query string, bypassing the ClickHouse
+    /// token stream (which is bounded by `max_query_size` on its own), so the limit
+    /// must be applied to the raw slice as well. The end is clipped rather than checked
+    /// against the whole slice, because in a multi-statement input the slice extends
+    /// to the end of all statements, while the limit applies to a single query.
+    const char * end = raw_end;
+    bool truncated = false;
+    if (max_query_size && static_cast<size_t>(raw_end - begin) > max_query_size)
+    {
+        end = begin + max_query_size;
+        truncated = true;
+    }
+
     LogsQLParser::Context context;
     context.database = database;
     context.table = table;
     context.time_column = time_column;
     context.msg_column = msg_column;
     context.max_depth = max_parser_depth;
+    context.truncated = truncated;
 
-    LogsQLParser parser(begin, raw_end, std::move(context));
+    LogsQLParser parser(begin, end, std::move(context));
     node = parser.parse();
 
     /// Advance the token iterator to the end of the parsed LogsQL text,

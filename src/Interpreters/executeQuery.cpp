@@ -1335,7 +1335,8 @@ static BlockIO executeQueryImpl(
                 settings[Setting::logsql_message_column],
                 end,
                 settings[Setting::allow_experimental_logsql_dialect],
-                settings[Setting::max_parser_depth]);
+                settings[Setting::max_parser_depth],
+                max_query_size);
             out_ast = parseLogsQLQuery(parser, begin, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else

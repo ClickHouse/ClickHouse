@@ -26,7 +26,9 @@ namespace DB
 class LogsQLLexer
 {
 public:
-    LogsQLLexer(const char * begin_, const char * end_);
+    /// `truncated` means that `end` was clipped by `max_query_size`, so running into it
+    /// is reported as an exceeded query size rather than as an end of input.
+    LogsQLLexer(const char * begin_, const char * end_, bool truncated_ = false);
 
     /// Advances to the next token.
     void nextToken();
@@ -90,9 +92,13 @@ public:
 
     static bool isWord(std::string_view text);
 
+    /// Throws if the (possibly clipped) end of input was reached because of `max_query_size`.
+    void checkTruncation(const char * pos) const;
+
 private:
     const char * begin;
     const char * end;
+    bool truncated;
 
     /// Position right after the current token.
     const char * current;

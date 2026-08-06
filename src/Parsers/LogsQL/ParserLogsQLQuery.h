@@ -20,7 +20,8 @@ public:
         String msg_column_,
         const char * raw_end_,
         bool feature_enabled_,
-        size_t max_parser_depth_)
+        size_t max_parser_depth_,
+        size_t max_query_size_)
         : database(std::move(database_))
         , table(std::move(table_))
         , time_column(std::move(time_column_))
@@ -28,6 +29,7 @@ public:
         , raw_end(raw_end_)
         , feature_enabled(feature_enabled_)
         , max_parser_depth(max_parser_depth_)
+        , max_query_size(max_query_size_)
     {
     }
 
@@ -48,6 +50,7 @@ private:
 
     bool feature_enabled;
     size_t max_parser_depth;
+    size_t max_query_size;
 };
 
 }
