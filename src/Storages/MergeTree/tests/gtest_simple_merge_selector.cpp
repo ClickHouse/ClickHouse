@@ -606,3 +606,68 @@ TEST(SimpleMergeSelector, SmallPartsMinCountUntrimmedMaxAgeLiftsGate)
     ASSERT_FALSE(selected.empty())
         << "small_parts gate must use max_age: an old part must lift the restriction on the untrimmed range";
 }
+
+
+/// Regression test: the default-on `enable_heuristic_to_lower_max_parts_to_merge_at_once`
+/// must not make `small_parts_min_count` unattainable.
+///
+/// Candidate enumeration in `selectWithinPartsRange` stops at the effective
+/// `max_parts_to_merge_at_once`. As a partition approaches `parts_to_throw_insert`, the
+/// fullness heuristic lowers that cap (with the defaults it drops below 8 at ~2981 parts).
+/// If the cap falls below `small_parts_min_count`, no all-small all-fresh candidate can ever
+/// reach the required width, so the gate would silently turn into "block all fresh small
+/// merges until `small_parts_max_age`" instead of "batch at least N parts". The fix keeps
+/// the effective cap at least `small_parts_min_count` while the gate is active.
+TEST(SimpleMergeSelector, SmallPartsMinCountSurvivesLoweredMaxPartsCap)
+{
+    SimpleMergeSelector::Settings settings;
+    /// base = 2 so the 8-part equal-size range passes the base-ratio check in `allow`.
+    settings.base = 2;
+    settings.small_parts_threshold = 10 * 1024 * 1024;
+    settings.small_parts_min_count = 8;
+    settings.small_parts_max_age = 600;
+    /// The heuristic under test stays at its default (enabled). Report a nearly full
+    /// partition (2990 of 3000 parts): the fullness formula lowers the effective
+    /// max-parts cap to 6, below `small_parts_min_count` = 8.
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = true;
+
+    PartsRange parts;
+    auto add_part = [&](int64_t block, size_t size, time_t age)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", block);
+        auto info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = info,
+            .size = size,
+            .age = age,
+            .rows = 1000,
+        });
+    };
+
+    /// Eight equal fresh 1 MiB parts: all small (below `small_parts_threshold`), all fresh
+    /// (below `small_parts_max_age`), exactly `small_parts_min_count` of them, equal sizes
+    /// so right-tail trimming is a no-op.
+    for (int64_t i = 0; i < 8; ++i)
+        add_part(i, 1024 * 1024, 1);
+
+    PartitionsStatistics statistics;
+    statistics["all"] = PartitionStatistics{
+        .min_age = 1,
+        .part_count = 2990,
+        .total_size = 2990ULL * 1024 * 1024,
+    };
+    settings.partitions_stats = &statistics;
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts}, constraints, nullptr);
+
+    /// With the lowered cap raised back to `small_parts_min_count`, the 8-part batch is an
+    /// eligible candidate and must be selected. Without the fix, enumeration stops at 6
+    /// parts, every candidate fails the `size < small_parts_min_count` gate, and nothing
+    /// is selected until the age valve fires.
+    ASSERT_EQ(selected.size(), 1)
+        << "the lowered max-parts cap must not make small_parts_min_count unattainable";
+    ASSERT_EQ(selected[0].size(), 8);
+}

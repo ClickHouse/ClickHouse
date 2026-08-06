@@ -876,6 +876,12 @@ When all parts in a merge range are small (below `merge_selector_small_parts_thr
 and fresh (below `merge_selector_small_parts_max_age`), require at least this many parts
 to allow the merge. Reduces the number of merge operations under rapid small-part insertion.
 0 means disabled. Works for Simple and StochasticSimple merge selectors.
+
+The selector never considers merge candidates wider than `max_parts_to_merge_at_once`, so an
+explicitly configured `max_parts_to_merge_at_once` below this minimum is a contradictory
+configuration: small fresh parts then merge only after `merge_selector_small_parts_max_age`.
+(The built-in heuristic that lowers the effective cap as a partition fills up never lowers it
+below this minimum, so the default configuration is unaffected.)
 )", 0) \
     DECLARE(UInt64, merge_selector_small_parts_max_age, 600, R"(
 Age limit in seconds for the small-parts restriction: as soon as any part in a range

@@ -325,6 +325,14 @@ void selectWithinPartsRange(
         }
 
         max_parts_to_merge_at_once = std::min(max_parts_to_merge_at_once, settings.max_parts_to_merge_at_once);
+
+        /// The small-parts batching gate rejects every all-small, all-fresh candidate narrower
+        /// than small_parts_min_count. If this heuristic lowered the cap below that minimum,
+        /// no eligible batch could be formed at all, and the gate would silently degrade into
+        /// "block all small fresh merges until small_parts_max_age". Keep the effective cap at
+        /// least small_parts_min_count, still bounded by the explicit max_parts_to_merge_at_once.
+        if (settings.small_parts_min_count && max_parts_to_merge_at_once < settings.small_parts_min_count)
+            max_parts_to_merge_at_once = std::min(settings.small_parts_min_count, settings.max_parts_to_merge_at_once);
     }
 
     for (; begin < parts_count; ++begin)

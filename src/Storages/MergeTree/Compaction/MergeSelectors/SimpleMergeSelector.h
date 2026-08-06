@@ -177,6 +177,17 @@ public:
           * single selection round: `Estimator` keeps one global best candidate per
           * partition, so rejecting the top-scoring small batch can hand that round to
           * another already-eligible range instead of producing no merge at all.
+          *
+          * Interaction with the max-parts cap: candidate enumeration stops at the
+          * effective max_parts_to_merge_at_once, so a cap below small_parts_min_count
+          * would make the minimum unattainable and turn the gate into "block all fresh
+          * small merges until small_parts_max_age". When the gate is active, the
+          * default-on enable_heuristic_to_lower_max_parts_to_merge_at_once therefore
+          * never lowers the effective cap below small_parts_min_count. An explicitly
+          * configured max_parts_to_merge_at_once still takes precedence: setting it
+          * below small_parts_min_count is a contradictory configuration in which small
+          * fresh parts merge only once small_parts_max_age (or min_age_to_force_merge)
+          * lifts the gate.
           */
         size_t small_parts_threshold = 10 * 1024 * 1024;   /// 10 MB
         size_t small_parts_min_count = 0;                   /// 0 = disabled
